@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-error-payloads",
-      "commit_sha": "f717fb709a7ea58bcf19bccc9c2b68fb340df3bd",
-      "tree_sha": "519cfff49129be2fb5498d4c7d6322e6ce51802e",
-      "committed_at_utc": "2026-11-12T19:27:25+00:00"
+      "commit_sha": "6bee572c95d8686111699de94a95635fda706a17",
+      "tree_sha": "c662e4d1ccdf3cbe5394e06c2a76ffe565c9d586",
+      "committed_at_utc": "2026-11-12T21:57:46+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "296d2032277d8a971fa880345ca207de6f259e67df8ce19a37672ae781c9c238"
+    "source_digest": "2752e7b44079cb33ae33da5d9b6d336b8348707f9fab76136cc1ee85c9ef45b3"
   },
   "summary": {
     "module_count": 695,
-    "declaration_count": 36365
+    "declaration_count": 36371
   },
   "readme_sync": {
     "version": "0.37.20",
     "lean_toolchain": "v4.28.0",
     "production_files": 625,
-    "production_loc": 628753,
+    "production_loc": 628928,
     "test_files": 70,
     "test_loc": 89557,
-    "proved_theorem_lemma_decls": 24085,
+    "proved_theorem_lemma_decls": 24087,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -27196,7 +27196,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallReturn",
       "path": "SeLe4n/Kernel/Architecture/SyscallReturn.lean",
-      "declaration_count": 209,
+      "declaration_count": 206,
       "declarations": [
         {
           "kind": "def",
@@ -27474,44 +27474,16 @@
         },
         {
           "kind": "def",
-          "name": "decEqWords",
-          "full_name": "SeLe4n.Model.KernelError.decEqWords",
-          "line": 412,
-          "called": [
-            "SeLe4n.Model.KernelError",
-            "SeLe4n.Model.KernelError.matchesWords_iff"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "instDecidableEqKernelError_decEq_eq_words",
-          "full_name": "SeLe4n.Model.KernelError.instDecidableEqKernelError_decEq_eq_words",
-          "line": 417,
-          "called": [
-            "SeLe4n.Model.KernelError.decEqWords"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "instDecidableEqKernelError_eq_words",
-          "full_name": "SeLe4n.Model.KernelError.instDecidableEqKernelError_eq_words",
-          "line": 422,
-          "called": [
-            "SeLe4n.Model.KernelError.decEqWords"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "payloadLengthOfWords",
           "full_name": "SeLe4n.Model.KernelError.payloadLengthOfWords",
-          "line": 429,
+          "line": 408,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "payloadLengthOfWords_eq",
           "full_name": "SeLe4n.Model.KernelError.payloadLengthOfWords_eq",
-          "line": 436,
+          "line": 415,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.payloadLength",
@@ -27527,14 +27499,14 @@
           "kind": "inductive",
           "name": "ReturnShape",
           "full_name": "SeLe4n.Kernel.Architecture.ReturnShape",
-          "line": 461,
+          "line": 440,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallReturnShape",
           "full_name": "SeLe4n.Kernel.Architecture.syscallReturnShape",
-          "line": 488,
+          "line": 467,
           "called": [
             "SeLe4n.Kernel.Architecture.ReturnShape",
             "SeLe4n.Model.SyscallId"
@@ -27544,7 +27516,7 @@
           "kind": "theorem",
           "name": "syscallReturnShape_total",
           "full_name": "SeLe4n.Kernel.Architecture.syscallReturnShape_total",
-          "line": 568,
+          "line": 547,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallReturnShape",
             "SeLe4n.Model.SyscallId"
@@ -27554,7 +27526,7 @@
           "kind": "theorem",
           "name": "syscallReturnShape_value_returning",
           "full_name": "SeLe4n.Kernel.Architecture.syscallReturnShape_value_returning",
-          "line": 576,
+          "line": 555,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallReturnShape",
             "SeLe4n.Model.SyscallId",
@@ -27565,7 +27537,7 @@
           "kind": "theorem",
           "name": "returnShape_list_gate_insufficient",
           "full_name": "SeLe4n.Kernel.Architecture.returnShape_list_gate_insufficient",
-          "line": 587,
+          "line": 566,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallReturnShape",
             "SeLe4n.Model.SyscallId"
@@ -27575,14 +27547,14 @@
           "kind": "structure",
           "name": "SyscallReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
-          "line": 601,
+          "line": 580,
           "called": []
         },
         {
           "kind": "def",
           "name": "zero",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame.zero",
-          "line": 613,
+          "line": 592,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
           ]
@@ -27591,7 +27563,7 @@
           "kind": "def",
           "name": "toRegs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame.toRegs",
-          "line": 617,
+          "line": 596,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
           ]
@@ -27600,7 +27572,7 @@
           "kind": "def",
           "name": "ofRegs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame.ofRegs",
-          "line": 622,
+          "line": 601,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
           ]
@@ -27609,7 +27581,7 @@
           "kind": "theorem",
           "name": "decodeReturnFrame_encodeReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame.decodeReturnFrame_encodeReturnFrame",
-          "line": 630,
+          "line": 609,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.ofRegs",
@@ -27620,7 +27592,7 @@
           "kind": "theorem",
           "name": "returnFrame_unit_is_zero",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallReturnFrame.returnFrame_unit_is_zero",
-          "line": 634,
+          "line": 613,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.toRegs",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.zero"
@@ -27630,14 +27602,14 @@
           "kind": "def",
           "name": "errorLabelRangeSize",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelRangeSize",
-          "line": 666,
+          "line": 645,
           "called": []
         },
         {
           "kind": "def",
           "name": "errorLabelBase",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelBase",
-          "line": 670,
+          "line": 649,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelRangeSize",
             "SeLe4n.Model.MessageInfo.maxLabel"
@@ -27647,7 +27619,7 @@
           "kind": "theorem",
           "name": "errorLabelBase_eq",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
-          "line": 675,
+          "line": 654,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase"
           ]
@@ -27656,7 +27628,7 @@
           "kind": "def",
           "name": "returnMessageInfo",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo",
-          "line": 704,
+          "line": 683,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Model.IpcMessage",
@@ -27668,7 +27640,7 @@
           "kind": "theorem",
           "name": "returnFrame_message_window",
           "full_name": "SeLe4n.Kernel.Architecture.returnFrame_message_window",
-          "line": 712,
+          "line": 691,
           "called": [
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
             "SeLe4n.Model.IpcMessage"
@@ -27678,7 +27650,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_wellFormed",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_wellFormed",
-          "line": 718,
+          "line": 697,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
@@ -27692,7 +27664,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_label_lt_errorLabelBase",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_label_lt_errorLabelBase",
-          "line": 730,
+          "line": 709,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
@@ -27704,7 +27676,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_label_of_lt",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_label_of_lt",
-          "line": 742,
+          "line": 721,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
@@ -27715,7 +27687,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_label_zero",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_label_zero",
-          "line": 750,
+          "line": 729,
           "called": [
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
             "SeLe4n.Model.IpcMessage"
@@ -27725,7 +27697,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_extraCaps_le_capInfo",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_capInfo",
-          "line": 758,
+          "line": 737,
           "called": [
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
             "SeLe4n.Model.IpcMessage"
@@ -27735,7 +27707,7 @@
           "kind": "theorem",
           "name": "returnMessageInfo_extraCaps_zero",
           "full_name": "SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_zero",
-          "line": 763,
+          "line": 742,
           "called": [
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
             "SeLe4n.Model.IpcMessage"
@@ -27745,7 +27717,7 @@
           "kind": "def",
           "name": "returnFrameOfMessage",
           "full_name": "SeLe4n.Kernel.Architecture.returnFrameOfMessage",
-          "line": 772,
+          "line": 751,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.returnMessageInfo",
@@ -27757,7 +27729,7 @@
           "kind": "def",
           "name": "returnFrameOfBadge",
           "full_name": "SeLe4n.Kernel.Architecture.returnFrameOfBadge",
-          "line": 783,
+          "line": 762,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
@@ -27767,7 +27739,7 @@
           "kind": "def",
           "name": "SeLe4n.RegisterFile.stageReturnFrame",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame",
-          "line": 793,
+          "line": 772,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.RegisterFile"
@@ -27777,7 +27749,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageReturnFrame_pc",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame_pc",
-          "line": 798,
+          "line": 777,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.RegisterFile",
@@ -27788,7 +27760,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageReturnFrame_sp",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame_sp",
-          "line": 802,
+          "line": 781,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.RegisterFile",
@@ -27799,7 +27771,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageReturnFrame_word",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame_word",
-          "line": 808,
+          "line": 787,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.trapFrameWordCount",
@@ -27813,7 +27785,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageReturnFrame_gpr_high",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame_gpr_high",
-          "line": 859,
+          "line": 838,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.RegName",
@@ -27827,7 +27799,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageReturnFrame_reads_back",
           "full_name": "SeLe4n.RegisterFile.stageReturnFrame_reads_back",
-          "line": 871,
+          "line": 850,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.RegisterFile",
@@ -27839,7 +27811,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.TCB.withReturnFrame",
           "full_name": "SeLe4n.Model.TCB.withReturnFrame",
-          "line": 884,
+          "line": 863,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27850,7 +27822,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withReturnFrame_ipcState",
           "full_name": "SeLe4n.Model.TCB.withReturnFrame_ipcState",
-          "line": 890,
+          "line": 869,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27862,7 +27834,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withReturnFrame_tid",
           "full_name": "SeLe4n.Model.TCB.withReturnFrame_tid",
-          "line": 894,
+          "line": 873,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27873,7 +27845,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withReturnFrame_pendingMessage",
           "full_name": "SeLe4n.Model.TCB.withReturnFrame_pendingMessage",
-          "line": 898,
+          "line": 877,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27884,7 +27856,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withReturnFrame_registerContext",
           "full_name": "SeLe4n.Model.TCB.withReturnFrame_registerContext",
-          "line": 902,
+          "line": 881,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27896,7 +27868,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.TCB.withDeliveredFrame",
           "full_name": "SeLe4n.Model.TCB.withDeliveredFrame",
-          "line": 910,
+          "line": 889,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27907,7 +27879,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withDeliveredFrame_ipcState",
           "full_name": "SeLe4n.Model.TCB.withDeliveredFrame_ipcState",
-          "line": 913,
+          "line": 892,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27919,7 +27891,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withDeliveredFrame_pendingMessage",
           "full_name": "SeLe4n.Model.TCB.withDeliveredFrame_pendingMessage",
-          "line": 917,
+          "line": 896,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27930,7 +27902,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withDeliveredFrame_registerContext",
           "full_name": "SeLe4n.Model.TCB.withDeliveredFrame_registerContext",
-          "line": 921,
+          "line": 900,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.TCB",
@@ -27942,7 +27914,7 @@
           "kind": "def",
           "name": "writeReturnFrameToTcb",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
-          "line": 952,
+          "line": 931,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.SystemState",
@@ -27954,7 +27926,7 @@
           "kind": "def",
           "name": "writeDeliveredFrameToTcb",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
-          "line": 958,
+          "line": 937,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Model.SystemState",
@@ -27966,7 +27938,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_id_when_not_tcb",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_id_when_not_tcb",
-          "line": 962,
+          "line": 941,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -27980,7 +27952,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_objects_ne",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_objects_ne",
-          "line": 967,
+          "line": 946,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -27996,7 +27968,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_scheduler_eq",
-          "line": 973,
+          "line": 952,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28009,7 +27981,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_machine_eq",
-          "line": 978,
+          "line": 957,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28022,7 +27994,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_declassificationAuditLog_eq",
-          "line": 983,
+          "line": 962,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28036,7 +28008,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_kindPreservingWrite",
-          "line": 990,
+          "line": 969,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28051,7 +28023,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_cdt_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_cdt_eq",
-          "line": 995,
+          "line": 974,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28064,7 +28036,7 @@
           "kind": "def",
           "name": "readReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame",
-          "line": 1004,
+          "line": 983,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.zero",
             "SeLe4n.Model.SystemState",
@@ -28076,7 +28048,7 @@
           "kind": "theorem",
           "name": "readReturnFrame_writeReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame_writeReturnFrame",
-          "line": 1019,
+          "line": 998,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
@@ -28095,7 +28067,7 @@
           "kind": "theorem",
           "name": "readReturnFrame_writeDeliveredFrame",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame_writeDeliveredFrame",
-          "line": 1040,
+          "line": 1019,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
@@ -28114,7 +28086,7 @@
           "kind": "theorem",
           "name": "writeDeliveredFrameToTcb_getTcb?_self",
           "full_name": "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_getTcb?_self",
-          "line": 1061,
+          "line": 1040,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
@@ -28131,7 +28103,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_objects_ne",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_objects_ne",
-          "line": 1071,
+          "line": 1050,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28147,7 +28119,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_scheduler_eq",
-          "line": 1081,
+          "line": 1060,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28160,7 +28132,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_machine_eq",
-          "line": 1090,
+          "line": 1069,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28173,7 +28145,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_declassificationAuditLog_eq",
-          "line": 1105,
+          "line": 1084,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28187,7 +28159,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_id_when_not_tcb",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_id_when_not_tcb",
-          "line": 1116,
+          "line": 1095,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28201,7 +28173,7 @@
           "kind": "def",
           "name": "overflowDeliveryWrites",
           "full_name": "SeLe4n.Kernel.Architecture.overflowDeliveryWrites",
-          "line": 1138,
+          "line": 1117,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
@@ -28214,7 +28186,7 @@
           "kind": "def",
           "name": "messageOverflowWrites",
           "full_name": "SeLe4n.Kernel.Architecture.messageOverflowWrites",
-          "line": 1147,
+          "line": 1126,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.overflowDeliveryWrites",
@@ -28227,7 +28199,7 @@
           "kind": "def",
           "name": "messageOverflowWritesImpl",
           "full_name": "SeLe4n.Kernel.Architecture.messageOverflowWritesImpl",
-          "line": 1153,
+          "line": 1132,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.overflowDeliveryWrites",
@@ -28240,7 +28212,7 @@
           "kind": "theorem",
           "name": "messageOverflowWrites_eq_impl",
           "full_name": "SeLe4n.Kernel.Architecture.messageOverflowWrites_eq_impl",
-          "line": 1157,
+          "line": 1136,
           "called": [
             "SeLe4n.Kernel.Architecture.messageOverflowWrites",
             "SeLe4n.Kernel.Architecture.messageOverflowWritesImpl"
@@ -28250,7 +28222,7 @@
           "kind": "theorem",
           "name": "overflowDeliveryWrites_storeUserWord",
           "full_name": "SeLe4n.Kernel.Architecture.overflowDeliveryWrites_storeUserWord",
-          "line": 1167,
+          "line": 1146,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.overflowDeliveryWrites",
@@ -28263,7 +28235,7 @@
           "kind": "theorem",
           "name": "overflowDeliveryWrites_length_le",
           "full_name": "SeLe4n.Kernel.Architecture.overflowDeliveryWrites_length_le",
-          "line": 1181,
+          "line": 1160,
           "called": [
             "SeLe4n.Kernel.Architecture.overflowDeliveryWrites",
             "SeLe4n.Model.SystemState",
@@ -28275,7 +28247,7 @@
           "kind": "def",
           "name": "stageDeliveredMessage",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
-          "line": 1216,
+          "line": 1195,
           "called": [
             "SeLe4n.Kernel.Architecture.messageOverflowWrites",
             "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
@@ -28290,7 +28262,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_kindPreservingWrite",
-          "line": 1234,
+          "line": 1213,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28305,7 +28277,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_cdt_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_cdt_eq",
-          "line": 1239,
+          "line": 1218,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28318,7 +28290,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_scheduler_eq",
-          "line": 1247,
+          "line": 1226,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_scheduler_eq",
@@ -28331,7 +28303,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_machine_eq",
-          "line": 1263,
+          "line": 1242,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_machine_eq",
@@ -28344,7 +28316,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_declassificationAuditLog_eq",
-          "line": 1280,
+          "line": 1259,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_declassificationAuditLog_eq",
@@ -28358,7 +28330,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_id_when_blocked",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_id_when_blocked",
-          "line": 1297,
+          "line": 1276,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Model.SystemState",
@@ -28372,7 +28344,7 @@
           "kind": "def",
           "name": "returnFrameOfWord",
           "full_name": "SeLe4n.Kernel.Architecture.returnFrameOfWord",
-          "line": 1308,
+          "line": 1287,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
           ]
@@ -28381,7 +28353,7 @@
           "kind": "def",
           "name": "stageReturnWords",
           "full_name": "SeLe4n.Kernel.Architecture.stageReturnWords",
-          "line": 1314,
+          "line": 1293,
           "called": [
             "SeLe4n.RegisterFile"
           ]
@@ -28390,7 +28362,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.TCB.withReturnWords",
           "full_name": "SeLe4n.Model.TCB.withReturnWords",
-          "line": 1320,
+          "line": 1299,
           "called": [
             "SeLe4n.Kernel.Architecture.stageReturnWords",
             "SeLe4n.Model.TCB"
@@ -28400,7 +28372,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_ofWord_eq_words",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_ofWord_eq_words",
-          "line": 1325,
+          "line": 1304,
           "called": [
             "SeLe4n.Kernel.Architecture.returnFrameOfWord",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28414,7 +28386,7 @@
           "kind": "def",
           "name": "stageWokenDelivery",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery",
-          "line": 1362,
+          "line": 1341,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Model.SystemState",
@@ -28425,7 +28397,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_none",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_none",
-          "line": 1368,
+          "line": 1347,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Model.SystemState"
@@ -28435,7 +28407,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_some",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_some",
-          "line": 1372,
+          "line": 1351,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28447,7 +28419,7 @@
           "kind": "def",
           "name": "stageWokenSendCompletion",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
-          "line": 1387,
+          "line": 1366,
           "called": [
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
             "SeLe4n.Model.SystemState",
@@ -28459,7 +28431,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_none",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_none",
-          "line": 1399,
+          "line": 1378,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Model.SystemState"
@@ -28469,7 +28441,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_not_ready",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_id_when_not_ready",
-          "line": 1405,
+          "line": 1384,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Model.SystemState",
@@ -28483,7 +28455,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_pending",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_id_when_pending",
-          "line": 1417,
+          "line": 1396,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Model.IpcMessage",
@@ -28497,7 +28469,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_stages_zero",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_stages_zero",
-          "line": 1428,
+          "line": 1407,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -28512,7 +28484,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_scheduler_eq",
-          "line": 1440,
+          "line": 1419,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_scheduler_eq",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28524,7 +28496,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_kindPreservingWrite",
-          "line": 1449,
+          "line": 1428,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_kindPreservingWrite",
@@ -28542,7 +28514,7 @@
           "kind": "theorem",
           "name": "stageDeliveredMessage_cdt_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageDeliveredMessage_cdt_eq",
-          "line": 1467,
+          "line": 1446,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb_cdt_eq",
@@ -28555,7 +28527,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_kindPreservingWrite",
-          "line": 1483,
+          "line": 1462,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_kindPreservingWrite",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28570,7 +28542,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_cdt_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_cdt_eq",
-          "line": 1490,
+          "line": 1469,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_cdt_eq",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28582,7 +28554,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_machine_eq",
-          "line": 1498,
+          "line": 1477,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_machine_eq",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28594,7 +28566,7 @@
           "kind": "theorem",
           "name": "stageWokenDelivery_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenDelivery_declassificationAuditLog_eq",
-          "line": 1507,
+          "line": 1486,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_declassificationAuditLog_eq",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -28607,7 +28579,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_scheduler_eq",
-          "line": 1517,
+          "line": 1496,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_scheduler_eq",
@@ -28620,7 +28592,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_machine_eq",
-          "line": 1534,
+          "line": 1513,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_machine_eq",
@@ -28633,7 +28605,7 @@
           "kind": "theorem",
           "name": "blockedReturn_staged_in_waiter_frame",
           "full_name": "SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame",
-          "line": 1558,
+          "line": 1537,
           "called": [
             "SeLe4n.Kernel.Architecture.messageOverflowWrites",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
@@ -28654,7 +28626,7 @@
           "kind": "theorem",
           "name": "blockedUnitReturn_staged_in_sender_frame",
           "full_name": "SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame",
-          "line": 1578,
+          "line": 1557,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.zero",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
@@ -28673,7 +28645,7 @@
           "kind": "def",
           "name": "errorLabel",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabel",
-          "line": 1596,
+          "line": 1575,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Model.KernelError",
@@ -28684,7 +28656,7 @@
           "kind": "def",
           "name": "ofErrorLabel?",
           "full_name": "SeLe4n.Kernel.Architecture.ofErrorLabel?",
-          "line": 1602,
+          "line": 1581,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Model.KernelError",
@@ -28695,7 +28667,7 @@
           "kind": "theorem",
           "name": "errorLabel_never_zero",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabel_never_zero",
-          "line": 1607,
+          "line": 1586,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
@@ -28706,7 +28678,7 @@
           "kind": "theorem",
           "name": "errorLabelBase_le_errorLabel",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelBase_le_errorLabel",
-          "line": 1611,
+          "line": 1590,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.errorLabelBase",
@@ -28717,7 +28689,7 @@
           "kind": "theorem",
           "name": "ofErrorLabel?_zero",
           "full_name": "SeLe4n.Kernel.Architecture.ofErrorLabel?_zero",
-          "line": 1615,
+          "line": 1594,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
             "SeLe4n.Kernel.Architecture.ofErrorLabel?"
@@ -28727,7 +28699,7 @@
           "kind": "theorem",
           "name": "ofErrorLabel?_none_of_lt_base",
           "full_name": "SeLe4n.Kernel.Architecture.ofErrorLabel?_none_of_lt_base",
-          "line": 1622,
+          "line": 1601,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Kernel.Architecture.ofErrorLabel?"
@@ -28737,7 +28709,7 @@
           "kind": "theorem",
           "name": "errorLabel_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabel_roundtrip",
-          "line": 1629,
+          "line": 1608,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.ofErrorLabel?",
@@ -28750,7 +28722,7 @@
           "kind": "theorem",
           "name": "errorLabel_zero_iff_success",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabel_zero_iff_success",
-          "line": 1641,
+          "line": 1620,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.errorLabelBase",
@@ -28768,7 +28740,7 @@
           "kind": "theorem",
           "name": "kernelErrorFitsLabel",
           "full_name": "SeLe4n.Kernel.Architecture.kernelErrorFitsLabel",
-          "line": 1668,
+          "line": 1647,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
@@ -28782,7 +28754,7 @@
           "kind": "theorem",
           "name": "errorLabelBase_add_range_eq_maxLabel",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelBase_add_range_eq_maxLabel",
-          "line": 1678,
+          "line": 1657,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Kernel.Architecture.errorLabelBase_eq",
@@ -28794,7 +28766,7 @@
           "kind": "theorem",
           "name": "overWideLabel_rejected",
           "full_name": "SeLe4n.Kernel.Architecture.overWideLabel_rejected",
-          "line": 1686,
+          "line": 1665,
           "called": [
             "SeLe4n.Model.MessageInfo.decode",
             "SeLe4n.Model.MessageInfo.maxLabel"
@@ -28804,7 +28776,7 @@
           "kind": "def",
           "name": "errorLabelWord",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelWord",
-          "line": 1694,
+          "line": 1673,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Model.KernelError"
@@ -28814,7 +28786,7 @@
           "kind": "theorem",
           "name": "errorLabelWord_eq_encode",
           "full_name": "SeLe4n.Kernel.Architecture.errorLabelWord_eq_encode",
-          "line": 1696,
+          "line": 1675,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabel",
             "SeLe4n.Kernel.Architecture.errorLabelWord",
@@ -28829,7 +28801,7 @@
           "kind": "def",
           "name": "errorInfoWord",
           "full_name": "SeLe4n.Kernel.Architecture.errorInfoWord",
-          "line": 1709,
+          "line": 1688,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelWord",
             "SeLe4n.Model.KernelError"
@@ -28839,7 +28811,7 @@
           "kind": "def",
           "name": "errorFrame",
           "full_name": "SeLe4n.Kernel.Architecture.errorFrame",
-          "line": 1719,
+          "line": 1698,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.errorInfoWord",
@@ -28852,7 +28824,7 @@
           "kind": "theorem",
           "name": "errorInfoWord_decodes_discriminants",
           "full_name": "SeLe4n.Kernel.Architecture.errorInfoWord_decodes_discriminants",
-          "line": 1727,
+          "line": 1706,
           "called": [
             "SeLe4n.Kernel.Architecture.errorLabelBase",
             "SeLe4n.Model.KernelError.kernelErrorEncodingBound",
@@ -28864,7 +28836,7 @@
           "kind": "theorem",
           "name": "errorFrame_x1_decodes",
           "full_name": "SeLe4n.Kernel.Architecture.errorFrame_x1_decodes",
-          "line": 1737,
+          "line": 1716,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Architecture.errorInfoWord_decodes_discriminants",
@@ -28880,7 +28852,7 @@
           "kind": "theorem",
           "name": "errorFrame_payload_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.errorFrame_payload_roundtrip",
-          "line": 1746,
+          "line": 1725,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Model.KernelError",
@@ -28891,7 +28863,7 @@
           "kind": "def",
           "name": "errorOverflowPAddr?",
           "full_name": "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
-          "line": 1760,
+          "line": 1739,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Model.KernelError",
@@ -28906,7 +28878,7 @@
           "kind": "def",
           "name": "recordErrorOverflow",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow",
-          "line": 1772,
+          "line": 1751,
           "called": [
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
             "SeLe4n.Model.KernelError",
@@ -28920,7 +28892,7 @@
           "kind": "def",
           "name": "recordErrorOverflowWord",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflowWord",
-          "line": 1781,
+          "line": 1760,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Model.SystemState",
@@ -28933,7 +28905,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflowWord_eq",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflowWord_eq",
-          "line": 1792,
+          "line": 1771,
           "called": [
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
@@ -28949,7 +28921,7 @@
           "kind": "def",
           "name": "errorOverflowWritten",
           "full_name": "SeLe4n.Kernel.Architecture.errorOverflowWritten",
-          "line": 1802,
+          "line": 1781,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Model.SystemState",
@@ -28961,7 +28933,7 @@
           "kind": "theorem",
           "name": "errorOverflowWritten_eq",
           "full_name": "SeLe4n.Kernel.Architecture.errorOverflowWritten_eq",
-          "line": 1809,
+          "line": 1788,
           "called": [
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
             "SeLe4n.Kernel.Architecture.errorOverflowWritten",
@@ -28975,7 +28947,7 @@
           "kind": "def",
           "name": "errorFrameFor",
           "full_name": "SeLe4n.Kernel.Architecture.errorFrameFor",
-          "line": 1818,
+          "line": 1797,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
@@ -28988,7 +28960,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_of_le_four",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_of_le_four",
-          "line": 1823,
+          "line": 1802,
           "called": [
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
@@ -29002,7 +28974,7 @@
           "kind": "theorem",
           "name": "errorFrameFor_of_le_four",
           "full_name": "SeLe4n.Kernel.Architecture.errorFrameFor_of_le_four",
-          "line": 1829,
+          "line": 1808,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Architecture.errorFrameFor",
@@ -29017,7 +28989,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_cases",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_cases",
-          "line": 1837,
+          "line": 1816,
           "called": [
             "SeLe4n.Kernel.Architecture.errorOverflowPAddr?",
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
@@ -29034,7 +29006,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_objects",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_objects",
-          "line": 1854,
+          "line": 1833,
           "called": [
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
             "SeLe4n.Model.KernelError",
@@ -29046,7 +29018,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_scheduler",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_scheduler",
-          "line": 1858,
+          "line": 1837,
           "called": [
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
             "SeLe4n.Model.KernelError",
@@ -29058,7 +29030,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_machine",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_machine",
-          "line": 1862,
+          "line": 1841,
           "called": [
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
             "SeLe4n.Model.KernelError",
@@ -29070,7 +29042,7 @@
           "kind": "theorem",
           "name": "recordErrorOverflow_declassificationRefusals",
           "full_name": "SeLe4n.Kernel.Architecture.recordErrorOverflow_declassificationRefusals",
-          "line": 1866,
+          "line": 1845,
           "called": [
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
             "SeLe4n.Model.KernelError",
@@ -29082,7 +29054,7 @@
           "kind": "theorem",
           "name": "readReturnFrame_recordErrorOverflow",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame_recordErrorOverflow",
-          "line": 1872,
+          "line": 1851,
           "called": [
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.Architecture.recordErrorOverflow",
@@ -29097,7 +29069,7 @@
           "kind": "def",
           "name": "timeoutFrame",
           "full_name": "SeLe4n.Kernel.Architecture.timeoutFrame",
-          "line": 1910,
+          "line": 1889,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.errorFrame"
@@ -29107,7 +29079,7 @@
           "kind": "def",
           "name": "cancelledIpcFrame",
           "full_name": "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
-          "line": 1913,
+          "line": 1892,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.errorFrame"
@@ -29117,7 +29089,7 @@
           "kind": "def",
           "name": "stageTimeoutFrame",
           "full_name": "SeLe4n.Kernel.Architecture.stageTimeoutFrame",
-          "line": 1920,
+          "line": 1899,
           "called": [
             "SeLe4n.Kernel.Architecture.timeoutFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -29129,7 +29101,7 @@
           "kind": "def",
           "name": "stageCancelledIpcFrame",
           "full_name": "SeLe4n.Kernel.Architecture.stageCancelledIpcFrame",
-          "line": 1924,
+          "line": 1903,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -29141,7 +29113,7 @@
           "kind": "theorem",
           "name": "stageTimeoutFrame_eq_withReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.stageTimeoutFrame_eq_withReturnFrame",
-          "line": 1930,
+          "line": 1909,
           "called": [
             "SeLe4n.Kernel.Architecture.stageTimeoutFrame",
             "SeLe4n.Kernel.Architecture.timeoutFrame",
@@ -29160,7 +29132,7 @@
           "kind": "theorem",
           "name": "stageCancelledIpcFrame_eq_withReturnFrame",
           "full_name": "SeLe4n.Kernel.Architecture.stageCancelledIpcFrame_eq_withReturnFrame",
-          "line": 1940,
+          "line": 1919,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.stageCancelledIpcFrame",
@@ -29179,7 +29151,7 @@
           "kind": "theorem",
           "name": "readReturnFrame_stageTimeoutFrame",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame_stageTimeoutFrame",
-          "line": 1951,
+          "line": 1930,
           "called": [
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.Architecture.readReturnFrame_writeReturnFrame",
@@ -29196,7 +29168,7 @@
           "kind": "theorem",
           "name": "readReturnFrame_stageCancelledIpcFrame",
           "full_name": "SeLe4n.Kernel.Architecture.readReturnFrame_stageCancelledIpcFrame",
-          "line": 1957,
+          "line": 1936,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
@@ -29213,7 +29185,7 @@
           "kind": "theorem",
           "name": "timeout_and_cancelled_frames_differ",
           "full_name": "SeLe4n.Kernel.Architecture.timeout_and_cancelled_frames_differ",
-          "line": 1968,
+          "line": 1947,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.timeoutFrame"
@@ -29223,7 +29195,7 @@
           "kind": "theorem",
           "name": "unblockFrames_ne_success",
           "full_name": "SeLe4n.Kernel.Architecture.unblockFrames_ne_success",
-          "line": 1974,
+          "line": 1953,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
@@ -29234,7 +29206,7 @@
           "kind": "theorem",
           "name": "unblockFrames_decode",
           "full_name": "SeLe4n.Kernel.Architecture.unblockFrames_decode",
-          "line": 1982,
+          "line": 1961,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
@@ -29250,7 +29222,7 @@
           "kind": "theorem",
           "name": "stageTimeoutFrame_objects_ne",
           "full_name": "SeLe4n.Kernel.Architecture.stageTimeoutFrame_objects_ne",
-          "line": 1996,
+          "line": 1975,
           "called": [
             "SeLe4n.Kernel.Architecture.stageTimeoutFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_objects_ne",
@@ -29265,7 +29237,7 @@
           "kind": "theorem",
           "name": "stageCancelledIpcFrame_objects_ne",
           "full_name": "SeLe4n.Kernel.Architecture.stageCancelledIpcFrame_objects_ne",
-          "line": 2002,
+          "line": 1981,
           "called": [
             "SeLe4n.Kernel.Architecture.stageCancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_objects_ne",
@@ -29280,7 +29252,7 @@
           "kind": "inductive",
           "name": "SyscallOutcome",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome",
-          "line": 2018,
+          "line": 1997,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
           ]
@@ -29289,7 +29261,7 @@
           "kind": "def",
           "name": "tagWord",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
-          "line": 2041,
+          "line": 2020,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome"
           ]
@@ -29298,7 +29270,7 @@
           "kind": "theorem",
           "name": "tagWord_blocks_ne_returns",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord_blocks_ne_returns",
-          "line": 2048,
+          "line": 2027,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
@@ -29309,7 +29281,7 @@
           "kind": "theorem",
           "name": "tagWord_faulted_ne_returns",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord_faulted_ne_returns",
-          "line": 2053,
+          "line": 2032,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
@@ -29320,7 +29292,7 @@
           "kind": "theorem",
           "name": "tagWord_faulted_ne_blocks",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord_faulted_ne_blocks",
-          "line": 2060,
+          "line": 2039,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord"
@@ -29330,7 +29302,7 @@
           "kind": "def",
           "name": "mailboxFrame",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.mailboxFrame",
-          "line": 2070,
+          "line": 2049,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
@@ -29341,7 +29313,7 @@
           "kind": "def",
           "name": "words",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.words",
-          "line": 2079,
+          "line": 2058,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.mailboxFrame",
@@ -29352,7 +29324,7 @@
           "kind": "def",
           "name": "ofWords",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.ofWords",
-          "line": 2086,
+          "line": 2065,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome"
           ]
@@ -29361,7 +29333,7 @@
           "kind": "theorem",
           "name": "ofWords_words",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallOutcome.ofWords_words",
-          "line": 2094,
+          "line": 2073,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.ofWords",
@@ -29372,7 +29344,7 @@
           "kind": "def",
           "name": "ipcStateBlocksReturn",
           "full_name": "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
-          "line": 2115,
+          "line": 2094,
           "called": [
             "SeLe4n.Model.ThreadIpcState"
           ]
@@ -29381,7 +29353,7 @@
           "kind": "theorem",
           "name": "ipcStateBlocksReturn_ready",
           "full_name": "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn_ready",
-          "line": 2123,
+          "line": 2102,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn"
           ]
@@ -29390,7 +29362,7 @@
           "kind": "def",
           "name": "tcbBlocksReturn",
           "full_name": "SeLe4n.Kernel.Architecture.tcbBlocksReturn",
-          "line": 2130,
+          "line": 2109,
           "called": [
             "SeLe4n.Model.TCB"
           ]
@@ -29399,7 +29371,7 @@
           "kind": "theorem",
           "name": "tcbBlocksReturn_eq",
           "full_name": "SeLe4n.Kernel.Architecture.tcbBlocksReturn_eq",
-          "line": 2133,
+          "line": 2112,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Kernel.Architecture.tcbBlocksReturn",
@@ -29411,7 +29383,7 @@
           "kind": "def",
           "name": "frameForShape",
           "full_name": "SeLe4n.Kernel.Architecture.frameForShape",
-          "line": 2145,
+          "line": 2124,
           "called": [
             "SeLe4n.Kernel.Architecture.ReturnShape",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
@@ -29422,7 +29394,7 @@
           "kind": "theorem",
           "name": "frameForShape_unit",
           "full_name": "SeLe4n.Kernel.Architecture.frameForShape_unit",
-          "line": 2154,
+          "line": 2133,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame.zero",
@@ -29433,7 +29405,7 @@
           "kind": "theorem",
           "name": "frameForShape_value",
           "full_name": "SeLe4n.Kernel.Architecture.frameForShape_value",
-          "line": 2158,
+          "line": 2137,
           "called": [
             "SeLe4n.Kernel.Architecture.ReturnShape",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
@@ -29444,14 +29416,14 @@
           "kind": "structure",
           "name": "FaultRestartFrame",
           "full_name": "SeLe4n.Kernel.Architecture.FaultRestartFrame",
-          "line": 2183,
+          "line": 2162,
           "called": []
         },
         {
           "kind": "def",
           "name": "returnWindow",
           "full_name": "SeLe4n.Kernel.Architecture.FaultRestartFrame.returnWindow",
-          "line": 2205,
+          "line": 2184,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame"
@@ -29461,7 +29433,7 @@
           "kind": "def",
           "name": "SeLe4n.RegisterFile.stageRestartFrame",
           "full_name": "SeLe4n.RegisterFile.stageRestartFrame",
-          "line": 2217,
+          "line": 2196,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.FaultRestartFrame.returnWindow",
@@ -29473,7 +29445,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageRestartFrame_pc",
           "full_name": "SeLe4n.RegisterFile.stageRestartFrame_pc",
-          "line": 2225,
+          "line": 2204,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.RegisterFile",
@@ -29484,7 +29456,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageRestartFrame_sp",
           "full_name": "SeLe4n.RegisterFile.stageRestartFrame_sp",
-          "line": 2229,
+          "line": 2208,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.RegisterFile",
@@ -29495,7 +29467,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageRestartFrame_reads_back",
           "full_name": "SeLe4n.RegisterFile.stageRestartFrame_reads_back",
-          "line": 2236,
+          "line": 2215,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.RegisterFile",
@@ -29507,7 +29479,7 @@
           "kind": "theorem",
           "name": "SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched",
           "full_name": "SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched",
-          "line": 2252,
+          "line": 2231,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.FaultRestartFrame.returnWindow",
@@ -29524,7 +29496,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.TCB.withRestartFrame",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame",
-          "line": 2304,
+          "line": 2283,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29535,7 +29507,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_ipcState",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_ipcState",
-          "line": 2307,
+          "line": 2286,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29547,7 +29519,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_threadState",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_threadState",
-          "line": 2311,
+          "line": 2290,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29558,7 +29530,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_tid",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_tid",
-          "line": 2315,
+          "line": 2294,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29569,7 +29541,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_pendingMessage",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_pendingMessage",
-          "line": 2319,
+          "line": 2298,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29580,7 +29552,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_pendingFault",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_pendingFault",
-          "line": 2323,
+          "line": 2302,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29592,7 +29564,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.TCB.withRestartFrame_registerContext",
           "full_name": "SeLe4n.Model.TCB.withRestartFrame_registerContext",
-          "line": 2327,
+          "line": 2306,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.TCB",
@@ -29604,7 +29576,7 @@
           "kind": "def",
           "name": "writeRestartFrameToTcb",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
-          "line": 2337,
+          "line": 2316,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Model.SystemState",
@@ -29616,7 +29588,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_scheduler_eq",
-          "line": 2344,
+          "line": 2323,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
@@ -29629,7 +29601,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_machine_eq",
-          "line": 2352,
+          "line": 2331,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
@@ -29642,7 +29614,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_declassificationAuditLog_eq",
-          "line": 2358,
+          "line": 2337,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
@@ -29656,7 +29628,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_objects_ne",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_objects_ne",
-          "line": 2366,
+          "line": 2345,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
@@ -29672,7 +29644,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_pc",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_pc",
-          "line": 2378,
+          "line": 2357,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb",
@@ -29690,21 +29662,21 @@
           "kind": "theorem",
           "name": "bit63Encoding_not_injective_on_badges",
           "full_name": "SeLe4n.Kernel.Architecture.bit63Encoding_not_injective_on_badges",
-          "line": 2401,
+          "line": 2380,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallAbiVersion",
           "full_name": "SeLe4n.Kernel.Architecture.syscallAbiVersion",
-          "line": 2440,
+          "line": 2419,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallAbiVersion_pinned",
           "full_name": "SeLe4n.Kernel.Architecture.syscallAbiVersion_pinned",
-          "line": 2444,
+          "line": 2423,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallAbiVersion"
           ]
@@ -308267,7 +308239,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.RetypePerform",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean",
-      "declaration_count": 47,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "def",
@@ -308512,10 +308484,110 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "untypedRetypeDstRefusal",
+          "full_name": "SeLe4n.Kernel.untypedRetypeDstRefusal",
+          "line": 231,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedRetypeDstRefusal_eq",
+          "full_name": "SeLe4n.Kernel.untypedRetypeDstRefusal_eq",
+          "line": 242,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.cspaceDstRefusal",
+            "SeLe4n.Kernel.untypedRetypeDstRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "untypedRetypeRefusalWith",
+          "full_name": "SeLe4n.Kernel.untypedRetypeRefusalWith",
+          "line": 252,
+          "called": [
+            "SeLe4n.InterruptLineSet.capacity",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.alignedCarveIndex",
+            "SeLe4n.Kernel.childrenNameNone",
+            "SeLe4n.Kernel.lifecycleRetypeAuthority",
+            "SeLe4n.Kernel.objectIdInAddressSpace",
+            "SeLe4n.Kernel.objectTypeAllocSize",
+            "SeLe4n.Kernel.retypeFreeIndex",
+            "SeLe4n.Kernel.retypeResetAdmitted",
+            "SeLe4n.Kernel.untypedRetypeDstRefusal",
+            "SeLe4n.MachineState",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelObjectType",
+            "SeLe4n.Model.KernelObjectType.deviceBackable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.getUntyped?",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.isIrqNodeObjId",
+            "SeLe4n.Model.maxObjects",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedRetypeObject_refused",
+          "full_name": "SeLe4n.Kernel.untypedRetypeObject_refused",
+          "line": 289,
+          "called": [
+            "SeLe4n.InterruptLineSet.capacity",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarveRequest",
+            "SeLe4n.Kernel.CarveRequest.admissible",
+            "SeLe4n.Kernel.CarveRequest.heapAdmitted",
+            "SeLe4n.Kernel.CarveRequest.objectType",
+            "SeLe4n.Kernel.CarveRequest.object_objectType",
+            "SeLe4n.Kernel.CarveRequest.size",
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.alignedCarveIndex",
+            "SeLe4n.Kernel.childrenNameNone_eq",
+            "SeLe4n.Kernel.cspaceDstRefusal",
+            "SeLe4n.Kernel.cspaceDstRefusal_eq_ok_iff",
+            "SeLe4n.Kernel.cspaceLookupSlot",
+            "SeLe4n.Kernel.lifecycleRetypeAuthority",
+            "SeLe4n.Kernel.objectIdInAddressSpace",
+            "SeLe4n.Kernel.objectTypeAllocSize",
+            "SeLe4n.Kernel.retypeFreeIndex",
+            "SeLe4n.Kernel.retypeFromUntyped",
+            "SeLe4n.Kernel.retypeFromUntypedAdmitted",
+            "SeLe4n.Kernel.retypeResetAdmitted",
+            "SeLe4n.Kernel.untypedRetypeAdmittedAt",
+            "SeLe4n.Kernel.untypedRetypeDstRefusal_eq",
+            "SeLe4n.Kernel.untypedRetypeObject",
+            "SeLe4n.Kernel.untypedRetypeRefusalWith",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.getUntyped?",
+            "SeLe4n.Model.SystemState.getUntyped?_eq_some_iff",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.UntypedObject",
+            "SeLe4n.Model.UntypedObject.allocate",
+            "SeLe4n.Model.UntypedObject.canAllocate",
+            "SeLe4n.Model.isIrqNodeObjId",
+            "SeLe4n.Model.maxObjects",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "untypedRetypeAdmittedAt_heapRefused",
           "full_name": "SeLe4n.Kernel.untypedRetypeAdmittedAt_heapRefused",
-          "line": 233,
+          "line": 375,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -308529,7 +308601,7 @@
           "kind": "theorem",
           "name": "untypedRetypeOfChecked_heapRefused",
           "full_name": "SeLe4n.Kernel.untypedRetypeOfChecked_heapRefused",
-          "line": 241,
+          "line": 383,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -308549,7 +308621,7 @@
           "kind": "def",
           "name": "CarveRequest.scrubAt",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrubAt",
-          "line": 254,
+          "line": 396,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.PhysicalWriteLedger.pushAfter",
@@ -308564,7 +308636,7 @@
           "kind": "theorem",
           "name": "CarveRequest.scrub_eq_scrubAt",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrub_eq_scrubAt",
-          "line": 278,
+          "line": 420,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.scrub",
@@ -308578,7 +308650,7 @@
           "kind": "def",
           "name": "untypedRetypePerformWords",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformWords",
-          "line": 290,
+          "line": 432,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.carveIndex",
@@ -308603,7 +308675,7 @@
           "kind": "theorem",
           "name": "untypedRetypePerformAt_eq_words",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformAt_eq_words",
-          "line": 316,
+          "line": 458,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -308635,7 +308707,7 @@
           "kind": "def",
           "name": "CarveRequest.ofWords",
           "full_name": "SeLe4n.Kernel.CarveRequest.ofWords",
-          "line": 360,
+          "line": 502,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308648,7 +308720,7 @@
           "kind": "def",
           "name": "CarveRequest.kindWord",
           "full_name": "SeLe4n.Kernel.CarveRequest.kindWord",
-          "line": 375,
+          "line": 517,
           "called": [
             "SeLe4n.Kernel.CarveRequest"
           ]
@@ -308657,7 +308729,7 @@
           "kind": "def",
           "name": "CarveRequest.sizeWord",
           "full_name": "SeLe4n.Kernel.CarveRequest.sizeWord",
-          "line": 388,
+          "line": 530,
           "called": [
             "SeLe4n.Kernel.CarveRequest"
           ]
@@ -308666,7 +308738,7 @@
           "kind": "def",
           "name": "CarveRequest.domainWord",
           "full_name": "SeLe4n.Kernel.CarveRequest.domainWord",
-          "line": 395,
+          "line": 537,
           "called": [
             "SeLe4n.DomainId",
             "SeLe4n.Kernel.CarveRequest"
@@ -308676,7 +308748,7 @@
           "kind": "def",
           "name": "CarveRequest.coreWord",
           "full_name": "SeLe4n.Kernel.CarveRequest.coreWord",
-          "line": 400,
+          "line": 542,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -308686,7 +308758,7 @@
           "kind": "def",
           "name": "CarveRequest.asidWord",
           "full_name": "SeLe4n.Kernel.CarveRequest.asidWord",
-          "line": 406,
+          "line": 548,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.CarveRequest"
@@ -308696,7 +308768,7 @@
           "kind": "theorem",
           "name": "CarveRequest.ofWords_words",
           "full_name": "SeLe4n.Kernel.CarveRequest.ofWords_words",
-          "line": 411,
+          "line": 553,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308714,7 +308786,7 @@
           "kind": "def",
           "name": "CarveRequest.objectTypeW",
           "full_name": "SeLe4n.Kernel.CarveRequest.objectTypeW",
-          "line": 423,
+          "line": 565,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -308723,7 +308795,7 @@
           "kind": "def",
           "name": "CarveRequest.sizeW",
           "full_name": "SeLe4n.Kernel.CarveRequest.sizeW",
-          "line": 429,
+          "line": 571,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.cnodeSlotBits",
@@ -308736,7 +308808,7 @@
           "kind": "def",
           "name": "CarveRequest.rightsW",
           "full_name": "SeLe4n.Kernel.CarveRequest.rightsW",
-          "line": 438,
+          "line": 580,
           "called": [
             "SeLe4n.Kernel.kernelObjectRights",
             "SeLe4n.Model.AccessRightSet",
@@ -308747,7 +308819,7 @@
           "kind": "def",
           "name": "CarveRequest.objectW",
           "full_name": "SeLe4n.Kernel.CarveRequest.objectW",
-          "line": 447,
+          "line": 589,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308775,7 +308847,7 @@
           "kind": "def",
           "name": "CarveRequest.scrubAtW",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrubAtW",
-          "line": 463,
+          "line": 605,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.PhysicalWriteLedger.pushAfter",
@@ -308789,7 +308861,7 @@
           "kind": "def",
           "name": "CarveRequest.heapAdmittedW",
           "full_name": "SeLe4n.Kernel.CarveRequest.heapAdmittedW",
-          "line": 482,
+          "line": 624,
           "called": [
             "SeLe4n.Kernel.carvedObjectHeapBytes",
             "SeLe4n.Kernel.carvedTcbHeapBytes",
@@ -308806,7 +308878,7 @@
           "kind": "def",
           "name": "CarveRequest.admissibleW",
           "full_name": "SeLe4n.Kernel.CarveRequest.admissibleW",
-          "line": 495,
+          "line": 637,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.ASID.toNat",
@@ -308818,7 +308890,7 @@
           "kind": "theorem",
           "name": "CarveRequest.objectTypeW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.objectTypeW_eq",
-          "line": 506,
+          "line": 648,
           "called": [
             "SeLe4n.Kernel.CarveRequest.objectType",
             "SeLe4n.Kernel.CarveRequest.objectTypeW",
@@ -308829,7 +308901,7 @@
           "kind": "theorem",
           "name": "CarveRequest.sizeW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.sizeW_eq",
-          "line": 512,
+          "line": 654,
           "called": [
             "SeLe4n.Kernel.CarveRequest.ofWords",
             "SeLe4n.Kernel.CarveRequest.size",
@@ -308840,7 +308912,7 @@
           "kind": "theorem",
           "name": "CarveRequest.rightsW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.rightsW_eq",
-          "line": 518,
+          "line": 660,
           "called": [
             "SeLe4n.Kernel.CarveRequest.ofWords",
             "SeLe4n.Kernel.CarveRequest.rights",
@@ -308851,7 +308923,7 @@
           "kind": "theorem",
           "name": "CarveRequest.objectW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.objectW_eq",
-          "line": 524,
+          "line": 666,
           "called": [
             "SeLe4n.Kernel.CarveRequest.object",
             "SeLe4n.Kernel.CarveRequest.objectW",
@@ -308865,7 +308937,7 @@
           "kind": "theorem",
           "name": "CarveRequest.scrubAtW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrubAtW_eq",
-          "line": 533,
+          "line": 675,
           "called": [
             "SeLe4n.Kernel.CarveRequest.ofWords",
             "SeLe4n.Kernel.CarveRequest.scrubAt",
@@ -308878,7 +308950,7 @@
           "kind": "theorem",
           "name": "CarveRequest.heapAdmittedW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.heapAdmittedW_eq",
-          "line": 540,
+          "line": 682,
           "called": [
             "SeLe4n.Kernel.CarveRequest.heapAdmitted",
             "SeLe4n.Kernel.CarveRequest.heapAdmittedW",
@@ -308890,7 +308962,7 @@
           "kind": "theorem",
           "name": "CarveRequest.admissibleW_eq",
           "full_name": "SeLe4n.Kernel.CarveRequest.admissibleW_eq",
-          "line": 546,
+          "line": 688,
           "called": [
             "SeLe4n.Kernel.CarveRequest.admissible",
             "SeLe4n.Kernel.CarveRequest.admissibleW",
@@ -308902,7 +308974,7 @@
           "kind": "def",
           "name": "untypedRetypePerformCode",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformCode",
-          "line": 556,
+          "line": 698,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308931,7 +309003,7 @@
           "kind": "theorem",
           "name": "untypedRetypePerformCode_eq_words",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformCode_eq_words",
-          "line": 582,
+          "line": 724,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308954,7 +309026,7 @@
           "kind": "theorem",
           "name": "untypedRetypePerformCode_eq",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformCode_eq",
-          "line": 596,
+          "line": 738,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -308979,7 +309051,7 @@
           "kind": "def",
           "name": "untypedRetypeAdmittedCode",
           "full_name": "SeLe4n.Kernel.untypedRetypeAdmittedCode",
-          "line": 605,
+          "line": 747,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -309001,7 +309073,7 @@
           "kind": "theorem",
           "name": "untypedRetypeAdmittedCode_eq",
           "full_name": "SeLe4n.Kernel.untypedRetypeAdmittedCode_eq",
-          "line": 621,
+          "line": 763,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -309025,10 +309097,59 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "untypedRetypeRefusalCode",
+          "full_name": "SeLe4n.Kernel.untypedRetypeRefusalCode",
+          "line": 780,
+          "called": [
+            "SeLe4n.ASID",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarveRequest.admissibleW",
+            "SeLe4n.Kernel.CarveRequest.heapAdmittedW",
+            "SeLe4n.Kernel.CarveRequest.objectTypeW",
+            "SeLe4n.Kernel.CarveRequest.sizeW",
+            "SeLe4n.Kernel.untypedRetypeRefusalWith",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedRetypeRefusalCode_eq",
+          "full_name": "SeLe4n.Kernel.untypedRetypeRefusalCode_eq",
+          "line": 785,
+          "called": [
+            "SeLe4n.ASID",
+            "SeLe4n.DomainId",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarveRequest",
+            "SeLe4n.Kernel.CarveRequest.admissible",
+            "SeLe4n.Kernel.CarveRequest.admissibleW_eq",
+            "SeLe4n.Kernel.CarveRequest.asidWord",
+            "SeLe4n.Kernel.CarveRequest.coreWord",
+            "SeLe4n.Kernel.CarveRequest.domainWord",
+            "SeLe4n.Kernel.CarveRequest.heapAdmitted",
+            "SeLe4n.Kernel.CarveRequest.heapAdmittedW_eq",
+            "SeLe4n.Kernel.CarveRequest.kindWord",
+            "SeLe4n.Kernel.CarveRequest.objectType",
+            "SeLe4n.Kernel.CarveRequest.objectTypeW_eq",
+            "SeLe4n.Kernel.CarveRequest.ofWords_words",
+            "SeLe4n.Kernel.CarveRequest.size",
+            "SeLe4n.Kernel.CarveRequest.sizeW_eq",
+            "SeLe4n.Kernel.CarveRequest.sizeWord",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.untypedRetypeRefusalCode",
+            "SeLe4n.Kernel.untypedRetypeRefusalWith",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "CarveRequest.heapAdmittedW_words",
           "full_name": "SeLe4n.Kernel.CarveRequest.heapAdmittedW_words",
-          "line": 638,
+          "line": 803,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.DomainId",
@@ -329447,6 +329568,7 @@
             "SeLe4n.Kernel.untypedResetPerformAt",
             "SeLe4n.Kernel.untypedRetypeAdmittedCode",
             "SeLe4n.Kernel.untypedRetypePerformCode",
+            "SeLe4n.Kernel.untypedRetypeRefusalCode",
             "SeLe4n.Kernel.validateObjIdArg",
             "SeLe4n.Kernel.validateThreadIdArg",
             "SeLe4n.Kernel.vspaceCapAuthorizesAsid",
@@ -329487,7 +329609,7 @@
           "kind": "theorem",
           "name": "dispatchInvocationByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchInvocationByR_eq",
-          "line": 1021,
+          "line": 1025,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted",
@@ -329595,13 +329717,16 @@
             "SeLe4n.Kernel.unbindNotification_of_inPlace",
             "SeLe4n.Kernel.untypedResetFromCap",
             "SeLe4n.Kernel.untypedResetSlot_of_admitted",
+            "SeLe4n.Kernel.untypedRetypeAdmittedAt",
             "SeLe4n.Kernel.untypedRetypeAdmittedCode_eq",
             "SeLe4n.Kernel.untypedRetypeFromCap",
             "SeLe4n.Kernel.untypedRetypeObject_heapRefused",
             "SeLe4n.Kernel.untypedRetypeObject_of_admitted",
+            "SeLe4n.Kernel.untypedRetypeObject_refused",
             "SeLe4n.Kernel.untypedRetypePerformAt",
             "SeLe4n.Kernel.untypedRetypePerformCode",
             "SeLe4n.Kernel.untypedRetypePerformCode_eq",
+            "SeLe4n.Kernel.untypedRetypeRefusalCode_eq",
             "SeLe4n.Kernel.validateObjIdArg",
             "SeLe4n.Kernel.validateThreadIdArg",
             "SeLe4n.Kernel.vspaceMapOrRemapFromFrameCap",
@@ -329635,7 +329760,7 @@
           "kind": "def",
           "name": "invocationOperandArmR",
           "full_name": "SeLe4n.Kernel.invocationOperandArmR",
-          "line": 1722,
+          "line": 1729,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -329658,7 +329783,7 @@
           "kind": "def",
           "name": "dispatchInvocationCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchInvocationCheckedR",
-          "line": 1742,
+          "line": 1749,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -329675,7 +329800,7 @@
           "kind": "theorem",
           "name": "dispatchInvocationCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchInvocationCheckedR_eq",
-          "line": 1748,
+          "line": 1755,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -329711,7 +329836,7 @@
           "kind": "def",
           "name": "dispatchConfigureBy",
           "full_name": "SeLe4n.Kernel.dispatchConfigureBy",
-          "line": 1801,
+          "line": 1808,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -329730,7 +329855,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_configureBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_configureBy",
-          "line": 1818,
+          "line": 1825,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked_eq_by",
@@ -329755,7 +329880,7 @@
           "kind": "def",
           "name": "dispatchConfigureByR",
           "full_name": "SeLe4n.Kernel.dispatchConfigureByR",
-          "line": 1841,
+          "line": 1848,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -329776,7 +329901,7 @@
           "kind": "theorem",
           "name": "dispatchConfigureByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchConfigureByR_eq",
-          "line": 1862,
+          "line": 1869,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -329797,7 +329922,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_configure",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_configure",
-          "line": 1889,
+          "line": 1896,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -329817,7 +329942,7 @@
           "kind": "def",
           "name": "configureOperandArmR",
           "full_name": "SeLe4n.Kernel.configureOperandArmR",
-          "line": 1901,
+          "line": 1908,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Kernel.dispatchConfigureByR",
@@ -329836,7 +329961,7 @@
           "kind": "def",
           "name": "dispatchConfigureCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchConfigureCheckedR",
-          "line": 1915,
+          "line": 1922,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -329851,7 +329976,7 @@
           "kind": "theorem",
           "name": "dispatchConfigureCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchConfigureCheckedR_eq",
-          "line": 1920,
+          "line": 1927,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -329886,7 +330011,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterBy",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterBy",
-          "line": 1969,
+          "line": 1976,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -329904,7 +330029,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_serviceRegisterBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_serviceRegisterBy",
-          "line": 1985,
+          "line": 1992,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgs_eq_by",
@@ -329929,7 +330054,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterByR",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR",
-          "line": 2008,
+          "line": 2015,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -329951,7 +330076,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR_eq",
-          "line": 2029,
+          "line": 2036,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.LabelingContext",
@@ -329971,7 +330096,7 @@
           "kind": "def",
           "name": "serviceRecordOfWords",
           "full_name": "SeLe4n.Kernel.serviceRecordOfWords",
-          "line": 2051,
+          "line": 2058,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Model.Capability",
@@ -329982,7 +330107,7 @@
           "kind": "def",
           "name": "registerServiceWordsPerform",
           "full_name": "SeLe4n.Kernel.registerServiceWordsPerform",
-          "line": 2064,
+          "line": 2071,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Kernel.serviceRecordOfWords",
@@ -329998,7 +330123,7 @@
           "kind": "def",
           "name": "registerServiceRefusalCode",
           "full_name": "SeLe4n.Kernel.registerServiceRefusalCode",
-          "line": 2079,
+          "line": 2086,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Kernel.LabelingContext",
@@ -330018,7 +330143,7 @@
           "kind": "def",
           "name": "registerServiceRefusalError",
           "full_name": "SeLe4n.Kernel.registerServiceRefusalError",
-          "line": 2095,
+          "line": 2102,
           "called": [
             "SeLe4n.Model.KernelError"
           ]
@@ -330027,7 +330152,7 @@
           "kind": "theorem",
           "name": "registerServiceChecked_refused",
           "full_name": "SeLe4n.Kernel.registerServiceChecked_refused",
-          "line": 2103,
+          "line": 2110,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.recordedRegistrationPresent",
@@ -330054,7 +330179,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterByRImpl",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByRImpl",
-          "line": 2145,
+          "line": 2152,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330078,7 +330203,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterByR_eq_impl",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR_eq_impl",
-          "line": 2168,
+          "line": 2175,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.dispatchServiceRegisterByR",
@@ -330101,7 +330226,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_serviceRegister",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_serviceRegister",
-          "line": 2213,
+          "line": 2220,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -330121,7 +330246,7 @@
           "kind": "def",
           "name": "serviceRegisterOperandArmR",
           "full_name": "SeLe4n.Kernel.serviceRegisterOperandArmR",
-          "line": 2225,
+          "line": 2232,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
@@ -330141,7 +330266,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterCheckedR",
-          "line": 2240,
+          "line": 2247,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330157,7 +330282,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterCheckedR_eq",
-          "line": 2245,
+          "line": 2252,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330192,7 +330317,7 @@
           "kind": "def",
           "name": "dispatchMintBy",
           "full_name": "SeLe4n.Kernel.dispatchMintBy",
-          "line": 2295,
+          "line": 2302,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
@@ -330215,7 +330340,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_mintBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_mintBy",
-          "line": 2313,
+          "line": 2320,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_eq_by",
@@ -330240,7 +330365,7 @@
           "kind": "def",
           "name": "dispatchMintByR",
           "full_name": "SeLe4n.Kernel.dispatchMintByR",
-          "line": 2336,
+          "line": 2343,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330265,7 +330390,7 @@
           "kind": "theorem",
           "name": "dispatchMintByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchMintByR_eq",
-          "line": 2359,
+          "line": 2366,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330292,7 +330417,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_cspaceMint",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_cspaceMint",
-          "line": 2393,
+          "line": 2400,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -330312,7 +330437,7 @@
           "kind": "def",
           "name": "mintOperandArmR",
           "full_name": "SeLe4n.Kernel.mintOperandArmR",
-          "line": 2405,
+          "line": 2412,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
@@ -330332,7 +330457,7 @@
           "kind": "def",
           "name": "dispatchMintCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchMintCheckedR",
-          "line": 2420,
+          "line": 2427,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330348,7 +330473,7 @@
           "kind": "theorem",
           "name": "dispatchMintCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchMintCheckedR_eq",
-          "line": 2425,
+          "line": 2432,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330383,7 +330508,7 @@
           "kind": "def",
           "name": "dispatchOverflowOneCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchOverflowOneCheckedR",
-          "line": 2472,
+          "line": 2479,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330401,7 +330526,7 @@
           "kind": "theorem",
           "name": "dispatchOverflowOneCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchOverflowOneCheckedR_eq",
-          "line": 2481,
+          "line": 2488,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -446777,7 +446902,7 @@
     {
       "module": "SeLe4n.Model.KernelError",
       "path": "SeLe4n/Model/KernelError.lean",
-      "declaration_count": 6,
+      "declaration_count": 9,
       "declarations": [
         {
           "kind": "inductive",
@@ -446830,6 +446955,35 @@
           "line": 302,
           "called": [
             "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "KernelError.eqWords",
+          "full_name": "SeLe4n.Model.KernelError.eqWords",
+          "line": 317,
+          "called": [
+            "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KernelError.eqWords_iff",
+          "full_name": "SeLe4n.Model.KernelError.eqWords_iff",
+          "line": 325,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelError.eqWords"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instDecidableEqKernelError",
+          "full_name": "SeLe4n.Model.instDecidableEqKernelError",
+          "line": 331,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelError.eqWords_iff"
           ]
         }
       ]
