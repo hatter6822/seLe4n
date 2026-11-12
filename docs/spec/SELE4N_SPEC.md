@@ -4694,13 +4694,12 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   entry (`RHEntry.bumpDist`) rather than rebuilding it (`insertCellLoop_eq`).
   The queue unlink and the slot lookup run out-of-line fast forms
   (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl`,
-  `cspaceLookupSlot_eq_impl`, all `@[csimp]`), so no compiled reset/reuse
-  writes one object's fields into another's cell.  Tier 1's
-  `scripts/check_cell_reuse_ownership.py` reads the production library's
-  generated C reached from the `@[export]`s over the store, Robin Hood, retire
-  and capability-copy code, refuses any reset or reuse shape it cannot
-  classify, and flags a reused cell filled from another cell; the QEMU heap
-  gate's owned-CNode window (a capability copied into the carved CNode and
+  `cspaceLookupSlot_eq_impl`, all `@[csimp]`), so their compiled reset/reuse
+  writes no object's fields into another's cell.  Each of these forms is
+  proven equal to its specification; that it builds or reuses its own cell is
+  how it is written, not a theorem, and no gate reads the generated C for it.
+  `ModelIntegritySuite` checks `copyOver` in place across every pair of
+  constructors by cell address, and the QEMU heap gate's owned-CNode window (a capability copied into the carved CNode and
   out of it into the root CNode, where it outlives the CNode's retire) holds
   the cells a CNode's carve-to-retire allocates and frees each to the CNode's
   carve pin.

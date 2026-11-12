@@ -1,10 +1,13 @@
-## v0.37.17 — a carve owns its cells, and no pass moves them
+## v0.37.17 — a carve owns its cells; seL4's CNode Copy, Move and Mint
 
 WS-UC UC4.  Every cell a carve builds is that carve's own, and no later
 operation moves another object into it: a capability copy builds its own
-target cell, the compiled Robin Hood insert moves a displaced entry instead of
-rebuilding it, and a Tier 1 scan of the generated C refuses any compiled
-reset/reuse that fills one object's cell with another object's fields.
+target cell, and the compiled Robin Hood insert moves a displaced entry instead
+of rebuilding it.  Each fix is a fast form proven equal to its specification;
+the QEMU owned-CNode window measures a carved CNode's carve-to-retire.  No gate
+reads the generated C for this: the scan that found these sites is not kept
+(see below).  CNode Copy, Move and Mint take seL4's addressing and rights
+masking.
 
 - **Copies build their own cells, in place, across every shape.**
   `CapTarget.copyOver`'s `.cnodeSlot` arm and its arm for a destination of
@@ -82,30 +85,30 @@ reset/reuse that fills one object's cell with another object's fields.
   mint is now the five-word mint, its badge written to the root task's
   current buffer and cleared after; the short mint stays an explicit
   four-word message, refused `TruncatedMessage`.
-- **What the scan found besides.** The queue unlink's neighbour writes reused
-  the removed thread's cell for its neighbour's record, and the slot lookup
-  reused the address's cell for its result.  Each now runs an out-of-line fast
+- **What a reading of the generated C found besides.** The queue unlink's
+  neighbour writes reused the removed thread's cell for its neighbour's
+  record, and the slot lookup reused the address's cell for its result.  Each now runs an out-of-line fast
   form joined to its specification by `@[csimp]`
   (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl` over
   `TCB.withQueueNextCode` / `TCB.withQueuePrevCodes`;
   `cspaceLookupSlot_eq_impl` over `lookupSlotCapOut`).
-- **The scan** (`scripts/check_cell_reuse_ownership.py`, Tier 1 after the
-  build, self-test first).  It reads the C of `lake query SeLe4n:modules`,
-  walks the C symbol graph from every `@[export]` (derived from the code view),
-  and scans the reached functions of the store, Robin Hood, retire and
-  capability-copy modules and every Robin Hood specialisation.  Every
-  exclusivity test must be the compiler's slow reset or its in-place shape,
-  every reuse token is spent on its reuse or released, and every field write
-  lands in an allocated or reused cell; anything else is refused.  A reused
-  cell is flagged when it takes at least as many object fields, at their own
-  positions, from another cell as it keeps of its own; scalar fields are data
-  and are not counted.  A derivation that comes back empty fails.  The tree:
-  2147 reuse sites in 3313 reached functions, 0 findings (before this
-  version's fixes: the sites above).  The self-test breaks the relation on the
-  real tree, retargeting the field reads of each of 1040 slow reuse sites that
-  keep their own fields to another parameter with the reset and reuse left in
-  place (each flagged), handing 436 real reuse tokens to a call (each refused),
-  and plants ten synthetic shapes.
+- **No generated-C gate.**  A scan of the generated C's reset/reuse sites
+  found the sites above while this version was written, and is not kept.  It
+  traces a field only through projections inside one function; a field that
+  comes from a parameter or a call result it cannot trace, and refusing those
+  fails 181 real sites (in-place field updates through a helper, the in-place
+  capability copy itself, list loops with an accumulator), which no source
+  change inside one function resolves.  So the evidence is the fixes
+  themselves: the two paths that shared a cell (the no-spare record build,
+  now `CapTarget.fresh`, and the CNode-slot copy arm, now `CapTarget.over` on
+  the one-word `CapTarget`) and the moved sites are each a fast form proven
+  equal to its specification (`Capability.ofFields_eq`, `fresh_eq`,
+  `copyOver_eq`, `over_eq`, `insertCellLoop_eq`,
+  `queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl`,
+  `cspaceLookupSlot_eq_impl`).  The proofs fix what each form computes; that
+  it builds or reuses its own cell is how the form is written, which
+  `ModelIntegritySuite` checks for `copyOver` by cell address and the
+  owned-CNode window below checks by counting frees.
 - **Frees, counted.** The kernel heap counts each free to the freeing core
   (`HeapStats::frees_by_core`, `kernel_frees_on`), tested on the host.  The
   QEMU exerciser's owned-CNode scenario carves a CNode, copies the boot
