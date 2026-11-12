@@ -813,10 +813,8 @@ refusal is read where it is, never rebuilt. -/
       | .ok args =>
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun _ =>
-            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
-            | .error e => .error (e, st)
-            | .ok r => .ok r)
+          (fun e =>
+            if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -866,10 +864,8 @@ refusal is read where it is, never rebuilt. -/
       | .ok args =>
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun _ =>
-            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
-            | .error e => .error (e, st)
-            | .ok r => .ok r)
+          (fun e =>
+            if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -1442,9 +1438,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | error e =>
-          simp only [RefusalCarrying.ofKernel]
-          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
-          cases r <;> rfl
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR]
+          cases cnodeInvoked cnodeId st <;> rfl
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
@@ -1506,9 +1501,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | error e =>
-          simp only [RefusalCarrying.ofKernel]
-          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
-          cases r <;> rfl
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR]
+          cases cnodeInvoked cnodeId st <;> rfl
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
@@ -2344,10 +2338,8 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
     | .ok args =>
       resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
         args.srcIndex args.srcDepth st
-        (fun _ =>
-          match dispatchMintBy ctx tid layout regs w cap st with
-          | .error e => .error (e, st)
-          | .ok r => .ok r)
+        (fun e =>
+          if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
           RefusalCarrying.ofChecked
             (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -2375,9 +2367,8 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
       cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st with
       | error e =>
-        simp only [RefusalCarrying.ofKernel]
-        generalize dispatchMintBy _ _ _ _ _ _ st = r
-        cases r <;> rfl
+        simp only [RefusalCarrying.ofKernel, dispatchMintBy, hT, hD, hR]
+        cases cnodeInvoked cnodeId st <;> rfl
       | ok p =>
         obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
         dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]

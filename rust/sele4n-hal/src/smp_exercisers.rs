@@ -2518,6 +2518,13 @@ const fn cnode_refusal(
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
 
+/// A root slot no scenario fills: the destination of the empty-source Copy.
+/// seL4's `decodeCNodeInvocation` refuses an occupied destination before it
+/// looks the source up, and the copy slot still holds the boot audit
+/// capability (`AUDIT_SLOT`) when the refusal scenarios run.
+#[cfg(feature = "hw_target")]
+const EMPTY_DEST_SLOT: u64 = 49;
+
 /// The long send's message length: four words in the sender's registers and
 /// two in its IPC buffer's overflow slots 0 and 1, which share a page.
 #[cfg(feature = "hw_target")]
@@ -3393,8 +3400,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SCHED_CONTROL_CAP,
             4,
         ),
-        // seL4's error payloads (`setMRs_syscall_error`), each a Copy into
-        // the free copy slot refused before any write: a destination depth
+        // seL4's error payloads (`setMRs_syscall_error`), each a Copy
+        // refused before any write: a destination depth
         // past 64 (`RangeError(1, 64)`), a destination index whose guard
         // matches but whose depth stops inside the root's level (a depth
         // mismatch), an empty source (`MissingCapability`, seL4's
@@ -3424,7 +3431,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         cnode_refusal(
             "failed-lookup-missing-source",
-            root_slot_copy(EMPTY_SOURCE_SLOT, COPY_SLOT),
+            root_slot_copy(EMPTY_SOURCE_SLOT, EMPTY_DEST_SLOT),
             // The source; MissingCapability (2), the source's depth, 64.
             refused_with(FAILED_LOOKUP, 3, [Some(1), Some(2), Some(64), None]),
         ),
