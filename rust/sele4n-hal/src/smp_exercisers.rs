@@ -8477,7 +8477,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
                 "untyped-retype-region-exhausted",
                 UNTYPED_RETYPE,
                 UNTYPED_CAP,
-                [UNTYPED_REGION_EXHAUSTED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+                [
+                    UNTYPED_REGION_EXHAUSTED_TYPE,
+                    UNTYPED_CHILD_ID,
+                    CNODE_CAP,
+                    FRAME_SLOT,
+                ],
             )
         },
         // A carve into an occupied slot (the untyped's own): refused
