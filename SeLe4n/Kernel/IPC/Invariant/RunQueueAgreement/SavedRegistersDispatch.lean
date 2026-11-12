@@ -94,8 +94,8 @@ theorem cspaceMintWithCdt_savedRegsKept {st st' : SystemState} {src dst : CSpace
     (untypedSourceSetFull_savedRegsKept _ src _ (cdtRecord_keyFrame stM src dst .mint i1).2.2)
 
 /-- **The copy**: the insert, the derivation edge and the source's free index. -/
-theorem cspaceCopy_savedRegsKept {st st' : SystemState} {src dst : CSpaceAddr}
-    (hInv : st.objects.invExt) (h : cspaceCopy src dst st = .ok ((), st')) :
+theorem cspaceCopy_savedRegsKept {st st' : SystemState} {src dst : CSpaceAddr} {mask : AccessRightSet}
+    (hInv : st.objects.invExt) (h : cspaceCopy src dst mask st = .ok ((), st')) :
     savedRegsKept st st' := by
   obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
   have i2 := cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInv hIns

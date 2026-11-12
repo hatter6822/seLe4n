@@ -1178,8 +1178,8 @@ def runInformationFlowChecks : IO Unit := do
   let copyDst : SlotRef := { cnode := ⟨41⟩, slot := (SeLe4n.Slot.ofNat 0) }
 
   -- Same-domain copy should succeed
-  let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst copyState
-  let uncheckedCopy := SeLe4n.Kernel.cspaceCopy copySrc copyDst copyState
+  let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst .full copyState
+  let uncheckedCopy := SeLe4n.Kernel.cspaceCopy copySrc copyDst .full copyState
 
   expect "same-domain cspaceCopyChecked matches unchecked"
     (match checkedCopy, uncheckedCopy with
@@ -1193,7 +1193,7 @@ def runInformationFlowChecks : IO Unit := do
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel }
 
-  let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst copyState
+  let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst .full copyState
   expect "cross-domain cspaceCopyChecked returns flowDenied"
     (match deniedCopy with
       | .error .flowDenied => true

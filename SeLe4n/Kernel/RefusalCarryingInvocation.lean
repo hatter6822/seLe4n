@@ -49,19 +49,6 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) (st : SystemState) : Except KernelError (Unit × SystemState) :=
   match sid with
-  | .cspaceMint =>
-    match cap.target with
-    | .object cnodeId =>
-        match decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
-        | .error e => .error e
-        | .ok args =>
-            if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            let badge : Option SeLe4n.Badge :=
-              if args.badge.val = 0 then none else some args.badge
-            cspaceMintChecked ctx src dst args.rights badge st
-    | _ => .error .invalidCapability
   | .cspaceCopy =>
     match cap.target with
     | .object cnodeId =>
@@ -72,7 +59,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
-            | .ok (src, dst) => cspaceCopyChecked ctx src dst st
+            | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st
     | _ => .error .invalidCapability
   | .cspaceMove =>
     match cap.target with
@@ -430,7 +417,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchInvocationBy ctx decoded.syscallId decoded.capAddr
         layout regs tid executingCore cap st := by
-  have hMint := decodeCSpaceMintArgs_eq_by layout regs decoded hRegs
   have hCopy := decodeCSpaceCopyArgs_eq_by layout regs decoded hRegs
   have hMove := decodeCSpaceMoveArgs_eq_by layout regs decoded hRegs
   have hReply := decodeMintReplyCapArgs_eq_by layout regs decoded hRegs
@@ -456,7 +442,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     simp only [truncationMinimum] at hLen <;>
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
-      hMint, hCopy, hMove, hReply, hDelete, hRetype, hMap, hUnmap,
+      hCopy, hMove, hReply, hDelete, hRetype, hMap, hUnmap,
       hScBind, hNtfn, hPrio, hMcp, hIpcBuf, hAff, hFault,
       hSpace, hPt, hIrqGet, hIrqNtfn, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
@@ -819,20 +805,6 @@ refusal is read where it is, never rebuilt. -/
           notificationId)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
-  | .cspaceMint =>
-    match cap.target with
-    | .object cnodeId =>
-      match decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
-        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-        RefusalCarrying.ofChecked
-          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceMintAdmittedAt cnodeId args.srcSlot args.dstSlot args.rights args.badge st)
-          (fun st => cspaceMintPerformAt cnodeId args.srcSlot args.dstSlot args.rights args.badge st)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
   | .cspaceMove =>
     match cap.target with
     | .object cnodeId =>
@@ -901,8 +873,8 @@ refusal is read where it is, never rebuilt. -/
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
-                cspaceCopyAdmittedAt srcCNode srcSlot dstCNode dstSlot st)
-              (fun st => cspaceCopyPerformAt srcCNode srcSlot dstCNode dstSlot st)
+                cspaceCopyAdmittedAt srcCNode srcSlot dstCNode dstSlot args.rights st)
+              (fun st => cspaceCopyPerformAt srcCNode srcSlot dstCNode dstSlot args.rights st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .vspaceMap =>
@@ -1457,21 +1429,6 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       apply RefusalCarrying.ofChecked_eq
       intro hA
       simp only [dispatchInvocationBy, unbindNotification_of_inPlace _ _ hA]
-    all_goals rfl
-  case cspaceMint =>
-    cases target
-    case object cnodeId =>
-      dsimp only
-      cases hD : decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
-      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
-      | ok args =>
-        dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]
-        apply RefusalCarrying.ofChecked_eq
-        intro hA
-        simp only [Bool.and_eq_true] at hA
-        simp only [dispatchInvocationBy, hD, cspaceMintChecked, hA.1, ↓reduceIte,
-          cnodeInvoked_of_mintAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
-          cspaceMintWithCdt_of_admitted hA.2]
     all_goals rfl
   case cspaceMove =>
     cases target
@@ -2323,10 +2280,191 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
+/-! ## The CNode mint
+
+A CNode mint carries five argument words: a copy's four (the two slots' index
+and depth, and the rights mask) and the badge, overflow slot 0 of the caller's
+IPC buffer, read at the entry and handed here as the word `w`.  Its taint step
+is the identity and its rights are checked in the classic order.  The rights
+are the request masked by the source capability's (`mintMaskedRights`, seL4's
+`maskCapRights`), so a mint never refuses a mask. -/
+
+/-- `dispatchWithCapChecked`'s CNode-mint arm, its arguments read from the
+register file `regs` through `layout` and then the overflow word `w`
+(`dispatchWithCapChecked_eq_mintBy`). -/
+@[inline] def dispatchMintBy (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
+    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match cap.target with
+  | .object cnodeId =>
+    match decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error e
+    | .ok args =>
+      if !cnodeInvoked cnodeId st then .error .objectNotFound else
+      match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+          args.srcIndex args.srcDepth st with
+      | .error e => .error e
+      | .ok (src, dst) =>
+        let badge : Option SeLe4n.Badge :=
+          if args.badge.val = 0 then none else some args.badge
+        cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
+  | _ => .error .invalidCapability
+
+theorem dispatchWithCapChecked_eq_mintBy (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (h : decoded.syscallId = .cspaceMint)
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      dispatchMintBy ctx tid layout regs w cap st := by
+  have hDec := decodeCSpaceMintArgs_eq_by layout regs w decoded hRegs hLen
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  simp only at h
+  subst h
+  cases target <;>
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchMintBy, hDec]
+  all_goals rfl
+
+/-- `dispatchMintBy`, refusal-carrying: the slots resolved, then the checks read
+first (the flow check and `cspaceMintAdmittedAt`) and the state handed to the
+write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
+(`dispatchMintByR_eq`). -/
+@[inline] def dispatchMintByR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+  match cap.target with
+  | .object cnodeId =>
+    match decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error (e, st)
+    | .ok args =>
+      resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
+        args.srcIndex args.srcDepth st
+        (fun _ =>
+          match dispatchMintBy ctx tid layout regs w cap st with
+          | .error e => .error (e, st)
+          | .ok r => .ok r)
+        (fun srcCNode srcSlot dstCNode dstSlot =>
+          RefusalCarrying.ofChecked
+            (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
+              cspaceMintAdmittedAt srcCNode srcSlot dstCNode dstSlot
+                (mintMaskedRights st ⟨srcCNode, srcSlot⟩ args.rights) args.badge st)
+            (fun st' => cspaceMintPerformAt srcCNode srcSlot dstCNode dstSlot
+                (mintMaskedRights st ⟨srcCNode, srcSlot⟩ args.rights) args.badge st')
+            (dispatchMintBy ctx tid layout regs w cap) st)
+  | _ => .error (.invalidCapability, st)
+
+theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
+    (st : SystemState) :
+    dispatchMintByR ctx tid layout regs w cap st =
+      RefusalCarrying.ofKernel (dispatchMintBy ctx tid layout regs w cap) st := by
+  unfold dispatchMintByR
+  cases hT : cap.target with
+  | object cnodeId =>
+    dsimp only
+    cases hD : decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) with
+    | error e => simp [RefusalCarrying.ofKernel, dispatchMintBy, hT, hD]
+    | ok args =>
+      dsimp only
+      rw [resolveCNodeOpSlotsK_eq]
+      cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+          args.srcIndex args.srcDepth st with
+      | error e =>
+        simp only [RefusalCarrying.ofKernel]
+        generalize dispatchMintBy _ _ _ _ _ _ st = r
+        cases r <;> rfl
+      | ok p =>
+        obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
+        dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [Bool.and_eq_true] at hA
+        simp only [dispatchMintBy, hT, hD, cspaceMintChecked, hA.1, ↓reduceIte, cnodeInvoked,
+          cnodeInvoked_of_resolveCNodeOpSlots_ok hR, hR, Bool.not_true, Bool.false_eq_true,
+          cspaceMintWithCdt_of_admitted hA.2]
+  | _ => simp [RefusalCarrying.ofKernel, dispatchMintBy, hT]
+
+/-- A CNode mint's taint step leaves the state as its arm left it. -/
+theorem applySyscallTaintAfter_cspaceMint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .cspaceMint)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintMap)
+    (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
+      post := by
+  simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
+    syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
+    applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
+
+/-- The CNode mint's arm behind the operand check: the gate's type and right,
+then `dispatchMintByR`. -/
+@[inline] def mintOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (regs : RegisterFile) (w : UInt64) :
+    Option Capability → RefusalCarrying Unit :=
+  fun operand st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .cspaceMint st cap then .error (.invalidCapability, st)
+        else if cap.hasRight (syscallRequiredRight .cspaceMint) then
+          dispatchMintByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
+        else .error (syscallMissingRightError .cspaceMint, st)
+
+/-- `dispatchSyscallChecked` for a CNode mint whose fifth word is `w`
+(`dispatchMintCheckedR_eq`). -/
+@[inline] def dispatchMintCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore (mintOperandArmR ctx tid regs w)
+
+theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hSid : decoded.syscallId = .cspaceMint)
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
+    dispatchMintCheckedR ctx decoded.capAddr regs w tid executingCore =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  have hNotYield : decoded.syscallId ≠ .yield := by
+    rw [hSid]; exact fun h => SyscallId.noConfusion h
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+  intro st tcb rootCn ref _ _ hRef
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    syscallInvokeTyped, syscallResolveCap, hRef,
+    applySyscallTaintAfter_cspaceMint st tid decoded hSid]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [mintOperandArmR, hSid]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hType : syscallTargetAccepted .cspaceMint st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .cspaceMint st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .cspaceMint) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [dispatchMintByR_eq]
+        simp only [RefusalCarrying.ofKernel]
+        rw [← dispatchWithCapChecked_eq_mintBy ctx decoded SeLe4n.arm64DefaultLayout
+          regs w tid executingCore
+          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight .cspaceMint }
+          cap st hSid hRegs hLen]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
+
 /-! ## The one-overflow-word invocations
 
 The register route's `overflowOne` arm names one of `routedOverflowOne`: the
-configure or the service register, each with its fifth word `w`. -/
+configure, the service register or the CNode mint, each with its fifth word
+`w`. -/
 
 /-- `dispatchSyscallChecked` for a one-overflow-word invocation `sid` whose
 fifth word is `w` (`dispatchOverflowOneCheckedR_eq`).  The last arm is never
@@ -2337,6 +2475,7 @@ taken: the route names only `routedOverflowOne` calls. -/
   match sid with
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr regs w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore
+  | .cspaceMint => dispatchMintCheckedR ctx capAddr regs w tid executingCore
   | _ => fun st => .error (.illegalState, st)
 
 theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
@@ -2353,5 +2492,6 @@ theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
     | (cases hR; done)
     | exact dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
     | exact dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+    | exact dispatchMintCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
 
 end SeLe4n.Kernel

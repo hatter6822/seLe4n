@@ -3286,7 +3286,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SCHED_CONTROL_CAP,
             4,
         ),
-        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 3),
+        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
         truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),

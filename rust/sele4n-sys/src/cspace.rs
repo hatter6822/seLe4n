@@ -5,49 +5,58 @@
 //! `apiCspaceMove`, `apiCspaceDelete`, `apiCspaceRevoke`.
 
 use sele4n_abi::args::cspace::*;
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{AccessRights, Badge, CPtr, KernelResult, Slot, SyscallId};
 
-/// Mint a new capability with restricted rights and/or badge.
+/// Mint a badged capability from the slot `slots` names in its source root
+/// into the empty slot it names in `cnode_cap`'s CNode (seL4's
+/// `seL4_CNode_Mint` addressing, [`CNodeOpArgs`]).
 ///
-/// Lean: `apiCspaceMint` (API.lean) — requires `.grant` right on `cnode_cap`.
-///
-/// Creates a new capability in `dst_slot` derived from the capability in
-/// `src_slot`, with rights restricted to `rights` and badge set to `badge`.
+/// Lean: the `.cspaceMint` arm (API.lean) — requires `.grant` right on
+/// `cnode_cap`.  The new capability's rights are the source's masked with
+/// `rights` (seL4's `maskCapRights`: masking, never a refusal), and its badge
+/// is `badge`.  The badge is the fifth word, written to the IPC buffer's
+/// overflow slot 0 (message register 4).
 #[inline]
 pub fn cspace_mint(
     cnode_cap: CPtr,
-    src_slot: Slot,
-    dst_slot: Slot,
+    slots: CNodeOpArgs,
     rights: AccessRights,
     badge: Badge,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     let args = CSpaceMintArgs {
-        src_slot,
-        dst_slot,
-        rights,
+        copy: CSpaceCopyArgs { slots, rights },
         badge,
     };
     let encoded = args.encode();
+    buf.set_mr(4, encoded[4])?;
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo::new_const(4, 0, 0),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new_const(5, 0, 0),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
     })
 }
 
-/// Copy a capability without modification, from the slot `slots` names in
-/// its source root into the empty slot it names in `cnode_cap`'s CNode
-/// (seL4's `seL4_CNode_Copy` addressing, [`CNodeOpArgs`]).
+/// Copy a capability from the slot `slots` names in its source root into the
+/// empty slot it names in `cnode_cap`'s CNode (seL4's `seL4_CNode_Copy`
+/// addressing, [`CNodeOpArgs`]), its rights masked with `rights` (seL4's
+/// copy takes a rights operand and masks with it; `AccessRights::ALL` copies
+/// the capability unchanged).
 ///
-/// Lean: `apiCspaceCopy` (API.lean) — requires `.grant` right on `cnode_cap`.
+/// Lean: the `.cspaceCopy` arm (API.lean) — requires `.grant` right on
+/// `cnode_cap`.
 #[inline]
-pub fn cspace_copy(cnode_cap: CPtr, slots: CNodeOpArgs) -> KernelResult<SyscallResponse> {
+pub fn cspace_copy(
+    cnode_cap: CPtr,
+    slots: CNodeOpArgs,
+    rights: AccessRights,
+) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
         msg_info: MessageInfo::new_const(4, 0, 0),
-        msg_regs: slots.encode(),
+        msg_regs: CSpaceCopyArgs { slots, rights }.encode(),
         syscall_id: SyscallId::CSpaceCopy,
     })
 }

@@ -188,8 +188,8 @@ theorem cspaceMintWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
   have hC := hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
   exact hC.trans (untypedSourceSetFull_keyFrame _ src _ hC.2.2)
 
-theorem cspaceCopy_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
-    (hObjInv : st.objects.invExt) (hStep : cspaceCopy src dst st = .ok ((), st')) :
+theorem cspaceCopy_keyFrame (st st' : SystemState) (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (hObjInv : st.objects.invExt) (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
   obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns

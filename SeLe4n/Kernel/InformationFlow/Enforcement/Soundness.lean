@@ -51,23 +51,23 @@ theorem notificationSignalChecked_flowDenied
 to the unchecked copy. -/
 theorem cspaceCopyChecked_eq_cspaceCopy_when_allowed
     (ctx : LabelingContext)
-    (src dst : CSpaceAddr)
+    (src dst : CSpaceAddr) (mask : AccessRightSet)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode)
                (ctx.objectLabelOf dst.cnode) = true) :
-    cspaceCopyChecked ctx src dst st =
-      cspaceCopy src dst st := by
+    cspaceCopyChecked ctx src dst mask st =
+      cspaceCopy src dst mask st := by
   unfold cspaceCopyChecked
   simp [hFlow]
 
 /-- WS-H8: When the policy denies flow, cspaceCopyChecked returns `flowDenied`. -/
 theorem cspaceCopyChecked_flowDenied
     (ctx : LabelingContext)
-    (src dst : CSpaceAddr)
+    (src dst : CSpaceAddr) (mask : AccessRightSet)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
                (ctx.objectLabelOf dst.cnode) = false) :
-    cspaceCopyChecked ctx src dst st =
+    cspaceCopyChecked ctx src dst mask st =
       .error .flowDenied := by
   unfold cspaceCopyChecked
   simp [hDeny]
@@ -147,11 +147,11 @@ theorem notificationSignalChecked_denied_preserves_state
 
 /-- WS-H8: cspaceCopyChecked denied → no state change. -/
 theorem cspaceCopyChecked_denied_preserves_state
-    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (ctx : LabelingContext) (src dst : CSpaceAddr) (mask : AccessRightSet)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.objectLabelOf src.cnode)
                (ctx.objectLabelOf dst.cnode) = false) :
-    ¬∃ st', cspaceCopyChecked ctx src dst st = .ok ((), st') := by
+    ¬∃ st', cspaceCopyChecked ctx src dst mask st = .ok ((), st') := by
   intro ⟨st', h⟩
   simp [cspaceCopyChecked, hDeny] at h
 
@@ -200,12 +200,12 @@ theorem enforcement_sufficiency_notificationSignal
 
 /-- WS-H8: `cspaceCopyChecked` either delegates or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceCopy
-    (ctx : LabelingContext) (src dst : CSpaceAddr)
+    (ctx : LabelingContext) (src dst : CSpaceAddr) (mask : AccessRightSet)
     (st : SystemState) :
     (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
-       cspaceCopyChecked ctx src dst st = cspaceCopy src dst st) ∨
+       cspaceCopyChecked ctx src dst mask st = cspaceCopy src dst mask st) ∨
     (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false ∧
-       cspaceCopyChecked ctx src dst st = .error .flowDenied) := by
+       cspaceCopyChecked ctx src dst mask st = .error .flowDenied) := by
   cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
   | true => left; exact ⟨rfl, by simp [cspaceCopyChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [cspaceCopyChecked, hFlow]⟩
@@ -550,13 +550,13 @@ theorem enforcementSoundness_notificationSignalChecked
 /-- WS-H8/A-35: Enforcement soundness for cspaceCopyChecked. -/
 theorem enforcementSoundness_cspaceCopyChecked
     (ctx : LabelingContext)
-    (src dst : CSpaceAddr) (st st' : SystemState)
-    (hStep : cspaceCopyChecked ctx src dst st = .ok ((), st')) :
+    (src dst : CSpaceAddr) (mask : AccessRightSet) (st st' : SystemState)
+    (hStep : cspaceCopyChecked ctx src dst mask st = .ok ((), st')) :
     securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true := by
   cases h : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
   | true => rfl
   | false =>
-    have := cspaceCopyChecked_flowDenied ctx src dst st h
+    have := cspaceCopyChecked_flowDenied ctx src dst mask st h
     rw [this] at hStep; simp at hStep
 
 /-- WS-H8/A-35: Enforcement soundness for cspaceMoveChecked. -/
@@ -1041,8 +1041,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       notificationSignalChecked ctx ntfnId signaler badge st = .ok ((), st') →
       securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf ntfnId) = true) ∧
     -- 3. cspaceCopyChecked: success implies src→dst CNode flow allowed
-    (∀ src dst,
-      cspaceCopyChecked ctx src dst st = .ok ((), st') →
+    (∀ src dst mask,
+      cspaceCopyChecked ctx src dst mask st = .ok ((), st') →
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
     -- 4. cspaceMoveChecked: success implies src→dst CNode flow allowed
     (∀ src dst,
@@ -1091,8 +1091,8 @@ theorem enforcementBridge_to_NonInterferenceStep
         st r st' hStep,
     fun ntfnId signaler badge hStep =>
       enforcementSoundness_notificationSignalChecked ctx ntfnId signaler badge st st' hStep,
-    fun src dst hStep =>
-      enforcementSoundness_cspaceCopyChecked ctx src dst st st' hStep,
+    fun src dst mask hStep =>
+      enforcementSoundness_cspaceCopyChecked ctx src dst mask st st' hStep,
     fun src dst hStep =>
       enforcementSoundness_cspaceMoveChecked ctx src dst st st' hStep,
     fun eid receiver replyId r hStep =>

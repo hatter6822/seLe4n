@@ -4147,7 +4147,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  \| \.cspaceMint \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -11234,7 +11234,7 @@ run_check "INVARIANT" rg -n '^  \| \.tlb, +st, st. => st.\.tlb = st\.tlb' SeLe4n
 # a theorem restated about another operation, fails it.
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : revokeService sid st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside revokeService_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMintWithCdt src dst rights badge st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst mask st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMove src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceDeleteSlot addr st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointSendDual endpointId sender payload st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
@@ -23608,7 +23608,7 @@ run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceI
 run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterface\]$' SeLe4n/Platform/QemuVirt/Contract.lean
 # WS-ZA ZA5.5: the service register is routed on the register file with the
 # configure, one overflow word read from the IPC buffer, and runs checks first.
-run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -U -n '^    if routedOverflowOne sid then\n      if len = size \+ 1 then \.overflowOne sid capAddr else \.overflowed sid capAddr len$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 # A syscall reads a message word past the inline registers only when its
@@ -23619,7 +23619,7 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 # answer, not on a syscall name.  A buffer the kernel cannot read clamps the
 # message to its inline words (`clampToInline`), as seL4's `handleInvocation`
 # clamps a message with no IPC buffer, in each of the three merges.
-run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean

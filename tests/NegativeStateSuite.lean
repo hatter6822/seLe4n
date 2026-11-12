@@ -2755,12 +2755,12 @@ def runWSJ1DecodeChecks : IO Unit := do
 private def runWSKGCSpaceChecks : IO Unit := do
   -- ---- K-G1: CSpace negative tests ----
 
-  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 5) → invalidMessageInfo
   let shortDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 5, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
-    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 4
+    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 5
   }
   expectErr "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
@@ -2793,13 +2793,13 @@ private def runWSKGCSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
     .invalidMessageInfo
 
-  -- A message shorter than the mint's four argument words is refused
+  -- A message shorter than the mint's five argument words is refused
   -- `.truncatedMessage` before any register is read (seL4's
   -- `seL4_TruncatedMessage`), whatever the registers hold.
-  expectErr "K-G-NEG-TRUNC cspaceMint decode of a three-word message"
+  expectErr "K-G-NEG-TRUNC cspaceMint decode of a four-word message"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs
-      { shortDecode with msgInfo := { length := 3, extraCaps := 0, label := 0 },
-                         msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩] })
+      { shortDecode with msgInfo := { length := 4, extraCaps := 0, label := 0 },
+                         msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩] })
     .truncatedMessage
   expectErr "K-G-NEG-TRUNC cspaceDelete decode of an empty message"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
@@ -2824,7 +2824,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 0 }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "K-G-NEG-06 cspaceCopy source slot empty"
-    (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot emptyCnodeState)
+    (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot .full emptyCnodeState)
     .invalidCapability
 
   IO.println "CSpace negative tests passed"
@@ -3828,7 +3828,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "cspaceCopy to occupied slot"
-    (SeLe4n.Kernel.cspaceCopy copySrc copyDst baseState)
+    (SeLe4n.Kernel.cspaceCopy copySrc copyDst .full baseState)
     .targetSlotOccupied
 
   -- S2-G-03: cspaceMint to occupied destination slot → targetSlotOccupied
@@ -3862,7 +3862,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let fullCopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "cspaceCopy to full CNode slot"
-    (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst fullCnodeState)
+    (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst .full fullCnodeState)
     .targetSlotOccupied
 
   -- S2-G-06: revoke over a five-deep chain root → n1 → … → n5.  `cteRevoke`
@@ -4569,14 +4569,14 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- CONTROL: an in-range destination still installs, so the refusal below is
   -- about the slot index and not about the copy.
   let (_, copiedState) ← expectOkVal "RR8-CSR-01 CONTROL in-range cspaceCopy installs"
-    (SeLe4n.Kernel.cspaceCopy rangeSrc inRangeDst rangeState)
+    (SeLe4n.Kernel.cspaceCopy rangeSrc inRangeDst .full rangeState)
   match SeLe4n.Model.SystemState.lookupSlotCap copiedState inRangeDst with
   | none => throw <| IO.userError "RR8-CSR-01: in-range destination slot is empty after copy"
   | some _ => IO.println "positive check passed [RR8-CSR-01 CONTROL: slot 2 of a four-slot CNode installs]"
 
   -- DEFECT: a destination the CNode's radix cannot address is refused.
   expectErr "RR8-CSR-02 cspaceCopy to an unaddressable destination slot"
-    (SeLe4n.Kernel.cspaceCopy rangeSrc outOfRangeDst rangeState)
+    (SeLe4n.Kernel.cspaceCopy rangeSrc outOfRangeDst .full rangeState)
     .invalidArgument
   expectErr "RR8-CSR-03 cspaceMint to an unaddressable destination slot"
     (SeLe4n.Kernel.cspaceMint rangeSrc outOfRangeDst

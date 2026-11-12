@@ -5,55 +5,9 @@
 
 use sele4n_types::{AccessRights, Badge, CPtr, KernelError, KernelResult, Slot};
 
-/// Arguments for `cspaceMint` (syscall 4).
-/// Register mapping: x2=srcSlot, x3=dstSlot, x4=rights bitmask, x5=badge.
-///
-/// Lean: `CSpaceMintArgs` (SyscallArgDecode.lean:78)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CSpaceMintArgs {
-    pub src_slot: Slot,
-    pub dst_slot: Slot,
-    pub rights: AccessRights,
-    pub badge: Badge,
-}
-
-impl CSpaceMintArgs {
-    /// Encode into message registers.
-    pub const fn encode(&self) -> [u64; 4] {
-        [
-            self.src_slot.raw(),
-            self.dst_slot.raw(),
-            self.rights.raw() as u64,
-            self.badge.raw(),
-        ]
-    }
-
-    /// Decode from message registers. Requires 4 registers.
-    ///
-    /// R-M01 fix: validates that the rights register fits in u8 and only
-    /// uses valid rights bits (0–4). Values > 0x1F are rejected.
-    /// V1-F (M-RS-4): Returns `InvalidArgument` (not `InvalidMessageInfo`)
-    /// for invalid rights — the message structure is correct, the argument
-    /// value is invalid.
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 4 {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        if regs[2] > 0x1F {
-            return Err(KernelError::InvalidArgument);
-        }
-        Ok(Self {
-            src_slot: Slot::from(regs[0]),
-            dst_slot: Slot::from(regs[1]),
-            rights: AccessRights::try_from(regs[2] as u8)
-                .map_err(|_| KernelError::InvalidArgument)?,
-            badge: Badge::from(regs[3]),
-        })
-    }
-}
-
 /// The CNode operation word: the fourth argument of `cspaceCopy`,
-/// `cspaceMove` and `cspaceMint`, packing the two depths (and a mint's rights).
+/// `cspaceMove` and `cspaceMint`, packing the two depths (and, for a copy or
+/// a mint, the rights mask).
 ///
 /// Lean: `CNodeOpWord` (SyscallArgDecode.lean).  Both sides render their
 /// layout by decoding each bit alone, against
@@ -65,7 +19,7 @@ pub mod cnode_op_word {
     pub const SRC_DEPTH_SHIFT: u32 = 8;
     /// Each depth's width.
     pub const DEPTH_WIDTH: u32 = 8;
-    /// Bits `[16, 21)`: a mint's rights.
+    /// Bits `[16, 21)`: a copy's or a mint's rights mask.
     pub const RIGHTS_SHIFT: u32 = 16;
     /// The rights' width.
     pub const RIGHTS_WIDTH: u32 = 5;
@@ -90,18 +44,18 @@ pub mod cnode_op_word {
         ((word >> SRC_DEPTH_SHIFT) & DEPTH_MASK) as u8
     }
 
-    /// The rights a mint's word names.
+    /// The rights mask a copy's or a mint's word names.
     pub const fn rights(word: u64) -> u8 {
         ((word >> RIGHTS_SHIFT) & RIGHTS_MASK) as u8
     }
 
-    /// A copy's or a move's word sets no bit past the two depths.
+    /// A move's word sets no bit past the two depths.
     pub const fn addressing_fits(word: u64) -> bool {
         word >> RIGHTS_SHIFT == 0
     }
 
-    /// A mint's word sets no bit past the depths and the rights.
-    pub const fn mint_fits(word: u64) -> bool {
+    /// A copy's or a mint's word sets no bit past the depths and the rights.
+    pub const fn rights_fits(word: u64) -> bool {
         word >> (RIGHTS_SHIFT + RIGHTS_WIDTH) == 0
     }
 }
@@ -153,11 +107,92 @@ impl CNodeOpArgs {
     }
 }
 
-/// Arguments for `cspaceCopy` (syscall 5): the two slots.
-pub type CSpaceCopyArgs = CNodeOpArgs;
+/// Arguments for `cspaceCopy` (syscall 5): the two slots and the rights mask
+/// the copy's rights are masked with (seL4's `seL4_CNode_Copy`, whose rights
+/// operand masks the copied capability; it never refuses one).
+/// Register mapping: x2=destIndex, x3=srcRoot, x4=srcIndex, x5=the depths and
+/// the rights ([`cnode_op_word`]).
+///
+/// Lean: `CSpaceCopyArgs` (SyscallArgDecode.lean)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CSpaceCopyArgs {
+    pub slots: CNodeOpArgs,
+    pub rights: AccessRights,
+}
 
-/// Arguments for `cspaceMove` (syscall 6): the two slots.
+impl CSpaceCopyArgs {
+    /// Encode into message registers.
+    pub const fn encode(&self) -> [u64; 4] {
+        [
+            self.slots.dest_index.raw(),
+            self.slots.src_root.raw(),
+            self.slots.src_index.raw(),
+            cnode_op_word::pack(
+                self.slots.dest_depth,
+                self.slots.src_depth,
+                self.rights.raw(),
+            ),
+        ]
+    }
+
+    /// Decode from message registers. Requires 4 registers; a word with a bit
+    /// set past the depths and the rights is `InvalidArgument`.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 4 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        if !cnode_op_word::rights_fits(regs[3]) {
+            return Err(KernelError::InvalidArgument);
+        }
+        Ok(Self {
+            slots: CNodeOpArgs {
+                dest_index: CPtr::from(regs[0]),
+                src_root: CPtr::from(regs[1]),
+                src_index: CPtr::from(regs[2]),
+                dest_depth: cnode_op_word::dest_depth(regs[3]),
+                src_depth: cnode_op_word::src_depth(regs[3]),
+            },
+            rights: AccessRights::try_from(cnode_op_word::rights(regs[3]))
+                .map_err(|_| KernelError::InvalidArgument)?,
+        })
+    }
+}
+
+/// Arguments for `cspaceMove` (syscall 6): the two slots.  A move takes no
+/// rights, as in seL4.
 pub type CSpaceMoveArgs = CNodeOpArgs;
+
+/// Arguments for `cspaceMint` (syscall 4): a copy's two slots and rights
+/// mask, and the badge.  The kernel masks the new capability's rights with
+/// the requested ones (seL4's `maskCapRights`); it never refuses them.
+/// Register mapping: x2..x5 as [`CSpaceCopyArgs`], the badge in the IPC
+/// buffer's overflow slot 0 (message register 4).
+///
+/// Lean: `CSpaceMintArgs` (SyscallArgDecode.lean)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CSpaceMintArgs {
+    pub copy: CSpaceCopyArgs,
+    pub badge: Badge,
+}
+
+impl CSpaceMintArgs {
+    /// Encode into message registers (the fifth goes to the IPC buffer).
+    pub const fn encode(&self) -> [u64; 5] {
+        let c = self.copy.encode();
+        [c[0], c[1], c[2], c[3], self.badge.raw()]
+    }
+
+    /// Decode from message registers. Requires 5 registers.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 5 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            copy: CSpaceCopyArgs::decode(regs)?,
+            badge: Badge::from(regs[4]),
+        })
+    }
+}
 
 /// Arguments for `mintReplyCap`: two slots of the invoked CNode.
 /// Register mapping: x2=srcSlot, x3=dstSlot.
@@ -213,27 +248,33 @@ impl CSpaceDeleteArgs {
 mod tests {
     use super::*;
 
-    #[test]
-    fn mint_roundtrip() {
-        let args = CSpaceMintArgs {
-            src_slot: Slot::from(1u64),
-            dst_slot: Slot::from(2u64),
-            rights: AccessRights::try_from(0x07u8).unwrap(),
-            badge: Badge::from(42u64),
-        };
-        let encoded = args.encode();
-        let decoded = CSpaceMintArgs::decode(&encoded).unwrap();
-        assert_eq!(decoded, args);
-    }
-
-    #[test]
-    fn copy_roundtrip() {
-        let args = CSpaceCopyArgs {
+    fn slots() -> CNodeOpArgs {
+        CNodeOpArgs {
             dest_index: CPtr::from(10u64),
             src_root: CPtr::from(3u64),
             src_index: CPtr::from(20u64),
             dest_depth: 64,
             src_depth: 5,
+        }
+    }
+
+    #[test]
+    fn mint_roundtrip() {
+        let args = CSpaceMintArgs {
+            copy: CSpaceCopyArgs {
+                slots: slots(),
+                rights: AccessRights::try_from(0x07u8).unwrap(),
+            },
+            badge: Badge::from(42u64),
+        };
+        assert_eq!(CSpaceMintArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn copy_roundtrip() {
+        let args = CSpaceCopyArgs {
+            slots: slots(),
+            rights: AccessRights::ALL,
         };
         assert_eq!(CSpaceCopyArgs::decode(&args.encode()).unwrap(), args);
     }
@@ -252,8 +293,15 @@ mod tests {
 
     #[test]
     fn cnode_op_word_refuses_stray_bits() {
+        // A move's word carries no rights.
         assert_eq!(
-            CSpaceCopyArgs::decode(&[1, 2, 3, 1 << 16]),
+            CSpaceMoveArgs::decode(&[1, 2, 3, 1 << 16]),
+            Err(KernelError::InvalidArgument)
+        );
+        // A copy's carries them in [16, 21), and nothing past.
+        assert!(CSpaceCopyArgs::decode(&[1, 2, 3, 0x1F << 16]).is_ok());
+        assert_eq!(
+            CSpaceCopyArgs::decode(&[1, 2, 3, 1 << 21]),
             Err(KernelError::InvalidArgument)
         );
         assert_eq!(
@@ -282,7 +330,7 @@ mod tests {
     #[test]
     fn mint_insufficient_regs() {
         assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 3]),
+            CSpaceMintArgs::decode(&[1, 2, 3, 0]),
             Err(KernelError::InvalidMessageInfo)
         );
     }
@@ -296,41 +344,22 @@ mod tests {
     }
 
     #[test]
-    fn mint_rights_valid_boundary() {
-        // 0x1F = all 5 rights bits set — maximum valid value
-        let regs = [1, 2, 0x1F, 42];
-        let args = CSpaceMintArgs::decode(&regs).unwrap();
-        assert_eq!(args.rights, AccessRights::try_from(0x1Fu8).unwrap());
+    fn mint_rights_every_mask_decodes() {
+        for r in 0u64..=0x1F {
+            let args = CSpaceMintArgs::decode(&[1, 2, 3, r << 16, 42]).unwrap();
+            assert_eq!(u64::from(args.copy.rights.raw()), r);
+        }
     }
 
     #[test]
-    fn mint_rights_zero() {
-        let regs = [1, 2, 0, 42];
-        let args = CSpaceMintArgs::decode(&regs).unwrap();
-        assert_eq!(args.rights, AccessRights::try_from(0u8).unwrap());
-    }
-
-    #[test]
-    fn mint_rights_truncation_rejected() {
-        // V1-F: invalid rights return InvalidArgument (not InvalidMessageInfo)
-        // 0x20 — bit 5 set, exceeds valid rights range
+    fn mint_word_past_rights_rejected() {
+        // A bit past the rights field is `InvalidArgument`, not a short message.
         assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 0x20, 42]),
+            CSpaceMintArgs::decode(&[1, 2, 3, 1 << 21, 42]),
             Err(KernelError::InvalidArgument)
         );
-        // 0xFF — u8 max
         assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]),
-            Err(KernelError::InvalidArgument)
-        );
-        // 0x100 — would truncate to 0x00 without bounds check
-        assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 0x100, 42]),
-            Err(KernelError::InvalidArgument)
-        );
-        // u64::MAX — worst case
-        assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]),
+            CSpaceMintArgs::decode(&[1, 2, 3, u64::MAX, 42]),
             Err(KernelError::InvalidArgument)
         );
     }

@@ -259,20 +259,20 @@ Copy composes cspaceLookupSlot + cspaceInsertSlot, both of which preserve the bu
 plus a CDT update that only touches the cdt field. -/
 theorem cspaceCopy_preserves_capabilityInvariantBundle
     (st st' : SystemState)
-    (src dst : CSpaceAddr)
+    (src dst : CSpaceAddr) (mask : AccessRightSet)
     (hInv : capabilityInvariantBundle st)
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   obtain ⟨cap, st2, hL, -, hInsert, hRef, rfl⟩ := cspaceCopy_ok_decompose hStep
   have hSrc : cspaceLookupSlot src st = .ok (cap, st) :=
     (cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).2 hL
   have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2 dst
-    cap.withoutMapping hInv.offCoverage
+    (cap.maskRights mask).withoutMapping hInv.offCoverage
     (capTargetKindBacked_of_source_slot st src cap hInv hSrc) hInsert
-  have hCdt := cdt_addEdge_after_insert st st2 src dst cap.withoutMapping .copy
+  have hCdt := cdt_addEdge_after_insert st st2 src dst (cap.maskRights mask).withoutMapping .copy
     hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
     (by rw [hL]; rfl) hInsert hInv.linksAgree
-  have hShape := treeShape_addEdge_after_copy st st2 src dst cap.withoutMapping .copy
+  have hShape := treeShape_addEdge_after_copy st st2 src dst (cap.maskRights mask).withoutMapping .copy
     hInv.treeShape hInv.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv) hInv.linksAgree
     hL (Capability.withMapping_target _ _) rfl hRef hInsert
   rcases hBundleSt2 with ⟨⟨_, hComp2, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩

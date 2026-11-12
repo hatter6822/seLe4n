@@ -14,7 +14,8 @@ import SeLe4n.Kernel.RoutedArms.OverflowOne
 # The overflowed route's arm, out of line
 
 The routed entry's `.overflowed` arm (`syscallEntryCheckedK`): a five-word
-invocation (a scheduling-context configure or a service register) whose
+invocation (a scheduling-context configure, a service register or a CNode
+mint) whose
 message runs past the inline words, as its own function.  Only a syscall that
 reads its overflow words is routed past the inline registers
 (`syscallReadsOverflow`), so no other kind reaches this arm.  Its overflow
@@ -57,8 +58,8 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
               entryReportResolved entryReportLookup))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
-/-- **The overflowed arm**: the configure's or the service register's, its fifth
-word slot 0's. -/
+/-- **The overflowed arm**: the configure's, the service register's or the CNode
+mint's, its fifth word slot 0's. -/
 @[noinline] def overflowedRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
     (capWord : UInt64) (length : Nat) (st : SystemState) : SystemState :=
@@ -66,6 +67,9 @@ word slot 0's. -/
   | .schedContextConfigure =>
     overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
       configureOperandArmR rf w tid) st
+  | .cspaceMint =>
+    overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
+      mintOperandArmR ctx tid rf w) st
   | _ =>
     overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
       serviceRegisterOperandArmR ctx tid rf w) st
@@ -78,6 +82,6 @@ theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurre
     overflowedRoutedArm ctx executingCore tid sid capWord length st =
       overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
         overflowedArmOf ctx sid rf w tid) st := by
-  rcases routedOverflowOne_cases hOv with rfl | rfl <;> rfl
+  rcases routedOverflowOne_cases hOv with rfl | rfl | rfl <;> rfl
 
 end SeLe4n.Kernel

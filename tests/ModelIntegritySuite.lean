@@ -364,7 +364,7 @@ def cspaceCopy_from_null_rejected : IO Unit := do
   let st := al1bStateWithNullCapSlot
   let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := (SeLe4n.Slot.ofNat 0) }
-  match SeLe4n.Kernel.cspaceCopy src dst st with
+  match SeLe4n.Kernel.cspaceCopy src dst .full st with
   | .error .nullCapability =>
       expect "copy from null → .nullCapability" true
   | .error e =>

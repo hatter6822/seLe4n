@@ -275,29 +275,31 @@ private def mkStub (regs : Array RegValue) : SyscallDecodeResult :=
 
 -- CSpace family ---------------------------------------------------------------
 
-/-- SAD-001: decodeCSpaceMintArgs — valid decode with 4 registers. -/
+/-- SAD-001: decodeCSpaceMintArgs — valid decode with 5 registers: a copy's
+four and the badge. -/
 private def sad001_cspaceMint : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨20⟩, ⟨7⟩, ⟨42⟩]
+  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, ⟨CNodeOpWord.pack 64 64 7⟩, ⟨42⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-001a mint ok" result.isOk
   match result with
   | .ok args =>
-    expect "SAD-001b srcSlot" (args.srcSlot.toNat == 10)
-    expect "SAD-001c dstSlot" (args.dstSlot.toNat == 20)
+    expect "SAD-001b srcIndex" (args.srcIndex.toNat == 20)
+    expect "SAD-001c destIndex" (args.destIndex.toNat == 10)
     expect "SAD-001d badge" (args.badge.toNat == 42)
+    expect "SAD-001e rights" (args.rights.bits == 7)
   | .error _ => expect "SAD-001 unexpected error" false
 
-/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (3). -/
+/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (4). -/
 private def sad002_cspaceMintInsufficient : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨20⟩, ⟨7⟩]
+  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, ⟨CNodeOpWord.pack 64 64 7⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-002a mint insufficient" (!result.isOk)
 
 /-- SAD-003: decodeCSpaceCopyArgs — valid decode with 4 registers, the depths
-packed in the fourth (`CNodeOpWord`); a short message and a depth word with a
-bit past the depths are refused. -/
+and the rights mask packed in the fourth (`CNodeOpWord`); a short message and
+a word with a bit past the mask are refused. -/
 private def sad003_cspaceCopy : IO Unit := do
-  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨CNodeOpWord.pack 64 3 0⟩]
+  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨CNodeOpWord.pack 64 3 5⟩]
   let result := decodeCSpaceCopyArgs stub
   expect "SAD-003a copy ok" result.isOk
   match result with
@@ -306,12 +308,13 @@ private def sad003_cspaceCopy : IO Unit := do
     expect "SAD-003c destIndex" (args.destIndex.toNat == 15)
     expect "SAD-003d srcRoot" (args.srcRoot.toNat == 9)
     expect "SAD-003e depths" (args.destDepth == 64 && args.srcDepth == 3)
+    expect "SAD-003e2 rights mask" (args.rights.bits == 5)
   | .error _ => expect "SAD-003 unexpected error" false
   expect "SAD-003f copy short"
     (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩]) with
       | .error .truncatedMessage => true | _ => false)
-  expect "SAD-003g copy stray depth bit"
-    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨65536⟩]) with
+  expect "SAD-003g copy stray bit past the mask"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨2097152⟩]) with
       | .error .invalidArgument => true | _ => false)
 
 /-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
@@ -753,7 +756,7 @@ words decodes with no IPC buffer mapped, merges no overflow word, and the
 router takes its short route. -/
 private def shortReadersLongReadNoIpcBuffer : IO Unit := do
   for sid in [SyscallId.receive, SyscallId.notificationWait, SyscallId.yield,
-      SyscallId.cspaceMint] do
+      SyscallId.cspaceCopy] do
     let st := buildIpcDecodeState sid.toNat 10 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] (mapIpcBuffer := false)
     let tid : SeLe4n.ThreadId := ⟨800⟩
     let regs : SeLe4n.RegisterFile :=
@@ -769,7 +772,7 @@ private def shortReadersLongReadNoIpcBuffer : IO Unit := do
     | .receive .., .receive => expect "a long receive routes as a receive" true
     | .wait _, .notificationWait => expect "a long wait routes as a wait" true
     | .yield, .yield => expect "a long yield routes as a yield" true
-    | .invoke s' _, .cspaceMint => expect "a long mint routes as an invocation" (s' == .cspaceMint)
+    | .invoke s' _, .cspaceCopy => expect "a long copy routes as an invocation" (s' == .cspaceCopy)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
 
 /-- A long send whose IPC buffer the kernel cannot read is clamped to its four

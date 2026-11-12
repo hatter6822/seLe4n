@@ -813,13 +813,15 @@ private def decodeRevoke (slot : Nat) : SyscallDecodeResult :=
 
 /-- `.cspaceCopy` of `src` to `dst` in the owner's CSpace root, invoked on the
 grant-bearing root capability, which is also the source root; both indices are
-resolved at the root's `radix` bits (it has no guard). -/
+resolved at the root's `radix` bits (it has no guard), and the copy's rights
+mask is every right (seL4's `seL4_AllRights`), so the copy keeps the source's. -/
 private def decodeCopyAt (radix src dst : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnGrant
   , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .cspaceCopy
   , msgRegs   := #[SeLe4n.RegValue.ofNat dst, SeLe4n.RegValue.ofNat slotOwnCnGrant,
-                   SeLe4n.RegValue.ofNat src, SeLe4n.RegValue.ofNat (radix + radix * 256)] }
+                   SeLe4n.RegValue.ofNat src,
+                   SeLe4n.RegValue.ofNat (radix + radix * 256 + 31 * 65536)] }
 
 /-- `decodeCopyAt` in the 4-bit root every scenario but the table scenario
 uses. -/

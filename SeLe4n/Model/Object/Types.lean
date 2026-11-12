@@ -151,6 +151,35 @@ theorem mk_checked_valid (bits : Nat) (h : bits < 2 ^ 5) :
 /-- The empty rights set (no permissions). -/
 @[inline] def empty : AccessRightSet := ⟨0⟩
 
+/-- Every right, the five bits: the mask under which a copy keeps every right
+its source holds (`maskBy_full`). -/
+@[inline] def full : AccessRightSet := ⟨31⟩
+
+/-- **`a` masked by `m`**, seL4's `maskCapRights`: each of the five rights `a`
+holds is kept where `m` holds it too, and a bit of `a` past the five is kept as
+it is, so a mask only ever removes rights. -/
+@[inline] def maskBy (a m : AccessRightSet) : AccessRightSet :=
+  ⟨a.bits >>> 5 <<< 5 ||| (a.bits &&& m.bits &&& 31)⟩
+
+/-- The mask of every right keeps every right (`full`). -/
+theorem maskBy_full (a : AccessRightSet) : a.maskBy full = a := by
+  rcases a with ⟨a⟩
+  unfold maskBy full
+  congr 1
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftRight, Nat.testBit_and]
+  by_cases h : i < 5
+  · have hLowBits : (31 : Nat).testBit i = true := by
+      have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 := by omega
+      rcases this with rfl | rfl | rfl | rfl | rfl <;> decide
+    simp [hLowBits, show ¬ (5 ≤ i) by omega]
+  · have hLowBits : (31 : Nat).testBit i = false := by
+      apply Nat.testBit_lt_two_pow
+      have : (31 : Nat) < 2 ^ 5 := by decide
+      exact Nat.lt_of_lt_of_le this (Nat.pow_le_pow_right (by decide) (by omega))
+    simp [hLowBits, show 5 ≤ i by omega, show 5 + (i - 5) = i by omega]
+
 /-- U2-K: `empty` is valid. -/
 theorem empty_valid : empty.valid := by decide
 
@@ -739,6 +768,29 @@ returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
     obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
     cases cap; simp_all
   · rw [if_neg h]
+
+/-- **The capability with its rights masked by `mask`**, seL4's
+`maskCapRights` (`AccessRightSet.maskBy`), every other field kept.  A copy
+derives its capability so (`cspaceCopy`), never refusing a mask, as seL4's
+`CNode_Copy` does not. -/
+@[inline] def maskRights (cap : Capability) (mask : AccessRightSet) : Capability :=
+  { cap with rights := cap.rights.maskBy mask }
+
+@[simp] theorem maskRights_target (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).target = cap.target := rfl
+
+@[simp] theorem maskRights_rights (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).rights = cap.rights.maskBy mask := rfl
+
+@[simp] theorem maskRights_badge (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).badge = cap.badge := rfl
+
+@[simp] theorem maskRights_freeIndex (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).freeIndex = cap.freeIndex := rfl
+
+/-- The mask of every right leaves the capability as it is. -/
+@[simp] theorem maskRights_full (cap : Capability) : cap.maskRights .full = cap := by
+  unfold maskRights; rw [AccessRightSet.maskBy_full]
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
