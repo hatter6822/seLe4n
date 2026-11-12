@@ -403,27 +403,6 @@ theorem matchesWords_iff (e ke : KernelError) :
   · rintro rfl
     simp [matchesWords]
 
-/-- **Equality of errors, decided on their words**: two errors are equal when
-their discriminants and payload words are (`matchesWords_iff`).  The derived
-instance compares a pair of the same constructor through a generated
-same-constructor matcher whose alternatives are a closure, built on every
-such comparison, so a refusal compared against a constant (the ledger's
-`declassificationDeniedAtReceiver`) built a cell; this one compares scalars. -/
-@[inline] def decEqWords (a b : KernelError) : Decidable (a = b) :=
-  decidable_of_iff _ (matchesWords_iff a b)
-
-/-- The compiled equality of errors is `decEqWords`: `Decidable` is a
-subsingleton, so the two instances agree. -/
-@[csimp] theorem instDecidableEqKernelError_decEq_eq_words :
-    @instDecidableEqKernelError.decEq = @decEqWords := by
-  funext a b
-  exact Subsingleton.elim _ _
-
-@[csimp] theorem instDecidableEqKernelError_eq_words :
-    @instDecidableEqKernelError = @decEqWords := by
-  funext a b
-  exact Subsingleton.elim _ _
-
 /-- The payload's length from the words: the code, and for a lookup failure its
 type word (word 1). -/
 @[inline] def payloadLengthOfWords (d : Nat) (w1 : UInt64) : Nat :=

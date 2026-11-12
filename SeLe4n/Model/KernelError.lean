@@ -293,7 +293,7 @@ inductive KernelError where
                            -- or names an empty source slot, with whether it was
                            -- the source's and seL4's lookup fault.  The model's
                            -- own discriminant (60).
-  deriving Repr, DecidableEq
+  deriving Repr
 
 /-- The error's code with its payload cleared: every field `0`, `false` or
 `invalidRoot`.  Two errors share a code exactly when their payload-cleared
@@ -306,5 +306,29 @@ def KernelError.erasePayload : KernelError → KernelError
   | .failedLookup _ _ => .failedLookup false .invalidRoot
   | .untypedRegionExhausted _ => .untypedRegionExhausted 0
   | e => e
+
+/-- **Equality of errors, decided field by field**: a payload constructor
+compares its fields, any other pair its constructor index.  The derived
+`DecidableEq` compared two errors of one constructor through a generated
+same-constructor matcher whose alternatives are a closure, built on every
+such comparison, so a refusal compared against a constant (the refusal
+ledger's `declassificationDeniedAtReceiver`) built a cell; this compares
+scalars (`eqWords_iff`), and is the instance. -/
+@[inline] def KernelError.eqWords : KernelError → KernelError → Bool
+  | .invalidCapability n, .invalidCapability m => n == m
+  | .invalidArgument n, .invalidArgument m => n == m
+  | .rangeError a b, .rangeError c d => a == c && b == d
+  | .untypedRegionExhausted n, .untypedRegionExhausted m => n == m
+  | .failedLookup w f, .failedLookup v g => w == v && f == g
+  | a, b => a.ctorIdx == b.ctorIdx
+
+theorem KernelError.eqWords_iff (a b : KernelError) : a.eqWords b = true ↔ a = b := by
+  cases a <;> cases b <;> simp [KernelError.eqWords, KernelError.ctorIdx]
+
+/-- **`DecidableEq KernelError` is `eqWords`**, not derived: the derived
+instance compares through a closure it builds on every comparison of two errors
+of one constructor. -/
+instance : DecidableEq KernelError := fun a b =>
+  decidable_of_iff _ (KernelError.eqWords_iff a b)
 
 end SeLe4n.Model
