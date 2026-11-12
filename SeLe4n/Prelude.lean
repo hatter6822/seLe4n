@@ -846,6 +846,115 @@ instance : ToString Slot where
 
 end Slot
 
+/-! ### Two words in one (WS-UC UC4)
+
+A CNode slot names two words, its CNode and its slot.  A capability target that
+names one is held as a single word, so every target constructor is one word
+and a copy writes any target over any other in place (`CapTarget.copyOver`).
+The pairing is Cantor's: a bijection of `Nat × Nat` onto `Nat` whose value is
+small whenever both words are, so a pair of small words is a boxed scalar,
+never a heap number. -/
+
+/-- The `w`th triangular number, `0 + 1 + ⋯ + w`, stated by its steps; the
+compiled form is the closed one (`triNum_eq_impl`). -/
+def triNum : Nat → Nat
+  | 0 => 0
+  | w + 1 => triNum w + (w + 1)
+
+theorem triNum_succ (w : Nat) : triNum (w + 1) = triNum w + (w + 1) := rfl
+
+theorem le_triNum_succ (w : Nat) : w + 1 ≤ triNum (w + 1) := by
+  rw [triNum_succ]; omega
+
+theorem triNum_mono {w w' : Nat} (h : w ≤ w') : triNum w ≤ triNum w' := by
+  induction w' with
+  | zero => have : w = 0 := by omega
+            subst this; exact Nat.le_refl _
+  | succ k ih =>
+    rcases Nat.lt_or_ge k w with hk | hk
+    · have : w = k + 1 := by omega
+      subst this; exact Nat.le_refl _
+    · have := ih hk; rw [triNum_succ]; omega
+
+theorem two_mul_triNum (w : Nat) : 2 * triNum w = w * (w + 1) := by
+  induction w with
+  | zero => rfl
+  | succ k ih =>
+    rw [triNum_succ, Nat.mul_add, ih, Nat.mul_succ (k + 1) (k + 1), Nat.mul_succ (k + 1) k,
+      Nat.mul_succ k k, Nat.succ_mul k k]
+    generalize k * k = m
+    omega
+
+/-- `triNum`'s closed form, `w·(w+1)/2`. -/
+def triNumImpl (w : Nat) : Nat := w * (w + 1) / 2
+
+@[csimp] theorem triNum_eq_impl : @triNum = @triNumImpl := by
+  funext w; unfold triNumImpl; rw [← two_mul_triNum]; omega
+
+/-- The word of the pair `(a, b)`: `triNum (a + b) + b`. -/
+def pairWords (a b : Nat) : Nat := triNum (a + b) + b
+
+/-- The greatest `w` with `triNum w ≤ n`, searched upward from `w` with `fuel` steps. -/
+def triRootFrom (n : Nat) : Nat → Nat → Nat
+  | 0, w => w
+  | fuel + 1, w => if triNum (w + 1) ≤ n then triRootFrom n fuel (w + 1) else w
+
+/-- The greatest `w` with `triNum w ≤ n`. -/
+def triRoot (n : Nat) : Nat := triRootFrom n (n + 1) 0
+
+/-- The pair a word stands for (`pairWords`'s inverse, `unpairWord_pairWords`). -/
+def unpairWord (n : Nat) : Nat × Nat :=
+  let w := triRoot n
+  (w - (n - triNum w), n - triNum w)
+
+theorem triRootFrom_spec (n : Nat) : ∀ fuel w, triNum w ≤ n → n + 1 ≤ fuel + w →
+    triNum (triRootFrom n fuel w) ≤ n ∧ n < triNum (triRootFrom n fuel w + 1) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro w hw hf
+    have := le_triNum_succ w
+    exact ⟨hw, by simp only [triRootFrom]; omega⟩
+  | succ k ih =>
+    intro w hw hf
+    simp only [triRootFrom]
+    split
+    · exact ih (w + 1) (by assumption) (by omega)
+    · exact ⟨hw, by omega⟩
+
+theorem triRoot_spec (n : Nat) : triNum (triRoot n) ≤ n ∧ n < triNum (triRoot n + 1) :=
+  triRootFrom_spec n (n + 1) 0 (by simp [triNum]) (by omega)
+
+theorem triRoot_unique {n w : Nat} (h1 : triNum w ≤ n) (h2 : n < triNum (w + 1)) :
+    triRoot n = w := by
+  obtain ⟨r1, r2⟩ := triRoot_spec n
+  rcases Nat.lt_trichotomy (triRoot n) w with h | h | h
+  · have := triNum_mono (show triRoot n + 1 ≤ w by omega); omega
+  · exact h
+  · have := triNum_mono (show w + 1 ≤ triRoot n by omega); omega
+
+theorem unpairWord_pairWords (a b : Nat) : unpairWord (pairWords a b) = (a, b) := by
+  have hr : triRoot (pairWords a b) = a + b :=
+    triRoot_unique (by unfold pairWords; omega) (by unfold pairWords; rw [triNum_succ]; omega)
+  unfold unpairWord
+  simp only [hr]
+  unfold pairWords
+  ext <;> simp <;> omega
+
+theorem pairWords_unpairWord (n : Nat) :
+    pairWords (unpairWord n).1 (unpairWord n).2 = n := by
+  obtain ⟨r1, r2⟩ := triRoot_spec n
+  rw [triNum_succ] at r2
+  simp only [unpairWord, pairWords]
+  have : triRoot n - (n - triNum (triRoot n)) + (n - triNum (triRoot n)) = triRoot n := by omega
+  rw [this]; omega
+
+theorem pairWords_inj {a b a' b' : Nat} (h : pairWords a b = pairWords a' b') : a = a' ∧ b = b' := by
+  have := congrArg unpairWord h
+  rw [unpairWord_pairWords, unpairWord_pairWords] at this
+  exact ⟨congrArg Prod.fst this, congrArg Prod.snd this⟩
+
+
 /-- AN2-F.1 / FND-M01: `CPtr.isWord64Bounded` reduces definitionally to
     `isWord64Dec ptr.val` — `isWord64Bounded` is implemented as the
     delegation itself (see `CPtr.isWord64Bounded` above). This theorem

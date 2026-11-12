@@ -4679,10 +4679,16 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   holds a boot-sized table.  The bundle's base case is the empty boot
   (`emptyBoot_proofLayerInvariantBundle`, from `emptyBoot_bootLinkedShape`).
 - **A carve owns its cells** (since `v0.37.17`, WS-UC UC4): no cell a carve
-  builds comes to hold another object.  A capability copy builds its target's
-  cell (`CapTarget.copyOver`, whose `.cnodeSlot` arm and arm for a destination
-  of another shape build afresh through `CapTarget.cnodeSlotOver`; `copyOver_eq`
-  keeps it equal to `src`), and so does a capability record built where no
+  builds comes to hold another object.  A capability copy writes its target
+  into the destination record's own target cell whatever either names
+  (`CapTarget.copyOver`, through `CapTarget.over`; `copyOver_eq` keeps it equal
+  to `src`).  Every target constructor carries one word, a CNode slot its CNode
+  and slot paired into one (`CapTarget.cnodeSlotWord`, `SeLe4n.pairWords`,
+  `unpairWord_pairWords`), so every constructor has the same cell and no change
+  of constructor allocates; `CapTarget.over` matches the destination against
+  its own constructor in every branch (an out-of-line constructor test,
+  `CapTarget.tagOf`), because a match whose arms all build the same thing is
+  folded into one arm that matches nothing and so reuses nothing.  So does a capability record built where no
   spare record is kept (`Capability.ofFields` through `CapTarget.fresh`,
   `Capability.ofFields_eq`).  The compiled Robin Hood insert moves a displaced
   entry (`RHEntry.bumpDist`) rather than rebuilding it (`insertCellLoop_eq`).

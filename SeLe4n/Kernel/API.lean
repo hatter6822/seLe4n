@@ -994,7 +994,7 @@ borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
   | .irqControl _ => sid == .irqControlGet
   | .irqHandler _ =>
       sid == .irqHandlerAck || sid == .irqHandlerSetNotification || sid == .irqHandlerClear
-  | .cnodeSlot _ _ => false
+  | .cnodeSlotWord word => false
 
 /-- **The answer to a capability of the right type without the syscall's
 right.**  seL4's `decodeInvocation` refuses an endpoint or notification

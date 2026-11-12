@@ -2214,6 +2214,45 @@ def an6b_architecture_assumptions_index_total : IO Unit := do
   expect "irq consumer name ends with irqBinding?_notification"
     (nIrq.toString.endsWith "irqBinding?_notification")
 
+/-- The address of a capability target's cell, read in order with the rest of
+the check (an `IO` step), so the address is taken before the copy consumes the
+cell. -/
+private unsafe def targetAddrUnsafe (t : @& CapTarget) : BaseIO USize := pure (ptrAddrUnsafe t)
+
+@[implemented_by targetAddrUnsafe]
+private opaque targetAddr (t : @& CapTarget) : BaseIO USize
+
+/-- WS-UC UC4: **a copy writes its target into the slot's own cell, whatever
+either target names** — every pair of the seven constructors, the object to CNode
+slot and CNode slot to object shape changes among them.  The spare is built at
+run time (a fresh, unshared cell), and the copy's result sits at the spare's
+address and equals the source. -/
+def capTarget_copyOver_writes_in_place_across_shapes : IO Unit := do
+  let seed ← IO.monoNanosNow
+  for k in List.range 7 do
+    for j in List.range 7 do
+      let t := CapTarget.ofTagWord k (seed % 1000 + 3 + k)
+      let src := CapTarget.ofTagWord j (seed % 1000 + 101 + j)
+      let a ← targetAddr t
+      let r := t.copyOver src
+      let b ← targetAddr r
+      expect s!"copyOver {k}→{j} keeps the spare's cell" (a == b)
+      expect s!"copyOver {k}→{j} answers the source" (r == src)
+  let pairOf (c s : Nat) : CapTarget := .cnodeSlot ⟨c⟩ (SeLe4n.Slot.ofNat s)
+  let t ← (fun n => CapTarget.ofTagWord 0 (n % 1000 + 9)) <$> IO.monoNanosNow
+  let src := pairOf (seed % 1000 + 40) 17
+  let a ← targetAddr t
+  let r := t.copyOver src
+  expect "object → CNode slot copy keeps the spare's cell" (a == (← targetAddr r))
+  expect "object → CNode slot copy names the source's CNode and slot"
+    (CapTarget.wordCnode r.word == ⟨seed % 1000 + 40⟩ && CapTarget.wordSlot r.word == SeLe4n.Slot.ofNat 17)
+  let t2 := pairOf (seed % 1000 + 50) 3
+  let src2 := CapTarget.ofTagWord 0 (seed % 1000 + 60)
+  let a2 ← targetAddr t2
+  let r2 := t2.copyOver src2
+  expect "CNode slot → object copy keeps the spare's cell" (a2 == (← targetAddr r2))
+  expect "CNode slot → object copy names the source's object" (r2 == .object ⟨seed % 1000 + 60⟩)
+
 end SeLe4n.Testing.ModelIntegritySuite
 
 open SeLe4n.Testing.ModelIntegritySuite in
@@ -2368,5 +2407,7 @@ def main : IO Unit := do
   bootFromPlatform_smp_witness_reachable
   an6f_cxm04_interruptsEnabled_bundle_inhabited
   an6f_cxm05_crossSubsystemInvariant_positive
+  -- WS-UC UC4: a copy writes into the spare's cell across every shape change
+  capTarget_copyOver_writes_in_place_across_shapes
   IO.println ""
   IO.println "=== All model integrity tests passed ==="

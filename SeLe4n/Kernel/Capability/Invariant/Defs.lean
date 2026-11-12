@@ -188,7 +188,7 @@ interrupt handler names its line's node, whose presence and issued line are
 `live`'s too. -/
 def capTargetKindBackedAt (st : SystemState) : CapTarget → Prop
   | .replyCap rid => st.getReply? rid ≠ none
-  | .cnodeSlot cn _ => st.getCNode? cn ≠ none
+  | .cnodeSlotWord word => st.getCNode? (SeLe4n.Model.CapTarget.wordCnode word) ≠ none
   | _ => True
 
 /-- **Every capability slot's capability names an object of the kind its target
@@ -216,7 +216,7 @@ theorem capTargetKindBackedAt_mono {st st' : SystemState}
   intro t h
   cases t with
   | replyCap rid => exact hReply rid h
-  | cnodeSlot cn _ => exact hCNode cn h
+  | cnodeSlotWord w => exact hCNode (CapTarget.wordCnode w) h
   | _ => trivial
 
 /-- A step that leaves every Reply and CNode where it was keeps every target's
@@ -275,7 +275,8 @@ theorem capTargetKindBacked.cnodeSlot {st : SystemState} (h : capTargetKindBacke
     st.getCNode? cn ≠ none := by
   have hK := h oid o slot cap hO hL
   rw [hT] at hK
-  exact hK
+  have hW : capTargetKindBackedAt st (.cnodeSlotWord (SeLe4n.pairWords cn.val s.val)) := hK
+  simpa only [capTargetKindBackedAt, CapTarget.wordCnode_pair] using hW
 
 /-- The slot-reader form: the capability a slot holds names an object of the
 kind its target claims. -/

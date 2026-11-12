@@ -278,10 +278,10 @@ rewrites it there.
 
 ### UC4 — A carve owns its cells, and no pass moves them — **LANDED `v0.37.17`**
 
-- **Done.** `CapTarget.copyOver` builds a fresh cell for a `.cnodeSlot`
-  source over any destination and for any source over a destination of
-  another shape (`CapTarget.cnodeSlotOver`, `CapTarget.ofCnodeSlot` and the
-  `*Over` builders); `copyOver_eq` still holds.  `Capability.ofFields`, the
+- **Done.** `CapTarget.copyOver` writes any source into the destination's
+  own target cell whatever either names (`CapTarget.over`): every target
+  constructor carries one word, a CNode slot's pair packed into one
+  (`CapTarget.cnodeSlotWord`, `SeLe4n.pairWords`); `copyOver_eq` still holds.  `Capability.ofFields`, the
   record the no-spare build path of `insertCellWith` stores, builds its target
   afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a minted
   reply capability no longer holds the reply object's own target cell.  In

@@ -84,7 +84,7 @@ same object as no other capability. -/
 def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   match c.target with
   | .object o => some o
-  | .cnodeSlot cn _ => some cn
+  | .cnodeSlotWord word => some (SeLe4n.Model.CapTarget.wordCnode word)
   | .replyCap r => some r.toObjId
   | .auditTrail _ => none
   | .schedControl _ => none

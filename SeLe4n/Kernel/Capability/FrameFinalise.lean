@@ -961,7 +961,7 @@ theorem cspaceDeleteTeardownAt_eq_frame :
   | some cap =>
     dsimp only
     cases hT : cap.target with
-    | cnodeSlot _ _ =>
+    | cnodeSlotWord _ =>
       refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
       · simp [slotPageTables, hL, capabilityPageTable, hT]
       · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
@@ -1375,7 +1375,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
   | some cap =>
     dsimp only
     cases hT : cap.target with
-    | cnodeSlot _ _ => rfl
+    | cnodeSlotWord _ => rfl
     | replyCap _ => rfl
     | auditTrail _ => rfl
     | schedControl _ => rfl

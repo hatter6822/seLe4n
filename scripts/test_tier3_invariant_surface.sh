@@ -5122,9 +5122,14 @@ run_check "INVARIANT" rg -n -U '@\[inline\] def retireUnrecord \(recorder : Nat\
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  let st1 := retireUnrecord recorder x st\n' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_target_gone ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'unrecordChild|untypedWithoutChild' SeLe4n
-# A reply-capability, scheduling-control, interrupt-handler, audit-trail or
-# interrupt-control target in a slot's spare record is written over in place.
-run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| \.schedControl _ => \.object id\n  \| \.irqHandler _ => \.object id\n  \| \.auditTrail _ => \.object id\n  \| \.irqControl _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
+# Any target, of any constructor, in a slot's spare record is written over in
+# place: every constructor is one word, and each branch of `CapTarget.over`
+# matches the spare against its own constructor (WS-UC UC4).
+run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.over \(t : CapTarget\) \(k w : Nat\) : CapTarget :=\n  if h0 : t\.tagOf = 0 then\n    match t, h0 with\n    \| \.object _, _ => CapTarget\.ofTagWord k w\n' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  t\.over 0 id\.val$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.copyOver \(t src : CapTarget\) : CapTarget :=\n  t\.over src\.tagOf src\.word$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| cnodeSlotWord \(word : Nat\)$' SeLe4n/Model/Object/Types.lean
+run_negative_check "INVARIANT" rg -n 'replyCapOver|schedControlOver|auditTrailOver|irqControlOver|cnodeSlotWordOver|cnodeSlotOver|CapTarget\.ofCnodeSlot ' SeLe4n
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => asidReleaseRound executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.139: the retire forgets the freed id's declassification provenance.
 # WS-ZA ZA5.12: the provenance is the target's own taint words, which the

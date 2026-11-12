@@ -626,7 +626,7 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
       -- Only the `.object` arm survives: a suspend names a TCB object, and the
       -- guard is `ThreadId.toValid?`, whose witness carries the refusal.
       cases hTgt : cap.target with
-      | cnodeSlot _ => rw [hTgt] at h; exact absurd h (by simp)
+      | cnodeSlotWord _ => rw [hTgt] at h; exact absurd h (by simp)
       | replyCap _ => rw [hTgt] at h; exact absurd h (by simp)
       | auditTrail _ => rw [hTgt] at h; exact absurd h (by simp)
       | schedControl _ => rw [hTgt] at h; exact absurd h (by simp)

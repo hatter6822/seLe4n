@@ -6,11 +6,24 @@ target cell, the compiled Robin Hood insert moves a displaced entry instead of
 rebuilding it, and a Tier 1 scan of the generated C refuses any compiled
 reset/reuse that fills one object's cell with another object's fields.
 
-- **Copies build their own cells.** `CapTarget.copyOver`'s `.cnodeSlot` arm
-  and its arm for a destination of another shape returned `src` itself, so the
-  copy shared the source's target cell; both now build a fresh one
-  (`CapTarget.cnodeSlotOver`, `CapTarget.ofCnodeSlot`), and `copyOver_eq`
-  (`t.copyOver src = src`) still holds.  `Capability.ofFields`, the record
+- **Copies build their own cells, in place, across every shape.**
+  `CapTarget.copyOver`'s `.cnodeSlot` arm and its arm for a destination of
+  another shape returned `src` itself, so the copy shared the source's target
+  cell.  Every target constructor now carries one word: a CNode slot target
+  pairs its CNode and slot into one (`CapTarget.cnodeSlotWord`,
+  `SeLe4n.pairWords`, inverted by `unpairWord`; `CapTarget.cnodeSlot` is the
+  paired constructor's builder, `CapTarget.cnodeSlot_inj`).  So every
+  constructor has the same cell, and `copyOver` writes `src`'s constructor and
+  word into the destination's own cell whatever either names
+  (`CapTarget.over`, `over_eq`); `copyOver_eq` (`t.copyOver src = src`) still
+  holds.  `over` tests the destination's constructor out of line
+  (`CapTarget.tagOf`) and matches it against that one constructor in each
+  branch: a match whose arms all build the same thing is folded into a single
+  default arm, which matches nothing, so the compiler reuses no cell there.
+  `objectOver` and `irqHandlerOver` are `over` at one constructor; the other
+  per-constructor builders are retired.  `ModelIntegritySuite` checks every
+  pair of the seven constructors, object to CNode slot and back among them, by
+  cell address.  `Capability.ofFields`, the record
   `insertCellWith` builds when its slot keeps no spare record, builds its
   target afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a
   minted reply capability no longer holds the boot reply object's own target
