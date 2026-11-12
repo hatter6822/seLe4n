@@ -921,11 +921,12 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       (.endpoint {}) 64 f2UntypedState)
     .untypedTypeMismatch
 
-  -- F2-NEG-03: retype exhausts region
+  -- F2-NEG-03: retype exhausts region; seL4's `memoryLeft` is the region's 256
+  -- free bytes.
   expectErr "F2 retype region exhausted (oversized)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 512 f2UntypedState)
-    (.untypedRegionExhausted 0)
+    (.untypedRegionExhausted 256)
 
   -- F2-NEG-04: device restriction (non-untyped child from device untyped)
   expectErr "F2 device untyped restricts non-untyped child"
@@ -2243,17 +2244,17 @@ def runRetypeHeapCapacityChecks : IO Unit := do
   let low := roomy.withKernelHeapFreeBytes 4096
   expectCond "heap" "the default capacity is the whole arena"
     (roomy.machine.kernelHeapFreeBytes == kernelHeapArenaBytes)
-  expectErr "carve the kernel heap cannot hold" (carve low) (.untypedRegionExhausted 0)
+  expectErr "carve the kernel heap cannot hold" (carve low) (.untypedRegionExhausted 4096)
   expectErr "carve one byte short of its need"
-    (carve (roomy.withKernelHeapFreeBytes (need - 1))) (.untypedRegionExhausted 0)
+    (carve (roomy.withKernelHeapFreeBytes (need - 1))) (.untypedRegionExhausted (need - 1).toUInt64)
   -- The refusal precedes every other check: through an empty slot it is
   -- still the heap's.
   expectErr "the heap refusal precedes the capability lookup"
     (SeLe4n.Kernel.untypedRetypeObject (slotAt 3) ⟨155⟩ (slotAt 1) .notification low)
-    (.untypedRegionExhausted 0)
+    (.untypedRegionExhausted 4096)
   expectCond "heap" "the refusal is answered in the state it was handed"
     (match RefusalCarrying.ofKernel carve low with
-     | .error (e, s) => e == (.untypedRegionExhausted 0) &&
+     | .error (e, s) => e == (.untypedRegionExhausted 4096) &&
          s.objectIds == low.objectIds &&
          s.machine.kernelHeapFreeBytes == low.machine.kernelHeapFreeBytes &&
          (s.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isNone

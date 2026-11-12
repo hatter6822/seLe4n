@@ -4007,7 +4007,7 @@ run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid exe
 # the record's ASID, its address, the walk) before the unmap writes; a refused
 # map half no longer leaves the unmap standing.
 run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability 0\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 0\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability 1\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 1\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*      if capabilityMappingLive st frameCap then\n        match vspaceRemapRefusal st args frameCap frame with\n        \| \.error e => \.error e\n        \| \.ok \(\) =>\n          match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore\n              args\.asid args\.vaddr st with\n          \| \.error e => \.error e\n          \| \.ok \(\(\), st0\) => vspaceMapFromFrameCap tid executingCore args st0$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'vspaceRemapChecks|vspaceRemapMapFallback|vspaceRemapAdmittedAt' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapRefused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -9952,7 +9952,7 @@ run_negative_check "INVARIANT" rg -n '\|\s*_\s*=>' SeLe4n/Kernel/InformationFlow
 
 # SM9.B.9: the write itself, and the three security theorems.
 run_check "INVARIANT" rg -n '^def recordSyscallRefusal($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n 'recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U 'recordSyscallRefusal ctx executingCore syscallId tid ke x0\n\s*\(Architecture\.recordErrorOverflow stRegs tid ke\)' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -11478,7 +11478,7 @@ run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureResumesBound$' 
 run_check "INVARIANT" bash -lc 'rg -U -n "pub const fn encode\(&self\) -> KernelResult<\[u64; 5\]> \{\n        if self\.priority > MAX_PRIORITY \|\| self\.domain > MAX_DOMAIN \{\n            return Err\(KernelError::InvalidSyscallArgument\);" rust/sele4n-abi/src/args/sched_context.rs'
 run_negative_check "INVARIANT" rg -n '\(self\.(priority|domain) & MAX_(PRIORITY|DOMAIN)\)' rust/sele4n-abi/src/args/sched_context.rs
 run_check "INVARIANT" bash -lc 'rg -U -n "^    let encoded = args\.encode\(\)\?;$" rust/sele4n-sys/src/sched_context.rs'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.schedParams ≥ 4096 then \.error \(\.invalidArgument 0\)$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.schedParams ≥ 4096 then \.error \(\.invalidArgument 3\)$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
 run_check "INVARIANT" rg -n '^  test_t10_sc_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
 run_check "INVARIANT" rg -n '^  test_t11_sc_word_reader_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
@@ -12222,7 +12222,7 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot(
 # fields; the inactive-flag relation the live decisions read is stated and
 # holds of the boot state.
 run_check "INVARIANT" rg -n '^def capTargetsReservedKernelObject($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/IdleThread.lean
-run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if SeLe4n\.Kernel\.capTargetsReservedKernelObject cap then \.error \(\.invalidCapability 0\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
@@ -12458,8 +12458,8 @@ run_check "INVARIANT" rg -n '^fn extern_block_openings' rust/sele4n-hal/build.rs
 # PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved
 # idle id at the one lift point every such operand passes through — the
 # capability chokepoint decides on the resolved capability's target only.
-run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if SeLe4n\.Kernel\.isIdleThreadId tid then \.error \(\.invalidArgument 0\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if SeLe4n\.Kernel\.isIdleObjId oid then \.error \(\.invalidArgument 0\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # `v0.35.204`: the bind's operand is a TCB CAPABILITY, so the idle refusal it
@@ -12573,7 +12573,7 @@ run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection
 run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 4' rust/sele4n-types/src/lib.rs
+run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 5' rust/sele4n-types/src/lib.rs
 # PR #866 review: the Blocked trap arm must poison the frame with the
 # fail-closed blocked-resume sentinel until the context-restore seam
 # installs a successor — a silent revert to the no-op arm re-opens the

@@ -1754,6 +1754,44 @@ def recordErrorOverflow (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelEr
   | some pa => st.recordPhysicalWrite (.storeUserWord pa (e.payloadWord 4))
   | none => st
 
+/-- `recordErrorOverflow` from the payload's length and its fifth word, out of
+line, so a refusal handed on as words writes its fifth word with one call and
+no branch in the entry (`recordErrorOverflowWord_eq`). -/
+@[noinline] def recordErrorOverflowWord (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat)
+    (w4 : UInt64) : SystemState :=
+  if len ≤ 4 then st
+  else
+    match st.getTcb? tid with
+    | some tcb =>
+      match IpcBufferRead.ipcBufferSlotPAddr? st tcb 0 true with
+      | some pa => st.recordPhysicalWrite (.storeUserWord pa w4)
+      | none => st
+    | none => st
+
+theorem recordErrorOverflowWord_eq (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    recordErrorOverflowWord st tid e.payloadLength (e.payloadWord 4) = recordErrorOverflow st tid e := by
+  unfold recordErrorOverflowWord recordErrorOverflow errorOverflowPAddr?
+  split
+  · rfl
+  · split <;> rfl
+
+/-- Whether the fifth payload word of a payload `len` words long reaches the
+caller's buffer: `(errorOverflowPAddr? st tid e).isSome`, out of line
+(`errorOverflowWritten_eq`). -/
+@[noinline] def errorOverflowWritten (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat) : Bool :=
+  if len ≤ 4 then false
+  else
+    match st.getTcb? tid with
+    | some tcb => (IpcBufferRead.ipcBufferSlotPAddr? st tcb 0 true).isSome
+    | none => false
+
+theorem errorOverflowWritten_eq (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    errorOverflowWritten st tid e.payloadLength = (errorOverflowPAddr? st tid e).isSome := by
+  unfold errorOverflowWritten errorOverflowPAddr?
+  split
+  · rfl
+  · split <;> rfl
+
 /-- The frame of an error returned to `tid`: its length counts the fifth word
 exactly when `recordErrorOverflow` writes it. -/
 @[inline] def errorFrameFor (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :

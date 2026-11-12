@@ -694,7 +694,8 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
     · cases h
       exact savedRegsWrittenFree.census (base := st) ((savedRegsWrittenFree.of_kept hW1
         fun _ e => e ▸ hFr).trans (.of_kept (W := fun _ => False)
-          (.of_objects_eq (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _))
+          (.of_objects_eq ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_objects _ _ _)))
           fun _ h => h.elim)) hC.currentKept hC.residentKept
   · rename_i hE
     cases h

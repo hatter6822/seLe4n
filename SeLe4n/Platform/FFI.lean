@@ -2616,8 +2616,10 @@ caller's `x0` as a word.  Equal to the specification
         rfl
 
 /-- `recordSyscallRefusal` for a refusal handed on as its discriminant and
-payload words: the error is rebuilt only where the ledger records it. -/
-@[inline] def recordSyscallRefusalW
+payload words: the error is rebuilt only where the ledger records it.  Out of
+line, so the entry calls it once per refusal continuation rather than holding
+the ledger's write, and the decode, in each. -/
+@[noinline] def recordSyscallRefusalW
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (tid : SeLe4n.ThreadId) (d : Nat) (w0 w1 w2 w3 w4 : UInt64)
@@ -3133,7 +3135,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
 
 /-- `syscallCapFaultOf` for a refusal handed on as its discriminant and payload
 words, compared on the words (`KernelError.matchesWords`). -/
-@[inline] def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
+def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
     (tid : SeLe4n.ThreadId) (d : Nat) (w0 w1 w2 w3 w4 : UInt64) : Option Fault :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
@@ -3545,18 +3547,12 @@ answer builds no error (`errorRefusalWordsW_eq`). -/
     (s : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64) × SystemState :=
   let len := KernelError.payloadLengthOfWords d w1
-  let pa? : Option SeLe4n.PAddr :=
-    if len ≤ 4 then none
-    else
-      match s.getTcb? tid with
-      | some tcb => SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? s tcb 0 true
-      | none => none
-  let msgLen := if len ≤ 4 ∨ pa?.isSome = true then len else 4
+  let msgLen :=
+    if len ≤ 4 then len
+    else if Architecture.errorOverflowWritten s tid len then len else 4
   ((0, 0, (Architecture.errorLabelBase + d).toUInt64 <<< 12 ||| msgLen.toUInt64, w0, w1, w2, w3),
     recordSyscallRefusalW ctx executingCore syscallId tid d w0 w1 w2 w3 w4 x0
-      (match pa? with
-       | some pa => s.recordPhysicalWrite (.storeUserWord pa w4)
-       | none => s))
+      (Architecture.recordErrorOverflowWord s tid len w4))
 
 theorem errorRefusalWordsW_eq (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
@@ -3564,12 +3560,17 @@ theorem errorRefusalWordsW_eq (ctx : LabelingContext)
     errorRefusalWordsW ctx executingCore syscallId tid x0 ke.toDiscriminant (ke.payloadWord 0)
         (ke.payloadWord 1) (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) s =
       errorRefusalWords ctx executingCore syscallId tid x0 ke s := by
-  unfold errorRefusalWordsW errorRefusalWords errorOutcomeWords Architecture.errorOverflowPAddr?
-    Architecture.recordErrorOverflow Architecture.errorInfoWord Architecture.errorLabelWord
-    Architecture.errorLabel KernelError.messageLength
+  unfold errorRefusalWordsW errorRefusalWords errorOutcomeWords Architecture.errorInfoWord
+    Architecture.errorLabelWord Architecture.errorLabel
   simp only [KernelError.payloadLengthOfWords_eq, recordSyscallRefusalW_eq,
-    KernelError.ofPayloadWords_payloadWord]
-  rfl
+    KernelError.ofPayloadWords_payloadWord, Architecture.recordErrorOverflowWord_eq]
+  have hLen : (if ke.payloadLength ≤ 4 then ke.payloadLength
+      else if Architecture.errorOverflowWritten s tid ke.payloadLength then ke.payloadLength
+        else 4) = ke.messageLength (Architecture.errorOverflowPAddr? s tid ke).isSome := by
+    rw [← Architecture.errorOverflowWritten_eq]
+    unfold KernelError.messageLength
+    by_cases h : ke.payloadLength ≤ 4 <;> simp [h]
+  rw [hLen]
 
 /-- **The ABI entry's join point, on words** (D2b): a routed arm's report
 handed on with each refusal as its discriminant and payload words
@@ -3595,7 +3596,9 @@ them (`abiEntryRoutedWith_eq`). -/
       (fun s w b e => (Architecture.SyscallOutcome.faulted.words,
         deliverSyscallLookupFault ctx executingCore s tid w b e
           syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
-      (fun ke s => errorRefusalWords ctx executingCore syscallId tid x0 ke s) sid
+      (fun ke s => errorRefusalWordsW ctx executingCore syscallId tid x0 ke.toDiscriminant
+        (ke.payloadWord 0) (ke.payloadWord 1) (ke.payloadWord 2) (ke.payloadWord 3)
+        (ke.payloadWord 4) s) sid
       (SeLe4n.CPtr.ofWord capWord))
     s
 
@@ -3640,6 +3643,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
   · intro sid w e s
     unfold abiEntryFinishW
     rw [SeLe4n.Kernel.entryReportOutcomeW_lookup]
+    simp only [errorRefusalWordsW_eq]
 
 /-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
 (`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands

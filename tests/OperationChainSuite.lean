@@ -2573,7 +2573,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       [(cnodeTarget, .cnode), (epId, .endpoint)]
       [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stBad with
-    | .error err => expect s!"chain27: {label} refused {toString want}" (err == want)
+    | .error err => expect s!"chain27: {label} refused {toString want} (got {toString err})" (err == want)
     | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
   copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] (.rangeError 1 64)
   copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] (.rangeError 1 64)
@@ -2586,7 +2586,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   copyRefusal "copy from an empty source slot"
     [(2, 2), (3, 0), (4, 5), (5, 4 + 4 * 256)] (.failedLookup true (.missingCapability 4))
   copyRefusal "copy whose operation word sets a bit past the rights"
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 0)
+    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 3)
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
 

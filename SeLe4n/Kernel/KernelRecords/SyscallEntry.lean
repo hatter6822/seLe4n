@@ -181,9 +181,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
         P1.deletes.1.ipcInvariantFull.queueHeadBlockedConsistent (hR1 e tid hCur1))
     · cases h
       exact hW.trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
-        (by unfold Platform.FFI.recordSyscallRefusal; split; rfl; split <;> rfl)
-        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq]))
+        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_objects _ _ _))
+        (by
+          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+          split <;> (try split) <;> (try split) <;> rfl)
+        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine]))
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_recordsStage P1 hR1 hE)

@@ -85,6 +85,9 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (Platform.FFI.recordSyscallRefusal_machine_eq _ _ _ _ _ _ _).trans ?_;
    machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.recordErrorOverflow_machine _ _ _).trans ?_;
+   machine_chain))
 macro_rules | `(tactic| resident_frame) => `(tactic|
   (rw [activateThreadOnCore_residentCode]))
 
@@ -226,8 +229,10 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
     · cases h
       refine stepCoversInv_trans hW.stepCovers (capabilityKeyFrame.stepCoversInv ?_)
       exact capabilityKeyFrame_of_objects_scheduler_eq hW.2.2
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
-        (Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _)
+        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_objects _ _ _))
+        ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_scheduler _ _ _))
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
