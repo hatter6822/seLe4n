@@ -37,8 +37,33 @@ allocation context, so every allocation still goes to the kernel heap.
   `kernel_alloc` consult it before the heap. A context is held only through
   `region::enter_context`, which masks interrupts until its guard drops.
   Nothing calls it yet.
-- **Boot.** `ffi_extend_boot_ram_map` puts each RAM extension under the map,
-  taking the map's storage from the kernel heap (`register_boot_ram`).
+- **The map's RAM is reserved at boot, not taken from the heap (D4).** As
+  seL4 reserves its boot-time structures, the map of each RAM extension takes
+  the extension's top pages, and its untyped covers the rest. The Lean boot
+  owns the layout (`SeLe4n/Platform/Boot/RegionMapReservation.lean`): an
+  extension of `S` bytes reserves the fewest whole pages `R` with
+  `513 · R ≥ S`, about 2 MiB per GiB. QEMU `virt`'s 768 MiB extension
+  reserves 384 pages at `[0x7FE8_0000, 0x8000_0000)`, so its untyped is
+  `[0x5000_0000, 0x7FE8_0000)` (`qemuVirtRegionMap_layout`). A 16 GiB Pi 5
+  reserves 384 + 7666 pages, about 31.4 MiB of RAM.
+  - Both deployments build their RAM untypeds from `untypedExtentOf`.
+    `rpi5RootTaskUntypeds_regions` and `qemuVirtRootTaskUntyped_region` now
+    state the untypeds are the extensions below their maps. Proved:
+    `regionMap_fits_reserve` (the map of the covered RAM fits),
+    `untypedSizeOf_tiles` (the untyped and the map tile the extension),
+    `rpi5BootRamExtensions_fit` (every accepted extension fits) and
+    `rpi5RootTaskUntypeds_clear_of_regionMaps` (no untyped meets a map).
+    `rpi5InitialObjectsFor_covers_ram` covers the RAM below each map.
+  - `extendBootRamMap` hands the HAL each extension's covered part and map
+    base (`ffi_reserve_region_map`) after mapping it. The HAL checks the
+    layout (`region::reservation_layout`) and halts the boot on unaligned,
+    unmapped or overlapping input rather than shrinking the map. It then
+    zeroes and registers the map (`region::register_reserved_map`).
+    `register_ram` refuses an extent or reservation meeting any other.
+  - Every thread-memory decode (`decode_install`, `decode_physical_write`,
+    the user-word capture, the restore commit) takes
+    `region::thread_ram_covered`, which refuses a reservation's pages, so
+    the map is kernel-only.
 - **Tests** (host, `region::tests`):
   - the map's whole-range record and its overlap refusals;
   - a bump ending at the range's end, and one byte past it;
@@ -48,7 +73,15 @@ allocation context, so every allocation still goes to the kernel heap.
   - the backstop query on a page of mixed sizes whose padding holds forged
     headers, reading exactly the recorded live ranges;
   - the kernel entries' routing by context and by address, run inside the
-    kernel heap's own test.
+    kernel heap's own test, with a second extent registered as the boot
+    registers one: its reservation excluded from thread RAM and refused to
+    every later extent and reservation;
+  - QEMU's reservation layout, and refusals of a map past the mapped RAM,
+    covered RAM past it, a map meeting its RAM, and unaligned or empty input;
+  - a lookup over every granule of the covered RAM with the map in the
+    reservation, which leaves the covered RAM's bytes untouched.
+  - `ak9_platform_suite` checks every board's untypeds stop at their maps,
+    with the 8 GiB firmware account's sizes written by hand.
 - **Readings** (QEMU `virt`, Lean-linked image, fresh archive). These are two
   runs of `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each
   PASS, and two more runs of the same gate keeping the serial log. The kept

@@ -713,12 +713,17 @@ configuration.
   per extension, at ids `6, 7, …` and root-CNode slots `5, 6, …` (since BP7.10,
   which retired the two fixed first-gigabyte untypeds), and
   `rpi5RootTaskUntypeds_regions` states its regions **are**
-  `rpi5BootRamExtensions v`.  Every gate holds over every admissible
+  `rpi5BootRamExtensions v` below their region maps (`untypedExtentOf`, since
+  `v0.37.18`).  `rpi5BootRamExtensions_fit` shows every extension holds its
+  map and an untyped beside it, and
+  `rpi5RootTaskUntypeds_clear_of_regionMaps` shows no untyped meets a map.
+  Every gate holds over every admissible
   configuration (§6.2.17), and
   `rpi5RootTaskCNodeFor_slotsAddressable` adds that every root-CNode slot is
   below the CNode's sixteen.  `rpi5InitialObjectsFor_covers_ram` is the
   direction the placement conjunct cannot state: every RAM address outside the
-  kernel's reserved extent lies in some root-task untyped, on every board.
+  kernel's reserved extent and below its extension's region map lies in some
+  root-task untyped, on every board.
   `rpi5DeploymentBootStateAt_untypedInstalled` says the boot installs each.
   `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
 
@@ -4700,10 +4705,21 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   `region` module serves cells from a range in an untyped's memory: a
   naturally aligned power-of-two block of at least 512 B.
   - **The map.** A range is found through a map kept outside every range, one
-    byte per 512 B granule of the boot map's RAM extensions (`region::map`;
+    byte per 512 B granule of the RAM the untypeds cover (`region::map`;
     decision D7). The byte is the log2 size of the range holding the granule,
-    so no lookup reads region memory. The map's storage is taken from the
-    kernel heap at boot (`register_boot_ram`).
+    so no lookup reads region memory.
+  - **The reservation.** The map's storage is reserved from physical RAM at
+    boot, never from the kernel heap. The Lean boot lays it out
+    (`Platform.Boot.RegionMapReservation`): each RAM extension's top
+    `regionMapReserveBytes` (the fewest whole pages `R` with `513 · R ≥ S`)
+    hold its map, and its untyped covers the rest (`untypedExtentOf`).
+    `extendBootRamMap` hands the HAL each layout (`ffi_reserve_region_map`).
+    The HAL checks it (`region::reservation_layout`) and halts the boot on one
+    that does not fit, rather than shrinking the map. It then zeroes and
+    registers the map (`region::register_reserved_map`). Every thread-memory
+    decode takes `region::thread_ram_covered`, which refuses a reservation's
+    pages, so the map is kernel-only. QEMU `virt` reserves 1.5 MiB at
+    `[0x7FE8_0000, 0x8000_0000)` (`qemuVirtRegionMap_layout`).
   - **The header.** A range's header holds its log2 size, an atomic live
     count, a bump cursor, a cell-start bitmap and a live bitmap. It is
     `24 + size / 32` bytes (`region::header_bytes`).

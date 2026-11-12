@@ -117,11 +117,18 @@ card changes only the rows that cite that decision. D7 is decided by the owner.
   erased ghosts (UC2). *Default:* accept the proof cost.
 - **D4.** *Default:* accept the boot cost and keep `maxObjects` at 65536
   (`State.lean:2352`). The object table and the ASID table are pre-sized at
-  boot (UC3). The allocator keeps one map byte per 512 B granule of the boot
-  map's RAM extensions (UC5, D7), taken from the kernel heap at boot. That is
-  2 MiB per GiB of extension RAM. Measured at `v0.37.18` on QEMU `virt` with
-  1 GiB, the 768 MiB extension costs 384 heap pages (1.5 MiB). On a 16 GiB
-  Raspberry Pi 5 the same rule costs about 31.5 MiB of the 64 MiB arena.
+  boot (UC3). The allocator keeps one map byte per 512 B granule of the RAM
+  the untypeds cover (UC5, D7). The map is reserved from physical RAM at boot,
+  as seL4 reserves its boot-time structures, and never from the kernel heap:
+  it takes the top pages of each RAM extension the boot maps, and the
+  extension's untyped covers the rest (`Platform.Boot.RegionMapReservation`).
+  An extension of `S` bytes reserves the fewest whole pages `R` with
+  `513 · R ≥ S`, about 2 MiB of RAM per GiB, which leaves the untypeds
+  `S - R`. On QEMU `virt` with 1 GiB, the 768 MiB extension reserves
+  384 pages (1.5 MiB) at `[0x7FE8_0000, 0x8000_0000)`. On a 16 GiB Raspberry
+  Pi 5 the two extensions (0.75 GiB and 15 GiB) reserve 384 and 7666 pages,
+  about 31.4 MiB of RAM. The heap pays nothing (boot census: CHANGELOG
+  `v0.37.18`).
 - **D5.** *Default:* object sizes are ABI-visible and larger than seL4's.
   `objectTypeAllocSize` (`ScrubAndUntyped.lean:42-54`) is the **one owning
   definition**. `rust/sele4n-abi` and the spec take the sizes from it (UC6).
@@ -347,9 +354,23 @@ rewrites it there.
   byte per 512 B granule (D7). It is 0 when the granule is in no recorded
   range, and otherwise the log2 size of the range that holds it. So a range's
   base is the address with its low bits cleared, and no lookup reads region
-  memory. The map's storage is taken from the kernel heap when the boot map is
-  extended over a RAM extension (`register_boot_ram`, from
-  `ffi_extend_boot_ram_map`).
+  memory.
+  - **The reservation.** The map's storage is reserved from physical RAM, not
+    taken from the kernel heap (D4). The Lean boot owns the layout
+    (`SeLe4n/Platform/Boot/RegionMapReservation.lean`): the map takes the top
+    of each RAM extension, and both deployments build their untypeds from
+    `untypedExtentOf`, so no untyped covers the map. Proofs show the map of
+    the covered RAM fits (`regionMap_fits_reserve`), the untyped and the map
+    tile the extension (`untypedSizeOf_tiles`), every accepted RPi5 extension
+    fits (`rpi5BootRamExtensions_fit`), and no RPi5 untyped meets a map
+    (`rpi5RootTaskUntypeds_clear_of_regionMaps`). The QEMU layout is decided
+    (`qemuVirtRegionMap_layout`). `extendBootRamMap` hands the HAL each
+    extension's covered part and map base (`ffi_reserve_region_map`) after
+    mapping it. The HAL checks the layout (`reservation_layout`): unaligned,
+    unmapped or overlapping input halts the boot, and a map is never shrunk.
+    It then zeroes the map and registers it (`register_reserved_map`). Every
+    thread-memory decode takes `thread_ram_covered`, which refuses a
+    reservation's pages, so the map is kernel-only.
   - **The header.** A range's header holds its log2 size, an atomic live
     count, a bump cursor, a cell-start bitmap and a live bitmap, one bit per
     8 bytes each. It is `24 + size / 32` bytes (`header_bytes`), 40 B for a
@@ -372,9 +393,13 @@ rewrites it there.
     otherwise unrecord those ranges whole.
   - **Tests.** Host tests in `region/tests.rs` cover each boundary, a planted
     leaked cell, and the backstop query on a page of mixed sizes whose padding
-    holds forged headers. The heap's own test covers the routing.
-  - **Readings.** Every QEMU reading is unchanged. Readings and the boot
-    census: CHANGELOG `v0.37.18`.
+    holds forged headers. They also cover the QEMU reservation layout and each
+    refusal, a lookup over every granule of the covered RAM with the map in
+    the reservation, and reservations excluded from thread RAM and from each
+    other. The heap's own test covers the routing. `ak9_platform_suite` checks
+    that every board's untypeds stop at their region maps.
+  - **Readings.** Every QEMU reading is unchanged, and the boot census is
+    unchanged. Readings and the census: CHANGELOG `v0.37.18`.
 - **Work** (`rust/sele4n-hal`):
   - a per-core allocation context;
   - a range header inside each range: the range's size, an atomic live count,
