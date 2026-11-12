@@ -977,12 +977,16 @@ refusal is read where it is, never rebuilt. -/
                 -- path it would otherwise fall back to (which decodes the
                 -- invocation again) never runs for it.
                 if !CarveRequest.heapAdmittedW st k n then .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) else
-                RefusalCarrying.ofChecked
-                  (untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
-                    k n asid)
-                  (fun st => untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
+                -- Every other refusal is read from the checks' words as well
+                -- (`untypedRetypeRefusalCode`), so the general path, which
+                -- decodes the invocation again, never runs here.
+                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
+                    k n asid then
+                  .ok ((), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
                     vChild.val k n dom core asid st)
-                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st))
+                else
+                  .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
+                    vChild.val k n asid, st)))
     | _ => .error (.invalidCapability 0, st)
   | .untypedReset =>
     match cap.target with
@@ -1659,7 +1663,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               obtain ⟨src, dst⟩ := pr
               dsimp only
               rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
-                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
+                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req,
+                untypedRetypeRefusalCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
               have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
                   vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
                   (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
@@ -1671,10 +1676,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
                   hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
               · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-                apply RefusalCarrying.ofChecked_eq
-                intro hA
-                simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
-                  untypedRetypeObject_of_admitted hA]
+                cases hA : untypedRetypeAdmittedAt st src dst vChild.val req
+                · simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel,
+                    dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR, hH,
+                    untypedRetypeObject_refused hA]
+                · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchInvocationBy,
+                    untypedRetypeFromCap, hD, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
     all_goals rfl
   case untypedReset =>
     cases target

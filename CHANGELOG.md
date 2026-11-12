@@ -53,11 +53,21 @@ now returns seL4's error payload in the message registers, in
 - **Comparing errors builds nothing.** With payload constructors, the derived
   `DecidableEq KernelError` compares two errors of one constructor through a
   closure it builds on every comparison, so the ledger's test for a
-  receiver-side declassification refusal built a cell. `decEqWords` decides
-  equality on the discriminant and the payload words (`matchesWords_iff`), and
-  `@[csimp]` makes it the compiled instance. `validateSchedContextParams` is
-  inlined, so a configure's refusal returns its closed constant rather than a
-  copy of it.
+  receiver-side declassification refusal built a cell. `KernelError` no longer
+  derives `DecidableEq`: its instance is `KernelError.eqWords`, which compares
+  the discriminant and the payload words (`eqWords_iff`), so every module that
+  compares errors (`Fault`, `RefusalRecord` among them) compiles the same
+  instance and the generated C holds no derived one.
+  `validateSchedContextParams` is inlined, so a configure's refusal returns its
+  closed constant rather than a copy of it.
+- **A carve's refusal is read from the checks' words.** A refused
+  `UntypedRetype` fell back to the general dispatch, which decoded the
+  invocation again and built 13 cells (304 bytes) before it answered.
+  `untypedRetypeRefusalWith` reads the refusal `untypedRetypeObject` answers
+  from the checks in their order, without building the request
+  (`untypedRetypeObject_refused`, `untypedRetypeRefusalCode_eq`), so the
+  region's refusal (`untypedRegionExhausted` with the bytes left) and every
+  other carve refusal build nothing.
 - **seL4's IllegalOperation.** A `TCB_SetSpace` whose CSpace or VSpace root
   capability names an object of the wrong kind, and a `TCB_BindNotification`
   whose capability is not a notification, are refused `.illegalState`, the
@@ -78,12 +88,13 @@ now returns seL4's error payload in the message registers, in
   - `sele4n-abi` gains `decode_error`.
   - `SYSCALL_ABI_VERSION` is 5.
   - The QEMU exerciser checks x2–x5, and gains `range-error-payload`,
-    `failed-lookup-depth-mismatch`, `failed-lookup-missing-source` and
-    `failed-lookup-guard-mismatch`. The guard mismatch's fifth word lands in
-    the root task's buffer `msg[4]`, which a later five-word call reads as an
-    argument (a configure's deadline), so the scenario names the buffer (the
-    window's frame, where the root task's buffer points at that step) and the
-    word goes back to zero after it.
+    `failed-lookup-depth-mismatch`, `failed-lookup-missing-source`,
+    `failed-lookup-guard-mismatch`, `untyped-retype-region-exhausted` (a
+    2^46-byte child untyped) and `untyped-retype-slot-occupied`. The guard
+    mismatch's fifth word lands in the root task's buffer `msg[4]`, which a
+    later five-word call reads as an argument (a configure's deadline), so the
+    scenario names the buffer (the window's frame, where the root task's
+    buffer points at that step) and the word goes back to zero after it.
 - **Readings** (QEMU `virt`, Lean-linked image, fresh archive). Two runs of
   `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each PASS, with
   the serial log kept. The two runs' 2258 reading lines are byte-identical.

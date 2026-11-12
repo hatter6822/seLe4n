@@ -2721,6 +2721,10 @@ const PAGE_TABLE_TYPE: u64 = 9;
 const VSPACE_ROOT_TYPE: u64 = 4;
 #[cfg(feature = "hw_target")]
 const UNTYPED_TYPE: u64 = 5 + (12 << 8);
+/// A child untyped of 2^46 bytes, more than any region the exerciser holds:
+/// the carve the region refuses (`untyped-retype-region-exhausted`).
+#[cfg(feature = "hw_target")]
+const UNTYPED_REGION_EXHAUSTED_TYPE: u64 = 5 + (46 << 8);
 /// The root task's ASID and the user address the frame is mapped at: the
 /// first page of the user window (`VAddr.userWindowBase`, 2^39), whose walk
 /// the three page tables complete.
@@ -8463,6 +8467,31 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
+        // seL4's `seL4_NotEnoughMemory` from the region: a child untyped of
+        // 2^46 bytes, more than the root task's untyped holds past its free
+        // index, refused before any write with the bytes left in MR0 (which
+        // the carves before it set, so not pinned here).
+        RoundTrip {
+            returns: refused(UNTYPED_REGION_EXHAUSTED),
+            ..invocation(
+                "untyped-retype-region-exhausted",
+                UNTYPED_RETYPE,
+                UNTYPED_CAP,
+                [UNTYPED_REGION_EXHAUSTED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+            )
+        },
+        // A carve into an occupied slot (the untyped's own): refused
+        // `targetSlotOccupied` from the checks' words, as every carve refusal
+        // after the heap's is, without decoding the invocation again.
+        RoundTrip {
+            returns: refused(TARGET_SLOT_OCCUPIED),
+            ..invocation(
+                "untyped-retype-slot-occupied",
+                UNTYPED_RETYPE,
+                UNTYPED_CAP,
+                [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, UNTYPED_SLOT],
+            )
+        },
         invocation(
             "untyped-retype-untyped",
             UNTYPED_RETYPE,
@@ -9277,6 +9306,8 @@ const FAILED_LOOKUP: u64 = 60;
 const INVALID_CAPABILITY: u64 = 0;
 #[cfg(feature = "hw_target")]
 const TRANSLATION_FAULT: u64 = 12;
+#[cfg(feature = "hw_target")]
+const TARGET_SLOT_OCCUPIED: u64 = 18;
 #[cfg(feature = "hw_target")]
 const REVOCATION_REQUIRED: u64 = 38;
 #[cfg(feature = "hw_target")]
