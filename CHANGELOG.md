@@ -84,6 +84,18 @@ now returns seL4's error payload in the message registers, in
     argument (a configure's deadline), so the scenario names the buffer (the
     window's frame, where the root task's buffer points at that step) and the
     word goes back to zero after it.
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive). Two runs of
+  `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each PASS, with
+  the serial log kept. The two runs' 2258 reading lines are byte-identical.
+  - Every pin is unchanged: endpoint 6 / 248, notification 6 / 240, reply
+    10 / 256, tcb 19 / 2040, sched-context 8 / 440, cnode 23 / 1128, frame
+    6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped 7 / 184.
+  - The owned-CNode window allocates 23 and frees 23.
+  - Every other reading is 0, the new payload scenarios among them.
+- **Boot heap** (the same runs, identical in both): 758 pages (103356 live
+  allocations) after the library initializer and 1350 pages (109460) after
+  the install, one page more than at `v0.37.19`: the payload's closed
+  constants and code.
 
 ## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
 
