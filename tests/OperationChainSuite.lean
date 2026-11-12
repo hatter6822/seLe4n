@@ -2583,8 +2583,8 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     [(2, 0), (3, 0), (4, 0), (5, 4 + 4 * 256)] .targetSlotOccupied
   copyRefusal "copy whose source root names an endpoint"
     [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] .invalidCapability
-  copyRefusal "copy whose depth word sets a rights bit"
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 65536)] .invalidArgument
+  copyRefusal "copy whose operation word sets a bit past the rights"
+    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] .invalidArgument
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
 
