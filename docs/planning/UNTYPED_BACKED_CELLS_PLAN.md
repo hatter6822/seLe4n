@@ -1,7 +1,8 @@
 # WS-UC — Untyped-backed object cells
 
 > **Workstream**: WS-UC (a carved object's cells in its untyped's memory).
-> **Status**: **ACTIVE** — registered at `v0.37.1`; UC1 landed at `v0.37.2`.
+> **Status**: **ACTIVE** — registered at `v0.37.1`; UC1 landed at `v0.37.2`,
+> UC5 at `v0.37.18`.
 > **Baseline**: the tree at `v0.37.0` (WS-ZA closed, ZA6.37). Every
 > `file:line` below was re-read against it.
 > **Closes**: the `docs/REGISTERED_DEBT.md` row "Only the retype checks the
@@ -9,7 +10,8 @@
 > **Rows**: UC1–UC10, numbered in the order they are implemented. Each row
 > consumes only lower-numbered rows, and a row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D6 (§3) — **default taken; owner card open** on each.
+> **Decisions**: D1–D7 (§3). D1–D6: **default taken; owner card open** on each.
+> D7: **decided by the owner** (`v0.37.18`).
 
 ## 1. The problem
 
@@ -95,8 +97,8 @@ Each fact is stated once, here, and the rows cite it by its letter.
 
 ## 3. Owner decisions
 
-Each decision below is **default taken; owner card open**. A different answer
-on the card changes only the rows that cite that decision.
+D1–D6 are each **default taken; owner card open**. A different answer on the
+card changes only the rows that cite that decision. D7 is decided by the owner.
 
 - **D1. Where the records of page kinds live.** The record cells of a frame,
   page table, VSpace root and child untyped cannot live in their own range,
@@ -115,7 +117,11 @@ on the card changes only the rows that cite that decision.
   erased ghosts (UC2). *Default:* accept the proof cost.
 - **D4.** *Default:* accept the boot cost and keep `maxObjects` at 65536
   (`State.lean:2352`). The object table and the ASID table are pre-sized at
-  boot (UC3), and the allocator keeps a per-page byte (UC5).
+  boot (UC3). The allocator keeps one map byte per 512 B granule of the boot
+  map's RAM extensions (UC5, D7), taken from the kernel heap at boot. That is
+  2 MiB per GiB of extension RAM. Measured at `v0.37.18` on QEMU `virt` with
+  1 GiB, the 768 MiB extension costs 384 heap pages (1.5 MiB). On a 16 GiB
+  Raspberry Pi 5 the same rule costs about 31.5 MiB of the 64 MiB arena.
 - **D5.** *Default:* object sizes are ABI-visible and larger than seL4's.
   `objectTypeAllocSize` (`ScrubAndUntyped.lean:42-54`) is the **one owning
   definition**. `rust/sele4n-abi` and the spec take the sizes from it (UC6).
@@ -123,6 +129,17 @@ on the card changes only the rows that cite that decision.
   reading (UC9). That includes its second half, "every other heap growth"
   (a mapping's table entry, a derivation record), which stays a gate reading
   and not a theorem.
+- **D7. Where a region address finds its range.** *Decided by the owner*
+  (`v0.37.18`): **one map byte per 512 B granule, and a range is at least
+  512 B.** Kernel kinds are smaller than a page, and carves bumped at their
+  own alignment put ranges of different sizes in one page. So one byte per
+  page could not name an address's range. The other ways found the range
+  through bytes inside the range or its padding, which a user can control: a
+  stale frame, a notification word, a thread's saved registers. Those bytes
+  could forge a header for the D2 backstop. The map is kept outside every
+  range, and nothing in a range's bytes decides which range an address is in.
+  The alternatives were a page minimum on every range, or a per-page byte with
+  a per-page start bitmap. Either would change only `rust/sele4n-hal/src/region/map.rs`.
 
 ## 4. Rows
 
@@ -324,14 +341,46 @@ rewrites it there.
   - The scanner reports 0 hits on the tree.
   - Every other reading stays 0.
 
-### UC5 — The region allocator, inert (Rust)
+### UC5 — The region allocator, inert (Rust) — **LANDED `v0.37.18`**
 
+- **Done.** `rust/sele4n-hal/src/region/`. The map (`region/map.rs`) keeps one
+  byte per 512 B granule (D7). It is 0 when the granule is in no recorded
+  range, and otherwise the log2 size of the range that holds it. So a range's
+  base is the address with its low bits cleared, and no lookup reads region
+  memory. The map's storage is taken from the kernel heap when the boot map is
+  extended over a RAM extension (`register_boot_ram`, from
+  `ffi_extend_boot_ram_map`).
+  - **The header.** A range's header holds its log2 size, an atomic live
+    count, a bump cursor, a cell-start bitmap and a live bitmap, one bit per
+    8 bytes each. It is `24 + size / 32` bytes (`header_bytes`), 40 B for a
+    512 B range.
+  - **Free and size.** A free clears the cell's live bit with one atomic
+    `fetch_and`, which refuses a double free, and decrements the count. It
+    takes no lock, and the bytes are not reused. A cell's size runs to the
+    next cell start, or to the cursor.
+  - **Classification.** The heap's free, size and usable-size entries classify
+    by address: inside the arena they go to the heap, outside it to the
+    region. That covers `lean_free_small`, `lean_small_mem_size`, the big
+    path's `kernel_free` / `kernel_usable_size`, and so `allocated_bytes`.
+  - **The context.** The per-core allocation context is a word per core.
+    `lean_heap`'s two allocation entries consult it. It is set only through
+    `enter_context`, whose guard masks interrupts while it is held, and
+    nothing calls `enter_context` yet.
+  - **The backstop.** `Region::begin_range` and `admit_page_zero` (called by
+    `apply_physical_write` before a zero) find every recorded range meeting
+    the bytes through the map. They halt on a live count above 0, and
+    otherwise unrecord those ranges whole.
+  - **Tests.** Host tests in `region/tests.rs` cover each boundary, a planted
+    leaked cell, and the backstop query on a page of mixed sizes whose padding
+    holds forged headers. The heap's own test covers the routing.
+  - **Readings.** Every QEMU reading is unchanged. Readings and the boot
+    census: CHANGELOG `v0.37.18`.
 - **Work** (`rust/sele4n-hal`):
   - a per-core allocation context;
   - a range header inside each range: the range's size, an atomic live count,
     a bump cursor and a cell-start bitmap;
-  - a per-page log2-size byte, allocated at boot, that maps an address to its
-    range;
+  - a per-granule log2-size byte (D7), allocated at boot, that maps an address
+    to its range;
   - free, size and usable-size classified by address on both the small path
     and the big path (`lean_heap.rs:1190-1218`, `lean_runtime/mod.rs:340-352`,
     `lean_runtime/mem.rs:40-48`). The header has no spare bits
@@ -345,8 +394,8 @@ rewrites it there.
 - **Cells.** None yet: nothing sets the context.
 - **Boundary.**
   - A live count of 1 at a zero halts; a live count of 0 zeroes.
-  - A bump that would reach the range's end halts. UC6's sizes make this
-    unreachable.
+  - A bump that would pass the range's end halts. A cell that ends exactly at
+    the end is served. UC6's sizes make the halt unreachable.
 - **Acceptance.**
   - Host tests cover each boundary, including a planted leaked cell.
   - `test_rust.sh` and `test_aarch64_cross_build.sh` pass.
@@ -359,8 +408,10 @@ rewrites it there.
     (`SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean:429-435`) and
     `cnodeSlotBits` to each kind's footprint plus UC5's range header. The
     footprint is the byte pin after UC4. Sizes are rounded up to a power of
-    two, so `alignedCarveIndex` and the alignment lemmas keep their form, and
-    the CNode's size still scales with its radix.
+    two, and to at least 512 B, the region map's granule (D7). So
+    `alignedCarveIndex` and the alignment lemmas keep their form, and the
+    CNode's size still scales with its radix. UC5's header for a range of
+    `S` bytes is `24 + S / 32` bytes (`region::header_bytes`).
   - Re-run the proofs.
   - `rust/sele4n-abi` (`CNODE_SLOT_BITS`, `MIN_SCHED_CONTEXT_SIZE_BITS` and a new
     per-kind size table, `src/args/lifecycle.rs`) is checked against the Lean

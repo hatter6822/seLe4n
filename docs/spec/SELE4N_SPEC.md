@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.17` (`lakefile.toml`) |
+| **Package version** | `0.37.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 626,057 across 624 Lean files |
 | **Test LoC** | 89,311 across 70 Lean test suites |
@@ -4696,6 +4696,29 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   classify, and flags a reused cell filled from another cell; the QEMU heap
   gate's owned-CNode window holds the cells a CNode's carve-to-retire
   allocates and frees each to the CNode's carve pin.
+- **The region allocator** (since `v0.37.18`, WS-UC UC5, inert): the HAL's
+  `region` module serves cells from a range in an untyped's memory: a
+  naturally aligned power-of-two block of at least 512 B.
+  - **The map.** A range is found through a map kept outside every range, one
+    byte per 512 B granule of the boot map's RAM extensions (`region::map`;
+    decision D7). The byte is the log2 size of the range holding the granule,
+    so no lookup reads region memory. The map's storage is taken from the
+    kernel heap at boot (`register_boot_ram`).
+  - **The header.** A range's header holds its log2 size, an atomic live
+    count, a bump cursor, a cell-start bitmap and a live bitmap. It is
+    `24 + size / 32` bytes (`region::header_bytes`).
+  - **Free and size.** A free clears its cell's live bit and decrements the
+    count with atomics, without a lock, and the bytes are not reused. A cell's
+    size runs to the next cell start or to the cursor.
+  - **Classification.** The heap's free and size entries classify by address,
+    the arena's to the heap and every other address to the region.
+  - **The backstop.** Beginning a range (`Region::begin_range`) or zeroing a
+    page (`admit_page_zero`, called by `apply_physical_write`) over bytes of a
+    recorded range whose live count is above 0 halts. Otherwise those ranges
+    are unrecorded whole.
+  - **Inert.** Allocations go to a range only while a core holds an
+    allocation context (`region::enter_context`, interrupts masked while it is
+    held), and nothing sets one yet. So every carve still reads its heap pin.
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /

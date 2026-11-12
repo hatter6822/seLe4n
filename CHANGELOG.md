@@ -1,3 +1,55 @@
+## v0.37.18 — the region allocator, inert
+
+WS-UC UC5. The HAL gets the allocator a carve's cells will live in: a range
+in the carve's untyped's own memory. It is still inert. Nothing sets a core's
+allocation context, so every allocation still goes to the kernel heap.
+
+- **Decision D7, decided by the owner: one map byte per 512 B granule.** The
+  plan's per-page byte could not name an address's range. Kernel kinds are
+  smaller than a page, and carves bumped at their own alignment put ranges of
+  different sizes in one page. The other ways found the range through bytes
+  inside a range or its padding. A user can control those bytes, and they
+  could forge a header for the backstop. So the map (`region/map.rs`) keeps
+  one byte per 512 B granule, outside every range. The byte is 0 for no range,
+  or the log2 size of the naturally aligned range that holds the granule. A
+  range is at least 512 B, and UC6's sizes round to at least that. The plan's
+  UC5 row, D4's boot cost and UC6's rounding are amended to match.
+- **The range header.** It holds the range's log2 size, an atomic live count,
+  a bump cursor, a cell-start bitmap and a live bitmap, one bit per 8 bytes
+  each. It is `24 + size / 32` bytes (`region::header_bytes`), 40 B for a
+  512 B range. A cell is bumped at the cursor, rounded to 8 bytes. A cell that
+  ends exactly at the range's end is served; one that would pass the end is
+  refused, and the image halts.
+- **Free and size, by address.** `lean_free_small`, `lean_small_mem_size`, and
+  the big path's `kernel_free` / `kernel_usable_size` (and so
+  `lean_runtime::allocated_bytes`) send an address inside the heap's arena to
+  the heap and every other address to the region. A region free clears the
+  cell's live bit with one atomic `fetch_and`, which refuses a double free.
+  It then decrements the live count. It takes no lock, and the bytes are not
+  reused. A cell's size runs to the next cell start or to the cursor, because
+  the Lean header has no spare bits (`m_cs_sz = 0`).
+- **The backstop (D2).** `Region::begin_range` and `region::admit_page_zero`
+  each find every recorded range meeting their bytes through the map, and
+  halt on a live count above 0. Otherwise they unrecord those ranges whole,
+  so a frame's later contents can never be read as a header.
+  `apply_physical_write` asks `admit_page_zero` before every zero.
+- **The context.** There is a word per core. `kernel_alloc_small` and
+  `kernel_alloc` consult it before the heap. A context is held only through
+  `region::enter_context`, which masks interrupts until its guard drops.
+  Nothing calls it yet.
+- **Boot.** `ffi_extend_boot_ram_map` puts each RAM extension under the map,
+  taking the map's storage from the kernel heap (`register_boot_ram`).
+- **Tests** (host, `region::tests`):
+  - the map's whole-range record and its overlap refusals;
+  - a bump ending at the range's end, and one byte past it;
+  - a zero over a live count of 1 refused and over 0 admitted;
+  - a planted leaked cell refusing a reset, a smaller carve, a larger carve
+    and a zero until it is freed;
+  - the backstop query on a page of mixed sizes whose padding holds forged
+    headers, reading exactly the recorded live ranges;
+  - the kernel entries' routing by context and by address, run inside the
+    kernel heap's own test.
+
 ## v0.37.17 — a carve owns its cells, and no pass moves them
 
 WS-UC UC4.  Every cell a carve builds is that carve's own, and no later
