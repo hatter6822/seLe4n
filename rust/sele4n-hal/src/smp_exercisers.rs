@@ -12734,26 +12734,6 @@ fn suspend_partner() -> bool {
     true
 }
 
-/// **The fault entries** (seL4's `handleFault` from each of its producers:
-/// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
-/// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
-/// each scenario run twice, at first call and at steady state:
-/// - with no handler (its capability's slot empty), each fault suspends the
-///   root task fail-closed; the partner, which then runs, resumes it
-///   (measured: the resume answers the fault the thread carries, restarting
-///   it at the faulting instruction), and the root task,
-///   chosen over the partner whenever both are runnable, suspends the partner;
-/// - a VM fault raised while the handler is not waiting queues the root task
-///   on the endpoint, and the partner's receive takes the fault message and its
-///   reply restarts the thread;
-/// - with the root task waiting on the endpoint as the handler, each fault the
-///   partner raises is delivered to it at once, and its reply-receive restarts
-///   the partner and waits again;
-/// - an FP/SIMD access loads the root task's context; its receive blocks it
-///   and the switch to the partner releases the core's registers into the root
-///   task's saved context; the partner's access loads its own, and its send
-///   wakes the root task, which takes the core and releases the partner's.
-#[cfg(feature = "hw_target")]
 /// A receive-side capability fault the partner raises (seL4-MCS
 /// `handleRecv`): the trap, the address the fault names and its
 /// `LookupFailureType`, and the message info the handler receives.
@@ -12944,6 +12924,26 @@ fn receive_side_faults(
     true
 }
 
+/// **The fault entries** (seL4's `handleFault` from each of its producers:
+/// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
+/// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
+/// each scenario run twice, at first call and at steady state:
+/// - with no handler (its capability's slot empty), each fault suspends the
+///   root task fail-closed; the partner, which then runs, resumes it
+///   (measured: the resume answers the fault the thread carries, restarting
+///   it at the faulting instruction), and the root task,
+///   chosen over the partner whenever both are runnable, suspends the partner;
+/// - a VM fault raised while the handler is not waiting queues the root task
+///   on the endpoint, and the partner's receive takes the fault message and its
+///   reply restarts the thread;
+/// - with the root task waiting on the endpoint as the handler, each fault the
+///   partner raises is delivered to it at once, and its reply-receive restarts
+///   the partner and waits again;
+/// - an FP/SIMD access loads the root task's context; its receive blocks it
+///   and the switch to the partner releases the core's registers into the root
+///   task's saved context; the partner's access loads its own, and its send
+///   wakes the root task, which takes the core and releases the partner's.
+#[cfg(feature = "hw_target")]
 fn fault_entries() -> Option<bool> {
     let set_handler = |name, tcb| {
         invocation(
