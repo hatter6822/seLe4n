@@ -11990,11 +11990,16 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 /// (1) as the label and the words `setMR` wrote as the length.  An empty
 /// slot's fault is seL4's five `seL4_CapFault_*` words (`IP`, `Addr`,
 /// `InRecvPhase`, `LookupFailureType`, `BitsLeft` of `seL4_MissingCapability`);
-/// the fifth lands only in an IPC buffer, which the receiving partner has
-/// none of, so the length is the four message registers (as an unknown
-/// syscall's fourteen words read four, `FAULT_QUEUED_INFO`).
+/// the fifth lands in the receiving partner's IPC buffer, the window's page
+/// (`tcb-set-ipc-buffer`), so while that page is mapped the length is five.
 #[cfg(feature = "hw_target")]
-const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 4;
+const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 5;
+
+/// The same fault while the partner's buffer page is unmapped: the fifth word
+/// has nowhere to go, so the length is the four message registers (seL4's
+/// `setMR` with no buffer answers `n_msgRegisters`).
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_UNMAPPED_BUFFER_INFO: u64 = (1 << 12) | 4;
 
 /// One overflow capability fault queued and answered: the partner resumed,
 /// the root task's trap queued on its handler's endpoint, the partner's
@@ -12005,6 +12010,7 @@ fn queued_overflow_cap_fault(
     trap: &TrapTrip,
     receive: &'static str,
     reply: &'static str,
+    info: u64,
     which: &str,
 ) -> bool {
     let receive = RoundTrip {
@@ -12017,7 +12023,7 @@ fn queued_overflow_cap_fault(
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((CAP_FAULT_MESSAGE_INFO, [None; 4])),
+        returns: Some((info, [None; 4])),
     };
     let reply = partner_step(reply, REPLY, REPLY_CAP, 0, [0, 0], false);
     unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
@@ -12141,6 +12147,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             ),
             "receive-long-send-unmapped-buffer-cap-fault",
             "reply-long-send-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12151,6 +12158,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             ),
             "receive-long-call-unmapped-buffer-cap-fault",
             "reply-long-call-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12160,6 +12168,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             },
             "receive-long-receive-unmapped-buffer-cap-fault",
             "reply-long-receive-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
@@ -12168,6 +12177,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-fills", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault",
             "reply-configure-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&fills, which) == Some(true)
@@ -12175,6 +12185,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-held", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault-held",
             "reply-configure-cap-fault-held",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
@@ -12185,12 +12196,14 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
             "receive-service-register-cap-fault",
             "reply-service-register-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && queued_overflow_cap_fault(
             &overflow_cap_fault("long-send-cap-fault", SEND, LONG_SEND_LENGTH),
             "receive-long-send-cap-fault",
             "reply-long-send-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         // A receive past its inline words on the CNode capability: seL4's
@@ -12203,6 +12216,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             },
             "receive-overflowed-receive-cap-fault",
             "reply-overflowed-receive-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && receive_phase_cap_faults(which)
@@ -12254,16 +12268,19 @@ fn receive_phase_cap_faults(which: &str) -> bool {
         &receive_phase_cap_fault("receive-wrong-type-cap-fault", RECEIVE, CNODE_CAP),
         "receive-receive-wrong-type-cap-fault",
         "reply-receive-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && queued_overflow_cap_fault(
         &receive_phase_cap_fault("wait-wrong-type-cap-fault", WAIT, CNODE_CAP),
         "receive-wait-wrong-type-cap-fault",
         "reply-wait-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && queued_overflow_cap_fault(
         &receive_phase_cap_fault("reply-recv-wrong-type-cap-fault", REPLY_RECV, CNODE_CAP),
         "receive-reply-recv-wrong-type-cap-fault",
         "reply-reply-recv-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && heap_allocations_round_trip(&mint_no_receive, which) == Some(true)
         && queued_overflow_cap_fault(
@@ -12274,6 +12291,7 @@ fn receive_phase_cap_faults(which: &str) -> bool {
             ),
             "receive-receive-no-right-cap-fault",
             "reply-receive-no-right-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&delete_no_receive, which) == Some(true)
