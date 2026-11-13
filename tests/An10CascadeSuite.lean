@@ -147,7 +147,7 @@ def an10_b_getUntyped_populated : IO Bool := do
 def an10_b_getCNode_populated : IO Bool := do
   let id : ObjId := ObjId.ofNat 600
   let cn : CNode :=
-    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 SeLe4n.UniqueSlotMap.empty)
+    (SeLe4n.Model.CNode.ofSlots 8 SeLe4n.UniqueSlotMap.empty)
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert id (.cnode cn) }
   return st.getCNode? id |>.isSome
@@ -541,36 +541,36 @@ def an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability : IO Bool := do
   let slotAddr : SeLe4n.Slot := SeLe4n.Slot.ofNat 99
   let addr : CSpaceAddr := { cnode := cnodeAddr, slot := slotAddr }
   -- Store an empty CNode (4-bit radix, no entries).
-  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 default)
+  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 default)
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert cnodeAddr (.cnode cn) }
   match SeLe4n.Kernel.cspaceLookupSlot addr st with
   | Except.error (KernelError.invalidCapability _) => return true
   | _ => return false
 
-/-- AN10-E.R2 — `cspaceResolvePath` rejects a non-CNode at the cnode
-slot with `.objectNotFound`. -/
-def an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound : IO Bool := do
+/-- AN10-E.R2 — `resolveAddressBits` rejects a capability naming a non-CNode
+object with `.invalidRoot`. -/
+def resolveAddressBits_wrong_variant_is_invalidRoot : IO Bool := do
   let cnodeAddr : ObjId := ObjId.ofNat 300
-  let addr : CSpacePathAddr := { cnode := cnodeAddr, cptr := SeLe4n.CPtr.ofNat 0,
-                                  depth := 4 }
-  -- Wrong variant at the cnode slot.
+  let rootCap : Capability := { target := .object cnodeAddr, rights := AccessRightSet.ofList [.read] }
+  -- Wrong variant at the capability's object.
   let tcb : TCB := mkTcb 300
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert cnodeAddr (.tcb tcb) }
-  match SeLe4n.Kernel.cspaceResolvePath addr st with
-  | Except.error KernelError.objectNotFound => return true
+  match SeLe4n.Kernel.resolveAddressBits rootCap (SeLe4n.CPtr.ofNat 0) 4 st with
+  | Except.error .invalidRoot => return true
   | _ => return false
 
-/-- AN10-E.R3 — `resolveCapAddress` rejects a missing root CNode with
-`.objectNotFound` (semantically equivalent under the migration since
-`getCNode?` returns `none` for both wrong-variant and absent). -/
-def an10_e_resolveCapAddress_missing_root_is_objectNotFound : IO Bool := do
-  let rootId : ObjId := ObjId.ofNat 999
+/-- AN10-E.R3 — `resolveAddressBits` rejects a capability naming a missing
+CNode with `.invalidRoot`, as seL4's `resolveAddressBits` rejects a capability
+that is not a CNode capability (`getCNode?` returns `none` for both a
+wrong-variant and an absent object). -/
+def resolveAddressBits_missing_root_is_invalidRoot : IO Bool := do
+  let rootCap : Capability := { target := .object (ObjId.ofNat 999), rights := AccessRightSet.ofList [.read] }
   let addr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
   let st : SystemState := default
-  match SeLe4n.Kernel.resolveCapAddress rootId addr 16 st with
-  | Except.error KernelError.objectNotFound => return true
+  match SeLe4n.Kernel.resolveAddressBits rootCap addr 16 st with
+  | Except.error .invalidRoot => return true
   | _ => return false
 
 /-- AN10-E.H5 — `donateSchedContextValid` reduces to `donateSchedContext`
@@ -798,10 +798,10 @@ def runAll : IO Bool := do
       an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound),
     ("an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability",
       an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability),
-    ("an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound",
-      an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound),
-    ("an10_e_resolveCapAddress_missing_root_is_objectNotFound",
-      an10_e_resolveCapAddress_missing_root_is_objectNotFound),
+    ("resolveAddressBits_wrong_variant_is_invalidRoot",
+      resolveAddressBits_wrong_variant_is_invalidRoot),
+    ("resolveAddressBits_missing_root_is_invalidRoot",
+      resolveAddressBits_missing_root_is_invalidRoot),
     ("an10_e_donateSchedContextValid_reduces", an10_e_donateSchedContextValid_reduces),
     ("an10_e_returnDonatedSchedContextValid_reduces",
       an10_e_returnDonatedSchedContextValid_reduces),

@@ -161,14 +161,18 @@ private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
 
 /-- An initial thread: `.Inactive`, detached, stored under its own id
     (`embeddedIdentitiesMatchSlots`), with its CSpace and address space named.
+    Its CSpace root capability carries the root CNode's guard (WS-SX D5): by
+    default seL4's root convention for a 16-slot root, a zero guard of 60
+    bits.
     Its IPC buffer address is `0`: its address space maps nothing yet, and the
     thread maps a frame for its buffer out of its own memory before it can use
     one. -/
-def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) : TCB :=
+def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) (guard : Nat := 0)
+    (guardSize : Nat := 60) : TCB :=
   { tid := ⟨id.val⟩
     priority := rpi5InitialThreadPriority
     domain := ⟨0⟩
-    spaceCells := SeLe4n.Model.TCB.spaceCellsOf cspace vspace
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOfRoot cspace guard guardSize vspace
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- **WS-BP BP7.11**: the core the untrusted domain's thread runs on — core 1,
@@ -183,15 +187,19 @@ def rpi5UntrustedThread : TCB :=
   { rpi5InitialThread rpi5UntrustedTcbId rpi5UntrustedCNodeId rpi5UntrustedVSpaceId with
     cpuAffinity := some rpi5UntrustedCore }
 
-/-- A capability to an object with the given rights, unbadged. -/
-def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
-  { target := .object target, rights := AccessRightSet.ofList rights }
+/-- A capability to an object with the given rights, unbadged; a CNode
+    capability carries its guard (`cnodeGuard`, `cnodeGuardSize`). -/
+def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) (guard : Nat := 0)
+    (guardSize : Nat := 0) : Capability :=
+  { target := .object target, rights := AccessRightSet.ofList rights, cnodeGuard := guard,
+    cnodeGuardSize := guardSize }
 
-/-- An initial CSpace: one level resolving a whole 64-bit CPtr — a 60-bit zero
-    guard and 16 slots, seL4's root-CNode convention — so a capability address
-    is its slot number.  Slot 0 is left empty. -/
+/-- An initial CSpace: 16 slots, which the capabilities naming it as a root
+    reach through a 60-bit zero guard (seL4's root-CNode convention, the guard
+    in the capability), so one level resolves a whole 64-bit CPtr and a
+    capability address is its slot number.  Slot 0 is left empty. -/
 def rpi5InitialCNode (slots : List (SeLe4n.Slot × Capability)) : CNode :=
-  CNode.ofList 64 60 0 4 slots
+  CNode.ofList 4 slots
 
 /-- **WS-ZA ZA6.4**: the scheduling-control capabilities the boot hands the root
     task, one per core, core `c`'s at slot `base + c` — seL4-MCS's boot info
@@ -283,7 +291,8 @@ theorem rpi5BootRamExtensions_length (v : BCM2712Config) (hv : v.Admissible) :
     capability names an object and not its extent. -/
 def rpi5RootTaskCNodeSlotsOfCount (n : Nat) : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5RootTaskTcbId [.read, .write, .grant, .grantReply])
-  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply]
+      (guardSize := 60))
   , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5RootTaskVSpaceId [.read, .write])
   , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write]) ] ++
   ((List.range n).map fun i =>
@@ -319,7 +328,8 @@ theorem rpi5RootTaskCNodeFor_slotsAddressable (v : BCM2712Config) (hv : v.Admiss
 def rpi5UntrustedCNode : CNode :=
   rpi5InitialCNode
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5UntrustedTcbId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5UntrustedCNodeId [.read, .write, .grant, .grantReply])
+    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5UntrustedCNodeId [.read, .write, .grant, .grantReply]
+      (guardSize := 60))
     , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5UntrustedVSpaceId [.read, .write]) ]
 
 private def tcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=

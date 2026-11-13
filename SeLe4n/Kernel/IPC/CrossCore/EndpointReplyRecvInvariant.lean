@@ -770,7 +770,7 @@ theorem replyRecvReplyTransfer_ok (answer : Option Architecture.FaultReplyOutcom
     cases replyCapRequest pre replier grant with
     | none => exact ⟨_, rfl⟩
     | some req =>
-      obtain ⟨root, addrs, depth⟩ := req
+      obtain ⟨root, addrs⟩ := req
       simp only []
       split
       · exact ⟨_, rfl⟩

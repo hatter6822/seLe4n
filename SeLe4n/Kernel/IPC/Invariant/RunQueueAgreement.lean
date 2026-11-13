@@ -886,7 +886,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : Opt
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
 theorem receiveTransferCaps_runQueueStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) : RunQueueStage st st' := by
   unfold receiveTransferCaps at h
@@ -895,7 +895,7 @@ theorem receiveTransferCaps_runQueueStage
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       rw [← h.2]; exact .refl _
   | some r =>
-      obtain ⟨cr, addrs, depth⟩ := r
+      obtain ⟨cr, addrs⟩ := r
       simp only at h
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h

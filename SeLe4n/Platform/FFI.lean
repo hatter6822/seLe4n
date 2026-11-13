@@ -2389,7 +2389,7 @@ plan requires SM9.B not to duplicate. -/
 a refused second hop was about**, from the pre-state the seam already holds.
 
 Mirrors the dispatch's own resolution exactly — the caller's TCB, its CSpace
-root's depth, `resolveCapAddress` on the supplied pointer, the slot's
+root capability, `lookupSlot` on the supplied pointer, the slot's
 capability, and the notification the capability targets — and then runs the
 *same* `declassifiedSignalReceiver?` the transition's second-hop gate ran on
 the *same* pre-state, so the two resolutions cannot disagree
@@ -2417,7 +2417,7 @@ def refusedSignalReceiver? (st : SystemState) (tid : SeLe4n.ThreadId)
     | _ => none
 
 /-- `refusedSignalReceiver?` as its code (`ThreadId.optCode`): the operand
-resolved through the continuation-passing walk (`resolveCapAddressKUnrolled`),
+resolved through the continuation-passing walk (`lookupSlotK`),
 the slot's capability matched where it is read, and the notification's receiver
 as its code (`declassifiedSignalReceiverCode`), so the seam's re-resolution
 builds no slot reference, no `some` and no result
@@ -2427,17 +2427,14 @@ builds no slot reference, no `some` and no result
   match st.getTcb? tid with
   | none => 0
   | some tcb =>
-    match st.getCNode? tcb.cspaceRoot with
-    | none => 0
-    | some rootCn =>
-      resolveCapAddressKUnrolled tcb.cspaceRoot capPtr rootCn.depth st (fun _ => 0)
-        (fun cnode slot =>
-          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-          | none => 0
-          | some cap =>
-            match cap.target with
-            | .object nid => declassifiedSignalReceiverCode st nid
-            | _ => 0)
+    lookupSlotK tcb capPtr st (fun _ _ _ _ => 0)
+      (fun cnode slot =>
+        match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+        | none => 0
+        | some cap =>
+          match cap.target with
+          | .object nid => declassifiedSignalReceiverCode st nid
+          | _ => 0)
 
 @[simp] theorem ofOptCode_refusedSignalReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) :
@@ -2447,32 +2444,28 @@ builds no slot reference, no `some` and no result
   rcases st.getTcb? tid with _ | tcb
   · rfl
   · dsimp only
-    rcases st.getCNode? tcb.cspaceRoot with _ | rootCn
+    rw [lookupSlotK_eq]
+    rcases lookupSlot tcb capPtr st with _ | ⟨cn, sl⟩
     · rfl
     · dsimp only
-      rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-      rcases resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st with _ | ⟨cn, sl⟩
+      rcases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with _ | cap
       · rfl
       · dsimp only
-        rcases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with _ | cap
-        · rfl
-        · dsimp only
-          rcases cap.target <;> simp
+        rcases cap.target <;> simp
 
 /-- WS-SM SM9.C.1: on the resolution path the dispatch itself took, the seam's
 re-resolution **is** the transition's — both are `declassifiedSignalReceiver?`
 at the same state and the same notification, so the record below names exactly
 the thread the second-hop gate refused. -/
 theorem refusedSignalReceiver?_resolves (st : SystemState) (tid : SeLe4n.ThreadId)
-    (capPtr : SeLe4n.CPtr) (tcb : TCB) (rootCn : CNode)
+    (capPtr : SeLe4n.CPtr) (tcb : TCB)
     (ref : SlotRef) (cap : Capability) (nid : SeLe4n.ObjId)
     (hTcb : st.getTcb? tid = some tcb)
-    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
-    (hRef : resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st = .ok ref)
+    (hRef : lookupSlot tcb capPtr st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object nid) :
     refusedSignalReceiver? st tid capPtr = declassifiedSignalReceiver? st nid := by
-  simp only [refusedSignalReceiver?, syscallOperandCap?, hTcb, hRoot, hRef, hSlot, hTarget]
+  simp only [refusedSignalReceiver?, syscallOperandCap?, hTcb, hRef, hSlot, hTarget]
 
 /-- WS-SM SM9.C.1: the ledger record's `refusedReceiver` fill — the re-resolved
 receiver **exactly when** the refusal is the declassifying signal's second hop,
@@ -2713,13 +2706,11 @@ the *success* path is required to audit exactly that destination
 theorem refusalRecord_names_failed_hop
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (tid : SeLe4n.ThreadId) (x0 : UInt64) (st : SystemState)
-    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
+    (tcb : TCB) (ref : SlotRef) (cap : Capability)
     (notifId : SeLe4n.ObjId) (actorDomain : SecurityDomain)
     (hDecode : SyscallId.ofNat? syscallId.toNat = some .declassifySignal)
     (hTcb : st.getTcb? tid = some tcb)
-    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
-    (hRef : resolveCapAddress tcb.cspaceRoot (SeLe4n.CPtr.ofNat x0.toNat) rootCn.depth st
-      = .ok ref)
+    (hRef : lookupSlot tcb (SeLe4n.CPtr.ofNat x0.toNat) st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object notifId)
     (hPlan : declassifiedSignalPlan (liftLegacyContext ctx) ctx.declassificationPolicy
@@ -2745,8 +2736,8 @@ theorem refusalRecord_names_failed_hop
   have hSeam : refusalReceiverFor st tid .declassifySignal
       .declassificationDeniedAtReceiver x0 = some receiver := by
     rw [refusalReceiverFor_receiver_hop,
-      refusedSignalReceiver?_resolves st tid (SeLe4n.CPtr.ofNat x0.toNat) tcb rootCn ref cap
-        notifId hTcb hRoot hRef hSlot hTarget, hRecv]
+      refusedSignalReceiver?_resolves st tid (SeLe4n.CPtr.ofNat x0.toNat) tcb ref cap
+        notifId hTcb hRef hSlot hTarget, hRecv]
   rw [hSeam]
 
 /-- WS-SM SM9.B.9 (**the frame**): recording a refusal writes the ledger and
@@ -3120,17 +3111,13 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
       match capFaultReceivePhase? decoded.syscallId with
       | none => none
       | some inRecv =>
-        match st.getObject? tcb.cspaceRoot with
-        | some (.cnode rootCn) =>
-          let gate : SyscallGate :=
-            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          match syscallOperandLookup decoded.syscallId gate st with
-          | .error e =>
-              if e = ke then some (.capFault decoded.capAddr.word inRecv e)
-              else none
-          | .ok _ => none
-        | _ => none
+        let gate : SyscallGate :=
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        match syscallOperandLookup decoded.syscallId gate st with
+        | .error e =>
+            if e = ke then some (.capFault decoded.capAddr.word inRecv e)
+            else none
+        | .ok _ => none
   | _ => none
 
 /-- `syscallCapFaultOf` for a refusal handed on as its discriminant and payload
@@ -3146,18 +3133,14 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
       match capFaultReceivePhase? decoded.syscallId with
       | none => none
       | some inRecv =>
-        match st.getObject? tcb.cspaceRoot with
-        | some (.cnode rootCn) =>
-          let gate : SyscallGate :=
-            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          match syscallOperandLookup decoded.syscallId gate st with
-          | .error e =>
-              if e.matchesWords d w0 w1 w2 w3 w4 then
-                some (.capFault decoded.capAddr.word inRecv e)
-              else none
-          | .ok _ => none
-        | _ => none
+        let gate : SyscallGate :=
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        match syscallOperandLookup decoded.syscallId gate st with
+        | .error e =>
+            if e.matchesWords d w0 w1 w2 w3 w4 then
+              some (.capFault decoded.capAddr.word inRecv e)
+            else none
+        | .ok _ => none
   | _ => none
 
 theorem syscallCapFaultOfW_eq (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
@@ -3223,18 +3206,15 @@ refused by its arm returns the error. -/
 theorem syscallCapFaultOf_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayout)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (tcb : TCB)
     (decoded : SeLe4n.Model.SyscallDecodeResult) (inRecv : Bool)
-    (rootCn : CNode)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout tcb.registerContext 32 = .ok decoded)
     (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
-    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
     (hLookup : syscallOperandLookup decoded.syscallId
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         st = .ok ()) :
     syscallCapFaultOf layout st tid ke = none := by
-  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hRoot, hLookup]
+  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hLookup]
 
 /-- The syscalls whose type and right the fault's lookup checks are the ones
 that fault in the receive phase: `syscallReceivesOnCap` and
@@ -3420,7 +3400,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
   rcases syscallEntryCheckedK_spec ctx executingCore st
       (syscallRefusalOutcome tid onFault onRefuse onOk) (syscallArmOutcome onRefuse onOk)
       (syscallLookupOutcome onLookupFault onRefuse) with
-    h | ⟨tid', tcb, decoded, rootCn, hCur', hObj, hDec, hRoot, h⟩
+    h | ⟨tid', tcb, decoded, hCur', hObj, hDec, h⟩
   · exact h
   rw [hCur] at hCur'
   cases hCur'
@@ -3435,13 +3415,13 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
       have hNe' := hNe ke s hR
       have hNone : syscallCapFaultOf SeLe4n.arm64DefaultLayout s tid ke = none := by
         unfold syscallCapFaultOf
-        simp only [hObj, hDec, hRoot]
+        simp only [hObj, hDec]
         cases capFaultReceivePhase? decoded.syscallId with
         | none => rfl
         | some inRecv =>
           simp only []
-          cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.cspaceRoot,
-              decoded.capAddr, rootCn.depth, syscallRequiredRight decoded.syscallId⟩ s with
+          cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0],
+              decoded.capAddr, syscallRequiredRight decoded.syscallId⟩ s with
           | ok _ => rfl
           | error e => simp only [hNe' e hG, ↓reduceIte]
       simp only [syscallArmOutcome, syscallRefusalOutcome, hNone]
@@ -3450,7 +3430,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
     subst hs
     simp only [syscallLookupOutcome, syscallRefusalOutcome]
     unfold syscallCapFaultOf
-    simp only [hObj, hDec, hRoot]
+    simp only [hObj, hDec]
     cases capFaultReceivePhase? decoded.syscallId with
     | none => rfl
     | some inRecv => simp only [hRes, ↓reduceIte, hF]
@@ -4510,11 +4490,8 @@ theorem syscallDispatchFromAbi_implies_capability_held
       (decoded.syscallId ≠ .yield →
       ∃ tcb, (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getTcb? tid
           = some tcb ∧
-        ∃ rootCn,
-          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getCNode? tcb.cspaceRoot
-            = some rootCn ∧
           ∃ cap ref,
-            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth
+            lookupSlot tcb decoded.capAddr
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = Except.ok ref ∧
             SystemState.lookupSlotCap
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) ref = some cap ∧

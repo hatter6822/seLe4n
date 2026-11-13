@@ -410,7 +410,7 @@ theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {endpointId : Option S
 /-- WS-ZA ZA4.7: the rendezvous capability lookup mints CDT nodes in the sender's
 CSpace and installs into the receive slot's CNode: no key input. -/
 theorem receiveTransferCaps_keyFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

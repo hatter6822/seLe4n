@@ -91,6 +91,21 @@ then `bitsLeft`, then `bitsFound` (a depth mismatch) or `guardFound` and
   | .guardMismatch _ _ b, 3 => b
   | _, _ => 0
 
+/-- **The fault its words name** (WS-SX SX2): the type word picks the
+constructor and the next words its fields, as `word` lays them out; a type word
+seL4 does not define reads as `invalidRoot`.  A resolver in continuation form
+hands its fault on as words, constant type words at each refusal, so the
+constructor is fixed where the words are made (`ofWords_word`). -/
+@[inline] def ofWords (t w1 w2 w3 : UInt64) : LookupFault :=
+  if t = 2 then .missingCapability w1
+  else if t = 3 then .depthMismatch w1 w2
+  else if t = 4 then .guardMismatch w1 w2 w3
+  else .invalidRoot
+
+@[simp] theorem ofWords_word (f : LookupFault) :
+    ofWords (f.word 0) (f.word 1) (f.word 2) (f.word 3) = f := by
+  cases f <;> rfl
+
 end LookupFault
 
 /-- F-04: Kernel error codes. This inductive has 60 variants.

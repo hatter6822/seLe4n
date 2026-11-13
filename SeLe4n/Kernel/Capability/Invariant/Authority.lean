@@ -311,6 +311,20 @@ theorem mintDerivedCap_target_preserved_with_badge_override
   have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
   exact hAtt.1
 
+/-- **A mint keeps seL4's CNode geometry**: the child names its parent's target
+under its parent's guard. -/
+theorem mintDerivedCap_keeps_cnodeCapGeometry {st : SystemState}
+    (parent : NonNullCap) (child : Capability) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge)
+    (hMint : mintDerivedCap parent rights badge = .ok child)
+    (h : cnodeCapGeometryAt st parent.val) : cnodeCapGeometryAt st child := by
+  unfold mintDerivedCap at hMint
+  split at hMint
+  · split at hMint
+    · simp at hMint
+    · cases hMint; exact cnodeCapGeometryAt_of_fields h rfl rfl rfl
+  · simp at hMint
+
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -569,7 +583,7 @@ theorem capabilityInvariantBundle_of_components
     (st : SystemState)
     (hComp : cdtCompleteness st)
     (hAcyclic : cdtAcyclicity st)
-    (hDepth : cspaceDepthConsistent st)
+    (hDepth : cnodeCapGeometry st)
     (hObjInv : st.objects.invExt)
     (hRCPV : capTargetKindBacked st)
     (hLinks : cdtLinksAgree st)
@@ -590,7 +604,7 @@ step owed a fresh forty-line case analysis over predicates it does not touch.
 The frame states the read set once, and it is smaller than the bundle's
 quantifiers suggest.  `cspaceLookupSound` is structural
 (`cspaceLookupSound_holds`), so it needs nothing.  Two conjuncts
-(`cspaceDepthConsistent` and the slot reading of
+(`cnodeCapGeometry` and the slot reading of
 `capTargetKindBacked`) read **CNodes** and are transported **backward** —
 a post-state CNode must be a pre-state CNode, which is exactly what a store at a
 TCB key gives.  `cdtCompleteness` reads the CDT and asks that every slot it
@@ -656,7 +670,13 @@ theorem capabilityBundleOffLinks_of_frame {st st' : SystemState}
     obtain ⟨o', hO', hE⟩ := SystemState.slotCap_fwd_of_slots (hCn ref.cnode) (hTcb ref.cnode) hO hL
     exact ⟨o', hO', by rw [hE]; exact hL⟩
   · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
-  · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
+  · intro oid o' slot cap hO' hLook
+    obtain ⟨o, hO, hE⟩ := SystemState.slotCap_back_of_slots (hCn oid) (hTcb oid) hO'
+      (by rw [hLook]; exact Option.some_ne_none _)
+    exact cnodeCapGeometryAt_mono (fun id cn' hC => ⟨cn',
+        (SystemState.getCNode?_eq_some_iff _ _ _).mpr
+          (hCnode id cn' ((SystemState.getCNode?_eq_some_iff _ _ _).mp hC)), rfl⟩)
+      _ (hDepth oid o slot cap hO (by rw [hE]; exact hLook))
   · intro oid o' slot cap hO' hLook
     obtain ⟨o, hO, hE⟩ := SystemState.slotCap_back_of_slots (hCn oid) (hTcb oid) hO'
       (by rw [hLook]; exact Option.some_ne_none _)
@@ -698,12 +718,15 @@ objects agree with the pre-state's off the slots' derivation links
 (`objectsAgreeOffDerivationLinks`) keeps each
 conjunct, and keeps the tree-reading ones when it keeps the tree. -/
 
-theorem cspaceDepthConsistent_of_agree {st st' : SystemState}
-    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cspaceDepthConsistent st) :
-    cspaceDepthConsistent st' := fun oid cn' hO => by
-  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
-  exact (CNode.proj_eq_of_withoutLinks_eq
-    (fun c => c.depth ≤ maxCSpaceDepth ∧ (c.bitsConsumed > 0 → c.wellFormed)) hw).mpr (h oid cn hc)
+theorem cnodeCapGeometry_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cnodeCapGeometry st) :
+    cnodeCapGeometry st' := fun oid o' slot cap hO hL => by
+  obtain ⟨o, hc, hS, -⟩ := hA.obj_slots_back hO
+  refine cnodeCapGeometryAt_mono (fun id cn' hC => ?_) _
+    (h oid o slot cap hc (by rw [← hS]; exact hL))
+  obtain ⟨cn, hc', hw⟩ := hA.cnode_back ((SystemState.getCNode?_eq_some_iff _ _ _).mp hC)
+  refine ⟨cn, (SystemState.getCNode?_eq_some_iff _ _ _).mpr hc', ?_⟩
+  rw [← CNode.radixWidth_withoutLinks cn', hw, CNode.radixWidth_withoutLinks]
 
 theorem cdtCompletenessOff_of_agree {st st' : SystemState} {gone : SlotRef → Prop}
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (hCdt : st'.cdt = st.cdt)
@@ -736,7 +759,7 @@ theorem capabilityBundleOffLinks_of_agree {st st' : SystemState}
     capabilityBundleOffLinks st' := by
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine ⟨cspaceLookupSound_holds st', cdtCompleteness_of_agree hA hCdt hComp, ?_,
-    cspaceDepthConsistent_of_agree hA hDepth, hObjInv, capTargetKindBacked_of_agree hA hRCPV⟩
+    cnodeCapGeometry_of_agree hA hDepth, hObjInv, capTargetKindBacked_of_agree hA hRCPV⟩
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
 /-- **A run of link writes keeps the bundle off (b) at a source** when its links
@@ -760,7 +783,7 @@ theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine capabilityInvariantBundle_of_components st'
     (cdtCompleteness_of_agree hA hCdt hComp)
-    ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
+    ?_ (cnodeCapGeometry_of_agree hA hDepth) hObjInv
     (capTargetKindBacked_of_agree hA hRCPV) hLinks
     (hShape.of_frame (.of_agree hA hCdt))
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic

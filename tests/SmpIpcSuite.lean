@@ -1244,9 +1244,9 @@ private def stCapBase : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject capEp (.endpoint {})
     |>.withObject capCallerCn (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)])))
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)])))
     |>.withObject capServerCn (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject capCaller.toObjId (.tcb ((mkTcb 852 40 none).withCSpaceRoot capCallerCn))
     |>.withObject capServer.toObjId (.tcb ((mkTcb 853 50 (some c1)).withCSpaceRoot capServerCn))
     |>.withObject capReply.toObjId (.reply { replyId := capReply })
@@ -1452,7 +1452,7 @@ private def stApi (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject apiEp (.endpoint {})
     |>.withObject apiCn (.cnode
-        (CNode.ofList 4 0 0 4 slots))
+        (CNode.ofList 4 slots))
     |>.withObject apiCaller.toObjId (.tcb ((mkTcb 862 40 none).withCSpaceRoot apiCn))
     |>.withObject apiServer.toObjId (.tcb ((mkTcb 863 50 (some c1)).withCSpaceRoot apiCn))
     |>.withObject apiReply.toObjId (.reply { replyId := apiReply })
@@ -4064,7 +4064,7 @@ no-op. -/
 private def stOrphanHeadReplyRecv : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject cnRoot (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject orphanEp (.endpoint
         (Endpoint.ofQueues ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) {}))
     |>.withObject orphanReply.toObjId (.reply

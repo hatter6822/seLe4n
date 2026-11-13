@@ -182,7 +182,7 @@ private def witnessState : SystemState :=
   BootstrapBuilder.empty
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
     |>.withObject callerCn (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)])))
     |>.withObject ntfnId (.notification
         { state := .idle, 
@@ -279,7 +279,7 @@ transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
 deliberately free — the receiver's receive path names it
 (`capsSendScenario`), so the granted transfer installs there. -/
 private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
        (SeLe4n.Slot.ofNat replyCapPtr, replyCap),
@@ -748,7 +748,7 @@ private def auditWitnessState : SystemState :=
   { (BootstrapBuilder.empty
       |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
       |>.withObject callerCn (.cnode
-          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
                (SeLe4n.Slot.ofNat auditCapPtr, auditCap),
                (SeLe4n.Slot.ofNat ordinaryCapPtr,

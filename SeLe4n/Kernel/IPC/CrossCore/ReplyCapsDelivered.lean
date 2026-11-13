@@ -41,8 +41,8 @@ reply's writes. -/
     (rid : SeLe4n.ReplyId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
     (storeReplyRendezvousReady st c server rid) server core).1
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
@@ -72,8 +72,8 @@ theorem replyRendezvousCaps_eq_delivered (st : SystemState) (c server : SeLe4n.T
           Except KernelError (Unit × SystemState))
       | .error e => .error e) =
       .ok ((), performReplyCapsDelivered st c server rid layout rf len badgeWord badged core
-        stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer
-        ct.cspaceRoot) := by
+        stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer
+        ct.spaceCells[0]) := by
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hNoX := propagatePipChainCrossCore_noResizeDue _ server core hNoS
   have hA := (ipcBufferReadsAgree_propagatePipChainCrossCore _ server core hNoS).trans
@@ -181,8 +181,8 @@ theorem replyTransferChecked_caps_inPlace (ctx : LabelingContext) (st : SystemSt
         { registers := Architecture.regMessageBody layout rf len,
           badge := SeLe4n.Badge.opt badgeWord badged } true core st =
       .ok ((), performReplyCapsDelivered st c server rid layout rf len badgeWord badged core
-        stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot (routedExtraCaps stcb.registerContext)
-        ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps stcb.registerContext)
+        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hNF : threadHasPendingFault st c = false := by

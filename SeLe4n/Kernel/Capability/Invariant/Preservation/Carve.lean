@@ -45,16 +45,16 @@ open SeLe4n.Model
 /-- **Storing an object that holds no capability and no derivation link at an id
 that held nothing keeps the capability bundle less its shape.**  Every slot
 reads and every link reads as before (the new object's slots are empty, and an
-absent object's read as empty), the tree is untouched, and the new object, if a
-CNode, is within the depth bound. -/
+absent object's read as empty), the tree is untouched, and no capability names
+the id, so no capability's geometry reads the new object. -/
 theorem storeObject_absent_preserves_capabilityBundleOffLinks
     {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (h : capabilityBundleOffLinks st) (hLinksAgree : cdtLinksAgree st)
     (hAbsent : st.objects[k]? = none)
     (hStore : storeObject k o st = .ok ((), st'))
     (hLinks : ∀ s f, o.linkAt s f = none)
-    (hDepth : ∀ cn, o = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
+    (hUnnamed : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject) (slot : SeLe4n.Slot) (cap : Capability),
+      st.objects[oid]? = some o' → o'.slotCap slot = some cap → cap.target ≠ .object k)
     (hCaps : ∀ s, o.slotCap s = none) :
     capabilityBundleOffLinks st' ∧ cdtLinksAgree st' := by
   obtain ⟨_, hComp, hAcyc, hDep, hObjInv, hRCPV⟩ := h
@@ -75,10 +75,14 @@ theorem storeObject_absent_preserves_capabilityBundleOffLinks
     obtain ⟨o0, hO, hL⟩ := hComp ref hM
     have e : ref.cnode ≠ k := fun e => by rw [e, hAbsent] at hO; cases hO
     exact ⟨o0, by rw [hNe _ e]; exact hO, hL⟩
-  · intro oid cn hO
-    by_cases e : oid = k
-    · rw [e, hSelf] at hO; exact hDepth cn (Option.some.inj hO)
-    · rw [hNe _ e] at hO; exact hDep oid cn hO
+  · intro oid o' slot cap hO hL
+    have e : oid ≠ k := fun e => by
+      rw [e, hSelf] at hO; cases hO; rw [hCaps] at hL; cases hL
+    rw [hNe _ e] at hO
+    have hG := hDep oid o' slot cap hO hL
+    refine ⟨hG.1, fun id cn' hT hC => ?_⟩
+    have e' : id ≠ k := fun e' => hUnnamed oid o' slot cap hO hL (e' ▸ hT)
+    exact hG.2 id cn' hT (by unfold SystemState.getCNode? at hC ⊢; rw [hNe _ e'] at hC; exact hC)
   · intro oid o' slot cap hO hL
     have e : oid ≠ k := fun e => by
       rw [e, hSelf] at hO; cases hO; rw [hCaps] at hL; cases hL
@@ -231,7 +235,7 @@ theorem retypeFromUntyped_authority_noUntypedBelow
 
 /-- **`retypeFromUntyped` preserves the capability bundle** when the object it
 carves holds no capability and no link, records no child if it is an untyped
-and, if a CNode, is within the depth bound: the untyped's record gains the
+(a fresh object no capability names): the untyped's record gains the
 child (`TreeShapeOver.carveRecord`), the object lands at an id that held nothing
 (the collision guard), and the authority's free index is rewritten in its
 occupied slot, its target kept.  The authority was not full (the carve fit), so
@@ -242,8 +246,6 @@ theorem retypeFromUntyped_preserves_capabilityInvariantBundle
     (newObj : KernelObject) (allocSize : Nat)
     (hInv : capabilityInvariantBundle st)
     (hCaps : ∀ s, newObj.slotCap s = none) (hLinks : ∀ s f, newObj.linkAt s f = none)
-    (hDepth : ∀ cn, newObj = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hKids : ∀ W, newObj.untyped? = some W → W.children = [])
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
@@ -263,8 +265,15 @@ theorem retypeFromUntyped_preserves_capabilityInvariantBundle
   have hChildUt : stUt.objects[childId]? = none := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]; exact hChild
   obtain ⟨hBUt, hLUt⟩ := storeObject_untyped_preserves_capabilityBundleOffLinks hInv hUt hStUt
+  have hUnnamed : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject) (slot : SeLe4n.Slot) (c : Capability),
+      stUt.objects[oid]? = some o' → o'.slotCap slot = some c → c.target ≠ .object childId := by
+    intro oid o' slot c hO hL hT
+    have e : oid ≠ untypedId := fun e => by
+      rw [e, storeObject_objects_eq _ _ _ _ hObjInv hStUt] at hO; cases hO; cases hL
+    rw [storeObject_objects_ne _ _ _ _ _ e hObjInv hStUt] at hO
+    exact capabilityInvariantBundle_objectCapsBacked hInv oid o' slot c childId hO hL hT hChild
   obtain ⟨hBCh, hLCh⟩ := storeObject_absent_preserves_capabilityBundleOffLinks hBUt hLUt hChildUt
-    hStCh hLinks hDepth hCaps
+    hStCh hLinks hUnnamed hCaps
   have hShapeCh := retypeFromUntyped_stores_shape hInv.treeShape hObjInv hUt hChild hNe
     (retypeFromUntyped_childId_notIrqNode authority untypedId childId newObj allocSize st st' hStep)
     hAlloc hStUt hStCh hCaps hKids
@@ -400,8 +409,6 @@ theorem retypeFromUntyped_fresh_child
     (newObj : KernelObject) (allocSize : Nat)
     (hInv : capabilityInvariantBundle st)
     (hCaps : ∀ s, newObj.slotCap s = none) (hLinks : ∀ s f, newObj.linkAt s f = none)
-    (hDepth : ∀ cn, newObj = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hKids : ∀ W, newObj.untyped? = some W → W.children = [])
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     (∀ U, st'.getUntyped? childId = some U → U.children = []) ∧
@@ -438,7 +445,7 @@ theorem retypeFromUntyped_fresh_child
     exact CNode.lookup_insert_eq cn authority.slot _ (CNode.slotsUnique_holds _)
       (CNode.slotAddressable_of_lookup _ _ _ hLkA)
   have h' := (retypeFromUntyped_preserves_capabilityInvariantBundle st st' authority untypedId
-    childId newObj allocSize hInv hCaps hLinks hDepth hKids hStep).treeShape
+    childId newObj allocSize hInv hCaps hLinks hKids hStep).treeShape
   have hLeaf := retypeFromUntyped_authority_leaf st st' authority untypedId childId newObj
     allocSize hInv hCaps hStep
   refine ⟨fun U hU => hKids U (by rw [SystemState.getUntyped?_eq_bind, hObjCh] at hU; exact hU),
@@ -450,6 +457,29 @@ theorem retypeFromUntyped_fresh_child
     · exact .inr e'
     · exact absurd hp (hLeaf untypedId hSrcU p e')
   · exact .inr (h'.carvedBelow t untypedId ht p authority hp hSrcU.namesAt)
+
+/-- A carve leaves the carved object at its id. -/
+theorem retypeFromUntyped_child_object
+    (st st' : SystemState) (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject) (allocSize : Nat) (hObjInv : st.objects.invExt)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    st'.objects[childId]? = some newObj := by
+  obtain ⟨_, _, _, stUt, _, _, _, _, _, _, _, _, _, _, _, _, hAC, hStUt,
+    hStCh, _, hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _
+      hObjInv hStep
+  have hInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
+  rw [storeObject_objects_ne _ _ _ _ _ (Ne.symm hAC) hInvCh hStIdx,
+    storeObject_objects_eq _ _ _ _ hInvUt hStCh]
+
+/-- A carved CNode's radix is at most a word's 64 bits: its request bounds it
+(`CarveRequest.cnode`). -/
+theorem CarveRequest.object_radix_le (untypedId childId : SeLe4n.ObjId)
+    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
+    ∀ cn, req.object untypedId childId ut idx = .cnode cn → cn.radixWidth ≤ 64 := by
+  intro cn hO
+  cases req <;> simp only [CarveRequest.object, KernelObject.cnode.injEq, reduceCtorEq] at hO
+  case cnode r hr => subst hO; simpa [carvedCNode] using hr
 
 /-- **A carve names nothing new in the slots, and its object is in the store**:
 the untyped's record and the carved object hold no capability, and the free-index
@@ -541,21 +571,6 @@ theorem CarveRequest.object_linkAt (untypedId childId : SeLe4n.ObjId) (ut : Unty
     exact TCB.spaceLinkAt_of_spaceLinksClear (by simp [TCB.spaceLinksClear, carvedTcb]) s f
   all_goals rfl
 
-/-- A carved CNode is within the depth bound: it has no guard and resolves
-exactly its radix bits, which its request bounds (`CarveRequest.cnode`). -/
-theorem CarveRequest.object_depthConsistent (untypedId childId : SeLe4n.ObjId)
-    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
-    ∀ cn, req.object untypedId childId ut idx = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed) := by
-  intro cn hO
-  cases req <;> simp only [CarveRequest.object, KernelObject.cnode.injEq, reduceCtorEq] at hO
-  case cnode r hr =>
-    subst hO
-    refine ⟨hr, fun hPos => ?_⟩
-    simp only [CNode.bitsConsumed, carvedCNode, CNode.ofSlots_guardWidth] at hPos ⊢
-    exact ⟨by simp [CNode.bitsConsumed], by simpa [CNode.bitsConsumed]
-      using hPos, by simp [CNode.guardBounded]⟩
-
 /-- A carved untyped records no child: it is the parent's next child, carved
 whole. -/
 theorem CarveRequest.object_untyped_children (untypedId childId : SeLe4n.ObjId)
@@ -584,13 +599,13 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
     (req.carveIndex ut (retypeFreeIndex st src utCap)) req
   have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle st st1 src untypedId
     childId _ _ hInv (CarveRequest.object_slotCap _ _ _ _ req)
-    (CarveRequest.object_linkAt _ _ _ _ req) (CarveRequest.object_depthConsistent _ _ _ _ req)
+    (CarveRequest.object_linkAt _ _ _ _ req)
     hKids hRt
   have hLeaf1 := retypeFromUntyped_authority_leaf st st1 src untypedId childId _ _ hInv
     (CarveRequest.object_slotCap _ _ _ _ req) hRt
   obtain ⟨hKids1, hBelow1⟩ := retypeFromUntyped_fresh_child st st1 src untypedId childId _ _ hInv
     (CarveRequest.object_slotCap _ _ _ _ req) (CarveRequest.object_linkAt _ _ _ _ req)
-    (CarveRequest.object_depthConsistent _ _ _ _ req) hKids hRt
+    hKids hRt
   have hSrc1 := retypeFromUntyped_lookupSlotCap_authority st st1 src untypedId childId _ _
     hInv.2.2.2.2.1 hRt
   have hObjZ := CarveRequest.scrub_objects st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap)) req
@@ -602,7 +617,14 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
     simpa only [SystemState.getObject?, hObjZ] using hSrc1
   have hObjInvZ := hInvZ.2.2.2.2.1
   have hBundle2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage _ st2 dst _
-    hInvZ.offCoverage (by rw [CarveRequest.capability_eq]; trivial) hIns
+    hInvZ.offCoverage (by rw [CarveRequest.capability_eq]; trivial)
+    (cnodeCapGeometryAt_of_noGuard (by rw [CarveRequest.capability_eq])
+      (by rw [CarveRequest.capability_eq]) fun id cn hT hC => by
+        rw [CarveRequest.capability_eq] at hT; cases hT
+        rw [SystemState.getCNode?_eq_some_iff, hObjZ,
+          retypeFromUntyped_child_object st st1 src untypedId childId _ _ hInv.2.2.2.2.1 hRt] at hC
+        exact CarveRequest.object_radix_le untypedId childId ut _ req cn (Option.some.inj hC))
+    hIns
   have hCdt := cdt_addEdge_after_insert _ st2 src dst _ .retype hInvZ.2.1 hInvZ.2.2.1 hObjInvZ
     hSrc hIns hInvZ.linksAgree
   -- The carved object's id held nothing, so no slot named it (`live`), and the
@@ -643,7 +665,7 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
   have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .retype }).objects = st2.objects := rfl
   exact capabilityInvariantBundle_of_linkReach
     ⟨cspaceLookupSound_holds _, hCdt.1, hCdt.2.1,
-      cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal, hObjFinal ▸ hObjInv2,
+      cnodeCapGeometry_of_objects_eq st2 _ hDepth2 hObjFinal, hObjFinal ▸ hObjInv2,
       capTargetKindBacked_of_objects_eq hObjFinal hRCPV2⟩
     (SystemState.cdtAddChild_reach st2 src dst .retype) hObjInv2 hCdt.2.2 hShape
 

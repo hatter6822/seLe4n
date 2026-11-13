@@ -192,7 +192,25 @@ def qemuVirtExerciserRootIpcBufferVAddr : Nat := 2 <<< 39
     the shipped geometry (`qemuVirtRootCNodeOf`), and the 32 slots past the
     shipped ones hold what the boot gives the root task. -/
 def qemuVirtExerciserRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
-  CNode.ofList 64 58 (qemuVirtRootTaskCNodeGuard / 2) 6 slots
+  CNode.ofList 6 slots
+
+/-- The exerciser's root guard: the shipped guard shifted by one, its top bit
+    set, so a slot's capability address is `2^63 + n`. -/
+def qemuVirtExerciserRootTaskCNodeGuard : Nat := 2 ^ 57
+
+/-- The exerciser's root guard width: 58 bits above the 6-bit radix, so one
+    level resolves a whole 64-bit CPtr.  Carried by the capabilities naming the
+    root CNode (each root thread's CSpace root and the CNode's own slot 2), as
+    seL4 keeps a CNode's guard in `cap_cnode_cap`. -/
+def qemuVirtExerciserRootTaskCNodeGuardSize : Nat := 58
+
+/-- The shipped root CNode's capabilities with the root's own (slot 2) carrying
+    the exerciser's guard. -/
+def qemuVirtExerciserRootCNodeSlots : List (SeLe4n.Slot × Capability) :=
+  qemuVirtRootTaskCNodeSlots.set 1
+    (SeLe4n.Slot.ofNat 2, SeLe4n.Platform.RPi5.rpi5InitialCap qemuVirtRootTaskCNodeId
+      [.read, .write, .grant, .grantReply]
+      qemuVirtExerciserRootTaskCNodeGuard qemuVirtExerciserRootTaskCNodeGuardSize)
 
 /-- The exerciser's root CNode: the shipped root CNode's capabilities, the
     audit trail's, with read and write (`Capability.auditTrailManage`), in
@@ -200,18 +218,34 @@ def qemuVirtExerciserRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CN
     `qemuVirtExerciserRootIpcBufferUntypedSlot`. -/
 def qemuVirtExerciserRootTaskCNode : CNode :=
   qemuVirtExerciserRootCNodeOf
-    (qemuVirtRootTaskCNodeSlots ++
+    (qemuVirtExerciserRootCNodeSlots ++
       [ (qemuVirtExerciserAuditSlot, Capability.auditTrailManage)
       , (SeLe4n.Slot.ofNat qemuVirtExerciserRootIpcBufferUntypedSlot,
           SeLe4n.Platform.RPi5.rpi5InitialCap qemuVirtExerciserRootIpcBufferUntypedId
             [.read, .write, .retype]) ])
 
+/-- A configured thread entry for the exerciser's initial objects. -/
+private def exerciserTcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=
+  { id := id, obj := .tcb tcb
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => nomatch h }
+
 set_option maxRecDepth 8192 in
 /-- The exerciser's initial objects: the shipped deployment's, its root CNode
-    (the second entry) replaced by the exerciser's and its root untyped (the
-    fifth) by the exerciser's, and the IPC-buffer untyped after them. -/
+    (the second entry) replaced by the exerciser's, its root untyped (the
+    fifth) by the exerciser's, the two root threads (the first and sixth) given
+    CSpace roots carrying the exerciser's guard, and the IPC-buffer untyped
+    after them. -/
 def qemuVirtExerciserInitialObjects : List ObjectEntry :=
-  ((qemuVirtInitialObjects.set 1
+  ((((qemuVirtInitialObjects.set 0
+    (exerciserTcbEntry qemuVirtRootTaskTcbId
+      (SeLe4n.Platform.RPi5.rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId
+        qemuVirtRootTaskVSpaceId qemuVirtExerciserRootTaskCNodeGuard
+        qemuVirtExerciserRootTaskCNodeGuardSize))).set 5
+    (exerciserTcbEntry qemuVirtPartnerTcbId
+      (SeLe4n.Platform.RPi5.rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId
+        qemuVirtRootTaskVSpaceId qemuVirtExerciserRootTaskCNodeGuard
+        qemuVirtExerciserRootTaskCNodeGuardSize))).set 1
     { id := qemuVirtRootTaskCNodeId, obj := .cnode qemuVirtExerciserRootTaskCNode
       hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
       hMappings := fun _ h => nomatch h }).set 4
@@ -292,16 +326,11 @@ def qemuVirtExerciserRootInvoke (decoded : SyscallDecodeResult) :
   let ctx := PlatformBinding.labeling (platform := QemuVirtExerciserPlatform)
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    match st.getObject? tcb.cspaceRoot with
-    | some (.cnode rootCn) =>
-      let gate : SeLe4n.Kernel.SyscallGate :=
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr
-          capDepth := rootCn.depth
-          requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
-      SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
-        SeLe4n.Kernel.Concurrency.bootCoreId gate st
-    | some _ => .error (.invalidCapability 0)
-    | none => .error .objectNotFound
+    let gate : SeLe4n.Kernel.SyscallGate :=
+      { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr
+        requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
+    SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
+      SeLe4n.Kernel.Concurrency.bootCoreId gate st
   | some _ => .error .illegalState
   | none => .error .objectNotFound
 

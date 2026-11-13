@@ -293,7 +293,12 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       · rw [SystemState.slotLinkAt_def, e, ← SystemState.slotLinkAt_def]; exact hNone
       · rw [SystemState.slotLinkAt_def, hn]
       · rw [SystemState.slotLinkAt_def, hU]; rfl
-  refine ⟨cspaceLookupSound_holds st', hComp', ?_, fun oid cn hC => h.2.2.2.1 oid cn (hCnB oid cn hC),
+  refine ⟨cspaceLookupSound_holds st', hComp', ?_, fun oid o' slot cap hO' hL' => by
+      have hS : st.slotCapAt ⟨oid, slot⟩ = some cap := by
+        rw [← hCap, SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO']; exact hL'
+      exact cnodeCapGeometryAt_mono (fun id cn' hC => ⟨cn', (SystemState.getCNode?_eq_some_iff _ _ _).mpr
+          (hCnB id cn' ((SystemState.getCNode?_eq_some_iff _ _ _).mp hC)), rfl⟩) _
+        (h.capGeometry.slotCapAt hS),
     hI', hRCPV', hL, (hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_) ?_).of_readers
       hCdt hCap (fun _ hp => hp) rfl⟩
   · have hA := h.2.2.1; unfold cdtAcyclicity at hA ⊢; rw [hCdt]; exact hA

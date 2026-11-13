@@ -437,9 +437,6 @@
  "an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound": {
   "tests/An10CascadeSuite.lean": 2
  },
- "an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound": {
-  "tests/An10CascadeSuite.lean": 2
- },
  "an10_e_donateSchedContextValid_reduces": {
   "tests/An10CascadeSuite.lean": 2
  },
@@ -447,9 +444,6 @@
   "tests/An10CascadeSuite.lean": 2
  },
  "an10_e_removeRunnableValid_reduces_to_raw": {
-  "tests/An10CascadeSuite.lean": 2
- },
- "an10_e_resolveCapAddress_missing_root_is_objectNotFound": {
   "tests/An10CascadeSuite.lean": 2
  },
  "an10_e_returnDonatedSchedContextValid_reduces": {

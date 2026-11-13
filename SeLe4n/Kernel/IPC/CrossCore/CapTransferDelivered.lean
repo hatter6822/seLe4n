@@ -57,7 +57,7 @@ theorem senderExtraCapAddrs (tcb : TCB) (c : Nat) :
 theorem frameCapRequestOf (tcb : TCB) (c : Nat) :
     frameCapRequestOf X tcb c = frameCapRequestOf st tcb c := by
   unfold SeLe4n.Kernel.frameCapRequestOf
-  rw [h.senderExtraCapAddrs, h.getCNode?]
+  rw [h.senderExtraCapAddrs]
 
 theorem receiverHasBuffer (tcb : TCB) :
     receiverHasBuffer X tcb = receiverHasBuffer st tcb := by
@@ -73,7 +73,8 @@ theorem receivePathSlot? (tcb : TCB) (c i d : UInt64) :
     receivePathSlot? X tcb c i d = receivePathSlot? st tcb c i d := by
   have hC : ∀ id, X.getCNode? id = st.getCNode? id := h.getCNode?
   unfold SeLe4n.Kernel.receivePathSlot?
-  simp only [hC, resolveCapAddress_congr_getCNode? X st hC, lookupSlotCap_congr_getCNode? X st hC]
+  simp only [lookupSlot_congr_getCNode? X st hC, lookupSlotCap_congr_getCNode? X st hC,
+    lookupSlotForCNodeOp_congr_getCNode? X st hC]
 
 theorem receiveSlot? (tcb : TCB) : receiveSlot? X tcb = receiveSlot? st tcb := by
   unfold SeLe4n.Kernel.receiveSlot?
@@ -87,19 +88,19 @@ end ipcBufferReadsAgree
 
 /-! ### The transfer always answers -/
 
-theorem receiveTransferCaps_ok (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+theorem receiveTransferCaps_ok (req : Option (Capability × Array SeLe4n.CPtr))
     (ep : Option SeLe4n.ObjId) (tgt : Option (TCB × Option CSpaceAddr)) (Z : SystemState) :
     ∃ s Z', receiveTransferCaps req ep tgt Z = .ok (s, Z') := by
   unfold receiveTransferCaps
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · exact ⟨_, _, rfl⟩
   · simp only []
     split
     · exact ⟨_, _, rfl⟩
     · rcases tgt with _ | ⟨rt, slot?⟩
       · exact ⟨_, _, rfl⟩
-      · obtain ⟨⟨s, Z'⟩, h⟩ := ipcUnwrapCapsLoop_ok (resolveExtraCaps root addrs depth true Z) ep rt
-          (resolveExtraCaps root addrs depth true Z).size 0 slot? #[] Z
+      · obtain ⟨⟨s, Z'⟩, h⟩ := ipcUnwrapCapsLoop_ok (resolveExtraCaps root addrs true Z) ep rt
+          (resolveExtraCaps root addrs true Z).size 0 slot? #[] Z
         exact ⟨s, Z', h⟩
 
 /-! ### The frame with the transfer's report -/
@@ -180,8 +181,8 @@ the transfer reads of them (`capTransferK`), read before the rendezvous. -/
     (r : SeLe4n.ThreadId) (nextCode : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     deliverCapsFrame (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
@@ -207,8 +208,8 @@ theorem sendRendezvousCaps_eq_delivered (st : SystemState) (endpointId : SeLe4n.
           s.capInfo
       | .error _ => st) =
       performSendCapsDelivered st endpointId r (ThreadId.optCode next) layout rf len badgeWord badged
-        core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count rt.vspaceRoot rt.ipcBuffer
-        rt.cspaceRoot := by
+        core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count rt.vspaceRoot rt.ipcBuffer
+        rt.spaceCells[0] := by
   have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
   have hNoY := wakeThread_noResizeDue _ r core hNo0
   have hA := ipcBufferReadsAgree_sendWoken st endpointId r (ThreadId.optCode next) core hNo

@@ -245,7 +245,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     cases hDisp
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     schedLockSetForSyscall_contains_objStore_write decoded.syscallId ops e st S hSched
-  obtain ⟨hTcb, rootCn, hRoot, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
+  obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   unfold abiEntryLockOperands at hOps
   rw [if_neg hY] at hOps
   rw [hGate] at hOps
@@ -736,11 +736,9 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
         exact schedLockSet_yieldOnCore_coversWrites e st stY S hSched hYieldOk
   obtain ⟨tcb, gate, cap, hGate, hLk, -⟩ :=
     abiEntryLockOperands_gate_lookup decoded tid st ops hY hOps
-  obtain ⟨hTcb, rootCn, hRoot, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
+  obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   have hTcbObj : st.getObject? tid.toObjId = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  have hRootObj : st.getObject? tcb.cspaceRoot = some (.cnode rootCn) :=
-    (SystemState.getCNode?_eq_some_iff st _ rootCn).mp hRoot
   have hRes : syscallResolveCap gate st = .ok (cap, st) := syscallLookupCap_resolve gate st cap hLk
   have key : ∀ stPost, dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), stPost) →
       footprintCoversWrites S st (applySyscallTaint (syscallTaintPlan st tid decoded) st stPost) :=
@@ -755,8 +753,6 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
   · exact absurd hDisp (by simp)
   · simp only at hDisp
     rw [hTcbObj] at hDisp
-    simp only at hDisp
-    rw [hRootObj] at hDisp
     simp only at hDisp
     rw [← hGateEq] at hDisp
     split at hDisp
@@ -861,7 +857,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           tid ke tcb decoded hTcbRegs hDec (by rw [hY]; rfl)
       obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv⟩ :=
         abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
-      obtain ⟨hTcbF, rootCn, hRoot, hGateEq⟩ :=
+      obtain ⟨hTcbF, -, -, hGateEq⟩ :=
         abiEntryGate_components decoded tid stFilled tcbF gate hGate
       have hTcbRegs' :
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects[tid.toObjId]?
@@ -870,10 +866,6 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       rw [hFillObj, hTcbRegs'] at hTcbF'
       simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
       subst hTcbF'
-      have hRootRegs :
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects[tcb.cspaceRoot]?
-            = some (.cnode rootCn) := by
-        rw [← hFillObj]; exact (SystemState.getCNode?_eq_some_iff _ _ _).mp hRoot
       have hResolve := syscallResolveCap_congr_objects gate stFilled _ cap hFillObj
         (syscallLookupCap_resolve gate stFilled cap hLk)
       subst hGateEq
@@ -887,7 +879,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           rw [← hRecv]; unfold receiveGateRefuses syscallTargetAccepted objectKindIs
           simp only [SystemState.getObject?, hFillObj]
         exact Platform.FFI.syscallCapFaultOf_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ tid ke
-          tcb decoded inRecv rootCn hTcbRegs' hDec hPhase hRootRegs
+          tcb decoded inRecv hTcbRegs' hDec hPhase
           (by simp [syscallOperandLookup, hResolve, hRecv'])
     rw [hNoFault] at hD
     simp only at hD

@@ -1,7 +1,7 @@
 [ENT-000] scheduled thread: some 1
 [ENT-001] source cap rights before mint: { bits := 7 }
 [ENT-002] source path lookup rights: { bits := 7 }
-[ENT-003] source path alias lookup rights: { bits := 7 }
+[ENT-003] source path alias branch error: SeLe4n.Model.KernelError.failedLookup false (SeLe4n.Model.LookupFault.depthMismatch 1 0)
 [CAT-002] adapter timer success path value: 2
 [CAT-003] adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
 [CAT-005] adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
@@ -27,8 +27,8 @@
 [SRG-009] chain success: iface=true svc=true
 [SST-021] deep cnode radix fixture: some 12
 [SST-023] deep cnode path lookup rights: { bits := 3 }
-[SST-024] deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
-[SST-026] deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability 0
+[SST-024] deep cnode path bad-depth branch: SeLe4n.Model.KernelError.failedLookup false (SeLe4n.Model.LookupFault.depthMismatch 13 14)
+[SST-026] deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.failedLookup false (SeLe4n.Model.LookupFault.guardMismatch 14 3 2)
 [SST-028] large runnable queue length: 2
 [SST-030] large queue scheduled current: some 1
 [SST-032] context switch regs match incoming: true
@@ -93,7 +93,7 @@
 [UMT-021] retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
 [UMT-023] retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
 [SGT-001] H15e syscall gate send (correct): ok
-[SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
+[SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.failedLookup false (SeLe4n.Model.LookupFault.invalidRoot)
 [SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.invalidCapability 0
 [SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability 0
 [SGT-009] H15e syscall gate retype: ok

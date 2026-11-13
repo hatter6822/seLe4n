@@ -60,33 +60,23 @@ mapping. -/
   (ipcBufferWordPAddr? st tcb 0 true).isSome
 
 /-- **The slot a receive path names** (seL4's `getReceiveSlots`): the
-`receiveCNode` word looked up in the receiver's CSpace (`lookupCap`) must name a
-CNode, in which `receiveIndex` resolves `receiveDepth` bits deep (seL4's
-`lookupTargetSlot`, a depth from 1 to the word's 64 bits) to a slot that is
-empty.  Any failure names no slot, and a transfer then installs nothing; seL4
+`receiveCNode` word looked up in the receiver's CSpace (`lookupCap`, through
+`lookupSlot`) names a capability from which `receiveIndex` resolves exactly
+`receiveDepth` bits (seL4's `lookupTargetSlot`: a CNode capability, a depth
+from 1 to the word's 64 bits) to a slot that is empty.  Any failure names no slot, and a transfer then installs nothing; seL4
 raises no fault for it. -/
 def receivePathSlot? (st : SystemState) (tcb : TCB) (cnodeWord indexWord depthWord : UInt64) :
     Option CSpaceAddr :=
-  match st.getCNode? tcb.cspaceRoot with
-  | none => none
-  | some rootCn =>
-    match resolveCapAddress tcb.cspaceRoot (SeLe4n.CPtr.ofWord cnodeWord) rootCn.depth st with
-    | .error _ => none
-    | .ok ref =>
-      match SystemState.lookupSlotCap st ref with
-      | none => none
-      | some cap =>
-        match cap.target with
-        | .object cnodeId =>
-          match st.getCNode? cnodeId with
-          | none => none
-          | some _ =>
-            if depthWord.toNat = 0 ∨ 64 < depthWord.toNat then none else
-            match resolveCapAddress cnodeId (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st with
-            | .error _ => none
-            | .ok slot =>
-              if (SystemState.lookupSlotCap st slot).isNone then some slot else none
-        | _ => none
+  match lookupSlot tcb (SeLe4n.CPtr.ofWord cnodeWord) st with
+  | .error _ => none
+  | .ok ref =>
+    match SystemState.lookupSlotCap st ref with
+    | none => none
+    | some cap =>
+      match lookupSlotForCNodeOp false cap (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st with
+      | .error _ => none
+      | .ok slot =>
+        if (SystemState.lookupSlotCap st slot).isNone then some slot else none
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- **The receiver's receive slot** (seL4's `getReceiveSlots`): the slot its

@@ -77,7 +77,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (tcb : TCB)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hDepthPre : cspaceDepthConsistent st)
+    (hDepthPre : cnodeCapGeometry st)
     (hObjInv : st.objects.invExt)
     (hRCPV : capTargetKindBacked st)
     (hLinks : cdtLinksAgree st) (hShape : SystemState.CapTreeShape st)

@@ -172,7 +172,7 @@ theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (endpointId : Opt
 /-- The rendezvous capability lookup reads the sender's CSpace and writes the
 receiver's CNodes alone. -/
 theorem receiveTransferCaps_replyViews_eq
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {sum : CapTransferSummary}
     (hInv : st.objects.invExt) (h : receiveTransferCaps req endpointId target? st = .ok (sum, st')) :
     st'.replyViews = st.replyViews := by

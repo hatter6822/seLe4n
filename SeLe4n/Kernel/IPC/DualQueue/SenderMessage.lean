@@ -68,7 +68,8 @@ def extraCapsFromSlots (st : SystemState) : List SlotRef → Array TransferCap �
     | some cap => extraCapsFromSlots st rest (acc.push (TransferCap.fromSlot cap ref))
 
 /-- **Resolve the extra capability addresses a sender names** (seL4's
-`lookupExtraCaps`), in its CSpace, at the rendezvous.
+`lookupExtraCaps`), in its CSpace from its root capability `root`, at the
+rendezvous, each through seL4's `lookupSlot` (`lookupSlotFrom`, 64 bits).
 
 seL4 semantics: the lookup of the addresses is all or nothing — if any address
 fails to resolve to a slot, the message carries no capabilities
@@ -83,11 +84,11 @@ was read from: the slot is its own derivation node (WS-ZA ZA5.3), so the
 transfer that installs it records the edge from that slot, and nothing is
 minted here.  A send resolves its addresses at the rendezvous only, so no source
 address is ever held across a syscall. -/
-def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
+def resolveExtraCaps (root : Capability)
+    (capAddrs : Array SeLe4n.CPtr) (granted : Bool)
     (st : SystemState) : Array TransferCap :=
   if !granted then #[] else
-  match capAddrs.toList.mapM (fun addr => (resolveCapAddress cspaceRoot addr depth st).toOption) with
+  match capAddrs.toList.mapM (fun addr => (lookupSlotFrom root addr st).toOption) with
   | none => #[]
   | some refs => extraCapsFromSlots st refs #[]
 
@@ -112,9 +113,9 @@ theorem extraCapsFromSlots_slot (st : SystemState) :
 
 /-- **Every resolved capability is the content of its source slot** in the state
 it is resolved in. -/
-theorem resolveExtraCaps_slot (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr)
-    (depth : Nat) (granted : Bool) (st : SystemState) (c : TransferCap)
-    (hc : c ∈ resolveExtraCaps cspaceRoot capAddrs depth granted st) :
+theorem resolveExtraCaps_slot (cspaceRoot : Capability) (capAddrs : Array SeLe4n.CPtr)
+    (granted : Bool) (st : SystemState) (c : TransferCap)
+    (hc : c ∈ resolveExtraCaps cspaceRoot capAddrs granted st) :
     SystemState.lookupSlotCap st c.srcSlot = some c.cap := by
   unfold resolveExtraCaps at hc
   split at hc
@@ -221,22 +222,22 @@ theorem senderExtraCapAddrs_getElem?_zero {st : SystemState} {tcb : TCB} {count 
       | some l => simp [List.mapM_cons, h0, hr] at ha; rw [ha]
 
 /-- WS-ZA ZA4.7: **the capabilities a sender's frame asks to transfer**, as the
-CSpace root, the addresses and the root's depth they resolve against -- or
+CSpace root capability and the addresses it resolves (at 64 bits) -- or
 `none` when it transfers nothing: no grant right, a frame that does not decode,
-no capability addresses, or a missing CSpace root.  The send that meets a
+no capability addresses, or no CSpace root capability.  The send that meets a
 waiting receiver and the receive that takes a blocked sender both resolve this
 request at the rendezvous (`receiveTransferCaps`), so no capability is looked up
 on the arm that blocks. -/
 def senderFrameCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB)
-    (grant : Bool) : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+    (grant : Bool) : Option (Capability × Array SeLe4n.CPtr) :=
   if !grant then none else
   match blockedSenderDecode st sender tcb with
   | .error _ => none
   | .ok decoded =>
       let addrs := senderExtraCapAddrs st tcb decoded.msgInfo.extraCaps
       if addrs.isEmpty then none else
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn => some (tcb.cspaceRoot, addrs, rootCn.depth)
+      match tcb.spaceCells[0] with
+      | some root => some (root, addrs)
       | none => none
 
 
@@ -319,14 +320,14 @@ theorem senderFrameCapRequest_of_noExtraCaps {st : SystemState} {sender : SeLe4n
     rw [beq_iff_eq.mp h] at hE
     simp only [hX, hE, UInt64.toNat_zero, senderExtraCapAddrs_zero, Array.isEmpty_empty, ↓reduceIte]
 /-- WS-ZA ZA4.7: **the capabilities a blocked sender asks to transfer**, as the
-CSpace root, the addresses and the root's depth they resolve against -- or
+CSpace root capability and the addresses it resolves (at 64 bits) -- or
 `none` when it transfers nothing: a fault message, a sender without the grant
 right, a frame that no longer decodes, no capability addresses, or a missing
 CSpace root.  `resolveExtraCaps` of the request is what the receive installs;
 `receiveInstallsCaps` is this function's `isSome`, so the receive's lock
 footprint and its install read one answer. -/
 def blockedSenderCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
-    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+    Option (Capability × Array SeLe4n.CPtr) :=
   if tcb.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb.ipcCanGrant
 
 /-- WS-ZA ZA4.7: and it is within the payload bound: a fault encodes inside the
@@ -391,7 +392,7 @@ makes (`sendPayloadMessage_frame_eq_blockedSenderMessage`). -/
 the frame's request (`senderFrameCapRequest`) under the capability's grant
 right, none for a fault. -/
 def sendPayloadCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
-    SendPayload → Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
+    SendPayload → Option (Capability × Array SeLe4n.CPtr)
   | .frame _ g => senderFrameCapRequest st sender tcb g
   | .fault _ _ _ => none
 

@@ -573,6 +573,18 @@ rewrites it there.
     pass.
   - The hook run halts at the zero with the range named.
   - Every other reading stays 0.
+- **Closure duty (the workstream's last row).**
+  - **Full documentation sweep against WS-UC's final tree:** the spec, every
+    GitBook chapter on untyped memory, retype and the heap, README metrics,
+    `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the
+    `docs/REGISTERED_DEBT.md` index row, and
+    `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-UC section moves to
+    `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.
+  - **Refresh every not-yet-started plan** under `docs/planning/` against
+    WS-UC's final tree: file:line citations, names, rows the final tree makes
+    obsolete or newly needs, and the decisions it affects.
+  - If the refresh is too large for UC10, it is the very next PR, landed
+    before any next-row code.
 
 ## 5. The per-kind byte table (filled by UC1)
 

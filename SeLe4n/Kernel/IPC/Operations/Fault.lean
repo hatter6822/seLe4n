@@ -193,10 +193,11 @@ The four gates, in the order seL4 applies them (the first two are
 
 1. the thread exists and **has** a fault-handler CPtr (`none` is seL4's
    "no handler configured", and takes the RR4.9 path);
-2. the CPtr resolves through the thread's **own** CSpace root, at that
-   root CNode's declared depth — the same resolution the syscall gate uses
-   (`syscallResolveCap`), so a fault handler is addressed with exactly the
-   authority its thread already has and no more;
+2. the CPtr resolves through the thread's **own** CSpace root capability, at
+   64 bits (`lookupSlot`, seL4's `lookupCap`) — the same resolution the
+   syscall gate uses (`syscallResolveCap`), so a fault handler is addressed
+   with exactly the authority its thread already has and no more; a failed
+   lookup is its lookup fault;
 3. the resolved capability satisfies `faultHandlerCapAuthorized` — send, and
    grant or grant-reply (RR4.8);
 4. it names an object that really is an endpoint.
@@ -204,11 +205,8 @@ The four gates, in the order seL4 applies them (the first two are
 Read-only: resolution never mutates the state. -/
 def resolveFaultHandlerCPtr (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
     Except KernelError FaultHandlerTarget :=
-  match st.getCNode? tcb.cspaceRoot with
-  | none => .error .objectNotFound
-  | some rootCn =>
-      match resolveCapAddress tcb.cspaceRoot cptr rootCn.depth st with
-      | .error e => .error e
+      match lookupSlot tcb cptr st with
+      | .error f => .error (.failedLookup false f)
       | .ok ref =>
           match SystemState.lookupSlotCap st ref with
           | none => .error (.invalidCapability 0)
@@ -710,21 +708,18 @@ def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadI
 
 /-- WS-ZA ZA5.2: does `cptr` resolve, through `tcb`'s CSpace, to a handler
 (`resolveFaultHandlerCPtr` succeeds)?  The slot is resolved through
-`resolveCapAddressKUnrolled`, so no slot reference, capability result or
+`lookupSlotK`, so no slot reference, capability result or
 handler record is built (`faultHandlerResolves_eq`). -/
 @[inline] def faultHandlerResolves (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) : Bool :=
-  match st.getCNode? tcb.cspaceRoot with
-  | none => false
-  | some rootCn =>
-      resolveCapAddressKUnrolled tcb.cspaceRoot cptr rootCn.depth st (fun _ => false)
-        (fun cnode slot =>
-          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-          | none => false
-          | some cap =>
-              faultHandlerCapAuthorized cap &&
-                (match cap.target with
-                 | .object epId => (st.getEndpoint? epId).isSome
-                 | _ => false))
+  lookupSlotK tcb cptr st (fun _ _ _ _ => false)
+    (fun cnode slot =>
+      match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+      | none => false
+      | some cap =>
+          faultHandlerCapAuthorized cap &&
+            (match cap.target with
+             | .object epId => (st.getEndpoint? epId).isSome
+             | _ => false))
 
 theorem faultHandlerResolves_eq (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
     faultHandlerResolves st tcb cptr =
@@ -732,26 +727,22 @@ theorem faultHandlerResolves_eq (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CP
        | .ok _ => true
        | .error _ => false) := by
   unfold faultHandlerResolves resolveFaultHandlerCPtr
-  cases st.getCNode? tcb.cspaceRoot with
-  | none => rfl
-  | some rootCn =>
+  rw [lookupSlotK_eq]
+  cases lookupSlot tcb cptr st with
+  | error e => rfl
+  | ok ref =>
+    obtain ⟨cnode, slot⟩ := ref
     simp only []
-    rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-    cases resolveCapAddress tcb.cspaceRoot cptr rootCn.depth st with
-    | error e => rfl
-    | ok ref =>
-      obtain ⟨cnode, slot⟩ := ref
+    cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+    | none => rfl
+    | some cap =>
       simp only []
-      cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-      | none => rfl
-      | some cap =>
-        simp only []
-        cases faultHandlerCapAuthorized cap
-        · rfl
-        · simp only [Bool.true_and, ↓reduceIte]
-          cases cap.target with
-          | object epId => cases h : st.getEndpoint? epId <;> simp [h]
-          | _ => rfl
+      cases faultHandlerCapAuthorized cap
+      · rfl
+      · simp only [Bool.true_and, ↓reduceIte]
+        cases cap.target with
+        | object epId => cases h : st.getEndpoint? epId <;> simp [h]
+        | _ => rfl
 
 /-- WS-ZA ZA5.2: the compiled `setThreadFaultHandlerOp` — the handler written
 into the TCB in its slot (`updateTcb`), so on an exclusively owned state the TCB

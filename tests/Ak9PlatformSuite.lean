@@ -156,7 +156,7 @@ private def mkNotifObjectEntry (oid : ObjId) : ObjectEntry :=
 /-- A CNode holding an interrupt-handler capability for line 40. -/
 private def mkHandlerCNodeEntry (oid : ObjId) : ObjectEntry :=
   { id := oid
-    obj := .cnode (CNode.ofList 0 0 0 1
+    obj := .cnode (CNode.ofList 1
       [(Slot.ofNat 0, { target := .irqHandler 40, rights := AccessRightSet.ofList [.write] })])
     hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
     hMappings := fun _ h => nomatch h }
@@ -2725,17 +2725,23 @@ def qemuVirt_deployment_boots : IO Unit := do
       unless q0 root && !q0 untrusted && q1 untrusted && !q1 root do
         throw <| IO.userError "the virt deployment's initial threads are not queued one per core"
       IO.println "  PASS: the virt deployment boots and starts both initial threads, one per domain"
-      -- WS-ZA ZA4.8: the root CNode's guard has its top bit set, so the root
-      -- task names its interrupt notification at `2^63 + 4`; the slot number
-      -- alone fails the guard.
+      -- WS-ZA ZA4.8: the root CNode capability's guard has its top bit set, so
+      -- the root task names its interrupt notification at `2^63 + 4`; the
+      -- slot number alone fails the guard with 64 bits left.
       let notificationAddr := SeLe4n.CPtr.ofNat (2 ^ 63 + 4)
-      match SeLe4n.Kernel.resolveCapAddress qemuVirtRootTaskCNodeId notificationAddr 64 ist.state with
+      let rootCap? : Option Capability :=
+        match ist.state.getTcb? root with
+        | some tcb => tcb.spaceCells[0]
+        | none => none
+      let some rootCap := rootCap?
+        | throw <| IO.userError "the root task has no CSpace root capability"
+      match SeLe4n.Kernel.lookupSlotFrom rootCap notificationAddr ist.state with
       | .ok ref =>
           unless ref.cnode == qemuVirtRootTaskCNodeId && ref.slot == SeLe4n.Slot.ofNat 4 do
             throw <| IO.userError s!"2^63 + 4 resolves to {reprStr ref}, not the root CNode's slot 4"
-      | .error e => throw <| IO.userError s!"the root CNode refuses 2^63 + 4: {reprStr e}"
-      match SeLe4n.Kernel.resolveCapAddress qemuVirtRootTaskCNodeId (SeLe4n.CPtr.ofNat 4) 64 ist.state with
-      | .error (.invalidCapability _) => pure ()
+      | .error f => throw <| IO.userError s!"the root CNode refuses 2^63 + 4: {reprStr f}"
+      match SeLe4n.Kernel.lookupSlotFrom rootCap (SeLe4n.CPtr.ofNat 4) ist.state with
+      | .error (.guardMismatch 64 _ _) => pure ()
       | other => throw <| IO.userError s!"the root CNode resolves 4 past its guard: {reprStr other}"
       IO.println "  PASS: the root task's capability addresses carry the root CNode's guard bit"
   unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]

@@ -460,7 +460,7 @@ theorem vspaceMapFromFrameCap_of_admitted (tid : SeLe4n.ThreadId) (ec : Concurre
     vspaceMapFromFrameCap tid ec args st =
       .ok ((), vspaceMapPerformAt ec args.asid args.vaddr frame.base args.perms rootId
         (frameCapObjId frameCap) frameSlot.cnode frameSlot.slot st) := by
-  obtain ⟨_, _, frameObjId, _, _, _, _, hTgt, hFrame, _, hSlot⟩ :=
+  obtain ⟨_, frameObjId, _, _, _, hTgt, hFrame, _, hSlot⟩ :=
     resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hRes
   have hFid : frameCapObjId frameCap = frameObjId := by unfold frameCapObjId; rw [hTgt]
   have hFr : st.objects[frameObjId]? = some (.frame frame) :=

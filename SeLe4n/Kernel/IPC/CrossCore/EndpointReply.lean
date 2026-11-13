@@ -1880,7 +1880,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- leg reads when it looks that sender's extra capabilities up at the
     -- rendezvous -- resolved by the same `receiveCapRequest` the transition
     -- branches on.
-    ((receiveCapRequest st endpointObjId).map (·.1)))
+    ((receiveCapRequest st endpointObjId).bind (·.1.namedObject)))
     ((receiveInstallCNode? st endpointObjId replier).map (fun r => (cnodeLock r, AccessMode.write))))
     -- And the receive slot's CNode as the receive leg resolves it **after** the
     -- reply leg's capability transfer (`receiveInstallCNodeAfterReply?`): the
@@ -1954,7 +1954,7 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, read when its extra
     -- capabilities are looked up at the rendezvous (seL4 `lookupExtraCaps`),
     -- through the same `receiveCapRequest` the transition branches on.
-    ((receiveCapRequest st endpointId).map (·.1)))
+    ((receiveCapRequest st endpointId).bind (·.1.namedObject)))
     ((receiveInstallCNode? st endpointId receiver).map (fun r => (cnodeLock r, AccessMode.write)))
 
 /-- The install's CNode is declared at write. -/
@@ -2466,12 +2466,13 @@ same `receiveCapRequest` the transition installs from. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_senderCapLookup
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (req : SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
-    (hReq : receiveCapRequest st endpointObjId = some req) :
+    (req : Capability × Array SeLe4n.CPtr) (root : SeLe4n.ObjId)
+    (hReq : receiveCapRequest st endpointObjId = some req)
+    (hRoot : req.1.namedObject = some root) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
-        endpointObjId).containsKey (cnodeLock req.1) = true := by
+        endpointObjId).containsKey (cnodeLock root) = true := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hReq]
+  rw [hReq, Option.bind_some, hRoot]
   exact containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| lockSet_replyRecv_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _
 
@@ -2928,7 +2929,7 @@ theorem replyTransferCaps_of_noInstall (pre st : SystemState)
       unfold replyTransferCaps receiveTransferCaps
       rw [hT]
       generalize replyCapRequest pre replier grant = req
-      rcases req with _ | ⟨sroot, addrs, depth⟩
+      rcases req with _ | ⟨sroot, addrs⟩
       · rfl
       · simp only []
         split <;> rfl
@@ -3076,12 +3077,13 @@ the CNode `receiveTransferCaps` reads at the rendezvous, resolved by the same
 theorem lockSet_endpointReceiveOnCore_covers_senderCapLookup
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
-    (req : SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
-    (hReq : receiveCapRequest st endpointId = some req) :
+    (req : Capability × Array SeLe4n.CPtr) (root : SeLe4n.ObjId)
+    (hReq : receiveCapRequest st endpointId = some req)
+    (hRoot : req.1.namedObject = some root) :
     (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId
-        replyId).containsKey (cnodeLock req.1) = true := by
+        replyId).containsKey (cnodeLock root) = true := by
   unfold lockSet_endpointReceiveOnCore
-  rw [hReq]
+  rw [hReq, Option.bind_some, hRoot]
   exact containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| lockSet_endpointReceive_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-ZA ZA4.6**: on the arm that dequeues a caller, the receiver's old

@@ -112,7 +112,7 @@ theorem ipcUnwrapCaps {caps : Array TransferCap} {endpointId : Option SeLe4n.Obj
     (fun s i b hA => recordUnwrappedBadge s rtcb i b hA)
     (fun _ _ _ _ _ _ hT hA => ipcTransferSingleCap hA hT) h hInv
 
-theorem receiveTransferCaps {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)}
+theorem receiveTransferCaps {req : Option (Capability × Array SeLe4n.CPtr)}
     {endpointId : Option SeLe4n.ObjId} {target? : Option (TCB × Option CSpaceAddr)}
     {st st' : SystemState} {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

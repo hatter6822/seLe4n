@@ -1622,7 +1622,6 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
       exact yieldOnCore_stepCovers st _ e hInv hB.bidirectional hAwayCur hYieldOk
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
-  split at h <;> try (cases h; done)
   split at h
   · cases h
   rename_i stPost hD

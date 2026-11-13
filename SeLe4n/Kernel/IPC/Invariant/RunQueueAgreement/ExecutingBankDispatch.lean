@@ -550,7 +550,6 @@ theorem dispatchSyscallChecked_bankAgree {ctx : LabelingContext}
       exact bankAgree_of_match (yieldOnCore_contextMatchesCurrentOnCore hInv hYieldOk)
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
-  split at h <;> try (cases h; done)
   split at h
   · cases h
   rename_i stPost hD

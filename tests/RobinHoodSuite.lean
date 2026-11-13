@@ -199,7 +199,7 @@ private def rh012_foldToList : IO Unit := do
 WS-ZA ZA5.3: an insert writes the slot's array entry, and `CNode.empty`
 (`radixWidth := 0`) has only slot 0, so the tests that fill slots 1..7 need
 the wider radix. -/
-private def rhIntCNode : CNode := CNode.mk' 0 0 0 4
+private def rhIntCNode : CNode := CNode.mk' 4
 
 open CNode in
 /-- RH-INT-001: CNode lookup/insert/remove with RHTable-backed slots -/
@@ -245,21 +245,22 @@ private def rhInt004_slotCountBounded : IO Unit := do
   expect "RH-INT-004a slot count" (cn.occupiedCount == 8)
 
 open CNode in
-/-- RH-INT-005: Multi-level CSpace resolution with RHTable-backed CNodes -/
+/-- RH-INT-005: CSpace resolution with RHTable-backed CNodes: a CNode
+capability with a 62-bit guard over a 2-bit CNode resolves capability
+address 3 to slot 3 in one level (`lookupSlotFrom`). -/
 private def rhInt005_cspaceResolution : IO Unit := do
-  -- Create a CNode with specific guard/radix for resolution testing
   let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write] }
-  let cn := CNode.ofList 4 0 0 2 [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)]
-  -- Resolve slot from CPtr
-  let result := cn.resolveSlot (SeLe4n.CPtr.ofNat 3) 4
-  match result with
-  | .ok slot =>
-    expect "RH-INT-005a resolution succeeds" true
-    expect "RH-INT-005b resolved slot has capability" (cn.lookup slot == some cap)
-  | .error _ =>
-    -- Resolution depends on guard/radix matching — verify the CNode at least works
-    expect "RH-INT-005c direct lookup works" (cn.lookup (SeLe4n.Slot.ofNat 0) == some cap)
-    expect "RH-INT-005d direct lookup slot 3" (cn.lookup (SeLe4n.Slot.ofNat 3) == some cap)
+  let cn := CNode.ofList 2 [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)]
+  let cnId : SeLe4n.ObjId := ⟨7⟩
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert cnId (.cnode cn) }
+  let root : Capability :=
+    { target := .object cnId, rights := AccessRightSet.ofList [.read, .write], cnodeGuardSize := 62 }
+  match SeLe4n.Kernel.lookupSlotFrom root (SeLe4n.CPtr.ofNat 3) st with
+  | .ok ref =>
+    expect "RH-INT-005a resolution names slot 3" (ref.cnode == cnId && ref.slot == SeLe4n.Slot.ofNat 3)
+    expect "RH-INT-005b resolved slot has capability" (cn.lookup ref.slot == some cap)
+  | .error _ => expect "RH-INT-005a resolution succeeds" false
 
 open CNode in
 /-- RH-INT-006: CNode BEq comparison with RHTable slots -/

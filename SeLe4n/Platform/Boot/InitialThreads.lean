@@ -509,6 +509,34 @@ theorem startInitialThreads_capTargetKindBacked (L : List SeLe4n.ThreadId)
       exact startInitialThreadOnCore_capTargetKindBacked i.state tid i.hAllTables.objects.1 hP)
     L ist ist' h hK
 
+/-- A start keeps every capability's CNode geometry (`cnodeCapGeometry`): its
+capabilities are the ones it held, and it writes a thread over a thread, so
+every CNode is where it was. -/
+theorem startInitialThreadOnCore_cnodeCapGeometry (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (h : cnodeCapGeometry st) :
+    cnodeCapGeometry (startInitialThreadOnCore st tid) := by
+  intro oid o slot c hO hc
+  have hS : (startInitialThreadOnCore st tid).slotCapAt ⟨oid, slot⟩ = some c := by
+    rw [SystemState.slotCapAt_of_object hO]; exact hc
+  rw [startInitialThreadOnCore_slotCapAt_of_ne_none st tid hInv ⟨oid, slot⟩
+    (by rw [hS]; exact Option.some_ne_none _)] at hS
+  refine cnodeCapGeometryAt_mono (fun k cn' hC => ⟨cn', ?_, rfl⟩) _ (h.slotCapAt hS)
+  have hO' := (SystemState.getCNode?_eq_some_iff _ _ _).mp hC
+  rcases startInitialThreadOnCore_objects_cases st tid hInv k _ hO' with hB | ⟨_, _, _, hT, _⟩
+  · exact (SystemState.getCNode?_eq_some_iff _ _ _).mpr hB
+  · cases hT
+
+/-- The starts keep every capability's CNode geometry. -/
+theorem startInitialThreads_cnodeCapGeometry (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hK : cnodeCapGeometry ist.state) : cnodeCapGeometry ist'.state :=
+  startInitialThreads_induct (fun i => cnodeCapGeometry i.state)
+    (fun i tid _ hP => by
+      show cnodeCapGeometry (startInitialThread i tid).state
+      rw [startInitialThread_state]
+      exact startInitialThreadOnCore_cnodeCapGeometry i.state tid i.hAllTables.objects.1 hP)
+    L ist ist' h hK
+
 /-- **WS-ZA ZA5.4 part 19**: a start keeps every untyped record: it writes a
 thread over a thread and removes no object. -/
 theorem startInitialThreadOnCore_getUntyped? (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -640,6 +668,11 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     hListed hLive hUnique hUncarved hNamedU
     (installIrqNodes_capTargetKindBacked hFresh (startInitialThreads_capTargetKindBacked _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked cores config base hBase)))
+    (installIrqNodes_cnodeCapGeometry hFresh
+      (startInitialThreads_capabilitiesLive _ _ _ hStart
+        (bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase))
+      (startInitialThreads_cnodeCapGeometry _ _ _ hStart
+        (bootFromPlatformCheckedWithIdleThreadsFor_ok_cnodeCapGeometry cores config base hBase)))
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state

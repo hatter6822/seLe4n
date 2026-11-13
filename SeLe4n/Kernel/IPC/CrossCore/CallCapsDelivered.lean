@@ -131,12 +131,12 @@ theorem KeepsBindings.recordUnwrappedBadge {B s : SystemState} (h : KeepsBinding
 
 /-- **The transfer keeps every thread's binding**, with no resize due. -/
 theorem receiveTransferCaps_keepsBindings
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     {B Z Z' : SystemState} {r : CapTransferSummary} (hK : KeepsBindings B Z)
     (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) : KeepsBindings B Z' := by
   unfold receiveTransferCaps at h
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · cases h; exact hK
   · simp only [] at h
     split at h
@@ -237,12 +237,12 @@ theorem CarriesThreads.recordUnwrappedBadge {B s : SystemState} (h : CarriesThre
 
 /-- **The transfer carries every thread**, with no resize due. -/
 theorem receiveTransferCaps_carriesThreads
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     {B Z Z' : SystemState} {r : CapTransferSummary} (hK : CarriesThreads B Z)
     (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) : CarriesThreads B Z' := by
   unfold receiveTransferCaps at h
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · cases h; exact hK
   · simp only [] at h
     split at h
@@ -276,8 +276,8 @@ them (`capTransferK`), read before the rendezvous. -/
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeCallRendezvousReady st endpointId caller r nextCode rid core
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     finishCallCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
@@ -304,8 +304,8 @@ theorem callRendezvousCaps_eq_delivered (st : SystemState) (endpointId : SeLe4n.
           (PriorityInheritance.propagatePipChainCrossCore st'' r core).1 (some r) s.capInfo
       | .error _ => st) =
       performCallCapsDelivered st endpointId caller r (ThreadId.optCode next) rid layout rf len
-        badgeWord badged core ctcb.vspaceRoot ctcb.ipcBuffer ctcb.cspaceRoot count rt.vspaceRoot
-        rt.ipcBuffer rt.cspaceRoot := by
+        badgeWord badged core ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0] count rt.vspaceRoot
+        rt.ipcBuffer rt.spaceCells[0] := by
   have hNoX := storeCallRendezvousReady_noResizeDue st endpointId caller r
     (ThreadId.optCode next) rid core hNo
   have hA := ipcBufferReadsAgree_storeCallRendezvousReady st endpointId caller r
@@ -426,8 +426,8 @@ transfer reads of them (`capTransferK`), read before the take. -/
 @[noinline] def performTakeCapsDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (core : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (w0 w2 w3 w4 w5 : UInt64)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1.updateTcb receiver receiverReady
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -499,8 +499,8 @@ of them (`capTransferK`), read before the take. -/
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (core : Concurrency.CoreId) (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeReceiveCallReady st endpointId s nextCode receiver rid
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     finishCallCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)

@@ -283,7 +283,7 @@ send-and-grant reading refused it. -/
 private def grantReplyCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 2
 
 private def rootCnode : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
+  (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0,
         { target := .object epHandler
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1210,8 +1210,8 @@ private def orphanTcbCap : Capability :=
   { target := .object orphan.toObjId, rights := AccessRightSet.ofList [.read, .write] }
 
 private def configGate : SyscallGate :=
-  { callerId := handler, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
-    capDepth := 2, requiredRight := .write }
+  { callerId := handler, cspaceRootCap := some (cnodeCapOf cnRoot 0 62), capAddr := SeLe4n.CPtr.ofNat 0,
+    requiredRight := .write }
 
 /-- `tcbSetFaultHandler` with MR0 = the CPtr, in the target's CSpace. -/
 private def setHandlerDecoded (cptr : Nat) : SyscallDecodeResult :=
@@ -1595,8 +1595,8 @@ private def abandonDecoded : SyscallDecodeResult :=
     msgRegs := restartRegs }
 
 private def replyGate : SyscallGate :=
-  { callerId := handler, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
-    capDepth := 2, requiredRight := .write }
+  { callerId := handler, cspaceRootCap := some (cnodeCapOf cnRoot 0 62), capAddr := SeLe4n.CPtr.ofNat 0,
+    requiredRight := .write }
 
 private def replyCapH : Capability :=
   { target := .replyCap replyH, rights := AccessRightSet.ofList [.read, .write] }
@@ -1738,8 +1738,8 @@ private def serverReplyDecoded : SyscallDecodeResult :=
     syscallId := .reply, msgRegs := #[SeLe4n.RegValue.ofNat 0x77] }
 
 private def serverReplyGate : SyscallGate :=
-  { callerId := orphan, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
-    capDepth := 2, requiredRight := .write }
+  { callerId := orphan, cspaceRootCap := some (cnodeCapOf cnRoot 0 62), capAddr := SeLe4n.CPtr.ofNat 0,
+    requiredRight := .write }
 
 private def serverReplyCap : Capability :=
   { target := .replyCap replyS, rights := AccessRightSet.ofList [.read, .write] }

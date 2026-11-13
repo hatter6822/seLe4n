@@ -153,11 +153,12 @@ run_check "INVARIANT" rg -n '^structure ASID($|[ ({:\[\]])' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure VAddr($|[ ({:\[\]])' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure PAddr($|[ ({:\[\]])' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^structure ServiceId($|[ ({:\[\]])' SeLe4n/Prelude.lean
-# WS-B5 closure anchors: CSpace guard/radix path resolution surface.
-run_check "INVARIANT" rg -n '^inductive ResolveError($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def resolveSlot($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def cspaceResolvePath($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceLookupPath($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+# WS-B5 closure anchors, re-pointed by WS-SX SX2: CSpace guard/radix path
+# resolution is seL4's `resolveAddressBits` from a CNode capability.
+run_check "INVARIANT" rg -n '^inductive LookupFault($|[ ({:\[\]])' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^def resolveAddressBits($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def lookupSlotFrom($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def lookupSlotForCNodeOp($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 
 # WS-B6 closure anchors: notification IPC object model and transition surface.
 run_check "INVARIANT" rg -n '^inductive NotificationState($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
@@ -182,7 +183,7 @@ run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder($|[ ({:\[\]])' SeLe4n/Testing/StateBuilder.lean
-run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
+run_check "INVARIANT" rg -n '^def build \(builder0 : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^private def runNegativeChecks($|[ ({:\[\]])' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
@@ -3910,8 +3911,12 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
+# WS-SX SX2 — every boot CNode capability's guard and its CNode's radix fit
+# the 64-bit address, a conjunct of `wellFormed` with its own row.
+run_check "INVARIANT" rg -n '^def bootCapabilitiesHaveCNodeGeometry \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesHaveCNodeGeometry($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
 # hands out no device untyped over them: the clause is in the placement
@@ -3994,7 +3999,7 @@ run_check "INVARIANT" rg -n '^  bootUntypedMustBePristine$' tests/
 # maps through the one named definition; the retired raw-address decode and the
 # page-lock refutation must not come back as code.
 run_check "INVARIANT" rg -n '^def resolveVSpaceMapFrame \(callerTid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*        capAddr       := args\.frame\n        capDepth      := rootCn\.depth\n        requiredRight := \.read' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*      cspaceRootCap := callerTcb\.spaceCells\[0\]\n      capAddr       := args\.frame\n      requiredRight := \.read' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*          match st\.getFrame\? frameObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
@@ -4105,8 +4110,8 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*        cspaceRootCap := callerTcb\.spaceCells\[0\]\n        capAddr       := dstCNode\n        requiredRight := \.write' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4140,7 +4145,7 @@ run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      ex
 # takes the bound as a hypothesis.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.Carve$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_absent_preserves_capabilityBundleOffLinks($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
-run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  obtain ⟨hBCh, hLCh⟩ := storeObject_absent_preserves_capabilityBundleOffLinks hBUt hLUt hChildUt\n    hStCh hLinks hDepth hCaps\n  have hShapeCh := retypeFromUntyped_stores_shape hInv\.treeShape [^\n]*(\n([ \t][^\n]*)?)*  refine storeObject_capRewrite_restores_capabilityInvariantBundle stCh st. authority cn cap _\n    hBCh hLCh hShapeCh ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  obtain ⟨hBCh, hLCh⟩ := storeObject_absent_preserves_capabilityBundleOffLinks hBUt hLUt hChildUt\n    hStCh hLinks hUnnamed hCaps\n  have hShapeCh := retypeFromUntyped_stores_shape hInv\.treeShape [^\n]*(\n([ \t][^\n]*)?)*  refine storeObject_capRewrite_restores_capabilityInvariantBundle stCh st. authority cn cap _\n    hBCh hLCh hShapeCh ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
 run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
 run_check "INVARIANT" rg -n '^  \| cnode \(radixBits : Nat\) \(bounded : radixBits ≤ maxCSpaceDepth\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -5105,8 +5110,8 @@ run_check "INVARIANT" rg -n -U '  let o := spaceCellAt t\.spaceCells s\n  \{ t w
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 2\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
 # The set reads the spare record, takes it out of the spares, then writes the
 # capability and its object target over it, before the one rebuild.
-run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights guard guardSize\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights guard guardSize\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 # A spare or space record owns its object target; a register word is passed
 # unboxed.
 run_check "INVARIANT" rg -n -c '^  \| some r => some \{ r with rights := opaqueId r\.rights, target := unshareTarget r\.target \}$' SeLe4n/Model/Object/Unshare.lean
@@ -5932,7 +5937,7 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
 run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*          if slotEmpty c then onLookup \(\.invalidCapability 0\) st\n          else\n([ \t]*(--[^\n]*)?\n)*            let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n            if receiveRefusedAt sid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^        let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*        if slotEmpty c then onLookup \(\.invalidCapability 0\) st\n        else\n([ \t]*(--[^\n]*)?\n)*          let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n          if receiveRefusedAt sid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def receiveSlotRefused \(sid : SyscallId\) \(st : @& SystemState\)\n    \(c : @& Option Capability\) : Bool :=\n  match c with\n  \| some cap => receiveGateRefuses sid st cap\n  \| none => false$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -6008,7 +6013,7 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispat
 # and right; any other resolved capability refused is the invocation's error
 # (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
 # to the flow-checked delivery, as the abort entry does.
-run_check "INVARIANT" rg -n '^          match syscallOperandLookup decoded\.syscallId gate st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^        match syscallOperandLookup decoded\.syscallId gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e => \.error e\n  \| \.ok \(cap, _\) => if receiveGateRefuses sid st cap then \.error \(\.invalidCapability 0\) else \.ok \(\)$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^def receiveGateRefuses \(sid : SyscallId\) \(st : SystemState\) \(cap : Capability\) : Bool :=\n  syscallReceivesOnCap sid &&\n    \(!syscallTargetAccepted sid st cap \|\| !cap\.hasRight \(syscallRequiredRight sid\)\)$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
@@ -6072,7 +6077,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem($|[ 
 # relation: the record's `declared` field IS the walk's resolver, and its
 # executed path is the resolution (`_run`, by `rfl`).
 run_check "INVARIANT" rg -n '^def cspaceWalkBracket($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^  declared := declaredLockSetForCSpaceWalk rootId addr bitsRemaining$' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^  declared := declaredLockSetForCSpaceWalk root addr nBits$' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem cspaceWalkBracket_run($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_negative_check "INVARIANT" rg -n 'runUnderDeclaredLockSet|LockBracketOutcome' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # The live seam's root-only footprints are **complete**, not approximate:
@@ -6087,7 +6092,7 @@ run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level($|[ ({:\[\]
 # CSpace deeper than the ladder carries declares `none` and the bracket falls
 # back to the pre-footprint seam.  The relation: the size test decides the
 # declaration, and the two theorems say what each verdict entails.
-run_check "INVARIANT" rg -n -U 'let S := cspaceWalkLockSet rootId addr bitsRemaining st\n\s+if S\.size ≤ Concurrency\.maxLockSetSize then some S else none' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n -U 'let S := cspaceWalkLockSet root addr nBits st\n\s+if S\.size ≤ Concurrency\.maxLockSetSize then some S else none' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_some_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_none_of_gt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # NEGATIVE: the unconditional declaration.
@@ -6097,12 +6102,12 @@ run_negative_check "INVARIANT" rg -n 'fun st => some \(cspaceWalkLockSet' SeLe4n
 # conflicts with the WRITE every structural writer declares — and every key
 # before the path's last holds a CNode, so a walk declares at most one such
 # member.  The relation is the arm's value and the classification's two arms.
-run_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[rootId\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n -U 'match st\.getCNode\? id with\n\s+\| none => \[id\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n -U 'def cspaceWalkKeyLock \(st : SystemState\) \(oid : SeLe4n\.ObjId\) :\n    Concurrency\.LockKey × AccessMode :=\n  match st\.getCNode\? oid with\n  \| some _ => \(cnodeLock oid, AccessMode\.read\)\n  \| none => \(Concurrency\.stateLevelLock, AccessMode\.read\)' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_dropLast_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem mem_cspaceWalkLockSet_missing($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # NEGATIVE: the first cut's arm, which declared nothing for the read.
-run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? id with\n\s+\| none => \[\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # PR #892 review round 5: the scheduler bracket domain acquires a footprint in
 # the CANONICAL order, as the object domain has since SM3.B — not the resolved
 # list.  A blocking chain descends in `ObjId` whenever a higher-numbered thread
@@ -8371,7 +8376,7 @@ run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_preserves_projecti
 # PR #864 review round 7.  The CSpace guard is structural: the root consumes
 # every bit, so the resolution cannot recurse — checking only the final
 # `ref.cnode` would accept a path that leaves the root and cycles back to it.
-run_check "INVARIANT" rg -n 'rootCn.depth . rootCn.guardWidth . rootCn.radixWidth' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'if rootCapGuardSize tcb \+ rootCn\.radixWidth ≠ 64 then none' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # WS-LS: the revalidated entry model is retired with the refusal arm; the
 # ghost acquire models the blocking FIFO lock, and re-resolve-and-retry is the
 # HAL's obligation, so no kernel outcome refuses a footprint.
@@ -10988,7 +10993,7 @@ run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?
 # capped at `maxLockSetSize` cannot name a path bounded only by the address
 # width -- so the resolver refuses rather than declaring a footprint that does
 # not cover the read selecting its own target.
-run_check "INVARIANT" rg -n 'rootCn.depth ≠ rootCn.guardWidth \+ rootCn.radixWidth' SeLe4n/Kernel/SyscallLockBracket.lean
+run_check "INVARIANT" rg -n 'if rootCapGuardSize tcb \+ rootCn\.radixWidth ≠ 64 then none' SeLe4n/Kernel/SyscallLockBracket.lean
 run_check "INVARIANT" rg -n 'ref.cnode ≠ tcb.cspaceRoot' SeLe4n/Kernel/SyscallLockBracket.lean
 # The guard is the ghost table's (WS-LS LS2.1, O4): every declared member is
 # held after the growing phase over the table the entry started from.  Stated
@@ -12478,7 +12483,7 @@ run_negative_check "INVARIANT" rg -n 'dispatchCapabilityOnly_schedContextBind_id
 # and the arm's characterisation are theorems, and the raw-operand reading
 # (`args.threadId`) must not come back on either side of the ABI.
 run_check "INVARIANT" rg -n '^def resolveSchedContextBindThread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*          requiredRight := \.write" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*        requiredRight := \.write" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(decodeSchedContextBindArgs decoded\) st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -18607,8 +18612,8 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_rep
 # capabilities up, resolved through the request the transition installs from.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_senderCapLookup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_senderCapLookup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointId\)\.map \(·\.1\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointObjId\)\.map \(·\.1\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointId\)\.bind \(·\.1\.namedObject\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointObjId\)\.bind \(·\.1\.namedObject\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_server($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -23278,7 +23283,7 @@ run_check "INVARIANT" bash -lc "rg -n -U 'def cspaceInsertSlot[^\n]*(\n([ \t][^\
 run_check "INVARIANT" bash -lc "rg -n -U 'def cspaceInsertSlot[^\n]*(\n([ \t][^\n]*)?)*invalidArgument' SeLe4n/Kernel/Capability/Operations.lean"
 # ...and CSpace resolution REACHES only addressable slots, so the guard refuses
 # exactly what no CPtr can name.
-run_check "INVARIANT" rg -n '^theorem resolveSlot_slotAddressable($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem resolveAddressBits_slotAddressable($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # The IPC transfer installs into the one receive slot its receiver's IPC buffer
 # names (seL4's `getReceiveSlots`) through that guarded insert, so a receive
 # slot outside the radix is refused like any other install.
@@ -23522,7 +23527,7 @@ run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
 # v0.36.106: the capability bundle carries the slot links' agreement with the
 # tree; since v0.36.111 the revoke reads the source's first-child link.
-run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ capTargetKindBacked st ∧\n    cdtLinksAgree st ∧ SystemState\.CapTreeShape st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n -U '    cnodeCapGeometry st ∧ st\.objects\.invExt ∧ capTargetKindBacked st ∧\n    cdtLinksAgree st ∧ SystemState\.CapTreeShape st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^    let fc := st\.slotLinkNodeWord cnode slot \.firstChild$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
@@ -23563,7 +23568,7 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def cdtAppendRoot \(st : SystemStat
 run_check "INVARIANT" rg -n '^theorem cdtSplice_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtMove_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtAppendRoot_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
-run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape ∧\n    capTargetKindBacked st$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape ∧\n    capTargetKindBacked st ∧ cnodeCapGeometry st$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.namedObject\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
@@ -23601,7 +23606,7 @@ run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bo
 # WS-ZA ZA5.5: the boot installs the configured service interfaces (the only
 # writer of the interface registry), the binding supplies them, and the twelfth
 # conjunct refuses a duplicate or sentinel id with its own diagnostic row.
-run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\),\n   \(bootCapabilitiesHaveCNodeGeometry config, bootCapabilityGeometryBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^   \(bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError\),\n   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootInterfacesWellFormed \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  let withInterfaces := foldInterfaces config\.initialInterfaces withObjects$' SeLe4n/Platform/Boot.lean
@@ -23744,7 +23749,7 @@ run_negative_check "INVARIANT" rg -n '\b(irqHandlers|irqBound|irqTable|registerI
 run_check "INVARIANT" rg -n -U '^  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_irqNodesFresh($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 # The node ids are the kernel's: a wellFormed conjunct, and the budget counts them.
-run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^def objectBudgetRespected \(config : PlatformConfig\) : Bool :=\n  config\.initialObjects\.length \+ 1 \+ SeLe4n\.Kernel\.Concurrency\.numCores \+\n    InterruptLineSet\.capacity ≤ maxObjects$' SeLe4n/Platform/Boot.lean
 # No resolved capability reaches a node.
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_irqNode($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -23902,7 +23907,7 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_checked_interrup
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5_bound_config_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem qemuVirtExerciser_bound_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Exerciser.lean
 run_check "INVARIANT" rg -n '^def bootIssuesNoInterruptHandler \(' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootIssuesNoInterruptHandler($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]' tests/
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]' tests/

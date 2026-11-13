@@ -872,7 +872,7 @@ so the obligation also covers the CDT nodes that resolution mints).
 The residue — a usable bundle lemma for a grant-bearing transfer — is registered
 debt. -/
 def receiveTransferCapsPreservesCapabilityBundle
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : Option SeLe4n.ObjId) : Prop :=
+    (req : Option (Capability × Array SeLe4n.CPtr)) (endpointId : Option SeLe4n.ObjId) : Prop :=
   ∀ (target? : Option (TCB × Option CSpaceAddr)) (stI stJ : SystemState)
     (summary : CapTransferSummary),
     capabilityInvariantBundle stI →

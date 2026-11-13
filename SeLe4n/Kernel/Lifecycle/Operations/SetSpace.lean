@@ -184,17 +184,19 @@ its source's: the source slot's record, once that slot is cleared, is still its
 own to be written over in place.  Out of line, so its matches are no branch of
 its caller. -/
 @[noinline] def capabilityCellOver (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) : Option Capability :=
+    (rights : AccessRightSet) (guard guardSize : Nat) : Option Capability :=
   match target, o with
-  | .object id, some r => some (r.overwriteObject id rights)
-  | .object id, none => some (Capability.ofObject id rights)
-  | _, some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0)
-  | _, none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0)
+  | .object id, some r => some (r.overwriteObject id rights guard guardSize)
+  | .object id, none => some (Capability.ofObject id rights guard guardSize)
+  | _, some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0
+      guard guardSize)
+  | _, none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0
+      guard guardSize)
 
 theorem capabilityCellOver_eq (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) :
-    capabilityCellOver o target rights =
-      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (rights : AccessRightSet) (guard guardSize : Nat) :
+    capabilityCellOver o target rights guard guardSize =
+      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold capabilityCellOver
   split
   · rw [Capability.overwriteObject_eq]
@@ -209,17 +211,20 @@ holds it when the capability is written over it (`capabilityCellOver`).  The
 thread is rebuilt once, after those calls, so an unshared thread is rebuilt in
 its own cell.  Equal to the insert (`TCB.spaceCellFilledWith_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilledWith (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) : TCB :=
+    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat)
+    (a : Array (Option Capability)) : TCB :=
   let i := s.toNat
   let o := spareRecordAt a i
   let a' := a.setIfInBounds i none
-  let c := capabilityCellOver o target rights
+  let c := capabilityCellOver o target rights guard guardSize
   { t with spaceCells := t.spaceCells.setIfInBounds i c, spaceSpare := Squash.mk a' }
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) :
-    t.spaceCellFilledWith s target rights a =
-      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat)
+    (a : Array (Option Capability)) :
+    t.spaceCellFilledWith s target rights guard guardSize a =
+      t.insertSpaceCap s
+        ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold TCB.spaceCellFilledWith TCB.insertSpaceCap
   dsimp only
   rw [capabilityCellOver_eq]
@@ -230,25 +235,27 @@ theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slo
 alone**, over the slot's spare record (`TCB.spaceCellFilledWith`); the insert
 (`TCB.spaceCellFilled_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilled (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) : TCB :=
-  Quot.lift (fun a => t.spaceCellFilledWith s target rights a)
-    (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights a).trans
-      (TCB.spaceCellFilledWith_eq t s target rights b).symm) t.spaceSpare
+    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat) : TCB :=
+  Quot.lift (fun a => t.spaceCellFilledWith s target rights guard guardSize a)
+    (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights guard guardSize a).trans
+      (TCB.spaceCellFilledWith_eq t s target rights guard guardSize b).symm) t.spaceSpare
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilled_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) :
-    t.spaceCellFilled s target rights =
-      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat) :
+    t.spaceCellFilled s target rights guard guardSize =
+      t.insertSpaceCap s
+        ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold TCB.spaceCellFilled
   induction t.spaceSpare using Quot.ind with
-  | mk a => exact TCB.spaceCellFilledWith_eq t s target rights a
+  | mk a => exact TCB.spaceCellFilledWith_eq t s target rights guard guardSize a
 
 /-- The thread's space slot `slot` written with the capability of `target` and
 `rights` alone, over the slot's spare record (`TCB.spaceCellFilled`).  Out of
 line, on words, so the update is compiled into it. -/
 @[noinline] def threadSpaceCellWritten (st : SystemState) (tid : SeLe4n.ThreadId)
-    (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet) : SystemState :=
-  st.updateTcb tid fun t => t.spaceCellFilled slot target rights
+    (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
+    (guard guardSize : Nat) : SystemState :=
+  st.updateTcb tid fun t => t.spaceCellFilled slot target rights guard guardSize
 
 /-- The insert and edge of `threadSlotCopied`, on the deleted state `stD`. -/
 @[noinline] def threadSlotRefilled (stD : SystemState)
@@ -257,7 +264,8 @@ line, on words, so the update is compiled into it. -/
   match SystemState.lookupSlotCap stD { cnode := srcCNode, slot := srcSlot } with
   | none => stD
   | some cap =>
-    (threadSpaceCellWritten stD tid slot cap.target (cap.rights.inter rights)).cdtAddChild
+    (threadSpaceCellWritten stD tid slot cap.target (cap.rights.inter rights)
+      cap.cnodeGuard cap.cnodeGuardSize).cdtAddChild
       { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy
 
 /-- `threadSlotCopied` as compiled: the delete keeps the slot's cell as its

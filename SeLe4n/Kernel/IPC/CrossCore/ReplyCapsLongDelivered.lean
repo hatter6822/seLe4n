@@ -40,8 +40,8 @@ writes left, the replier and the caller entering as the words the transfer
 reads of them. -/
 @[inline] def replyCapsLongTail (X : SystemState) (c replier : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     deliverLongCapsFrame
@@ -55,8 +55,8 @@ endpoint, then the long frame with the transfer's report. -/
 @[noinline] def performReplyCapsDeliveredLong (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (rf : SeLe4n.RegisterFile) (len : Nat) (replier : SeLe4n.ThreadId)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   replyCapsLongTail (PriorityInheritance.propagatePipChainCrossCore
       (storeReplyRendezvousReady st c server rid) server core).1
     c replier rf len badgeWord badged sv sb sroot count rv rb rroot
@@ -69,8 +69,8 @@ in place, the server's priority walk, the transfer, then the long frame. -/
     (home : Concurrency.CoreId) (rf : SeLe4n.RegisterFile) (len : Nat)
     (replier : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   replyCapsLongTail (PriorityInheritance.propagatePipChainCrossCore
       (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home)
       server core).1
@@ -84,8 +84,8 @@ long frame. -/
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : Concurrency.CoreId)
     (rf : SeLe4n.RegisterFile) (len : Nat) (replier : SeLe4n.ThreadId)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   replyCapsLongTail (SchedContextOps.settleReturnedContext
       (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId)
     c replier rf len badgeWord badged sv sb sroot count rv rb rroot
@@ -136,8 +136,8 @@ theorem replyTransferChecked_capsLong_inPlace (ctx : LabelingContext) (st : Syst
     replyTransferOnCoreChecked ctx replier c mi' regs
         (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
       .ok ((), performReplyCapsDeliveredLong st c server rid rf mi.length replier badgeWord
-        badged core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-        (if g then routedExtraCaps rf else 0) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        badged core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+        (if g then routedExtraCaps rf else 0) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   obtain ⟨hLen, hSz'⟩ := routedReplyLong_length st replier rf capAddr mi sid badgeWord badged hR
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -191,8 +191,8 @@ theorem replyTransferChecked_donatedCapsLong_inPlace (ctx : LabelingContext) (st
         (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
       .ok ((), performReplyDonatedCapsDeliveredLong st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) rf mi.length replier
-        badgeWord badged core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-        (if g then routedExtraCaps rf else 0) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        badgeWord badged core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+        (if g then routedExtraCaps rf else 0) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid (longReplyMessage st replier rf mi.length badgeWord badged) ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -263,8 +263,8 @@ theorem replyTransferChecked_unheldCapsLong_inPlace (ctx : LabelingContext) (st 
         (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
       .ok ((), performReplyUnheldCapsDeliveredLong st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) rf mi.length replier badgeWord badged stcb.vspaceRoot
-        stcb.ipcBuffer stcb.cspaceRoot (if g then routedExtraCaps rf else 0) ct.vspaceRoot
-        ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.ipcBuffer stcb.spaceCells[0] (if g then routedExtraCaps rf else 0) ct.vspaceRoot
+        ct.ipcBuffer ct.spaceCells[0]) := by
   obtain ⟨rp, scId, hRp, hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, -, hPop⟩ :=
     replyUnheldPopsInPlace_pop st c rid (longReplyMessage st replier rf mi.length badgeWord badged) ct hT hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by

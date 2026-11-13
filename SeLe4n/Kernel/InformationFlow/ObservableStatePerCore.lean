@@ -1192,7 +1192,7 @@ as much". -/
 `projectCNode` is `cn.filterSlots …` (map and slot array alike) with the
 derivation links cleared, so raising the clearance may re-admit redacted slots
 and may do nothing else.  This relation
-says exactly that: the five non-slot fields are pinned, and every capability
+says exactly that: the non-slot fields (the radix and the links) are pinned, and every capability
 the narrower observer can look up is still there — same slot, same capability
 — for the wider one.  It may not be moved, altered, or dropped.
 
@@ -1200,9 +1200,6 @@ Named fields rather than a nested conjunction, so a consumer writes
 `h.lookup` instead of a projection chain and `eq_of_cnodeVisibilityLe_of_slots_eq`
 can state that the field list is exhaustive. -/
 structure cnodeVisibilityLe (cn₁ cn₂ : CNode) : Prop where
-  depth : cn₁.depth = cn₂.depth
-  guardWidth : cn₁.guardWidth = cn₂.guardWidth
-  guardValue : cn₁.guardValue = cn₂.guardValue
   radixWidth : cn₁.radixWidth = cn₂.radixWidth
   /-- WS-ZA ZA5.3 part 4: the derivation links are pinned (a projected CNode
   carries none). -/
@@ -1210,13 +1207,12 @@ structure cnodeVisibilityLe (cn₁ cn₂ : CNode) : Prop where
   lookup : ∀ slot cap, cn₁.lookup slot = some cap → cn₂.lookup slot = some cap
 
 theorem cnodeVisibilityLe_refl (cn : CNode) : cnodeVisibilityLe cn cn :=
-  ⟨rfl, rfl, rfl, rfl, rfl, fun _ _ h => h⟩
+  ⟨rfl, rfl, fun _ _ h => h⟩
 
 theorem cnodeVisibilityLe_trans {cn₁ cn₂ cn₃ : CNode}
     (h₁ : cnodeVisibilityLe cn₁ cn₂) (h₂ : cnodeVisibilityLe cn₂ cn₃) :
     cnodeVisibilityLe cn₁ cn₃ :=
-  ⟨h₁.depth.trans h₂.depth, h₁.guardWidth.trans h₂.guardWidth,
-   h₁.guardValue.trans h₂.guardValue, h₁.radixWidth.trans h₂.radixWidth,
+  ⟨h₁.radixWidth.trans h₂.radixWidth,
    h₁.links.trans h₂.links, fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
 
 /-- SM8.A.5: the field list of `cnodeVisibilityLe` is **exhaustive** — two
@@ -1241,7 +1237,7 @@ theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
       rw [← e₁, ← e₂, hS]
   have hGhost : cn₁.slotsGhost = cn₂.slotsGhost := SeLe4n.Erased.ext hSlots
   -- The spare records are no slot's capability (`SpareCells`: logically one value).
-  exact CNode.ext_of_fields h.depth h.guardWidth h.guardValue h.radixWidth hGhost hCells h.links
+  exact CNode.ext_of_fields h.radixWidth hGhost hCells h.links
     hOcc hHead
 
 /-- SM8.A.5: the visibility order on a **projected kernel object**.
@@ -1304,7 +1300,7 @@ theorem projectCNode_visibilityLe_monotone (ctx : LabelingContext) {L₁ L₂ : 
     (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) :
     cnodeVisibilityLe (projectCNode ctx (IfObserver.ofLabel L₁) cn)
       (projectCNode ctx (IfObserver.ofLabel L₂) cn) :=
-  ⟨rfl, rfl, rfl, rfl, rfl,
+  ⟨rfl, rfl,
    fun slot cap h => projectCNode_lookup_monotone ctx hFlow cn slot cap h⟩
 
 /-- SM8.A.5: the whole object projection is monotone in the clearance.  This is

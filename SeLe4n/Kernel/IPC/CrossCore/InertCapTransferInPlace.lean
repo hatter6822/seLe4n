@@ -40,9 +40,9 @@ at `endpointId`. -/
       match senderExtraCapAddr? st stcb 0 with
       | none => true
       | some addr =>
-        match st.getCNode? stcb.cspaceRoot with
+        match stcb.spaceCells[0] with
         | none => true
-        | some rootCn => extraCapStaysW st endpointId stcb.cspaceRoot addr rootCn.depth)
+        | some root => extraCapStaysW st endpointId root addr)
 
 /-- **The in-place decision is the specification's**: for a sender whose saved
 frame is a short capability-carrying one, the request it makes
@@ -61,9 +61,9 @@ theorem capTransferInert_of_W (st : SystemState) (endpointId : SeLe4n.ObjId)
   · rfl
   split
   · rfl
-  cases hCn : st.getCNode? stcb.cspaceRoot with
+  cases hCn : stcb.spaceCells[0] with
   | none => rfl
-  | some rootCn =>
+  | some root =>
     unfold receiverCapTarget?
     simp only [hT]
     unfold capTransferInertW at hW
@@ -204,7 +204,7 @@ theorem capTransferInert_receiveCapRequest_of_W (st : SystemState) (endpointId :
       have hTgt : receiverCapTarget? st receiver = none := by
         unfold receiverCapTarget?; rw [hT]
       rw [hTgt]
-      rcases senderFrameCapRequest st s sTcb sTcb.ipcCanGrant with _ | ⟨_, _, _⟩ <;> rfl
+      rcases senderFrameCapRequest st s sTcb sTcb.ipcCanGrant with _ | ⟨_, _⟩ <;> rfl
     | some rt =>
       simp only [hT] at hW
       exact capTransferInert_of_W st endpointId receiver rt s sTcb sTcb.ipcCanGrant hT hW

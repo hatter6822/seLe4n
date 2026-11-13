@@ -3046,7 +3046,7 @@ private def highSlotCap : Capability :=
   { target := .object highEndpoint, rights := AccessRightSet.ofList [.read] }
 /-- The raw CNode the fixture stores (both slots present, unredacted). -/
 private def probeCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)]))
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)]))
 
 /-- The CSpace root every fixture TCB names.
 
@@ -3057,7 +3057,7 @@ invariants exclude.  Both roots are therefore real objects, and §3.0 checks
 the well-formedness that makes them necessary.  Empty slots: this root exists to
 be *referenced*, and the redaction probe is `probeCNode`. -/
 private def rootCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF []))
+  (SeLe4n.Model.CNode.ofSlots 8 (SeLe4n.UniqueSlotMap.ofListWF []))
 
 /-- The VSpace root every fixture TCB names.  Its ASID is distinct from any
 other in the fixture (it is the only VSpaceRoot), so the builder's ASID
@@ -5759,7 +5759,7 @@ carries read+write on `declassTargetA` (the wait and the signal). -/
 private def declassChainCNode : SeLe4n.ObjId := ⟨1033⟩
 
 private def declassChainCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat 2,
         { target := .object declassTargetA,
           rights := AccessRightSet.ofList [.read, .write] })]))
@@ -5777,7 +5777,7 @@ private def declassChainStage (tid : SeLe4n.ThreadId)
           objects :=
             (st.objects.insert declassChainCNode (.cnode declassChainCNodeValue)).insert
               tid.toObjId
-              (.tcb { (tcb.withCSpaceRoot declassChainCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+              (.tcb { (TCB.withGuardedCSpaceRoot tcb declassChainCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
                         if r == 0 then capPtr.toUInt64
                         else if r == 1 then msgInfo.toUInt64
                         else if r == 2 then m0.toUInt64
@@ -7332,7 +7332,7 @@ a read capability to the **high** endpoint and registers encoding `.receive`
 sender and blocks it — so the object store, the endpoint queue and core 1's
 scheduler slots all move, and every one of those movements is high. -/
 private def hiCallerTcb : TCB :=
-  { ((mkTcb 1011 50 (some c1)).withCSpaceRoot probeCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -7572,7 +7572,7 @@ send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send
 /-- §7.9 fixture: a victim whose CSpace root differs from the caller's, so the
 footprint's CNode member can be attributed to one of them. -/
 private def distinctRootVictim : TCB :=
-  ((mkTcb 1011 50 (some c1)).withCSpaceRoot probeCNode)
+  (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60)
 
 -- ---------------------------------------------------------------------------
 -- §7.9 fixture: an entry whose registers really decode to `.tcbSuspend`.
@@ -7592,13 +7592,14 @@ private def suspendSlotCap : Capability :=
   { target := .object highQueued.toObjId,
     rights := AccessRightSet.ofList [.read, .write] }
 
-/-- Depth 4 = `radixWidth`, so resolution consumes every bit in one step and the
-leaf **is** this root — the single-level resolution `entryCapTarget` requires. -/
+/-- Radix 4 under the caller's 60-bit root guard (`suspendCallerTcb`), so
+resolution consumes every bit in one step and the leaf **is** this root — the
+single-level resolution `entryCapTarget` requires. -/
 private def suspendCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
 
 private def suspendCallerTcb : TCB :=
-  { ((mkTcb 1011 50 (some c1)).withCSpaceRoot suspendCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) suspendCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
 
 private def suspendEntryState : SystemState :=
   { niState with
@@ -7639,7 +7640,7 @@ negatives. -/
 private def ipcMessage : IpcMessage := { registers := #[] }
 
 private def ipcReceiverTcb : TCB :=
-  ((mkTcb 1043 40 (some c1)).withCSpaceRoot ipcReceiverRoot)
+  (TCB.withGuardedCSpaceRoot (mkTcb 1043 40 (some c1)) ipcReceiverRoot 60)
 
 /-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
 condition: the grant right in its TCB and one capability address in its saved
@@ -7661,7 +7662,7 @@ private def ipcFootprintState : SystemState :=
   { niState with
       objects :=
         (((((niState.objects.insert ipcReceiverRoot
-              (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))).insert
+              (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))).insert
               ipcReplyId.toObjId
               (.reply { replyId := ipcReplyId, callerCode := SeLe4n.ThreadId.optCode (some lowQueued) })).insert
             ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
@@ -7972,10 +7973,10 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- The multi-level CSpace guard: the footprint read-locks the caller's ROOT
   -- CNode only, so a resolution that descends into child CNodes would select the
   -- target through CNodes no declared lock covers.  Rejected, and the fixture
-  -- root is single-level (depth = radixWidth) so the declared path above is not
-  -- passing by accident.
+  -- root is single-level (root guard + radix = 64) so the declared path above
+  -- is not passing by accident.
   assertBool "the resolved capability lives in the caller's own root CNode"
-    (decide (suspendCNodeValue.depth = suspendCNodeValue.radixWidth) &&
+    (decide (SeLe4n.Kernel.rootCapGuardSize suspendCallerTcb + suspendCNodeValue.radixWidth = 64) &&
      (have _t := @entryCapTarget_single_level
       true))
   -- The splice's neighbour-TCB writes ride the ENDPOINT write lock (the
@@ -8041,7 +8042,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   --
   -- WS-RR RR7.41: **two**, from three.  The CSpace walk's interior is deleted —
   -- `cspaceWalkPath` derives the CNodes a resolution reads from
-  -- `resolveCapAddress`'s own recursion, `cspaceWalkLockSet` read-locks each, and
+  -- `resolveAddressBits`'s own recursion, `cspaceWalkLockSet` read-locks each, and
   -- `cspaceWalk_conflicts_with_delete` proves the conflict with a `cspaceDelete`
   -- on the path that the root-only footprint could not state.
   --
@@ -10179,13 +10180,13 @@ private def declassNotifSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
 private def declassNotifCap : Capability :=
   { target := .object highNotification, rights := AccessRightSet.ofList [.write] }
 private def declassCapCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)]))
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)]))
 private def declassSeamState : SystemState :=
   { declassSignalState with
       objects := (declassSignalState.objects.insert declassCapCNode
                     (.cnode declassCapCNodeValue)).insert
                   highCurrent.toObjId
-                    (.tcb ((mkTcb 1011 50 (some c1)).withCSpaceRoot declassCapCNode)) }
+                    (.tcb (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) declassCapCNode 60)) }
 
 /-- The seam run on a hop-2 refusal: syscall 33, reason 56, `x0 = 2` (the slot
 the capability sits in). -/

@@ -234,7 +234,7 @@ private def scenario (cap : Capability) : Option SystemState :=
       |>.withObject frameDev (.frame { base := SeLe4n.PAddr.ofNat 0xB0000, isDevice := true })
       |>.withObject frameOdd (.frame { base := SeLe4n.PAddr.ofNat 0xA0001 })
       |>.withObject attackerCn (.cnode
-          (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap),
+          (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, cap),
                (SeLe4n.Slot.ofNat slotFrameRO, frameCapTo frameA [.read]),
                (SeLe4n.Slot.ofNat slotFrameRW, frameCapTo frameA [.read, .write]),
                (SeLe4n.Slot.ofNat slotFrameNoRead, frameCapTo frameA [.write]),
@@ -510,11 +510,13 @@ private def runFrameCapabilityChecks : IO Unit := do
       | .error _ => !(stillMapped st victimAsid freshVaddr)
       | .ok ((), st') => !(stillMapped st' victimAsid freshVaddr)
     -- The retired reading: MR2 as the raw physical address of the frame's page.
-    -- `0xA0000` is a CSpace *address* now; it masks to slot 0, which holds a
-    -- VSpace-root capability, not a frame — refused, and nothing is mapped.
+    -- `0xA0000` is a CSpace *address* now; its bits above the root CNode's
+    -- 4-bit radix fail the root capability's zero guard, so the lookup itself
+    -- refuses it (seL4 `resolveAddressBits`), and nothing is mapped.
     let rRaw := dispatchSyscallAsCurrent (decodeMap 7 0x50000 frameABase) attacker Concurrency.bootCoreId st
     assertBool "the RETIRED reading (MR2 = a raw physical address) maps nothing"
-      (isErr (.invalidCapability 0) rRaw && nothingMapped rRaw)
+      ((match rRaw with | .error (.failedLookup false (.guardMismatch _ _ _)) => true | _ => false)
+        && nothingMapped rRaw)
     -- Naming memory without holding a frame capability, every other way.
     let rNotFrame := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotNotFrame) attacker Concurrency.bootCoreId st
     assertBool "a capability to a non-frame object is refused (invalidCapability)"
@@ -621,7 +623,7 @@ private def carveScenario : SystemState :=
           { regionBase := SeLe4n.PAddr.ofNat carveDevBase, regionSize := 0x1000,
             isDevice := true })
       |>.withObject carveCn (.cnode
-          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat slotUtRetype, frameCapTo carveUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRW, frameCapTo carveCn [.read, .write]),
                (SeLe4n.Slot.ofNat slotOwnVsp, frameCapTo carveVsp [.read, .write]),
@@ -1426,7 +1428,7 @@ private def runFrameFinaliseChecks : IO Unit := do
     (frameCapability (SeLe4n.ObjId.ofNat 950)).withMapping
       (some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
   let lone (cap : Capability) : CNode :=
-    CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]
+    CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, cap)]
   let retypeLone (cap : Capability) : Bool :=
     match storeObject (SeLe4n.ObjId.ofNat 970) (.cnode (lone cap)) carveScenario with
     | .error _ => false
@@ -1643,10 +1645,19 @@ private def tableScenario : SystemState :=
   match st1.getCNode? carveCn with
   | some cn =>
     -- WS-ZA ZA5.3: a wider radix needs a wider slot array, so the root is
-    -- rebuilt at radix 5 holding the same capabilities.
+    -- rebuilt at radix 5 holding the same capabilities, and (WS-SX SX2) the
+    -- owner's root capability narrows its guard to 59 bits so that guard and
+    -- radix still cover the 64-bit address in one level.
     match storeObject carveCn
-        (.cnode (CNode.ofList 5 cn.guardWidth cn.guardValue 5 cn.occupiedSlots)) st1 with
-    | .ok ((), s) => s
+        (.cnode (CNode.ofList 5 cn.occupiedSlots)) st1 with
+    | .ok ((), s) =>
+      match s.getTcb? carveOwner with
+      | some t =>
+        match storeObject carveOwner.toObjId
+            (.tcb (TCB.withGuardedCSpaceRoot t carveCn 59)) s with
+        | .ok ((), s') => s'
+        | .error _ => s
+      | none => s
     | .error _ => st1
   | none => st1
 
@@ -3208,7 +3219,11 @@ private def runZombieDeleteChecks : IO Unit := do
   | .ok st0 =>
     let tid : SeLe4n.ThreadId := ⟨960⟩
     let c0 := Concurrency.bootCoreId
-    let running := st0.updateTcb tid fun t => { t with threadState := .Ready }
+    -- The copied root capability carries no guard (the fixture's CNode holds
+    -- unguarded capabilities), so the thread is given seL4's root convention
+    -- here: a 60-bit zero guard over the 4-bit radix (WS-SX SX2).
+    let running := st0.updateTcb tid fun t =>
+      { TCB.withGuardedCSpaceRoot t carveCn 60 with threadState := .Ready }
     let own : SystemState :=
       { running with scheduler := running.scheduler.setCurrentOnCore c0 (some tid) }
     match dispatchSyscallAsCurrent (decodeDelete 12) tid c0 own with

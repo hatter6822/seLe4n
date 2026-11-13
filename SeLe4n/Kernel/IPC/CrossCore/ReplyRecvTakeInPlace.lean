@@ -758,8 +758,8 @@ the six words of its frame, all read before the reply's writes. -/
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
     (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeReplyRendezvousReady st c tid rid
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -774,8 +774,8 @@ server's register file between them. -/
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
     (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   writeTakerFrame (performReplyRecvTakeCapsLegs st c tid rid epId s nextCode core layout rf len
     badge sv sb sroot count rv rb rroot) tid w0 w1 w2 w3 w4 w5
 
@@ -823,8 +823,8 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
           sTcb.ipcBadgeView).x4
         (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           sTcb.ipcBadgeView).x5
-        stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer
-        ct.cspaceRoot) := by
+        stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer
+        ct.spaceCells[0]) := by
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG

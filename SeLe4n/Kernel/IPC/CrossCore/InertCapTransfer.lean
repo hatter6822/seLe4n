@@ -33,11 +33,11 @@ open SeLe4n.Model
 /-- **A transfer to a receiver that can take no capability is the identity and
 reports none.** -/
 theorem receiveTransferCaps_of_noTarget
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : Option SeLe4n.ObjId)
+    (req : Option (Capability × Array SeLe4n.CPtr)) (endpointId : Option SeLe4n.ObjId)
     (st : SystemState) :
     receiveTransferCaps req endpointId none st = .ok ({ results := #[] }, st) := by
   unfold receiveTransferCaps
-  rcases req with _ | ⟨sroot, addrs, depth⟩
+  rcases req with _ | ⟨sroot, addrs⟩
   · rfl
   · simp only []
     split <;> rfl
@@ -60,10 +60,10 @@ fails to resolve, names an empty slot, or names a capability to another
 object). -/
 def capTransferInert (st : SystemState) (endpointId : SeLe4n.ObjId)
     (target? : Option (TCB × Option CSpaceAddr))
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) : Bool :=
+    (req : Option (Capability × Array SeLe4n.CPtr)) : Bool :=
   match req with
   | none => true
-  | some (root, addrs, depth) =>
+  | some (root, addrs) =>
     match target? with
     | none => true
     | some (_, some _) => false
@@ -71,7 +71,7 @@ def capTransferInert (st : SystemState) (endpointId : SeLe4n.ObjId)
       match addrs[0]? with
       | none => true
       | some a =>
-        match resolveCapAddress root a depth st with
+        match lookupSlotFrom root a st with
         | .error _ => true
         | .ok ref =>
           match SystemState.lookupSlotCap st ref with
@@ -94,12 +94,12 @@ theorem extraCapsFromSlots_congr_getCNode? (st₁ st₂ : SystemState)
 /-- **The sender's capabilities resolve alike** in two states that read every
 CNode alike. -/
 theorem resolveExtraCaps_congr_getCNode? (st₁ st₂ : SystemState)
-    (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id) (root : SeLe4n.ObjId)
-    (addrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) :
-    resolveExtraCaps root addrs depth granted st₁ = resolveExtraCaps root addrs depth granted st₂ := by
-  have hf : (fun addr => (resolveCapAddress root addr depth st₁).toOption) =
-      (fun addr => (resolveCapAddress root addr depth st₂).toOption) := by
-    funext addr; rw [resolveCapAddress_congr_getCNode? st₁ st₂ hCNode]
+    (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id) (root : Capability)
+    (addrs : Array SeLe4n.CPtr) (granted : Bool) :
+    resolveExtraCaps root addrs granted st₁ = resolveExtraCaps root addrs granted st₂ := by
+  have hf : (fun addr => (lookupSlotFrom root addr st₁).toOption) =
+      (fun addr => (lookupSlotFrom root addr st₂).toOption) := by
+    funext addr; rw [lookupSlotFrom_congr_getCNode? st₁ st₂ hCNode]
   unfold resolveExtraCaps
   rw [hf]
   split
@@ -123,12 +123,12 @@ theorem extraCapsFromSlots_getElem?_of_lt (st : SystemState) :
 /-- **A transfer that transfers nothing is the identity and reports none**,
 run in any state reading every CNode as the one its decision was read in. -/
 theorem receiveTransferCaps_of_inert {st st' : SystemState}
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)}
     (hInert : capTransferInert st endpointId target? req = true)
     (hCNode : ∀ id, st'.getCNode? id = st.getCNode? id) :
     receiveTransferCaps req endpointId target? st' = .ok ({ results := #[] }, st') := by
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · rfl
   rcases target? with _ | ⟨rtcb, _ | dst⟩
   · exact receiveTransferCaps_of_noTarget _ endpointId st'
@@ -139,8 +139,8 @@ theorem receiveTransferCaps_of_inert {st st' : SystemState}
     · simp only [List.getElem?_toArray, List.getElem?_cons_zero] at hInert
       unfold resolveExtraCaps
       simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, List.mapM_cons]
-      generalize rest.mapM (fun addr => (resolveCapAddress root addr depth st).toOption) = m
-      cases hR : resolveCapAddress root a depth st with
+      generalize rest.mapM (fun addr => (lookupSlotFrom root addr st).toOption) = m
+      cases hR : lookupSlotFrom root a st with
       | error e => rfl
       | ok ref =>
         simp only [hR] at hInert
@@ -180,7 +180,7 @@ theorem receiveTransferCaps_of_inert {st st' : SystemState}
 
 The compiled arms decide `capTransferInert` without building the receiver's
 side or the sender's resolved capabilities: each lookup is a continuation-form
-resolve (`resolveCapAddressKUnrolled`), so the decision builds nothing on the
+resolve (`lookupSlotK`, `lookupSlotFromK`, `lookupSlotForCNodeOpK`), so the decision builds nothing on the
 common path. -/
 
 /-- The receive depth refused, compared as the word (so no number is built for
@@ -200,57 +200,44 @@ theorem receiveDepthRefused_eq (d : UInt64) :
 (`receivePathAbsentW_eq`). -/
 @[inline] def receivePathAbsentW (st : SystemState) (tcb : TCB)
     (cnodeWord indexWord depthWord : UInt64) : Bool :=
-  match st.getCNode? tcb.cspaceRoot with
-  | none => true
-  | some rootCn =>
-    resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord cnodeWord) rootCn.depth st
-      (fun _ => true)
-      (fun cn sl =>
-        match SystemState.lookupSlotCap st ⟨cn, sl⟩ with
-        | none => true
-        | some cap =>
-          match cap.target with
-          | .object cnodeId =>
-            match st.getCNode? cnodeId with
-            | none => true
-            | some _ =>
-              if depthWord == 0 || (64 : UInt64) < depthWord then true else
-              resolveCapAddressKUnrolled cnodeId (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st
-                (fun _ => true)
-                (fun cn' sl' => (SystemState.lookupSlotCap st ⟨cn', sl'⟩).isSome)
-          | _ => true)
+  lookupSlotK tcb (SeLe4n.CPtr.ofWord cnodeWord) st
+    (fun _ _ _ _ => true)
+    (fun cn sl =>
+      match SystemState.lookupSlotCap st ⟨cn, sl⟩ with
+      | none => true
+      | some cap =>
+        if depthWord == 0 || (64 : UInt64) < depthWord then true else
+        lookupSlotForCNodeOpK false cap (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st
+          (fun _ => true)
+          (fun cn' sl' => (SystemState.lookupSlotCap st ⟨cn', sl'⟩).isSome))
 
 theorem receivePathAbsentW_eq (st : SystemState) (tcb : TCB) (c i d : UInt64) :
     receivePathAbsentW st tcb c i d = (receivePathSlot? st tcb c i d).isNone := by
   unfold receivePathAbsentW receivePathSlot?
-  cases st.getCNode? tcb.cspaceRoot with
-  | none => rfl
-  | some rootCn =>
-    simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-    cases resolveCapAddress tcb.cspaceRoot (SeLe4n.CPtr.ofWord c) rootCn.depth st with
-    | error _ => rfl
-    | ok ref =>
-      simp only []
-      cases SystemState.lookupSlotCap st ⟨ref.cnode, ref.slot⟩ with
-      | none => rfl
-      | some cap =>
-        simp only []
-        cases cap.target with
-        | object cnodeId =>
+  rw [lookupSlotK_eq]
+  cases lookupSlot tcb (SeLe4n.CPtr.ofWord c) st with
+  | error _ => rfl
+  | ok ref =>
+    simp only []
+    cases SystemState.lookupSlotCap st ⟨ref.cnode, ref.slot⟩ with
+    | none => rfl
+    | some cap =>
+      simp only [receiveDepthRefused_eq]
+      by_cases hd : d.toNat = 0 ∨ 64 < d.toNat
+      · have hE : ∃ e, lookupSlotForCNodeOp false cap (SeLe4n.CPtr.ofWord i) d.toNat st = .error e := by
+          unfold lookupSlotForCNodeOp
+          split
+          · exact ⟨_, rfl⟩
+          · rw [if_pos (by rcases hd with h | h <;> omega)]; exact ⟨_, rfl⟩
+        obtain ⟨e, hE⟩ := hE
+        simp only [hd, decide_true, ↓reduceIte, hE, Option.isNone_none]
+      · simp only [hd, decide_false, Bool.false_eq_true, ↓reduceIte]
+        rw [lookupSlotForCNodeOpK_eq]
+        cases lookupSlotForCNodeOp false cap (SeLe4n.CPtr.ofWord i) d.toNat st with
+        | error _ => rfl
+        | ok ref' =>
           simp only []
-          cases st.getCNode? cnodeId with
-          | none => rfl
-          | some _ =>
-            simp only [receiveDepthRefused_eq]
-            by_cases hd : d.toNat = 0 ∨ 64 < d.toNat
-            · simp only [hd, decide_true, ↓reduceIte, Option.isNone_none]
-            · simp only [hd, decide_false, Bool.false_eq_true, ↓reduceIte]
-              cases resolveCapAddress cnodeId (SeLe4n.CPtr.ofWord i) d.toNat st with
-              | error _ => rfl
-              | ok ref' =>
-                simp only []
-                cases SystemState.lookupSlotCap st ⟨ref'.cnode, ref'.slot⟩ <;> rfl
-        | _ => rfl
+          cases SystemState.lookupSlotCap st ⟨ref'.cnode, ref'.slot⟩ <;> rfl
 
 /-- The receiver's buffer names no receive slot, decided in place
 (`receiveSlotAbsentW_eq`). -/
@@ -316,25 +303,25 @@ theorem replyTransferInert_of_W {st : SystemState} {replier : SeLe4n.ThreadId} {
 
 /-- The capability an address names does not unwrap at `endpointId` (or the
 address names none), decided in place (`extraCapStaysW_eq`). -/
-@[inline] def extraCapStaysW (st : SystemState) (endpointId root : SeLe4n.ObjId)
-    (addr : SeLe4n.CPtr) (depth : Nat) : Bool :=
-  resolveCapAddressKUnrolled root addr depth st (fun _ => true)
+@[inline] def extraCapStaysW (st : SystemState) (endpointId : SeLe4n.ObjId) (root : Capability)
+    (addr : SeLe4n.CPtr) : Bool :=
+  lookupSlotFromK root addr st (fun _ _ _ _ => true)
     (fun cn sl =>
       match SystemState.lookupSlotCap st ⟨cn, sl⟩ with
       | none => true
       | some cap => !capUnwrapsAt cap endpointId)
 
-theorem extraCapStaysW_eq (st : SystemState) (endpointId root : SeLe4n.ObjId)
-    (addr : SeLe4n.CPtr) (depth : Nat) :
-    extraCapStaysW st endpointId root addr depth =
-      match resolveCapAddress root addr depth st with
+theorem extraCapStaysW_eq (st : SystemState) (endpointId : SeLe4n.ObjId) (root : Capability)
+    (addr : SeLe4n.CPtr) :
+    extraCapStaysW st endpointId root addr =
+      match lookupSlotFrom root addr st with
       | .error _ => true
       | .ok ref =>
         match SystemState.lookupSlotCap st ref with
         | none => true
         | some cap => !capUnwrapsAt cap endpointId := by
   unfold extraCapStaysW
-  rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-  cases resolveCapAddress root addr depth st <;> rfl
+  rw [lookupSlotFromK_eq]
+  cases lookupSlotFrom root addr st <;> rfl
 
 end SeLe4n.Kernel

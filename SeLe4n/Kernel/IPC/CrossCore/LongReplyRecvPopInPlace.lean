@@ -270,8 +270,8 @@ theorem replyRecvOnCore_unheld_deliveredLong (st : SystemState) (epId : SeLe4n.O
 @[noinline] def performReplyRecvDonatedCapsDeliveredLong (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
     (tailCode : Nat) (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
-    (core : CoreId) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (core : CoreId) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId home
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -311,7 +311,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
       | .error e => .error e) =
       .ok ((), performReplyRecvDonatedCapsDeliveredLong st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId ep.recvTailCode rf len badge core stcb.vspaceRoot
-        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
@@ -388,8 +388,8 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
 @[noinline] def performReplyRecvUnheldCapsDeliveredLong (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
     (tailCode : Nat) (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
-    (core : CoreId) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (core : CoreId) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := SchedContextOps.settleReturnedContext
     (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
@@ -430,7 +430,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
       | .error e => .error e) =
       .ok ((), performReplyRecvUnheldCapsDeliveredLong st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId ep.recvTailCode rf len badge core stcb.vspaceRoot
-        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]

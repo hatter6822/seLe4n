@@ -320,21 +320,16 @@ theorem dispatchCapabilityOnly_mappingStage
           | none => simp only [hCaller] at hStep; cases hStep
           | some callerTcb =>
               simp only [hCaller] at hStep
-              cases hRoot : st.getCNode? callerTcb.cspaceRoot with
-              | none => simp only [hRoot] at hStep; cases hStep
-              | some rootCn =>
-                  simp only [hRoot] at hStep
-                  try dsimp only [] at hStep
-                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
-                  | error e => simp only [hCap2] at hStep; cases hStep
-                  | ok pair =>
-                      obtain ⟨ntfnCap, stL⟩ := pair
-                      simp only [hCap2] at hStep
-                      cases hNT : ntfnCap.target with
-                      | object notifId =>
-                          simp only [hNT] at hStep
-                          exact bindNotification_mappingStage hStep
-                      | _ => simp only [hNT] at hStep; cases hStep
+              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
+              | error e => simp only [hCap2] at hStep; cases hStep
+              | ok pair =>
+                  obtain ⟨ntfnCap, stL⟩ := pair
+                  simp only [hCap2] at hStep
+                  cases hNT : ntfnCap.target with
+                  | object notifId =>
+                      simp only [hNT] at hStep
+                      exact bindNotification_mappingStage hStep
+                  | _ => simp only [hNT] at hStep; cases hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -728,7 +723,6 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
       exact yieldOnCore_mappingStage hYieldOk
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
-  split at h <;> try (cases h; done)
   split at h
   · cases h
   rename_i stPost hD
@@ -885,7 +879,6 @@ theorem dispatchSyscall_mappingStage (decoded : SyscallDecodeResult)
       cases h
       exact yieldOnCore_mappingStage hYieldOk
   simp only [hY, ↓reduceIte] at h
-  split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
   split at h
   · cases h

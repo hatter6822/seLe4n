@@ -289,17 +289,25 @@ theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toN
   · exact h
 
 /-- **The capability a thread's space slot holds when set from `cap`**: `cap`'s
-target, its rights masked by the slot's own (`rights`), with no badge and no
-mapping record.  A derivation of `cap`, as seL4's `deriveCap` is: it never
-carries a right `cap` lacks. -/
+target under its CNode guard, its rights masked by the slot's own (`rights`),
+with no badge and no mapping record.  A derivation of `cap`, as seL4's
+`deriveCap` is: it never carries a right `cap` lacks, and a CNode capability
+keeps the guard it resolves through. -/
 @[inline] def spaceCopyOf (cap : Capability) (rights : AccessRightSet) : Capability :=
-  ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+  ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0,
+    cap.cnodeGuard, cap.cnodeGuardSize⟩
 
 @[simp] theorem spaceCopyOf_target (cap : Capability) (rights : AccessRightSet) :
     (spaceCopyOf cap rights).target = cap.target := rfl
 
 @[simp] theorem spaceCopyOf_badge (cap : Capability) (rights : AccessRightSet) :
     (spaceCopyOf cap rights).badge = none := rfl
+
+@[simp] theorem spaceCopyOf_cnodeGuard (cap : Capability) (rights : AccessRightSet) :
+    (spaceCopyOf cap rights).cnodeGuard = cap.cnodeGuard := rfl
+
+@[simp] theorem spaceCopyOf_cnodeGuardSize (cap : Capability) (rights : AccessRightSet) :
+    (spaceCopyOf cap rights).cnodeGuardSize = cap.cnodeGuardSize := rfl
 
 end TCB
 
@@ -864,6 +872,16 @@ theorem slotCap_removeSlotCap_back {o : KernelObject} {s s' : SeLe4n.Slot} {cap 
   split at h
   · cases h
   · exact h
+
+/-- Emptying a slot keeps a CNode a CNode of the same radix, and makes nothing a
+CNode that was not one. -/
+theorem removeSlotCap_cnode {o : KernelObject} {s : SeLe4n.Slot} {cn' : CNode}
+    (h : o.removeSlotCap s = .cnode cn') :
+    ∃ cn, o = .cnode cn ∧ cn'.radixWidth = cn.radixWidth := by
+  cases o with
+  | cnode cn => cases h; exact ⟨cn, rfl, rfl⟩
+  | tcb t => cases h
+  | _ => exact ⟨cn', h, rfl⟩
 
 @[simp] theorem slotCap_removeSlotCap_self (o : KernelObject) (s : SeLe4n.Slot) :
     (o.removeSlotCap s).slotCap s = none := by

@@ -720,7 +720,7 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
 every thread's IPC state: it writes a receive slot's CNode, the derivation tree
 and the badge ledger alone. -/
 theorem receiveTransferCaps_ipcFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

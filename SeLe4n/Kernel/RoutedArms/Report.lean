@@ -414,18 +414,14 @@ reaches the report as scalars (`dispatchOperandCheckedKW_eq`). -/
   else
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    match st.getObject? tcb.cspaceRoot with
-    | some (.cnode rootCn) =>
-      resolveCapAddressKUnrolled tcb.cspaceRoot capAddr rootCn.depth st
-        (fun e => onLookup e st)
-        (fun cnode slot =>
-          let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-          if slotEmpty c then onLookup (.invalidCapability 0) st
-          else
-            let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr onLookup (arm c st)
-            if receiveRefusedAt sid st c then k true else k (capHeldNone c))
-    | some _ => kPre (.error (.invalidCapability 0, st))
-    | none => kPre (.error (.objectNotFound, st))
+    lookupSlotK tcb capAddr st
+      (fun t a b c => onLookup (.failedLookup false (LookupFault.ofWords t a b c)) st)
+      (fun cnode slot =>
+        let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
+        if slotEmpty c then onLookup (.invalidCapability 0) st
+        else
+          let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr onLookup (arm c st)
+          if receiveRefusedAt sid st c then k true else k (capHeldNone c))
   | some _ => kPre (.error (.illegalState, st))
   | none => kPre (.error (.objectNotFound, st))
 
@@ -549,14 +545,12 @@ theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (sid : Syscal
   split
   · rfl
   split
-  · split
-    · simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-      split
+  · simp only [lookupSlotK_eq]
+    split
+    · rfl
+    · split
       · rfl
-      · split
-        · rfl
-        · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
-    all_goals rfl
+      · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
   all_goals rfl
 
 /-- **`longOperandK` commutes with a function of its result**, as

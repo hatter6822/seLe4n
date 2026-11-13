@@ -1124,10 +1124,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.chooseThreadInDomain
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.commitKernelAction
-  , `SeLe4n.Kernel.cspaceLookupMultiLevel
-  , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
-  , `SeLe4n.Kernel.cspaceResolvePath
   , `SeLe4n.Kernel.cspaceRevoke
   -- WS-LS LS2.4: the STAGED CSpace walk's bracket (`CSpaceWalkFootprint.lean`
   -- §4), which no committing seam runs; its predecessor

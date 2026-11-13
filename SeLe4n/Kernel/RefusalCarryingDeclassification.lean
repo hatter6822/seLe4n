@@ -50,7 +50,7 @@ def auditedDecoded (sid : SyscallId) (capAddr : SeLe4n.CPtr) (regs : SeLe4n.Regi
 /-- The gate a routed declassification or audit call's arm reads: only its
 required right (`dispatchWithCapChecked_eq_auditedArmSpec`). -/
 def auditedGate (tid : SeLe4n.ThreadId) (capAddr : SeLe4n.CPtr) (sid : SyscallId) : SyscallGate :=
-  { callerId := tid, cspaceRoot := ⟨0⟩, capAddr, capDepth := 0,
+  { callerId := tid, cspaceRootCap := none, capAddr,
     requiredRight := syscallRequiredRight sid }
 
 /-- **The general form**: `dispatchWithCapChecked`'s arm for a routed
@@ -289,20 +289,18 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : decoded.msgInfo.length = routedLength regs)
-    (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
+    (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
-    (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
-    (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
+    (hRef : lookupSlot tcb decoded.capAddr st = .ok ref) :
     declassifyOperandArmR ctx regs decoded.capAddr tid executingCore
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb rootCn ref hTcb hRoot hRef
+  have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb ref hTcb hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
-    syscallInvokeTyped, syscallResolveCap, hRef,
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     declassifyTaintStep_eq st tid decoded hSid, hOp]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
@@ -316,8 +314,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassify) = true
     · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } cap
         (by rw [hSid]; rfl) hRegs hLen rfl
       rw [hSid] at hSpec
       rw [hSpec]
@@ -645,11 +642,10 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : decoded.msgInfo.length = routedLength regs)
-    (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
-    (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
+    (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
+    (hRef : lookupSlot tcb decoded.capAddr st = .ok ref) :
     RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st =
       match SystemState.lookupSlotCap st ref with
@@ -660,7 +656,7 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
   have hR : routedAudited decoded.syscallId = true := by
     rcases hSid with h | h <;> rw [h] <;> rfl
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    syscallInvokeTyped, syscallResolveCap, hRef, auditTaintStep_eq st tid decoded hSid]
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, auditTaintStep_eq st tid decoded hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only []
@@ -700,16 +696,15 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : decoded.msgInfo.length = routedLength regs)
-    (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
-    (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
+    (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
+    (hRef : lookupSlot tcb decoded.capAddr st = .ok ref) :
     auditDrainOperandArmR ctx regs decoded.capAddr tid executingCore
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  rw [auditOperand_spec ctx decoded regs tid executingCore (.inr hSid) hRegs hLen st tcb rootCn ref hRef,
+  rw [auditOperand_spec ctx decoded regs tid executingCore (.inr hSid) hRegs hLen st tcb ref hRef,
     hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
@@ -1544,16 +1539,15 @@ theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecode
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : decoded.msgInfo.length = routedLength regs)
-    (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
-    (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
+    (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
+    (hRef : lookupSlot tcb decoded.capAddr st = .ok ref) :
     auditReadOperandArmR ctx regs decoded.capAddr tid executingCore
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  rw [auditOperand_spec ctx decoded regs tid executingCore (.inl hSid) hRegs hLen st tcb rootCn ref hRef,
+  rw [auditOperand_spec ctx decoded regs tid executingCore (.inl hSid) hRegs hLen st tcb ref hRef,
     hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
@@ -2445,20 +2439,18 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : decoded.msgInfo.length = routedLength regs)
-    (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
+    (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
-    (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
-    (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
+    (hRef : lookupSlot tcb decoded.capAddr st = .ok ref) :
     declassifySignalOperandArmR ctx regs decoded.capAddr tid executingCore
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb rootCn ref hTcb hRoot hRef
+  have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb ref hTcb hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
-    syscallInvokeTyped, syscallResolveCap, hRef,
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     declassifySignalTaintStep_eq st tid decoded hSid _ _ _ _ _ (decode_taintWordsAt st tid.toObjId)
       (decode_taintWordsAt st _), hOp]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2473,8 +2465,7 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassifySignal) = true
     · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } cap
         (by rw [hSid]; rfl) hRegs hLen rfl
       rw [hSid] at hSpec
       rw [hSpec]
@@ -2642,20 +2633,20 @@ theorem dispatchAuditedCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDec
   have hNotYield : decoded.syscallId ≠ .yield := by
     intro h; rw [h] at hRouted; cases hRouted
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
-  intro st tcb rootCn ref hTcb hRoot hRef
+  intro st tcb ref hTcb hRef
   rcases hs : decoded.syscallId <;> rw [hs] at hRouted <;>
     simp only [routedAudited, Bool.false_eq_true] at hRouted <;> simp only [auditedOperandArmR]
   all_goals first
-    | (have h := declassifyOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
-        ref hTcb hRoot hRef
+    | (have h := declassifyOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb
+        ref hTcb hRef
        rw [hs] at h; exact h)
     | (have h := declassifySignalOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb
-        rootCn ref hTcb hRoot hRef
+        ref hTcb hRef
        rw [hs] at h; exact h)
-    | (have h := auditReadOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
+    | (have h := auditReadOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb
         ref hRef
        rw [hs] at h; exact h)
-    | (have h := auditDrainOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
+    | (have h := auditDrainOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb
         ref hRef
        rw [hs] at h; exact h)
 

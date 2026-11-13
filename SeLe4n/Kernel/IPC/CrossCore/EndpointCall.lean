@@ -2673,7 +2673,7 @@ the receive's or the send's) resolves the sender's capabilities -- writing CDT n
 with one `ipcUnwrapCaps`; so it frames everything the unwrap frames. -/
 
 section receiveTransferCapsFrames
-variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+variable {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
   {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState} {summary : CapTransferSummary}
 
 theorem receiveTransferCaps_scheduler_eq

@@ -66,26 +66,23 @@ theorem resolveVSpaceMapFrame_congr {s t : SystemState} (tid : SeLe4n.ThreadId)
   split
   · rfl
   · next tcb _ =>
-    rw [hC]
-    split
-    · rfl
-    · next cn _ =>
+    dsimp only
+    simp only [SyscallGate.lookupSlot_mk, lookupSlot_congr_getCNode? s t hC,
+      lookupSlotCap_congr_getCNode? s t hC, hF]
+    cases lookupSlot tcb args.frame t with
+    | error e => rfl
+    | ok ref =>
       dsimp only
-      simp only [resolveCapAddress_congr_getCNode? s t hC, lookupSlotCap_congr_getCNode? s t hC, hF]
-      cases resolveCapAddress tcb.cspaceRoot args.frame cn.depth t with
-      | error e => rfl
-      | ok ref =>
+      cases t.lookupSlotCap ref with
+      | none => rfl
+      | some cap =>
         dsimp only
-        cases t.lookupSlotCap ref with
-        | none => rfl
-        | some cap =>
-          dsimp only
-          by_cases h1 : capTargetsReservedKernelObject cap = true
-          · simp [h1]
-          · simp only [h1, Bool.false_eq_true, ↓reduceIte]
-            by_cases h2 : cap.hasRight AccessRight.read = true
-            · simp only [h2, ↓reduceIte]
-            · simp [h2]
+        by_cases h1 : capTargetsReservedKernelObject cap = true
+        · simp [h1]
+        · simp only [h1, Bool.false_eq_true, ↓reduceIte]
+          by_cases h2 : cap.hasRight AccessRight.read = true
+          · simp only [h2, ↓reduceIte]
+          · simp [h2]
 
 /-- **The remap's in-place conditions**, read before any write: the unmap of
 the address is admitted in place (`vspaceUnmapAdmittedAt`), the root holds the

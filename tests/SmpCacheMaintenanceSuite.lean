@@ -523,7 +523,7 @@ private def cacheState (slots : List (SeLe4n.Slot × Capability)) : SystemState 
   (BootstrapBuilder.empty
     |>.withObject udVsp (.vspaceRoot { asid := asid5, mappings := {} })
     |>.withObject udCn (.cnode
-        (CNode.ofList 4 0 0 4 slots))
+        (CNode.ofList 4 slots))
     |>.withObject udCaller.toObjId (.tcb
         { tid := udCaller, priority := ⟨40⟩, domain := ⟨0⟩,
           spaceCells := SeLe4n.Model.TCB.spaceCellsOf udCn udVsp,
@@ -631,7 +631,7 @@ private def carveScenario : SystemState :=
   (SeLe4n.Testing.BootstrapBuilder.empty
     |>.withObject carveUt (.untyped
         { regionBase := SeLe4n.PAddr.ofNat 0x200000, regionSize := 0x2000 })
-    |>.withObject carveCn (.cnode (SeLe4n.Model.CNode.ofList 0 0 0 2 [
+    |>.withObject carveCn (.cnode (SeLe4n.Model.CNode.ofList 2 [
         (SeLe4n.Slot.ofNat 0, { target := .object carveUt,
                                 rights := AccessRightSet.ofList [.read, .write, .retype] }) ]))
     |>.build)

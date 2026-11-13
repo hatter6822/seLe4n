@@ -27,7 +27,7 @@
 #                           — production dispatch sites guarded by
 #                             `validateThreadIdArg` / `validateSchedContextIdArg`
 #                             / `validateObjIdArg`. SHOULD-GROW metric.
-#   * `READER_HYGIENE_SUITE_TESTS`      — `tests/An10CascadeSuite.lean` test count.
+#   * `READER_HYGIENE_SUITE_TESTS`      — `tests/An10CascadeSuite.lean` registered test count.
 #                             SHOULD-GROW metric.
 #
 # All counts exclude `SeLe4n/Model/State.lean` (the helper definition file
@@ -624,8 +624,10 @@ SENTINEL_CHECK_DISPATCH=$(count_lines_matching \
 # AN10 regression suite test count (cascades into the post-AN10 floor).
 READER_HYGIENE_SUITE_TESTS=0
 if [[ -f tests/An10CascadeSuite.lean ]]; then
-  # Per-test definitions are named `def an10_<letter>_<id>`.
-  READER_HYGIENE_SUITE_TESTS=$(count_lines_matching "^def an10_" tests/An10CascadeSuite.lean)
+  # The tests `runAll` registers, one `("<name>", <test>)` row each: the count
+  # is what the runner executes, not a name prefix (new tests carry no
+  # workstream prefix in their identifiers).
+  READER_HYGIENE_SUITE_TESTS=$(count_lines_matching '^    ("[[:alnum:]_]*",' tests/An10CascadeSuite.lean)
 fi
 
 # AN11-A KernelError matrix row count (cascades into the post-AN11 floor).

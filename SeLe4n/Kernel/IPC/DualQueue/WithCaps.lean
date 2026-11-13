@@ -83,14 +83,14 @@ sender waited is never transferred), then transferred to the receiver's side
 endpoint, so nothing unwraps).  The grant right was checked when the request was formed.  No
 request, nothing that resolves, or a receiver that can take no capability,
 transfers nothing. -/
-def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+def receiveTransferCaps (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr)) :
     Kernel CapTransferSummary :=
   fun st =>
     match req with
     | none => .ok ({ results := #[] }, st)
-    | some (root, addrs, depth) =>
-        let caps := resolveExtraCaps root addrs depth true st
+    | some (root, addrs) =>
+        let caps := resolveExtraCaps root addrs true st
         if caps.isEmpty then .ok ({ results := #[] }, st)
         else
           match target? with
@@ -103,7 +103,7 @@ buffer as a sender's is) under the reply capability's grant right `grant`
 (seL4's `cap_reply_cap_get_capReplyCanGrant`, which `doReplyTransfer` passes
 to `doIPCTransfer`).  A replier without that right transfers nothing. -/
 def replyCapRequest (st : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) :
-    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+    Option (Capability × Array SeLe4n.CPtr) :=
   match st.getTcb? replier with
   | none => none
   | some tcb => senderFrameCapRequest st replier tcb grant
@@ -155,20 +155,20 @@ theorem replyTransferCaps_of_inert (pre : SystemState) (replier caller : SeLe4n.
   · have : receiverCapTarget? pre caller = none := by
       simp [receiverCapTarget?, hT, hB]
     rw [this]
-    rcases replyCapRequest pre replier true with _ | ⟨_, _, _⟩
+    rcases replyCapRequest pre replier true with _ | ⟨_, _⟩
     · rfl
     · simp only []; split <;> rfl
   have hS : receiveSlot? pre ct = none := by simpa [hB] using hW
   have : receiverCapTarget? pre caller = some (ct, none) := by
     simp [receiverCapTarget?, hT, hB, hS]
   rw [this]
-  rcases replyCapRequest pre replier true with _ | ⟨root, addrs, depth⟩
+  rcases replyCapRequest pre replier true with _ | ⟨root, addrs⟩
   · rfl
   simp only []
   split
   · rfl
   unfold ipcUnwrapCaps
-  generalize resolveExtraCaps root addrs depth true st = caps
+  generalize resolveExtraCaps root addrs true st = caps
   cases hN : caps.size with
   | zero => simp [ipcUnwrapCapsLoop]
   | succ n =>
@@ -276,7 +276,7 @@ def endpointCallWithCaps
 transfer's object frame is `ipcUnwrapCaps_object_cases` at the slot of its
 target. -/
 theorem receiveTransferCaps_object_cases
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary} (oid : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
@@ -290,7 +290,7 @@ theorem receiveTransferCaps_object_cases
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     exact .inl (.of_eq (by rw [h.2]))
   | some r =>
-    obtain ⟨root, addrs, depth⟩ := r
+    obtain ⟨root, addrs⟩ := r
     simp only at h
     split at h
     · simp only [Except.ok.injEq, Prod.mk.injEq] at h

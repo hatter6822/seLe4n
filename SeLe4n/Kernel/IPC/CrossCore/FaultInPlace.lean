@@ -38,7 +38,7 @@ open SeLe4n.Kernel.Concurrency
 -- ============================================================================
 
 /-- **`resolveFaultHandler` in continuation form**: the thread's configured
-handler address resolved through its own CSpace (`resolveCapAddressKUnrolled`),
+handler address resolved through its own CSpace root capability (`lookupSlotK`),
 the refusal to `onErr`, the handler's endpoint and capability to `onOk`, so a
 caller that matches the result at once builds no target and no `Except`
 (`resolveFaultHandlerK_eq`).  Every gate is the specification's: a configured
@@ -50,11 +50,8 @@ grant right, naming an endpoint. -/
   | none => onErr ()
   | some tcb =>
     if tcb.faultHandlerSet then
-      match st.getCNode? tcb.cspaceRoot with
-      | none => onErr ()
-      | some rootCn =>
-        resolveCapAddressKUnrolled tcb.cspaceRoot tcb.faultHandlerWord rootCn.depth st
-          (fun _ => onErr ())
+        lookupSlotK tcb tcb.faultHandlerWord st
+          (fun _ _ _ _ => onErr ())
           (fun cnode slot =>
             match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
             | none => onErr ()
@@ -85,12 +82,8 @@ theorem resolveFaultHandlerK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thr
     | true =>
       simp only [↓reduceIte]
       unfold resolveFaultHandlerCPtr
-      cases st.getCNode? tcb.cspaceRoot with
-      | none => rfl
-      | some rootCn =>
-        simp only []
-        rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-        cases resolveCapAddress tcb.cspaceRoot tcb.faultHandlerWord rootCn.depth st with
+      rw [lookupSlotK_eq]
+      cases lookupSlot tcb tcb.faultHandlerWord st with
         | error e => rfl
         | ok ref =>
           obtain ⟨cnode, slot⟩ := ref

@@ -210,7 +210,7 @@ theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : Opti
 /-- The rendezvous capability transfer is the identity or one unwrap from the
 state it starts from. -/
 theorem receiveTransferCaps_cases
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
@@ -220,7 +220,7 @@ theorem receiveTransferCaps_cases
   cases req with
   | none => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact .inl h.2.symm
   | some r =>
-      obtain ⟨cr, addrs, depth⟩ := r
+      obtain ⟨cr, addrs⟩ := r
       simp only at h
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact .inl h.2.symm
@@ -231,7 +231,7 @@ theorem receiveTransferCaps_cases
           exact .inr ⟨_, rtcb, slot?, h⟩
 
 theorem receiveTransferCaps_mappingStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

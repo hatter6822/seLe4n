@@ -84,6 +84,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     (hs : slot.toNat < 2) (hEmpty : t.spaceSlotCap slot = none)
     (hSrc : SystemState.lookupSlotCap st src = some cap)
     (hBacked : capTargetKindBackedAt st c.target)
+    (hGeo : cnodeCapGeometryAt st c)
     (hTgt : c.target = cap.target)
     (hNotUt : ∀ u, cap.target = .object u → st.getUntyped? u = none) :
     capabilityInvariantBundle
@@ -130,11 +131,6 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
       exact ⟨.tcb (t.insertSpaceCap slot c), by rw [h]; exact hAt,
         TCB.spaceSlotCap_insertSpaceCap_mono t hs c _ hL⟩
     · rw [hNe _ (Ne.symm h)]; exact hComp ref hM
-  have hDepth1 : cspaceDepthConsistent st1 := by
-    intro k cn hO
-    by_cases h : k = tid.toObjId
-    · rw [h, hAt] at hO; cases hO
-    · rw [hNe _ (Ne.symm h)] at hO; exact hDepth k cn hO
   have hReply : ∀ rid : SeLe4n.ReplyId, st1.getReply? rid = st.getReply? rid := by
     intro rid
     unfold SystemState.getReply?
@@ -148,6 +144,15 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     · rw [h, hAt, hPre]
     · rw [hNe _ (Ne.symm h)]
   have hKind := capTargetKindBackedAt_congr hReply hCNode
+  have hGeoT := cnodeCapGeometryAt_congr hCNode
+  have hDepth1 : cnodeCapGeometry st1 := by
+    intro oid o s cap' hO hL
+    by_cases h : oid = tid.toObjId
+    · rw [h, hAt] at hO; cases hO
+      rcases TCB.spaceSlotCap_insertSpaceCap_back hL with rfl | hL'
+      · exact hGeoT _ hGeo
+      · exact hGeoT _ (hDepth tid.toObjId (.tcb t) s cap' hPre hL')
+    · rw [hNe _ (Ne.symm h)] at hO; exact hGeoT _ (hDepth oid o s cap' hO hL)
   have hRCPV1 : capTargetKindBacked st1 := by
     intro oid o s cap' hO hL
     by_cases h : oid = tid.toObjId
@@ -201,7 +206,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
   refine capabilityInvariantBundle_of_linkReach ?_
     (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_ hShape1
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,
-      cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
+      cnodeCapGeometry_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
       capTargetKindBacked_of_objects_eq rfl hRCPV1⟩
     · rcases hM with ⟨e, he, hr⟩ | hr
       · simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
@@ -245,6 +250,8 @@ theorem threadSlotCopied_preserves_capabilityInvariantBundle
       simp only [if_true] at h
       rw [← h]; unfold TCB.spaceSlotCap; rw [hCells]
     refine threadSlotFilled_preserves_capabilityInvariantBundle hD hT' hs hEmpty hCap ?_
+      (cnodeCapGeometryAt_of_fields
+        (hD.capGeometry.slotCapAt (SystemState.slotCapAt_of_lookupSlotCap hCap)) rfl rfl rfl)
       (TCB.spaceCopyOf_target _ _) ?_
     rotate_left
     · intro u hu

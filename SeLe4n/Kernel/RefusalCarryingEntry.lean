@@ -1104,23 +1104,19 @@ operand's address and the error, so the lookup runs once. -/
   else
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    match st.getObject? tcb.cspaceRoot with
-    | some (.cnode rootCn) =>
-      resolveCapAddressKUnrolled tcb.cspaceRoot capAddr rootCn.depth st
-        (fun e => onLookup e st)
-        (fun cnode slot =>
-          let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-          -- an empty slot is the resolution's refusal, handed on without
-          -- running the arm, so no refusal is built as a value
-          if slotEmpty c then onLookup (.invalidCapability 0) st
-          else
-            -- a receive's capability of the wrong type or without its right
-            -- is the lookup's failure (seL4 `handleRecv`), asked before the
-            -- arm takes the state; the arm runs once on either branch
-            let k := fun noCap => noCapRefusal noCap kArm onLookup (arm c st)
-            if receiveRefusedAt sid st c then k true else k (capHeldNone c))
-    | some _ => kPre (.error (.invalidCapability 0, st))
-    | none => kPre (.error (.objectNotFound, st))
+    lookupSlotK tcb capAddr st
+      (fun t a b c => onLookup (.failedLookup false (LookupFault.ofWords t a b c)) st)
+      (fun cnode slot =>
+        let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
+        -- an empty slot is the resolution's refusal, handed on without
+        -- running the arm, so no refusal is built as a value
+        if slotEmpty c then onLookup (.invalidCapability 0) st
+        else
+          -- a receive's capability of the wrong type or without its right
+          -- is the lookup's failure (seL4 `handleRecv`), asked before the
+          -- arm takes the state; the arm runs once on either branch
+          let k := fun noCap => noCapRefusal noCap kArm onLookup (arm c st)
+          if receiveRefusedAt sid st c then k true else k (capHeldNone c))
   | some _ => kPre (.error (.illegalState, st))
   | none => kPre (.error (.objectNotFound, st))
 
@@ -1137,17 +1133,16 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
     (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre kArm onLookup =
         kPre (dispatchOperandCheckedR capAddr tid executingCore arm st) ∨
-      ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
-        st.getObject? tcb.cspaceRoot = some (.cnode rootCn) ∧
+      ∃ tcb, st.getObject? tid.toObjId = some (.tcb tcb) ∧
         ((dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre kArm onLookup =
             kArm (dispatchOperandCheckedR capAddr tid executingCore arm st) ∧
           ∀ ke s, dispatchOperandCheckedR capAddr tid executingCore arm st = .error (ke, s) →
-            ∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
+            ∀ e, syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st =
               .error e → e ≠ ke) ∨
          ∃ e s, dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre kArm onLookup =
             onLookup e s ∧
           dispatchOperandCheckedR capAddr tid executingCore arm st = .error (e, s) ∧
-          syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error e) := by
+          syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .error e) := by
   unfold dispatchOperandCheckedK dispatchOperandCheckedR
   by_cases hc : (!(st.scheduler.currentOnCore executingCore).isEqSome tid) = true
   · rw [if_pos hc, if_pos hc]; exact .inl rfl
@@ -1157,65 +1152,62 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
   | some o =>
   cases o <;> (try dsimp only) <;> try exact .inl rfl
   rename_i tcb
-  cases hRoot : st.getObject? tcb.cspaceRoot with
-    | none => dsimp only; exact .inl rfl
-    | some r =>
-    cases r <;> (try dsimp only) <;> try exact .inl rfl
-    rename_i rootCn
-    · refine .inr ⟨tcb, rootCn, rfl, hRoot, ?_⟩
-      simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-      cases hRes : resolveCapAddress tcb.cspaceRoot capAddr rootCn.depth st with
-      | error e =>
-        exact .inr ⟨e, st, rfl, rfl, by simp only [syscallOperandLookup, syscallResolveCap, hRes]⟩
-      | ok ref =>
-        obtain ⟨cn, sl⟩ := ref
-        dsimp only
-        cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
-        | some cap =>
-          rw [if_neg (by simp only [slotEmpty, Option.isNone, Bool.false_eq_true,
-            not_false_eq_true])]
-          -- the slot's refusal flag: the reserved target, or the receive's gate
-          obtain ⟨noCap, hK, hLk⟩ : ∃ noCap : Bool,
-              (if receiveRefusedAt sid st (some cap) = true then
-                  noCapRefusal true kArm onLookup (arm (some cap) st)
-                else noCapRefusal (capHeldNone (some cap)) kArm onLookup (arm (some cap) st)) =
-                noCapRefusal noCap kArm onLookup (arm (some cap) st) ∧
-              (noCap = true → syscallOperandLookup sid
-                ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error (.invalidCapability 0)) ∧
-              (∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
-                .error e → noCap = true ∧ e = (.invalidCapability 0)) := by
-            rw [receiveRefusedAt_some]
-            by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-            · refine ⟨true, by split <;> simp [capHeldNone, hIdle], fun _ => ?_, fun e h => ?_⟩
-              · simp [syscallOperandLookup, syscallResolveCap, hRes, hC, hIdle]
-              · simp [syscallOperandLookup, syscallResolveCap, hRes, hC, hIdle] at h
-                exact ⟨rfl, h.symm⟩
-            · by_cases hG : receiveGateRefuses sid st cap = true
-              · refine ⟨true, by simp [hG], fun _ => ?_, fun e h => ?_⟩
-                · simp [syscallOperandLookup, syscallResolveCap, hRes, hC, hIdle, hG]
-                · simp [syscallOperandLookup, syscallResolveCap, hRes, hC, hIdle, hG] at h
-                  exact ⟨rfl, h.symm⟩
-              · refine ⟨false, by simp [hG, capHeldNone, hIdle], (fun h => nomatch h),
-                  fun e h => ?_⟩
-                simp [syscallOperandLookup, syscallResolveCap, hRes, hC, hIdle, hG] at h
-          rw [hK]
-          unfold noCapRefusal
-          rcases hA : arm (some cap) st with ⟨e, s⟩ | v <;> (try dsimp only)
-          · by_cases hX : noCap = true ∧ e = (.invalidCapability 0)
-            · rw [if_pos hX]
-              refine .inr ⟨e, s, rfl, rfl, ?_⟩
-              rw [hX.2]; exact hLk.1 hX.1
-            · rw [if_neg hX]
-              refine .inl ⟨rfl, fun ke s' h e' h' => ?_⟩
-              cases h
-              obtain ⟨hN, hE⟩ := hLk.2 e' h'
-              subst hE
-              exact fun h => hX ⟨hN, h.symm⟩
-          · exact .inl ⟨rfl, fun ke s' h => by cases h⟩
-        | none =>
-          rw [if_pos (by simp only [slotEmpty, Option.isNone])]
-          exact .inr ⟨(.invalidCapability 0), st, rfl, hNone st,
-            by simp only [syscallOperandLookup, syscallResolveCap, hRes, hC]⟩
+  refine .inr ⟨tcb, rfl, ?_⟩
+  simp only [lookupSlotK_eq]
+  cases hRes : lookupSlot tcb capAddr st with
+  | error f =>
+    simp only [LookupFault.ofWords_word]
+    exact .inr ⟨_, st, rfl, rfl, by
+      simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes]⟩
+  | ok ref =>
+    obtain ⟨cn, sl⟩ := ref
+    dsimp only
+    cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+    | some cap =>
+      rw [if_neg (by simp only [slotEmpty, Option.isNone, Bool.false_eq_true,
+        not_false_eq_true])]
+      -- the slot's refusal flag: the reserved target, or the receive's gate
+      obtain ⟨noCap, hK, hLk⟩ : ∃ noCap : Bool,
+          (if receiveRefusedAt sid st (some cap) = true then
+              noCapRefusal true kArm onLookup (arm (some cap) st)
+            else noCapRefusal (capHeldNone (some cap)) kArm onLookup (arm (some cap) st)) =
+            noCapRefusal noCap kArm onLookup (arm (some cap) st) ∧
+          (noCap = true → syscallOperandLookup sid
+            ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .error (.invalidCapability 0)) ∧
+          (∀ e, syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st =
+            .error e → noCap = true ∧ e = (.invalidCapability 0)) := by
+        rw [receiveRefusedAt_some]
+        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+        · refine ⟨true, by split <;> simp [capHeldNone, hIdle], fun _ => ?_, fun e h => ?_⟩
+          · simp [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle]
+          · simp [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle] at h
+            exact ⟨rfl, h.symm⟩
+        · by_cases hG : receiveGateRefuses sid st cap = true
+          · refine ⟨true, by simp [hG], fun _ => ?_, fun e h => ?_⟩
+            · simp [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle, hG]
+            · simp [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle, hG] at h
+              exact ⟨rfl, h.symm⟩
+          · refine ⟨false, by simp [hG, capHeldNone, hIdle], (fun h => nomatch h),
+              fun e h => ?_⟩
+            simp [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle, hG] at h
+      rw [hK]
+      unfold noCapRefusal
+      rcases hA : arm (some cap) st with ⟨e, s⟩ | v <;> (try dsimp only)
+      · by_cases hX : noCap = true ∧ e = (.invalidCapability 0)
+        · rw [if_pos hX]
+          refine .inr ⟨e, s, rfl, rfl, ?_⟩
+          rw [hX.2]; exact hLk.1 hX.1
+        · rw [if_neg hX]
+          refine .inl ⟨rfl, fun ke s' h e' h' => ?_⟩
+          cases h
+          obtain ⟨hN, hE⟩ := hLk.2 e' h'
+          subst hE
+          exact fun h => hX ⟨hN, h.symm⟩
+      · exact .inl ⟨rfl, fun ke s' h => by cases h⟩
+    | none =>
+      rw [if_pos (by simp only [slotEmpty, Option.isNone])]
+      exact .inr ⟨(.invalidCapability 0), st, rfl, hNone st,
+        by simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC]⟩
 
 /-- A refusal of an operand dispatch run on the state whose TLB the entry
 filled for the IPC buffer, its state handed back with the TLB the entry held;
@@ -1271,9 +1263,8 @@ theorem syscallResolveCap_error_perCoreTlb (gate : SyscallGate) (st : SystemStat
     syscallResolveCap gate { st with perCoreTlb := t } = .error e ↔
       syscallResolveCap gate st = .error e := by
   unfold syscallResolveCap
-  rw [resolveCapAddress_congr_objects { st with perCoreTlb := t } st rfl gate.capAddr
-    gate.capDepth gate.cspaceRoot]
-  cases resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st with
+  rw [gate.lookupSlot_congr_objects { st with perCoreTlb := t } st rfl]
+  cases gate.lookupSlot st with
   | error e' => exact Iff.rfl
   | ok ref =>
     dsimp only
@@ -1293,9 +1284,8 @@ theorem syscallOperandLookup_error_perCoreTlb (sid : SyscallId) (gate : SyscallG
     syscallOperandLookup sid gate { st with perCoreTlb := t } = .error e ↔
       syscallOperandLookup sid gate st = .error e := by
   unfold syscallOperandLookup syscallResolveCap
-  rw [resolveCapAddress_congr_objects { st with perCoreTlb := t } st rfl gate.capAddr
-    gate.capDepth gate.cspaceRoot]
-  cases resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st with
+  rw [gate.lookupSlot_congr_objects { st with perCoreTlb := t } st rfl]
+  cases gate.lookupSlot st with
   | error e' => exact Iff.rfl
   | ok ref =>
     dsimp only
@@ -1327,16 +1317,15 @@ theorem dispatchOperandFilledK_spec {β : Type} (sid : SyscallId) (capAddr : SeL
       (dispatchOperandCheckedR capAddr tid executingCore arm stF)
     dispatchOperandFilledK sid capAddr tid executingCore arm held n0 stF kPre kArm onLookup =
         kPre R ∨
-      ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
-        st.getObject? tcb.cspaceRoot = some (.cnode rootCn) ∧
+      ∃ tcb, st.getObject? tid.toObjId = some (.tcb tcb) ∧
         ((dispatchOperandFilledK sid capAddr tid executingCore arm held n0 stF kPre kArm onLookup =
             kArm R ∧
           ∀ ke s, R = .error (ke, s) →
-            ∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
+            ∀ e, syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st =
               .error e → e ≠ ke) ∨
          ∃ e s, dispatchOperandFilledK sid capAddr tid executingCore arm held n0 stF kPre kArm
             onLookup = onLookup e s ∧ R = .error (e, s) ∧
-          syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error e) := by
+          syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .error e) := by
   intro R
   subst hF
   have hGet : ∀ x, ({ st with perCoreTlb := t } : SystemState).getObject? x = st.getObject? x :=
@@ -1348,9 +1337,9 @@ theorem dispatchOperandFilledK_spec {β : Type} (sid : SyscallId) (capAddr : SeL
       (fun r => kArm (undoFillRefusal held executingCore n0 r))
       (fun e s => onLookup e
         (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
-      rr hNone with h | ⟨tcb, rootCn, hT, hRoot, h⟩
+      rr hNone with h | ⟨tcb, hT, h⟩
   · exact .inl h
-  refine .inr ⟨tcb, rootCn, (hGet _).symm.trans hT, (hGet _).symm.trans hRoot, ?_⟩
+  refine .inr ⟨tcb, (hGet _).symm.trans hT, ?_⟩
   rcases h with ⟨hK, hNe⟩ | ⟨e, s, hK, hE, hRes⟩
   · refine .inl ⟨hK, fun ke s hR e hRes => ?_⟩
     have hRes' := (syscallOperandLookup_error_perCoreTlb sid _ st t e).mpr hRes
@@ -1417,16 +1406,15 @@ theorem longOperandK_spec {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr) 
     (hn : n ≤ SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots) :
     longOperandK sid capAddr tid executingCore arm n st kPre kArm onLookup =
         kPre (longOperandSpecR capAddr tid executingCore arm n st) ∨
-      ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
-        st.getObject? tcb.cspaceRoot = some (.cnode rootCn) ∧
+      ∃ tcb, st.getObject? tid.toObjId = some (.tcb tcb) ∧
         ((longOperandK sid capAddr tid executingCore arm n st kPre kArm onLookup =
             kArm (longOperandSpecR capAddr tid executingCore arm n st) ∧
           ∀ ke s, longOperandSpecR capAddr tid executingCore arm n st = .error (ke, s) →
-            ∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
+            ∀ e, syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st =
               .error e → e ≠ ke) ∨
          ∃ e s, longOperandK sid capAddr tid executingCore arm n st kPre kArm onLookup =
             onLookup e s ∧ longOperandSpecR capAddr tid executingCore arm n st = .error (e, s) ∧
-          syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error e) := by
+          syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .error e) := by
   have hR : undoFillRefusal (SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid n)
       executingCore (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
       (dispatchOperandCheckedR capAddr tid executingCore arm
@@ -1514,16 +1502,15 @@ theorem overflowOneOperandK_spec {β : Type} (sid : SyscallId) (capAddr : SeLe4n
     (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     overflowOneOperandK sid capAddr tid executingCore arm st kPre kArm onLookup =
         kPre (overflowOneOperandSpecR capAddr tid executingCore arm st) ∨
-      ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
-        st.getObject? tcb.cspaceRoot = some (.cnode rootCn) ∧
+      ∃ tcb, st.getObject? tid.toObjId = some (.tcb tcb) ∧
         ((overflowOneOperandK sid capAddr tid executingCore arm st kPre kArm onLookup =
             kArm (overflowOneOperandSpecR capAddr tid executingCore arm st) ∧
           ∀ ke s, overflowOneOperandSpecR capAddr tid executingCore arm st = .error (ke, s) →
-            ∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
+            ∀ e, syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st =
               .error e → e ≠ ke) ∨
          ∃ e s, overflowOneOperandK sid capAddr tid executingCore arm st kPre kArm onLookup =
             onLookup e s ∧ overflowOneOperandSpecR capAddr tid executingCore arm st = .error (e, s) ∧
-          syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error e) := by
+          syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .error e) := by
   have hR : undoFillRefusal (SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid)
       executingCore (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
       (dispatchOperandCheckedR capAddr tid executingCore arm
@@ -1764,19 +1751,18 @@ operand's resolution raises, or the resolution's failure, refused alike. -/
 def EntryOperandOutcome {β : Type} (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (st : SystemState) (kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kLook : SyscallId → SeLe4n.CPtr → KernelError → SystemState → β) (result : β) : Prop :=
-  ∃ tid tcb decoded rootCn,
+  ∃ tid tcb decoded,
     st.scheduler.currentOnCore executingCore = some tid ∧
     st.getObject? tid.toObjId = some (.tcb tcb) ∧
     SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState st tid
       SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
-    st.getObject? tcb.cspaceRoot = some (.cnode rootCn) ∧
     ((result = kRes (syscallEntryCheckedR ctx executingCore st) ∧
       ∀ ke s, syscallEntryCheckedR ctx executingCore st = .error (ke, s) → ∀ e,
-        syscallOperandLookup decoded.syscallId ⟨tid, tcb.cspaceRoot, decoded.capAddr,
-          rootCn.depth, syscallRequiredRight decoded.syscallId⟩ st = .error e → e ≠ ke) ∨
+        syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0], decoded.capAddr,
+          syscallRequiredRight decoded.syscallId⟩ st = .error e → e ≠ ke) ∨
      ∃ e s, result = kLook decoded.syscallId decoded.capAddr e s ∧
       syscallEntryCheckedR ctx executingCore st = .error (e, s) ∧
-      syscallOperandLookup decoded.syscallId ⟨tid, tcb.cspaceRoot, decoded.capAddr, rootCn.depth,
+      syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0], decoded.capAddr,
         syscallRequiredRight decoded.syscallId⟩ st = .error e)
 
 /-- One routed operand dispatch's share of `syscallEntryCheckedK_spec`. -/
@@ -1803,11 +1789,11 @@ theorem entryOperandOutcome_of_dispatch {β : Type} (ctx : LabelingContext)
   subst hSid
   rcases dispatchOperandCheckedK_spec decoded.syscallId decoded.capAddr tid executingCore arm st kGen kRes
       (kLook decoded.syscallId decoded.capAddr) (syscallRequiredRight decoded.syscallId) hNone with
-    h | ⟨tcb', rootCn, hObj', hRoot, h⟩
+    h | ⟨tcb', hObj', h⟩
   · exact .inl h
   · rw [hObj] at hObj'
     cases hObj'
-    exact .inr ⟨tid, tcb, decoded, rootCn, hCur, hObj, hDec, hRoot, by rw [hR]; exact h⟩
+    exact .inr ⟨tid, tcb, decoded, hCur, hObj, hDec, by rw [hR]; exact h⟩
 
 /-- One long route's operand dispatch's share of `syscallEntryCheckedK_spec`. -/
 theorem entryOperandOutcome_of_long {β : Type} (ctx : LabelingContext)
@@ -1833,11 +1819,11 @@ theorem entryOperandOutcome_of_long {β : Type} (ctx : LabelingContext)
   subst hSid hCap
   rcases longOperandK_spec decoded.syscallId decoded.capAddr tid executingCore arm n st kGen kRes
       (kLook decoded.syscallId decoded.capAddr) (syscallRequiredRight decoded.syscallId) hNone
-      hn0 hn with h | ⟨tcb', rootCn, hObj', hRoot, h⟩
+      hn0 hn with h | ⟨tcb', hObj', h⟩
   · exact .inl h
   · rw [hObj] at hObj'
     cases hObj'
-    exact .inr ⟨tid, tcb, decoded, rootCn, hCur, hObj, hDec, hRoot, by rw [hR]; exact h⟩
+    exact .inr ⟨tid, tcb, decoded, hCur, hObj, hDec, by rw [hR]; exact h⟩
 
 /-- The one-overflow-word route's operand dispatch's share of
 `syscallEntryCheckedK_spec`. -/
@@ -1863,11 +1849,11 @@ theorem entryOperandOutcome_of_overflowOne {β : Type} (ctx : LabelingContext)
   subst hSid hCap
   rcases overflowOneOperandK_spec decoded.syscallId decoded.capAddr tid executingCore arm st kGen kRes
       (kLook decoded.syscallId decoded.capAddr) (syscallRequiredRight decoded.syscallId)
-      hNone with h | ⟨tcb', rootCn, hObj', hRoot, h⟩
+      hNone with h | ⟨tcb', hObj', h⟩
   · exact .inl h
   · rw [hObj] at hObj'
     cases hObj'
-    exact .inr ⟨tid, tcb, decoded, rootCn, hCur, hObj, hDec, hRoot, by rw [hR]; exact h⟩
+    exact .inr ⟨tid, tcb, decoded, hCur, hObj, hDec, by rw [hR]; exact h⟩
 
 /-- **What `syscallEntryCheckedK` hands on**: `syscallEntryCheckedR`'s result to
 `kGen`, or, on a call routed to an operand dispatch whose caller's TCB, decode

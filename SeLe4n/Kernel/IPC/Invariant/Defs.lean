@@ -1087,15 +1087,15 @@ theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
 /-- Every resolved capability's badge is valid: each one is read out of a CNode
 slot of the state it is resolved in. -/
 theorem resolveExtraCaps_badges_valid
-    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (cspaceRoot : Capability) (capAddrs : Array SeLe4n.CPtr)
     (granted : Bool) (st : SystemState)
     (hCapWf : capabilityBadgesWellFormed st) :
     ∀ (i : Nat) (c : TransferCap),
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st)[i]? = some c →
+      (resolveExtraCaps cspaceRoot capAddrs granted st)[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid := by
   intro i c hc b hBadge
   exact lookupSlotCap_badge_valid st c.srcSlot c.cap hCapWf
-    (resolveExtraCaps_slot cspaceRoot capAddrs depth granted st c (Array.mem_of_getElem? hc))
+    (resolveExtraCaps_slot cspaceRoot capAddrs granted st c (Array.mem_of_getElem? hc))
     b hBadge
 
 /-- WS-ZA ZA4.7: **what a receive's capability transfer writes** -- nothing
@@ -1104,7 +1104,7 @@ resolved, one `ipcUnwrapCaps` of the resolved capabilities, whose badges are
 valid whenever the pre-state's are.  Every WithCaps receive preservation proof
 goes through this one shape. -/
 theorem receiveTransferCaps_frame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
@@ -1121,7 +1121,7 @@ theorem receiveTransferCaps_frame
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       exact ⟨st, #[], rfl, rfl, (fun _ _ _ hc => by simp at hc), Or.inl h.2.symm⟩
   | some r =>
-      obtain ⟨cr, addrs, depth⟩ := r
+      obtain ⟨cr, addrs⟩ := r
       simp only at h
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h
@@ -1132,12 +1132,12 @@ theorem receiveTransferCaps_frame
           exact ⟨st, #[], rfl, rfl, (fun _ _ _ hc => by simp at hc), Or.inl h.2.symm⟩
         | some t =>
           obtain ⟨rtcb, slot?⟩ := t
-          exact ⟨st, resolveExtraCaps cr addrs depth true st, rfl, rfl,
-            fun hW => resolveExtraCaps_badges_valid cr addrs depth true st hW, Or.inr ⟨rtcb, slot?, h⟩⟩
+          exact ⟨st, resolveExtraCaps cr addrs true st, rfl, rfl,
+            fun hW => resolveExtraCaps_badges_valid cr addrs true st hW, Or.inr ⟨rtcb, slot?, h⟩⟩
 
 /-- WS-ZA ZA4.7: the rendezvous capability transfer writes no machine state. -/
 theorem receiveTransferCaps_preserves_machine
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
@@ -1148,7 +1148,7 @@ theorem receiveTransferCaps_preserves_machine
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       rw [← h.2]
   | some r =>
-      obtain ⟨cr, addrs, depth⟩ := r
+      obtain ⟨cr, addrs⟩ := r
       simp only at h
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h

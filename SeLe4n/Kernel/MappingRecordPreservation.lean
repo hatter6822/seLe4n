@@ -184,7 +184,7 @@ theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded (tid : SeLe4n.Threa
     st'.liveMappingsRecorded := by
   obtain ⟨frameSlot, frameCap, frame, st1, hR, -, hLive, -, -, hMap, epoch, st2, hT, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid ec args st st' h
-  obtain ⟨_, _, fid, _, _, _, _, hTgt, hGF, -, hSlotCap⟩ :=
+  obtain ⟨_, fid, _, _, _, hTgt, hGF, -, hSlotCap⟩ :=
     resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
   have hFid : frameCapObjId frameCap = fid := by simp [frameCapObjId, hTgt]
   rw [hFid] at hT

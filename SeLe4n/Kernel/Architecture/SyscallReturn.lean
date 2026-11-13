@@ -330,14 +330,6 @@ theorem messageLength_of_le_four (e : KernelError) (w : Bool) (h : e.payloadLeng
 A refusal handed on as scalars (`SystemState.pushEntryReport`) is its
 discriminant and its five payload words; these rebuild it. -/
 
-/-- A lookup fault from its words in `setMRs_lookup_failure`'s order: the type
-word, then the fields. -/
-def _root_.SeLe4n.Model.LookupFault.ofWords (t a b c : UInt64) : LookupFault :=
-  if t = 2 then .missingCapability a
-  else if t = 3 then .depthMismatch a b
-  else if t = 4 then .guardMismatch a b c
-  else .invalidRoot
-
 /-- `e`'s code with the payload the words name. -/
 def withPayloadWords : KernelError → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → KernelError
   | .invalidCapability _, w0, _, _, _, _ => .invalidCapability w0
