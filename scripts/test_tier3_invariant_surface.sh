@@ -6005,7 +6005,12 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvRoutedArm($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^@\[noinline\] def invocationRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Invocation.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def overflowOneRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Audited.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def decodedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Decoded.lean
+# The default layout never routes a register file to the decode
+# (`registerRoutedSyscall_viaDecode`), so the routed entry's `.viaDecode` arm
+# is that theorem's absurdity: no decoded arm is compiled.
+run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_check "INVARIANT" rg -n -U '^      \| \.viaDecode =>\n        absurd hRt \(SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall_viaDecode _\)$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_negative_check "INVARIANT" rg -n 'decodedRoutedArm' SeLe4n/Kernel
 run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv => \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
