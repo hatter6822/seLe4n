@@ -10457,6 +10457,7 @@ fn bound_declassified_signals(which: &str) -> bool {
         )
         || heap_allocations_trap(&cap_fault("cap-fault-to-handler-without-reply"), which)
             != Some(true)
+        || !fault_not_delivered("cap-fault-to-handler-without-reply")
         || !heap_allocations_interrupt(&irq_wakes_handler, which)
         || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
         || !unmeasured(&resume_low, "the low thread was not resumed")
@@ -12596,6 +12597,39 @@ const FAULT_PLAIN_REPLIES: [&str; 5] = [
 /// synchronous-exception handler entered with IRQs masked, and this core's
 /// heap counter read before and after.  The handler returns only through a
 /// context the kernel restored (it halts the core otherwise).
+/// Whether the thread a capability-fault trap restored is its handler,
+/// woken holding the fault: its `x1` carries `seL4_Fault_CapFault`'s tag (1).
+#[cfg(feature = "hw_target")]
+fn restored_cap_fault() -> bool {
+    TRAP_RESTORED_X1.load(Ordering::SeqCst) >> 12 == 1
+}
+
+/// The trap named `name` delivered its capability fault to the handler.
+#[cfg(feature = "hw_target")]
+fn fault_delivered(name: &str) -> bool {
+    if !restored_cap_fault() {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler was not woken with the fault (x1={:#x})",
+            TRAP_RESTORED_X1.load(Ordering::SeqCst)
+        );
+        return false;
+    }
+    true
+}
+
+/// The trap named `name` did not deliver its capability fault: the handler
+/// was left waiting.
+#[cfg(feature = "hw_target")]
+fn fault_not_delivered(name: &str) -> bool {
+    if restored_cap_fault() {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler was woken with the fault"
+        );
+        return false;
+    }
+    true
+}
+
 #[cfg(feature = "hw_target")]
 fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr();
@@ -12971,6 +13005,7 @@ fn fault_entries() -> Option<bool> {
             || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
             || heap_allocations_trap(&fault_trip(2, "cap-fault-donating-delivered"), which)
                 != Some(true)
+            || !fault_delivered("cap-fault-donating-delivered")
             || heap_allocations_round_trip(&donating_reply, which) != Some(true)
             || !unmeasured_all(&donating_teardown, "the donating fault's teardown failed")
         {
