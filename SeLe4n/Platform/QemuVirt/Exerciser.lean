@@ -196,13 +196,13 @@ def qemuVirtExerciserRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CN
 
 /-- The exerciser's root guard: the shipped guard shifted by one, its top bit
     set, so a slot's capability address is `2^63 + n`. -/
-def qemuVirtExerciserRootTaskCNodeGuard : Nat := 2 ^ 57
+def qemuVirtExerciserRootTaskCNodeGuard : UInt64 := 2 ^ 57
 
 /-- The exerciser's root guard width: 58 bits above the 6-bit radix, so one
     level resolves a whole 64-bit CPtr.  Carried by the capabilities naming the
     root CNode (each root thread's CSpace root and the CNode's own slot 2), as
     seL4 keeps a CNode's guard in `cap_cnode_cap`. -/
-def qemuVirtExerciserRootTaskCNodeGuardSize : Nat := 58
+def qemuVirtExerciserRootTaskCNodeGuardSize : UInt8 := 58
 
 /-- The shipped root CNode's capabilities with the root's own (slot 2) carrying
     the exerciser's guard. -/

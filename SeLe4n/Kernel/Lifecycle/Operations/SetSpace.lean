@@ -184,7 +184,7 @@ its source's: the source slot's record, once that slot is cleared, is still its
 own to be written over in place.  Out of line, so its matches are no branch of
 its caller. -/
 @[noinline] def capabilityCellOver (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) (guard guardSize : Nat) : Option Capability :=
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : Option Capability :=
   match target, o with
   | .object id, some r => some (r.overwriteObject id rights guard guardSize)
   | .object id, none => some (Capability.ofObject id rights guard guardSize)
@@ -194,7 +194,7 @@ its caller. -/
       guard guardSize)
 
 theorem capabilityCellOver_eq (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) (guard guardSize : Nat) :
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
     capabilityCellOver o target rights guard guardSize =
       some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold capabilityCellOver
@@ -211,7 +211,7 @@ holds it when the capability is written over it (`capabilityCellOver`).  The
 thread is rebuilt once, after those calls, so an unshared thread is rebuilt in
 its own cell.  Equal to the insert (`TCB.spaceCellFilledWith_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilledWith (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat)
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8)
     (a : Array (Option Capability)) : TCB :=
   let i := s.toNat
   let o := spareRecordAt a i
@@ -220,7 +220,7 @@ its own cell.  Equal to the insert (`TCB.spaceCellFilledWith_eq`). -/
   { t with spaceCells := t.spaceCells.setIfInBounds i c, spaceSpare := Squash.mk a' }
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat)
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8)
     (a : Array (Option Capability)) :
     t.spaceCellFilledWith s target rights guard guardSize a =
       t.insertSpaceCap s
@@ -235,13 +235,13 @@ theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slo
 alone**, over the slot's spare record (`TCB.spaceCellFilledWith`); the insert
 (`TCB.spaceCellFilled_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilled (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat) : TCB :=
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : TCB :=
   Quot.lift (fun a => t.spaceCellFilledWith s target rights guard guardSize a)
     (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights guard guardSize a).trans
       (TCB.spaceCellFilledWith_eq t s target rights guard guardSize b).symm) t.spaceSpare
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilled_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (guard guardSize : Nat) :
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
     t.spaceCellFilled s target rights guard guardSize =
       t.insertSpaceCap s
         ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
@@ -254,7 +254,7 @@ theorem _root_.SeLe4n.Model.TCB.spaceCellFilled_eq (t : TCB) (s : SeLe4n.Slot)
 line, on words, so the update is compiled into it. -/
 @[noinline] def threadSpaceCellWritten (st : SystemState) (tid : SeLe4n.ThreadId)
     (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (guard guardSize : Nat) : SystemState :=
+    (guard : UInt64) (guardSize : UInt8) : SystemState :=
   st.updateTcb tid fun t => t.spaceCellFilled slot target rights guard guardSize
 
 /-- The insert and edge of `threadSlotCopied`, on the deleted state `stD`. -/
@@ -315,7 +315,7 @@ is not passed through `updateCapData` and is never refused. -/
 @[inline] def cspaceRootDataRefused (st : SystemState) (id : SeLe4n.ObjId) (data : UInt64) :
     Bool :=
   match st.getCNode? id with
-  | some cn => data != 0 && decide (64 < capDataGuardSize data + cn.radixWidth)
+  | some cn => data != 0 && decide (64 < (capDataGuardSize data).toNat + cn.radixWidth)
   | none => false
 
 /-- The CSpace-root source check: the slot holds a capability naming a CNode,
@@ -624,7 +624,7 @@ has seL4's CNode geometry. -/
 theorem cspaceRootSourceAdmitted_dataFits {st : SystemState} {src : CSpaceAddr} {data : UInt64}
     (h : cspaceRootSourceAdmitted st src data = true) :
     ∀ cap id cn, SystemState.lookupSlotCap st src = some cap → cap.target = .object id →
-      st.getCNode? id = some cn → data ≠ 0 → capDataGuardSize data + cn.radixWidth ≤ 64 := by
+      st.getCNode? id = some cn → data ≠ 0 → (capDataGuardSize data).toNat + cn.radixWidth ≤ 64 := by
   intro cap id cn hL hT hC h0
   unfold cspaceRootSourceAdmitted at h
   rw [hL] at h

@@ -256,7 +256,7 @@ theorem threadSlotCopied_preserves_capabilityInvariantBundle
       some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)
     (hData : ∀ cap id cn, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
       some cap → cap.target = .object id → st.getCNode? id = some cn → data ≠ 0 →
-      capDataGuardSize data + cn.radixWidth ≤ 64) :
+      (capDataGuardSize data).toNat + cn.radixWidth ≤ 64) :
     capabilityInvariantBundle (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have hD := cspaceDeleteSlot_preserves_capabilityInvariantBundle st _ _ hInv
@@ -364,7 +364,7 @@ theorem threadSlotSet_preserves_capabilityInvariantBundle (ec : Concurrency.Core
       some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)
     (hData : ∀ cap id cn, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
       some cap → cap.target = .object id → st.getCNode? id = some cn → data ≠ 0 →
-      capDataGuardSize data + cn.radixWidth ≤ 64) :
+      (capDataGuardSize data).toNat + cn.radixWidth ≤ 64) :
     capabilityInvariantBundle (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have h1 := threadSlotCopied_preserves_capabilityInvariantBundle hInv hT hs srcCNode srcSlot

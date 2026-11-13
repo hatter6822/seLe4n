@@ -168,16 +168,16 @@ def resolveAddressBits (nodeCap : Capability) (cptr : SeLe4n.CPtr) (nBits : Nat)
     match st.getCNode? id with
     | none => .error .invalidRoot
     | some cn =>
-      if nodeCap.cnodeGuardSize > nBits ∨
-          cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+      if nodeCap.cnodeGuardSize.toNat > nBits ∨
+          cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
             nodeCap.cnodeGuard then
-        .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard.toUInt64
-          nodeCap.cnodeGuardSize.toUInt8)
-      else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
-          nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
-        .error (.depthMismatch nBits.toUInt8 (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt8)
+        .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard
+          nodeCap.cnodeGuardSize)
+      else if hL : nodeCap.cnodeGuardSize.toNat + cn.radixWidth > nBits ∨
+          nodeCap.cnodeGuardSize.toNat + cn.radixWidth = 0 then
+        .error (.depthMismatch nBits.toUInt8 (nodeCap.cnodeGuardSize.toNat + cn.radixWidth).toUInt8)
       else
-        let level := nodeCap.cnodeGuardSize + cn.radixWidth
+        let level := nodeCap.cnodeGuardSize.toNat + cn.radixWidth
         let slot := SeLe4n.Slot.ofNat (cptr.slotBits (nBits - level) cn.radixWidth)
         if hEq : nBits = level then .ok ({ cnode := id, slot := slot }, 0)
         else
@@ -206,22 +206,22 @@ builds. -/
     match st.getCNode? id with
     | none => stop nodeCap nBits
     | some cn =>
-      if nodeCap.cnodeGuardSize > nBits ∨
-          cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+      if nodeCap.cnodeGuardSize.toNat > nBits ∨
+          cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
             nodeCap.cnodeGuard then
         stop nodeCap nBits
-      else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
-          nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
+      else if hL : nodeCap.cnodeGuardSize.toNat + cn.radixWidth > nBits ∨
+          nodeCap.cnodeGuardSize.toNat + cn.radixWidth = 0 then
         stop nodeCap nBits
       else
-        if hEq : nBits = nodeCap.cnodeGuardSize + cn.radixWidth then stop nodeCap nBits
+        if hEq : nBits = nodeCap.cnodeGuardSize.toNat + cn.radixWidth then stop nodeCap nBits
         else
-          match cn.lookup (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
+          match cn.lookup (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize.toNat +
               cn.radixWidth)) cn.radixWidth)) with
           | some cap =>
             if isCNodeCap st cap then
-              have : nBits - (nodeCap.cnodeGuardSize + cn.radixWidth) < nBits := by omega
-              resolveAddressBitsWalk cap cptr (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth)) st
+              have : nBits - (nodeCap.cnodeGuardSize.toNat + cn.radixWidth) < nBits := by omega
+              resolveAddressBitsWalk cap cptr (nBits - (nodeCap.cnodeGuardSize.toNat + cn.radixWidth)) st
                 stop
             else stop nodeCap nBits
           | none => stop nodeCap nBits
@@ -242,21 +242,21 @@ branch answers the slot itself and is never taken. -/
     match st.getCNode? id with
     | none => onErr 1 0 0 0
     | some cn =>
-      if nodeCap.cnodeGuardSize > nBits ∨
-          cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+      if nodeCap.cnodeGuardSize.toNat > nBits ∨
+          cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
             nodeCap.cnodeGuard then
-        onErr 4 nBits.toUInt8.toUInt64 nodeCap.cnodeGuard.toUInt64
-          nodeCap.cnodeGuardSize.toUInt8.toUInt64
-      else if nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
-          nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
+        onErr 4 nBits.toUInt8.toUInt64 nodeCap.cnodeGuard
+          nodeCap.cnodeGuardSize.toUInt64
+      else if nodeCap.cnodeGuardSize.toNat + cn.radixWidth > nBits ∨
+          nodeCap.cnodeGuardSize.toNat + cn.radixWidth = 0 then
         onErr 3 nBits.toUInt8.toUInt64
-          (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt8.toUInt64 0
+          (nodeCap.cnodeGuardSize.toNat + cn.radixWidth).toUInt8.toUInt64 0
       else
-        if nBits = nodeCap.cnodeGuardSize + cn.radixWidth then
-          onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
+        if nBits = nodeCap.cnodeGuardSize.toNat + cn.radixWidth then
+          onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize.toNat +
             cn.radixWidth)) cn.radixWidth)) 0
-        else onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
-          cn.radixWidth)) cn.radixWidth)) (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth))
+        else onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize.toNat +
+          cn.radixWidth)) cn.radixWidth)) (nBits - (nodeCap.cnodeGuardSize.toNat + cn.radixWidth))
   | _ => onErr 1 0 0 0
 
 /-- `resolveAddressBits` in continuation form (WS-SX SX2): the lookup fault goes
@@ -336,14 +336,14 @@ theorem resolveAddressBitsK_eq {α : Type} (cptr : SeLe4n.CPtr) (st : SystemStat
       | none => rfl
       | some cn =>
         simp only []
-        by_cases hG : nodeCap.cnodeGuardSize > n ∨
-            cptr.guardBits (n - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+        by_cases hG : nodeCap.cnodeGuardSize.toNat > n ∨
+            cptr.guardWord (n - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
               nodeCap.cnodeGuard
         · simp only [hG, ↓reduceIte, hT, hC]; rfl
-        · by_cases hL : nodeCap.cnodeGuardSize + cn.radixWidth > n ∨
-              nodeCap.cnodeGuardSize + cn.radixWidth = 0
+        · by_cases hL : nodeCap.cnodeGuardSize.toNat + cn.radixWidth > n ∨
+              nodeCap.cnodeGuardSize.toNat + cn.radixWidth = 0
           · simp only [hG, hL, ↓reduceIte, ↓reduceDIte, hT, hC]; rfl
-          · by_cases hE : n = nodeCap.cnodeGuardSize + cn.radixWidth
+          · by_cases hE : n = nodeCap.cnodeGuardSize.toNat + cn.radixWidth
             · subst hE
               simp only [hG, hL, ↓reduceIte, ↓reduceDIte, hT, hC]
             · simp only [hG, hL, hE, ↓reduceIte, ↓reduceDIte, hT, hC]
@@ -484,12 +484,12 @@ theorem resolveAddressBits_guard_reject
     (id : SeLe4n.ObjId) (cn : CNode)
     (hTarget : nodeCap.target = .object id)
     (hObj : st.objects[id]? = some (.cnode cn))
-    (hFit : nodeCap.cnodeGuardSize ≤ nBits)
-    (hBadGuard : cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+    (hFit : nodeCap.cnodeGuardSize.toNat ≤ nBits)
+    (hBadGuard : cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
         nodeCap.cnodeGuard) :
     resolveAddressBits nodeCap cptr nBits st =
-      .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard.toUInt64
-        nodeCap.cnodeGuardSize.toUInt8) := by
+      .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard
+        nodeCap.cnodeGuardSize) := by
   have hCN : st.getCNode? id = some cn := (SystemState.getCNode?_eq_some_iff st id cn).mpr hObj
   rw [resolveAddressBits, hTarget]
   simp only [hCN]
@@ -501,8 +501,8 @@ theorem resolveAddressBits_guard_match
     (nodeCap : Capability) (cptr : SeLe4n.CPtr) (nBits : Nat) (st : SystemState)
     (ref : SlotRef) (rem : Nat)
     (hOk : resolveAddressBits nodeCap cptr nBits st = .ok (ref, rem)) :
-    nodeCap.cnodeGuardSize ≤ nBits ∧
-      cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize =
+    nodeCap.cnodeGuardSize.toNat ≤ nBits ∧
+      cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat =
         nodeCap.cnodeGuard := by
   rw [resolveAddressBits] at hOk
   cases hT : nodeCap.target with
@@ -512,8 +512,8 @@ theorem resolveAddressBits_guard_match
     | none => simp [hC] at hOk
     | some cn =>
       simp only [hC] at hOk
-      by_cases hG : nodeCap.cnodeGuardSize > nBits ∨
-          cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+      by_cases hG : nodeCap.cnodeGuardSize.toNat > nBits ∨
+          cptr.guardWord (nBits - nodeCap.cnodeGuardSize.toNat) nodeCap.cnodeGuardSize.toNat ≠
             nodeCap.cnodeGuard
       · rw [if_pos hG] at hOk; cases hOk
       · exact ⟨by omega, Classical.byContradiction fun hne => hG (Or.inr hne)⟩
@@ -592,7 +592,7 @@ theorem lookupSlotFromK_eq {α : Type} (root : Capability) (cptr : SeLe4n.CPtr)
 cell), 0 when it holds none. -/
 def rootCapGuardSize (tcb : TCB) : Nat :=
   match tcb.spaceCells[0] with
-  | some root => root.cnodeGuardSize
+  | some root => root.cnodeGuardSize.toNat
   | none => 0
 
 /-- **seL4's `lookupSlot`** (`src/kernel/cspace.c`): the slot a thread's
@@ -1211,7 +1211,7 @@ bits is refused when `guardSize + radix` exceeds the word. -/
 @[inline] def capDataRefused (kind : CapDataKind) (cap : Capability) (w : UInt64) : Bool :=
   match kind with
   | .badged => cap.badge.isSome
-  | .cnode radix => decide (64 < capDataGuardSize w + radix)
+  | .cnode radix => decide (64 < (capDataGuardSize w).toNat + radix)
   | .other => false
 
 /-- The badge `updateCapData` gives: the data's on an endpoint or notification
@@ -1224,13 +1224,13 @@ capability, the capability's own otherwise. -/
 
 /-- The guard `updateCapData` gives: the data's on a CNode capability, the
 capability's own otherwise. -/
-@[inline] def mintedGuard (kind : CapDataKind) (cap : Capability) (w : UInt64) : Nat :=
+@[inline] def mintedGuard (kind : CapDataKind) (cap : Capability) (w : UInt64) : UInt64 :=
   match kind with
   | .cnode _ => capDataGuard w
   | _ => cap.cnodeGuard
 
 /-- The guard size `updateCapData` gives. -/
-@[inline] def mintedGuardSize (kind : CapDataKind) (cap : Capability) (w : UInt64) : Nat :=
+@[inline] def mintedGuardSize (kind : CapDataKind) (cap : Capability) (w : UInt64) : UInt8 :=
   match kind with
   | .cnode _ => capDataGuardSize w
   | _ => cap.cnodeGuardSize
@@ -2554,7 +2554,7 @@ tables (`modifyCdt`). -/
     match st.getObject? id with
     | some (.endpoint _) => cap.badge.isSome
     | some (.notification _) => cap.badge.isSome
-    | some (.cnode cn) => decide (64 < capDataGuardSize w + cn.radixWidth)
+    | some (.cnode cn) => decide (64 < (capDataGuardSize w).toNat + cn.radixWidth)
     | _ => false
   | _ => false
 

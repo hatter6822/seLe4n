@@ -1586,13 +1586,13 @@ written in place, and the fields go straight into the slot's own record (mint,
 copy).  The fields are a literal here, not a match on a record argument, so the
 capability is never built. -/
 def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) (guard guardSize : Nat) : CNode :=
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) (guard : UInt64) (guardSize : UInt8) : CNode :=
   node.insertCell slot
     ⟨target, rights, badgeWord, badged, default, default, 0, false, freeIndex, guard, guardSize⟩
 
 theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
     (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat)
-    (guard guardSize : Nat) :
+    (guard : UInt64) (guardSize : UInt8) :
     node.insertFields slot target rights badgeWord badged freeIndex guard guardSize =
       node.insert slot (((Capability.ofWords target rights badgeWord badged none).withFreeIndex
         freeIndex).withCNodeGuard guard guardSize) :=

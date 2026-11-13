@@ -292,12 +292,12 @@ theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toN
 `data`** — seL4's `decodeSetSpace`: a nonzero root data word goes through
 `updateCapData`, which sets a CNode capability's guard from the word
 (`capDataGuard`); a zero word leaves the capability as it is. -/
-@[inline] def spaceCopyGuard (cap : Capability) (data : UInt64) : Nat :=
+@[inline] def spaceCopyGuard (cap : Capability) (data : UInt64) : UInt64 :=
   if data = 0 then cap.cnodeGuard else capDataGuard data
 
 /-- The guard size of `spaceCopyGuard`: the data word's (`capDataGuardSize`)
 when it is nonzero, `cap`'s own otherwise. -/
-@[inline] def spaceCopyGuardSize (cap : Capability) (data : UInt64) : Nat :=
+@[inline] def spaceCopyGuardSize (cap : Capability) (data : UInt64) : UInt8 :=
   if data = 0 then cap.cnodeGuardSize else capDataGuardSize data
 
 /-- **The capability a thread's space slot holds when set from `cap`** with the

@@ -1606,7 +1606,7 @@ private def runSetSpaceChecks : IO Unit := do
     | .ok ((), stG) =>
       assertBool "the new CSpace root carries the data word's guard and guard size"
         (((stG.getTcb? spaceWorker).bind (·.spaceSlotCap TCB.cspaceRootSlot)).map
-          (fun c => (c.cnodeGuard, c.cnodeGuardSize)) == some (5, fitSize))
+          (fun c => (c.cnodeGuard.toNat, c.cnodeGuardSize.toNat)) == some (5, fitSize))
     match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId st1 with
     | .error e => assertBool s!"setting the suspended worker's space succeeds (got {repr e})" false
     | .ok ((), st2) => do

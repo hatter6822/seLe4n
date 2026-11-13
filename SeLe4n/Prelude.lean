@@ -2071,6 +2071,19 @@ def CPtr.guardBitsImpl (addr : CPtr) (s radix guard : Nat) : Nat :=
   rw [toNat_lowWord, toNat_shiftWord, CPtr.toNat_mod_machineWordMax, Nat.shiftRight_add,
     Nat.shiftRight_eq_div_pow (addr.word.toNat >>> s)]
 
+/-- The `guard` bits of the address above its low `s`, as a word: a CNode
+level's guard, compared with a capability's `UInt64` guard where it stands, so
+a 64-bit guard builds no heap number. -/
+@[inline] def CPtr.guardWord (addr : CPtr) (s guard : Nat) : UInt64 :=
+  lowWord (shiftWord addr.word s) guard
+
+/-- The guard word's value is `guardBits`'s. -/
+theorem CPtr.toNat_guardWord (addr : CPtr) (s guard : Nat) :
+    (addr.guardWord s guard).toNat = addr.guardBits s 0 guard := by
+  rw [CPtr.guardBits_eq_impl]
+  unfold CPtr.guardWord CPtr.guardBitsImpl
+  rfl
+
 /-- WS-H14d: Slot roundtrip — construct then project. -/
 theorem Slot.toNat_ofNat (n : Nat) : (Slot.ofNat n).toNat = n := rfl
 /-- WS-H14d: Slot roundtrip — project then reconstruct. -/

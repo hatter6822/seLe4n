@@ -406,7 +406,7 @@ def cspaceMint_cnode_guard : IO Unit := do
   -- guard 5 in 3 bits: word (5 <<< 6) ||| 3 = 323
   match mintDataChild (mintDataFrom 2 (some (SeLe4n.Badge.ofNatMasked 323))) with
   | some c =>
-      expect "minted CNode guard" (c.cnodeGuard == 5 && c.cnodeGuardSize == 3 && c.badge == none)
+      expect "minted CNode guard" (c.cnodeGuard.toNat == 5 && c.cnodeGuardSize.toNat == 3 && c.badge == none)
   | none => throw <| IO.userError "a CNode mint with a fitting guard should succeed"
   -- guard size 61 beside radix 4 exceeds the word
   match mintDataFrom 2 (some (SeLe4n.Badge.ofNatMasked 61)) with

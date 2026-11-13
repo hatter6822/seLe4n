@@ -567,30 +567,41 @@ structure Capability where
       before it indexes the CNode (`resolveAddressBits`, seL4's
       `cspace.c`).  The guard is the capability's, not the object's, so two
       capabilities to one CNode may resolve through it with different guards.
-      A plain word, `0` on every capability that is not a CNode's. -/
-  cnodeGuard : Nat := 0
-  /-- WS-SX SX2: the guard's width in bits, seL4's `capCNodeGuardSize`. -/
-  cnodeGuardSize : Nat := 0
+      A machine word, as seL4's `cap_cnode_cap` holds it, so the record holds it
+      unboxed and a guard at or above `2^63` is no heap number; `0` on every
+      capability that is not a CNode's. -/
+  cnodeGuard : UInt64 := 0
+  /-- WS-SX SX2: the guard's width in bits, seL4's six-bit
+      `capCNodeGuardSize`, a byte held unboxed beside the guard. -/
+  cnodeGuardSize : UInt8 := 0
   deriving Repr, DecidableEq, Inhabited
 
 /-- seL4's `cnodeCapData_get_guardSize` (64-bit): bits 5:0 of the data word. -/
-@[inline] def capDataGuardSize (w : UInt64) : Nat := (w &&& 63).toNat
+@[inline] def capDataGuardSize (w : UInt64) : UInt8 := (w &&& 63).toUInt8
 
 /-- seL4's `cnodeCapData_get_guard` masked to the guard size: bits 63:6 of the
 data word, `& MASK(guardSize)`. -/
-@[inline] def capDataGuard (w : UInt64) : Nat :=
-  ((w >>> 6) % ((1 : UInt64) <<< (w &&& 63))).toNat
+@[inline] def capDataGuard (w : UInt64) : UInt64 :=
+  (w >>> 6) % ((1 : UInt64) <<< (w &&& 63))
 
-theorem capDataGuardSize_lt (w : UInt64) : capDataGuardSize w < 64 := by
+theorem toNat_capDataGuardSize (w : UInt64) : (capDataGuardSize w).toNat = (w &&& 63).toNat := by
+  have : (w &&& 63).toNat ≤ 63 := by
+    rw [UInt64.toNat_and]; exact Nat.and_le_right
   unfold capDataGuardSize
+  rw [UInt64.toNat_toUInt8]
+  exact Nat.mod_eq_of_lt (by omega)
+
+theorem capDataGuardSize_lt (w : UInt64) : (capDataGuardSize w).toNat < 64 := by
+  rw [toNat_capDataGuardSize]
   have : (w &&& 63).toNat ≤ 63 := by
     rw [UInt64.toNat_and]; exact Nat.and_le_right
   omega
 
-theorem capDataGuard_lt (w : UInt64) : capDataGuard w < 2 ^ capDataGuardSize w := by
+theorem capDataGuard_lt (w : UInt64) :
+    (capDataGuard w).toNat < 2 ^ (capDataGuardSize w).toNat := by
   have hs := capDataGuardSize_lt w
+  rw [toNat_capDataGuardSize] at hs ⊢
   unfold capDataGuard
-  unfold capDataGuardSize at hs ⊢
   have hm : ((1 : UInt64) <<< (w &&& 63)).toNat = 2 ^ (w &&& 63).toNat := by
     rw [UInt64.toNat_shiftLeft]
     simp only [UInt64.toNat_one, Nat.one_shiftLeft]
@@ -644,22 +655,22 @@ theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
 /-- WS-SX SX2: **the capability with CNode guard `guard`, `guardSize` bits
 wide**, every other field kept — seL4's `cap_cnode_cap_set_capCNodeGuard` and
 `cap_cnode_cap_set_capCNodeGuardSize`. -/
-@[inline] def withCNodeGuard (cap : Capability) (guard guardSize : Nat) : Capability :=
+@[inline] def withCNodeGuard (cap : Capability) (guard : UInt64) (guardSize : UInt8) : Capability :=
   { cap with cnodeGuard := guard, cnodeGuardSize := guardSize }
 
-@[simp] theorem withCNodeGuard_target (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_target (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).target = cap.target := rfl
 
-@[simp] theorem withCNodeGuard_rights (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_rights (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).rights = cap.rights := rfl
 
-@[simp] theorem withCNodeGuard_freeIndex (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_freeIndex (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).freeIndex = cap.freeIndex := rfl
 
-@[simp] theorem withCNodeGuard_cnodeGuard (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_cnodeGuard (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).cnodeGuard = g := rfl
 
-@[simp] theorem withCNodeGuard_cnodeGuardSize (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_cnodeGuardSize (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).cnodeGuardSize = gs := rfl
 
 @[simp] theorem withCNodeGuard_self (cap : Capability) :
@@ -718,7 +729,7 @@ theorem signalBadge_eq_ofOption (cap : Capability) :
     (cap.withBadge b).badge = b := by
   cases b <;> rfl
 
-@[simp] theorem withCNodeGuard_badge (cap : Capability) (g gs : Nat) :
+@[simp] theorem withCNodeGuard_badge (cap : Capability) (g : UInt64) (gs : UInt8) :
     (cap.withCNodeGuard g gs).badge = cap.badge := rfl
 
 @[simp] theorem withBadge_target (cap : Capability) (b : Option SeLe4n.Badge) :
@@ -1583,7 +1594,7 @@ cell written; its target is written over `r`'s own (`CapTarget.copyOver`).
 Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard cnodeGuardSize : Nat) :
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard : UInt64) (cnodeGuardSize : UInt8) :
     Capability :=
   match r with
   | ⟨t, rr, _, _, _, _, _, _, _, _, _⟩ =>
@@ -1602,7 +1613,7 @@ matched apart and rebuilt with no join point between, so it is written in place,
 and its target, then owned alone, is too.  Equal to that capability
 (`overwriteObject_eq`). -/
 @[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) (guard guardSize : Nat) : Capability :=
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : Capability :=
   match r with
   | ⟨t, rr, _, _, _, _, _, _, _, _, _⟩ =>
     ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0,
@@ -1611,14 +1622,14 @@ and its target, then owned alone, is too.  Equal to that capability
 /-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
 fresh out of line, so its target is built only on the path that builds it. -/
 @[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet)
-    (guard guardSize : Nat) : Capability :=
+    (guard : UInt64) (guardSize : UInt8) : Capability :=
   ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩
 
 theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
   unfold keepOr; split <;> simp_all
 
 theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) (guard guardSize : Nat) :
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
     r.overwriteObject id rights guard guardSize =
       ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   obtain ⟨t, rr, _, _, _, _, _, _, _, _, _⟩ := r
@@ -1676,14 +1687,14 @@ fresh too (`CapTarget.fresh`), so the new record owns its target cell and holds
 none of the caller's. -/
 @[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard cnodeGuardSize : Nat) :
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard : UInt64) (cnodeGuardSize : UInt8) :
     Capability :=
   ⟨target.fresh, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex,
     cnodeGuard, cnodeGuardSize⟩
 
 theorem Capability.ofFields_eq (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard cnodeGuardSize : Nat) :
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard : UInt64) (cnodeGuardSize : UInt8) :
     Capability.ofFields target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex
         cnodeGuard cnodeGuardSize =
       ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex,
@@ -1692,7 +1703,7 @@ theorem Capability.ofFields_eq (target : CapTarget) (rights : AccessRightSet)
 
 theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard cnodeGuardSize : Nat) :
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) (cnodeGuard : UInt64) (cnodeGuardSize : UInt8) :
     r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex
         cnodeGuard cnodeGuardSize =
       ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex,
@@ -2270,12 +2281,12 @@ thread with no root), else the capability to `id` with those rights alone. -/
 sentinel, as `spaceCellOf` is.  seL4's root convention (`create_root_cnode`)
 is a zero guard of `64 - radix` bits, so a one-level root resolves a whole
 64-bit address and a capability address is its slot number. -/
-@[inline] def TCB.cspaceCellOf (id : SeLe4n.ObjId) (guard guardSize : Nat) : Option Capability :=
+@[inline] def TCB.cspaceCellOf (id : SeLe4n.ObjId) (guard : UInt64) (guardSize : UInt8) : Option Capability :=
   if id.isReserved then none
   else some ⟨.object id, TCB.cspaceRootRights, SeLe4n.Badge.zero, false, default, default, 0,
     false, 0, guard, guardSize⟩
 
-@[simp] theorem TCB.spaceCellObject_cspaceCellOf (id : SeLe4n.ObjId) (guard guardSize : Nat) :
+@[simp] theorem TCB.spaceCellObject_cspaceCellOf (id : SeLe4n.ObjId) (guard : UInt64) (guardSize : UInt8) :
     TCB.spaceCellObject (TCB.cspaceCellOf id guard guardSize) = id := by
   unfold TCB.spaceCellObject TCB.cspaceCellOf
   by_cases h : id.isReserved
@@ -2287,7 +2298,7 @@ is a zero guard of `64 - radix` bits, so a one-level root resolves a whole
 /-- The two space slots of a thread whose CSpace root is CNode `c`, named with
 the root guard `guard` of `guardSize` bits (`cspaceCellOf`), and whose VSpace
 root is `v`. -/
-@[inline] def TCB.spaceCellsOfRoot (c : SeLe4n.ObjId) (guard guardSize : Nat)
+@[inline] def TCB.spaceCellsOfRoot (c : SeLe4n.ObjId) (guard : UInt64) (guardSize : UInt8)
     (v : SeLe4n.ObjId) : Vector (Option Capability) 2 :=
   #v[TCB.cspaceCellOf c guard guardSize, TCB.spaceCellOf v TCB.vspaceRootRights]
 

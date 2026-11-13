@@ -5406,7 +5406,12 @@ run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.t
 # guard from the word.
 run_check "INVARIANT" rg -n -U '    else if \(st\.getCNode\? cnId\)\.isNone then \.error \.illegalState\n    else if cspaceRootDataRefused st cnId args\.cspaceRootData then \.error \.illegalState\n    else\n      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRootSourceAdmitted_dataFits($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-run_check "INVARIANT" rg -n -U '@\[inline\] def spaceCopyGuard \(cap : Capability\) \(data : UInt64\) : Nat :=\n  if data = 0 then cap\.cnodeGuard else capDataGuard data' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def spaceCopyGuard \(cap : Capability\) \(data : UInt64\) : UInt64 :=\n  if data = 0 then cap\.cnodeGuard else capDataGuard data' SeLe4n/Model/ObjectSlots.lean
+# The guard is a machine word in the capability: the record holds the guard and its size unboxed,
+# and the compiled resolver compares the address's guard bits with it as a word.
+run_check "INVARIANT" rg -n '^  cnodeGuard : UInt64 := 0$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  cnodeGuardSize : UInt8 := 0$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def resolveAddressBitsLevel[^\n]*\n(?:[^\n]*\n){8}      if nodeCap\.cnodeGuardSize\.toNat > nBits ∨\n          cptr\.guardWord \(nBits - nodeCap\.cnodeGuardSize\.toNat\) nodeCap\.cnodeGuardSize\.toNat ≠\n            nodeCap\.cnodeGuard then' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '@\[inline\] def resolveAddressBitsK \{α : Type\}[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n  resolveAddressBitsLevel \(resolveAddressBitsWalk nodeCap cptr nBits st fun c _ => c\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "THEOREM" rg -n '^theorem resolveAddressBitsK_eq ' SeLe4n/Kernel/Capability/Operations.lean
 run_check "THEOREM" rg -n '^theorem cspaceMintWithCdt_of_dataRefused ' SeLe4n/Kernel/Capability/Operations.lean

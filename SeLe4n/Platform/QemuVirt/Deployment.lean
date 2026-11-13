@@ -130,13 +130,13 @@ theorem qemuVirtRegionMap_layout :
     capability address the allocation exerciser resolves is then a word that
     does not fit a scalar `Nat`, and its guard and slot are read from that word
     on every lookup the gate measures. -/
-def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 58
+def qemuVirtRootTaskCNodeGuard : UInt64 := 2 ^ 58
 
 /-- The root CNode's guard width: 59 bits above its 5-bit radix, so one level
     resolves a whole 64-bit CPtr.  Carried by the capabilities naming the root
     CNode (the root task's CSpace root and the CNode's own slot 2), as seL4
     keeps a CNode's guard in `cap_cnode_cap`. -/
-def qemuVirtRootTaskCNodeGuardSize : Nat := 59
+def qemuVirtRootTaskCNodeGuardSize : UInt8 := 59
 
 /-- **WS-ZA ZA6.4**: the root CNode's geometry: 32 slots, reached through the
     59-bit guard `qemuVirtRootTaskCNodeGuard` its capabilities carry, so one

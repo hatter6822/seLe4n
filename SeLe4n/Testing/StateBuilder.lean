@@ -156,7 +156,7 @@ def withRootGuards (objects : List (SeLe4n.ObjId × KernelObject)) :
           if cap.cnodeGuardSize = 0 then
             match objects.find? (fun (o, _) => o == rootId) with
             | some (_, .cnode cn) =>
-              let guarded : Capability := { cap with cnodeGuardSize := 64 - cn.radixWidth }
+              let guarded : Capability := { cap with cnodeGuardSize := (64 - cn.radixWidth).toUInt8 }
               let cells := t.spaceCells.set 0 (some guarded)
               (oid, .tcb { t with spaceCells := cells })
             | _ => (oid, obj)
@@ -557,7 +557,7 @@ def withReceiveSlot (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
 
 /-- A CNode capability naming CNode `oid` with guard `guard` of `guardSize`
 bits: seL4 keeps a CNode's guard in `cap_cnode_cap`. -/
-def cnodeCapOf (oid : SeLe4n.ObjId) (guard guardSize : Nat := 0) : Capability :=
+def cnodeCapOf (oid : SeLe4n.ObjId) (guard : UInt64 := 0) (guardSize : UInt8 := 0) : Capability :=
   { target := .object oid, rights := AccessRightSet.ofList [.read, .write],
     cnodeGuard := guard, cnodeGuardSize := guardSize }
 
@@ -576,7 +576,7 @@ def pathLookupCap (root : Capability) (cptr : Nat) (depth : Nat) (st : SystemSta
 with guard 0 of `guardSize` bits, seL4's root-task convention: a CNode of
 radix `r` takes a `64 - r`-bit guard, so a capability address is the slot
 number and resolves in one level. -/
-def TCB.withGuardedCSpaceRoot (t : TCB) (c : SeLe4n.ObjId) (guardSize : Nat) : TCB :=
+def TCB.withGuardedCSpaceRoot (t : TCB) (c : SeLe4n.ObjId) (guardSize : UInt8) : TCB :=
   let cell := (TCB.spaceCellOf c TCB.cspaceRootRights).map
     (fun cap => { cap with cnodeGuardSize := guardSize })
   let cells := t.spaceCells.set 0 cell

@@ -167,8 +167,8 @@ private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
     Its IPC buffer address is `0`: its address space maps nothing yet, and the
     thread maps a frame for its buffer out of its own memory before it can use
     one. -/
-def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) (guard : Nat := 0)
-    (guardSize : Nat := 60) : TCB :=
+def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) (guard : UInt64 := 0)
+    (guardSize : UInt8 := 60) : TCB :=
   { tid := ⟨id.val⟩
     priority := rpi5InitialThreadPriority
     domain := ⟨0⟩
@@ -189,8 +189,8 @@ def rpi5UntrustedThread : TCB :=
 
 /-- A capability to an object with the given rights, unbadged; a CNode
     capability carries its guard (`cnodeGuard`, `cnodeGuardSize`). -/
-def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) (guard : Nat := 0)
-    (guardSize : Nat := 0) : Capability :=
+def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) (guard : UInt64 := 0)
+    (guardSize : UInt8 := 0) : Capability :=
   { target := .object target, rights := AccessRightSet.ofList rights, cnodeGuard := guard,
     cnodeGuardSize := guardSize }
 

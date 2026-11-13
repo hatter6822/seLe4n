@@ -170,9 +170,9 @@ most a word's 64 bits — the bound `updateCapData` (`objecttype.c:395`) refuses
 Mint past, and the one `resolveAddressBits` (`cspace.c:126`) consumes a level
 by. -/
 def cnodeCapGeometryAt (st : SystemState) (cap : Capability) : Prop :=
-  cap.cnodeGuard < 2 ^ cap.cnodeGuardSize ∧
+  cap.cnodeGuard.toNat < 2 ^ cap.cnodeGuardSize.toNat ∧
   ∀ (id : SeLe4n.ObjId) (cn : CNode), cap.target = .object id →
-    st.getCNode? id = some cn → cap.cnodeGuardSize + cn.radixWidth ≤ 64
+    st.getCNode? id = some cn → cap.cnodeGuardSize.toNat + cn.radixWidth ≤ 64
 
 /-- **Every slot's capability has seL4's CNode geometry** (`cnodeCapGeometryAt`),
 read through `KernelObject.slotCap` over CNode slots and thread space slots.  The
@@ -206,7 +206,7 @@ theorem cnodeCapGeometryAt_of_noGuard {st : SystemState} {cap : Capability}
     (hG : cap.cnodeGuard = 0) (hS : cap.cnodeGuardSize = 0)
     (hR : ∀ id cn, cap.target = .object id → st.getCNode? id = some cn → cn.radixWidth ≤ 64) :
     cnodeCapGeometryAt st cap :=
-  ⟨by rw [hG, hS]; decide, fun id cn hT hC => by rw [hS, Nat.zero_add]; exact hR id cn hT hC⟩
+  ⟨by rw [hG, hS]; decide, fun id cn hT hC => by rw [hS, UInt8.toNat_zero, Nat.zero_add]; exact hR id cn hT hC⟩
 
 /-- Geometry reads only the guard words and the target. -/
 theorem cnodeCapGeometryAt_of_fields {st : SystemState} {cap cap' : Capability}

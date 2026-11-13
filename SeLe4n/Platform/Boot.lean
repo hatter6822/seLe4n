@@ -1670,9 +1670,9 @@ def bootCapabilitiesNameObjectsOfTheirKind (config : PlatformConfig) : Bool :=
     configured CNode it names takes the guard and its radix within the 64-bit
     word, the bound seL4's `updateCapData` puts on a CNode capability. -/
 @[inline] def bootCapGeometryHolds (objs : List ObjectEntry) (c : Capability) : Bool :=
-  decide (c.cnodeGuard < 2 ^ c.cnodeGuardSize) &&
+  decide (c.cnodeGuard.toNat < 2 ^ c.cnodeGuardSize.toNat) &&
   match c.target with
-  | .object o => objs.all (bootEntryRadixFits c.cnodeGuardSize o)
+  | .object o => objs.all (bootEntryRadixFits c.cnodeGuardSize.toNat o)
   | _ => true
 
 /-- **WS-SX SX2**: **every boot capability has seL4's CNode geometry** — the

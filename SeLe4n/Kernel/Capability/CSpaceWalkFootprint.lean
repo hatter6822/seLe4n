@@ -123,20 +123,20 @@ def cspaceWalkPath (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
     match st.getCNode? id with
     | none => [id]
     | some cn =>
-      if root.cnodeGuardSize > nBits ∨
-          addr.guardBits (nBits - root.cnodeGuardSize) 0 root.cnodeGuardSize ≠
+      if root.cnodeGuardSize.toNat > nBits ∨
+          addr.guardWord (nBits - root.cnodeGuardSize.toNat) root.cnodeGuardSize.toNat ≠
             root.cnodeGuard then [id]
-      else if hL : root.cnodeGuardSize + cn.radixWidth > nBits ∨
-          root.cnodeGuardSize + cn.radixWidth = 0 then [id]
-      else if nBits = root.cnodeGuardSize + cn.radixWidth then [id]
+      else if hL : root.cnodeGuardSize.toNat + cn.radixWidth > nBits ∨
+          root.cnodeGuardSize.toNat + cn.radixWidth = 0 then [id]
+      else if nBits = root.cnodeGuardSize.toNat + cn.radixWidth then [id]
       else
         match cn.lookup (SeLe4n.Slot.ofNat (addr.slotBits
-            (nBits - (root.cnodeGuardSize + cn.radixWidth)) cn.radixWidth)) with
+            (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) cn.radixWidth)) with
         | some cap =>
           match cap.target with
           | .object _ =>
-            have : nBits - (root.cnodeGuardSize + cn.radixWidth) < nBits := by omega
-            id :: cspaceWalkPath cap addr (nBits - (root.cnodeGuardSize + cn.radixWidth)) st
+            have : nBits - (root.cnodeGuardSize.toNat + cn.radixWidth) < nBits := by omega
+            id :: cspaceWalkPath cap addr (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) st
           | _ => [id]
         | none => [id]
   | _ => []
@@ -235,13 +235,13 @@ theorem cspaceWalkPath_dropLast_cnode (addr : SeLe4n.CPtr) (st : SystemState) :
               split at hMem
               · rename_i childId hC
                 obtain ⟨rest, hPath⟩ := cspaceWalkPath_cons cap addr
-                  (nBits - (root.cnodeGuardSize + cn.radixWidth)) st childId hC
+                  (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) st childId hC
                 rw [hPath] at hMem
                 simp only [List.dropLast, List.mem_cons] at hMem
                 rcases hMem with rfl | hMem
                 · rw [hRoot]; rfl
                 · rw [← hPath] at hMem
-                  exact ih (nBits - (root.cnodeGuardSize + cn.radixWidth))
+                  exact ih (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth))
                     (by omega) cap oid hMem
               · simp at hMem
             · simp at hMem
@@ -444,7 +444,7 @@ theorem cspaceWalkPath_single_level (root : Capability) (addr : SeLe4n.CPtr)
     (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
     (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hFull : root.cnodeGuardSize + cn.radixWidth = 64) :
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
     cspaceWalkPath root addr 64 st = [rootId] := by
   unfold cspaceWalkPath
   rw [hT]
@@ -462,7 +462,7 @@ theorem cspaceWalkLockSet_single_level (root : Capability) (addr : SeLe4n.CPtr)
     (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
     (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hFull : root.cnodeGuardSize + cn.radixWidth = 64) :
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
     (cspaceWalkLockSet root addr 64 st).pairs
       = [(cnodeLock rootId, AccessMode.read)] := by
   unfold cspaceWalkLockSet
@@ -477,7 +477,7 @@ theorem declaredLockSetForCSpaceWalk_single_level (root : Capability)
     (addr : SeLe4n.CPtr) (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
     (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hFull : root.cnodeGuardSize + cn.radixWidth = 64) :
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
     declaredLockSetForCSpaceWalk root addr 64 st
       = some (cspaceWalkLockSet root addr 64 st) := by
   apply declaredLockSetForCSpaceWalk_of_le
