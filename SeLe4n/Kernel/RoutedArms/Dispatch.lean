@@ -212,66 +212,85 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
     dsimp only
     cases hRt : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
     | signal capAddr =>
-      simp only [signalRoutedArm, finish_operand finish kGen kRes kLook hG hR hL]; rfl
-    | wait capAddr => simp only [waitRoutedArm, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [signalRoutedArm, dispatchOperandCheckedKW_report,
+        finish_operand finish kGen kRes kLook hG hR hL]; rfl
+    | wait capAddr => simp only [waitRoutedArm, dispatchOperandCheckedKW_report,
+        finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | yield =>
       simp only [yieldRoutedArm, hG]
       cases yieldOnCoreR st executingCore <;> rfl
     | send capAddr msgInfo =>
-      simp only [sendRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [sendRoutedArm, dispatchOperandCheckedKW_report,
+        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | call capAddr msgInfo =>
-      simp only [callRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [callRoutedArm, dispatchOperandCheckedKW_report,
+        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | reply capAddr msgInfo =>
-      simp only [replyRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [replyRoutedArm, dispatchOperandCheckedKW_report,
+        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | receive capAddr len replyAddr =>
-      simp only [receiveRoutedArm, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [receiveRoutedArm, dispatchOperandCheckedKW_report,
+        finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | replyRecv capAddr msgInfo =>
-      simp only [replyRecvRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [replyRecvRoutedArm, dispatchOperandCheckedKW_report,
+        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | invoke sid capAddr =>
-      simp only [invocationRoutedArm, hO, dispatchOperandCheckedKW_eq,
-        liftReport_entryReportResolved, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [invocationRoutedArm, dispatchOperandCheckedKW_report,
+        hO,
+        finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | overflowOne sid capAddr =>
-      simp only [overflowOneRoutedArm, hO, overflowOneOperandKW_eq, liftReport_entryReportResolved]
+      simp only [overflowOneRoutedArm,
+        overflowOneOperandKW_report, hO]
       rw [ipcBufferReadMrK_comp (finish _ _)]
-      simp only [shortArgsRoutedArm, finish_operand finish kGen kRes kLook hG hR hL, finish_overflowOne finish kGen kRes kLook hG hR hL]
+      simp only [shortArgsRoutedArm, dispatchOperandCheckedKW_report,
+        finish_operand finish kGen kRes kLook hG hR hL, finish_overflowOne finish kGen kRes kLook hG hR hL]
       rfl
     | sendLong capAddr msgInfo =>
-      simp only [sendLongRoutedArm, sendRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
+      simp only [sendLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
+        sendRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | callLong capAddr msgInfo =>
-      simp only [callLongRoutedArm, callRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
+      simp only [callLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
+        callRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | replyLong capAddr msgInfo =>
-      simp only [replyLongRoutedArm, replyRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
+      simp only [replyLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
+        replyRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | replyRecvLong capAddr msgInfo =>
-      simp only [replyRecvLongRoutedArm, replyRecvRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
+      simp only [replyRecvLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
+        replyRecvRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | transferring sid capAddr msgInfo =>
       by_cases hS : msgInfo.length ≤ 4
-      · simp only [transferringRoutedArm, hO, hS, ↓reduceIte, finish_operand finish kGen kRes kLook hG hR hL]; rfl
-      · simp only [transferringRoutedArm, hO, hS, ↓reduceIte,
+      · simp only [transferringRoutedArm, dispatchOperandCheckedKW_report,
+        hO, hS, ↓reduceIte, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      · simp only [transferringRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
+        hO, hS, ↓reduceIte,
           ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
           finish_long finish kGen kRes kLook hG hR hL]
         rfl
     | audited sid capAddr =>
-      simp only [auditedRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [auditedRoutedArm, dispatchOperandCheckedKW_report,
+        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | overflowed sid capAddr len =>
       obtain ⟨-, -, -, -, -, hOv, -⟩ :=
         Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed st tid _ _ 32
           sid capAddr len hRt
       dsimp only
       rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word len st hOv]
-      simp only [overflowedLongArmWith, shortArgsRoutedArm, hO, longOperandKW_eq,
-        liftReport_entryReportResolved, ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
+      simp only [overflowedLongArmWith, dispatchOperandCheckedKW_report, longOperandKW_report,
+        shortArgsRoutedArm, hO,
+        ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
         finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | shortArgs sid capAddr =>
-      simp only [shortArgsRoutedArm, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [shortArgsRoutedArm, dispatchOperandCheckedKW_report,
+        finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | refused e => simp only [hG]
     | viaDecode => simp only [decodedRoutedArm, hG]
   | _ => simp only [hG]

@@ -3437,16 +3437,58 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
 
 /-- WS-ZA ZA6.31: a capability fault the entry's own resolution raised,
 delivered from its words: the operand's address word, the syscall's phase and
-the resolution's error, with the trap frame's registers.  Out of line, so the
-entry's every failed-resolution site calls it with scalars, and equal to
-`deliverSyscallCapFault` of the fault those words build by definition. -/
+the resolution's refusal as its discriminant `d` and payload words `w1`–`w4`
+(a failed lookup's type word and fields), with the trap frame's registers.
+The lookup failure's two stored words are computed on those words
+(`LookupFault.storedWordOfWords`), a refusal other than a failed lookup being
+`missingCapability 0` (`KernelError.capFaultLookup`), so neither the error nor
+the fault is built (WS-SX SX2).  Out of line, so the entry's every
+failed-resolution site calls it with scalars; `deliverSyscallLookupFault_eq`
+is `deliverSyscallCapFault` of the fault the refusal names. -/
 @[noinline] def deliverSyscallLookupFault (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (d : Nat)
+    (w1 w2 w3 w4 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
+    SystemState :=
+  let failed := d = (KernelError.failedLookup false .invalidRoot).toDiscriminant
+  faultDeliveredWords ctx st (Fault.capFault 0 false .invalidRoot).kindCode inRecv capWord
+    (if failed then LookupFault.guardWordOfWords w1 w3 else 0)
+    (if failed then LookupFault.storedWordOfWords w1 w2 w3 w4
+     else (LookupFault.missingCapability 0).storedWord)
+    (svcFaultIP elr) spsr (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+    executingCore tid
+
+/-- **The lookup fault delivered from a refusal's words is the capability
+fault the refusal names.** -/
+theorem deliverSyscallLookupFault_eq (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (e : KernelError)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
-    SystemState :=
-  deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e.capFaultLookup)
-    (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr
+    deliverSyscallLookupFault ctx executingCore st tid capWord inRecv e.toDiscriminant
+        (e.payloadWord 1) (e.payloadWord 2) (e.payloadWord 3) (e.payloadWord 4)
+        syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr =
+      deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e.capFaultLookup)
+        (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr := by
+  rw [deliverSyscallCapFault_eq_impl]
+  unfold deliverSyscallLookupFault deliverSyscallCapFaultImpl
+  have hw : (if e.toDiscriminant = (KernelError.failedLookup false .invalidRoot).toDiscriminant
+        then LookupFault.guardWordOfWords (e.payloadWord 1) (e.payloadWord 3) else 0) =
+          e.capFaultLookup.guardWord ∧
+      (if e.toDiscriminant = (KernelError.failedLookup false .invalidRoot).toDiscriminant
+        then LookupFault.storedWordOfWords (e.payloadWord 1) (e.payloadWord 2) (e.payloadWord 3)
+          (e.payloadWord 4)
+        else (LookupFault.missingCapability 0).storedWord) = e.capFaultLookup.storedWord := by
+    cases e with
+    | failedLookup w f =>
+      simp only [KernelError.payloadWord, KernelError.capFaultLookup,
+        ← LookupFault.guardWord_ofWords (f.word 0) (f.word 1) (f.word 2) (f.word 3),
+        ← LookupFault.storedWord_ofWords, LookupFault.ofWords_word]
+      exact ⟨if_pos rfl, if_pos rfl⟩
+    | _ => exact ⟨rfl, rfl⟩
+  dsimp only
+  rw [hw.1, hw.2]
+  rfl
 
 /-- WS-ZA ZA4: a returning caller's boundary words, read off its post-state:
 `syscallReturnOutcome`'s words (`returnOutcomeWords_eq`) with a value shape's
@@ -3572,14 +3614,12 @@ them (`abiEntryRoutedWith_eq`). -/
             (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr)
       | none => errorRefusalWordsW ctx executingCore syscallId tid x0 d w0 w1 w2 w3 w4 s)
     (fun d w0 w1 w2 w3 w4 s => errorRefusalWordsW ctx executingCore syscallId tid x0 d w0 w1 w2 w3 w4 s)
-    (syscallLookupOutcome
-      (fun s w b e => (Architecture.SyscallOutcome.faulted.words,
-        deliverSyscallLookupFault ctx executingCore s tid w b e
-          syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
-      (fun ke s => errorRefusalWordsW ctx executingCore syscallId tid x0 ke.toDiscriminant
-        (ke.payloadWord 0) (ke.payloadWord 1) (ke.payloadWord 2) (ke.payloadWord 3)
-        (ke.payloadWord 4) s) sid
-      (SeLe4n.CPtr.ofWord capWord))
+    (fun d w0 w1 w2 w3 w4 s =>
+      match capFaultReceivePhase? sid with
+      | some inRecv => (Architecture.SyscallOutcome.faulted.words,
+          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4
+            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+      | none => errorRefusalWordsW ctx executingCore syscallId tid x0 d w0 w1 w2 w3 w4 s)
     s
 
 /-- The routed entry joined at `abiEntryFinishW` is the continued entry into the
@@ -3603,8 +3643,8 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
           (fun st' => (returnOutcomeWords syscallId st' tid, st')))
         (syscallLookupOutcome
           (fun s w b e => (Architecture.SyscallOutcome.faulted.words,
-            deliverSyscallLookupFault ctx executingCore s tid w b e
-              syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
+            deliverSyscallCapFault ctx executingCore s tid (.capFault w b e.capFaultLookup)
+              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
           (fun ke s => errorRefusalWords ctx executingCore syscallId tid x0 ke s)) := by
   apply SeLe4n.Kernel.syscallEntryRoutedWith_eq
   · intro sid w r
@@ -3623,7 +3663,10 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
   · intro sid w e s
     unfold abiEntryFinishW
     rw [SeLe4n.Kernel.entryReportOutcomeW_lookup]
-    simp only [errorRefusalWordsW_eq]
+    unfold syscallLookupOutcome
+    cases capFaultReceivePhase? sid with
+    | some inRecv => simp only [deliverSyscallLookupFault_eq]; rfl
+    | none => simp only [errorRefusalWordsW_eq]
 
 /-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
 (`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands

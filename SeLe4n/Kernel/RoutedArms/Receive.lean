@@ -28,9 +28,10 @@ reported. -/
 @[noinline] def receiveRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (length : Nat) (replyWord : UInt64)
     (st : SystemState) : SystemState :=
-  dispatchOperandCheckedK .receive (SeLe4n.CPtr.ofWord capWord) tid executingCore
+  dispatchOperandCheckedKW .receive (SeLe4n.CPtr.ofWord capWord) tid executingCore
     (receiveOperandArmThenTaintR ctx tid length (SeLe4n.CPtr.ofWord replyWord) executingCore
       (syscallRequiredRight .receive))
-    st entryReportGeneral entryReportResolved entryReportLookup
+    st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+    entryReportLookup entryReportLookupW
 
 end SeLe4n.Kernel

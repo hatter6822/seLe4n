@@ -40,6 +40,7 @@ results reported, the arm's refusal pushed from its words
       (invocationOperandArmR ctx sid (SeLe4n.CPtr.ofWord capWord) tcb.registerContext tid
         executingCore)
       st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
+      entryReportLookupW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

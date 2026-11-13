@@ -5991,7 +5991,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def invocationRoutedArm($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^@\[noinline\] def overflowOneRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Audited.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def decodedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Decoded.lean
-run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \(Architecture\.SyscallOutcome\.faulted\.words,\n            deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv => \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
 # message held as a constant.

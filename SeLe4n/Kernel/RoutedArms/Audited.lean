@@ -35,10 +35,11 @@ results reported. -/
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (auditedOperandArmR ctx sid tcb.registerContext (SeLe4n.CPtr.ofWord capWord) tid
         executingCore)
-      st entryReportGeneral entryReportResolved entryReportLookup
+      st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+      entryReportLookup entryReportLookupW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

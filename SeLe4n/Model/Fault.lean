@@ -431,6 +431,31 @@ into its first word.  The guard is the second (`guardWord`). -/
   | .guardMismatch _ g _ => g
   | _ => 0
 
+/-- `storedWord` of the fault the words `t w1 w2 w3` name (`ofWords`), computed
+on the words (`storedWord_ofWords`), so a fault delivered from a resolver's
+words builds no fault. -/
+@[inline] def storedWordOfWords (t w1 w2 w3 : UInt64) : UInt64 :=
+  if t = 2 then (2 : UInt64) ||| (w1.toUInt8.toUInt64 <<< 8)
+  else if t = 3 then (3 : UInt64) ||| (w1.toUInt8.toUInt64 <<< 8) ||| (w2.toUInt8.toUInt64 <<< 16)
+  else if t = 4 then (4 : UInt64) ||| (w1.toUInt8.toUInt64 <<< 8) ||| (w3.toUInt8.toUInt64 <<< 16)
+  else 1
+
+/-- `guardWord` of the fault the words name, on the words (`guardWord_ofWords`). -/
+@[inline] def guardWordOfWords (t w2 : UInt64) : UInt64 :=
+  if t = 4 then w2 else 0
+
+theorem storedWord_ofWords (t w1 w2 w3 : UInt64) :
+    (ofWords t w1 w2 w3).storedWord = storedWordOfWords t w1 w2 w3 := by
+  unfold ofWords storedWordOfWords
+  by_cases h2 : t = 2 <;> by_cases h3 : t = 3 <;> by_cases h4 : t = 4 <;>
+    simp_all [storedWord]
+
+theorem guardWord_ofWords (t w1 w2 w3 : UInt64) :
+    (ofWords t w1 w2 w3).guardWord = guardWordOfWords t w2 := by
+  unfold ofWords guardWordOfWords
+  by_cases h2 : t = 2 <;> by_cases h3 : t = 3 <;> by_cases h4 : t = 4 <;>
+    simp_all [guardWord]
+
 /-- The type word two stored words hold: byte 0 of the first, when it is a
 type word seL4 defines past `seL4_InvalidRoot`, else `seL4_InvalidRoot` (1). -/
 @[inline] def storedType (lk : UInt64) : UInt64 :=

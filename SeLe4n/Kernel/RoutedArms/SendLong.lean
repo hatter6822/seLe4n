@@ -50,10 +50,11 @@ apart, a result under the first. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => sendRoutedArm ctx executingCore tid capWord 4 st)
-            (fun _ => longOperandK .send (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandKW .send (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                     length tid executingCore (syscallRequiredRight .send))
-                  (length - 4) st entryReportGeneral entryReportResolved entryReportLookup))
+                  (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+                  entryReportLookup entryReportLookupW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

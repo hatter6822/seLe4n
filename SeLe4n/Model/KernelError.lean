@@ -111,6 +111,44 @@ constructor is fixed where the words are made (`ofWords_word`). -/
     ofWords (f.word 0) (f.word 1) (f.word 2) (f.word 3) = f := by
   cases f <;> simp [ofWords, word, typeWord]
 
+/-- Word `i` of `ofWords t w1 w2 w3`, computed on the words (`word_ofWords`),
+so a resolver's failure words are put in their canonical form with no fault
+built. -/
+@[inline] def wordOfWords (t w1 w2 w3 : UInt64) (i : Nat) : UInt64 :=
+  if t = 2 then
+    match i with
+    | 0 => 2
+    | 1 => w1.toUInt8.toUInt64
+    | _ => 0
+  else if t = 3 then
+    match i with
+    | 0 => 3
+    | 1 => w1.toUInt8.toUInt64
+    | 2 => w2.toUInt8.toUInt64
+    | _ => 0
+  else if t = 4 then
+    match i with
+    | 0 => 4
+    | 1 => w1.toUInt8.toUInt64
+    | 2 => w2
+    | 3 => w3.toUInt8.toUInt64
+    | _ => 0
+  else
+    match i with
+    | 0 => 1
+    | _ => 0
+
+theorem word_ofWords (t w1 w2 w3 : UInt64) (i : Nat) :
+    (ofWords t w1 w2 w3).word i = wordOfWords t w1 w2 w3 i := by
+  unfold ofWords wordOfWords
+  by_cases h2 : t = 2
+  · rcases i with _ | _ | i <;> simp [h2, word, typeWord]
+  by_cases h3 : t = 3
+  · rcases i with _ | _ | _ | i <;> simp [h3, word, typeWord]
+  by_cases h4 : t = 4
+  · rcases i with _ | _ | _ | _ | i <;> simp [h4, word, typeWord]
+  rcases i with _ | i <;> simp [h2, h3, h4, word, typeWord]
+
 end LookupFault
 
 /-- F-04: Kernel error codes. This inductive has 60 variants.
