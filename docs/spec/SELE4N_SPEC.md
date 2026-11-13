@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.23` (`lakefile.toml`) |
+| **Package version** | `0.37.24` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 629,051 across 626 Lean files |
 | **Test LoC** | 89,699 across 70 Lean test suites |
@@ -8222,9 +8222,20 @@ syscall, the type and the right, and `syscallCapFaultOf` and the compiled entry
 deliver its failure as `.capFault cptr true e`.  With no fault handler the
 thread is suspended, as seL4's `handleNoFaultHandler` makes it inactive.
 
-The reply half of `replyRecv` keeps a registered divergence: the model checks
-the endpoint before the reply capability, where seL4-MCS runs the reply first,
-and a failed reply-capability lookup returns its error rather than faulting.
+A wait on a notification bound to another thread faults the same way
+(`receiveBoundRefuses`, seL4 `handleRecv`'s `ntfnBoundTCB` check), with lookup
+failure `missingCapability 0`.
+
+**The reply capability's fault (WS-SX SX3, v0.37.24).**  A receive or
+reply-receive that names a reply capability looks it up as seL4-MCS's
+`lookupReply` does (`lookupReplyCap`): a failed lookup is its own lookup
+fault, and a slot holding no reply capability the receiver may use is
+`missingCapability 0`.  Either is the capability fault
+`CapFault(replyCPtr, true, fault)`, never an error frame:
+`syscallCapFaultOf` raises it when the reply capability's lookup, re-run on
+the refusal's state, fails with the refusal's own fault
+(`receiveReplyFaults`), and the compiled entry re-runs the same lookup in
+place (`lookupReplyCapK`) before it reports the fault.
 
 ### 8.10.6 IPC Capability-Transfer NI Symmetry
 The three IPC capability-transfer wrappers in

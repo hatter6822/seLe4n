@@ -1,3 +1,37 @@
+## v0.37.24 — receive-side refusals are capability faults
+
+WS-SX SX3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A receive's refusals now
+follow seL4-MCS `handleRecv` and `lookupReply` (`syscall.c`): each one is a
+capability fault in the receive phase, delivered to the thread's fault handler,
+never an error frame.
+
+- **A notification bound to another thread.** A wait on it faults at the
+  notification's address with `missingCapability 0`. The lookup gate checks it
+  (`receiveBoundRefuses`, `notificationBoundElsewhere`), and the wait arm checks
+  it again after the flow check, before any write.
+- **The reply capability is looked up as `lookupReply` looks it up.**
+  `lookupReplyCap` returns a failed lookup's own fault. A slot that holds no
+  reply capability the receiver may use (empty, a reserved object's, without the
+  reply authority, or of another kind) is `missingCapability 0`. The receive
+  and the reply-receive refuse with `failedLookup` carrying that fault. The
+  entry raises it as `CapFault(replyCPtr, true, fault)` when the reply
+  capability's lookup, run again on the refusal's state, fails with the same
+  fault (`receiveReplyFaults`). The compiled entry runs the same lookup again
+  in place (`lookupReplyCapK`, `replyLookupRefusalW`) and reports the fault
+  under report kind 3. It is delivered from its words
+  (`deliverSyscallLookupFault`).
+- **Retired:** the reply capability's argument numbers
+  (`recvReplyCapNumber`, `replyRecvReplyCapNumber`) and the registered note
+  that a failed reply lookup returned an error.
+- **QEMU:** the two reply-capability guard-mismatch round trips are now fault
+  scenarios, under the same names. `receive-reply-cap-wrong-kind`,
+  `reply-recv-reply-cap-wrong-kind` and `wait-notification-bound-elsewhere`
+  are added. The handler checks each fault's address, its receive phase and
+  its lookup failure type, and the partner restarts from its own context.
+- **Left to later rows:** a reply object that is not free (SX4,
+  `cancelIPC`), a reply-receive with no caller, and a receive on the other
+  object kind (SX6.2).
+
 ## v0.37.23 — the guard in the capability, and seL4's `resolveAddressBits`
 
 WS-SX SX2 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D4, D5, D17). Capability

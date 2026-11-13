@@ -3640,30 +3640,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         },
         // A second capability whose address misses the root CNode's guard,
         // one per arm that resolves one (seL4's `lookupCap` of an argument,
-        // `seL4_FailedLookup` with the guard-mismatch words): the receive's
-        // and the reply-receive's reply capability, the configure's
+        // `seL4_FailedLookup` with the guard-mismatch words): the configure's
         // scheduling context (the `.overflowOne` route), and the SetSpace
         // CSpace root and the bound notification an invocation resolves.
         // Each is refused before anything changes, its fifth word in the
-        // buffer as above.
-        guard_mismatch_refusal(RoundTrip {
-            msg_len: 1,
-            ..invocation(
-                "receive-reply-cap-guard-mismatch",
-                RECEIVE,
-                ENDPOINT_CAP,
-                [REPLY_CAP_SLOT, 0, 0, 0],
-            )
-        }),
-        guard_mismatch_refusal(RoundTrip {
-            msg_len: 2,
-            ..invocation(
-                "reply-recv-reply-cap-guard-mismatch",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                [REPLY_CAP_SLOT, 0x99, 0, 0],
-            )
-        }),
+        // buffer as above.  A receive's reply capability is not here: its
+        // failed lookup is the receive's capability fault (seL4-MCS
+        // `lookupReply`), which `receive_side_faults` reaches.
         guard_mismatch_refusal(configure(
             "configure-sched-context-guard-mismatch",
             [
@@ -11925,7 +11908,8 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
 /// (`trap::handle_synchronous_exception`), as an EL0 thread raises it: the
 /// syndrome and fault-address words, the PC it trapped at, and `x0`, `x1` and
 /// `x7` (the capability address, the message info and the syscall number of
-/// an `SVC`).
+/// an `SVC`), with `x2` the first message register (a receive's reply
+/// capability address).
 #[cfg(feature = "hw_target")]
 struct TrapTrip {
     name: &'static str,
@@ -11934,6 +11918,7 @@ struct TrapTrip {
     elr: u64,
     x0: u64,
     x1: u64,
+    x2: u64,
     x7: u64,
 }
 
@@ -11959,6 +11944,7 @@ const fn data_abort(name: &'static str) -> TrapTrip {
         elr: FAULT_PC,
         x0: 0,
         x1: 0,
+        x2: 0,
         x7: 0,
     }
 }
@@ -11973,6 +11959,7 @@ const fn instruction_abort(name: &'static str) -> TrapTrip {
         elr: FAULT_PC,
         x0: 0,
         x1: 0,
+        x2: 0,
         x7: 0,
     }
 }
@@ -11987,6 +11974,7 @@ const fn pc_alignment(name: &'static str) -> TrapTrip {
         elr: FAULT_PC + 2,
         x0: 0,
         x1: 0,
+        x2: 0,
         x7: 0,
     }
 }
@@ -12004,6 +11992,7 @@ const fn unknown_syscall(name: &'static str) -> TrapTrip {
         elr: FAULT_PC + 4,
         x0: 0,
         x1: 0,
+        x2: 0,
         x7: UNKNOWN_SYSCALL_NUMBER,
     }
 }
@@ -12022,6 +12011,7 @@ const fn cap_fault(name: &'static str) -> TrapTrip {
         elr: FAULT_PC + 4,
         x0: cap_address(EMPTY_SLOT),
         x1: 0,
+        x2: 0,
         x7: SEND,
     }
 }
@@ -12036,6 +12026,7 @@ const fn fp_access(name: &'static str) -> TrapTrip {
         elr: FAULT_PC,
         x0: 0,
         x1: 0,
+        x2: 0,
         x7: 0,
     }
 }
@@ -12121,6 +12112,7 @@ const FAULT_REPLIES: [&str; 5] = [
 const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> TrapTrip {
     TrapTrip {
         x1: length,
+        x2: 0,
         x7: syscall,
         ..cap_fault(name)
     }
@@ -12392,6 +12384,7 @@ const fn receive_phase_cap_fault(name: &'static str, syscall: u64, cptr: u64) ->
     TrapTrip {
         x0: cptr,
         x1: 0,
+        x2: 0,
         x7: syscall,
         ..cap_fault(name)
     }
@@ -12646,6 +12639,7 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     };
     frame.gprs[0] = trip.x0;
     frame.gprs[1] = trip.x1;
+    frame.gprs[2] = trip.x2;
     frame.gprs[7] = trip.x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core as usize);
@@ -12659,6 +12653,8 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     );
     let after = own_heap_allocations(core as usize);
     TRAP_RESTORED_X1.store(frame.gprs[1], Ordering::SeqCst);
+    TRAP_RESTORED_X3.store(frame.gprs[3], Ordering::SeqCst);
+    TRAP_RESTORED_X4.store(frame.gprs[4], Ordering::SeqCst);
     TRAP_RESTORED_X5.store(frame.gprs[5], Ordering::SeqCst);
     crate::interrupts::restore_interrupts(saved_daif);
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
@@ -12692,10 +12688,16 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     Some(true)
 }
 
-/// `x1` and `x5` of the context the last [`heap_allocations_trap`]'s entry
-/// restored: a delivered fault's message info and its fourth message word.
+/// `x1` and `x3`–`x5` of the context the last [`heap_allocations_trap`]'s
+/// entry restored: a delivered fault's message info and its second to fourth
+/// message words (a capability fault's `Addr`, `InRecvPhase` and
+/// `LookupFailureType`).
 #[cfg(feature = "hw_target")]
 static TRAP_RESTORED_X1: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X3: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X4: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 #[cfg(feature = "hw_target")]
 static TRAP_RESTORED_X5: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -12752,6 +12754,196 @@ fn suspend_partner() -> bool {
 ///   task's saved context; the partner's access loads its own, and its send
 ///   wakes the root task, which takes the core and releases the partner's.
 #[cfg(feature = "hw_target")]
+/// A receive-side capability fault the partner raises (seL4-MCS
+/// `handleRecv`): the trap, the address the fault names and its
+/// `LookupFailureType`, and the message info the handler receives.
+#[cfg(feature = "hw_target")]
+struct ReceiveFault {
+    trip: TrapTrip,
+    addr: u64,
+    lookup_type: u64,
+    info: u64,
+}
+
+/// A receive trap of the partner: syscall `x7` on capability `x0`, its message
+/// info `x1` and first message register `x2`.
+#[cfg(feature = "hw_target")]
+const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: ROUND_TRIP_ESR,
+        far: 0,
+        elr: FAULT_PC + 4,
+        x0,
+        x1,
+        x2,
+        x7,
+    }
+}
+
+/// **The receive side's capability faults** (seL4-MCS `handleRecv`,
+/// `lookupReply`): a receive and a reply-receive whose reply capability's
+/// address misses the root CNode's guard, each fault carrying the reply
+/// capability's address and the guard-mismatch words; a receive and a
+/// reply-receive whose reply capability's slot holds another kind of
+/// capability, `MissingCapability`; and a wait on a notification bound to
+/// another thread (the root task), `MissingCapability` at the notification's
+/// address.  Each is delivered to the handler in the receive phase, answered,
+/// and restarts the partner's context.
+#[cfg(feature = "hw_target")]
+fn receive_side_faults(
+    handler_waits: &RoundTrip,
+    handler_waits_again: &RoundTrip,
+    wake_handler: &RoundTrip,
+) -> bool {
+    let faults = [
+        ReceiveFault {
+            trip: receive_trap(
+                "receive-reply-cap-guard-mismatch",
+                RECEIVE,
+                ENDPOINT_CAP,
+                1,
+                REPLY_CAP_SLOT,
+            ),
+            addr: REPLY_CAP_SLOT,
+            lookup_type: 4,
+            info: CAP_FAULT_GUARD_MISMATCH_INFO,
+        },
+        ReceiveFault {
+            trip: receive_trap(
+                "reply-recv-reply-cap-guard-mismatch",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                2,
+                REPLY_CAP_SLOT,
+            ),
+            addr: REPLY_CAP_SLOT,
+            lookup_type: 4,
+            info: CAP_FAULT_GUARD_MISMATCH_INFO,
+        },
+        ReceiveFault {
+            trip: receive_trap(
+                "receive-reply-cap-wrong-kind",
+                RECEIVE,
+                ENDPOINT_CAP,
+                1,
+                CNODE_CAP,
+            ),
+            addr: CNODE_CAP,
+            lookup_type: 2,
+            info: CAP_FAULT_MESSAGE_INFO,
+        },
+        ReceiveFault {
+            trip: receive_trap(
+                "reply-recv-reply-cap-wrong-kind",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                CNODE_CAP,
+            ),
+            addr: CNODE_CAP,
+            lookup_type: 2,
+            info: CAP_FAULT_MESSAGE_INFO,
+        },
+        ReceiveFault {
+            trip: receive_trap(
+                "wait-notification-bound-elsewhere",
+                WAIT,
+                NOTIFICATION_CAP,
+                0,
+                0,
+            ),
+            addr: NOTIFICATION_CAP,
+            lookup_type: 2,
+            info: CAP_FAULT_MESSAGE_INFO,
+        },
+    ];
+    let bind_root = invocation(
+        "bind-root-notification",
+        TCB_BIND_NOTIFICATION,
+        ROOT_TCB_CAP,
+        [NOTIFICATION_CAP, 0, 0, 0],
+    );
+    let unbind_root = invocation(
+        "unbind-root-notification",
+        TCB_UNBIND_NOTIFICATION,
+        ROOT_TCB_CAP,
+        [0; 4],
+    );
+    let reply = partner_step(
+        "receive-side-fault-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    for fault in faults.iter() {
+        let name = fault.trip.name;
+        let bound = fault.trip.x7 == WAIT;
+        if bound && !unmeasured(&bind_root, "the root task's notification was not bound") {
+            return false;
+        }
+        for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
+            if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+                || !unmeasured(handler_waits, "the handler did not wait on the endpoint")
+                || heap_allocations_trap(&fault.trip, which) != Some(true)
+            {
+                return false;
+            }
+            let info = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+            let addr = TRAP_RESTORED_X3.load(Ordering::SeqCst);
+            let in_recv = TRAP_RESTORED_X4.load(Ordering::SeqCst);
+            let lookup_type = TRAP_RESTORED_X5.load(Ordering::SeqCst);
+            if info != fault.info
+                || addr != fault.addr
+                || in_recv != 1
+                || lookup_type != fault.lookup_type
+            {
+                crate::kprintln!(
+                    "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler received x1={:#x} x3={:#x} x4={:#x} x5={:#x}",
+                    info,
+                    addr,
+                    in_recv,
+                    lookup_type
+                );
+                return false;
+            }
+            if (fault.info == CAP_FAULT_GUARD_MISMATCH_INFO
+                && !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0]))
+                || heap_allocations_round_trip(&reply, which) != Some(true)
+            {
+                return false;
+            }
+            let (waited, _, _, resumed) = dispatch_round_trip(handler_waits_again);
+            if !matches!(waited, Dispatched::Blocked) {
+                crate::kprintln!(
+                    "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler did not wait again"
+                );
+                return false;
+            }
+            // A capability fault resumes its own context: the receive it
+            // trapped with, re-issued from its `SVC`.
+            let restart = FaultRestart {
+                pc: fault.trip.elr - 4,
+                x0: fault.trip.x0,
+                x1: fault.trip.x1,
+            };
+            if !restarted_as(name, &resumed, restart)
+                || !unmeasured(wake_handler, "the waiting handler was not woken")
+                || !suspend_partner()
+            {
+                return false;
+            }
+        }
+        if bound && !unmeasured(&unbind_root, "the root task's notification was not unbound") {
+            return false;
+        }
+    }
+    true
+}
+
 fn fault_entries() -> Option<bool> {
     let set_handler = |name, tcb| {
         invocation(
@@ -13155,6 +13347,9 @@ fn fault_entries() -> Option<bool> {
         {
             return Some(false);
         }
+    }
+    if !receive_side_faults(&handler_waits, &handler_waits_again, &wake_handler) {
+        return Some(false);
     }
     let root_buffer_back = invocation(
         "fault-long-root-ipc-buffer-back",
