@@ -352,6 +352,32 @@ def withPayloadWordsFast : KernelError → UInt64 → UInt64 → UInt64 → UInt
   | some e => e.withPayloadWords w0 w1 w2 w3 w4
   | none => .illegalState
 
+/-- The payload words never move an error's discriminant. -/
+theorem toDiscriminant_withPayloadWords (e : KernelError) (w0 w1 w2 w3 w4 : UInt64) :
+    (e.withPayloadWords w0 w1 w2 w3 w4).toDiscriminant = e.toDiscriminant := by
+  cases e <;> rfl
+
+/-- The discriminant of the error a code and its payload words spell
+(`toDiscriminant_ofPayloadWords`), read off the code alone, so the error is
+never built. -/
+@[inline] def discriminantOfCode (d : Nat) : Nat :=
+  if (decide (d < kernelErrorEncodingBound) && !retiredDiscriminants.contains d) = true then d
+  else illegalState.toDiscriminant
+
+theorem toDiscriminant_ofPayloadWords (d : Nat) (w0 w1 w2 w3 w4 : UInt64) :
+    (ofPayloadWords d w0 w1 w2 w3 w4).toDiscriminant = discriminantOfCode d := by
+  unfold ofPayloadWords discriminantOfCode
+  rw [← ofDiscriminant?_isSome_iff]
+  cases h : ofDiscriminant? d with
+  | none => rfl
+  | some e =>
+    have hS : (ofDiscriminant? d).isSome = true := by rw [h]; rfl
+    rw [ofDiscriminant?_isSome_iff, Bool.and_eq_true, decide_eq_true_eq,
+      Bool.not_eq_true'] at hS
+    have hD := toDiscriminant_ofDiscriminant?.1 d hS.1 hS.2
+    rw [h, Option.map_some, Option.some.injEq] at hD
+    simp only [Option.isSome_some, ↓reduceIte, toDiscriminant_withPayloadWords, hD]
+
 /-- **An error is its discriminant and its payload words.** -/
 theorem ofPayloadWords_payloadWord (e : KernelError) :
     ofPayloadWords e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)

@@ -9370,6 +9370,17 @@ run_check "INVARIANT" rg -n '^theorem dispatchAuditedCheckedR_eq\b' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^    declassificationAudit := st\.declassificationAudit\.recordEvent actorDomain dstDomain targetId$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem recordEvent_eq\b' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_stored_ok\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# WS-SX SX2: an audited call's general form runs that call's arm alone, so its
+# compiled path carries no other syscall's arm; the audit read's tag word reads
+# the reason's discriminant off the slot's code, rebuilding no error.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'dispatchWithCapChecked ctx \(auditedDecoded' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def auditGeneralR\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_eq_auditedArmSpec\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^  \| 14 => refusalTagsSlotCode rl index$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^        refusalTagSlots \* KernelError\.discriminantOfCode s\.reasonCode\) \+ 1$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsSlotCode_eq\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem toDiscriminant_ofPayloadWords\b' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs

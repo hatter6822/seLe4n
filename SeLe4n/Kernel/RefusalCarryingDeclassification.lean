@@ -57,9 +57,10 @@ def auditedGate (tid : SeLe4n.ThreadId) (capAddr : SeLe4n.CPtr) (sid : SyscallId
 declassification or audit call, on the record and gate it reads
 (`dispatchWithCapChecked_eq_auditedArmSpec`).  Built only on a call the
 admitted form does not take.  It matches on the syscall and runs that call's
-arm alone, so the compiled path of the four calls carries no other syscall's
-arm; an identifier `routedAudited` refuses never reaches the last branch. -/
-def auditedArmSpec (ctx : LabelingContext) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+arm alone, and inlined at a caller naming the syscall the match folds, so each
+call's compiled path carries no other syscall's arm; an identifier
+`routedAudited` refuses never reaches the last branch. -/
+@[inline] def auditedArmSpec (ctx : LabelingContext) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : Kernel Unit :=
   match sid with
@@ -633,8 +634,8 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
 
 /-- An audit call's general form: the specification's arm, whose taint step is
 the identity (`auditTaintStep_eq`), every refusal carrying the state it was
-handed. -/
-def auditGeneralR (ctx : LabelingContext) (sid : SyscallId) (regs : SeLe4n.RegisterFile)
+handed.  Inlined, so a caller naming the syscall runs that call's arm alone. -/
+@[inline] def auditGeneralR (ctx : LabelingContext) (sid : SyscallId) (regs : SeLe4n.RegisterFile)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -1110,6 +1111,31 @@ theorem refusalFieldChunk_eq (r : DeclassificationRefusal) (f : RefusalReadField
   let n := refusalFieldCount r f
   if n ≠ 0 ∧ chunk < n then refusalFieldChunk r f chunk + 1 else 0
 
+/-- A refusal-ledger slot's tag word, as a code: `refusalTagsWord` of the
+slot's refusal, the reason's discriminant read off the slot's code
+(`KernelError.toDiscriminant_ofPayloadWords`), so the error its words spell is
+never rebuilt (`refusalTagsSlotCode_eq`). -/
+@[inline] def refusalTagsSlotCode (rl : RefusalLedger) (slot : Nat) : Nat :=
+  if h : slot < refusalRingSize then
+    let s := rl.slots.get ⟨slot, h⟩
+    if s.occupied then
+      s.originatingCore.val + refusalTagSlots * (s.syscall.toNat +
+        refusalTagSlots * KernelError.discriminantOfCode s.reasonCode) + 1
+    else 0
+  else 0
+
+theorem refusalTagsSlotCode_eq (rl : RefusalLedger) (slot : Nat) :
+    refusalTagsSlotCode rl slot =
+      refusalScalarSlotCode rl slot (fun x => refusalTagsWord x + 1) := by
+  unfold refusalTagsSlotCode refusalScalarSlotCode
+  split
+  · dsimp only
+    split
+    · simp only [refusalTagsWord, RefusalSlot.toRefusalWith, RefusalSlot.reason,
+        KernelError.toDiscriminant_ofPayloadWords]
+    · rfl
+  · rfl
+
 /-- A refusal's receiver chunk count, as a code (`1` for no receiver: count 0). -/
 @[inline] def refusalReceiverCountCode (r : DeclassificationRefusal) : Nat :=
   match r.refusedReceiver with
@@ -1169,7 +1195,7 @@ def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (st : Sy
   | 11 => auditBasisWordCode ctx reader r index chunk
   | 12 => refusalStatusWord rl.nextSlot.val rl.version + 1
   | 13 => refusalCountersWord rl.attemptCount.val rl.droppedCount.val + 1
-  | 14 => refusalScalarSlotCode rl index fun x => refusalTagsWord x + 1
+  | 14 => refusalTagsSlotCode rl index
   | 15 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subject
   | 16 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subjectDomain
   | 17 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .requestedTarget
@@ -1476,6 +1502,7 @@ theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomai
     simp only [Nat.add_right_cancel_iff] at h
     rw [h]
   | 14, h =>
+    rw [refusalTagsSlotCode_eq] at h
     obtain ⟨hs, r, hr, hf⟩ := refusalScalarSlotCode_some (fun _ => rfl) h
     simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr]
     simp only [Nat.add_right_cancel_iff] at hf
