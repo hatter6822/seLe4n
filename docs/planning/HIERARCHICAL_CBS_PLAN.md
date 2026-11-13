@@ -1407,8 +1407,8 @@ chain that runs it.
 | effect | `serverCore := some core`; the window, budget and refills are **kept** — conversion changes the context's role, never its reservation, so a used leaf cannot be laundered into a fresh budget by becoming a server (D17); its refills are released through seL4-MCS's `refillUnblockCheck` (§4.2) at the first member's activation, which places it on `core`'s release queue if its head is not yet released.  **Zero allocation**: one context's fields rewritten in place, no queue node built; scenario `sched-context-configure-server` reads 0 (CB6.6 pins it) |
 
 **`schedContextBindServer vServer vChild`** (new, CB5.3; the child CPtr
-resolved in the caller's CSpace with `.write` first — `.invalidCapability` /
-`.invalidCapPtr` from `syscallLookupCap`)
+resolved in the caller's CSpace with `.write` first — `.invalidCapability`
+from `syscallLookupCap`)
 
 | Check, in order | Error |
 |-----------------|-------|

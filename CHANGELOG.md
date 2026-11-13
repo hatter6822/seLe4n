@@ -9,9 +9,18 @@ decodes later SX phases re-decode, which keep a narrowed row.
 - **`RegValue` is a machine word** (`RegValue.word : UInt64`; `.val` is its
   `toNat`, kept for the specifications). The syscall number, the message info
   and the capability address are decoded from the word: `@[csimp]`
-  `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and
-  `decodeCapPtr_eq_word` join the specification decoders to word forms, beside
-  the router's `registerRoutedSyscallOf_eq_word`.
+  `decodeSyscallId_eq_word` and `decodeMsgInfo_eq_word` join the
+  specification decoders to word forms, beside the router's
+  `registerRoutedSyscallOf_eq_word`, and `decodeCapPtr` reads the word as the
+  address.
+- **Error code 35 is retired.** `invalidCapPtr` refused a capability-pointer
+  register past `2^64`, which no register can hold once it is a 64-bit word.
+  The refusal, the variant, `decodeCapPtr_ok_iff` and
+  `decodeCapPtr_ok_of_word64` are deleted, `decodeCapPtr_roundtrip` and
+  `decode_components_roundtrip` lose their word-bound hypothesis, and 35 joins
+  37 in `retiredDiscriminants` (Lean) and `KernelError::RETIRED` (Rust).
+  Discriminants are explicit, so no other code is renumbered and SX10 needs
+  no change for it.
 - **Range tests on the word.** The VSpace map and unmap decodes test the ASID
   against the configured bound and the address against the canonical bound
   on the word (`wordLtNat`) before making a `Nat`, and a map's permissions
@@ -43,10 +52,10 @@ decodes later SX phases re-decode, which keep a narrowed row.
   `configure-budget-over-wide-period` expect the `MAX_PERIOD` refusal.
 - **Tests and the trace fixture.** The suites build registers through
   `RegValue.ofNat` or the word. A register can no longer hold a number past
-  `2^64`, so `decodeCapPtr` never answers `invalidCapPtr`: the decoding suite
-  checks that such a number wraps as the hardware register would, and the
-  error matrix replaces its `invalidCapPtr` row with a configure over
-  `MAX_PERIOD`. `main_trace_smoke.expected` is
+  `2^64`: the decoding suite checks that such a number wraps as the hardware
+  register would, the error matrix replaces its `invalidCapPtr` row with a
+  configure over `MAX_PERIOD`, the dispatch suite pins 35 as retired, and
+  `syscall_return_abi.expected`'s error-label line lists `retired [35, 37]`. `main_trace_smoke.expected` is
   regenerated for two reasons: the configure refusals' `MAX_PERIOD` is now
   `2305843009213693951`, and a register prints as `{ word := n }`.
 - **The reply-receive's reply address** is read as a word

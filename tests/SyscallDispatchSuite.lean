@@ -130,13 +130,18 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_32_invalidMessageInfo"           .invalidMessageInfo           32
   pin "sd001_33_invalidTypeTag"               .invalidTypeTag               33
   pin "sd001_34_resourceExhausted"            .resourceExhausted            34
-  pin "sd001_35_invalidCapPtr"                .invalidCapPtr                35
+  -- 35 is retired (the former `invalidCapPtr`): a register is a 64-bit word,
+  -- so no capability pointer exceeds it.
+  expect "sd001_35_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 35 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 35)).isNone)
+    "discriminant 35 is retired: it must decode to no error"
   pin "sd001_36_objectStoreCapacityExceeded"  .objectStoreCapacityExceeded  36
   -- 37 is retired (the former `allocationMisaligned`): no error has it, and it
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [37] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38

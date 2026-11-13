@@ -81,7 +81,7 @@ Discriminant `37` is retired (`retiredDiscriminants`) and no variant has it.  Mi
   | .invalidMessageInfo            => 32
   | .invalidTypeTag                => 33
   | .resourceExhausted             => 34
-  | .invalidCapPtr                 => 35
+  -- 35: retired (`retiredDiscriminants`).
   | .objectStoreCapacityExceeded   => 36
   -- 37: retired (`retiredDiscriminants`).
   | .revocationRequired            => 38
@@ -151,7 +151,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 32 => some .invalidMessageInfo
   | 33 => some .invalidTypeTag
   | 34 => some .resourceExhausted
-  | 35 => some .invalidCapPtr
+  -- 35: retired (`retiredDiscriminants`), decodes to `none`.
   | 36 => some .objectStoreCapacityExceeded
   -- 37: retired (`retiredDiscriminants`), decodes to `none`.
   | 38 => some .revocationRequired
@@ -219,11 +219,13 @@ crates, and WS-RR RR7.14 found one of them stated as prose in a trace line that
 kept saying `57` while the check beside it had moved to `58`. -/
 def kernelErrorEncodingBound : Nat := 61
 
-/-- **Retired discriminants**, reserved and never reassigned: `37`, the
+/-- **Retired discriminants**, reserved and never reassigned: `35`, the
+`invalidCapPtr` a capability-pointer register past `2^64` was refused with
+before a register became a 64-bit word (WS-SX SX1.3), and `37`, the
 `allocationMisaligned` the carve returned before it rounded the free index up
 to the object's boundary (WS-ZA ZA5.4 part 14).  No variant has one, and
 `ofDiscriminant?` decodes one to `none`. -/
-def retiredDiscriminants : List Nat := [37]
+def retiredDiscriminants : List Nat := [35, 37]
 
 /-- Every discriminant is inside the table. -/
 theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorEncodingBound := by
@@ -269,6 +271,9 @@ theorem ofDiscriminant?_isSome_iff (n : Nat) :
 
 /-- The retired `allocationMisaligned` discriminant names no error. -/
 theorem ofDiscriminant?_retired : ofDiscriminant? 37 = none := rfl
+
+/-- The retired `invalidCapPtr` discriminant names no error. -/
+theorem ofDiscriminant?_retired_capPtr : ofDiscriminant? 35 = none := rfl
 
 /-! ### The error payload, in seL4's message-register order
 

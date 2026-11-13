@@ -833,7 +833,7 @@ private def returnAbiTraceLines : List String :=
     | e => e
   -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
   -- discriminant (the newest being `.failedLookup` at 60); every
-  -- value below it is a variant's or a retired one (`37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
+  -- value below it is a variant's or a retired one (`35`, WS-SX SX1.3; `37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
   -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
   -- fixture line diverges, and this range has to move with it rather than
   -- silently under-covering.  **WS-RR RR7.17**: the figure is interpolated into

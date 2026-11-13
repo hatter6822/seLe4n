@@ -2,8 +2,8 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–60 other than the retired 37 are a 1:1 mapping from the
-//! Lean inductive (60 variants after `RangeError` at 59 and `FailedLookup` at
+//! Discriminants 0–60 other than the retired 35 and 37 are a 1:1 mapping from
+//! the Lean inductive (59 variants after `RangeError` at 59 and `FailedLookup` at
 //! 60 — seL4's `seL4_RangeError` and `seL4_FailedLookup` for a CNode
 //! operation's address — and `TruncatedMessage` at 58 — seL4's
 //! `seL4_TruncatedMessage`, an invocation's message shorter than its decode
@@ -14,9 +14,10 @@
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
-//! Discriminant 37 is retired (WS-ZA ZA5.4 part 14, the former
-//! `AllocationMisaligned`): no variant carries it and it is never reassigned
-//! (see [`KernelError::RETIRED`]).
+//! Discriminant 35 is retired (WS-SX SX1.3, the former `InvalidCapPtr`, which
+//! no register can provoke once a register is a 64-bit word) and 37 is retired
+//! (WS-ZA ZA5.4 part 14, the former `AllocationMisaligned`): no variant carries
+//! either and neither is reassigned (see [`KernelError::RETIRED`]).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 //!
 //! A discriminant names an error's **code**.  Five codes carry seL4's error
@@ -25,7 +26,7 @@
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// Discriminants 0–60 (37 retired) match the Lean `KernelError` inductive exactly.
+/// Discriminants 0–60 (35 and 37 retired) match the Lean `KernelError` inductive exactly.
 /// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
 /// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
@@ -72,8 +73,7 @@ pub enum KernelError {
     InvalidTypeTag = 33,
     /// T1-F/H-4: Resource exhaustion (e.g., fuel exhaustion in streaming BFS revocation)
     ResourceExhausted = 34,
-    /// T1-F/H-4: Capability pointer exceeds word64 bounds
-    InvalidCapPtr = 35,
+    // 35: retired (WS-SX SX1.3, `InvalidCapPtr`); reserved.
     /// T1-F/H-4: Object count exceeds maxObjects capacity
     ObjectStoreCapacityExceeded = 36,
     // 37: retired (WS-ZA ZA5.4 part 14, `AllocationMisaligned`); reserved.
@@ -181,11 +181,13 @@ pub enum KernelError {
 }
 
 impl KernelError {
-    /// Retired discriminants, reserved and never reassigned.  `37` was
+    /// Retired discriminants, reserved and never reassigned.  `35` was
+    /// `InvalidCapPtr`, a capability-pointer register past `2^64`, which no
+    /// register can hold once a register is a 64-bit word; `37` was
     /// `AllocationMisaligned`, which no carve returns once the free index is
-    /// rounded up to the object's boundary; `from_u32` maps it to `None`.
+    /// rounded up to the object's boundary.  `from_u32` maps each to `None`.
     /// Mirrors Lean's `KernelError.retiredDiscriminants`.
-    pub const RETIRED: [u32; 1] = [37];
+    pub const RETIRED: [u32; 2] = [35, 37];
 
     /// Convert from a raw `u32` discriminant. Returns `None` for out-of-range
     /// and retired values.
@@ -226,7 +228,6 @@ impl KernelError {
             32 => Some(Self::InvalidMessageInfo),
             33 => Some(Self::InvalidTypeTag),
             34 => Some(Self::ResourceExhausted),
-            35 => Some(Self::InvalidCapPtr),
             36 => Some(Self::ObjectStoreCapacityExceeded),
             38 => Some(Self::RevocationRequired),
             39 => Some(Self::InvalidArgument),
@@ -296,7 +297,6 @@ impl std::fmt::Display for KernelError {
             Self::InvalidMessageInfo => write!(f, "invalid message info"),
             Self::InvalidTypeTag => write!(f, "invalid type tag"),
             Self::ResourceExhausted => write!(f, "resource exhausted"),
-            Self::InvalidCapPtr => write!(f, "invalid capability pointer"),
             Self::ObjectStoreCapacityExceeded => write!(f, "object store capacity exceeded"),
             Self::RevocationRequired => write!(f, "revocation required"),
             Self::InvalidArgument => write!(f, "invalid argument"),
@@ -542,10 +542,11 @@ mod tests {
     #[test]
     fn new_variants_discriminants() {
         assert_eq!(KernelError::ResourceExhausted as u32, 34);
-        assert_eq!(KernelError::InvalidCapPtr as u32, 35);
+        // 35 is retired: no variant carries it.
+        assert!(KernelError::from_u32(35).is_none());
         assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
         // 37 is retired: no variant carries it.
-        assert_eq!(KernelError::RETIRED, [37]);
+        assert_eq!(KernelError::RETIRED, [35, 37]);
         assert!(KernelError::from_u32(37).is_none());
         assert_eq!(KernelError::RevocationRequired as u32, 38);
         assert_eq!(KernelError::InvalidArgument as u32, 39);
@@ -572,14 +573,13 @@ mod tests {
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
-    /// The Lean KernelError inductive has these 3 variants at positions 34-36,
-    /// and 37 is retired:
+    /// The Lean KernelError inductive has these 2 variants at positions 34 and
+    /// 36, and 35 and 37 are retired:
     ///   | resourceExhausted       (34)
-    ///   | invalidCapPtr           (35)
     ///   | objectStoreCapacityExceeded (36)
     #[test]
     fn lean_rust_correspondence() {
-        // 61 discriminants (0-60, 37 retired) — verify the range matches
+        // 61 discriminants (0-60, 35 and 37 retired) — verify the range matches
         // Lean's `kernelErrorEncodingBound` (FailedLookup at 60).
         let max_valid = 60u32;
         assert!(KernelError::from_u32(max_valid).is_some());

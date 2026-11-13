@@ -71,17 +71,13 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
 -- Decode functions — total with explicit error returns
 -- ============================================================================
 
-/-- Decode a raw register value into a capability pointer.
-
-    S4-K: Returns `invalidCapPtr` for register values exceeding 64-bit word
-    bounds (`rv.val ≥ 2^64`). In the abstract model with unbounded `Nat`, this
-    rejects values that cannot be represented in a hardware register. On real
-    ARM64 hardware, all register values are inherently 64-bit and this check
-    is always satisfied. The bounds check ensures model-level consistency:
-    proofs about CPtr values hold for the hardware word size. -/
+/-- Decode a raw register value into a capability pointer: the register's
+    64-bit word is the address, so every register decodes and an address
+    `≥ 2^63` builds no heap number (WS-SX SX1.3, which retired the
+    `invalidCapPtr` refusal of a value past `2^64` once a register became a
+    machine word). -/
 @[inline] def decodeCapPtr (rv : RegValue) : Except KernelError CPtr :=
-  if isWord64Dec rv.val then .ok (CPtr.ofNat rv.val)
-  else .error .invalidCapPtr
+  .ok (CPtr.ofWord rv.word)
 
 /-- Decode a raw register value into a message info word.
     Extracts length, extra caps count, and label from bit fields.
@@ -127,20 +123,6 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
   funext rv
   unfold decodeMsgInfoOfWord
   rw [decodeMsgInfoWord_eq]
-
-/-- `decodeCapPtr` as compiled: a register's word is always within the word
-bound, so the capability address is the word itself (WS-SX SX1.3). -/
-@[inline] def decodeCapPtrWord (rv : RegValue) : Except KernelError CPtr :=
-  .ok (CPtr.ofWord rv.word)
-
-@[csimp] theorem decodeCapPtr_eq_word : @decodeCapPtr = @decodeCapPtrWord := by
-  funext rv
-  unfold decodeCapPtr decodeCapPtrWord
-  have h : isWord64Dec rv.val = true := by
-    unfold isWord64Dec machineWordMax machineWordBits
-    exact decide_eq_true (RegValue.val_lt rv)
-  rw [if_pos h, CPtr.ofWord_eq_ofNat]
-  rfl
 
 /-- A register's message info, decoded off its word, is its decode. -/
 theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
@@ -447,11 +429,8 @@ address its word names — read as the word, an address `≥ 2^63` builds no
 heap number. -/
 theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
     decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
-  have hLt : (readRegWord rf r).toNat < machineWordMax := by
-    unfold machineWordMax machineWordBits
-    exact (readRegWord rf r).toNat_lt
   unfold decodeCapPtr
-  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
+  rw [readReg_eq_word]
 
 /-- `decodeSyscallArgsFromState`, building nothing a caller does not use.  The
     register bounds are one test rather than a `mapM` pass that copies the
@@ -507,17 +486,12 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
 -- Round-trip lemmas
 -- ============================================================================
 
-/-- Round-trip: encoding then decoding a CPtr recovers the original,
-    provided the CPtr value fits in a 64-bit word.
-
-    S4-K: The `isWord64` precondition is required because `decodeCapPtr` now
-    rejects out-of-range values. On real ARM64 hardware, all register values
-    are inherently 64-bit, so `hBound` is trivially satisfied. -/
-theorem decodeCapPtr_roundtrip (c : CPtr) (hBound : isWord64 c.toNat) :
+/-- Round-trip: encoding then decoding a CPtr recovers the original; a CPtr
+    is a 64-bit word, as the register that carries it is. -/
+theorem decodeCapPtr_roundtrip (c : CPtr) :
     decodeCapPtr (encodeCapPtr c) = .ok c := by
-  have h64 : isWord64Dec c.word.toNat = true := (SeLe4n.isWord64Dec_iff c.toNat).mpr hBound
   unfold decodeCapPtr encodeCapPtr
-  simp only [RegValue.val_mk, h64, if_true, CPtr.ofNat_word_toNat]
+  rfl
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem decodeSyscallId_roundtrip (s : SyscallId) :
@@ -561,12 +535,11 @@ theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
     (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps)
     (hLabel : decoded.msgInfo.label ≤ MessageInfo.maxLabel := by omega)
-    (hUnw : decoded.msgInfo.capsUnwrapped ≤ MessageInfo.maxCapsUnwrapped := by omega)
-    (hCapBound : isWord64 decoded.capAddr.toNat) :
+    (hUnw : decoded.msgInfo.capsUnwrapped ≤ MessageInfo.maxCapsUnwrapped := by omega) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
     decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId :=
-  ⟨decodeCapPtr_roundtrip decoded.capAddr hCapBound,
+  ⟨decodeCapPtr_roundtrip decoded.capAddr,
    decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps hLabel hUnw,
    decodeSyscallId_roundtrip decoded.syscallId⟩
 
@@ -630,19 +603,6 @@ theorem decodeMsgInfo_error_iff (rv : RegValue) :
   constructor
   · intro h; split at h <;> simp_all
   · intro h; simp [h]
-
-/-- S4-K: decodeCapPtr succeeds iff the register value is word64-bounded. -/
-theorem decodeCapPtr_ok_iff (rv : RegValue) :
-    (∃ c, decodeCapPtr rv = .ok c) ↔ isWord64Dec rv.val = true := by
-  unfold decodeCapPtr
-  constructor
-  · intro ⟨c, h⟩; split at h <;> simp_all
-  · intro h; exact ⟨CPtr.ofNat rv.val, by simp [h]⟩
-
-/-- S4-K: decodeCapPtr succeeds for word64-bounded values. -/
-theorem decodeCapPtr_ok_of_word64 (rv : RegValue) (h : isWord64Dec rv.val = true) :
-    decodeCapPtr rv = .ok (CPtr.ofNat rv.val) := by
-  unfold decodeCapPtr; simp [h]
 
 /-- Register bound validation succeeds iff the index is within bounds. -/
 theorem validateRegBound_ok_iff (r : RegName) (bound : Nat) :
