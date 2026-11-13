@@ -16,17 +16,20 @@ never an error frame.
   and the reply-receive refuse with `failedLookup` carrying that fault. The
   entry raises it as `CapFault(replyCPtr, true, fault)` when the reply
   capability's lookup, run again on the refusal's state, fails with the same
-  fault (`receiveReplyFaults`). The compiled entry runs the same lookup again
-  in place (`lookupReplyCapK`, `replyLookupRefusalW`) and reports the fault
-  under report kind 3. It is delivered from its words
-  (`deliverSyscallLookupFault`).
+  fault (`receiveReplyFaults`, and on a refusal's words
+  `receiveReplyFaultsW`, so no error is rebuilt). The compiled entry runs the
+  same lookup again in place on a borrowed state (`replyLookupFailsWith`, over
+  `lookupReplyCapK`, whose slot checks are one answer, `replySlotUsable`, so
+  its failure continuation builds no closure) and reports the fault under
+  report kind 3. It is delivered from its words (`deliverSyscallLookupFault`).
 - **Retired:** the reply capability's argument numbers
-  (`recvReplyCapNumber`, `replyRecvReplyCapNumber`) and the registered note
-  that a failed reply lookup returned an error.
+  (`recvReplyCapNumber`, `replyRecvReplyCapNumber`), the `extractReplyId`
+  check, the unconsumed `syscallLookupReplyId` and its theorem, and the
+  registered note that a failed reply lookup returned an error.
 - **QEMU:** the two reply-capability guard-mismatch round trips are now fault
   scenarios, under the same names. `receive-reply-cap-wrong-kind`,
-  `reply-recv-reply-cap-wrong-kind` and `wait-notification-bound-elsewhere`
-  are added. The handler checks each fault's address, its receive phase and
+  `reply-recv-reply-cap-wrong-kind`, `wait-notification-bound-elsewhere` and
+  `receive-side-fault-reply` (the handler's reply) are added; each reads 0. The handler checks each fault's address, its receive phase and
   its lookup failure type, and the partner restarts from its own context.
 - **Left to later rows:** a reply object that is not free (SX4,
   `cancelIPC`), a reply-receive with no caller, and a receive on the other
