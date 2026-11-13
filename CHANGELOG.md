@@ -76,6 +76,48 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   - `set-space-root-data` and `set-space-root-data-refused`.
   - `cap-fault-guard-mismatch`, whose handler reads 7 words and
     `LookupFailureType` 4, and its reply.
+- **A refused rebadge builds nothing.** The routed mint arm reads the
+  source's `updateCapData` refusal before the write
+  (`cspaceMintDataRefused`, after the flow check, in `mintDerivedCap`'s
+  order) and answers `illegalState` itself
+  (`cspaceMintWithCdt_of_dataRefused`). Before, it fell back to the
+  specification's mint, which built 8 cells for the rebadge and 7 for the
+  unbadge.
+- **The capability fault's length under QEMU.** A missing capability's fault
+  is five words. The fifth, `BitsLeft`, lands in the receiving partner's IPC
+  buffer when its page is mapped, so `CAP_FAULT_MESSAGE_INFO` is
+  `(1 << 12) | 5`. The three faults raised while the page is unmapped read
+  `(1 << 12) | 4` (`CAP_FAULT_UNMAPPED_BUFFER_INFO`).
+- **No `bv_decide` in the kernel's closure.** `Model/Fault.lean` imported
+  `Std.Tactic.BVDecide` for one proof. That put `Std.Data.ByteSlice` and the
+  LRAT checker's initializers in the image link, which needs runtime symbols
+  the kernel does not provide, so the archive build refused. The import is
+  gone, and `ofStored_stored` is proved with `Nat.shiftLeft_add_eq_or_of_lt`
+  and `omega`.
+- **Two carve pins move**, with their cell counts unchanged:
+  - tcb/0 goes from 19 / 2040 to 19 / 2072.
+  - cnode/2 goes from 23 / 1128 to 23 / 1168.
+
+  The cause is the `Capability` record, which has two more object fields,
+  `cnodeGuard` and `cnodeGuardSize`. The generated C builds it with
+  `lean_alloc_ctor(0, 8, 10)`, 88 bytes, where it was 72. A carve builds each
+  slot cell once, unshared (`unshareSpaceCell`, `unshareSlotCell`), so that
+  every later write is in place:
+  - a TCB has two slot cells, +32 bytes;
+  - a radix-2 CNode has four, +64 bytes, and its record lost `depth`,
+    `guardWidth` and `guardValue`, 80 bytes to 56, so +40 in all.
+
+  No other entry allocates.
+- **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
+  non-carve entry reads 0, including every new scenario. The pins are:
+  - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
+  - tcb 19 / 2072, sched-context 8 / 440, cnode 23 / 1168;
+  - frame 6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped
+    7 / 184;
+  - `owned-cnode-retire` 23 / 23.
+
+  Boot heap: 760 pages (103535 live) after the initializer, and 1352
+  (109639) after the install.
 
 ## v0.37.20 — error payloads and the `LookupFault` type
 
