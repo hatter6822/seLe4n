@@ -1358,9 +1358,10 @@ theorem registerRoutedSyscall_default (rf : RegisterFile) :
 /-- **The router hands the decode nothing**, for the default layout: every
 register file is routed to an arm of its own or refused as the decode refuses
 it -- a send or a call transferring capabilities included (`.transferring`)
--- so the entry's decoded arm (`.viaDecode`) is unreachable from the ABI.  It
-stays for a layout whose registers lie out of bounds or which has no message
-register. -/
+-- so the entry's decoded arm (`.viaDecode`) is unreachable from the ABI: the
+routed entry (`syscallEntryRoutedWith`) discharges it by this theorem and
+compiles no arm for it.  The route stays in the specification for a layout
+whose registers lie out of bounds or which has no message register. -/
 theorem registerRoutedSyscall_viaDecode (rf : RegisterFile) :
     registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 ≠ .viaDecode := by
   intro h

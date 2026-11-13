@@ -1377,6 +1377,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.withObjects
   , `SeLe4n.Model.Builder.markRunnable
   , `SeLe4n.Model.Builder.withTaint
+  -- The refusal-carrying form of a whole `Kernel` step: the specification
+  -- every in-place routed and dispatched arm is proven equal to
+  -- (`syscallEntryRoutedWith_eq`, `dispatchOperandCheckedR_eq`, the
+  -- `RefusalCarryingInvocation` arm lemmas).  The decoded route's runtime arm
+  -- was its last executed caller; that arm is discharged by
+  -- `registerRoutedSyscall_viaDecode` and compiles nothing, so only proofs
+  -- and the suites' refusal checks run it.
+  , `SeLe4n.Model.RefusalCarrying.ofKernel
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked

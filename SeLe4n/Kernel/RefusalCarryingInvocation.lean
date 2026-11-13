@@ -601,11 +601,8 @@ refusal is read where it is, never rebuilt. -/
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          RefusalCarrying.ofCheckedThen (setThreadFaultHandlerAdmitted st vtid args.handlerCPtr)
-            (fun st => st.updateTcb vtid.val
-              (fun t => { t with faultHandlerSet := true, faultHandlerWord := args.handlerCPtr }))
-            (fun st => setThreadFaultHandlerOp st vtid args.handlerCPtr)
-            (fun st' => .ok ((), st')) st
+          setThreadFaultHandlerOpK st vtid args.handlerCPtr (fun e => .error (e, st))
+            (fun st' => .ok ((), st'))
     | _ => .error (.invalidCapability 0, st)
   | .tcbSetSpace =>
     match cap.target with
@@ -1155,11 +1152,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
         | ok vT =>
           dsimp only
-          refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-          · simp only [dispatchInvocationBy, hD, hT]
-            split <;> simp_all
-          intro hA
-          simp only [dispatchInvocationBy, hD, hT, setThreadFaultHandlerOp_of_admitted _ _ _ hA]
+          rw [setThreadFaultHandlerOpK_eq]
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
+          cases setThreadFaultHandlerOp st vT args.handlerCPtr <;> rfl
     all_goals rfl
   case tcbSetSpace =>
     cases target

@@ -6005,7 +6005,12 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvRoutedArm($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^@\[noinline\] def invocationRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Invocation.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def overflowOneRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Audited.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def decodedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Decoded.lean
+# The default layout never routes a register file to the decode
+# (`registerRoutedSyscall_viaDecode`), so the routed entry's `.viaDecode` arm
+# is that theorem's absurdity: no decoded arm is compiled.
+run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_check "INVARIANT" rg -n -U '^      \| \.viaDecode =>\n        absurd hRt \(SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall_viaDecode _\)$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_negative_check "INVARIANT" rg -n 'decodedRoutedArm' SeLe4n/Kernel
 run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv => \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
@@ -6424,6 +6429,23 @@ run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated($|[ ({:\
 run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# The routed arm runs the set in place: the handler's lookup refuses through
+# the lookup's failure words (no heap fault record), proven equal to the
+# specification, and no admitted-check wrapper survives beside it.
+run_check "INVARIANT" rg -n '^@\[inline\] def setThreadFaultHandlerOpK($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def setThreadFaultHandlerOpK[^\n]*(\n([ \t][^\n]*)?)*lookupSlotK tcb cptr st\n\s*\(fun t a b c => onErr \(\.failedLookup false \(LookupFault\.ofWords t a b c\)\)\)' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOpK_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'setThreadFaultHandlerOpK st vtid args\.handlerCPtr \(fun e => \.error \(e, st\)\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerAdmitted|faultHandlerResolves' SeLe4n
+# A refused audit read answers from the read's own code in place
+# (`auditReadFastRefusal`, proven the specification's refusal), not through
+# the specification's payload fallback.
+run_check "INVARIANT" rg -n '^@\[inline\] def auditReadTrailR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusal ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadTrailR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastRefusal_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '\| \.auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditReadAdmitted' SeLe4n
 run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
@@ -9379,6 +9401,17 @@ run_check "INVARIANT" rg -n '^theorem dispatchAuditedCheckedR_eq\b' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^    declassificationAudit := st\.declassificationAudit\.recordEvent actorDomain dstDomain targetId$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem recordEvent_eq\b' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_stored_ok\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# WS-SX SX2: an audited call's general form runs that call's arm alone, so its
+# compiled path carries no other syscall's arm; the audit read's tag word reads
+# the reason's discriminant off the slot's code, rebuilding no error.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'dispatchWithCapChecked ctx \(auditedDecoded' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def auditGeneralR\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_eq_auditedArmSpec\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^  \| 14 => refusalTagsSlotCode rl index$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^        refusalTagSlots \* KernelError\.discriminantOfCode s\.reasonCode\) \+ 1$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsSlotCode_eq\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem toDiscriminant_ofPayloadWords\b' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs

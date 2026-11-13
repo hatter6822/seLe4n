@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-address-bits",
-      "commit_sha": "7dd1a3b19fd8f00981537730974541cf763ac16c",
-      "tree_sha": "d9fabb7e078fff2cb732c984d2931333c96d1a3c",
-      "committed_at_utc": "2026-11-13T15:44:09+00:00"
+      "commit_sha": "86a0fc5a3789a4078a4b808dc4661642d0c11852",
+      "tree_sha": "5310cf9a83dd106680a47bdfe650c2e76ad134b3",
+      "committed_at_utc": "2026-11-13T18:31:31+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "35556191f4f14cb9385b64b4aa2e8a8bf768fb4c3abf36e7aaaf6cdca78a8a57"
+    "source_digest": "2e5e07d0573eeaf6a070aad4b6a797f9b112ec29b23b489f2647df8aa5b51b39"
   },
   "summary": {
-    "module_count": 696,
-    "declaration_count": 36496
+    "module_count": 695,
+    "declaration_count": 36518
   },
   "readme_sync": {
     "version": "0.37.24",
     "lean_toolchain": "v4.28.0",
-    "production_files": 626,
-    "production_loc": 629051,
+    "production_files": 625,
+    "production_loc": 629688,
     "test_files": 70,
     "test_loc": 89699,
-    "proved_theorem_lemma_decls": 24130,
+    "proved_theorem_lemma_decls": 24148,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -22595,7 +22595,7 @@
           "kind": "theorem",
           "name": "registerRoutedSyscall_viaDecode",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode",
-          "line": 1364,
+          "line": 1365,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
@@ -22619,7 +22619,7 @@
           "kind": "def",
           "name": "routedLength",
           "full_name": "SeLe4n.Kernel.routedLength",
-          "line": 1405,
+          "line": 1406,
           "called": [
             "SeLe4n.RegisterFile",
             "SeLe4n.SyscallRegisterLayout",
@@ -22631,7 +22631,7 @@
           "kind": "theorem",
           "name": "routedLength_of_decodeWord",
           "full_name": "SeLe4n.Kernel.routedLength_of_decodeWord",
-          "line": 1409,
+          "line": 1410,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
             "SeLe4n.Kernel.routedLength",
@@ -22646,7 +22646,7 @@
           "kind": "theorem",
           "name": "routedLength_of_decode",
           "full_name": "SeLe4n.Kernel.routedLength_of_decode",
-          "line": 1418,
+          "line": 1419,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
@@ -243413,7 +243413,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Fault",
       "path": "SeLe4n/Kernel/IPC/Operations/Fault.lean",
-      "declaration_count": 79,
+      "declaration_count": 77,
       "declarations": [
         {
           "kind": "def",
@@ -244163,40 +244163,9 @@
         },
         {
           "kind": "def",
-          "name": "faultHandlerResolves",
-          "full_name": "SeLe4n.Kernel.faultHandlerResolves",
-          "line": 718,
-          "called": [
-            "SeLe4n.CPtr",
-            "SeLe4n.Kernel.faultHandlerCapAuthorized",
-            "SeLe4n.Kernel.lookupSlotK",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getEndpoint?",
-            "SeLe4n.Model.SystemState.lookupSlotCap",
-            "SeLe4n.Model.TCB"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "faultHandlerResolves_eq",
-          "full_name": "SeLe4n.Kernel.faultHandlerResolves_eq",
-          "line": 729,
-          "called": [
-            "SeLe4n.CPtr",
-            "SeLe4n.Kernel.faultHandlerResolves",
-            "SeLe4n.Kernel.lookupSlotK_eq",
-            "SeLe4n.Kernel.resolveFaultHandlerCPtr",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getEndpoint?",
-            "SeLe4n.Model.SystemState.lookupSlotCap",
-            "SeLe4n.Model.TCB"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "setThreadFaultHandlerOpImpl",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOpImpl",
-          "line": 755,
+          "line": 717,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244214,7 +244183,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_eq_impl",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_eq_impl",
-          "line": 764,
+          "line": 726,
           "called": [
             "SeLe4n.Kernel.installFaultHandler",
             "SeLe4n.Kernel.setThreadFaultHandlerOp",
@@ -244227,35 +244196,46 @@
         },
         {
           "kind": "def",
-          "name": "setThreadFaultHandlerAdmitted",
-          "full_name": "SeLe4n.Kernel.setThreadFaultHandlerAdmitted",
-          "line": 785,
+          "name": "setThreadFaultHandlerOpK",
+          "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOpK",
+          "line": 748,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
-            "SeLe4n.Kernel.faultHandlerResolves",
+            "SeLe4n.Kernel.faultHandlerCapAuthorized",
+            "SeLe4n.Kernel.faultHandlerCapNumber",
+            "SeLe4n.Kernel.lookupSlotK",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.LookupFault.ofWords",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
             "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.SystemState.updateTcb",
             "SeLe4n.ValidThreadId"
           ]
         },
         {
           "kind": "theorem",
-          "name": "setThreadFaultHandlerOp_of_admitted",
-          "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_of_admitted",
-          "line": 791,
+          "name": "setThreadFaultHandlerOpK_eq",
+          "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOpK_eq",
+          "line": 770,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
-            "SeLe4n.Kernel.faultHandlerResolves_eq",
+            "SeLe4n.Kernel.lookupSlotK_eq",
             "SeLe4n.Kernel.resolveFaultHandlerCPtr",
-            "SeLe4n.Kernel.setThreadFaultHandlerAdmitted",
             "SeLe4n.Kernel.setThreadFaultHandlerOp",
             "SeLe4n.Kernel.setThreadFaultHandlerOpImpl",
+            "SeLe4n.Kernel.setThreadFaultHandlerOpK",
             "SeLe4n.Kernel.setThreadFaultHandlerOp_eq_impl",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelError.forArgumentCap",
+            "SeLe4n.Model.LookupFault.ofWords_word",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
             "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
             "SeLe4n.ValidThreadId"
           ]
         },
@@ -244263,7 +244243,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_ok_eq",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_ok_eq",
-          "line": 808,
+          "line": 801,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244282,7 +244262,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_validated",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_validated",
-          "line": 819,
+          "line": 812,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244302,7 +244282,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_faultHandler",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_faultHandler",
-          "line": 838,
+          "line": 831,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244324,7 +244304,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_scheduler_eq",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_scheduler_eq",
-          "line": 855,
+          "line": 848,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244342,7 +244322,7 @@
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_rejects",
           "full_name": "SeLe4n.Kernel.setThreadFaultHandlerOp_rejects",
-          "line": 873,
+          "line": 866,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.val",
@@ -244362,7 +244342,7 @@
           "kind": "def",
           "name": "retirePendingFaultForResume",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume",
-          "line": 910,
+          "line": 903,
           "called": [
             "SeLe4n.Kernel.Architecture.faultRestartFrameOfContext",
             "SeLe4n.Kernel.applyFaultRestart",
@@ -244377,7 +244357,7 @@
           "kind": "def",
           "name": "retirePendingFaultForResumeImpl",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResumeImpl",
-          "line": 924,
+          "line": 917,
           "called": [
             "SeLe4n.Kernel.Architecture.faultRestartFrameOfContext",
             "SeLe4n.Kernel.discardPendingFault",
@@ -244392,7 +244372,7 @@
           "kind": "theorem",
           "name": "retirePendingFaultForResume_eq_impl",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume_eq_impl",
-          "line": 936,
+          "line": 929,
           "called": [
             "SeLe4n.Kernel.applyFaultRestart",
             "SeLe4n.Kernel.retirePendingFaultForResume",
@@ -244411,7 +244391,7 @@
           "kind": "theorem",
           "name": "retirePendingFaultForResume_pendingFault_none",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume_pendingFault_none",
-          "line": 962,
+          "line": 955,
           "called": [
             "SeLe4n.Kernel.Architecture.faultRestartFrameOfContext",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -244432,7 +244412,7 @@
           "kind": "theorem",
           "name": "retirePendingFaultForResume_noFault",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume_noFault",
-          "line": 992,
+          "line": 985,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.retirePendingFaultForResume",
@@ -244446,7 +244426,7 @@
           "kind": "theorem",
           "name": "retirePendingFaultForResume_of_no_fault",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume_of_no_fault",
-          "line": 1006,
+          "line": 999,
           "called": [
             "SeLe4n.Kernel.retirePendingFaultForResume",
             "SeLe4n.Model.SystemState",
@@ -244460,7 +244440,7 @@
           "kind": "theorem",
           "name": "retirePendingFaultForResume_scheduler_eq",
           "full_name": "SeLe4n.Kernel.retirePendingFaultForResume_scheduler_eq",
-          "line": 1016,
+          "line": 1009,
           "called": [
             "SeLe4n.Kernel.applyFaultRestart_scheduler_eq",
             "SeLe4n.Kernel.discardPendingFault_scheduler_eq",
@@ -244474,7 +244454,7 @@
           "kind": "def",
           "name": "writeFaultRegistersToTcb",
           "full_name": "SeLe4n.Kernel.writeFaultRegistersToTcb",
-          "line": 1047,
+          "line": 1040,
           "called": [
             "SeLe4n.Model.FaultRegisterWindow",
             "SeLe4n.Model.FaultRegisterWindow.spill",
@@ -244487,7 +244467,7 @@
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_scheduler",
           "full_name": "SeLe4n.Kernel.writeFaultRegistersToTcb_scheduler",
-          "line": 1053,
+          "line": 1046,
           "called": [
             "SeLe4n.Kernel.writeFaultRegistersToTcb",
             "SeLe4n.Model.FaultRegisterWindow",
@@ -244500,7 +244480,7 @@
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_id_when_not_tcb",
           "full_name": "SeLe4n.Kernel.writeFaultRegistersToTcb_id_when_not_tcb",
-          "line": 1059,
+          "line": 1052,
           "called": [
             "SeLe4n.Kernel.writeFaultRegistersToTcb",
             "SeLe4n.Model.FaultRegisterWindow",
@@ -244514,7 +244494,7 @@
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_getTcb?",
           "full_name": "SeLe4n.Kernel.writeFaultRegistersToTcb_getTcb?",
-          "line": 1065,
+          "line": 1058,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.writeFaultRegistersToTcb",
@@ -244531,7 +244511,7 @@
           "kind": "theorem",
           "name": "faultContextOfThread_writeFaultRegistersToTcb",
           "full_name": "SeLe4n.Kernel.faultContextOfThread_writeFaultRegistersToTcb",
-          "line": 1079,
+          "line": 1072,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -321436,7 +321416,7 @@
     {
       "module": "SeLe4n.Kernel.RefusalCarryingDeclassification",
       "path": "SeLe4n/Kernel/RefusalCarryingDeclassification.lean",
-      "declaration_count": 146,
+      "declaration_count": 168,
       "declarations": [
         {
           "kind": "def",
@@ -321470,17 +321450,35 @@
           "kind": "def",
           "name": "auditedArmSpec",
           "full_name": "SeLe4n.Kernel.auditedArmSpec",
-          "line": 59,
+          "line": 63,
           "called": [
             "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditReadArgs",
+            "SeLe4n.Kernel.Architecture.returnFrameOfWord",
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery",
+            "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.auditDrainVisiblePrefix",
+            "SeLe4n.Kernel.auditReadFromCore",
             "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.auditedGate",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
+            "SeLe4n.Kernel.boundDeliveryTarget?",
+            "SeLe4n.Kernel.clearWokenReceiverStash",
+            "SeLe4n.Kernel.declassifyObjectFromCore",
+            "SeLe4n.Kernel.decodeAuditReadOp",
+            "SeLe4n.Kernel.extractAuditAuthority",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch",
+            "SeLe4n.Kernel.notificationSignalWaiter?",
+            "SeLe4n.Kernel.validatedAuditMonitorClearance",
             "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.hasRight",
+            "SeLe4n.Model.Capability.signalBadge",
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.SyscallId",
+            "SeLe4n.Model.SyscallId.count",
             "SeLe4n.RegisterFile",
             "SeLe4n.ThreadId"
           ]
@@ -321489,7 +321487,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_auditedArmSpec",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_auditedArmSpec",
-          "line": 67,
+          "line": 134,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -321521,7 +321519,7 @@
           "kind": "def",
           "name": "declassifyAdmitted",
           "full_name": "SeLe4n.Kernel.declassifyAdmitted",
-          "line": 97,
+          "line": 165,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.DeclassificationPolicy",
@@ -321539,7 +321537,7 @@
           "kind": "def",
           "name": "recordEventInPlace",
           "full_name": "SeLe4n.Kernel.recordEventInPlace",
-          "line": 110,
+          "line": 178,
           "called": [
             "SeLe4n.Kernel.AuditRing.recordEvent",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -321553,7 +321551,7 @@
           "kind": "theorem",
           "name": "recordEventInPlace_eq",
           "full_name": "SeLe4n.Kernel.recordEventInPlace_eq",
-          "line": 118,
+          "line": 186,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.append",
@@ -321572,7 +321570,7 @@
           "kind": "def",
           "name": "declassifyPerform",
           "full_name": "SeLe4n.Kernel.declassifyPerform",
-          "line": 136,
+          "line": 204,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SecurityDomain",
@@ -321587,7 +321585,7 @@
           "kind": "theorem",
           "name": "declassifyPerform_eq",
           "full_name": "SeLe4n.Kernel.declassifyPerform_eq",
-          "line": 144,
+          "line": 212,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.append",
@@ -321608,22 +321606,19 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassify_admitted",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassify_admitted",
-          "line": 165,
+          "line": 233,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.AuditRing.append",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.authorizeDeclassificationOnCore",
             "SeLe4n.Kernel.declassificationActorOf",
             "SeLe4n.Kernel.declassificationDecision",
             "SeLe4n.Kernel.declassifyAdmitted",
             "SeLe4n.Kernel.declassifyObjectFromCore",
             "SeLe4n.Kernel.declassifyStoreEvent",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
             "SeLe4n.Kernel.liftLegacyContext",
@@ -321640,7 +321635,7 @@
           "kind": "def",
           "name": "declassifyRefusal",
           "full_name": "SeLe4n.Kernel.declassifyRefusal",
-          "line": 194,
+          "line": 262,
           "called": [
             "SeLe4n.Kernel.DeclassificationPolicy",
             "SeLe4n.Kernel.LabelingContext",
@@ -321657,7 +321652,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassify_refused",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassify_refused",
-          "line": 205,
+          "line": 273,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.AuditRing",
@@ -321665,15 +321660,12 @@
             "SeLe4n.Kernel.DeclassificationPolicy",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.authorizeDeclassificationOnCore",
             "SeLe4n.Kernel.declassificationActorOf",
             "SeLe4n.Kernel.declassificationDecision",
             "SeLe4n.Kernel.declassifyAdmitted",
             "SeLe4n.Kernel.declassifyObjectFromCore",
             "SeLe4n.Kernel.declassifyRefusal",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
             "SeLe4n.Kernel.liftLegacyContext",
@@ -321693,7 +321685,7 @@
           "kind": "def",
           "name": "declassifyGeneralR",
           "full_name": "SeLe4n.Kernel.declassifyGeneralR",
-          "line": 247,
+          "line": 315,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -321712,7 +321704,7 @@
           "kind": "def",
           "name": "declassifyOperandArmR",
           "full_name": "SeLe4n.Kernel.declassifyOperandArmR",
-          "line": 261,
+          "line": 329,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -321740,7 +321732,7 @@
           "kind": "theorem",
           "name": "declassifyOperandArmR_eq",
           "full_name": "SeLe4n.Kernel.declassifyOperandArmR_eq",
-          "line": 286,
+          "line": 354,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.AuditRing",
@@ -321790,7 +321782,7 @@
           "kind": "def",
           "name": "auditEntryVisibleLegacy",
           "full_name": "SeLe4n.Kernel.auditEntryVisibleLegacy",
-          "line": 340,
+          "line": 408,
           "called": [
             "SeLe4n.Kernel.DeclassificationActor",
             "SeLe4n.Kernel.DeclassificationEvent",
@@ -321805,7 +321797,7 @@
           "kind": "theorem",
           "name": "auditEntryVisibleLegacy_eq",
           "full_name": "SeLe4n.Kernel.auditEntryVisibleLegacy_eq",
-          "line": 348,
+          "line": 416,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityDomain",
@@ -321818,7 +321810,7 @@
           "kind": "theorem",
           "name": "liftLegacyContext_policy",
           "full_name": "SeLe4n.Kernel.liftLegacyContext_policy",
-          "line": 351,
+          "line": 419,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.liftLegacyContext"
@@ -321828,7 +321820,7 @@
           "kind": "theorem",
           "name": "liftLegacyContext_threadDomainOf",
           "full_name": "SeLe4n.Kernel.liftLegacyContext_threadDomainOf",
-          "line": 354,
+          "line": 422,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.embedLegacyLabel",
@@ -321840,7 +321832,7 @@
           "kind": "theorem",
           "name": "liftLegacyContext_objectDomainOf",
           "full_name": "SeLe4n.Kernel.liftLegacyContext_objectDomainOf",
-          "line": 357,
+          "line": 425,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.embedLegacyLabel",
@@ -321852,7 +321844,7 @@
           "kind": "theorem",
           "name": "AuditRing.toList_eq_window",
           "full_name": "SeLe4n.Kernel.AuditRing.toList_eq_window",
-          "line": 361,
+          "line": 429,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.toList",
@@ -321863,7 +321855,7 @@
           "kind": "def",
           "name": "auditWindowAllVisible",
           "full_name": "SeLe4n.Kernel.auditWindowAllVisible",
-          "line": 366,
+          "line": 434,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -321876,7 +321868,7 @@
           "kind": "theorem",
           "name": "auditWindowAllVisible_eq",
           "full_name": "SeLe4n.Kernel.auditWindowAllVisible_eq",
-          "line": 372,
+          "line": 440,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.window",
@@ -321891,7 +321883,7 @@
           "kind": "def",
           "name": "auditWindowVisibleCount",
           "full_name": "SeLe4n.Kernel.auditWindowVisibleCount",
-          "line": 382,
+          "line": 450,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -321904,7 +321896,7 @@
           "kind": "theorem",
           "name": "auditWindowVisibleCount_eq",
           "full_name": "SeLe4n.Kernel.auditWindowVisibleCount_eq",
-          "line": 388,
+          "line": 456,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.window",
@@ -321919,7 +321911,7 @@
           "kind": "def",
           "name": "auditWindowFindVisible",
           "full_name": "SeLe4n.Kernel.auditWindowFindVisible",
-          "line": 402,
+          "line": 470,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -321932,7 +321924,7 @@
           "kind": "theorem",
           "name": "auditWindowFindVisible_eq",
           "full_name": "SeLe4n.Kernel.auditWindowFindVisible_eq",
-          "line": 410,
+          "line": 478,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -321948,7 +321940,7 @@
           "kind": "def",
           "name": "auditedArgWord",
           "full_name": "SeLe4n.Kernel.auditedArgWord",
-          "line": 434,
+          "line": 502,
           "called": [
             "SeLe4n.RegisterFile",
             "SeLe4n.SyscallRegisterLayout",
@@ -321960,7 +321952,7 @@
           "kind": "theorem",
           "name": "auditedDecoded_msgReg",
           "full_name": "SeLe4n.Kernel.auditedDecoded_msgReg",
-          "line": 439,
+          "line": 507,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFile",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -321976,7 +321968,7 @@
           "kind": "def",
           "name": "auditClearanceDominates",
           "full_name": "SeLe4n.Kernel.auditClearanceDominates",
-          "line": 450,
+          "line": 518,
           "called": [
             "SeLe4n.Kernel.DomainFlowPolicy",
             "SeLe4n.Kernel.DomainFlowPolicy.legacyLattice",
@@ -321987,7 +321979,7 @@
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_eq_some",
           "full_name": "SeLe4n.Kernel.validatedAuditMonitorClearance_eq_some",
-          "line": 454,
+          "line": 522,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityDomain",
@@ -322001,7 +321993,7 @@
           "kind": "def",
           "name": "auditTruncated",
           "full_name": "SeLe4n.Kernel.auditTruncated",
-          "line": 467,
+          "line": 535,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.truncationMinimum",
             "SeLe4n.Kernel.routedLength",
@@ -322016,7 +322008,7 @@
           "kind": "theorem",
           "name": "auditTruncated_false_le",
           "full_name": "SeLe4n.Kernel.auditTruncated_false_le",
-          "line": 477,
+          "line": 545,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.truncationMinimum",
             "SeLe4n.Kernel.auditTruncated",
@@ -322032,7 +322024,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_audit_truncated",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_audit_truncated",
-          "line": 488,
+          "line": 556,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs",
@@ -322044,8 +322036,6 @@
             "SeLe4n.Kernel.auditedArmSpec",
             "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.auditedGate",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.extractAuditAuthority",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SyscallId",
@@ -322058,7 +322048,7 @@
           "kind": "def",
           "name": "auditDrainAdmitted",
           "full_name": "SeLe4n.Kernel.auditDrainAdmitted",
-          "line": 510,
+          "line": 578,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322079,7 +322069,7 @@
           "kind": "def",
           "name": "auditDrainPerform",
           "full_name": "SeLe4n.Kernel.auditDrainPerform",
-          "line": 523,
+          "line": 591,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.dropFront",
@@ -322093,7 +322083,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_auditDrain_admitted",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_auditDrain_admitted",
-          "line": 532,
+          "line": 600,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs",
@@ -322119,8 +322109,6 @@
             "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.auditedDecoded_msgReg",
             "SeLe4n.Kernel.auditedGate",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.extractAuditAuthority",
             "SeLe4n.Kernel.liftLegacyContext",
@@ -322138,7 +322126,7 @@
           "kind": "def",
           "name": "auditGeneralR",
           "full_name": "SeLe4n.Kernel.auditGeneralR",
-          "line": 570,
+          "line": 638,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322155,16 +322143,12 @@
           "kind": "theorem",
           "name": "auditedArmSpec_audit_not_trail",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_audit_not_trail",
-          "line": 581,
+          "line": 649,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
-            "SeLe4n.Kernel.auditedGate",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.extractAuditAuthority",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SyscallId",
@@ -322177,7 +322161,7 @@
           "kind": "def",
           "name": "auditTargetGeneralR",
           "full_name": "SeLe4n.Kernel.auditTargetGeneralR",
-          "line": 598,
+          "line": 666,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322194,7 +322178,7 @@
           "kind": "theorem",
           "name": "auditTargetGeneralR_eq",
           "full_name": "SeLe4n.Kernel.auditTargetGeneralR_eq",
-          "line": 606,
+          "line": 674,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322213,7 +322197,7 @@
           "kind": "def",
           "name": "auditDrainOperandArmR",
           "full_name": "SeLe4n.Kernel.auditDrainOperandArmR",
-          "line": 622,
+          "line": 690,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322234,7 +322218,7 @@
           "kind": "theorem",
           "name": "auditOperand_spec",
           "full_name": "SeLe4n.Kernel.auditOperand_spec",
-          "line": 639,
+          "line": 707,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -322280,7 +322264,7 @@
           "kind": "theorem",
           "name": "auditDrainOperandArmR_eq",
           "full_name": "SeLe4n.Kernel.auditDrainOperandArmR_eq",
-          "line": 693,
+          "line": 766,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.AuditRing",
@@ -322319,14 +322303,14 @@
           "kind": "theorem",
           "name": "toNat_toUInt64_of_lt",
           "full_name": "SeLe4n.Kernel.toNat_toUInt64_of_lt",
-          "line": 728,
+          "line": 801,
           "called": []
         },
         {
           "kind": "def",
           "name": "auditChunkCountDiv",
           "full_name": "SeLe4n.Kernel.auditChunkCountDiv",
-          "line": 734,
+          "line": 807,
           "called": [
             "SeLe4n.Kernel.auditFieldChunkModulus"
           ]
@@ -322335,7 +322319,7 @@
           "kind": "def",
           "name": "auditChunkCountN",
           "full_name": "SeLe4n.Kernel.auditChunkCountN",
-          "line": 746,
+          "line": 819,
           "called": [
             "SeLe4n.Kernel.auditChunkCountDiv"
           ]
@@ -322344,7 +322328,7 @@
           "kind": "theorem",
           "name": "auditChunkCountN_eq_div",
           "full_name": "SeLe4n.Kernel.auditChunkCountN_eq_div",
-          "line": 750,
+          "line": 823,
           "called": [
             "SeLe4n.Kernel.auditChunkCountDiv",
             "SeLe4n.Kernel.auditChunkCountN",
@@ -322355,7 +322339,7 @@
           "kind": "theorem",
           "name": "auditFieldChunkCount?_eq_code",
           "full_name": "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
-          "line": 765,
+          "line": 838,
           "called": [
             "SeLe4n.Kernel.auditChunkCountDiv",
             "SeLe4n.Kernel.auditChunkCountN",
@@ -322370,7 +322354,7 @@
           "kind": "def",
           "name": "auditFieldCountCode",
           "full_name": "SeLe4n.Kernel.auditFieldCountCode",
-          "line": 784,
+          "line": 857,
           "called": [
             "SeLe4n.Kernel.AuditReadField",
             "SeLe4n.Kernel.AuditRing",
@@ -322386,14 +322370,14 @@
           "kind": "def",
           "name": "divChunk",
           "full_name": "SeLe4n.Kernel.divChunk",
-          "line": 795,
+          "line": 868,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "divChunk_eq",
           "full_name": "SeLe4n.Kernel.divChunk_eq",
-          "line": 803,
+          "line": 876,
           "called": [
             "SeLe4n.Kernel.divChunk"
           ]
@@ -322402,7 +322386,7 @@
           "kind": "def",
           "name": "auditFieldChunkCode",
           "full_name": "SeLe4n.Kernel.auditFieldChunkCode",
-          "line": 816,
+          "line": 889,
           "called": [
             "SeLe4n.Kernel.auditFieldChunkModulus",
             "SeLe4n.Kernel.divChunk"
@@ -322412,7 +322396,7 @@
           "kind": "theorem",
           "name": "auditFieldChunkCode_eq",
           "full_name": "SeLe4n.Kernel.auditFieldChunkCode_eq",
-          "line": 823,
+          "line": 896,
           "called": [
             "SeLe4n.Kernel.auditFieldChunk",
             "SeLe4n.Kernel.auditFieldChunkCode",
@@ -322426,7 +322410,7 @@
           "kind": "def",
           "name": "auditFieldWordCode",
           "full_name": "SeLe4n.Kernel.auditFieldWordCode",
-          "line": 858,
+          "line": 931,
           "called": [
             "SeLe4n.Kernel.AuditReadField",
             "SeLe4n.Kernel.AuditRing",
@@ -322443,14 +322427,14 @@
           "kind": "theorem",
           "name": "auditBytes_toList_loop",
           "full_name": "SeLe4n.Kernel.auditBytes_toList_loop",
-          "line": 869,
+          "line": 942,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "auditBytes_toList",
           "full_name": "SeLe4n.Kernel.auditBytes_toList",
-          "line": 894,
+          "line": 967,
           "called": [
             "SeLe4n.Kernel.auditBytes_toList_loop"
           ]
@@ -322459,14 +322443,14 @@
           "kind": "def",
           "name": "auditBasisByteAt",
           "full_name": "SeLe4n.Kernel.auditBasisByteAt",
-          "line": 899,
+          "line": 972,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "auditBasisBytes_getD",
           "full_name": "SeLe4n.Kernel.auditBasisBytes_getD",
-          "line": 902,
+          "line": 975,
           "called": [
             "SeLe4n.Kernel.DeclassificationBasis.render",
             "SeLe4n.Kernel.DeclassificationEvent",
@@ -322479,7 +322463,7 @@
           "kind": "theorem",
           "name": "auditBasisBytes_length",
           "full_name": "SeLe4n.Kernel.auditBasisBytes_length",
-          "line": 918,
+          "line": 991,
           "called": [
             "SeLe4n.Kernel.DeclassificationBasis.render",
             "SeLe4n.Kernel.DeclassificationEvent",
@@ -322491,7 +322475,7 @@
           "kind": "def",
           "name": "auditBasisChunkCode",
           "full_name": "SeLe4n.Kernel.auditBasisChunkCode",
-          "line": 925,
+          "line": 998,
           "called": [
             "SeLe4n.Kernel.auditBasisByteAt"
           ]
@@ -322500,7 +322484,7 @@
           "kind": "theorem",
           "name": "auditBasisChunkCode_eq",
           "full_name": "SeLe4n.Kernel.auditBasisChunkCode_eq",
-          "line": 929,
+          "line": 1002,
           "called": [
             "SeLe4n.Kernel.DeclassificationBasis.render",
             "SeLe4n.Kernel.DeclassificationEvent",
@@ -322514,7 +322498,7 @@
           "kind": "def",
           "name": "auditBasisCountCode",
           "full_name": "SeLe4n.Kernel.auditBasisCountCode",
-          "line": 936,
+          "line": 1009,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322528,7 +322512,7 @@
           "kind": "def",
           "name": "auditBasisWordCode",
           "full_name": "SeLe4n.Kernel.auditBasisWordCode",
-          "line": 945,
+          "line": 1018,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322544,7 +322528,7 @@
           "kind": "def",
           "name": "refusalSlotCode",
           "full_name": "SeLe4n.Kernel.refusalSlotCode",
-          "line": 960,
+          "line": 1033,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalLedger",
@@ -322555,7 +322539,7 @@
           "kind": "def",
           "name": "refusalScalarSlotCode",
           "full_name": "SeLe4n.Kernel.refusalScalarSlotCode",
-          "line": 973,
+          "line": 1046,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalLedger",
@@ -322566,14 +322550,14 @@
           "kind": "def",
           "name": "wordChunkCount",
           "full_name": "SeLe4n.Kernel.wordChunkCount",
-          "line": 981,
+          "line": 1054,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "auditChunkCountN_toNat",
           "full_name": "SeLe4n.Kernel.auditChunkCountN_toNat",
-          "line": 983,
+          "line": 1056,
           "called": [
             "SeLe4n.Kernel.auditChunkCountN",
             "SeLe4n.Kernel.wordChunkCount"
@@ -322583,7 +322567,7 @@
           "kind": "def",
           "name": "wordChunk",
           "full_name": "SeLe4n.Kernel.wordChunk",
-          "line": 989,
+          "line": 1062,
           "called": [
             "SeLe4n.Kernel.auditFieldChunkModulus",
             "SeLe4n.Kernel.divChunk"
@@ -322593,7 +322577,7 @@
           "kind": "theorem",
           "name": "auditFieldChunkCode_toNat",
           "full_name": "SeLe4n.Kernel.auditFieldChunkCode_toNat",
-          "line": 995,
+          "line": 1068,
           "called": [
             "SeLe4n.Kernel.auditFieldChunkCode",
             "SeLe4n.Kernel.wordChunk"
@@ -322603,7 +322587,7 @@
           "kind": "def",
           "name": "refusalFieldCount",
           "full_name": "SeLe4n.Kernel.refusalFieldCount",
-          "line": 1003,
+          "line": 1076,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322616,7 +322600,7 @@
           "kind": "theorem",
           "name": "refusalFieldCount_eq",
           "full_name": "SeLe4n.Kernel.refusalFieldCount_eq",
-          "line": 1008,
+          "line": 1081,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322630,7 +322614,7 @@
           "kind": "def",
           "name": "refusalFieldChunk",
           "full_name": "SeLe4n.Kernel.refusalFieldChunk",
-          "line": 1017,
+          "line": 1090,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322643,7 +322627,7 @@
           "kind": "theorem",
           "name": "refusalFieldChunk_eq",
           "full_name": "SeLe4n.Kernel.refusalFieldChunk_eq",
-          "line": 1023,
+          "line": 1096,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322657,7 +322641,7 @@
           "kind": "def",
           "name": "refusalFieldCountCode",
           "full_name": "SeLe4n.Kernel.refusalFieldCountCode",
-          "line": 1031,
+          "line": 1104,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322668,7 +322652,7 @@
           "kind": "def",
           "name": "refusalFieldWordCode",
           "full_name": "SeLe4n.Kernel.refusalFieldWordCode",
-          "line": 1036,
+          "line": 1109,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalReadField",
@@ -322678,9 +322662,36 @@
         },
         {
           "kind": "def",
+          "name": "refusalTagsSlotCode",
+          "full_name": "SeLe4n.Kernel.refusalTagsSlotCode",
+          "line": 1118,
+          "called": [
+            "SeLe4n.Kernel.RefusalLedger",
+            "SeLe4n.Kernel.refusalRingSize",
+            "SeLe4n.Kernel.refusalTagSlots",
+            "SeLe4n.Model.KernelError.discriminantOfCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalTagsSlotCode_eq",
+          "full_name": "SeLe4n.Kernel.refusalTagsSlotCode_eq",
+          "line": 1127,
+          "called": [
+            "SeLe4n.Kernel.RefusalLedger",
+            "SeLe4n.Kernel.RefusalSlot.reason",
+            "SeLe4n.Kernel.RefusalSlot.toRefusalWith",
+            "SeLe4n.Kernel.refusalScalarSlotCode",
+            "SeLe4n.Kernel.refusalTagsSlotCode",
+            "SeLe4n.Kernel.refusalTagsWord",
+            "SeLe4n.Model.KernelError.toDiscriminant_ofPayloadWords"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "refusalReceiverCountCode",
           "full_name": "SeLe4n.Kernel.refusalReceiverCountCode",
-          "line": 1042,
+          "line": 1140,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.auditChunkCountN"
@@ -322690,7 +322701,7 @@
           "kind": "def",
           "name": "refusalReceiverWordCode",
           "full_name": "SeLe4n.Kernel.refusalReceiverWordCode",
-          "line": 1050,
+          "line": 1148,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.auditChunkCountN",
@@ -322701,7 +322712,7 @@
           "kind": "def",
           "name": "auditEventNamesCode",
           "full_name": "SeLe4n.Kernel.auditEventNamesCode",
-          "line": 1059,
+          "line": 1157,
           "called": [
             "SeLe4n.Kernel.DeclassificationEvent",
             "SeLe4n.Kernel.TaintWords.containsCode"
@@ -322711,7 +322722,7 @@
           "kind": "theorem",
           "name": "declassificationEventNames_eq_code",
           "full_name": "SeLe4n.Kernel.declassificationEventNames_eq_code",
-          "line": 1062,
+          "line": 1160,
           "called": [
             "SeLe4n.Kernel.DeclassificationEvent",
             "SeLe4n.Kernel.TaintWords.decode_contains_eq",
@@ -322723,7 +322734,7 @@
           "kind": "def",
           "name": "auditChainCode",
           "full_name": "SeLe4n.Kernel.auditChainCode",
-          "line": 1067,
+          "line": 1165,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322737,7 +322748,7 @@
           "kind": "def",
           "name": "auditReadFastCode",
           "full_name": "SeLe4n.Kernel.auditReadFastCode",
-          "line": 1078,
+          "line": 1176,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityDomain",
@@ -322758,7 +322769,7 @@
             "SeLe4n.Kernel.refusalScalarSlotCode",
             "SeLe4n.Kernel.refusalSlotCode",
             "SeLe4n.Kernel.refusalStatusWord",
-            "SeLe4n.Kernel.refusalTagsWord",
+            "SeLe4n.Kernel.refusalTagsSlotCode",
             "SeLe4n.Model.SystemState"
           ]
         },
@@ -322766,7 +322777,7 @@
           "kind": "theorem",
           "name": "auditLogVisibleTo_getElem?",
           "full_name": "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
-          "line": 1124,
+          "line": 1222,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322787,7 +322798,7 @@
           "kind": "theorem",
           "name": "auditLogVisibleTo_length",
           "full_name": "SeLe4n.Kernel.auditLogVisibleTo_length",
-          "line": 1136,
+          "line": 1234,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.toList",
@@ -322807,7 +322818,7 @@
           "kind": "theorem",
           "name": "auditFieldCountCode_spec",
           "full_name": "SeLe4n.Kernel.auditFieldCountCode_spec",
-          "line": 1147,
+          "line": 1245,
           "called": [
             "SeLe4n.Kernel.AuditReadField",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322828,7 +322839,7 @@
           "kind": "theorem",
           "name": "auditFieldWordCode_spec",
           "full_name": "SeLe4n.Kernel.auditFieldWordCode_spec",
-          "line": 1165,
+          "line": 1263,
           "called": [
             "SeLe4n.Kernel.AuditReadField",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -322850,7 +322861,7 @@
           "kind": "theorem",
           "name": "auditBasisCountCode_spec",
           "full_name": "SeLe4n.Kernel.auditBasisCountCode_spec",
-          "line": 1187,
+          "line": 1285,
           "called": [
             "SeLe4n.Kernel.AuditRing.entry",
             "SeLe4n.Kernel.LabelingContext",
@@ -322868,7 +322879,7 @@
           "kind": "theorem",
           "name": "auditBasisWordCode_spec",
           "full_name": "SeLe4n.Kernel.auditBasisWordCode_spec",
-          "line": 1205,
+          "line": 1303,
           "called": [
             "SeLe4n.Kernel.AuditRing.entry",
             "SeLe4n.Kernel.LabelingContext",
@@ -322888,7 +322899,7 @@
           "kind": "theorem",
           "name": "refusalSlotCode_some",
           "full_name": "SeLe4n.Kernel.refusalSlotCode_some",
-          "line": 1226,
+          "line": 1324,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalLedger",
@@ -322905,7 +322916,7 @@
           "kind": "theorem",
           "name": "refusalScalarSlotCode_some",
           "full_name": "SeLe4n.Kernel.refusalScalarSlotCode_some",
-          "line": 1248,
+          "line": 1346,
           "called": [
             "SeLe4n.Kernel.DeclassificationRefusal",
             "SeLe4n.Kernel.RefusalLedger",
@@ -322921,7 +322932,7 @@
           "kind": "theorem",
           "name": "refusalFieldCountCode_spec",
           "full_name": "SeLe4n.Kernel.refusalFieldCountCode_spec",
-          "line": 1267,
+          "line": 1365,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RefusalLedger.slotView_eq",
@@ -322944,7 +322955,7 @@
           "kind": "theorem",
           "name": "refusalFieldWordCode_spec",
           "full_name": "SeLe4n.Kernel.refusalFieldWordCode_spec",
-          "line": 1283,
+          "line": 1381,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RefusalLedger.slotView_eq",
@@ -322969,7 +322980,7 @@
           "kind": "theorem",
           "name": "refusalReceiverCountCode_spec",
           "full_name": "SeLe4n.Kernel.refusalReceiverCountCode_spec",
-          "line": 1302,
+          "line": 1400,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RefusalLedger.slotView_eq",
@@ -322989,7 +323000,7 @@
           "kind": "theorem",
           "name": "refusalReceiverWordCode_spec",
           "full_name": "SeLe4n.Kernel.refusalReceiverWordCode_spec",
-          "line": 1323,
+          "line": 1421,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RefusalLedger.slotView_eq",
@@ -323010,7 +323021,7 @@
           "kind": "theorem",
           "name": "auditChainCode_some",
           "full_name": "SeLe4n.Kernel.auditChainCode_some",
-          "line": 1345,
+          "line": 1443,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.entry",
@@ -323027,7 +323038,7 @@
           "kind": "theorem",
           "name": "auditReadFastCode_spec",
           "full_name": "SeLe4n.Kernel.auditReadFastCode_spec",
-          "line": 1364,
+          "line": 1462,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.DomainFlowPolicy",
@@ -323054,6 +323065,376 @@
             "SeLe4n.Kernel.refusalReceiverCountCode_spec",
             "SeLe4n.Kernel.refusalReceiverWordCode_spec",
             "SeLe4n.Kernel.refusalScalarSlotCode_some",
+            "SeLe4n.Kernel.refusalTagsSlotCode_eq",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.declassificationAuditEpoch"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeAuditReadOp_isSome",
+          "full_name": "SeLe4n.Kernel.decodeAuditReadOp_isSome",
+          "line": 1551,
+          "called": [
+            "SeLe4n.Kernel.decodeAuditReadOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeAuditReadOp_none",
+          "full_name": "SeLe4n.Kernel.decodeAuditReadOp_none",
+          "line": 1560,
+          "called": [
+            "SeLe4n.Kernel.decodeAuditReadOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "auditEntryRefusal",
+          "full_name": "SeLe4n.Kernel.auditEntryRefusal",
+          "line": 1574,
+          "called": [
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "auditChunkRefusal",
+          "full_name": "SeLe4n.Kernel.auditChunkRefusal",
+          "line": 1582,
+          "called": [
+            "SeLe4n.Kernel.auditReadChunkWord",
+            "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "refusalSlotRefusal",
+          "full_name": "SeLe4n.Kernel.refusalSlotRefusal",
+          "line": 1588,
+          "called": [
+            "SeLe4n.Kernel.DeclassificationRefusal",
+            "SeLe4n.Kernel.RefusalLedger",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.refusalRingSize",
+            "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "auditReadFastRefusal",
+          "full_name": "SeLe4n.Kernel.auditReadFastRefusal",
+          "line": 1605,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditChunkRefusal",
+            "SeLe4n.Kernel.auditEntryRefusal",
+            "SeLe4n.Kernel.auditExportedFieldValue",
+            "SeLe4n.Kernel.auditReadChunkWord",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.maxAuditDesignationBytes",
+            "SeLe4n.Kernel.refusalFieldCount",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditReadFastRefusal_of_ge",
+          "full_name": "SeLe4n.Kernel.auditReadFastRefusal_of_ge",
+          "line": 1648,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditReadFastRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditFieldCountCode_refused",
+          "full_name": "SeLe4n.Kernel.auditFieldCountCode_refused",
+          "line": 1655,
+          "called": [
+            "SeLe4n.Kernel.AuditReadField",
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.AuditRing.entry",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditEntryRefusal",
+            "SeLe4n.Kernel.auditExportedFieldValue",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditFieldCountCode",
+            "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditFieldWordCode_refused",
+          "full_name": "SeLe4n.Kernel.auditFieldWordCode_refused",
+          "line": 1677,
+          "called": [
+            "SeLe4n.Kernel.AuditReadField",
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.AuditRing.entry",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditChunkRefusal",
+            "SeLe4n.Kernel.auditEntryRefusal",
+            "SeLe4n.Kernel.auditExportedFieldValue",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditFieldWordCode",
+            "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditBasisCountCode_refused",
+          "full_name": "SeLe4n.Kernel.auditBasisCountCode_refused",
+          "line": 1703,
+          "called": [
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.AuditRing.entry",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditBasisBytes_length",
+            "SeLe4n.Kernel.auditBasisCountCode",
+            "SeLe4n.Kernel.auditEntryRefusal",
+            "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.maxAuditDesignationBytes",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditBasisWordCode_refused",
+          "full_name": "SeLe4n.Kernel.auditBasisWordCode_refused",
+          "line": 1724,
+          "called": [
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.AuditRing.entry",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditBasisBytes_length",
+            "SeLe4n.Kernel.auditBasisChunkCount",
+            "SeLe4n.Kernel.auditBasisWordCode",
+            "SeLe4n.Kernel.auditEntryRefusal",
+            "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
+            "SeLe4n.Kernel.auditReadChunkWord",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.maxAuditDesignationBytes",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalSlot_codeRefusal",
+          "full_name": "SeLe4n.Kernel.refusalSlot_codeRefusal",
+          "line": 1752,
+          "called": [
+            "SeLe4n.Kernel.DeclassificationRefusal",
+            "SeLe4n.Kernel.RefusalLedger",
+            "SeLe4n.Kernel.RefusalLedger.recent",
+            "SeLe4n.Kernel.RefusalLedger.recent_get",
+            "SeLe4n.Kernel.RefusalSlot",
+            "SeLe4n.Kernel.RefusalSlot.receiver?",
+            "SeLe4n.Kernel.RefusalSlot.toRefusal",
+            "SeLe4n.Kernel.RefusalSlot.view",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.refusalRingSize",
+            "SeLe4n.Kernel.refusalSlotCode",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.KernelError"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalScalarSlotCode_eq_slotCode",
+          "full_name": "SeLe4n.Kernel.refusalScalarSlotCode_eq_slotCode",
+          "line": 1780,
+          "called": [
+            "SeLe4n.Kernel.DeclassificationRefusal",
+            "SeLe4n.Kernel.RefusalLedger",
+            "SeLe4n.Kernel.refusalScalarSlotCode",
+            "SeLe4n.Kernel.refusalSlotCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalSlotRead_absent",
+          "full_name": "SeLe4n.Kernel.refusalSlotRead_absent",
+          "line": 1798,
+          "called": [
+            "SeLe4n.Kernel.AuditReadOp",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RefusalLedger.recent",
+            "SeLe4n.Kernel.RefusalLedger.slotView_eq",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalRingSize",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalFieldCountCode_refused",
+          "full_name": "SeLe4n.Kernel.refusalFieldCountCode_refused",
+          "line": 1816,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RefusalLedger.slotView_eq",
+            "SeLe4n.Kernel.RefusalReadField",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalExportedFieldValue",
+            "SeLe4n.Kernel.refusalFieldCountCode",
+            "SeLe4n.Kernel.refusalFieldCount_eq",
+            "SeLe4n.Kernel.refusalScalarSlotCode",
+            "SeLe4n.Kernel.refusalScalarSlotCode_eq_slotCode",
+            "SeLe4n.Kernel.refusalSlotRead_absent",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalFieldWordCode_refused",
+          "full_name": "SeLe4n.Kernel.refusalFieldWordCode_refused",
+          "line": 1840,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RefusalLedger.slotView_eq",
+            "SeLe4n.Kernel.RefusalReadField",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditChunkRefusal",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalExportedFieldValue",
+            "SeLe4n.Kernel.refusalFieldCount",
+            "SeLe4n.Kernel.refusalFieldCount_eq",
+            "SeLe4n.Kernel.refusalFieldWordCode",
+            "SeLe4n.Kernel.refusalScalarSlotCode",
+            "SeLe4n.Kernel.refusalScalarSlotCode_eq_slotCode",
+            "SeLe4n.Kernel.refusalSlotRead_absent",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalReceiverCountCode_refused",
+          "full_name": "SeLe4n.Kernel.refusalReceiverCountCode_refused",
+          "line": 1867,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RefusalLedger.slotView_eq",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalReceiverCountCode",
+            "SeLe4n.Kernel.refusalSlotCode",
+            "SeLe4n.Kernel.refusalSlotRead_absent",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalReceiverWordCode_refused",
+          "full_name": "SeLe4n.Kernel.refusalReceiverWordCode_refused",
+          "line": 1892,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RefusalLedger.slotView_eq",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditChunkCountN",
+            "SeLe4n.Kernel.auditChunkRefusal",
+            "SeLe4n.Kernel.auditFieldChunkCount?_eq_code",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadChunkWord",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalReceiverWordCode",
+            "SeLe4n.Kernel.refusalSlotCode",
+            "SeLe4n.Kernel.refusalSlotRead_absent",
+            "SeLe4n.Kernel.refusalSlotRefusal",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditReadFastRefusal_spec",
+          "full_name": "SeLe4n.Kernel.auditReadFastRefusal_spec",
+          "line": 1929,
+          "called": [
+            "SeLe4n.Kernel.AuditRing",
+            "SeLe4n.Kernel.DomainFlowPolicy",
+            "SeLe4n.Kernel.DomainFlowPolicy.legacyLattice",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditBasisCountCode_refused",
+            "SeLe4n.Kernel.auditBasisWordCode_refused",
+            "SeLe4n.Kernel.auditChainCode",
+            "SeLe4n.Kernel.auditFieldCountCode_refused",
+            "SeLe4n.Kernel.auditFieldWordCode_refused",
+            "SeLe4n.Kernel.auditLogVisibleTo_getElem?",
+            "SeLe4n.Kernel.auditMonitorAuthorized",
+            "SeLe4n.Kernel.auditReadFastCode",
+            "SeLe4n.Kernel.auditReadFastRefusal",
+            "SeLe4n.Kernel.auditReadFastRefusal_of_ge",
+            "SeLe4n.Kernel.auditReadIndexWord",
+            "SeLe4n.Kernel.auditReadWord",
+            "SeLe4n.Kernel.auditWindowFindVisible",
+            "SeLe4n.Kernel.decodeAuditReadOp",
+            "SeLe4n.Kernel.decodeAuditReadOp_none",
+            "SeLe4n.Kernel.liftLegacyContext",
+            "SeLe4n.Kernel.refusalFieldCountCode_refused",
+            "SeLe4n.Kernel.refusalFieldWordCode_refused",
+            "SeLe4n.Kernel.refusalReceiverCountCode_refused",
+            "SeLe4n.Kernel.refusalReceiverWordCode_refused",
+            "SeLe4n.Kernel.refusalScalarSlotCode_eq_slotCode",
+            "SeLe4n.Kernel.refusalSlotRead_absent",
+            "SeLe4n.Kernel.refusalTagsSlotCode_eq",
+            "SeLe4n.Kernel.refusalTagsWord",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.declassificationAuditEpoch"
@@ -323063,7 +323444,7 @@
           "kind": "def",
           "name": "auditReadPerform",
           "full_name": "SeLe4n.Kernel.auditReadPerform",
-          "line": 1453,
+          "line": 2014,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb",
@@ -323073,24 +323454,9 @@
         },
         {
           "kind": "def",
-          "name": "auditReadAdmitted",
-          "full_name": "SeLe4n.Kernel.auditReadAdmitted",
-          "line": 1461,
-          "called": [
-            "SeLe4n.Kernel.DomainFlowPolicy",
-            "SeLe4n.Kernel.DomainFlowPolicy.legacyLattice",
-            "SeLe4n.Kernel.SecurityDomain",
-            "SeLe4n.Kernel.auditClearanceDominates",
-            "SeLe4n.Kernel.syscallRequiredRight",
-            "SeLe4n.Model.Capability",
-            "SeLe4n.Model.Capability.hasRight"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "auditReadCode",
           "full_name": "SeLe4n.Kernel.auditReadCode",
-          "line": 1468,
+          "line": 2019,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityDomain",
@@ -323103,23 +323469,65 @@
         },
         {
           "kind": "theorem",
-          "name": "auditedArmSpec_auditRead_admitted",
-          "full_name": "SeLe4n.Kernel.auditedArmSpec_auditRead_admitted",
-          "line": 1474,
+          "name": "validatedAuditMonitorClearance_eq",
+          "full_name": "SeLe4n.Kernel.validatedAuditMonitorClearance_eq",
+          "line": 2026,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditClearanceDominates",
+            "SeLe4n.Kernel.embedLegacyLabel",
+            "SeLe4n.Kernel.legacySubjectLabels",
+            "SeLe4n.Kernel.validatedAuditMonitorClearance",
+            "SeLe4n.Kernel.validatedAuditMonitorClearance_eq_some"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "auditReadTrailR",
+          "full_name": "SeLe4n.Kernel.auditReadTrailR",
+          "line": 2046,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.DomainFlowPolicy",
+            "SeLe4n.Kernel.DomainFlowPolicy.legacyLattice",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.auditClearanceDominates",
+            "SeLe4n.Kernel.auditReadCode",
+            "SeLe4n.Kernel.auditReadFastRefusal",
+            "SeLe4n.Kernel.auditReadPerform",
+            "SeLe4n.Kernel.auditedArgWord",
+            "SeLe4n.Kernel.embedLegacyLabel",
+            "SeLe4n.Kernel.syscallRequiredRight",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.hasRight",
+            "SeLe4n.Model.RefusalCarrying",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "auditReadTrailR_eq",
+          "full_name": "SeLe4n.Kernel.auditReadTrailR_eq",
+          "line": 2075,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditReadArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMessageLength",
-            "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_ofWord_eq_words",
             "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.DomainFlowPolicy",
+            "SeLe4n.Kernel.DomainFlowPolicy.legacyLattice",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.SecurityDomain",
+            "SeLe4n.Kernel.auditClearanceDominates",
+            "SeLe4n.Kernel.auditGeneralR",
             "SeLe4n.Kernel.auditMonitorAuthorized",
-            "SeLe4n.Kernel.auditReadAdmitted",
             "SeLe4n.Kernel.auditReadCode",
             "SeLe4n.Kernel.auditReadFastCode_spec",
+            "SeLe4n.Kernel.auditReadFastRefusal_spec",
             "SeLe4n.Kernel.auditReadFromCore",
-            "SeLe4n.Kernel.auditReadPerform",
+            "SeLe4n.Kernel.auditReadTrailR",
             "SeLe4n.Kernel.auditReaderDomain",
             "SeLe4n.Kernel.auditTruncated",
             "SeLe4n.Kernel.auditTruncated_false_le",
@@ -323128,14 +323536,17 @@
             "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.auditedDecoded_msgReg",
             "SeLe4n.Kernel.auditedGate",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
+            "SeLe4n.Kernel.decodeAuditReadOp_isSome",
+            "SeLe4n.Kernel.decodeAuditReadOp_none",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.extractAuditAuthority",
             "SeLe4n.Kernel.liftLegacyContext",
             "SeLe4n.Kernel.liftLegacyContext_threadDomainOf",
-            "SeLe4n.Kernel.validatedAuditMonitorClearance_eq_some",
+            "SeLe4n.Kernel.syscallRequiredRight",
+            "SeLe4n.Kernel.validatedAuditMonitorClearance",
+            "SeLe4n.Kernel.validatedAuditMonitorClearance_eq",
             "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.hasRight",
             "SeLe4n.Model.SchedulerState.currentOnCore",
             "SeLe4n.Model.SystemState",
             "SeLe4n.RegValue.val_mk",
@@ -323147,19 +323558,14 @@
           "kind": "def",
           "name": "auditReadOperandArmR",
           "full_name": "SeLe4n.Kernel.auditReadOperandArmR",
-          "line": 1516,
+          "line": 2145,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.auditGeneralR",
-            "SeLe4n.Kernel.auditReadAdmitted",
-            "SeLe4n.Kernel.auditReadCode",
-            "SeLe4n.Kernel.auditReadPerform",
-            "SeLe4n.Kernel.auditTargetGeneralR",
+            "SeLe4n.Kernel.auditReadTrailR",
             "SeLe4n.Kernel.auditTruncated",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
-            "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.RefusalCarrying",
             "SeLe4n.RegisterFile",
@@ -323170,7 +323576,7 @@
           "kind": "theorem",
           "name": "auditReadOperandArmR_eq",
           "full_name": "SeLe4n.Kernel.auditReadOperandArmR_eq",
-          "line": 1536,
+          "line": 2161,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.AuditRing",
@@ -323180,9 +323586,9 @@
             "SeLe4n.Kernel.auditGeneralR",
             "SeLe4n.Kernel.auditOperand_spec",
             "SeLe4n.Kernel.auditReadOperandArmR",
-            "SeLe4n.Kernel.auditTargetGeneralR_eq",
+            "SeLe4n.Kernel.auditReadTrailR_eq",
             "SeLe4n.Kernel.auditTruncated",
-            "SeLe4n.Kernel.auditedArmSpec_auditRead_admitted",
+            "SeLe4n.Kernel.auditedArmSpec_audit_not_trail",
             "SeLe4n.Kernel.auditedArmSpec_audit_truncated",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
@@ -323209,7 +323615,7 @@
           "kind": "def",
           "name": "declassifySignalStoredAdmitted",
           "full_name": "SeLe4n.Kernel.declassifySignalStoredAdmitted",
-          "line": 1579,
+          "line": 2203,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.DeclassificationPolicy",
@@ -323229,7 +323635,7 @@
           "kind": "def",
           "name": "declassifySignalRecord",
           "full_name": "SeLe4n.Kernel.declassifySignalRecord",
-          "line": 1591,
+          "line": 2215,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323246,7 +323652,7 @@
           "kind": "theorem",
           "name": "notificationSignalBoundOnCore_stored_ok",
           "full_name": "SeLe4n.Kernel.notificationSignalBoundOnCore_stored_ok",
-          "line": 1603,
+          "line": 2227,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323266,7 +323672,7 @@
           "kind": "def",
           "name": "declassifySignalStoredPerform",
           "full_name": "SeLe4n.Kernel.declassifySignalStoredPerform",
-          "line": 1622,
+          "line": 2246,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323283,7 +323689,7 @@
           "kind": "theorem",
           "name": "taintWordsAt_mapTcbInPlace_withMessageSlots",
           "full_name": "SeLe4n.Kernel.taintWordsAt_mapTcbInPlace_withMessageSlots",
-          "line": 1634,
+          "line": 2258,
           "called": [
             "SeLe4n.Model.IpcMessage",
             "SeLe4n.Model.SystemState",
@@ -323302,7 +323708,7 @@
           "kind": "theorem",
           "name": "declassifySignalRecord_mapTcbInPlace",
           "full_name": "SeLe4n.Kernel.declassifySignalRecord_mapTcbInPlace",
-          "line": 1648,
+          "line": 2272,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SecurityDomain",
@@ -323322,7 +323728,7 @@
           "kind": "theorem",
           "name": "declassifySignalRecord_objects",
           "full_name": "SeLe4n.Kernel.declassifySignalRecord_objects",
-          "line": 1662,
+          "line": 2286,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SecurityDomain",
@@ -323337,7 +323743,7 @@
           "kind": "def",
           "name": "recordHopInPlace",
           "full_name": "SeLe4n.Kernel.recordHopInPlace",
-          "line": 1675,
+          "line": 2299,
           "called": [
             "SeLe4n.Kernel.AuditRing.recordEvent",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323351,7 +323757,7 @@
           "kind": "theorem",
           "name": "recordHopInPlace_eq",
           "full_name": "SeLe4n.Kernel.recordHopInPlace_eq",
-          "line": 1683,
+          "line": 2307,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.append",
@@ -323370,7 +323776,7 @@
           "kind": "def",
           "name": "declassifySignalHopsRecord",
           "full_name": "SeLe4n.Kernel.declassifySignalHopsRecord",
-          "line": 1704,
+          "line": 2328,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323391,7 +323797,7 @@
           "kind": "def",
           "name": "hopAuthorizationOf",
           "full_name": "SeLe4n.Kernel.hopAuthorizationOf",
-          "line": 1724,
+          "line": 2348,
           "called": [
             "SeLe4n.Kernel.DeclassifiedHopAuthorization"
           ]
@@ -323400,7 +323806,7 @@
           "kind": "theorem",
           "name": "recordDeclassifiedHops_hopsRecord",
           "full_name": "SeLe4n.Kernel.recordDeclassifiedHops_hopsRecord",
-          "line": 1730,
+          "line": 2354,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.AuditRing.length_append",
@@ -323431,7 +323837,7 @@
           "kind": "theorem",
           "name": "declassifySignalHopsRecord_objects",
           "full_name": "SeLe4n.Kernel.declassifySignalHopsRecord_objects",
-          "line": 1759,
+          "line": 2383,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SecurityDomain",
@@ -323446,7 +323852,7 @@
           "kind": "theorem",
           "name": "declassifySignalHopsRecord_mapTcbInPlace",
           "full_name": "SeLe4n.Kernel.declassifySignalHopsRecord_mapTcbInPlace",
-          "line": 1770,
+          "line": 2394,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SecurityDomain",
@@ -323466,7 +323872,7 @@
           "kind": "def",
           "name": "declassifySignalWokenWrites",
           "full_name": "SeLe4n.Kernel.declassifySignalWokenWrites",
-          "line": 1788,
+          "line": 2412,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.returnFrameOfBadge",
@@ -323488,7 +323894,7 @@
           "kind": "theorem",
           "name": "declassifySignalWoken_eq_writes",
           "full_name": "SeLe4n.Kernel.declassifySignalWoken_eq_writes",
-          "line": 1801,
+          "line": 2425,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -323521,7 +323927,7 @@
           "kind": "def",
           "name": "declassifySignalWokenAdmitted",
           "full_name": "SeLe4n.Kernel.declassifySignalWokenAdmitted",
-          "line": 1828,
+          "line": 2452,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.DeclassificationPolicy",
@@ -323540,7 +323946,7 @@
           "kind": "def",
           "name": "declassifySignalWokenPerform",
           "full_name": "SeLe4n.Kernel.declassifySignalWokenPerform",
-          "line": 1846,
+          "line": 2470,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323556,7 +323962,7 @@
           "kind": "def",
           "name": "declassifySignalBoundWrites",
           "full_name": "SeLe4n.Kernel.declassifySignalBoundWrites",
-          "line": 1863,
+          "line": 2487,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.returnFrameOfBadge",
@@ -323580,7 +323986,7 @@
           "kind": "theorem",
           "name": "declassifySignalBound_eq_writes",
           "full_name": "SeLe4n.Kernel.declassifySignalBound_eq_writes",
-          "line": 1875,
+          "line": 2499,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -323628,7 +324034,7 @@
           "kind": "def",
           "name": "declassifySignalBoundAdmitted",
           "full_name": "SeLe4n.Kernel.declassifySignalBoundAdmitted",
-          "line": 1918,
+          "line": 2542,
           "called": [
             "SeLe4n.Kernel.AuditRing",
             "SeLe4n.Kernel.DeclassificationPolicy",
@@ -323648,7 +324054,7 @@
           "kind": "def",
           "name": "declassifySignalBoundPerform",
           "full_name": "SeLe4n.Kernel.declassifySignalBoundPerform",
-          "line": 1936,
+          "line": 2560,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323666,7 +324072,7 @@
           "kind": "theorem",
           "name": "notificationSignalWaiter?_of_boundDeliveryTarget",
           "full_name": "SeLe4n.Kernel.notificationSignalWaiter?_of_boundDeliveryTarget",
-          "line": 1949,
+          "line": 2573,
           "called": [
             "SeLe4n.Kernel.boundDeliveryTarget?",
             "SeLe4n.Kernel.notificationSignalWaiter?",
@@ -323680,7 +324086,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassifySignal_bound",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassifySignal_bound",
-          "line": 1966,
+          "line": 2590,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -323689,7 +324095,6 @@
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.boundDeliveryTarget?",
             "SeLe4n.Kernel.clearWokenReceiverStashPure",
             "SeLe4n.Kernel.clearWokenReceiverStash_eq_pure",
@@ -323702,8 +324107,6 @@
             "SeLe4n.Kernel.declassifiedSignalReceiver?_some_notification",
             "SeLe4n.Kernel.declassifySignalBoundAdmitted",
             "SeLe4n.Kernel.declassifySignalHopsRecord",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.hopAuthorizationOf",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
@@ -323739,7 +324142,7 @@
           "kind": "def",
           "name": "declassifySignalHopRefused",
           "full_name": "SeLe4n.Kernel.declassifySignalHopRefused",
-          "line": 2030,
+          "line": 2654,
           "called": [
             "SeLe4n.Kernel.DeclassificationPolicy",
             "SeLe4n.Kernel.LabelingContext",
@@ -323752,7 +324155,7 @@
           "kind": "def",
           "name": "declassifySignalPlanRefusal",
           "full_name": "SeLe4n.Kernel.declassifySignalPlanRefusal",
-          "line": 2040,
+          "line": 2664,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.declassifiedSignalReceiver?",
@@ -323766,7 +324169,7 @@
           "kind": "def",
           "name": "declassifySignalPlanRefusalCode",
           "full_name": "SeLe4n.Kernel.declassifySignalPlanRefusalCode",
-          "line": 2053,
+          "line": 2677,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.declassifiedSignalReceiverCode",
@@ -323780,7 +324183,7 @@
           "kind": "theorem",
           "name": "declassifySignalPlanRefusal_eq_code",
           "full_name": "SeLe4n.Kernel.declassifySignalPlanRefusal_eq_code",
-          "line": 2063,
+          "line": 2687,
           "called": [
             "SeLe4n.Kernel.declassifySignalPlanRefusal",
             "SeLe4n.Kernel.declassifySignalPlanRefusalCode",
@@ -323791,7 +324194,7 @@
           "kind": "def",
           "name": "declassifySignalPresentRefusal",
           "full_name": "SeLe4n.Kernel.declassifySignalPresentRefusal",
-          "line": 2077,
+          "line": 2701,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.declassifySignalPlanRefusal",
@@ -323805,7 +324208,7 @@
           "kind": "theorem",
           "name": "declassifySignalPresentRefusal_ne_zero",
           "full_name": "SeLe4n.Kernel.declassifySignalPresentRefusal_ne_zero",
-          "line": 2083,
+          "line": 2707,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.declassifySignalPlanRefusal",
@@ -323820,7 +324223,7 @@
           "kind": "def",
           "name": "declassifySignalAbsentRefusal",
           "full_name": "SeLe4n.Kernel.declassifySignalAbsentRefusal",
-          "line": 2100,
+          "line": 2724,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -323832,7 +324235,7 @@
           "kind": "def",
           "name": "declassifySignalAbsentRefusalError",
           "full_name": "SeLe4n.Kernel.declassifySignalAbsentRefusalError",
-          "line": 2106,
+          "line": 2730,
           "called": [
             "SeLe4n.Model.KernelError"
           ]
@@ -323841,7 +324244,7 @@
           "kind": "theorem",
           "name": "declassifySignalAbsentRefusal_ne_zero",
           "full_name": "SeLe4n.Kernel.declassifySignalAbsentRefusal_ne_zero",
-          "line": 2109,
+          "line": 2733,
           "called": [
             "SeLe4n.Kernel.declassifySignalAbsentRefusal",
             "SeLe4n.Model.SystemState",
@@ -323853,7 +324256,7 @@
           "kind": "def",
           "name": "declassifySignalPlanRefusalError",
           "full_name": "SeLe4n.Kernel.declassifySignalPlanRefusalError",
-          "line": 2117,
+          "line": 2741,
           "called": [
             "SeLe4n.Model.KernelError"
           ]
@@ -323862,7 +324265,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassifySignal_planRefused",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassifySignal_planRefused",
-          "line": 2122,
+          "line": 2746,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323870,7 +324273,6 @@
             "SeLe4n.Kernel.DeclassifiedSignalHop.refusal",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.declassificationActorOf",
             "SeLe4n.Kernel.declassificationDecision",
             "SeLe4n.Kernel.declassifiedSignalHopAuthorization",
@@ -323879,8 +324281,6 @@
             "SeLe4n.Kernel.declassifySignalHopRefused",
             "SeLe4n.Kernel.declassifySignalPlanRefusal",
             "SeLe4n.Kernel.declassifySignalPlanRefusalError",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
             "SeLe4n.Kernel.liftLegacyContext_objectDomainOf",
@@ -323902,7 +324302,7 @@
           "kind": "def",
           "name": "declassifySignalGeneralR",
           "full_name": "SeLe4n.Kernel.declassifySignalGeneralR",
-          "line": 2204,
+          "line": 2828,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323922,17 +324322,14 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassifySignal_absent",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassifySignal_absent",
-          "line": 2217,
+          "line": 2841,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.declassifySignalAbsentRefusal",
             "SeLe4n.Kernel.declassifySignalAbsentRefusalError",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch",
             "SeLe4n.Kernel.notificationSignalDeclassifiedOnCore",
             "SeLe4n.Model.Capability",
@@ -323949,7 +324346,7 @@
           "kind": "def",
           "name": "declassifySignalOperandArmR",
           "full_name": "SeLe4n.Kernel.declassifySignalOperandArmR",
-          "line": 2236,
+          "line": 2860,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323986,7 +324383,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassifySignal_stored",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassifySignal_stored",
-          "line": 2315,
+          "line": 2939,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery_none",
@@ -323995,7 +324392,6 @@
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.clearWokenReceiverStash",
             "SeLe4n.Kernel.declassificationActorOf",
             "SeLe4n.Kernel.declassificationDecision",
@@ -324005,8 +324401,6 @@
             "SeLe4n.Kernel.declassifiedSignalReceiver?",
             "SeLe4n.Kernel.declassifySignalRecord",
             "SeLe4n.Kernel.declassifySignalStoredAdmitted",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
             "SeLe4n.Kernel.liftLegacyContext_objectDomainOf",
@@ -324038,7 +324432,7 @@
           "kind": "theorem",
           "name": "auditedArmSpec_declassifySignal_woken",
           "full_name": "SeLe4n.Kernel.auditedArmSpec_declassifySignal_woken",
-          "line": 2368,
+          "line": 2992,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -324047,7 +324441,6 @@
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedArmSpec",
-            "SeLe4n.Kernel.auditedDecoded",
             "SeLe4n.Kernel.clearWokenReceiverStash",
             "SeLe4n.Kernel.declassificationActorOf",
             "SeLe4n.Kernel.declassificationDecision",
@@ -324056,8 +324449,6 @@
             "SeLe4n.Kernel.declassifiedSignalReceiver?",
             "SeLe4n.Kernel.declassifySignalHopsRecord",
             "SeLe4n.Kernel.declassifySignalWokenAdmitted",
-            "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.hopAuthorizationOf",
             "SeLe4n.Kernel.legacyLattice_canFlow_embed",
@@ -324095,7 +324486,7 @@
           "kind": "theorem",
           "name": "declassifySignalOperandArmR_eq",
           "full_name": "SeLe4n.Kernel.declassifySignalOperandArmR_eq",
-          "line": 2436,
+          "line": 3060,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.AuditRing",
@@ -324179,7 +324570,7 @@
           "kind": "def",
           "name": "auditedOperandArmR",
           "full_name": "SeLe4n.Kernel.auditedOperandArmR",
-          "line": 2603,
+          "line": 3227,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -324199,7 +324590,7 @@
           "kind": "def",
           "name": "dispatchAuditedCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchAuditedCheckedR",
-          "line": 2619,
+          "line": 3243,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -324216,7 +324607,7 @@
           "kind": "theorem",
           "name": "dispatchAuditedCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchAuditedCheckedR_eq",
-          "line": 2625,
+          "line": 3249,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -329967,8 +330358,7 @@
             "SeLe4n.Kernel.setAffinityAdmitted",
             "SeLe4n.Kernel.setAffinityPerform",
             "SeLe4n.Kernel.setThreadCpuAffinityOnCore",
-            "SeLe4n.Kernel.setThreadFaultHandlerAdmitted",
-            "SeLe4n.Kernel.setThreadFaultHandlerOp",
+            "SeLe4n.Kernel.setThreadFaultHandlerOpK",
             "SeLe4n.Kernel.storeBindNotification",
             "SeLe4n.Kernel.storeUnbindNotification",
             "SeLe4n.Kernel.unbindNotificationInPlace",
@@ -330020,7 +330410,7 @@
           "kind": "theorem",
           "name": "dispatchInvocationByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchInvocationByR_eq",
-          "line": 1021,
+          "line": 1018,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted",
@@ -330123,7 +330513,7 @@
             "SeLe4n.Kernel.serviceQueryStaged",
             "SeLe4n.Kernel.serviceQueryStaged_of_admitted",
             "SeLe4n.Kernel.setThreadCpuAffinityOnCore_of_admitted",
-            "SeLe4n.Kernel.setThreadFaultHandlerOp_of_admitted",
+            "SeLe4n.Kernel.setThreadFaultHandlerOpK_eq",
             "SeLe4n.Kernel.syscallLookupArgumentCap",
             "SeLe4n.Kernel.syscallLookupCap",
             "SeLe4n.Kernel.syscallResolveCap",
@@ -330175,7 +330565,7 @@
           "kind": "def",
           "name": "invocationOperandArmR",
           "full_name": "SeLe4n.Kernel.invocationOperandArmR",
-          "line": 1720,
+          "line": 1715,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330198,7 +330588,7 @@
           "kind": "def",
           "name": "dispatchInvocationCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchInvocationCheckedR",
-          "line": 1740,
+          "line": 1735,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330215,7 +330605,7 @@
           "kind": "theorem",
           "name": "dispatchInvocationCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchInvocationCheckedR_eq",
-          "line": 1746,
+          "line": 1741,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -330252,7 +330642,7 @@
           "kind": "def",
           "name": "dispatchConfigureBy",
           "full_name": "SeLe4n.Kernel.dispatchConfigureBy",
-          "line": 1798,
+          "line": 1793,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330271,7 +330661,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_configureBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_configureBy",
-          "line": 1815,
+          "line": 1810,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked_eq_by",
@@ -330296,7 +330686,7 @@
           "kind": "def",
           "name": "dispatchConfigureByR",
           "full_name": "SeLe4n.Kernel.dispatchConfigureByR",
-          "line": 1838,
+          "line": 1833,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330317,7 +330707,7 @@
           "kind": "theorem",
           "name": "dispatchConfigureByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchConfigureByR_eq",
-          "line": 1859,
+          "line": 1854,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -330338,7 +330728,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_configure",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_configure",
-          "line": 1886,
+          "line": 1881,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -330358,7 +330748,7 @@
           "kind": "def",
           "name": "configureOperandArmR",
           "full_name": "SeLe4n.Kernel.configureOperandArmR",
-          "line": 1898,
+          "line": 1893,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Kernel.dispatchConfigureByR",
@@ -330377,7 +330767,7 @@
           "kind": "def",
           "name": "dispatchConfigureCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchConfigureCheckedR",
-          "line": 1912,
+          "line": 1907,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330392,7 +330782,7 @@
           "kind": "theorem",
           "name": "dispatchConfigureCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchConfigureCheckedR_eq",
-          "line": 1917,
+          "line": 1912,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330428,7 +330818,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterBy",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterBy",
-          "line": 1965,
+          "line": 1960,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330446,7 +330836,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_serviceRegisterBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_serviceRegisterBy",
-          "line": 1981,
+          "line": 1976,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgs_eq_by",
@@ -330471,7 +330861,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterByR",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR",
-          "line": 2004,
+          "line": 1999,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330493,7 +330883,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR_eq",
-          "line": 2025,
+          "line": 2020,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.LabelingContext",
@@ -330513,7 +330903,7 @@
           "kind": "def",
           "name": "serviceRecordOfWords",
           "full_name": "SeLe4n.Kernel.serviceRecordOfWords",
-          "line": 2047,
+          "line": 2042,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Model.Capability",
@@ -330524,7 +330914,7 @@
           "kind": "def",
           "name": "registerServiceWordsPerform",
           "full_name": "SeLe4n.Kernel.registerServiceWordsPerform",
-          "line": 2060,
+          "line": 2055,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Kernel.serviceRecordOfWords",
@@ -330540,7 +330930,7 @@
           "kind": "def",
           "name": "registerServiceRefusalCode",
           "full_name": "SeLe4n.Kernel.registerServiceRefusalCode",
-          "line": 2075,
+          "line": 2070,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Kernel.LabelingContext",
@@ -330560,7 +330950,7 @@
           "kind": "def",
           "name": "registerServiceRefusalError",
           "full_name": "SeLe4n.Kernel.registerServiceRefusalError",
-          "line": 2091,
+          "line": 2086,
           "called": [
             "SeLe4n.Model.KernelError"
           ]
@@ -330569,7 +330959,7 @@
           "kind": "theorem",
           "name": "registerServiceChecked_refused",
           "full_name": "SeLe4n.Kernel.registerServiceChecked_refused",
-          "line": 2099,
+          "line": 2094,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.recordedRegistrationPresent",
@@ -330596,7 +330986,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterByRImpl",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByRImpl",
-          "line": 2141,
+          "line": 2136,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330620,7 +331010,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterByR_eq_impl",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterByR_eq_impl",
-          "line": 2164,
+          "line": 2159,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.dispatchServiceRegisterByR",
@@ -330643,7 +331033,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_serviceRegister",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_serviceRegister",
-          "line": 2210,
+          "line": 2205,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -330663,7 +331053,7 @@
           "kind": "def",
           "name": "serviceRegisterOperandArmR",
           "full_name": "SeLe4n.Kernel.serviceRegisterOperandArmR",
-          "line": 2222,
+          "line": 2217,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
@@ -330683,7 +331073,7 @@
           "kind": "def",
           "name": "dispatchServiceRegisterCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterCheckedR",
-          "line": 2237,
+          "line": 2232,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330699,7 +331089,7 @@
           "kind": "theorem",
           "name": "dispatchServiceRegisterCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchServiceRegisterCheckedR_eq",
-          "line": 2242,
+          "line": 2237,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330735,7 +331125,7 @@
           "kind": "def",
           "name": "dispatchMintBy",
           "full_name": "SeLe4n.Kernel.dispatchMintBy",
-          "line": 2291,
+          "line": 2286,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
@@ -330758,7 +331148,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_mintBy",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_mintBy",
-          "line": 2309,
+          "line": 2304,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_eq_by",
@@ -330783,7 +331173,7 @@
           "kind": "def",
           "name": "dispatchMintByR",
           "full_name": "SeLe4n.Kernel.dispatchMintByR",
-          "line": 2332,
+          "line": 2327,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330810,7 +331200,7 @@
           "kind": "theorem",
           "name": "dispatchMintByR_eq",
           "full_name": "SeLe4n.Kernel.dispatchMintByR_eq",
-          "line": 2359,
+          "line": 2354,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
@@ -330844,7 +331234,7 @@
           "kind": "theorem",
           "name": "applySyscallTaintAfter_cspaceMint",
           "full_name": "SeLe4n.Kernel.applySyscallTaintAfter_cspaceMint",
-          "line": 2406,
+          "line": 2401,
           "called": [
             "SeLe4n.Kernel.TaintMap",
             "SeLe4n.Kernel.applyOrigination",
@@ -330864,7 +331254,7 @@
           "kind": "def",
           "name": "mintOperandArmR",
           "full_name": "SeLe4n.Kernel.mintOperandArmR",
-          "line": 2418,
+          "line": 2413,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
@@ -330884,7 +331274,7 @@
           "kind": "def",
           "name": "dispatchMintCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchMintCheckedR",
-          "line": 2433,
+          "line": 2428,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330900,7 +331290,7 @@
           "kind": "theorem",
           "name": "dispatchMintCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchMintCheckedR_eq",
-          "line": 2438,
+          "line": 2433,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330936,7 +331326,7 @@
           "kind": "def",
           "name": "dispatchOverflowOneCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchOverflowOneCheckedR",
-          "line": 2484,
+          "line": 2479,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -330954,7 +331344,7 @@
           "kind": "theorem",
           "name": "dispatchOverflowOneCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchOverflowOneCheckedR_eq",
-          "line": 2493,
+          "line": 2488,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -346037,28 +346427,6 @@
       ]
     },
     {
-      "module": "SeLe4n.Kernel.RoutedArms.Decoded",
-      "path": "SeLe4n/Kernel/RoutedArms/Decoded.lean",
-      "declaration_count": 1,
-      "declarations": [
-        {
-          "kind": "def",
-          "name": "decodedRoutedArm",
-          "full_name": "SeLe4n.Kernel.decodedRoutedArm",
-          "line": 28,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.entryReportGeneral",
-            "SeLe4n.Kernel.syscallEntryChecked",
-            "SeLe4n.Model.RefusalCarrying.ofKernel",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.arm64DefaultLayout"
-          ]
-        }
-      ]
-    },
-    {
       "module": "SeLe4n.Kernel.RoutedArms.Dispatch",
       "path": "SeLe4n/Kernel/RoutedArms/Dispatch.lean",
       "declaration_count": 7,
@@ -346067,15 +346435,15 @@
           "kind": "def",
           "name": "syscallEntryRoutedWith",
           "full_name": "SeLe4n.Kernel.syscallEntryRoutedWith",
-          "line": 51,
+          "line": 50,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedRoutedArm",
             "SeLe4n.Kernel.callLongRoutedArm",
             "SeLe4n.Kernel.callRoutedArm",
-            "SeLe4n.Kernel.decodedRoutedArm",
             "SeLe4n.Kernel.entryReportGeneral",
             "SeLe4n.Kernel.invocationRoutedArm",
             "SeLe4n.Kernel.isInsecureDefaultContext",
@@ -346195,13 +346563,12 @@
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.auditedRoutedArm",
             "SeLe4n.Kernel.callLongRoutedArm",
             "SeLe4n.Kernel.callRoutedArm",
-            "SeLe4n.Kernel.decodedRoutedArm",
             "SeLe4n.Kernel.dispatchOperandCheckedKW_report",
             "SeLe4n.Kernel.entryReportGeneral",
             "SeLe4n.Kernel.entryReportLookup",
@@ -346235,15 +346602,14 @@
             "SeLe4n.Model.SchedulerState.currentOnCore",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getObject?",
-            "SeLe4n.arm64DefaultLayout"
+            "SeLe4n.Model.SystemState.getObject?"
           ]
         },
         {
           "kind": "theorem",
           "name": "syscallEntryCheckedK_eq_routed",
           "full_name": "SeLe4n.Kernel.syscallEntryCheckedK_eq_routed",
-          "line": 300,
+          "line": 323,
           "called": [
             "SeLe4n.Kernel.entryReportOutcome_general",
             "SeLe4n.Kernel.entryReportOutcome_lookup",
@@ -447962,7 +448328,7 @@
     {
       "module": "SeLe4n.Model.KernelErrorWords",
       "path": "SeLe4n/Model/KernelErrorWords.lean",
-      "declaration_count": 28,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "def",
@@ -448198,9 +448564,47 @@
         },
         {
           "kind": "theorem",
+          "name": "toDiscriminant_withPayloadWords",
+          "full_name": "SeLe4n.Model.KernelError.toDiscriminant_withPayloadWords",
+          "line": 356,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelError.toDiscriminant",
+            "SeLe4n.Model.KernelError.withPayloadWords"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "discriminantOfCode",
+          "full_name": "SeLe4n.Model.KernelError.discriminantOfCode",
+          "line": 363,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelError.kernelErrorEncodingBound",
+            "SeLe4n.Model.KernelError.retiredDiscriminants",
+            "SeLe4n.Model.KernelError.toDiscriminant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "toDiscriminant_ofPayloadWords",
+          "full_name": "SeLe4n.Model.KernelError.toDiscriminant_ofPayloadWords",
+          "line": 367,
+          "called": [
+            "SeLe4n.Model.KernelError.discriminantOfCode",
+            "SeLe4n.Model.KernelError.ofDiscriminant?",
+            "SeLe4n.Model.KernelError.ofDiscriminant?_isSome_iff",
+            "SeLe4n.Model.KernelError.ofPayloadWords",
+            "SeLe4n.Model.KernelError.toDiscriminant",
+            "SeLe4n.Model.KernelError.toDiscriminant_ofDiscriminant?",
+            "SeLe4n.Model.KernelError.toDiscriminant_withPayloadWords"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ofPayloadWords_payloadWord",
           "full_name": "SeLe4n.Model.KernelError.ofPayloadWords_payloadWord",
-          "line": 356,
+          "line": 382,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.erasePayload",
@@ -448218,7 +448622,7 @@
           "kind": "def",
           "name": "matchesWords",
           "full_name": "SeLe4n.Model.KernelError.matchesWords",
-          "line": 370,
+          "line": 396,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.payloadWord",
@@ -448229,7 +448633,7 @@
           "kind": "theorem",
           "name": "matchesWords_iff",
           "full_name": "SeLe4n.Model.KernelError.matchesWords_iff",
-          "line": 374,
+          "line": 400,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.matchesWords",
@@ -448242,14 +448646,14 @@
           "kind": "def",
           "name": "payloadLengthOfWords",
           "full_name": "SeLe4n.Model.KernelError.payloadLengthOfWords",
-          "line": 387,
+          "line": 413,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "payloadLengthOfWords_eq",
           "full_name": "SeLe4n.Model.KernelError.payloadLengthOfWords_eq",
-          "line": 394,
+          "line": 420,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.payloadLength",
@@ -512948,7 +513352,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1418,
+          "line": 1426,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -512957,7 +513361,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1461,
+          "line": 1469,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -512967,21 +513371,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1487,
+          "line": 1495,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1511,
+          "line": 1519,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1544,
+          "line": 1552,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -512990,7 +513394,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1576,
+          "line": 1584,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -512999,7 +513403,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1589,
+          "line": 1597,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -513008,7 +513412,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1629,
+          "line": 1637,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -513018,7 +513422,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1637,
+          "line": 1645,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -513028,7 +513432,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1644,
+          "line": 1652,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -513038,7 +513442,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1649,
+          "line": 1657,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -513049,7 +513453,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1661,
+          "line": 1669,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",

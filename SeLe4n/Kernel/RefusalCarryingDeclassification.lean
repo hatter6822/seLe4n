@@ -54,13 +54,80 @@ def auditedGate (tid : SeLe4n.ThreadId) (capAddr : SeLe4n.CPtr) (sid : SyscallId
     requiredRight := syscallRequiredRight sid }
 
 /-- **The general form**: `dispatchWithCapChecked`'s arm for a routed
-declassification or audit call, on the record and gate it reads.  Built only
-on a call the admitted form does not take. -/
-def auditedArmSpec (ctx : LabelingContext) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+declassification or audit call, on the record and gate it reads
+(`dispatchWithCapChecked_eq_auditedArmSpec`).  Built only on a call the
+admitted form does not take.  It matches on the syscall and runs that call's
+arm alone, and inlined at a caller naming the syscall the match folds, so each
+call's compiled path carries no other syscall's arm; an identifier
+`routedAudited` refuses never reaches the last branch. -/
+@[inline] def auditedArmSpec (ctx : LabelingContext) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : Kernel Unit :=
-  dispatchWithCapChecked ctx (auditedDecoded sid capAddr regs) tid executingCore
-    (auditedGate tid capAddr sid) cap
+  match sid with
+  | .declassify =>
+    match cap.target with
+    | .object targetId =>
+        fun st =>
+          declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
+            executingCore targetId st
+    | _ => fun _ => .error (.invalidCapability 0)
+  | .declassifySignal =>
+    match cap.target with
+    | .object notifId =>
+      fun st =>
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
+          let plainWaiter? := notificationSignalWaiter? st notifId
+          match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
+                  ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
+          | (st', .ok _) =>
+              match clearWokenReceiverStash woken? st' with
+              | .error e => .error e
+              | .ok ((), st'') =>
+                  .ok ((), Architecture.stageWokenDelivery
+                            (Architecture.stageWokenDelivery st'' woken? 0)
+                            plainWaiter? 0)
+          | (_, .error e) => .error e
+    | _ => fun _ => .error (.invalidCapability 0)
+  | .auditRead =>
+    fun st =>
+      match extractAuditAuthority cap with
+      | .error e => .error e
+      | .ok () =>
+        if cap.hasRight (auditedGate tid capAddr .auditRead).requiredRight then
+          match Architecture.SyscallArgDecode.decodeAuditReadArgs
+              (auditedDecoded .auditRead capAddr regs) with
+          | .error e => .error e
+          | .ok args =>
+              match decodeAuditReadOp args.opcode args.index args.chunk with
+              | none => .error .invalidSyscallArgument
+              | some op =>
+                  match auditReadFromCore (liftLegacyContext ctx)
+                      (validatedAuditMonitorClearance ctx)
+                      executingCore op st with
+                  | .error e => .error e
+                  | .ok (w, st') =>
+                      .ok ((), Architecture.writeReturnFrameToTcb st' tid
+                        (Architecture.returnFrameOfWord w.toUInt64))
+        else .error .illegalAuthority
+  | .auditDrain =>
+    fun st =>
+      match extractAuditAuthority cap with
+      | .error e => .error e
+      | .ok () =>
+        if cap.hasRight (auditedGate tid capAddr .auditDrain).requiredRight then
+          match Architecture.SyscallArgDecode.decodeAuditDrainArgs
+              (auditedDecoded .auditDrain capAddr regs) with
+          | .error e => .error e
+          | .ok args =>
+              match auditDrainVisiblePrefix (liftLegacyContext ctx)
+                  (validatedAuditMonitorClearance ctx)
+                  executingCore args.count st with
+              | .error e => .error e
+              | .ok (n, st') =>
+                  .ok ((), Architecture.writeReturnFrameToTcb st' tid
+                    (Architecture.returnFrameOfWord n.toUInt64))
+        else .error .illegalAuthority
+  | _ => fun _ => .error .illegalState
 
 /-- A routed declassification or audit call's arm reads its decode only through
 the syscall and the message registers, and its gate only through the right. -/
@@ -85,7 +152,8 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
       auditedGate, hR, hLen, Architecture.SyscallArgDecode.requireMessageLength,
       hRight,
       Architecture.SyscallArgDecode.decodeAuditReadArgs,
-      Architecture.SyscallArgDecode.decodeAuditDrainArgs]
+      Architecture.SyscallArgDecode.decodeAuditDrainArgs] <;>
+    rfl
 
 /-! ## `.declassify` -/
 
@@ -179,7 +247,7 @@ theorem auditedArmSpec_declassify_admitted (ctx : LabelingContext) (capAddr : Se
     decide_eq_true_eq] at hA
   obtain ⟨⟨⟨hPresent, hFlow⟩, hDecl⟩, hRoom⟩ := hA
   obtain ⟨ty, hTy⟩ := Option.isSome_iff_exists.mp hPresent
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
     declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow, hDecl,
     Bool.false_eq_true, ↓reduceIte, recordDeclassificationChecked, hRoom,
@@ -214,12 +282,12 @@ theorem auditedArmSpec_declassify_refused (ctx : LabelingContext) (capAddr : SeL
   unfold declassifyRefusal
   cases hTy : st.getObjectType? targetId with
   | none =>
-    simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    simp only [auditedArmSpec, hT,
       declassifyObjectFromCore, hCur, hTy, Option.isNone_none, ↓reduceIte]
   | some ty =>
     simp only [hTy, Option.isSome_some, Bool.true_and] at hA
     by_cases hFlow : securityFlowsTo (ctx.threadLabelOf actorTid) (ctx.objectLabelOf targetId) = true
-    · simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    · simp only [auditedArmSpec, hT,
         declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
         declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow,
         Option.isNone_some, Bool.false_eq_true, ↓reduceIte, declassificationActorOf]
@@ -229,13 +297,13 @@ theorem auditedArmSpec_declassify_refused (ctx : LabelingContext) (capAddr : SeL
           (embedLegacyLabel (ctx.objectLabelOf targetId)) = true
       · have hRoom : ¬ st.declassificationAudit.length < maxDeclassificationAuditEntries := by
           intro h; simp [hFlow, hDecl, h] at hA
-        simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+        simp only [auditedArmSpec,
           hT, declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
           declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow, hDecl,
           Option.isNone_some, Bool.false_eq_true, ↓reduceIte, recordDeclassificationChecked, hRoom,
           declassificationActorOf, Bool.not_true]
       · simp only [Bool.not_eq_true] at hDecl
-        simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+        simp only [auditedArmSpec,
           hT, declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
           declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow, hDecl,
           Option.isNone_some, Bool.false_eq_true, ↓reduceIte, declassificationActorOf,
@@ -496,7 +564,7 @@ theorem auditedArmSpec_audit_truncated (ctx : LabelingContext) (sid : SyscallId)
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hTr
     obtain ⟨hRight, hLt⟩ := hTr
     rcases hSid with rfl | rfl <;>
-      simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+      simp only [auditedArmSpec, auditedDecoded,
         hT, extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
         Architecture.SyscallArgDecode.decodeAuditReadArgs,
         Architecture.SyscallArgDecode.decodeAuditDrainArgs,
@@ -552,7 +620,7 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
       intro a ha
       rw [← auditEntryVisibleLegacy_eq]
       exact hAll a ha
-    simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    simp only [auditedArmSpec, auditedDecoded, hT,
       extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
       Architecture.SyscallArgDecode.decodeAuditDrainArgs,
       Architecture.SyscallArgDecode.requireMessageLength, hL,
@@ -566,8 +634,8 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
 
 /-- An audit call's general form: the specification's arm, whose taint step is
 the identity (`auditTaintStep_eq`), every refusal carrying the state it was
-handed. -/
-def auditGeneralR (ctx : LabelingContext) (sid : SyscallId) (regs : SeLe4n.RegisterFile)
+handed.  Inlined, so a caller naming the syscall runs that call's arm alone. -/
+@[inline] def auditGeneralR (ctx : LabelingContext) (sid : SyscallId) (regs : SeLe4n.RegisterFile)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -588,8 +656,8 @@ theorem auditedArmSpec_audit_not_trail (ctx : LabelingContext) (sid : SyscallId)
     unfold extractAuditAuthority
     cases h : cap.target <;> first | rfl | exact absurd h (hT _)
   rcases hSid with rfl | rfl <;>
-    simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
-      auditedGate, hA]
+    simp only [auditedArmSpec,
+      hA]
 
 /-- **An audit call's general form, its target read first**: a capability that
 does not target the audit trail is refused here, in the state it was handed,
@@ -678,8 +746,13 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
             (auditedDecoded decoded.syscallId decoded.capAddr regs) tid executingCore
             (auditedGate tid decoded.capAddr decoded.syscallId) cap st hSid hTc
             (by simpa [auditedGate] using hRt)
-          simp only [auditedArmSpec] at hNo
-          simp only [hAcc, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, auditedArmSpec, hNo]
+          have hNo' : auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore
+              cap st = .error .illegalAuthority :=
+            (congrFun (dispatchWithCapChecked_eq_auditedArmSpec ctx
+              (auditedDecoded decoded.syscallId decoded.capAddr regs) regs tid executingCore
+              (auditedGate tid decoded.capAddr decoded.syscallId) cap hR (fun _ _ => rfl) rfl
+              rfl) st).symm.trans hNo
+          simp only [hAcc, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hNo']
           rcases hSid with h | h <;> simp [h, syscallMissingRightError]
       · have hNA : syscallTargetAccepted decoded.syscallId st cap = false := by
           rcases hSid with h | h <;> cases hTc : cap.target <;>
@@ -1038,6 +1111,31 @@ theorem refusalFieldChunk_eq (r : DeclassificationRefusal) (f : RefusalReadField
   let n := refusalFieldCount r f
   if n ≠ 0 ∧ chunk < n then refusalFieldChunk r f chunk + 1 else 0
 
+/-- A refusal-ledger slot's tag word, as a code: `refusalTagsWord` of the
+slot's refusal, the reason's discriminant read off the slot's code
+(`KernelError.toDiscriminant_ofPayloadWords`), so the error its words spell is
+never rebuilt (`refusalTagsSlotCode_eq`). -/
+@[inline] def refusalTagsSlotCode (rl : RefusalLedger) (slot : Nat) : Nat :=
+  if h : slot < refusalRingSize then
+    let s := rl.slots.get ⟨slot, h⟩
+    if s.occupied then
+      s.originatingCore.val + refusalTagSlots * (s.syscall.toNat +
+        refusalTagSlots * KernelError.discriminantOfCode s.reasonCode) + 1
+    else 0
+  else 0
+
+theorem refusalTagsSlotCode_eq (rl : RefusalLedger) (slot : Nat) :
+    refusalTagsSlotCode rl slot =
+      refusalScalarSlotCode rl slot (fun x => refusalTagsWord x + 1) := by
+  unfold refusalTagsSlotCode refusalScalarSlotCode
+  split
+  · dsimp only
+    split
+    · simp only [refusalTagsWord, RefusalSlot.toRefusalWith, RefusalSlot.reason,
+        KernelError.toDiscriminant_ofPayloadWords]
+    · rfl
+  · rfl
+
 /-- A refusal's receiver chunk count, as a code (`1` for no receiver: count 0). -/
 @[inline] def refusalReceiverCountCode (r : DeclassificationRefusal) : Nat :=
   match r.refusedReceiver with
@@ -1097,7 +1195,7 @@ def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (st : Sy
   | 11 => auditBasisWordCode ctx reader r index chunk
   | 12 => refusalStatusWord rl.nextSlot.val rl.version + 1
   | 13 => refusalCountersWord rl.attemptCount.val rl.droppedCount.val + 1
-  | 14 => refusalScalarSlotCode rl index fun x => refusalTagsWord x + 1
+  | 14 => refusalTagsSlotCode rl index
   | 15 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subject
   | 16 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subjectDomain
   | 17 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .requestedTarget
@@ -1404,6 +1502,7 @@ theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomai
     simp only [Nat.add_right_cancel_iff] at h
     rw [h]
   | 14, h =>
+    rw [refusalTagsSlotCode_eq] at h
     obtain ⟨hs, r, hr, hf⟩ := refusalScalarSlotCode_some (fun _ => rfl) h
     simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr]
     simp only [Nat.add_right_cancel_iff] at hf
@@ -1448,21 +1547,473 @@ theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomai
     · simp only [hc, ↓reduceIte] at h; cases h
   | _ + 30, h => cases h
 
+/-- Every opcode below 30 names a read. -/
+theorem decodeAuditReadOp_isSome {n : Nat} (h : n < 30) (index chunk : Nat) :
+    (decodeAuditReadOp n index chunk).isSome = true := by
+  match n, h with
+  | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ | 7, _ | 8, _ | 9, _ | 10, _ | 11, _
+  | 12, _ | 13, _ | 14, _ | 15, _ | 16, _ | 17, _ | 18, _ | 19, _ | 20, _ | 21, _ | 22, _
+  | 23, _ | 24, _ | 25, _ | 26, _ | 27, _ | 28, _ | 29, _ => rfl
+  | _ + 30, h => exact absurd h (by omega)
+
+/-- No opcode from 30 names a read. -/
+theorem decodeAuditReadOp_none {n : Nat} (h : 30 ≤ n) (index chunk : Nat) :
+    decodeAuditReadOp n index chunk = none := by
+  obtain ⟨k, rfl⟩ : ∃ k, n = k + 30 := ⟨n - 30, by omega⟩
+  rfl
+
+/-! ### A refused read, found in place
+
+The refusal the specification answers a monitor's read with when its code is
+`0` (`auditReadFastRefusal_spec`): each one a closed constant, found by the
+walks the code takes, so a refused read builds nothing either. -/
+
+/-- The refusal of a read naming visible entry `index`: `invalidArgument` of
+the index word when the caller's view holds none, else `k` of the entry's
+position in the ring. -/
+@[inline] def auditEntryRefusal (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (index : Nat) (k : Nat → KernelError) : KernelError :=
+  match auditWindowFindVisible ctx reader r 0 r.length index with
+  | 0 => .invalidArgument auditReadIndexWord
+  | j + 1 => k j
+
+/-- A chunk read's refusal once its value is found, given the value's chunk
+count: none (`0`, a value too wide to export) or a chunk past the last. -/
+@[inline] def auditChunkRefusal (n : Nat) : KernelError :=
+  if n = 0 then .auditFieldTooLarge else .invalidArgument auditReadChunkWord
+
+/-- The refusal of a read naming refusal-ledger slot `slot`: `invalidArgument`
+of the index word for a slot out of range or empty, else `k` of its refusal,
+read off the slot's words as `refusalSlotCode` reads them. -/
+@[inline] def refusalSlotRefusal (rl : RefusalLedger) (slot : Nat)
+    (k : DeclassificationRefusal → KernelError) : KernelError :=
+  if h : slot < refusalRingSize then
+    let s := rl.slots.get ⟨slot, h⟩
+    if s.occupied then
+      if s.receiverNamed then k (s.toRefusalWith (some s.receiver)) else k (s.toRefusalWith none)
+    else .invalidArgument auditReadIndexWord
+  else .invalidArgument auditReadIndexWord
+
+/-- **A monitor's refused read, found in place**: the error the specification
+refuses a read with whose code (`auditReadFastCode`) is `0`
+(`auditReadFastRefusal_spec`) — an index the caller's view does not hold or a
+ledger slot out of range or empty (`invalidArgument` of the index word), a
+chunk past the value's last or an entry pair out of order (`invalidArgument`
+of the chunk word), a value too wide to export (`auditFieldTooLarge`), or an
+opcode that names no read (`invalidSyscallArgument`).  The opcodes whose code
+is never `0` (the status words and the counters) take the last arm. -/
+def auditReadFastRefusal (ctx : LabelingContext) (reader : SecurityDomain) (st : SystemState)
+    (opcode index chunk : Nat) : KernelError :=
+  let r := st.declassificationAudit
+  let rl := st.declassificationRefusals
+  match opcode with
+  | 1 | 2 | 3 | 4 | 21 | 22 | 10 => auditEntryRefusal ctx reader r index fun _ => .auditFieldTooLarge
+  | 5 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .srcDomain))
+  | 6 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .dstDomain))
+  | 7 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal
+        (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .targetObject))
+  | 8 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .timestamp))
+  | 23 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal
+        (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .actorSubject))
+  | 24 => auditEntryRefusal ctx reader r index fun j =>
+      auditChunkRefusal
+        (auditChunkCountN (auditExportedFieldValue true index (r.entry j) .actorDomain))
+  | 9 | 14 | 27 => .invalidArgument auditReadIndexWord
+  | 11 => auditEntryRefusal ctx reader r index fun j =>
+      if (r.entry j).authorizationBasis.render.utf8ByteSize ≤ maxAuditDesignationBytes then
+        .invalidArgument auditReadChunkWord
+      else .auditFieldTooLarge
+  | 15 | 16 | 17 | 25 => refusalSlotRefusal rl index fun _ => .auditFieldTooLarge
+  | 18 => refusalSlotRefusal rl index fun x => auditChunkRefusal (refusalFieldCount x .subject)
+  | 19 => refusalSlotRefusal rl index fun x =>
+      auditChunkRefusal (refusalFieldCount x .subjectDomain)
+  | 20 => refusalSlotRefusal rl index fun x =>
+      auditChunkRefusal (refusalFieldCount x .requestedTarget)
+  | 26 => refusalSlotRefusal rl index fun x =>
+      match x.refusedReceiver with
+      | none => .invalidArgument auditReadChunkWord
+      | some receiver => auditChunkRefusal (auditChunkCountN receiver.val)
+  | 28 => if chunk < index then .invalidArgument auditReadIndexWord
+      else .invalidArgument auditReadChunkWord
+  | 29 => if chunk < r.epoch then .invalidArgument auditReadIndexWord
+      else .invalidArgument auditReadChunkWord
+  | _ => .invalidSyscallArgument
+
+/-- An opcode from 30 names no read, and is refused as the decode refuses it. -/
+theorem auditReadFastRefusal_of_ge {ctx : LabelingContext} {reader : SecurityDomain}
+    {st : SystemState} {opcode : Nat} (h : 30 ≤ opcode) (index chunk : Nat) :
+    auditReadFastRefusal ctx reader st opcode index chunk = .invalidSyscallArgument := by
+  obtain ⟨k, rfl⟩ : ∃ k, opcode = k + 30 := ⟨opcode - 30, by omega⟩
+  rfl
+
+/-- A refused field-count code is the specification's refusal, for a monitor. -/
+theorem auditFieldCountCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index : Nat) (f : AuditReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : auditFieldCountCode ctx reader st.declassificationAudit index f = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.fieldChunkCount index f) =
+      .error (auditEntryRefusal ctx reader st.declassificationAudit index
+        fun _ => .auditFieldTooLarge) := by
+  unfold auditFieldCountCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?, hIs, auditFieldChunkCount?_eq_code,
+    auditEntryRefusal]
+  generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+    st.declassificationAudit.length index = v at h ⊢
+  cases v with
+  | zero => rfl
+  | succ j =>
+    dsimp only at h ⊢
+    by_cases hn : auditChunkCountN (auditExportedFieldValue true index
+      (st.declassificationAudit.entry j) f) = 0
+    · simp only [hn, ↓reduceIte]
+    · simp only [hn, ↓reduceIte] at h; cases h
+
+/-- A refused field-chunk code is the specification's refusal, for a monitor. -/
+theorem auditFieldWordCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index chunk : Nat) (f : AuditReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : auditFieldWordCode ctx reader st.declassificationAudit index chunk f = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.field index f chunk) =
+      .error (auditEntryRefusal ctx reader st.declassificationAudit index fun j =>
+        auditChunkRefusal (auditChunkCountN
+          (auditExportedFieldValue true index (st.declassificationAudit.entry j) f))) := by
+  unfold auditFieldWordCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?, hIs, auditFieldChunkCount?_eq_code,
+    auditEntryRefusal, auditChunkRefusal]
+  generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+    st.declassificationAudit.length index = v at h ⊢
+  cases v with
+  | zero => rfl
+  | succ j =>
+    dsimp only at h ⊢
+    by_cases hn : auditChunkCountN (auditExportedFieldValue true index
+      (st.declassificationAudit.entry j) f) = 0
+    · simp only [hn, ↓reduceIte]
+    · by_cases hc : chunk < auditChunkCountN (auditExportedFieldValue true index
+          (st.declassificationAudit.entry j) f)
+      · simp only [ne_eq, hn, not_false_eq_true, hc, and_self, ↓reduceIte] at h; cases h
+      · simp only [hn, hc, ↓reduceIte]
+
+/-- A refused designation byte-count code is the specification's refusal. -/
+theorem auditBasisCountCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index : Nat)
+    (h : auditBasisCountCode ctx reader st.declassificationAudit index = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.basisByteCount index) =
+      .error (auditEntryRefusal ctx reader st.declassificationAudit index
+        fun _ => .auditFieldTooLarge) := by
+  unfold auditBasisCountCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?, auditEntryRefusal]
+  generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+    st.declassificationAudit.length index = v at h ⊢
+  cases v with
+  | zero => rfl
+  | succ j =>
+    dsimp only at h ⊢
+    simp only [auditBasisBytes_length]
+    by_cases hn : (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize ≤
+        maxAuditDesignationBytes
+    · simp only [hn, ↓reduceIte] at h; cases h
+    · simp only [hn, ↓reduceIte]
+
+/-- A refused designation chunk code is the specification's refusal. -/
+theorem auditBasisWordCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index chunk : Nat)
+    (h : auditBasisWordCode ctx reader st.declassificationAudit index chunk = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.basisChunk index chunk) =
+      .error (auditEntryRefusal ctx reader st.declassificationAudit index fun j =>
+        if (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize ≤
+            maxAuditDesignationBytes then .invalidArgument auditReadChunkWord
+        else .auditFieldTooLarge) := by
+  unfold auditBasisWordCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?, auditEntryRefusal]
+  generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+    st.declassificationAudit.length index = v at h ⊢
+  cases v with
+  | zero => rfl
+  | succ j =>
+    dsimp only at h ⊢
+    simp only [auditBasisBytes_length]
+    by_cases hn : (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize ≤
+        maxAuditDesignationBytes
+    · by_cases hc : chunk < auditBasisChunkCount
+          (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize
+      · simp only [hn, hc, ↓reduceIte] at h; cases h
+      · simp only [hn, hc, ↓reduceIte]
+    · simp only [hn, ↓reduceIte]
+
+/-- A refusal-ledger slot's code and refusal, read alike: on a present slot,
+`f` and `k` of its refusal; otherwise `0` and `invalidArgument` of the index
+word. -/
+theorem refusalSlot_codeRefusal (rl : RefusalLedger) (slot : Nat)
+    (f : DeclassificationRefusal → Nat) (k : DeclassificationRefusal → KernelError) :
+    (∃ (hs : slot < refusalRingSize) (r : DeclassificationRefusal),
+        rl.recent.get ⟨slot, hs⟩ = some r ∧ refusalSlotCode rl slot f = f r ∧
+          refusalSlotRefusal rl slot k = k r) ∨
+      ((∀ hs : slot < refusalRingSize, rl.recent.get ⟨slot, hs⟩ = none) ∧
+        refusalSlotCode rl slot f = 0 ∧
+          refusalSlotRefusal rl slot k = .invalidArgument auditReadIndexWord) := by
+  unfold refusalSlotCode refusalSlotRefusal
+  by_cases hs : slot < refusalRingSize
+  · simp only [dif_pos hs]
+    by_cases hOcc : (rl.slots.get ⟨slot, hs⟩).occupied = true
+    · refine .inl ⟨hs, (rl.slots.get ⟨slot, hs⟩).toRefusal, ?_, ?_, ?_⟩
+      · simp only [RefusalLedger.recent_get, RefusalSlot.view, hOcc, ↓reduceIte]
+      · by_cases hN : (rl.slots.get ⟨slot, hs⟩).receiverNamed = true <;>
+          simp [hOcc, hN, RefusalSlot.toRefusal, RefusalSlot.receiver?]
+      · by_cases hN : (rl.slots.get ⟨slot, hs⟩).receiverNamed = true <;>
+          simp [hOcc, hN, RefusalSlot.toRefusal, RefusalSlot.receiver?]
+    · refine .inr ⟨fun hs' => ?_, ?_, ?_⟩
+      · simp only [RefusalLedger.recent_get, RefusalSlot.view, hOcc, Bool.false_eq_true,
+          ↓reduceIte]
+      · simp only [hOcc, Bool.false_eq_true, ↓reduceIte]
+      · simp only [hOcc, Bool.false_eq_true, ↓reduceIte]
+  · exact .inr ⟨fun hs' => absurd hs' hs, by simp only [dif_neg hs],
+      by simp only [dif_neg hs]⟩
+
+/-- A scalar slot's code is the slot's code, for a reader `f` the receiver does
+not move. -/
+theorem refusalScalarSlotCode_eq_slotCode {rl : RefusalLedger} {slot : Nat}
+    {f : DeclassificationRefusal → Nat}
+    (hScalar : ∀ r : DeclassificationRefusal, f { r with refusedReceiver := none } = f r) :
+    refusalScalarSlotCode rl slot f = refusalSlotCode rl slot f := by
+  unfold refusalScalarSlotCode refusalSlotCode
+  split
+  · dsimp only
+    split
+    · split
+      · rename_i hs _ _
+        exact hScalar ((rl.slots.get ⟨slot, hs⟩).toRefusalWith
+          (some (rl.slots.get ⟨slot, hs⟩).receiver))
+      · rfl
+    · rfl
+  · rfl
+
+/-- A ledger read of an empty or out-of-range slot is refused with
+`invalidArgument` of the index word. -/
+theorem refusalSlotRead_absent (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot : Nat)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (hNone : ∀ hs : slot < refusalRingSize, st.declassificationRefusals.recent.get ⟨slot, hs⟩ = none)
+    (op : AuditReadOp)
+    (hOp : op = .refusalSlotTags slot ∨ (∃ f, op = .refusalSlotFieldChunkCount slot f) ∨
+      (∃ f chunk, op = .refusalSlotField slot f chunk) ∨ op = .refusalReceiverChunkCount slot ∨
+      (∃ chunk, op = .refusalReceiverChunk slot chunk)) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st op =
+      .error (.invalidArgument auditReadIndexWord) := by
+  by_cases hs : slot < refusalRingSize
+  · rcases hOp with rfl | ⟨f, rfl⟩ | ⟨f, chunk, rfl⟩ | rfl | ⟨chunk, rfl⟩ <;>
+      simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq,
+        hNone hs]
+  · rcases hOp with rfl | ⟨f, rfl⟩ | ⟨f, chunk, rfl⟩ | rfl | ⟨chunk, rfl⟩ <;>
+      simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_false]
+
+/-- A refused ledger field-count code is the specification's refusal. -/
+theorem refusalFieldCountCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot : Nat) (f : RefusalReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalScalarSlotCode st.declassificationRefusals slot
+      (fun x => refusalFieldCountCode x f) = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotFieldChunkCount slot f) =
+      .error (refusalSlotRefusal st.declassificationRefusals slot fun _ => .auditFieldTooLarge) := by
+  rw [refusalScalarSlotCode_eq_slotCode (fun _ => rfl)] at h
+  rcases refusalSlot_codeRefusal st.declassificationRefusals slot
+      (fun x => refusalFieldCountCode x f) (fun _ => .auditFieldTooLarge) with
+    ⟨hs, r, hr, hc, hk⟩ | ⟨hNone, -, hk⟩
+  · rw [hk]
+    rw [hc] at h
+    simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr,
+      auditFieldChunkCount?_eq_code]
+    unfold refusalFieldCountCode at h
+    rw [refusalFieldCount_eq] at h
+    by_cases hn : auditChunkCountN (refusalExportedFieldValue r f) = 0
+    · simp only [hn, ↓reduceIte]
+    · simp only [hn, ↓reduceIte] at h; cases h
+  · rw [hk]
+    exact refusalSlotRead_absent ctx m reader st slot hIs hNone _ (.inr (.inl ⟨f, rfl⟩))
+
+/-- A refused ledger field-chunk code is the specification's refusal. -/
+theorem refusalFieldWordCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot chunk : Nat) (f : RefusalReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalScalarSlotCode st.declassificationRefusals slot
+      (fun x => refusalFieldWordCode x f chunk) = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotField slot f chunk) =
+      .error (refusalSlotRefusal st.declassificationRefusals slot fun x =>
+        auditChunkRefusal (refusalFieldCount x f)) := by
+  rw [refusalScalarSlotCode_eq_slotCode (fun _ => rfl)] at h
+  rcases refusalSlot_codeRefusal st.declassificationRefusals slot
+      (fun x => refusalFieldWordCode x f chunk) (fun x => auditChunkRefusal (refusalFieldCount x f))
+      with ⟨hs, r, hr, hc, hk⟩ | ⟨hNone, -, hk⟩
+  · rw [hk]
+    rw [hc] at h
+    simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr,
+      auditFieldChunkCount?_eq_code, auditChunkRefusal, refusalFieldCount_eq]
+    unfold refusalFieldWordCode at h
+    rw [refusalFieldCount_eq] at h
+    by_cases hn : auditChunkCountN (refusalExportedFieldValue r f) = 0
+    · simp only [hn, ↓reduceIte]
+    · by_cases hlt : chunk < auditChunkCountN (refusalExportedFieldValue r f)
+      · simp only [ne_eq, hn, not_false_eq_true, hlt, and_self, ↓reduceIte] at h; cases h
+      · simp only [hn, hlt, ↓reduceIte]
+  · rw [hk]
+    exact refusalSlotRead_absent ctx m reader st slot hIs hNone _ (.inr (.inr (.inl ⟨f, chunk, rfl⟩)))
+
+/-- A refused receiver chunk-count code is the specification's refusal. -/
+theorem refusalReceiverCountCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot : Nat)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot refusalReceiverCountCode = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunkCount slot) =
+      .error (refusalSlotRefusal st.declassificationRefusals slot fun _ => .auditFieldTooLarge) := by
+  rcases refusalSlot_codeRefusal st.declassificationRefusals slot
+      refusalReceiverCountCode (fun _ => .auditFieldTooLarge) with
+    ⟨hs, r, hr, hc, hk⟩ | ⟨hNone, -, hk⟩
+  · rw [hk]
+    rw [hc] at h
+    simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr,
+      auditFieldChunkCount?_eq_code]
+    unfold refusalReceiverCountCode at h
+    split at h
+    · cases h
+    · next rc hN =>
+      simp only [hN]
+      by_cases hn : auditChunkCountN rc.val = 0
+      · simp only [hn, ↓reduceIte]
+      · simp only [hn, ↓reduceIte] at h; cases h
+  · rw [hk]
+    exact refusalSlotRead_absent ctx m reader st slot hIs hNone _ (.inr (.inr (.inr (.inl rfl))))
+
+/-- A refused receiver chunk code is the specification's refusal. -/
+theorem refusalReceiverWordCode_refused (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot chunk : Nat)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot
+      (fun x => refusalReceiverWordCode x chunk) = 0) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunk slot chunk) =
+      .error (refusalSlotRefusal st.declassificationRefusals slot fun x =>
+        match x.refusedReceiver with
+        | none => .invalidArgument auditReadChunkWord
+        | some receiver => auditChunkRefusal (auditChunkCountN receiver.val)) := by
+  rcases refusalSlot_codeRefusal st.declassificationRefusals slot
+      (fun x => refusalReceiverWordCode x chunk) (fun x =>
+        match x.refusedReceiver with
+        | none => .invalidArgument auditReadChunkWord
+        | some receiver => auditChunkRefusal (auditChunkCountN receiver.val)) with
+    ⟨hs, r, hr, hc, hk⟩ | ⟨hNone, -, hk⟩
+  · rw [hk]
+    rw [hc] at h
+    simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr,
+      auditFieldChunkCount?_eq_code]
+    unfold refusalReceiverWordCode at h
+    split at h
+    · next hN => simp only [hN]
+    · next rc hN =>
+      simp only [hN, auditChunkRefusal]
+      by_cases hn : auditChunkCountN rc.val = 0
+      · simp only [hn, ↓reduceIte]
+      · by_cases hlt : chunk < auditChunkCountN rc.val
+        · simp only [ne_eq, hn, not_false_eq_true, hlt, and_self, ↓reduceIte] at h; cases h
+        · simp only [hn, hlt, ↓reduceIte]
+  · rw [hk]
+    exact refusalSlotRead_absent ctx m reader st slot hIs hNone _
+      (.inr (.inr (.inr (.inr ⟨chunk, rfl⟩))))
+
+/-- **A refused read's refusal is the specification's**, for a reader the
+clearance dominates: a read whose code is `0` is refused with
+`auditReadFastRefusal`. -/
+theorem auditReadFastRefusal_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (opcode index chunk : Nat)
+    (hMon : DomainFlowPolicy.legacyLattice.canFlow m reader = true)
+    (h : auditReadFastCode ctx reader st opcode index chunk = 0) :
+    (match decodeAuditReadOp opcode index chunk with
+     | none => (.error .invalidSyscallArgument : Except KernelError Nat)
+     | some op => auditReadWord (liftLegacyContext ctx) (some m) reader st op) =
+      .error (auditReadFastRefusal ctx reader st opcode index chunk) := by
+  have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true := hMon
+  unfold auditReadFastCode at h
+  dsimp only at h
+  match opcode, h with
+  | 0, h => exact absurd h (Nat.succ_ne_zero _)
+  | 1, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 2, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 3, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 4, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 5, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 6, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 7, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 8, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 9, h =>
+    simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?, auditReadFastRefusal]
+    generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+      st.declassificationAudit.length index = v at h ⊢
+    cases v with
+    | zero => rfl
+    | succ j => cases h
+  | 10, h => exact auditBasisCountCode_refused ctx m reader st _ h
+  | 11, h => exact auditBasisWordCode_refused ctx m reader st _ _ h
+  | 12, h => exact absurd h (Nat.succ_ne_zero _)
+  | 13, h => exact absurd h (Nat.succ_ne_zero _)
+  | 14, h =>
+    rw [refusalTagsSlotCode_eq, refusalScalarSlotCode_eq_slotCode (fun _ => rfl)] at h
+    rcases refusalSlot_codeRefusal st.declassificationRefusals index
+        (fun x => refusalTagsWord x + 1) (fun _ => .invalidArgument auditReadIndexWord) with
+      ⟨hs, r, hr, hc, hk⟩ | ⟨hNone, hc, hk⟩
+    · rw [hc] at h; cases h
+    · exact refusalSlotRead_absent ctx m reader st index hIs hNone _ (.inl rfl)
+  | 15, h => exact refusalFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 16, h => exact refusalFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 17, h => exact refusalFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 18, h => exact refusalFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 19, h => exact refusalFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 20, h => exact refusalFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 21, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 22, h => exact auditFieldCountCode_refused ctx m reader st _ _ hIs h
+  | 23, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 24, h => exact auditFieldWordCode_refused ctx m reader st _ _ _ hIs h
+  | 25, h => exact refusalReceiverCountCode_refused ctx m reader st _ hIs h
+  | 26, h => exact refusalReceiverWordCode_refused ctx m reader st _ _ hIs h
+  | 27, h =>
+    simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?, auditReadFastRefusal]
+    unfold auditChainCode at h
+    generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+      st.declassificationAudit.length index = a at h ⊢
+    generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+      st.declassificationAudit.length (index - 1) = b at h ⊢
+    by_cases hi : index = 0 <;> cases a <;> cases b <;> simp_all
+  | 28, h =>
+    simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?, auditReadFastRefusal]
+    by_cases hc : chunk < index
+    · simp only [hc, ↓reduceIte] at h ⊢
+      unfold auditChainCode at h
+      generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+        st.declassificationAudit.length index = a at h ⊢
+      generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+        st.declassificationAudit.length chunk = b at h ⊢
+      cases a <;> cases b <;> simp_all
+    · simp only [hc, ↓reduceIte]
+  | 29, h =>
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte,
+      SystemState.declassificationAuditEpoch, auditLogVisibleTo_getElem?, auditReadFastRefusal]
+    by_cases hc : chunk < st.declassificationAudit.epoch
+    · simp only [hc, ↓reduceIte] at h ⊢
+      split at h
+      · next hF => simp only [hF]
+      · cases h
+    · simp only [hc, ↓reduceIte]
+  | n + 30, _ =>
+    simp only [decodeAuditReadOp_none (Nat.le_add_left 30 n),
+      auditReadFastRefusal_of_ge (Nat.le_add_left 30 n)]
+
 /-- **An admitted read's write**: the word staged into the caller's return
 registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
 @[noinline] def auditReadPerform (tid : SeLe4n.ThreadId) (w : Nat) (st : SystemState) :
     SystemState :=
   st.updateTcb tid (TCB.withReturnWords · w.toUInt64 0 0 0 0 0)
-
-/-- Whether an `.auditRead` is admitted, given the code its read computes
-(`auditReadFastCode`): the target is the trail (checked by the caller), the
-capability carries the read's right, the configured clearance validates and
-dominates the reader, and the read is covered, succeeds and fits a word. -/
-@[inline] def auditReadAdmitted (cap : Capability) (m readerDomain : SecurityDomain)
-    (code : Nat) : Bool :=
-  cap.hasRight (syscallRequiredRight .auditRead) && auditClearanceDominates m &&
-    DomainFlowPolicy.legacyLattice.canFlow m readerDomain && code != 0 &&
-    decide (code - 1 < 2 ^ 64)
 
 /-- The opcode, index and chunk of a read, from the caller's registers. -/
 @[inline] def auditReadCode (ctx : LabelingContext) (readerDomain : SecurityDomain)
@@ -1470,49 +2021,127 @@ dominates the reader, and the read is covered, succeeds and fits a word. -/
   auditReadFastCode ctx readerDomain st (auditedArgWord regs 0).toNat
     (auditedArgWord regs 1).toNat (auditedArgWord regs 2).toNat
 
-/-- An admitted read is the specification's. -/
-theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (cap : Capability) (st : SystemState) (m : SecurityDomain) (reader : SeLe4n.ThreadId)
-    {code : Nat} (hT : cap.target = .auditTrail code) (hM : ctx.auditMonitorClearance = some m)
-    (hCur : st.scheduler.currentOnCore executingCore = some reader)
-    (hTr : auditTruncated .auditRead regs cap = false)
-    (hA : auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader))
-      (auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs) = true) :
-    auditedArmSpec ctx .auditRead capAddr regs tid executingCore cap st =
-      .ok ((), auditReadPerform tid
-        (auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs - 1) st) := by
-  simp only [auditReadAdmitted, Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hA
-  obtain ⟨⟨⟨⟨hRight, hDom⟩, hMon⟩, hCode⟩, hFit⟩ := hA
-  have hL := Nat.not_lt.mpr (auditTruncated_false_le hTr hT hRight)
-  have hV := validatedAuditMonitorClearance_eq_some ctx m hM hDom
-  obtain ⟨w, hw⟩ : ∃ w, auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs =
-      w + 1 := Nat.exists_eq_succ_of_ne_zero hCode
-  have hSpec := auditReadFastCode_spec ctx m _ st _ _ _ w hMon hw
-  rw [hw, Nat.add_sub_cancel] at hFit ⊢
-  have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m)
-      (embedLegacyLabel (ctx.threadLabelOf reader)) = true := hMon
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
-    extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
-    Architecture.SyscallArgDecode.decodeAuditReadArgs,
-    Architecture.SyscallArgDecode.requireMessageLength, hL, auditedDecoded_msgReg regs 0 (by decide),
-    auditedDecoded_msgReg regs 1 (by decide), auditedDecoded_msgReg regs 2 (by decide), bind,
-    Except.bind, pure, Except.pure, hV, SeLe4n.RegValue.val_mk]
-  revert hSpec
-  cases decodeAuditReadOp (auditedArgWord regs 0).toNat (auditedArgWord regs 1).toNat
-      (auditedArgWord regs 2).toNat with
-  | none => intro hSpec; cases hSpec
-  | some op =>
-    intro hSpec
-    simp only at hSpec
-    simp only [auditReadFromCore, auditReaderDomain, hCur, Option.map_some,
-      liftLegacyContext_threadDomainOf, hIs, ↓reduceIte, hSpec, hFit]
-    rw [Architecture.writeReturnFrameToTcb_ofWord_eq_words]
-    rfl
+/-- A configured clearance validates exactly when it dominates every subject
+label (`auditClearanceDominates`). -/
+theorem validatedAuditMonitorClearance_eq (ctx : LabelingContext) (m : SecurityDomain)
+    (hM : ctx.auditMonitorClearance = some m) :
+    validatedAuditMonitorClearance ctx = if auditClearanceDominates m then some m else none := by
+  by_cases hD : auditClearanceDominates m = true
+  · rw [validatedAuditMonitorClearance_eq_some ctx m hM hD, if_pos hD]
+  · rw [if_neg hD]
+    simp only [auditClearanceDominates, Bool.and_eq_true, not_and] at hD
+    simp only [validatedAuditMonitorClearance, hM, legacySubjectLabels, List.all_cons, List.all_nil,
+      embedLegacyLabel, Bool.and_true, Bool.and_eq_true]
+    split
+    · next hAll =>
+      exact absurd hAll.2.2.2 (hD ⟨⟨hAll.1, hAll.2.1⟩, hAll.2.2.1⟩)
+    · rfl
 
-/-- **`.auditRead` behind its operand check**: the idle-object check, then the admitted form — the word computed by walking the
-ring's live window and staged in place — or the general one
-(`auditReadOperandArmR_eq`). -/
+/-- **A monitor's audit read on the trail, in place**: the read's right, its
+opcode (checked on the word), the configured clearance, the reader and the
+monitor gate, then the word its code computes staged in place, or the
+refusal its code finds (`auditReadFastRefusal`), each a closed constant, or a
+word too wide for the return register refused; equal to the specification's
+arm (`auditReadTrailR_eq`). -/
+@[inline] def auditReadTrailR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    if cap.hasRight (syscallRequiredRight .auditRead) then
+      if auditedArgWord regs 0 < 30 then
+        match ctx.auditMonitorClearance with
+        | none => .error (.illegalAuthority, st)
+        | some m =>
+          if auditClearanceDominates m then
+            match st.scheduler.currentOnCore executingCore with
+            | none => .error (.illegalState, st)
+            | some reader =>
+              if DomainFlowPolicy.legacyLattice.canFlow m
+                  (embedLegacyLabel (ctx.threadLabelOf reader)) then
+                let code := auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs
+                if code = 0 then
+                  .error (auditReadFastRefusal ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st
+                    (auditedArgWord regs 0).toNat (auditedArgWord regs 1).toNat
+                    (auditedArgWord regs 2).toNat, st)
+                else if code - 1 < 2 ^ 64 then .ok ((), auditReadPerform tid (code - 1) st)
+                else .error (.auditFieldTooLarge, st)
+              else .error (.illegalAuthority, st)
+          else .error (.illegalAuthority, st)
+      else .error (.invalidSyscallArgument, st)
+    else .error (.illegalAuthority, st)
+
+/-- The in-place read on the trail is the specification's arm, for a call long
+enough for its arguments. -/
+theorem auditReadTrailR_eq (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) (st : SystemState) {code : Nat} (hT : cap.target = .auditTrail code)
+    (hTr : auditTruncated .auditRead regs cap = false) :
+    auditReadTrailR ctx regs tid executingCore cap st =
+      auditGeneralR ctx .auditRead regs capAddr tid executingCore cap st := by
+  unfold auditReadTrailR auditGeneralR
+  cases hRight : cap.hasRight (syscallRequiredRight .auditRead) with
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, auditedArmSpec, hT, extractAuditAuthority,
+      auditedGate, hRight]
+  | true =>
+  have hL := Nat.not_lt.mpr (auditTruncated_false_le hTr hT hRight)
+  simp only [↓reduceIte, auditedArmSpec, auditedDecoded, hT, extractAuditAuthority,
+    auditedGate, hRight, Architecture.SyscallArgDecode.decodeAuditReadArgs,
+    Architecture.SyscallArgDecode.requireMessageLength, hL,
+    auditedDecoded_msgReg regs 0 (by decide), auditedDecoded_msgReg regs 1 (by decide),
+    auditedDecoded_msgReg regs 2 (by decide), bind, Except.bind, pure, Except.pure,
+    SeLe4n.RegValue.val_mk]
+  by_cases hOp : auditedArgWord regs 0 < 30
+  · have hN : (auditedArgWord regs 0).toNat < 30 := UInt64.lt_iff_toNat_lt.mp hOp
+    obtain ⟨op, hD⟩ := Option.isSome_iff_exists.mp
+      (decodeAuditReadOp_isSome hN (auditedArgWord regs 1).toNat (auditedArgWord regs 2).toNat)
+    simp only [hOp, ↓reduceIte, hD]
+    cases hM : ctx.auditMonitorClearance with
+    | none =>
+      simp only [validatedAuditMonitorClearance, hM, auditReadFromCore]
+    | some m =>
+    rw [validatedAuditMonitorClearance_eq ctx m hM]
+    cases hDom : auditClearanceDominates m with
+    | false => simp only [hDom, Bool.false_eq_true, ↓reduceIte, auditReadFromCore]
+    | true =>
+    simp only [hDom, ↓reduceIte, auditReadFromCore, auditReaderDomain]
+    cases hCur : st.scheduler.currentOnCore executingCore with
+    | none => simp only [Option.map_none]
+    | some reader =>
+    simp only [Option.map_some, liftLegacyContext_threadDomainOf]
+    cases hMon : DomainFlowPolicy.legacyLattice.canFlow m
+        (embedLegacyLabel (ctx.threadLabelOf reader)) with
+    | false =>
+      have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m)
+          (embedLegacyLabel (ctx.threadLabelOf reader)) = false := hMon
+      simp only [hMon, hIs, Bool.false_eq_true, ↓reduceIte]
+    | true =>
+    have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m)
+        (embedLegacyLabel (ctx.threadLabelOf reader)) = true := hMon
+    simp only [hMon, hIs, ↓reduceIte]
+    by_cases h0 : auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs = 0
+    · have hR := auditReadFastRefusal_spec ctx m _ st _ _ _ hMon h0
+      simp only [hD] at hR
+      simp only [h0, ↓reduceIte, hR]
+    · obtain ⟨w, hw⟩ := Nat.exists_eq_succ_of_ne_zero h0
+      have hS := auditReadFastCode_spec ctx m _ st _ _ _ w hMon hw
+      simp only [hD] at hS
+      simp only [hw, Nat.add_one_ne_zero, ↓reduceIte, Nat.add_sub_cancel, hS]
+      by_cases hFit : w < 2 ^ 64
+      · simp only [Nat.succ_sub_one, hFit, ↓reduceIte]
+        rfl
+      · simp only [Nat.succ_sub_one, hFit, ↓reduceIte]
+  · have hN : 30 ≤ (auditedArgWord regs 0).toNat := by
+      have := mt UInt64.lt_iff_toNat_lt.mpr hOp
+      simp only [UInt64.reduceToNat] at this
+      omega
+    simp only [hOp, ↓reduceIte, decodeAuditReadOp_none hN]
+
+/-- **`.auditRead` behind its operand check**: the idle-object check, the
+truncation check, then the read on the trail in place (`auditReadTrailR`) —
+the word computed by walking the ring's live window and staged in place, or
+the refusal the same walk finds — and a capability naming anything else
+refused `invalidCapability` (`auditReadOperandArmR_eq`). -/
 @[inline] def auditReadOperandArmR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
     Option Capability → RefusalCarrying Unit :=
@@ -1523,13 +2152,9 @@ ring's live window and staged in place — or the general one
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
       else if auditTruncated .auditRead regs cap then .error (.truncatedMessage, st)
       else
-        match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
-        | .auditTrail _, some m, some reader =>
-          let code := auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs
-          if auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader)) code then
-            .ok ((), auditReadPerform tid (code - 1) st)
-          else auditGeneralR ctx .auditRead regs capAddr tid executingCore cap st
-        | _, _, _ => auditTargetGeneralR ctx .auditRead regs capAddr tid executingCore cap st
+        match cap.target with
+        | .auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st
+        | _ => .error (.invalidCapability 0, st)
 
 /-- `.auditRead` behind its operand check is the specification's arm and taint
 step, on every capability the operand resolves to. -/
@@ -1559,14 +2184,13 @@ theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecode
         auditedArmSpec_audit_truncated ctx .auditRead decoded.capAddr regs tid executingCore cap
           st (.inl rfl) hTr]
     · simp only [hIdle, hTr, Bool.false_eq_true, ↓reduceIte]
-      split
-      · next m reader hT hM hCur =>
-        split
-        · next hA =>
-          simp only [auditGeneralR, auditedArmSpec_auditRead_admitted ctx decoded.capAddr regs tid
-            executingCore cap st m reader hT hM hCur (Bool.eq_false_iff.mpr hTr) hA]
-        · rfl
-      · exact auditTargetGeneralR_eq ctx _ regs _ tid executingCore cap st (.inl rfl)
+      cases hT : cap.target with
+      | auditTrail code =>
+        exact auditReadTrailR_eq ctx decoded.capAddr regs tid executingCore cap st hT
+          (Bool.eq_false_iff.mpr hTr)
+      | _ =>
+        simp only [auditGeneralR, auditedArmSpec_audit_not_trail ctx .auditRead decoded.capAddr
+          regs tid executingCore cap st (.inl rfl) (fun c h => by rw [hT] at h; cases h)]
 
 /-! ## `.declassifySignal` -/
 
@@ -2008,7 +2632,7 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext) (capAddr :
     (embedLegacyLabel (ctx.threadLabelOf t)) nid t
     (!securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid))
     (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf t)) W.1 (by rw [hLen]; exact hRoom)
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
@@ -2131,7 +2755,7 @@ theorem auditedArmSpec_declassifySignal_planRefused (ctx : LabelingContext)
       .error (declassifySignalPlanRefusalError (declassifySignalPlanRefusal ctx st signaler nid)) := by
   obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
   unfold declassifySignalPlanRefusal at hR ⊢
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
@@ -2223,7 +2847,7 @@ theorem auditedArmSpec_declassifySignal_absent (ctx : LabelingContext)
     (hAbsent : st.getNotification? nid = none) :
     auditedArmSpec ctx .declassifySignal capAddr regs tid executingCore cap st =
       .error (declassifySignalAbsentRefusalError (declassifySignalAbsentRefusal st nid)) := by
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     notificationSignalDeclassifiedCrossCoreDispatch, notificationSignalDeclassifiedOnCore, hCur,
     hAbsent, declassifySignalAbsentRefusal, declassifySignalAbsentRefusalError]
   by_cases hO : (st.getObjectType? nid).isSome = true <;> simp [hO]
@@ -2330,7 +2954,7 @@ theorem auditedArmSpec_declassifySignal_stored (ctx : LabelingContext) (capAddr 
   obtain ⟨⟨⟨⟨hSig, hPresent⟩, hBound⟩, hWait⟩, hHop⟩ := hA
   subst hSig
   obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
@@ -2415,7 +3039,7 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext) (capAddr :
     (!securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid))
     (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩)) W.1
     (by rw [hLen]; exact hRoom)
-  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+  simp only [auditedArmSpec, hT,
     notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,

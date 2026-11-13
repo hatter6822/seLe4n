@@ -711,44 +711,6 @@ def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadI
       | .error e => .error (e.forArgumentCap faultHandlerCapNumber)
       | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr)
 
-/-- WS-ZA ZA5.2: does `cptr` resolve, through `tcb`'s CSpace, to a handler
-(`resolveFaultHandlerCPtr` succeeds)?  The slot is resolved through
-`lookupSlotK`, so no slot reference, capability result or
-handler record is built (`faultHandlerResolves_eq`). -/
-@[inline] def faultHandlerResolves (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) : Bool :=
-  lookupSlotK tcb cptr st (fun _ _ _ _ => false)
-    (fun cnode slot =>
-      match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-      | none => false
-      | some cap =>
-          faultHandlerCapAuthorized cap &&
-            (match cap.target with
-             | .object epId => (st.getEndpoint? epId).isSome
-             | _ => false))
-
-theorem faultHandlerResolves_eq (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
-    faultHandlerResolves st tcb cptr =
-      (match resolveFaultHandlerCPtr st tcb cptr with
-       | .ok _ => true
-       | .error _ => false) := by
-  unfold faultHandlerResolves resolveFaultHandlerCPtr
-  rw [lookupSlotK_eq]
-  cases lookupSlot tcb cptr st with
-  | error e => rfl
-  | ok ref =>
-    obtain ⟨cnode, slot⟩ := ref
-    simp only []
-    cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-    | none => rfl
-    | some cap =>
-      simp only []
-      cases faultHandlerCapAuthorized cap
-      · rfl
-      · simp only [Bool.true_and, ↓reduceIte]
-        cases cap.target with
-        | object epId => cases h : st.getEndpoint? epId <;> simp [h]
-        | _ => rfl
-
 /-- WS-ZA ZA5.2: the compiled `setThreadFaultHandlerOp` — the handler written
 into the TCB in its slot (`updateTcb`), so on an exclusively owned state the TCB
 is not rebuilt. -/
@@ -778,31 +740,62 @@ def setThreadFaultHandlerOpImpl (st : SystemState) (vTargetTid : SeLe4n.ValidThr
       simp only [installFaultHandler]
       rw [SystemState.rewriteObject_tcb_eq_updateTcb hT (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr })]
 
-/-- WS-ZA ZA5.2: `setThreadFaultHandlerOp`'s checks, read before anything is
-written: the thread is a stored TCB and the handler resolves through its
-CSpace.  When they pass the operation is the in-slot write
-(`setThreadFaultHandlerOp_of_admitted`). -/
-@[inline] def setThreadFaultHandlerAdmitted (st : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) : Bool :=
+/-- **`setThreadFaultHandlerOp` in place, into continuations**: the handler's
+address resolved through the target's CSpace by `lookupSlotK`, so a refused
+address hands its lookup fault on as words and only `onErr` builds the error;
+the handler written into the TCB in its slot (`updateTcb`) on success.  Equal to
+the operation (`setThreadFaultHandlerOpK_eq`). -/
+@[inline] def setThreadFaultHandlerOpK {α : Type} (st : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (onErr : KernelError → α)
+    (onOk : SystemState → α) : α :=
   match st.getTcb? vTargetTid.val with
-  | none => false
-  | some tcb => faultHandlerResolves st tcb cptr
-
-theorem setThreadFaultHandlerOp_of_admitted (st : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (h : setThreadFaultHandlerAdmitted st vTargetTid cptr = true) :
-    setThreadFaultHandlerOp st vTargetTid cptr =
-      .ok (st.updateTcb vTargetTid.val (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr })) := by
-  rw [setThreadFaultHandlerOp_eq_impl]
-  unfold setThreadFaultHandlerAdmitted at h
-  cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [hT] at h
+  | none => onErr .objectNotFound
   | some tcb =>
-    unfold setThreadFaultHandlerOpImpl
-    simp only [hT, faultHandlerResolves_eq] at h ⊢
-    cases hR : resolveFaultHandlerCPtr st tcb cptr with
-    | error e => simp [hR] at h
-    | ok _ => rfl
+    lookupSlotK tcb cptr st
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun cnode slot =>
+        match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+        | none => onErr (.invalidCapability faultHandlerCapNumber)
+        | some cap =>
+          if faultHandlerCapAuthorized cap then
+            match cap.target with
+            | .object epId =>
+              match st.getEndpoint? epId with
+              | some _ => onOk (st.updateTcb vTargetTid.val
+                  (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr }))
+              | none => onErr (.invalidCapability faultHandlerCapNumber)
+            | _ => onErr (.invalidCapability faultHandlerCapNumber)
+          else onErr .illegalAuthority)
+
+theorem setThreadFaultHandlerOpK_eq {α : Type} (st : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (onErr : KernelError → α)
+    (onOk : SystemState → α) :
+    setThreadFaultHandlerOpK st vTargetTid cptr onErr onOk =
+      match setThreadFaultHandlerOp st vTargetTid cptr with
+      | .error e => onErr e
+      | .ok st' => onOk st' := by
+  rw [setThreadFaultHandlerOp_eq_impl]
+  unfold setThreadFaultHandlerOpK setThreadFaultHandlerOpImpl resolveFaultHandlerCPtr
+  cases st.getTcb? vTargetTid.val with
+  | none => rfl
+  | some tcb =>
+    dsimp only
+    rw [lookupSlotK_eq]
+    cases lookupSlot tcb cptr st with
+    | error f => simp only [LookupFault.ofWords_word, KernelError.forArgumentCap]
+    | ok ref =>
+      obtain ⟨cnode, slot⟩ := ref
+      dsimp only
+      cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+      | none => rfl
+      | some cap =>
+        dsimp only
+        cases faultHandlerCapAuthorized cap
+        · rfl
+        · simp only [↓reduceIte]
+          cases cap.target with
+          | object epId => dsimp only; cases st.getEndpoint? epId <;> rfl
+          | _ => rfl
 
 /-- On the success path the step *is* the one-field rewrite. -/
 theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
