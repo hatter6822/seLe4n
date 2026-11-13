@@ -5952,7 +5952,6 @@ run_check "INVARIANT" rg -n '^    \(tid : SeLe4n\.ThreadId\) \(capWord : UInt64\
 run_check "INVARIANT" rg -n '^  \| signal \(capAddr : CPtr\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_notificationSignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatch notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge$' SeLe4n/Kernel/RefusalCarryingDispatch.lean
@@ -6313,7 +6312,6 @@ run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_fault($|[ ({:\[\]])
 # Relation, not presence: the arms must *call* the seam.  A check for the
 # seam's mere existence in `API.lean` would pass on a file that defines it and
 # never dispatches through it, which is the defect this closed.
-run_check "INVARIANT" rg -n 'replyTransferOnCore tid callerTid' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'replyTransferOnCoreChecked ctx tid callerTid' SeLe4n/Kernel/API.lean
 # RR4.20 relation, not presence: the live entry must call the **checked**
 # delivery.  Both names contain `faultDeliverOnCore`, so a presence check for
@@ -9007,7 +9005,6 @@ run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_staging_write_mem($|[ (
 run_check "INVARIANT" rg -n '^theorem lockSet_serviceQuery_staging_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n 'auditReadFromCore#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
 # The two audit readers join the cross-core inventory with an EMPTY write set:
 # they take an executing core (the reader's clearance is resolved from the
@@ -10199,7 +10196,6 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_de
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '\| declassifySignalDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'notificationSignalDeclassifiedCrossCoreDispatch#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'policyGated "notificationSignalDeclassifiedCrossCoreDispatch"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # NEGATIVE: it must NOT be classified capability-only — that would say the
 # notification capability alone authorizes the downgrade, which it does not.
@@ -10684,12 +10680,11 @@ run_negative_check "INVARIANT" rg -n '&& decide \(timestamp <' SeLe4n/Kernel/Inf
 # PR #873 round 10: four gate-soundness corrections.  Two stop the anchor gate
 # inventing failures (a search MODE and a search SCOPE are part of what an
 # anchor pins), and two stop the content-flow gate under-reading (a walk that
-# stops with an unexpanded frontier, and three dispatchers merged under one
-# syscall name so a healthy arm masked a broken sibling).
+# stops with an unexpanded frontier, and dispatchers merged under one syscall
+# name so a healthy arm masked a broken sibling).
 run_check "INVARIANT" rg -n '^def _mode_allows($|[ ({:\[\]])' scripts/check_anchor_consistency.py
 run_check "INVARIANT" rg -n '^def _scope_contains($|[ ({:\[\]])' scripts/check_anchor_consistency.py
 run_check "INVARIANT" rg -n '^def arm_key($|[ ({:\[\]])' scripts/check_content_flow_coverage.py
-run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
 # WS-ZA ZA4.7: no blocked thread holds a message.  A blocked sender keeps its
 # message in its saved registers and IPC buffer (seL4's placement) and the

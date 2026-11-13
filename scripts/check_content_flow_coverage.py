@@ -1564,17 +1564,22 @@ def main() -> int:
             print("      detecting: every production finding below would be a false PASS.")
             return 1
         # PR #873 round 10: the dispatchers must stay SEPARATE keys.  Merging
-        # them let a healthy implementation mask a broken sibling — a checked
-        # `.receive` that lost its `pendingMessage` write still passed on the
-        # unchecked arm's hit.  A collapse back to one key per syscall would be
-        # invisible in the verdict, so it is asserted here: `.receive` is
-        # implemented in two dispatchers and both must reach a content write.
+        # them let a healthy implementation mask a broken sibling.  A collapse
+        # back to one key per syscall would be invisible in the verdict, so it
+        # is asserted here: every key names its dispatcher, both dispatchers
+        # contribute keys, and `.receive` (implemented in the checked
+        # dispatcher only) must reach a content write under its own key.
+        seen = {dispatcher_of(k) for k in roots if k != SELF_TEST_ROOT_ARM}
+        if "" in seen or not set(DISPATCHERS) <= seen:
+            print("FAIL: --self-test — the reach keys do not name their")
+            print(f"      dispatchers (saw {sorted(seen)}, want {list(DISPATCHERS)}).")
+            print("      The reach key has collapsed back to the syscall name, so one")
+            print("      dispatcher's healthy arm can again mask a broken sibling.")
+            return 1
         recv_keys = [k for k in roots if arm_of(k) == "receive"]
-        if len(recv_keys) < 2:
-            print("FAIL: --self-test — `.receive` resolved to fewer than two")
-            print(f"      dispatcher implementations ({recv_keys}).  The reach key")
-            print("      has collapsed back to the syscall name, so one dispatcher's")
-            print("      healthy arm can again mask a broken sibling.")
+        if not recv_keys:
+            print("FAIL: --self-test — `.receive` resolved to no dispatcher")
+            print("      implementation at all.")
             return 1
         blind_recv = [k for k in recv_keys if hits.get(k, 0) == 0]
         if blind_recv:
