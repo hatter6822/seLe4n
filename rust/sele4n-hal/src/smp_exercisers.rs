@@ -10422,7 +10422,44 @@ fn bound_declassified_signals(which: &str) -> bool {
         name: "irq-signal-bound",
         enter: irq_bound_line_entry,
     };
+    // A capability fault to a handler waiting with no reply object: the low
+    // thread names the boot endpoint as its fault handler, the root task's
+    // receive on it (no reply object, message length 0) blocks it, and the
+    // low thread's fault finds the handler holding no reply to link it to, so
+    // it is suspended with the fault recorded (seL4's `sendFaultIPC` failing
+    // into `handleDoubleFault`), the handler left waiting.  The bound line's
+    // interrupt wakes the root task through its bound notification, and the
+    // low thread is resumed.
+    let set_low_handler = invocation(
+        "low-thread-set-fault-handler",
+        TCB_SET_FAULT_HANDLER,
+        LOW_THREAD_CAP,
+        [ENDPOINT_CAP, 0, 0, 0],
+    );
+    let irq_wakes_handler = KernelEntry {
+        name: "irq-wakes-handler-without-reply",
+        enter: irq_bound_line_entry,
+    };
+    let resume_low = invocation(
+        "low-thread-resume-after-fault",
+        TCB_RESUME,
+        LOW_THREAD_CAP,
+        [0; 4],
+    );
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
+        || !unmeasured(
+            &set_low_handler,
+            "the low thread's fault handler was not set",
+        )
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the root task's receive did not block",
+        )
+        || heap_allocations_trap(&cap_fault("cap-fault-to-handler-without-reply"), which)
+            != Some(true)
+        || !heap_allocations_interrupt(&irq_wakes_handler, which)
+        || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
+        || !unmeasured(&resume_low, "the low thread was not resumed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
@@ -12879,6 +12916,68 @@ fn fault_entries() -> Option<bool> {
         if !unmeasured(&wake_handler, "the waiting handler was not woken") || !suspend_partner() {
             return Some(false);
         }
+    }
+    // A capability fault from a thread running on a scheduling context, to a
+    // passive handler waiting with a reply object: the fault's call lends the
+    // faulting thread's context to the handler (seL4-MCS `sendFaultIPC`, the
+    // call's `schedContext_donate`), each write in its slot.  The handler then
+    // suspends the faulting thread (the context stays with it, as seL4 returns
+    // no loan on a suspend) and the context is unbound from it.  The timer is
+    // masked across the sequence, so no tick switches the threads between steps.
+    let donating_setup = [
+        configure(
+            "fault-donating-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "fault-donating-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("fault-donating-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+    ];
+    let donating_teardown = [
+        invocation(
+            "fault-donating-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "fault-donating-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+    ];
+    if !unmeasured(
+        &kernel_step("fault-donating-mask-ticks", MASK_TICKS_STEP),
+        "the timer was not masked",
+    ) {
+        return Some(false);
+    }
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured_all(&donating_setup, "the donating fault's setup failed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(&fault_trip(2, "cap-fault-donating-delivered"), which)
+                != Some(true)
+            || !unmeasured_all(&donating_teardown, "the donating fault's teardown failed")
+        {
+            return Some(false);
+        }
+    }
+    if !unmeasured(
+        &kernel_step("fault-donating-unmask-ticks", UNMASK_TICKS_STEP),
+        "the timer was not unmasked",
+    ) {
+        return Some(false);
     }
     // A capability fault answered by a reply at the longest message, 120
     // words, and then by a reply-receive at that length: the reply's words
