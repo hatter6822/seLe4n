@@ -191,13 +191,49 @@ def resolveAddressBits (nodeCap : Capability) (cptr : SeLe4n.CPtr) (nBits : Nat)
   | _ => .error .invalidRoot
   termination_by nBits
 
-/-- `resolveAddressBits` in continuation form (WS-SX SX2): the lookup fault goes
-to `onErr` as its four words (`LookupFault.word`, the type word first) and the
-slot's CNode, index and bits left to `onOk`, so a caller builds neither the
-`Except`, the slot reference nor the fault.  Its recursion is specialised at
-each caller (`@[specialize]`), so the walk calls no closure and builds nothing
-at any depth; equal to the specification (`resolveAddressBitsK_eq`). -/
-@[specialize] def resolveAddressBitsK {α : Type} (nodeCap : Capability) (cptr : SeLe4n.CPtr)
+/-- **Where `resolveAddressBits`'s walk stops**, handed to `stop` as the node
+capability it stops at and the bits still left there: the walk descends through
+each CNode capability its slot holds, as `resolveAddressBits` does, and stops at
+the first level that fails, consumes the last bits or reads anything but a CNode
+capability.  Its recursion is specialised at each `stop` (`@[specialize]`); the
+compiled resolver (`resolveAddressBitsK`) asks it for the capability and for the
+bits, each a value the walk already holds, so the recursion returns no result it
+builds. -/
+@[specialize] def resolveAddressBitsWalk {β : Type} (nodeCap : Capability) (cptr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState) (stop : Capability → Nat → β) : β :=
+  match nodeCap.target with
+  | .object id =>
+    match st.getCNode? id with
+    | none => stop nodeCap nBits
+    | some cn =>
+      if nodeCap.cnodeGuardSize > nBits ∨
+          cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+            nodeCap.cnodeGuard then
+        stop nodeCap nBits
+      else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
+          nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
+        stop nodeCap nBits
+      else
+        if hEq : nBits = nodeCap.cnodeGuardSize + cn.radixWidth then stop nodeCap nBits
+        else
+          match cn.lookup (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
+              cn.radixWidth)) cn.radixWidth)) with
+          | some cap =>
+            if isCNodeCap st cap then
+              have : nBits - (nodeCap.cnodeGuardSize + cn.radixWidth) < nBits := by omega
+              resolveAddressBitsWalk cap cptr (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth)) st
+                stop
+            else stop nodeCap nBits
+          | none => stop nodeCap nBits
+  | _ => stop nodeCap nBits
+  termination_by nBits
+
+/-- **One level of the walk, answered**: the level `nodeCap` resolves with
+`nBits` left, as `resolveAddressBits` answers it, its fault to `onErr` as its
+four words and its slot to `onOk`.  A CNode capability in the slot is a level the
+walk descends to (`resolveAddressBitsWalk`), never one it stops at, so that
+branch answers the slot itself and is never taken. -/
+@[inline] def resolveAddressBitsLevel {α : Type} (nodeCap : Capability) (cptr : SeLe4n.CPtr)
     (nBits : Nat) (st : SystemState)
     (onErr : UInt64 → UInt64 → UInt64 → UInt64 → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → Nat → α) : α :=
@@ -211,42 +247,49 @@ at any depth; equal to the specification (`resolveAddressBitsK_eq`). -/
             nodeCap.cnodeGuard then
         onErr 4 nBits.toUInt8.toUInt64 nodeCap.cnodeGuard.toUInt64
           nodeCap.cnodeGuardSize.toUInt8.toUInt64
-      else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
+      else if nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
           nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
         onErr 3 nBits.toUInt8.toUInt64
           (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt8.toUInt64 0
       else
-        if hEq : nBits = nodeCap.cnodeGuardSize + cn.radixWidth then
+        if nBits = nodeCap.cnodeGuardSize + cn.radixWidth then
           onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
             cn.radixWidth)) cn.radixWidth)) 0
-        else
-          match cn.lookup (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
-              cn.radixWidth)) cn.radixWidth)) with
-          | some cap =>
-            if isCNodeCap st cap then
-              have : nBits - (nodeCap.cnodeGuardSize + cn.radixWidth) < nBits := by omega
-              resolveAddressBitsK cap cptr (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth)) st
-                onErr onOk
-            else onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
-              cn.radixWidth)) cn.radixWidth)) (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth))
-          | none => onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
-              cn.radixWidth)) cn.radixWidth)) (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth))
+        else onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
+          cn.radixWidth)) cn.radixWidth)) (nBits - (nodeCap.cnodeGuardSize + cn.radixWidth))
   | _ => onErr 1 0 0 0
-  termination_by nBits
 
-theorem resolveAddressBitsK_eq {α : Type} (cptr : SeLe4n.CPtr) (st : SystemState)
+/-- `resolveAddressBits` in continuation form (WS-SX SX2): the lookup fault goes
+to `onErr` as its four words (`LookupFault.word`, the type word first) and the
+slot's CNode, index and bits left to `onOk`, so a caller builds neither the
+`Except`, the slot reference nor the fault.  The walk finds the level it stops
+at (`resolveAddressBitsWalk`, asked for its capability and its bits) and that
+level is answered (`resolveAddressBitsLevel`); neither continuation runs inside
+the recursion, so an inlined caller's continuations stay in the caller, where
+their results are taken apart as they are built.  Equal to the specification
+(`resolveAddressBitsK_eq`). -/
+@[inline] def resolveAddressBitsK {α : Type} (nodeCap : Capability) (cptr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState)
     (onErr : UInt64 → UInt64 → UInt64 → UInt64 → α)
-    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Nat → α) :
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Nat → α) : α :=
+  resolveAddressBitsLevel (resolveAddressBitsWalk nodeCap cptr nBits st fun c _ => c) cptr
+    (resolveAddressBitsWalk nodeCap cptr nBits st fun _ n => n) st onErr onOk
+
+/-- The walk hands `stop` the capability and the bits it is asked for one at a
+time. -/
+theorem resolveAddressBitsWalk_stop {β : Type} (cptr : SeLe4n.CPtr) (st : SystemState)
+    (stop : Capability → Nat → β) :
     ∀ (nBits : Nat) (nodeCap : Capability),
-      resolveAddressBitsK nodeCap cptr nBits st onErr onOk =
-        match resolveAddressBits nodeCap cptr nBits st with
-        | .error f => onErr (f.word 0) (f.word 1) (f.word 2) (f.word 3)
-        | .ok (ref, n) => onOk ref.cnode ref.slot n := by
+      resolveAddressBitsWalk nodeCap cptr nBits st stop =
+        stop (resolveAddressBitsWalk nodeCap cptr nBits st fun c _ => c)
+          (resolveAddressBitsWalk nodeCap cptr nBits st fun _ n => n) := by
   intro nBits
   induction nBits using Nat.strongRecOn with
   | _ n ih =>
     intro nodeCap
-    rw [resolveAddressBitsK, resolveAddressBits]
+    rw [resolveAddressBitsWalk.eq_def nodeCap cptr n st stop,
+      resolveAddressBitsWalk.eq_def nodeCap cptr n st (fun c _ => c),
+      resolveAddressBitsWalk.eq_def nodeCap cptr n st (fun _ n => n)]
     cases nodeCap.target with
     | object id =>
       simp only []
@@ -267,6 +310,50 @@ theorem resolveAddressBitsK_eq {α : Type} (cptr : SeLe4n.CPtr) (st : SystemStat
                 · rfl
               · rfl
     | _ => rfl
+
+theorem resolveAddressBitsK_eq {α : Type} (cptr : SeLe4n.CPtr) (st : SystemState)
+    (onErr : UInt64 → UInt64 → UInt64 → UInt64 → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Nat → α) :
+    ∀ (nBits : Nat) (nodeCap : Capability),
+      resolveAddressBitsK nodeCap cptr nBits st onErr onOk =
+        match resolveAddressBits nodeCap cptr nBits st with
+        | .error f => onErr (f.word 0) (f.word 1) (f.word 2) (f.word 3)
+        | .ok (ref, n) => onOk ref.cnode ref.slot n := by
+  intro nBits nodeCap
+  unfold resolveAddressBitsK
+  rw [← resolveAddressBitsWalk_stop cptr st
+    (fun c n => resolveAddressBitsLevel c cptr n st onErr onOk)]
+  revert nodeCap
+  induction nBits using Nat.strongRecOn with
+  | _ n ih =>
+    intro nodeCap
+    rw [resolveAddressBitsWalk, resolveAddressBits]
+    unfold resolveAddressBitsLevel
+    cases hT : nodeCap.target with
+    | object id =>
+      simp only []
+      cases hC : st.getCNode? id with
+      | none => rfl
+      | some cn =>
+        simp only []
+        by_cases hG : nodeCap.cnodeGuardSize > n ∨
+            cptr.guardBits (n - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
+              nodeCap.cnodeGuard
+        · simp only [hG, ↓reduceIte, hT, hC]; rfl
+        · by_cases hL : nodeCap.cnodeGuardSize + cn.radixWidth > n ∨
+              nodeCap.cnodeGuardSize + cn.radixWidth = 0
+          · simp only [hG, hL, ↓reduceIte, ↓reduceDIte, hT, hC]; rfl
+          · by_cases hE : n = nodeCap.cnodeGuardSize + cn.radixWidth
+            · subst hE
+              simp only [hG, hL, ↓reduceIte, ↓reduceDIte, hT, hC]
+            · simp only [hG, hL, hE, ↓reduceIte, ↓reduceDIte, hT, hC]
+              split
+              · rename_i cap _
+                split
+                · exact ih _ (by omega) cap
+                · rfl
+              · rfl
+    | _ => simp only [hT]; rfl
 
 /-- The walk reads only CNodes: two states that read every CNode alike resolve
 every address alike.  A capability transfer resolves the sender's addresses
