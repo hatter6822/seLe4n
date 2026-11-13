@@ -3178,7 +3178,7 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
         let gate : SyscallGate :=
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         let replyFault : Option Fault :=
-          match receiveReplyFaults gate decoded st (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) with
+          match receiveReplyFaultsW gate decoded st d w0 w1 w2 w3 w4 with
           | some (replyAddr, lf) => some (.capFault replyAddr.word true lf)
           | none => none
         match syscallOperandLookup decoded.syscallId gate st with
@@ -3195,7 +3195,7 @@ theorem syscallCapFaultOfW_eq (layout : SeLe4n.SyscallRegisterLayout) (st : Syst
         (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) =
       syscallCapFaultOf layout st tid ke := by
   unfold syscallCapFaultOfW syscallCapFaultOf
-  simp only [KernelError.matchesWords_iff, KernelError.ofPayloadWords_payloadWord]
+  simp only [KernelError.matchesWords_iff, receiveReplyFaultsW_eq]
 
 /-- PR #887 review round 3: deliver a syscall-raised capability fault — the
 abort entry's delivery, at the SVC seam: spill the trap frame's window, build

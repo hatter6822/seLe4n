@@ -1252,6 +1252,40 @@ def receiveReplyFaults (gate : SyscallGate) (decoded : SyscallDecodeResult)
   | some (replyAddr, lf) => if ke = .failedLookup false lf then some (replyAddr, lf) else none
   | none => none
 
+/-- `receiveReplyFaults` for a refusal handed on as its discriminant and
+payload words: only a refusal whose words are a `failedLookup` with the
+receive phase's `false` word re-runs the reply lookup, and its fault is
+compared on the words (`KernelError.matchesWords`), so no error is rebuilt. -/
+@[inline] def receiveReplyFaultsW (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (d : Nat) (w0 w1 w2 w3 w4 : UInt64) :
+    Option (SeLe4n.CPtr × LookupFault) :=
+  if d == (KernelError.failedLookup false .invalidRoot).toDiscriminant && w0 == 0 then
+    match receiveReplyFault? gate decoded st with
+    | some (replyAddr, lf) =>
+        if (KernelError.failedLookup false lf).matchesWords d w0 w1 w2 w3 w4 then
+          some (replyAddr, lf)
+        else none
+    | none => none
+  else none
+
+theorem receiveReplyFaultsW_eq (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (ke : KernelError) :
+    receiveReplyFaultsW gate decoded st ke.toDiscriminant (ke.payloadWord 0) (ke.payloadWord 1)
+        (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) =
+      receiveReplyFaults gate decoded st ke := by
+  unfold receiveReplyFaultsW receiveReplyFaults
+  cases h : receiveReplyFault? gate decoded st with
+  | none => split <;> rfl
+  | some p =>
+    obtain ⟨replyAddr, lf⟩ := p
+    simp only [KernelError.matchesWords_iff]
+    by_cases hk : ke = KernelError.failedLookup false lf
+    · subst hk
+      simp [KernelError.toDiscriminant, KernelError.payloadWord]
+    · have hk' : ¬KernelError.failedLookup false lf = ke := fun e => hk e.symm
+      simp only [hk, hk', ↓reduceIte]
+      split <;> rfl
+
 /-- A receive refused by its reply capability's resolution raises the
 capability fault: the refusal is `lookupReplyCap`'s failure at the address
 `receiveReplyAddr?` reads (seL4-MCS's `lookupReply`). -/
