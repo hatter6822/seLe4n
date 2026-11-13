@@ -1186,16 +1186,32 @@ theorem cspaceMint_preserves_ipcInvariantFull
       split at hStep
       · contradiction
       · rename_i child hMint
-        have hChildBadge : child.badge = badge := by
-          unfold mintDerivedCap at hMint
-          split at hMint
-          · split at hMint
-            · contradiction
-            · cases hMint; simp
-          · contradiction
+        -- The child's badge is `updateCapData`'s (`mintedBadge`): the
+        -- requested badge, or the parent's own, valid by the pre-state's
+        -- `capabilityBadgesWellFormed`.
+        have hV : parentNN.val = parent := by
+          unfold Capability.toNonNull? at hNN; split at hNN
+          · cases hNN; rfl
+          · cases hNN
+        have hParentValid : ∀ b, parent.badge = some b → b.valid := by
+          intro b hb
+          have hC := (cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 (hMid ▸ hLk)
+          rw [SystemState.lookupSlotCap] at hC
+          cases hCN : SystemState.lookupCNode st src.cnode with
+          | none => rw [hCN] at hC; exact absurd hC (by simp)
+          | some cn =>
+            rw [hCN] at hC
+            exact hInv.badgeWellFormed.2 src.cnode (.cnode cn) src.slot parent b
+              ((SystemState.lookupCNode_eq_some_iff st src.cnode cn).1 hCN) hC hb
+        have hChildBadge : ∀ b, child.badge = some b → b.valid := by
+          intro b hb
+          rw [mintDerivedCap_badge_propagated parentNN rights _ badge child hMint] at hb
+          unfold mintedBadge at hb
+          split at hb
+          · exact hBadgeValid b hb
+          · exact hParentValid b (hV ▸ hb)
         exact cspaceInsertSlot_preserves_ipcInvariantFull stMid st' dst child
-          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
-          (fun b hb => hBadgeValid b (hChildBadge ▸ hb)) hStep
+          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv) hChildBadge hStep
 
 /-- The CDT-recording tail every `WithCdt` form ends in touches neither
 objects nor the scheduler. -/

@@ -353,6 +353,14 @@ run_check "INVARIANT" rg -n '^theorem slotsUnique_holds($|[ ({:\[\]])' SeLe4n/Mo
 run_check "INVARIANT" rg -n '^theorem cnode_slots_unique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 # H-03 remediation: badge/notification routing consistency chain.
 run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# seL4's updateCapData under Mint: the data word is taken by the parent's kind
+# (read from the store in cspaceMint), a badged endpoint or notification is never
+# rebadged, and a CNode guard is admitted only when it fits beside the radix.
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rebadge_refused($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_keeps_cnodeCapGeometry($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^    if capDataRefused kind parent\.val \(SeLe4n\.Badge\.ofOption badge\)\.word then$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^            match mintDerivedCap parentNN rights \(capDataKind st parent\) badge with$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^       !capDataRefusedAt st parent w &&$' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean

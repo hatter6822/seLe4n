@@ -393,7 +393,7 @@ theorem step_preserves_projection
       · exact Bool.not_eq_true _ |>.mp h
     have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
       Capability.toNonNull?_of_not_null hNotNull
-    cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+    cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (capDataKind st parent) badge with
     | error e => simp [hToNN, hMint] at hOp
     | ok c =>
       have hInsert : cspaceInsertSlot dst c st = .ok ((), st') := by

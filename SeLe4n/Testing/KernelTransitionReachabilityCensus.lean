@@ -1167,6 +1167,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSendDualChecked
   , `SeLe4n.Kernel.endpointSendDualWithCaps
   , `SeLe4n.Kernel.endpointSweepBody
+  -- The operand dispatch's report of an arm's result, in the specification
+  -- forms (`dispatchOperandCheckedK`): every routed arm pushes the result from
+  -- its words (`entryReportPushOk 1`, `entryReportPushErrorW 1`), equal to it
+  -- by `liftReport_entryReportResolved`.
+  , `SeLe4n.Kernel.entryReportResolved
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD

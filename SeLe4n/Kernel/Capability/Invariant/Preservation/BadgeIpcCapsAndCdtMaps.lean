@@ -68,7 +68,7 @@ theorem cspaceMint_preserves_badgeWellFormed
     have hToNN : pair.1.toNonNull? = some ⟨pair.1, hNotNull⟩ :=
       Capability.toNonNull?_of_not_null hNotNull
     simp only [hToNN] at hStep
-    cases hMint : mintDerivedCap ⟨pair.1, hNotNull⟩ rights badge with
+    cases hMint : mintDerivedCap ⟨pair.1, hNotNull⟩ rights (capDataKind pair.2 pair.1) badge with
     | error e => simp [hMint] at hStep
     | ok child =>
       simp only [hMint] at hStep
@@ -81,11 +81,23 @@ theorem cspaceMint_preserves_badgeWellFormed
       have hObj : pair.2.objects[dst.cnode]? = some (.cnode cn) :=
         (SystemState.getCNode?_eq_some_iff pair.2 dst.cnode cn).mp hCnOpt
       have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-      -- Extract child.badge from mintDerivedCap. AN4-E (H-06) refactors the body
-      -- to wrap the `.ok` in a second `if` that rejects null-valued candidates,
-      -- so walk both splits.
-      have hChildBadge : child.badge = badge :=
-        mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights badge child hMint
+      -- The child's badge is `updateCapData`'s (`mintedBadge`): the requested
+      -- badge, or the parent's own, valid by the pre-state invariant.
+      have hChildBadge : ∀ b, child.badge = some b → b.valid := by
+        intro b hb
+        rw [mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights _ badge child hMint] at hb
+        unfold mintedBadge at hb
+        split at hb
+        · exact hBadgeValid b hb
+        · have hC : SystemState.lookupSlotCap pair.2 src = some pair.1 :=
+            (cspaceLookupSlot_ok_iff_lookupSlotCap pair.2 src pair.1).1 hLookup
+          rw [SystemState.lookupSlotCap] at hC
+          cases hCN : SystemState.lookupCNode pair.2 src.cnode with
+          | none => rw [hCN] at hC; exact absurd hC (by simp)
+          | some cn =>
+            rw [hCN] at hC
+            exact hCap src.cnode (.cnode cn) src.slot pair.1 b
+              ((SystemState.lookupCNode_eq_some_iff pair.2 src.cnode cn).1 hCN) hC hb
       exact ⟨storeObject_cnode_preserves_notificationBadgesWellFormed
           pair.2 st' dst.cnode _ hNtfn hObjInv hStore,
         storeObject_cnode_preserves_capabilityBadgesWellFormed
@@ -95,8 +107,8 @@ theorem cspaceMint_preserves_badgeWellFormed
             · subst hSlotEq
               rw [CNode.lookup_insert_eq cn dst.slot child hUniq
                 (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
-              cases hLk; rw [hChildBadge] at hBdg
-              exact hBadgeValid badge' hBdg
+              cases hLk
+              exact hChildBadge badge' hBdg
             · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
               exact hCap dst.cnode (.cnode cn) slot' cap' badge' hObj hLk hBdg)⟩
 

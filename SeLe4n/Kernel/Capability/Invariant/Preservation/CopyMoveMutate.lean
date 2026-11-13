@@ -45,7 +45,7 @@ theorem cspaceMint_ok_decompose (src dst : CSpaceAddr) (rights : AccessRightSet)
     | none => simp [hNN] at h
     | some pNN =>
       simp only [hNN] at h
-      cases hM : mintDerivedCap pNN rights badge with
+      cases hM : mintDerivedCap pNN rights (capDataKind stL parent) badge with
       | error e => simp [hM] at h
       | ok child =>
         simp only [hM] at h
@@ -54,7 +54,7 @@ theorem cspaceMint_ok_decompose (src dst : CSpaceAddr) (rights : AccessRightSet)
           · cases hNN; rfl
           · cases hNN
         exact ⟨parent, child, rfl, h,
-          hV ▸ mintDerivedCap_preserves_target pNN rights badge child hM⟩
+          hV ▸ mintDerivedCap_preserves_target pNN rights _ badge child hM⟩
 
 /-- A successful reply-cap mint read its source and installed into its destination. -/
 theorem mintReplyCap_ok_decompose (src dst : CSpaceAddr) (st st1 : SystemState)

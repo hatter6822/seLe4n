@@ -45,8 +45,8 @@ def cspaceLookupSound (st : SystemState) : Prop :=
 /-- Attenuation rule operation-correctness lemma (proved by `cspaceAttenuationRule_holds`).
 Not a state invariant (no `st` parameter); removed from `capabilityInvariantBundle` in WS-F6/D1. -/
 def cspaceAttenuationRule : Prop :=
-  ∀ parent child rights badge,
-    mintDerivedCap parent rights badge = .ok child →
+  ∀ parent child rights kind badge,
+    mintDerivedCap parent rights kind badge = .ok child →
     capAttenuates parent child
 
 /-- Lifecycle-transition authority monotonicity obligations for the active slice.

@@ -2378,9 +2378,11 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA
+        have hA2 := hA.2
+        rw [← mintDataWord_ofRegister] at hA2
         simp only [dispatchMintBy, hT, hD, cspaceMintChecked, hA.1, ↓reduceIte, cnodeInvoked,
           cnodeInvoked_of_resolveCNodeOpSlots_ok hR hT, hR, Bool.not_true, Bool.false_eq_true,
-          cspaceMintWithCdt_of_admitted hA.2]
+          cspaceMintWithCdt_of_admitted hA2]
   | _ => simp [RefusalCarrying.ofKernel, dispatchMintBy, hT]
 
 /-- A CNode mint's taint step leaves the state as its arm left it. -/

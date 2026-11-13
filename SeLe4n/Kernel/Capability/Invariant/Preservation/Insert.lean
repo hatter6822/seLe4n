@@ -262,7 +262,7 @@ theorem cspaceMint_preserves_capabilityBundleOffCoverage
         · exact Bool.not_eq_true _ |>.mp h
       have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
         Capability.toNonNull?_of_not_null hNotNull
-      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (capDataKind st parent) badge with
       | error e => simp [hSrc, hToNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
@@ -270,7 +270,7 @@ theorem cspaceMint_preserves_capabilityBundleOffCoverage
           -- The minted child shares the parent's target; a reply-cap child therefore
           -- inherits the parent slot's backing via the pre-state invariant.
           have hChildTgt : child.target = parent.target :=
-            mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights badge hMint
+            mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights _ badge hMint
           exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst child hInv.offCoverage
             (by rw [hChildTgt]; exact capTargetKindBacked_of_source_slot st src parent hInv hSrc)
             (mintDerivedCap_keeps_cnodeCapGeometry ⟨parent, hNotNull⟩ child rights badge hMint

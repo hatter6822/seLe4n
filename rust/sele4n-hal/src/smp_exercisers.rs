@@ -11768,7 +11768,12 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 }
 
 /// The `x1` a capability fault reaches its receiver with: `seL4_Fault_CapFault`
-/// (1) as the label, the frame's four words as the length.
+/// (1) as the label and the words `setMR` wrote as the length.  An empty
+/// slot's fault is seL4's five `seL4_CapFault_*` words (`IP`, `Addr`,
+/// `InRecvPhase`, `LookupFailureType`, `BitsLeft` of `seL4_MissingCapability`);
+/// the fifth lands only in an IPC buffer, which the receiving partner has
+/// none of, so the length is the four message registers (as an unknown
+/// syscall's fourteen words read four, `FAULT_QUEUED_INFO`).
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 4;
 

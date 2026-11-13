@@ -1096,7 +1096,102 @@ theorem rightsSubset_sound
   simp only [Membership.mem] at hMem ⊢
   exact rightsSubset_at requested allowed right hSubset hMem
 
+/-- **The kinds seL4's `updateCapData` tells apart** (`objecttype.c:395`): an
+endpoint or notification capability takes the data word as its badge, a CNode
+capability (whose CNode has radix `radix`) as its guard and guard size, and
+every other capability ignores it. -/
+inductive CapDataKind where
+  | badged
+  | cnode (radix : Nat)
+  | other
+  deriving DecidableEq, Repr
+
+/-- The kind of `cap` for `updateCapData`, read from the object it names. -/
+@[inline] def capDataKind (st : SystemState) (cap : Capability) : CapDataKind :=
+  match cap.target with
+  | .object id =>
+    match st.getObject? id with
+    | some (.endpoint _) => .badged
+    | some (.notification _) => .badged
+    | some (.cnode cn) => .cnode cn.radixWidth
+    | _ => .other
+  | _ => .other
+
+/-- seL4's `cnodeCapData_get_guardSize` (64-bit): bits 5:0 of the data word. -/
+@[inline] def capDataGuardSize (w : UInt64) : Nat := (w &&& 63).toNat
+
+/-- seL4's `cnodeCapData_get_guard` masked to the guard size: bits 63:6 of the
+data word, `& MASK(guardSize)`. -/
+@[inline] def capDataGuard (w : UInt64) : Nat :=
+  ((w >>> 6) % ((1 : UInt64) <<< (w &&& 63))).toNat
+
+theorem capDataGuardSize_lt (w : UInt64) : capDataGuardSize w < 64 := by
+  unfold capDataGuardSize
+  have : (w &&& 63).toNat ≤ 63 := by
+    rw [UInt64.toNat_and]; exact Nat.and_le_right
+  omega
+
+theorem capDataGuard_lt (w : UInt64) : capDataGuard w < 2 ^ capDataGuardSize w := by
+  have hs := capDataGuardSize_lt w
+  unfold capDataGuard
+  unfold capDataGuardSize at hs ⊢
+  have hm : ((1 : UInt64) <<< (w &&& 63)).toNat = 2 ^ (w &&& 63).toNat := by
+    rw [UInt64.toNat_shiftLeft]
+    simp only [UInt64.toNat_one, Nat.one_shiftLeft]
+    rw [Nat.mod_eq_of_lt (by omega : (w &&& 63).toNat < 64)]
+    exact Nat.mod_eq_of_lt (Nat.pow_lt_pow_right (by decide) hs)
+  rw [UInt64.toNat_mod, hm]
+  exact Nat.mod_lt _ (Nat.two_pow_pos _)
+
+/-- **`updateCapData` refuses** (its null capability, seL4's
+`IllegalOperation` under Mint): an endpoint or notification capability that
+already carries a badge is never rebadged, and a CNode guard of `guardSize`
+bits is refused when `guardSize + radix` exceeds the word. -/
+@[inline] def capDataRefused (kind : CapDataKind) (cap : Capability) (w : UInt64) : Bool :=
+  match kind with
+  | .badged => cap.badge.isSome
+  | .cnode radix => decide (64 < capDataGuardSize w + radix)
+  | .other => false
+
+/-- The badge `updateCapData` gives: the data's on an endpoint or notification
+capability, the capability's own otherwise. -/
+@[inline] def mintedBadge (kind : CapDataKind) (cap : Capability)
+    (badge : Option SeLe4n.Badge) : Option SeLe4n.Badge :=
+  match kind with
+  | .badged => badge
+  | _ => cap.badge
+
+/-- The guard `updateCapData` gives: the data's on a CNode capability, the
+capability's own otherwise. -/
+@[inline] def mintedGuard (kind : CapDataKind) (cap : Capability) (w : UInt64) : Nat :=
+  match kind with
+  | .cnode _ => capDataGuard w
+  | _ => cap.cnodeGuard
+
+/-- The guard size `updateCapData` gives. -/
+@[inline] def mintedGuardSize (kind : CapDataKind) (cap : Capability) (w : UInt64) : Nat :=
+  match kind with
+  | .cnode _ => capDataGuardSize w
+  | _ => cap.cnodeGuardSize
+
+/-- WS-ZA ZA5.3: the capability a mint of `parent` with `rights` and the data
+`badge` writes (`mintDerivedCap`'s): the rights attenuated and the data taken
+as `updateCapData` takes it for `kind`. -/
+@[inline] def mintedCap (parent : Capability) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) : Capability :=
+  ((Capability.ofParts parent.target rights (mintedBadge kind parent badge)).withFreeIndex
+    parent.freeIndex).withCNodeGuard (mintedGuard kind parent (SeLe4n.Badge.ofOption badge).word)
+    (mintedGuardSize kind parent (SeLe4n.Badge.ofOption badge).word)
+
 /-- WS-F5/D2b: Build a mint-like derived capability with explicit rights attenuation.
+
+**seL4's `updateCapData` (WS-SX SX2):** the data word (`badge`, `none` for
+`0`) is taken as `kind` says (`CapDataKind`): an endpoint or notification
+capability takes it as its badge, refused when the parent already carries one
+(`mintDerivedCap_rebadge_refused`); a CNode capability takes it as its guard
+and guard size, refused when they do not fit the word
+(`mintDerivedCap_keeps_cnodeCapGeometry`); any other capability ignores it.
+A refusal is seL4's `IllegalOperation` (`.illegalState`).
 
 **S1-M: Badge-forging security note.** When minting with a custom `badge`,
 any holder of a capability with Mint authority on an endpoint can construct a
@@ -1128,30 +1223,55 @@ The explicit `isNull` guard below rejects that corner case eagerly with
 `.nullCapability`. This makes `mintDerivedCap_preserves_non_null`
 unconditional and removes the need for every downstream caller to re-check
 the mint result against the null sentinel. -/
-def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
+def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
     (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError Capability :=
   if rightsSubset rights parent.val.rights then
-    if ((Capability.ofParts parent.val.target rights badge) : Capability).isNull then
+    if capDataRefused kind parent.val (SeLe4n.Badge.ofOption badge).word then
+      .error .illegalState
+    else if ((Capability.ofParts parent.val.target rights none) : Capability).isNull then
       .error .nullCapability
     else
-      .ok (((Capability.ofParts parent.val.target rights badge).withFreeIndex
-        parent.val.freeIndex).withCNodeGuard parent.val.cnodeGuard parent.val.cnodeGuardSize)
+      .ok (mintedCap parent.val rights kind badge)
   else
     .error (.invalidCapability 0)
 
-/-- WS-SM SM9.A.9: `mintDerivedCap` **preserves the target** — minting attenuates
-rights and rewrites the badge, never the thing a capability names. -/
-theorem mintDerivedCap_preserves_target
-    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
-    child.target = parent.val.target := by
+/-- **What a mint writes**: an admitted mint's child is `mintedCap`, its rights
+attenuated, `updateCapData` not refused and the child not null. -/
+theorem mintDerivedCap_eq_ok {parent : NonNullCap} {rights : AccessRightSet}
+    {kind : CapDataKind} {badge : Option SeLe4n.Badge} {child : Capability}
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
+    rightsSubset rights parent.val.rights = true ∧
+      capDataRefused kind parent.val (SeLe4n.Badge.ofOption badge).word = false ∧
+      (Capability.ofParts parent.val.target rights none).isNull = false ∧
+      child = mintedCap parent.val rights kind badge := by
   unfold mintDerivedCap at hMint
   split at hMint
   · split at hMint
     · simp at hMint
-    · cases hMint; rfl
+    · split at hMint
+      · simp at hMint
+      · cases hMint
+        refine ⟨by assumption, by simp_all, by simp_all, rfl⟩
   · simp at hMint
+
+/-- **seL4 never rebadges** (`updateCapData` on a badged endpoint or
+notification capability): a mint of a badged endpoint or notification
+capability is refused, whatever data it asks for. -/
+theorem mintDerivedCap_rebadge_refused (parent : NonNullCap) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (hR : rightsSubset rights parent.val.rights = true)
+    (hB : parent.val.badge.isSome = true) :
+    mintDerivedCap parent rights .badged badge = .error .illegalState := by
+  simp [mintDerivedCap, hR, capDataRefused, hB]
+
+/-- WS-SM SM9.A.9: `mintDerivedCap` **preserves the target** — minting attenuates
+rights and rewrites the badge, never the thing a capability names. -/
+theorem mintDerivedCap_preserves_target
+    (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) (child : Capability)
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
+    child.target = parent.val.target := by
+  obtain ⟨-, -, -, rfl⟩ := mintDerivedCap_eq_ok hMint
+  rfl
 
 /-- WS-SM SM9.A.9 (**audit authority is unforgeable by minting**): a mint
 produces a capability targeting the audit trail **only** if its parent already
@@ -1163,12 +1283,12 @@ manufacture audit authority from a capability that lacks it.  So an audit
 capability exists in a deployment exactly where the boot/CSpace layer put one —
 which is why an unconfigured deployment has no audit reader at all. -/
 theorem mintDerivedCap_no_audit_forgery
-    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability) {code : Nat}
-    (hMint : mintDerivedCap parent rights badge = .ok child)
+    (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) (child : Capability) {code : Nat}
+    (hMint : mintDerivedCap parent rights kind badge = .ok child)
     (hChild : child.target = .auditTrail code) :
     parent.val.target = .auditTrail code := by
-  rw [← mintDerivedCap_preserves_target parent rights badge child hMint]
+  rw [← mintDerivedCap_preserves_target parent rights kind badge child hMint]
   exact hChild
 
 /-- AN4-E (H-06): `mintDerivedCap` always produces a non-null capability.
@@ -1176,48 +1296,35 @@ Unconditional consequence of the explicit null-guard added to the function
 body — the `.ok` branch is only reached when the constructed child's
 `isNull` is false. -/
 theorem mintDerivedCap_preserves_non_null
-    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) (child : Capability)
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
     child.isNull = false := by
-  unfold mintDerivedCap at hMint
-  split at hMint
-  · -- rightsSubset passed
-    split at hMint
-    · -- isNull candidate = true: contradiction with `.ok`
-      simp at hMint
-    · -- isNull candidate = false: .ok constructed, extract equality
-      rename_i hNotNull
-      injection hMint with hEq
-      subst hEq
-      -- The constructed candidate equals the extracted child, so their
-      -- isNull results match.
-      exact Bool.not_eq_true _ |>.mp hNotNull
-  · -- rightsSubset failed: .error
-    simp at hMint
+  obtain ⟨-, -, hN, rfl⟩ := mintDerivedCap_eq_ok hMint
+  exact hN
 
 /-- AN4-E (H-06): Tightened post-condition convenience wrapper — returns a
 `NonNullCap` directly. Internally invokes `mintDerivedCap` and lifts the
 `.ok` result through `Capability.toNonNull?` using
 `mintDerivedCap_preserves_non_null`. Callers that do not need to destructure
 the raw `Capability` should prefer this variant. -/
-def mintDerivedCapNonNull (parent : NonNullCap) (rights : AccessRightSet)
+def mintDerivedCapNonNull (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
     (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError NonNullCap :=
-  match hMint : mintDerivedCap parent rights badge with
+  match hMint : mintDerivedCap parent rights kind badge with
   | .error e => .error e
   | .ok child =>
       have hNN : child.isNull = false :=
-        mintDerivedCap_preserves_non_null parent rights badge child hMint
+        mintDerivedCap_preserves_non_null parent rights kind badge child hMint
       .ok ⟨child, hNN⟩
 
 /-- AN4-E (H-06): Forward direction bridge — if `mintDerivedCapNonNull`
 returns a concrete `NonNullCap`, `mintDerivedCap` returns the same
 capability's raw `Capability` value. Used by the `cspaceMint` migration. -/
 theorem mintDerivedCapNonNull_ok_implies_mintDerivedCap_ok
-    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (childNN : NonNullCap)
-    (hMintNN : mintDerivedCapNonNull parent rights badge = .ok childNN) :
-    mintDerivedCap parent rights badge = .ok childNN.val := by
+    (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) (childNN : NonNullCap)
+    (hMintNN : mintDerivedCapNonNull parent rights kind badge = .ok childNN) :
+    mintDerivedCap parent rights kind badge = .ok childNN.val := by
   unfold mintDerivedCapNonNull at hMintNN
   split at hMintNN
   · simp at hMintNN
@@ -1255,7 +1362,7 @@ def cspaceMint
         match parent.toNonNull? with
         | none => .error .nullCapability
         | some parentNN =>
-            match mintDerivedCap parentNN rights badge with
+            match mintDerivedCap parentNN rights (capDataKind st parent) badge with
             | .error e => .error e
             | .ok child => cspaceInsertSlot dst child st'
 
@@ -2378,22 +2485,70 @@ tables (`modifyCdt`). -/
     (op : DerivationOp) (st : SystemState) : SystemState :=
   (st.storeCNodeWith dst.cnode (·.insert dst.slot child)).cdtAddChild src dst op
 
-/-- WS-ZA ZA5.3: the capability a mint of `parent` with `rights` and `badge`
-writes (`mintDerivedCap`'s). -/
-@[inline] def mintedCap (parent : Capability) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge) : Capability :=
-  ((Capability.ofParts parent.target rights badge).withFreeIndex parent.freeIndex).withCNodeGuard
-    parent.cnodeGuard parent.cnodeGuardSize
+/-- `capDataRefused` of the capability's kind, read from the object it names
+(`capDataRefusedAt_eq`): no kind is built. -/
+@[inline] def capDataRefusedAt (st : SystemState) (cap : Capability) (w : UInt64) : Bool :=
+  match cap.target with
+  | .object id =>
+    match st.getObject? id with
+    | some (.endpoint _) => cap.badge.isSome
+    | some (.notification _) => cap.badge.isSome
+    | some (.cnode cn) => decide (64 < capDataGuardSize w + cn.radixWidth)
+    | _ => false
+  | _ => false
+
+theorem capDataRefusedAt_eq (st : SystemState) (cap : Capability) (w : UInt64) :
+    capDataRefusedAt st cap w = capDataRefused (capDataKind st cap) cap w := by
+  unfold capDataRefusedAt capDataKind
+  split <;> (try split) <;> rfl
+
+/-- The capability's kind as a code (`1` an endpoint or notification, `2` a
+CNode, `0` any other), read from the object it names, so the compiled mint
+builds no kind. -/
+@[inline] def capDataCode (st : SystemState) (cap : Capability) : Nat :=
+  match cap.target with
+  | .object id =>
+    match st.getObject? id with
+    | some (.endpoint _) => 1
+    | some (.notification _) => 1
+    | some (.cnode _) => 2
+    | _ => 0
+  | _ => 0
+
+/-- `mintedCap` of the capability's kind, its fields chosen by the kind's code. -/
+theorem mintedCap_capDataKind (st : SystemState) (parent : Capability) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) :
+    mintedCap parent rights (capDataKind st parent) badge =
+      ((Capability.ofWords parent.target rights
+          (if capDataCode st parent = 1 then SeLe4n.Badge.ofOption badge
+           else SeLe4n.Badge.ofOption parent.badge)
+          (if capDataCode st parent = 1 then badge.isSome else parent.badge.isSome) none).withFreeIndex
+        parent.freeIndex).withCNodeGuard
+        (if capDataCode st parent = 2 then capDataGuard (SeLe4n.Badge.ofOption badge).word
+         else parent.cnodeGuard)
+        (if capDataCode st parent = 2 then capDataGuardSize (SeLe4n.Badge.ofOption badge).word
+         else parent.cnodeGuardSize) := by
+  unfold mintedCap capDataKind capDataCode mintedBadge mintedGuard mintedGuardSize
+    Capability.ofParts
+  cases hT : parent.target with
+  | object id =>
+    cases hO : st.objects[id]? with
+    | none => simp [hO]
+    | some o => cases o <;> simp [hO]
+  | _ => simp
 
 /-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s checks**, read before any write: the
-source holds a capability that is not null, the rights attenuate it, the minted
-capability is not null, and the destination is admitted
+source holds a capability that is not null, the rights attenuate it,
+`updateCapData` does not refuse the data word `w` (`capDataRefusedAt`), the
+minted capability is not null, and the destination is admitted
 (`cspaceMintWithCdt_of_admitted`). -/
 @[inline] def cspaceMintAdmitted (src dst : CSpaceAddr) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge) (st : SystemState) : Bool :=
+    (w : UInt64) (st : SystemState) : Bool :=
   (match SystemState.lookupSlotCap st src with
    | some parent => parent.isNotNull && rightsSubset rights parent.rights &&
-       (mintedCap parent rights badge).isNotNull && !untypedDeriveRefused st src parent
+       !capDataRefusedAt st parent w &&
+       (Capability.ofParts parent.target rights none).isNotNull &&
+       !untypedDeriveRefused st src parent
    | none => false) &&
   cspaceDstAdmitted dst st
 
@@ -2402,21 +2557,26 @@ def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent =>
-      untypedSourceSetFull (cspaceInstallPerform src dst (mintedCap parent rights badge) .mint st)
-        src parent
+      untypedSourceSetFull (cspaceInstallPerform src dst
+        (mintedCap parent rights (capDataKind st parent) badge) .mint st) src parent
   | none => st
 
 /-- `cspaceMintPerform` as compiled: the minted capability's fields are written
-straight over the destination slot's own record (`CNode.insertFields`), so the
-mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
+straight over the destination slot's own record (`CNode.insertFields`), each
+chosen by the parent's kind code (`capDataCode`), so the mint builds neither a
+capability, its cell nor a kind (WS-ZA ZA5.3 part 6). -/
 @[inline] def cspaceMintPerformWords (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent =>
+      let c := capDataCode st parent
       untypedSourceSetFull
         ((st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot parent.target rights badgeWord badged parent.freeIndex
-            parent.cnodeGuard parent.cnodeGuardSize)).cdtAddChild
+          (·.insertFields dst.slot parent.target rights
+            (if c = 1 then badgeWord else SeLe4n.Badge.ofOption parent.badge)
+            (if c = 1 then badged else parent.badge.isSome) parent.freeIndex
+            (if c = 2 then capDataGuard badgeWord.word else parent.cnodeGuard)
+            (if c = 2 then capDataGuardSize badgeWord.word else parent.cnodeGuardSize))).cdtAddChild
           src dst .mint) src parent
   | none => st
 
@@ -2429,12 +2589,15 @@ capability holds (`cspaceMintPerformWords`), so no `Option` is passed. -/
 @[csimp] theorem cspaceMintPerform_eq_impl : @cspaceMintPerform = @cspaceMintPerformImpl := by
   funext src dst rights badge st
   unfold cspaceMintPerform cspaceMintPerformImpl cspaceMintPerformWords cspaceInstallPerform
-  simp only [CNode.insertFields_eq_insert]; cases badge <;> rfl
+  cases SystemState.lookupSlotCap st src with
+  | none => rfl
+  | some parent =>
+    simp only [CNode.insertFields_eq_insert, mintedCap_capDataKind]
 
 /-- WS-ZA ZA5.3: an admitted mint is its writes. -/
 theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRightSet}
     {badge : Option SeLe4n.Badge} {st : SystemState}
-    (h : cspaceMintAdmitted src dst rights badge st = true) :
+    (h : cspaceMintAdmitted src dst rights (SeLe4n.Badge.ofOption badge).word st = true) :
     cspaceMintWithCdt src dst rights badge st =
       .ok ((), cspaceMintPerform src dst rights badge st) := by
   unfold cspaceMintAdmitted at h
@@ -2443,13 +2606,14 @@ theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRig
   | none => simp [hL] at h
   | some parent =>
     simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨⟨⟨⟨hN, hR⟩, hC⟩, hU⟩, hD⟩ := h
+    obtain ⟨⟨⟨⟨⟨hN, hR⟩, hK⟩, hC⟩, hU⟩, hD⟩ := h
     have hNN : parent.toNonNull? = some ⟨parent, hN⟩ := by
       unfold Capability.toNonNull?; rw [dif_pos hN]
-    have hM : mintDerivedCap ⟨parent, hN⟩ rights badge = .ok (mintedCap parent rights badge) := by
-      have hC' : (Capability.ofParts parent.target rights badge).isNull = false := hC
-      unfold mintDerivedCap mintedCap
-      simp only [hR, ↓reduceIte, hC', Bool.false_eq_true]
+    have hM : mintDerivedCap ⟨parent, hN⟩ rights (capDataKind st parent) badge =
+        .ok (mintedCap parent rights (capDataKind st parent) badge) := by
+      rw [capDataRefusedAt_eq] at hK
+      unfold mintDerivedCap
+      simp only [hR, ↓reduceIte, hK, hC, Bool.false_eq_true]
     simp only [hNN, hM, cspaceInsertSlot_of_admitted hD, hU, Bool.false_eq_true, ↓reduceIte]
     rfl
 
@@ -2715,25 +2879,19 @@ address record is built per invocation (WS-ZA ZA5.3 part 6).  Each is the step o
 the two addresses, by definition. -/
 
 /-- `cspaceMintAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
-`dstCNode`, with the badge as the register carries it: the word, 0 for no
-badge (seL4's mint). -/
+`dstCNode`, with the data word as the register carries it (seL4's mint). -/
 def cspaceMintAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : Bool :=
-  cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights
-    (if badge.val = 0 then none else some badge) st
+  cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights badge.word st
 
-/-- `cspaceMintAdmittedAt` as compiled: the checks read no badge (whether the
-minted capability is null is a question of its target and rights), so none is
-built (WS-ZA ZA5.3 part 6). -/
-def cspaceMintAdmittedAtImpl (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (_badge : SeLe4n.Badge) (st : SystemState) : Bool :=
-  cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights none st
-
-@[csimp] theorem cspaceMintAdmittedAt_eq_impl : @cspaceMintAdmittedAt = @cspaceMintAdmittedAtImpl := by
-  funext srcCNode srcSlot dstCNode dstSlot rights badge st
-  rfl
+/-- The register's data word is the word of the badge a mint reads off it
+(`none` for `0`). -/
+theorem mintDataWord_ofRegister (badge : SeLe4n.Badge) :
+    (SeLe4n.Badge.ofOption (if badge.val = 0 then none else some badge)).word = badge.word := by
+  by_cases h : badge.val = 0
+  · rw [if_pos h, SeLe4n.Badge.eq_zero_of_val_eq_zero h]; rfl
+  · rw [if_neg h]; rfl
 
 /-- `cspaceMintPerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
 `dstCNode`, with the badge as the register carries it (0 for no badge). -/
@@ -2813,8 +2971,8 @@ refuses that slot itself. -/
 install's CNode invocation passes the CNode guard (`cnodeInvoked`). -/
 
 theorem cnodeInvoked_of_mintAdmitted {src dst : CSpaceAddr} {rights : AccessRightSet}
-    {badge : Option SeLe4n.Badge} {st : SystemState}
-    (h : cspaceMintAdmitted src dst rights badge st = true) : cnodeInvoked dst.cnode st = true := by
+    {w : UInt64} {st : SystemState}
+    (h : cspaceMintAdmitted src dst rights w st = true) : cnodeInvoked dst.cnode st = true := by
   unfold cspaceMintAdmitted at h
   exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
 

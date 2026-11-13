@@ -8534,9 +8534,9 @@ theorem unconfiguredDeployment_has_no_audit_reader
       dispatchWithCapChecked ctx decoded tid executingCore gate anyCap st ≠ .ok ((), st')) ∧
     dispatchWithCapChecked ctx decoded tid executingCore gate
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } st = .error (.invalidCapability 0) ∧
-    (∀ (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-        (child : Capability) (code : Nat),
-      mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail code →
+    (∀ (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+        (badge : Option SeLe4n.Badge) (child : Capability) (code : Nat),
+      mintDerivedCap parent rights kind badge = .ok child → child.target = .auditTrail code →
         parent.val.target = .auditTrail code) ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
         c count st =
@@ -8547,8 +8547,8 @@ theorem unconfiguredDeployment_has_no_audit_reader
         hSyscall hNoMonitor,
     dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid executingCore gate _ oid st
       hSyscall rfl,
-    fun parent rights badge child _ hMint hChild =>
-      mintDerivedCap_no_audit_forgery parent rights badge child hMint hChild,
+    fun parent rights kind badge child _ hMint hChild =>
+      mintDerivedCap_no_audit_forgery parent rights kind badge child hMint hChild,
     ?_, Capability.auditTrailRead_cannot_drain.2⟩
   rw [validatedAuditMonitorClearance_none ctx hNoMonitor]
   exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st

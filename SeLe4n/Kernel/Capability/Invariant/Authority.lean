@@ -252,27 +252,12 @@ private theorem mintDerivedCap_attenuates
     (parent : NonNullCap)
     (child : Capability)
     (rights : AccessRightSet)
+    (kind : CapDataKind)
     (badge : Option SeLe4n.Badge)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
     capAttenuates parent.val child := by
-  -- AN4-E (H-06): the function body now has two `if`s (rightsSubset, then
-  -- isNull). Walk through both via `split at hMint` so the `.ok` branch is
-  -- isolated before we destructure.
-  unfold mintDerivedCap at hMint
-  split at hMint
-  · -- rightsSubset = true
-    rename_i hSubset
-    split at hMint
-    · -- candidate.isNull = true: contradiction with `.ok`
-      simp at hMint
-    · -- candidate.isNull = false: .ok branch
-      injection hMint with hEq
-      subst hEq
-      constructor
-      · rfl
-      · exact rightsSubset_sound rights parent.val.rights hSubset
-  · -- rightsSubset = false: .error
-    simp at hMint
+  obtain ⟨hSubset, -, -, rfl⟩ := mintDerivedCap_eq_ok hMint
+  exact ⟨rfl, rightsSubset_sound rights parent.val.rights hSubset⟩
 
 -- ============================================================================
 -- F-06 / TPI-D04: Badge-override safety in cspaceMint
@@ -288,10 +273,11 @@ theorem mintDerivedCap_rights_attenuated_with_badge_override
     (parent : NonNullCap)
     (child : Capability)
     (rights : AccessRightSet)
+    (kind : CapDataKind)
     (badge : Option SeLe4n.Badge)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
     ∀ right, right ∈ child.rights → right ∈ parent.val.rights := by
-  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  have hAtt := mintDerivedCap_attenuates parent child rights kind badge hMint
   exact hAtt.2
 
 /-- Badge override preserves target identity: a minted capability always names the
@@ -305,25 +291,45 @@ theorem mintDerivedCap_target_preserved_with_badge_override
     (parent : NonNullCap)
     (child : Capability)
     (rights : AccessRightSet)
+    (kind : CapDataKind)
     (badge : Option SeLe4n.Badge)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
     child.target = parent.val.target := by
-  have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
+  have hAtt := mintDerivedCap_attenuates parent child rights kind badge hMint
   exact hAtt.1
 
-/-- **A mint keeps seL4's CNode geometry**: the child names its parent's target
-under its parent's guard. -/
+/-- **A mint keeps seL4's CNode geometry** (`updateCapData` on a CNode
+capability): the child names its parent's target under its parent's guard, or,
+minted from a CNode capability, under the data's guard, which `updateCapData`
+admits only when the guard size and the CNode's radix fit the word. -/
 theorem mintDerivedCap_keeps_cnodeCapGeometry {st : SystemState}
     (parent : NonNullCap) (child : Capability) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
-    (hMint : mintDerivedCap parent rights badge = .ok child)
+    (hMint : mintDerivedCap parent rights (capDataKind st parent.val) badge = .ok child)
     (h : cnodeCapGeometryAt st parent.val) : cnodeCapGeometryAt st child := by
-  unfold mintDerivedCap at hMint
-  split at hMint
-  · split at hMint
-    · simp at hMint
-    · cases hMint; exact cnodeCapGeometryAt_of_fields h rfl rfl rfl
-  · simp at hMint
+  obtain ⟨-, hK, -, rfl⟩ := mintDerivedCap_eq_ok hMint
+  unfold capDataKind at hK ⊢
+  unfold mintedCap mintedGuard mintedGuardSize
+  cases hT : parent.val.target with
+  | object id =>
+    simp only [hT] at hK ⊢
+    cases hO : st.getObject? id with
+    | none => simp only [hO]; exact cnodeCapGeometryAt_of_fields h (by simp [hT]) rfl rfl
+    | some o =>
+      cases o with
+      | cnode cn =>
+        simp only [hO, capDataRefused, decide_eq_false_iff_not, Nat.not_lt] at hK ⊢
+        refine ⟨capDataGuard_lt _, ?_⟩
+        intro id' cn' hT' hC
+        have hId : id' = id := by simp [Capability.ofParts, hT] at hT'; exact hT'.symm
+        subst hId
+        have hCn : cn' = cn := by
+          rw [SystemState.getCNode?_eq_some_iff] at hC
+          unfold SystemState.getObject? at hO; rw [hO] at hC; cases hC; rfl
+        subst hCn
+        simpa using hK
+      | _ => simp only [hO]; exact cnodeCapGeometryAt_of_fields h (by simp [hT]) rfl rfl
+  | _ => simp only [hT]; exact cnodeCapGeometryAt_of_fields h (by simp [hT]) rfl rfl
 
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
@@ -353,11 +359,11 @@ theorem cspaceMint_child_attenuates
       have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
         Capability.toNonNull?_of_not_null hNotNull
       simp [hSrc, hToNN] at hStep
-      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (capDataKind st parent) badge with
       | error e => simp [hMint] at hStep
       | ok child =>
           have hAtt : capAttenuates parent child := by
-            have := mintDerivedCap_attenuates ⟨parent, hNotNull⟩ child rights badge hMint
+            have := mintDerivedCap_attenuates ⟨parent, hNotNull⟩ child rights _ badge hMint
             exact this
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
             simpa [hMint] using hStep
@@ -391,35 +397,28 @@ theorem cspaceMint_badge_override_safe
 -- WS-E2 / H-03: Badge/notification routing consistency
 -- ============================================================================
 
-/-- (H-03) `mintDerivedCap` propagates the explicitly provided badge to the
-derived capability when rights are sufficient. -/
+/-- (H-03) `mintDerivedCap` gives the derived capability the badge
+`updateCapData` gives (`mintedBadge`): the provided badge on an endpoint or
+notification capability, the parent's own on any other. -/
 theorem mintDerivedCap_badge_propagated
-    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability)
-    (hMint : mintDerivedCap parent rights badge = .ok child) :
-    child.badge = badge := by
-  -- AN4-E (H-06): walk through both `if`s introduced by the null-guard.
-  unfold mintDerivedCap at hMint
-  split at hMint
-  · -- rightsSubset = true
-    split at hMint
-    · -- candidate.isNull = true: contradiction
-      simp at hMint
-    · -- candidate.isNull = false: extract equality from `.ok`
-      injection hMint with hEq
-      subst hEq
-      simp
-  · -- rightsSubset = false
-    simp at hMint
+    (parent : NonNullCap) (rights : AccessRightSet) (kind : CapDataKind)
+    (badge : Option SeLe4n.Badge) (child : Capability)
+    (hMint : mintDerivedCap parent rights kind badge = .ok child) :
+    child.badge = mintedBadge kind parent.val badge := by
+  obtain ⟨-, -, -, rfl⟩ := mintDerivedCap_eq_ok hMint
+  simp [mintedCap]
 
-/-- (H-03) `cspaceMint` stores a child capability whose badge equals the requested badge.
-This is the operation-level badge consistency witness. -/
+/-- (H-03) `cspaceMint` from an endpoint or notification capability stores a
+child capability whose badge equals the requested badge.  This is the
+operation-level badge consistency witness. -/
 theorem cspaceMint_child_badge_preserved
     (st st' : SystemState)
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
+    (hKind : ∀ parent, cspaceLookupSlot src st = .ok (parent, st) →
+      capDataKind st parent = .badged)
     (hStep : cspaceMint src dst rights (some badge) st = .ok ((), st')) :
     ∃ child,
       cspaceLookupSlot dst st' = .ok (child, st') ∧
@@ -431,7 +430,7 @@ theorem cspaceMint_child_badge_preserved
       rcases pair with ⟨parent, st1⟩
       have hSt1 := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      -- AL1b (AK7-I.cascade): `toNonNull?` promotes parent under the `.ok` path.
+      have hK := hKind parent hSrc
       have hNotNull : parent.isNull = false := by
         by_cases h : parent.isNull
         · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
@@ -439,17 +438,16 @@ theorem cspaceMint_child_badge_preserved
       have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
         Capability.toNonNull?_of_not_null hNotNull
       simp [hSrc, hToNN] at hStep
-      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (some badge) with
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (capDataKind st parent)
+          (some badge) with
       | error e => simp [hMint] at hStep
       | ok child =>
           simp [hMint] at hStep
           have hDst := cspaceInsertSlot_lookup_eq st st' dst child hObjInv hStep
           refine ⟨child, hDst, ?_⟩
-          -- AN4-E (H-06): discharge child.badge = some badge via the
-          -- badge-propagation companion theorem, which already walks through
-          -- the new two-`if` structure of `mintDerivedCap`.
-          exact mintDerivedCap_badge_propagated ⟨parent, hNotNull⟩ rights
-            (some badge) child hMint
+          rw [mintDerivedCap_badge_propagated ⟨parent, hNotNull⟩ rights _ (some badge) child
+            hMint, hK]
+          rfl
 
 /-- (H-03) When a notification has no waiters and no pending badge, signaling with badge `b`
 stores `ofNatMasked b.val` as the pending badge (word-bounded).
@@ -559,8 +557,8 @@ theorem cspaceLookupSound_holds (st : SystemState) : cspaceLookupSound st := by
 
 theorem cspaceAttenuationRule_holds :
     cspaceAttenuationRule := by
-  intro parent child rights badge hMint
-  exact mintDerivedCap_attenuates parent child rights badge hMint
+  intro parent child rights kind badge hMint
+  exact mintDerivedCap_attenuates parent child rights kind badge hMint
 
 
 theorem lifecycleAuthorityMonotonicity_holds (st : SystemState)

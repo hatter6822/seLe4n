@@ -1267,10 +1267,10 @@ theorem cspaceMint_preserves_lowEquivalent
     Capability.toNonNull?_of_not_null hNotNull₁
   have hToNN₂ : parent₂.toNonNull? = some ⟨parent₂, hNotNull₂⟩ :=
     Capability.toNonNull?_of_not_null hNotNull₂
-  cases hMint₁ : mintDerivedCap ⟨parent₁, hNotNull₁⟩ rights badge with
+  cases hMint₁ : mintDerivedCap ⟨parent₁, hNotNull₁⟩ rights (capDataKind s₁ parent₁) badge with
   | error e => simp [hToNN₁, hMint₁] at hStep₁
   | ok c₁ =>
-    cases hMint₂ : mintDerivedCap ⟨parent₂, hNotNull₂⟩ rights badge with
+    cases hMint₂ : mintDerivedCap ⟨parent₂, hNotNull₂⟩ rights (capDataKind s₂ parent₂) badge with
     | error e => simp [hToNN₂, hMint₂] at hStep₂
     | ok c₂ =>
       have hInsert₁ : cspaceInsertSlot dst c₁ s₁ = .ok ((), s₁') := by
