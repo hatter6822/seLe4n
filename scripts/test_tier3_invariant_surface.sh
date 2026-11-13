@@ -6432,7 +6432,13 @@ run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerAdmitted|faultHandler
 # (`auditReadFastRefusal`, proven the specification's refusal), not through
 # the specification's payload fallback.
 run_check "INVARIANT" rg -n '^@\[inline\] def auditReadTrailR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
-run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusal ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusalW ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# A read's index and chunk are read as words: no word past `2 ^ 63` is made a
+# number.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditReadCode[^\n]*\n[^\n]*\n\s*auditReadFastCodeW ctx readerDomain st \(auditedArgWord regs 0\)\.toNat\n\s*\(auditedArgWord regs 1\) \(auditedArgWord regs 2\)$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastCodeW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastRefusalW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditReadFastCode ctx readerDomain st|\.error \(auditReadFastRefusal ctx \(embedLegacyLabel' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem auditReadTrailR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem auditReadFastRefusal_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n -U '\| \.auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st' SeLe4n/Kernel/RefusalCarryingDeclassification.lean

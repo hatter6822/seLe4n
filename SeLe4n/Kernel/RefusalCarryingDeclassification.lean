@@ -2106,17 +2106,328 @@ theorem auditReadFastRefusal_spec (ctx : LabelingContext) (m reader : SecurityDo
     simp only [decodeAuditReadOp_none (Nat.le_add_left 30 n),
       auditReadFastRefusal_of_ge (Nat.le_add_left 30 n)]
 
+/-! ### A read's index and chunk words, read as words
+
+An index or chunk word at or above `2 ^ 63` is a number the runtime holds as a
+big number, so `UInt64.toNat` of it allocates.  Every index the trail, the
+refusal ledger and a value's chunks answer to is below `2 ^ 32`, so a word at or
+above it is read as `2 ^ 32` (`auditWordIndex`), which every read answers as
+the word's own number (`auditReadFastCodeW_eq`, `auditReadFastRefusalW_eq`);
+the two reads that compare the words (opcodes 28 and 29) compare them as
+words. -/
+
+/-- A read's index or chunk word as a number: its own number below `2 ^ 32`,
+else `2 ^ 32`, past every index and chunk a read answers to. -/
+@[inline] def auditWordIndex (w : UInt64) : Nat :=
+  if w < 4294967296 then w.toNat else 4294967296
+
+theorem auditWordIndex_cases (w : UInt64) :
+    auditWordIndex w = w.toNat ∨ (4294967296 ≤ auditWordIndex w ∧ 4294967296 ≤ w.toNat) := by
+  unfold auditWordIndex
+  by_cases h : w < 4294967296
+  · exact .inl (if_pos h)
+  · rw [if_neg h]
+    refine .inr ⟨Nat.le_refl _, ?_⟩
+    have := mt UInt64.lt_iff_toNat_lt.mpr h
+    simp only [UInt64.reduceToNat] at this
+    omega
+
+/-- No visible entry stands past the walk's length. -/
+theorem auditWindowFindVisible_of_le (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) : ∀ (n i k : Nat), n ≤ k → auditWindowFindVisible ctx reader r i n k = 0
+  | 0, _, _, _ => rfl
+  | n + 1, i, k, h => by
+    unfold auditWindowFindVisible
+    split
+    · rw [if_neg (by omega)]
+      exact auditWindowFindVisible_of_le ctx reader r n (i + 1) (k - 1) (by omega)
+    · exact auditWindowFindVisible_of_le ctx reader r n (i + 1) k (by omega)
+
+theorem auditWindowFindVisible_wide (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) {k : Nat} (h : 4294967296 ≤ k) :
+    auditWindowFindVisible ctx reader r 0 r.length k = 0 :=
+  auditWindowFindVisible_of_le ctx reader r _ _ _
+    (Nat.le_trans r.length_le (Nat.le_trans (by decide) h))
+
+theorem auditWindowFindVisible_wordIndex (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (w : UInt64) :
+    auditWindowFindVisible ctx reader r 0 r.length (auditWordIndex w) =
+      auditWindowFindVisible ctx reader r 0 r.length w.toNat := by
+  rcases auditWordIndex_cases w with h | ⟨h1, h2⟩
+  · rw [h]
+  · rw [auditWindowFindVisible_wide ctx reader r h1, auditWindowFindVisible_wide ctx reader r h2]
+
+theorem refusalRingSize_not_wide {k : Nat} (h : 4294967296 ≤ k) : ¬ k < refusalRingSize := by
+  have : refusalRingSize = 32 := rfl
+  omega
+
+theorem auditChunkCountN_le (v : Nat) : auditChunkCountN v ≤ 4 := by
+  rw [auditChunkCountN_eq_div]
+  unfold auditChunkCountDiv
+  split
+  · omega
+  split
+  · omega
+  split
+  · omega
+  split <;> omega
+
+theorem refusalFieldCount_le (r : DeclassificationRefusal) (f : RefusalReadField) :
+    refusalFieldCount r f ≤ 4 := by
+  rw [refusalFieldCount_eq]
+  exact auditChunkCountN_le _
+
+theorem auditFieldWordCode_wideChunk (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (i : Nat) (f : AuditReadField) {c c' : Nat} (hc : 4294967296 ≤ c)
+    (hc' : 4294967296 ≤ c') :
+    auditFieldWordCode ctx reader r i c f = auditFieldWordCode ctx reader r i c' f := by
+  unfold auditFieldWordCode
+  split
+  · rfl
+  · next j _ =>
+    have h4 := auditChunkCountN_le (auditExportedFieldValue true i (r.entry j) f)
+    dsimp only
+    rw [if_neg (fun h => absurd h.2 (by omega)), if_neg (fun h => absurd h.2 (by omega))]
+
+theorem auditBasisWordCode_wideChunk (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (i : Nat) {c c' : Nat} (hc : 4294967296 ≤ c) (hc' : 4294967296 ≤ c') :
+    auditBasisWordCode ctx reader r i c = auditBasisWordCode ctx reader r i c' := by
+  unfold auditBasisWordCode
+  split
+  · rfl
+  · next j _ =>
+    dsimp only
+    split
+    · next hn =>
+      have hBasisChunks : auditBasisChunkCount (r.entry j).authorizationBasis.render.utf8ByteSize ≤ 64 := by
+        unfold auditBasisChunkCount
+        unfold maxAuditDesignationBytes at hn
+        omega
+      rw [if_neg (by omega), if_neg (by omega)]
+    · rfl
+
+theorem refusalFieldWordCode_wideChunk (r : DeclassificationRefusal) (f : RefusalReadField)
+    {c c' : Nat} (hc : 4294967296 ≤ c) (hc' : 4294967296 ≤ c') :
+    refusalFieldWordCode r f c = refusalFieldWordCode r f c' := by
+  have h4 := refusalFieldCount_le r f
+  unfold refusalFieldWordCode
+  dsimp only
+  rw [if_neg (fun h => absurd h.2 (by omega)), if_neg (fun h => absurd h.2 (by omega))]
+
+theorem refusalReceiverWordCode_wideChunk (r : DeclassificationRefusal) {c c' : Nat}
+    (hc : 4294967296 ≤ c) (hc' : 4294967296 ≤ c') :
+    refusalReceiverWordCode r c = refusalReceiverWordCode r c' := by
+  unfold refusalReceiverWordCode
+  split
+  · rfl
+  · next receiver _ =>
+    have h4 := auditChunkCountN_le receiver.val
+    dsimp only
+    rw [if_neg (fun h => absurd h.2 (by omega)), if_neg (fun h => absurd h.2 (by omega))]
+
+/-- A read's code is the same for every index at or past `2 ^ 32`. -/
+theorem auditReadFastCode_wideIndex (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) (opcode : Nat) {i i' : Nat} (hi : 4294967296 ≤ i)
+    (hi' : 4294967296 ≤ i') (c : Nat) :
+    auditReadFastCode ctx reader st opcode i c = auditReadFastCode ctx reader st opcode i' c := by
+  have hF := auditWindowFindVisible_wide ctx reader st.declassificationAudit hi
+  have hF' := auditWindowFindVisible_wide ctx reader st.declassificationAudit hi'
+  have hS := refusalRingSize_not_wide hi
+  have hS' := refusalRingSize_not_wide hi'
+  have h0 : i ≠ 0 := by omega
+  have h0' : i' ≠ 0 := by omega
+  unfold auditReadFastCode
+  match opcode with
+  | 0 | 12 | 13 => rfl
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
+  | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 =>
+    simp only [auditFieldCountCode, auditFieldWordCode, auditBasisCountCode, auditBasisWordCode,
+      refusalTagsSlotCode, refusalScalarSlotCode, refusalSlotCode, auditChainCode, hF, hF',
+      hS, hS', h0, h0', dite_false, ite_self]
+  | _ + 30 => rfl
+
+/-- A read's code is the same for every chunk at or past `2 ^ 32`, but for the
+two reads that compare the chunk with another number. -/
+theorem auditReadFastCode_wideChunk (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) {opcode : Nat} (hNotChain : opcode ≠ 28) (hNotArchived : opcode ≠ 29) (i : Nat)
+    {c c' : Nat} (hc : 4294967296 ≤ c) (hc' : 4294967296 ≤ c') :
+    auditReadFastCode ctx reader st opcode i c = auditReadFastCode ctx reader st opcode i c' := by
+  unfold auditReadFastCode
+  match opcode, hNotChain, hNotArchived with
+  | 28, h, _ => exact absurd rfl h
+  | 29, _, h => exact absurd rfl h
+  | 0, _, _ | 1, _, _ | 2, _, _ | 3, _, _ | 4, _, _ | 5, _, _ | 6, _, _ | 7, _, _ | 8, _, _
+  | 9, _, _ | 10, _, _ | 11, _, _ | 12, _, _ | 13, _, _ | 14, _, _ | 15, _, _ | 16, _, _
+  | 17, _, _ | 18, _, _ | 19, _, _ | 20, _, _ | 21, _, _ | 22, _, _ | 23, _, _ | 24, _, _
+  | 25, _, _ | 26, _, _ | 27, _, _ =>
+    simp only [auditFieldWordCode_wideChunk (hc := hc) (hc' := hc'),
+      auditBasisWordCode_wideChunk (hc := hc) (hc' := hc'),
+      refusalFieldWordCode_wideChunk (hc := hc) (hc' := hc'),
+      refusalReceiverWordCode_wideChunk (hc := hc) (hc' := hc')]
+  | _ + 30, _, _ => rfl
+
+/-- A read's refusal is the same for every index at or past `2 ^ 32`, but for
+the two reads that compare the index with another number. -/
+theorem auditReadFastRefusal_wideIndex (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) {opcode : Nat} (hNotChain : opcode ≠ 28) (hNotArchived : opcode ≠ 29) {i i' : Nat}
+    (hi : 4294967296 ≤ i) (hi' : 4294967296 ≤ i') (c : Nat) :
+    auditReadFastRefusal ctx reader st opcode i c =
+      auditReadFastRefusal ctx reader st opcode i' c := by
+  have hF := auditWindowFindVisible_wide ctx reader st.declassificationAudit hi
+  have hF' := auditWindowFindVisible_wide ctx reader st.declassificationAudit hi'
+  have hS := refusalRingSize_not_wide hi
+  have hS' := refusalRingSize_not_wide hi'
+  unfold auditReadFastRefusal
+  match opcode, hNotChain, hNotArchived with
+  | 28, h, _ => exact absurd rfl h
+  | 29, _, h => exact absurd rfl h
+  | 0, _, _ | 1, _, _ | 2, _, _ | 3, _, _ | 4, _, _ | 5, _, _ | 6, _, _ | 7, _, _ | 8, _, _
+  | 9, _, _ | 10, _, _ | 11, _, _ | 12, _, _ | 13, _, _ | 14, _, _ | 15, _, _ | 16, _, _
+  | 17, _, _ | 18, _, _ | 19, _, _ | 20, _, _ | 21, _, _ | 22, _, _ | 23, _, _ | 24, _, _
+  | 25, _, _ | 26, _, _ | 27, _, _ =>
+    simp only [auditEntryRefusal, refusalSlotRefusal, hF, hF', hS, hS', dite_false]
+  | _ + 30, _, _ => rfl
+
+/-- A read's refusal reads its chunk only in the two reads that compare it. -/
+theorem auditReadFastRefusal_anyChunk (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) {opcode : Nat} (hNotChain : opcode ≠ 28) (hNotArchived : opcode ≠ 29) (i c c' : Nat) :
+    auditReadFastRefusal ctx reader st opcode i c =
+      auditReadFastRefusal ctx reader st opcode i c' := by
+  unfold auditReadFastRefusal
+  match opcode, hNotChain, hNotArchived with
+  | 28, h, _ => exact absurd rfl h
+  | 29, _, h => exact absurd rfl h
+  | 0, _, _ | 1, _, _ | 2, _, _ | 3, _, _ | 4, _, _ | 5, _, _ | 6, _, _ | 7, _, _ | 8, _, _
+  | 9, _, _ | 10, _, _ | 11, _, _ | 12, _, _ | 13, _, _ | 14, _, _ | 15, _, _ | 16, _, _
+  | 17, _, _ | 18, _, _ | 19, _, _ | 20, _, _ | 21, _, _ | 22, _, _ | 23, _, _ | 24, _, _
+  | 25, _, _ | 26, _, _ | 27, _, _ => rfl
+  | _ + 30, _, _ => rfl
+
+/-- Whether the taint the words name carries the number of word `x`, compared
+on the word (`taintWordsContainsWord_eq`). -/
+@[inline] def taintWordsContainsWord (w : TaintWords) (x : UInt64) : Bool :=
+  if w.canonicalCode then
+    w.saturated ||
+      ((decide (0 < w.count) && w.tag0 == x) ||
+      (decide (1 < w.count) && w.tag1 == x) ||
+      (decide (2 < w.count) && w.tag2 == x) ||
+      (decide (3 < w.count) && w.tag3 == x) ||
+      (decide (4 < w.count) && w.tag4 == x) ||
+      (decide (5 < w.count) && w.tag5 == x) ||
+      (decide (6 < w.count) && w.tag6 == x) ||
+      (decide (7 < w.count) && w.tag7 == x))
+  else true
+
+theorem taintWordsContainsWord_eq (w : TaintWords) (x : UInt64) :
+    taintWordsContainsWord w x = w.containsCode x.toNat := by
+  have hN : ∀ y : UInt64, TaintWords.wordNamesNat y x.toNat = (y == x) := fun y => by
+    unfold TaintWords.wordNamesNat
+    simp only [x.toNat_lt, decide_true, Bool.true_and, UInt64.ofNat_toNat]
+  unfold taintWordsContainsWord TaintWords.containsCode TaintWords.memCode
+  simp only [hN]
+
+/-- **A monitor's audit read, its index and chunk read as words**: the code
+`auditReadFastCode` finds for the words' numbers (`auditReadFastCodeW_eq`),
+with no word made a number past `2 ^ 32`. -/
+@[inline] def auditReadFastCodeW (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) (opcode : Nat) (iw cw : UInt64) : Nat :=
+  if opcode = 28 then
+    if cw < iw then
+      auditChainCode ctx reader st.declassificationAudit (auditWordIndex iw) (auditWordIndex cw)
+    else 0
+  else if opcode = 29 then
+    if natLeWord st.declassificationAudit.epoch cw then 0
+    else
+      match auditWindowFindVisible ctx reader st.declassificationAudit 0
+          st.declassificationAudit.length (auditWordIndex iw) with
+      | 0 => 0
+      | j + 1 =>
+        (if taintWordsContainsWord (st.declassificationAudit.entry j).predecessorWords cw then 1
+         else 0) + 1
+  else auditReadFastCode ctx reader st opcode (auditWordIndex iw) (auditWordIndex cw)
+
+theorem auditReadFastCodeW_eq (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) (opcode : Nat) (iw cw : UInt64) :
+    auditReadFastCodeW ctx reader st opcode iw cw =
+      auditReadFastCode ctx reader st opcode iw.toNat cw.toNat := by
+  unfold auditReadFastCodeW
+  by_cases hNotChain : opcode = 28
+  · subst hNotChain
+    simp only [↓reduceIte]
+    show _ = if cw.toNat < iw.toNat then
+      auditChainCode ctx reader st.declassificationAudit iw.toNat cw.toNat else 0
+    by_cases hc : cw < iw
+    · simp only [hc, UInt64.lt_iff_toNat_lt.mp hc, ↓reduceIte, auditChainCode,
+        auditWindowFindVisible_wordIndex]
+    · simp only [hc, mt UInt64.lt_iff_toNat_lt.mpr hc, ↓reduceIte]
+  by_cases hNotArchived : opcode = 29
+  · subst hNotArchived
+    simp only [↓reduceIte, Nat.succ_ne_self, natLeWord_eq, auditWindowFindVisible_wordIndex,
+      taintWordsContainsWord_eq]
+    show _ = if cw.toNat < st.declassificationAudit.epoch then _ else 0
+    by_cases hc : cw.toNat < st.declassificationAudit.epoch
+    · simp only [hc, ↓reduceIte, Nat.not_le.mpr hc, decide_false, Bool.false_eq_true]
+    · simp only [hc, ↓reduceIte, Nat.not_lt.mp hc, decide_true]
+  simp only [hNotChain, hNotArchived, ↓reduceIte]
+  calc auditReadFastCode ctx reader st opcode (auditWordIndex iw) (auditWordIndex cw)
+      = auditReadFastCode ctx reader st opcode iw.toNat (auditWordIndex cw) := by
+        rcases auditWordIndex_cases iw with h | ⟨h1, h2⟩
+        · rw [h]
+        · exact auditReadFastCode_wideIndex ctx reader st opcode h1 h2 _
+    _ = auditReadFastCode ctx reader st opcode iw.toNat cw.toNat := by
+        rcases auditWordIndex_cases cw with h | ⟨h1, h2⟩
+        · rw [h]
+        · exact auditReadFastCode_wideChunk ctx reader st hNotChain hNotArchived _ h1 h2
+
+/-- **A monitor's refused read, its index and chunk read as words**: the
+refusal `auditReadFastRefusal` finds for the words' numbers
+(`auditReadFastRefusalW_eq`). -/
+@[inline] def auditReadFastRefusalW (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) (opcode : Nat) (iw cw : UInt64) : KernelError :=
+  if opcode = 28 then
+    if cw < iw then .invalidArgument auditReadIndexWord else .invalidArgument auditReadChunkWord
+  else if opcode = 29 then
+    if natLeWord st.declassificationAudit.epoch cw then .invalidArgument auditReadChunkWord
+    else .invalidArgument auditReadIndexWord
+  else auditReadFastRefusal ctx reader st opcode (auditWordIndex iw) 0
+
+theorem auditReadFastRefusalW_eq (ctx : LabelingContext) (reader : SecurityDomain)
+    (st : SystemState) (opcode : Nat) (iw cw : UInt64) :
+    auditReadFastRefusalW ctx reader st opcode iw cw =
+      auditReadFastRefusal ctx reader st opcode iw.toNat cw.toNat := by
+  unfold auditReadFastRefusalW
+  by_cases hNotChain : opcode = 28
+  · subst hNotChain
+    simp only [↓reduceIte]
+    show _ = if cw.toNat < iw.toNat then _ else _
+    by_cases hc : cw < iw
+    · simp only [hc, UInt64.lt_iff_toNat_lt.mp hc, ↓reduceIte]
+    · simp only [hc, mt UInt64.lt_iff_toNat_lt.mpr hc, ↓reduceIte]
+  by_cases hNotArchived : opcode = 29
+  · subst hNotArchived
+    simp only [↓reduceIte, Nat.succ_ne_self, natLeWord_eq]
+    show _ = if cw.toNat < st.declassificationAudit.epoch then _ else _
+    by_cases hc : cw.toNat < st.declassificationAudit.epoch
+    · simp only [hc, ↓reduceIte, Nat.not_le.mpr hc, decide_false, Bool.false_eq_true]
+    · simp only [hc, ↓reduceIte, Nat.not_lt.mp hc, decide_true]
+  simp only [hNotChain, hNotArchived, ↓reduceIte]
+  rw [auditReadFastRefusal_anyChunk ctx reader st hNotChain hNotArchived _ 0 cw.toNat]
+  rcases auditWordIndex_cases iw with h | ⟨h1, h2⟩
+  · rw [h]
+  · exact auditReadFastRefusal_wideIndex ctx reader st hNotChain hNotArchived h1 h2 _
+
 /-- **An admitted read's write**: the word staged into the caller's return
 registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
 @[noinline] def auditReadPerform (tid : SeLe4n.ThreadId) (w : Nat) (st : SystemState) :
     SystemState :=
   st.updateTcb tid (TCB.withReturnWords · w.toUInt64 0 0 0 0 0)
 
-/-- The opcode, index and chunk of a read, from the caller's registers. -/
+/-- The opcode, index and chunk of a read, from the caller's registers: the
+index and chunk read as words (`auditReadFastCodeW`). -/
 @[inline] def auditReadCode (ctx : LabelingContext) (readerDomain : SecurityDomain)
     (st : SystemState) (regs : SeLe4n.RegisterFile) : Nat :=
-  auditReadFastCode ctx readerDomain st (auditedArgWord regs 0).toNat
-    (auditedArgWord regs 1).toNat (auditedArgWord regs 2).toNat
+  auditReadFastCodeW ctx readerDomain st (auditedArgWord regs 0).toNat
+    (auditedArgWord regs 1) (auditedArgWord regs 2)
 
 /-- **A monitor's audit read on the trail, in place**: the read's right, its
 opcode (checked on the word), the configured clearance, the reader and the
@@ -2141,9 +2452,9 @@ arm (`auditReadTrailR_eq`). -/
                   (embedLegacyLabel (ctx.threadLabelOf reader)) then
                 let code := auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs
                 if code = 0 then
-                  .error (auditReadFastRefusal ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st
-                    (auditedArgWord regs 0).toNat (auditedArgWord regs 1).toNat
-                    (auditedArgWord regs 2).toNat, st)
+                  .error (auditReadFastRefusalW ctx (embedLegacyLabel (ctx.threadLabelOf reader))
+                    st (auditedArgWord regs 0).toNat (auditedArgWord regs 1)
+                    (auditedArgWord regs 2), st)
                 else if code - 1 < 2 ^ 64 then .ok ((), auditReadPerform tid (code - 1) st)
                 else .error (.auditFieldTooLarge, st)
               else .error (.illegalAuthority, st)
@@ -2199,8 +2510,11 @@ theorem auditReadTrailR_eq (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     | true =>
     have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m)
         (embedLegacyLabel (ctx.threadLabelOf reader)) = true := hMon
-    simp only [hMon, hIs, ↓reduceIte]
-    by_cases h0 : auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs = 0
+    simp only [hMon, hIs, ↓reduceIte, auditReadCode, auditReadFastCodeW_eq,
+      auditReadFastRefusalW_eq]
+    by_cases h0 : auditReadFastCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st
+        (auditedArgWord regs 0).toNat (auditedArgWord regs 1).toNat
+        (auditedArgWord regs 2).toNat = 0
     · have hR := auditReadFastRefusal_spec ctx m _ st _ _ _ hMon h0
       simp only [hD] at hR
       simp only [h0, ↓reduceIte, hR]

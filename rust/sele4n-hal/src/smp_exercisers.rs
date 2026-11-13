@@ -9890,7 +9890,7 @@ const READ_ONLY_AUDIT_MINT: RoundTrip = mint(
 /// past the last), each answered in place; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 28] = [
+const AUDIT_SCENARIO: [RoundTrip; 33] = [
     // A drain and a read a word short of their arguments, through the audit
     // capability: refused `TruncatedMessage` once the target and the right
     // are checked, the trail untouched.
@@ -10182,6 +10182,74 @@ const AUDIT_SCENARIO: [RoundTrip; 28] = [
         caps_or_badges: None,
         overflow: None,
         returns: refused(INVALID_SYSCALL_ARGUMENT),
+    },
+    // Reads whose index or chunk word is at or above `2 ^ 63`, each read on
+    // the word (`auditReadFastCodeW`, `auditReadFastRefusalW`), so no word is
+    // made a number: an entry index (`InvalidArgument` of the index word),
+    RoundTrip {
+        name: "audit-read-entry-index-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a chunk of the first visible entry's target object (the chunk word),
+    RoundTrip {
+        name: "audit-read-entry-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // a refusal-ledger slot (the index word),
+    RoundTrip {
+        name: "audit-read-refusal-slot-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a causality verdict between two wide entries, compared on the words
+    // (the index word),
+    RoundTrip {
+        name: "audit-read-chain-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [28, WIDE_WORD + 1, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // and an archived predecessor past the epoch (the chunk word).
+    RoundTrip {
+        name: "audit-read-archived-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [29, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
     },
     // A drain through the read-only copy of the audit capability
     // ([`READ_ONLY_AUDIT_MINT`]), which cannot drain
