@@ -730,7 +730,9 @@ theorem notificationWaitCrossCoreDispatchChecked_mappingStage {ctx : LabelingCon
       executingCore st).1 := by
   unfold notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore_mappingStage
+  · split
+    · exact MappingStage.refl _
+    · exact notificationWaitOnCore_mappingStage
   · exact MappingStage.refl _
 
 /-! ### ReplyRecv -/

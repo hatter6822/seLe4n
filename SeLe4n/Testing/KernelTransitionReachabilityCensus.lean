@@ -1175,6 +1175,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- its words (`entryReportPushOk 1`, `entryReportPushErrorW 1`), equal to it
   -- by `liftReport_entryReportResolved`.
   , `SeLe4n.Kernel.entryReportResolved
+  -- The reply capability's failed lookup as a report, in the specification
+  -- form (`replyLookupRefusal`): the entry pushes it from the lookup's words
+  -- (`entryReportPushReplyW` through `replyLookupRefusalW`), equal to it by
+  -- `liftReport_replyLookupRefusalW`.
+  , `SeLe4n.Kernel.entryReportReplyLookup
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
@@ -1361,7 +1366,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.syncThreadStates
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
   , `SeLe4n.Kernel.syscallEntryUnderLockSet
-  , `SeLe4n.Kernel.syscallLookupReplyId
   , `SeLe4n.Kernel.timeoutAwareReceive
   , `SeLe4n.Kernel.timerTick
   , `SeLe4n.Kernel.timerTickBudget

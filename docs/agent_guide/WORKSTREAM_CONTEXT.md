@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -173,7 +173,14 @@ code:** resolve a capability address only through `resolveAddressBits`
 recursion returns only values the walk already holds (`resolveAddressBitsWalk`),
 never the caller's result type, so a refused lookup builds nothing on the heap;
 a CNode capability's guard comes from its capability, never from the CNode.
-SX3 is the next cut.
+SX3 (`v0.37.24`) made the receive side's refusals capability faults: a
+notification bound to another thread (`receiveBoundRefuses`) and a reply
+capability that does not look up (`lookupReplyCap`, seL4-MCS `lookupReply`)
+fault in the receive phase. **Standing constraints for new code:** a receive
+arm's reply capability is resolved only through `lookupReplyCap` (its K form
+`lookupReplyCapK`); whether a refusal is the reply capability's fault is decided
+by re-running that lookup (`receiveReplyFaults`, `replyLookupRefusal`), never by
+the refusal's form alone. SX4 is the next cut.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

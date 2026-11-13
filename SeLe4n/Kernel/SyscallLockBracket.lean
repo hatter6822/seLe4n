@@ -450,7 +450,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     | .ok (cap, _) =>
       -- a receive refused at its type or its right faults on its lookup
       -- (seL4 `handleRecv`), so it declares no operands, as a failed lookup
-      if receiveGateRefuses decoded.syscallId s cap then none else
+      if receiveGateRefuses decoded.syscallId tid s cap then none else
       match decoded.syscallId, cap.target with
       | .tcbSuspend, .object objId =>
           match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
@@ -694,7 +694,8 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
     ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
       abiEntryGate decoded tid s = some (tcb, gate) ∧
       syscallLookupCap gate s = .ok (cap, s) ∧
-      receiveGateRefuses decoded.syscallId s cap = false := by
+      receiveGateRefuses decoded.syscallId tid s cap = false ∧
+      receiveReplyFault? gate decoded s = none := by
   unfold abiEntryLockOperands at h
   rw [if_neg hNotYield] at h
   cases hGate : abiEntryGate decoded tid s with
@@ -711,8 +712,20 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
       subst s'
       rw [hLk] at h
       simp only at h
-      cases hG : receiveGateRefuses decoded.syscallId s cap
-      · exact ⟨tcb, gate, cap, rfl, hLk, hG⟩
+      cases hG : receiveGateRefuses decoded.syscallId tid s cap
+      · refine ⟨tcb, gate, cap, rfl, hLk, hG, ?_⟩
+        rw [hG] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        cases hN : syscallNamesReply decoded.syscallId
+        · simp only [receiveReplyFault?, receiveReplyAddr?_none_of_namesReply decoded hN]
+        · have hS : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv := by
+            revert hN; cases decoded.syscallId <;> simp [syscallNamesReply]
+          rcases hS with hS | hS <;> rw [hS] at h <;> cases hT : cap.target <;>
+            simp only [hT] at h <;> (try (simp at h; done)) <;> split at h <;>
+            (try (simp at h; done))
+          · exact receiveReplyFault?_of_resolveRecvReplyId_ok gate decoded s _ hS (by assumption)
+          · exact receiveReplyFault?_of_resolveReplyRecvReply_ok gate decoded s _ hS
+              (by assumption)
       · rw [hG] at h; exact absurd h (by simp)
 
 end SeLe4n.Kernel

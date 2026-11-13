@@ -52,15 +52,12 @@ def resolveReplyRecvReplyR (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat
           cspaceRootCap := callerCspaceRoot st tid
           capAddr := SeLe4n.CPtr.ofWord r0.word
           requiredRight := .write }
-      match syscallLookupArgumentCap replyRecvReplyCapNumber gate st with
-      | .error e => .error e
-      | .ok (rcap, _) =>
-          match extractReplyId rcap with
-          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
-          | .ok rid =>
-              match replyAnsweredCaller? st rid with
-              | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
-              | none => .error .replyCapInvalid
+      match lookupReplyCap gate st with
+      | .error lf => .error (.failedLookup false lf)
+      | .ok (rcap, rid) =>
+          match replyAnsweredCaller? st rid with
+          | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
+          | none => .error .replyCapInvalid
 
 theorem resolveReplyRecvReplyR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (decoded : SyscallDecodeResult)
@@ -147,17 +144,18 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
     (onErr : KernelError → α)
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   match cap? with
-  | none => onErr (.invalidCapability 0)
+  | none => onErr (.failedLookup false (.missingCapability 0))
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr (.invalidCapability 0)
-      else if !cap.hasRight .write then onErr .illegalAuthority
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then
+        onErr (.failedLookup false (.missingCapability 0))
+      else if !cap.hasRight .write then onErr (.failedLookup false (.missingCapability 0))
       else
         match cap.target with
         | .replyCap rid =>
             match replyAnsweredCaller? st rid with
             | some c => onOk rid c cap.badge (cap.rights.mem .grant)
             | none => onErr .replyCapInvalid
-        | _ => onErr (.invalidCapability 0)
+        | _ => onErr (.failedLookup false (.missingCapability 0))
 
 /-- `resolveReplyRecvReplyR` in continuation form (`resolveReplyRecvK_eq`), on
 the message length and the first message register: the slot is resolved
@@ -167,13 +165,13 @@ through `lookupSlotFromK`, as the operand is.  WS-ZA ZA4.7. -/
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   if len = 0 then onErr .replyCapInvalid else
   match callerCspaceRoot st tid with
-  | none => (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr) (.failedLookup false .invalidRoot)
+  | none => onErr (.failedLookup false .invalidRoot)
   | some root =>
     lookupSlotFromK root replyAddr st
-      (fun t a b c => (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr) (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
       (fun cnode slot =>
         replyRecvCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-          (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr) onOk)
+          onErr onOk)
 
 theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (regs : Array SeLe4n.RegValue)
@@ -193,8 +191,8 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       obtain ⟨hs, hv⟩ := h
       simp only [requireMsgReg, hs, ↓reduceDIte, hv]
     have hL : (len == 0) = false := by simp [h0]
-    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupArgumentCap, syscallLookupCap,
-      syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.RegValue.val_mk,
+    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, lookupReplyCap, syscallLookupCap,
+      syscallResolveCap, SeLe4n.RegValue.val_mk,
       SeLe4n.CPtr.ofNat_word_toNat, SeLe4n.CPtr.ofWord]
     simp only [SyscallGate.lookupSlot]
     cases callerCspaceRoot st tid with
@@ -202,7 +200,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
     | some root =>
     simp only [lookupSlotFromK_eq]
     cases lookupSlotFrom root replyAddr st with
-    | error e => simp only [LookupFault.ofWords_word]
+    | error e => simp only [LookupFault.ofWords_word, KernelError.capFaultLookup]
     | ok ref =>
       simp only [replyRecvCapK]
       cases SystemState.lookupSlotCap st ref with
@@ -213,7 +211,6 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
         · simp only [hIdle, ↓reduceIte] <;> rfl
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
-            unfold extractReplyId
             cases cap.target <;> try rfl
             rename_i rid
             simp only []

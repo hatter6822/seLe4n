@@ -220,6 +220,12 @@ def notificationWaitCrossCoreDispatchChecked (ctx : LabelingContext)
     (st : SystemState) :
     SystemState × Except KernelError (Option SeLe4n.Badge) :=
   if securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) then
+    -- seL4's `handleRecv`: a notification bound to another thread is the
+    -- wait's capability fault (`missingCapability 0`), refused before any
+    -- write; checked after the flow, so a denied wait learns nothing of it.
+    if notificationBoundElsewhere st notificationId waiter then
+      (st, .error (.invalidCapability 0))
+    else
     notificationWaitOnCore notificationId waiter executingCore st
   else
     (st, .error .flowDenied)
@@ -234,7 +240,9 @@ theorem notificationWaitCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContex
     (notificationWaitOnCore notificationId waiter executingCore st).1 = st' := by
   unfold notificationWaitCrossCoreDispatchChecked at h
   split at h
-  · exact congrArg Prod.fst h
+  · split at h
+    · exact absurd (congrArg Prod.snd h) (by simp)
+    · exact congrArg Prod.fst h
   · exact absurd (congrArg Prod.snd h) (by simp)
 
 /-- WS-SM SM6.B: a disallowed wait flow is rejected before any state change. -/
@@ -247,14 +255,17 @@ theorem notificationWaitCrossCoreDispatchChecked_flow_denied
   simp [notificationWaitCrossCoreDispatchChecked, hDeny]
 
 /-- WS-SM SM6.B: when the flow is permitted, the checked wait dispatch is exactly the
-unchecked one — the guard is a pure precondition. -/
+unchecked one on a notification bound to no other thread — the guards are pure
+preconditions. -/
 theorem notificationWaitCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (executingCore : CoreId) (st : SystemState)
-    (hAllow : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true) :
+    (hAllow : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true)
+    (hUnbound : notificationBoundElsewhere st notificationId waiter = false) :
     notificationWaitCrossCoreDispatchChecked ctx notificationId waiter executingCore st
       = notificationWaitCrossCoreDispatch notificationId waiter executingCore st := by
-  simp [notificationWaitCrossCoreDispatchChecked, notificationWaitCrossCoreDispatch, hAllow]
+  simp [notificationWaitCrossCoreDispatchChecked, notificationWaitCrossCoreDispatch, hAllow,
+    hUnbound]
 
 /-- WS-SM SM6.B: the cross-core wait dispatch preserves `objects.invExt`. -/
 theorem notificationWaitCrossCoreDispatch_preserves_objects_invExt

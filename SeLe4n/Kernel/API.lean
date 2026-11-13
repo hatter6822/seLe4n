@@ -380,34 +380,89 @@ theorem syscallLookupArgumentCap_error (capNumber : UInt64) (gate : SyscallGate)
     syscallLookupArgumentCap capNumber gate st = .error (e.forArgumentCap capNumber) := by
   unfold syscallLookupArgumentCap; rw [h]
 
-/-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
-single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
-if the capability does not target a reply object. -/
-def extractReplyId (cap : Capability) : Except KernelError SeLe4n.ReplyId :=
-  match cap.target with
-  | .replyCap rid => .ok rid
-  | _ => .error (.invalidCapability 0)
+/-- **seL4-MCS's `lookupReply`** (`syscall.c`): the reply capability a receive
+names, looked up through `gate` (its `capAddr` the reply capability's address).
+A lookup that fails answers its own lookup fault; a slot that holds no reply
+capability this receiver may use (empty, a reserved object's, without the
+reply authority `.write`, or of another kind) answers `missingCapability 0`,
+the fault `lookupReply` raises for a capability that is not a reply capability.
+The receive raises `CapFault(replyCPtr, inRecvPhase)` with it, so the failure
+is never an error frame. -/
+def lookupReplyCap (gate : SyscallGate) (st : SystemState) :
+    Except LookupFault (Capability × SeLe4n.ReplyId) :=
+  match syscallLookupCap { gate with requiredRight := .write } st with
+  | .error e => .error e.capFaultLookup
+  | .ok (rcap, _) =>
+      match rcap.target with
+      | .replyCap rid => .ok (rcap, rid)
+      | _ => .error (.missingCapability 0)
 
-/-- WS-SM SM6.D: resolve a reply capability held at a CSpace slot to its
-`ReplyId`.  Under faithful seL4-MCS the *server* passes the reply *capability*
-slot (a CPtr through the verified `syscallLookupCap`, like `tcbBindNotification`),
-not a raw `ReplyId`, so authority flows from *holding* a reply capability rather
-than naming an arbitrary reply object.  Read-only (state unchanged on success). -/
-def syscallLookupReplyId (gate : SyscallGate) : Kernel SeLe4n.ReplyId :=
-  fun st =>
-    match syscallLookupCap gate st with
-    | .error e => .error e
-    | .ok (cap, st') =>
-        match extractReplyId cap with
-        | .error e => .error e
-        | .ok rid => .ok (rid, st')
+/-- `lookupReplyCap` reads the gate's caller, root and address alone: the
+right it asks is the reply authority whatever the gate carries. -/
+theorem lookupReplyCap_congr (g g' : SyscallGate) {st : SystemState}
+    (h1 : g.callerId = g'.callerId) (h2 : g.cspaceRootCap = g'.cspaceRootCap)
+    (h3 : g.capAddr = g'.capAddr) :
+    lookupReplyCap g st = lookupReplyCap g' st := by
+  rcases g with ⟨c, r, a, q⟩
+  rcases g' with ⟨c', r', a', q'⟩
+  simp only at h1 h2 h3
+  subst h1 h2 h3
+  rfl
 
-/-- `extractReplyId` succeeds with `rid` exactly when the capability targets the
-reply object `rid`. -/
-theorem extractReplyId_eq_ok_iff (cap : Capability) (rid : SeLe4n.ReplyId) :
-    extractReplyId cap = .ok rid ↔ cap.target = .replyCap rid := by
-  unfold extractReplyId
-  cases cap.target <;> simp
+/-- Whether the slot `cnode`/`slot` holds a reply capability a receiver may
+use: present, not a reserved object's, carrying `.write`, and a reply
+capability (`lookupReplyCap`'s checks after the slot lookup), as one
+answer, so the continuation form applies its failure continuation once. -/
+def replySlotUsable (st : @& SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : Bool :=
+  match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+  | none => false
+  | some cap =>
+      !SeLe4n.Kernel.capTargetsReservedKernelObject cap && cap.hasRight .write &&
+        match cap.target with
+        | .replyCap _ => true
+        | _ => false
+
+/-- `lookupReplyCap` in continuation form (`lookupReplyCapK_eq`): its lookup
+fault handed on as its four words, so the entry re-checks a receive's reply
+capability without building a result. -/
+@[inline] def lookupReplyCapK {α : Type} (gate : SyscallGate) (st : SystemState)
+    (onFail : UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) : α :=
+  gate.lookupSlotK st onFail (fun cnode slot =>
+    if replySlotUsable st cnode slot then onOk
+    else
+      onFail ((LookupFault.missingCapability 0).word 0)
+        ((LookupFault.missingCapability 0).word 1) ((LookupFault.missingCapability 0).word 2)
+        ((LookupFault.missingCapability 0).word 3))
+
+theorem lookupReplyCapK_eq {α : Type} (gate : SyscallGate) (st : SystemState)
+    (onFail : UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) :
+    lookupReplyCapK gate st onFail onOk =
+      match lookupReplyCap gate st with
+      | .error lf => onFail (lf.word 0) (lf.word 1) (lf.word 2) (lf.word 3)
+      | .ok _ => onOk := by
+  unfold lookupReplyCapK lookupReplyCap
+  rw [SyscallGate.lookupSlotK_eq]
+  simp only [syscallLookupCap, syscallResolveCap]
+  have hG : ({ gate with requiredRight := .write } : SyscallGate).lookupSlot st =
+      gate.lookupSlot st := rfl
+  rw [hG]
+  cases gate.lookupSlot st with
+  | error f => rfl
+  | ok ref =>
+    dsimp only
+    unfold replySlotUsable
+    cases SystemState.lookupSlotCap st ref with
+    | none => rfl
+    | some cap =>
+      dsimp only
+      by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+      · simp only [hIdle, ↓reduceIte, Bool.not_true, Bool.false_and, Bool.false_eq_true]; rfl
+      · by_cases hRight : cap.hasRight .write = true
+        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_false,
+            Bool.true_and]
+          cases cap.target <;> rfl
+        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_false,
+            Bool.true_and, Bool.false_and]; rfl
 
 /-- WS-SM SM9.A.9: **bind the audit syscalls to an audit capability.**
 
@@ -421,7 +476,7 @@ executable page in a different address space; the fix there was
 `vspaceCapAuthorizesAsid`, and the fix here is the same shape and cheaper,
 because the trail is a singleton with no operand to bind against.
 
-Written in the shape `extractReplyId` already uses.  On the composed path the
+Written in the shape `lookupReplyCap` checks a reply capability with.  On the composed path the
 gate checks the same type first (`syscallTargetAccepted`), so the target is
 checked before the right for the audit pair as for every syscall, with
 `dispatchSyscallChecked_type_before_rights` the composed witness. -/
@@ -448,21 +503,17 @@ theorem extractAuditAuthority_rejects_non_audit_capability (oid : SeLe4n.ObjId) 
     extractAuditAuthority
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) := rfl
 
-/-- The reply object a `.receive` names at MR0: its argument capability `0`. -/
-def recvReplyCapNumber : UInt64 := 1
-
-/-- The reply object a `.replyRecv` names at MR0: its argument capability `0`
-(the endpoint is the invoked capability). -/
-def replyRecvReplyCapNumber : UInt64 := 1
-
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
 reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
 its `ReplyId`.  Crucially the reply cap lives at a **different** CSpace slot than
 the endpoint receive cap, so we resolve it through a gate whose `capAddr` is
 `replyCPtr` (not the primary syscall gate, which names the endpoint).  Read-only.
-Returns `none` for a plain `Recv` that omits a reply object (the source may be a
-`Send`/`Notification`), an unresolvable slot, or a non-reply cap — the caller arm
-then links only on a genuine `Call` rendezvous. -/
+Returns `none` for a plain `Recv` that omits a reply object (message length 0);
+the caller arm then links only on a genuine `Call` rendezvous.  A reply
+capability that does not look up (`lookupReplyCap`, seL4-MCS's `lookupReply`)
+is refused `failedLookup` with its lookup fault, which the entry raises as the
+receive's capability fault at the reply capability's address
+(`receiveReplyFault?`). -/
 def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) : Except KernelError (Option SeLe4n.ReplyId) :=
   -- A plain `Recv` *omits* the reply object via message length 0 (PR #822 review):
@@ -477,14 +528,11 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
   match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
   | .error e => .error e
   | .ok rargs =>
-      let replyGate : SyscallGate :=
-        { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
-      match syscallLookupArgumentCap recvReplyCapNumber replyGate st with
-      | .error e => .error e
-      | .ok (rcap, _) =>
-          match extractReplyId rcap with
-          | .error e => .error (e.forArgumentCap recvReplyCapNumber)
-          | .ok rid =>
+      -- seL4-MCS `lookupReply`: a reply capability that does not look up is
+      -- the receive's capability fault, its error the lookup fault itself.
+      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | .error lf => .error (.failedLookup false lf)
+      | .ok (_, rid) =>
               -- PR #822 review: validate the reply object exists AND is FREE before
               -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
               -- caller-first link) AND not already stashed in some server's
@@ -681,11 +729,11 @@ capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pai
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
 the reply leg answers.  Resolves the reply cap from the caller's CSpace at
 `replyCPtr` (a gate whose `capAddr` is that slot), then `getReply?` + reads
-`reply.caller`.  Read-only.  Returns `Except KernelError`: a CSpace / cap
-resolution failure (`decodeReplyRecvArgs` / `syscallLookupCap` / `extractReplyId`)
-**propagates** its explicit error (`invalidCapability` / `illegalAuthority` / …),
-mirroring `resolveRecvReplyId`, so a malformed or unauthorized reply-cap slot is
-distinguishable from a valid-but-consumed Reply.  `.replyCapInvalid` is reserved for
+`reply.caller`.  Read-only.  Returns `Except KernelError`: a reply capability
+that does not look up (`lookupReplyCap`, seL4-MCS `lookupReply`) answers
+`.failedLookup false lf`, the receive's capability fault carrying the lookup
+fault `lf`, mirroring `resolveRecvReplyId`, so a malformed or unauthorized
+reply-cap slot is distinguishable from a valid-but-consumed Reply.  `.replyCapInvalid` is reserved for
 a missing MR0, a missing Reply object, or a present Reply object with **no
 outstanding caller** (authority now flows from *holding* the reply cap, exactly like
 the `.reply` arm — no raw-thread bypass). -/
@@ -699,18 +747,13 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
   match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
   | .error e => .error e
   | .ok rargs =>
-      let replyGate : SyscallGate :=
-        { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
-      -- PR #822 review: propagate the explicit CSpace cap error (a missing slot or a
-      -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
-      -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
-      -- object with no outstanding caller (mirrors `resolveRecvReplyId`).
-      match syscallLookupArgumentCap replyRecvReplyCapNumber replyGate st with
-      | .error e => .error e
-      | .ok (rcap, _) =>
-          match extractReplyId rcap with
-          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
-          | .ok rid =>
+      -- seL4-MCS `lookupReply`: a reply capability that does not look up is
+      -- the receive's capability fault, its error the lookup fault itself; a
+      -- `.replyCapInvalid` is reserved for a resolved Reply object with no
+      -- outstanding caller (mirrors `resolveRecvReplyId`).
+      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | .error lf => .error (.failedLookup false lf)
+      | .ok (rcap, rid) =>
               -- WS-RR RR7.11: one resolution of "which thread does this reply
               -- capability answer", shared with the `.reply` arm and with the
               -- declared-footprint resolver.  Both former `none` arms produced
@@ -740,18 +783,15 @@ theorem resolveReplyRecvReply_answered (gate : SyscallGate) (decoded : SyscallDe
   · exact absurd h (by simp)
   · split at h
     · exact absurd h (by simp)
-    · dsimp only at h
-      split at h
+    · split at h
       · exact absurd h (by simp)
       · split at h
+        · rename_i hAns
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨hR, hP, _⟩ := h
+          subst hR; subst hP
+          exact hAns
         · exact absurd h (by simp)
-        · split at h
-          · rename_i hAns
-            simp only [Except.ok.injEq, Prod.mk.injEq] at h
-            obtain ⟨hR, hP, _⟩ := h
-            subst hR; subst hP
-            exact hAns
-          · exact absurd h (by simp)
 
 /-- **WS-LS LS2.3**: the rights-gated lookup succeeds only through a successful
 resolution of the same gate at the same state. -/
@@ -1156,13 +1196,294 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
   | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
 
+/-- **A notification bound to another thread** (seL4's `handleRecv`): a wait on
+a notification capability whose notification is bound to a thread other than
+the waiter.  `false` on every other syscall and capability. -/
+def receiveBoundRefuses (sid : SyscallId) (tid : SeLe4n.ThreadId) (st : SystemState)
+    (cap : Capability) : Bool :=
+  match sid, cap.target with
+  | .notificationWait, .object id => notificationBoundElsewhere st id tid
+  | _, _ => false
+
 /-- Whether a receive refuses the capability it resolved as seL4's `handleRecv`
 does: a receive-phase syscall whose capability is not of its type or lacks its
-right.  seL4 raises a capability fault there, with the lookup failure
+right, or names a notification bound to another thread.  seL4 raises a capability fault there, with the lookup failure
 `missing_capability`, exactly as for a failed lookup. -/
-def receiveGateRefuses (sid : SyscallId) (st : SystemState) (cap : Capability) : Bool :=
+def receiveGateRefuses (sid : SyscallId) (tid : SeLe4n.ThreadId) (st : SystemState)
+    (cap : Capability) : Bool :=
   syscallReceivesOnCap sid &&
-    (!syscallTargetAccepted sid st cap || !cap.hasRight (syscallRequiredRight sid))
+    (!syscallTargetAccepted sid st cap || !cap.hasRight (syscallRequiredRight sid) ||
+      receiveBoundRefuses sid tid st cap)
+
+/-- **The reply capability's address a receive names**, when it names one: a
+`.receive` or `.replyRecv` whose message declares its first register (length at
+least 1), read as each arm reads it (`resolveRecvReplyId`,
+`resolveReplyRecvReply`).  `none` on every other syscall. -/
+def receiveReplyAddr? (decoded : SyscallDecodeResult) : Option SeLe4n.CPtr :=
+  if decoded.msgInfo.length == 0 then none else
+  match decoded.syscallId with
+  | .receive =>
+      match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+      | .ok rargs => some rargs.replyCPtr
+      | .error _ => none
+  | .replyRecv =>
+      match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
+      | .ok rargs => some rargs.replyCPtr
+      | .error _ => none
+  | _ => none
+
+/-- **The capability fault a receive's reply capability raises**
+(seL4-MCS's `lookupReply`): the reply capability's address and the lookup
+fault, when the receive names a reply capability (`receiveReplyAddr?`) that
+does not look up (`lookupReplyCap`) through the caller's gate.  The arms refuse
+that receive `failedLookup` with the same fault (`resolveRecvReplyId`,
+`resolveReplyRecvReply`), and the entry raises the fault rather than return the
+error. -/
+def receiveReplyFault? (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) : Option (SeLe4n.CPtr × LookupFault) :=
+  match receiveReplyAddr? decoded with
+  | none => none
+  | some replyAddr =>
+      match lookupReplyCap { gate with capAddr := replyAddr } st with
+      | .error lf => some (replyAddr, lf)
+      | .ok _ => none
+
+/-- **The reply capability's fault a receive's refusal raises**: a refusal
+that is the reply capability's own failed lookup, as `receiveReplyFault?` finds
+it on the state the refusal hands back, is raised as the capability fault at
+the reply capability's address with that lookup fault (seL4-MCS
+`lookupReply`).  Decided on the lookup, not on the refusal's form: a
+`failedLookup` refusal the reply capability's lookup did not raise is an
+error. -/
+def receiveReplyFaults (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (ke : KernelError) : Option (SeLe4n.CPtr × LookupFault) :=
+  match receiveReplyFault? gate decoded st with
+  | some (replyAddr, lf) => if ke = .failedLookup false lf then some (replyAddr, lf) else none
+  | none => none
+
+/-- `receiveReplyFaults` for a refusal handed on as its discriminant and
+payload words: only a refusal whose words are a `failedLookup` with the
+receive phase's `false` word re-runs the reply lookup, and its fault is
+compared on the words (`KernelError.matchesWords`), so no error is rebuilt. -/
+@[inline] def receiveReplyFaultsW (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (d : Nat) (w0 w1 w2 w3 w4 : UInt64) :
+    Option (SeLe4n.CPtr × LookupFault) :=
+  if d == (KernelError.failedLookup false .invalidRoot).toDiscriminant && w0 == 0 then
+    match receiveReplyFault? gate decoded st with
+    | some (replyAddr, lf) =>
+        if (KernelError.failedLookup false lf).matchesWords d w0 w1 w2 w3 w4 then
+          some (replyAddr, lf)
+        else none
+    | none => none
+  else none
+
+theorem receiveReplyFaultsW_eq (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (ke : KernelError) :
+    receiveReplyFaultsW gate decoded st ke.toDiscriminant (ke.payloadWord 0) (ke.payloadWord 1)
+        (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) =
+      receiveReplyFaults gate decoded st ke := by
+  unfold receiveReplyFaultsW receiveReplyFaults
+  cases h : receiveReplyFault? gate decoded st with
+  | none => split <;> rfl
+  | some p =>
+    obtain ⟨replyAddr, lf⟩ := p
+    simp only [KernelError.matchesWords_iff]
+    by_cases hk : ke = KernelError.failedLookup false lf
+    · subst hk
+      simp [KernelError.toDiscriminant, KernelError.payloadWord]
+    · have hk' : ¬KernelError.failedLookup false lf = ke := fun e => hk e.symm
+      simp only [hk, hk', ↓reduceIte]
+      split <;> rfl
+
+/-- A receive refused by its reply capability's resolution raises the
+capability fault: the refusal is `lookupReplyCap`'s failure at the address
+`receiveReplyAddr?` reads (seL4-MCS's `lookupReply`). -/
+theorem resolveRecvReplyId_failedLookup (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (w : Bool) (lf : LookupFault) (hSid : decoded.syscallId = .receive)
+    (h : resolveRecvReplyId gate decoded st = .error (.failedLookup w lf)) :
+    ∃ replyAddr, receiveReplyFaults gate decoded st (.failedLookup w lf) = some (replyAddr, lf) := by
+  unfold resolveRecvReplyId at h
+  unfold receiveReplyFaults receiveReplyFault? receiveReplyAddr?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at h
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  rw [hSid]
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e =>
+    rw [hA] at h; cases h
+    exfalso; revert hA
+    unfold Architecture.SyscallArgDecode.decodeRecvArgs Architecture.SyscallArgDecode.requireMsgReg
+    split <;> simp [bind, Except.bind, pure, Except.pure]
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error lf' =>
+      rw [hL] at h
+      simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rargs.replyCPtr, by simp⟩
+    | ok p =>
+      rw [hL] at h
+      simp only at h
+      split at h <;> (try split at h) <;> cases h
+
+/-- A reply-receive refused by its reply capability's resolution likewise
+raises the capability fault. -/
+theorem resolveReplyRecvReply_failedLookup (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (w : Bool) (lf : LookupFault) (hSid : decoded.syscallId = .replyRecv)
+    (h : resolveReplyRecvReply gate decoded st = .error (.failedLookup w lf)) :
+    ∃ replyAddr, receiveReplyFaults gate decoded st (.failedLookup w lf) = some (replyAddr, lf) := by
+  unfold resolveReplyRecvReply at h
+  unfold receiveReplyFaults receiveReplyFault? receiveReplyAddr?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at h
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  rw [hSid]
+  cases hA : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
+  | error e =>
+    rw [hA] at h; cases h
+    exfalso; revert hA
+    unfold Architecture.SyscallArgDecode.decodeReplyRecvArgs Architecture.SyscallArgDecode.requireMsgReg
+    split <;> simp [bind, Except.bind, pure, Except.pure]
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error lf' =>
+      rw [hL] at h
+      simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rargs.replyCPtr, by simp⟩
+    | ok p =>
+      rw [hL] at h
+      simp only at h
+      split at h <;> cases h
+
+/-- A receive whose reply capability resolved raises no reply fault. -/
+theorem receiveReplyFault?_of_resolveRecvReplyId_ok (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (st : SystemState) (r : Option SeLe4n.ReplyId)
+    (hSid : decoded.syscallId = .receive) (h : resolveRecvReplyId gate decoded st = .ok r) :
+    receiveReplyFault? gate decoded st = none := by
+  cases hF : receiveReplyFault? gate decoded st with
+  | none => rfl
+  | some p =>
+    exfalso
+    unfold receiveReplyFault? receiveReplyAddr? at hF
+    unfold resolveRecvReplyId at h
+    rw [hSid] at hF
+    by_cases h0 : (decoded.msgInfo.length == 0) = true
+    · simp [h0] at hF
+    simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hF
+    cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+    | error e => rw [hA] at h; cases h
+    | ok rargs =>
+      rw [hA] at h hF
+      simp only at h hF
+      cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | error lf => rw [hL] at h; cases h
+      | ok q => rw [hL] at hF; cases hF
+
+/-- A reply-receive whose reply capability resolved raises no reply fault. -/
+theorem receiveReplyFault?_of_resolveReplyRecvReply_ok (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (st : SystemState)
+    (r : SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool)
+    (hSid : decoded.syscallId = .replyRecv) (h : resolveReplyRecvReply gate decoded st = .ok r) :
+    receiveReplyFault? gate decoded st = none := by
+  cases hF : receiveReplyFault? gate decoded st with
+  | none => rfl
+  | some p =>
+    exfalso
+    unfold receiveReplyFault? receiveReplyAddr? at hF
+    unfold resolveReplyRecvReply at h
+    rw [hSid] at hF
+    by_cases h0 : (decoded.msgInfo.length == 0) = true
+    · simp [h0] at h
+    simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hF
+    cases hA : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
+    | error e => rw [hA] at h; cases h
+    | ok rargs =>
+      rw [hA] at h hF
+      simp only at h hF
+      cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | error lf => rw [hL] at h; cases h
+      | ok q => rw [hL] at hF; cases hF
+
+/-- **The syscalls that name a reply capability to receive with**: the
+receive and the reply-receive.  No wildcard: a new syscall states its answer. -/
+def syscallNamesReply : SyscallId → Bool
+  | .receive | .replyRecv => true
+  | .send | .call | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .cspaceRevoke | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap
+  | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
+  | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
+  | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
+  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .yield | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
+  | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
+  | .tcbUnbindNotification | .mintReplyCap => false
+
+/-- A syscall that names no reply capability raises no reply capability's
+fault. -/
+theorem receiveReplyAddr?_none_of_namesReply (decoded : SyscallDecodeResult)
+    (h : syscallNamesReply decoded.syscallId = false) :
+    receiveReplyAddr? decoded = none := by
+  unfold receiveReplyAddr?
+  split
+  · rfl
+  · revert h; cases decoded.syscallId <;> simp [syscallNamesReply]
+
+/-- A receive's reply fault reads the object store alone. -/
+theorem receiveReplyFault?_congr_objects (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st₁ st₂ : SystemState) (hObj : st₁.objects = st₂.objects) :
+    receiveReplyFault? gate decoded st₁ = receiveReplyFault? gate decoded st₂ := by
+  unfold receiveReplyFault?
+  cases receiveReplyAddr? decoded with
+  | none => rfl
+  | some r =>
+    dsimp only
+    have hL : lookupReplyCap { gate with capAddr := r } st₁ =
+        lookupReplyCap { gate with capAddr := r } st₂ := by
+      unfold lookupReplyCap syscallLookupCap syscallResolveCap
+      rw [SyscallGate.lookupSlot_congr_objects _ st₁ st₂ hObj]
+      cases SyscallGate.lookupSlot _ st₂ with
+      | error e => rfl
+      | ok ref =>
+        dsimp only
+        rw [lookupSlotCap_congr_objects st₁ st₂ ref hObj]
+        cases SystemState.lookupSlotCap st₂ ref with
+        | none => rfl
+        | some c =>
+          dsimp only
+          by_cases h1 : capTargetsReservedKernelObject c = true
+          · simp [h1]
+          · by_cases h2 : c.hasRight .write = true <;> simp [h1, h2]
+    rw [hL]
+
+theorem receiveReplyFaults_none_of_namesReply (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (st : SystemState) (ke : KernelError)
+    (h : syscallNamesReply decoded.syscallId = false) :
+    receiveReplyFaults gate decoded st ke = none := by
+  simp only [receiveReplyFaults, receiveReplyFault?, receiveReplyAddr?_none_of_namesReply decoded h]
+
+/-- No one-overflow-word invocation names a reply capability. -/
+theorem syscallNamesReply_of_routedOverflowOne {sid : SyscallId}
+    (h : Architecture.RegisterDecode.routedOverflowOne sid = true) :
+    syscallNamesReply sid = false := by
+  revert h; cases sid <;> decide
+
+/-- No register-routed invocation names a reply capability. -/
+theorem syscallNamesReply_of_routedInvocation {sid : SyscallId}
+    (h : Architecture.RegisterDecode.routedInvocation sid = true) :
+    syscallNamesReply sid = false := by
+  revert h; cases sid <;> decide
+
+/-- No audited syscall names a reply capability. -/
+theorem syscallNamesReply_of_routedAudited {sid : SyscallId}
+    (h : Architecture.RegisterDecode.routedAudited sid = true) :
+    syscallNamesReply sid = false := by
+  revert h; cases sid <;> decide
 
 /-- **The lookup a capability fault reads**: the resolution, then, for a
 receive-phase syscall, the type and the right (`receiveGateRefuses`), whose
@@ -1173,7 +1494,8 @@ def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (st : SystemStat
     Except KernelError Unit :=
   match syscallResolveCap gate st with
   | .error e => .error e
-  | .ok (cap, _) => if receiveGateRefuses sid st cap then .error (.invalidCapability 0) else .ok ()
+  | .ok (cap, _) =>
+      if receiveGateRefuses sid gate.callerId st cap then .error (.invalidCapability 0) else .ok ()
 
 theorem syscallOperandLookup_error_of_not_receive (sid : SyscallId) (gate : SyscallGate)
     (st : SystemState) (e : KernelError) (h : syscallReceivesOnCap sid = false) :
@@ -6274,22 +6596,6 @@ theorem syscallLookupCap_preserves_state
     st' = st := by
   rcases syscallLookupCap_implies_capability_held gate st cap st' hOk with ⟨_, _, _, _, hEq⟩
   exact hEq
-
-/-- WS-SM SM6.D: `syscallLookupReplyId` is read-only — it only resolves and
-inspects a capability, so the state is unchanged on success. -/
-theorem syscallLookupReplyId_preserves_state
-    (gate : SyscallGate) (st st' : SystemState) (rid : SeLe4n.ReplyId)
-    (hOk : syscallLookupReplyId gate st = .ok (rid, st')) :
-    st' = st := by
-  unfold syscallLookupReplyId at hOk
-  split at hOk
-  · simp at hOk
-  · next cap st'' hLook =>
-    split at hOk
-    · simp at hOk
-    · next rid' hExtract =>
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
-      exact hOk.2 ▸ syscallLookupCap_preserves_state gate st st'' cap hLook
 
 /-- WS-J1-D: `lookupThreadRegisterContext` preserves `proofLayerInvariantBundle`
 because it is read-only. -/

@@ -253,8 +253,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   rw [hLk] at hOps
   simp only at hOps
   -- the operands were declared, so the receive's gate did not refuse
-  have hRecv : receiveGateRefuses decoded.syscallId st cap = false := by
-    cases hG : receiveGateRefuses decoded.syscallId st cap
+  have hRecv : receiveGateRefuses decoded.syscallId tid st cap = false := by
+    cases hG : receiveGateRefuses decoded.syscallId tid st cap
     · rfl
     · rw [hG] at hOps; simp at hOps
   simp only [hRecv, Bool.false_eq_true, ↓reduceIte] at hOps
@@ -855,7 +855,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       by_cases hY : decoded.syscallId = .yield
       · exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _
           tid ke tcb decoded hTcbRegs hDec (by rw [hY]; rfl)
-      obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv⟩ :=
+      obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv, hReplyF⟩ :=
         abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
       obtain ⟨hTcbF, -, -, hGateEq⟩ :=
         abiEntryGate_components decoded tid stFilled tcbF gate hGate
@@ -874,13 +874,16 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
         exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ tid
           ke tcb decoded hTcbRegs' hDec hPhase
       | some inRecv =>
-        have hRecv' : receiveGateRefuses decoded.syscallId
+        have hRecv' : receiveGateRefuses decoded.syscallId tid
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) cap = false := by
-          rw [← hRecv]; unfold receiveGateRefuses syscallTargetAccepted objectKindIs
-          simp only [SystemState.getObject?, hFillObj]
+          rw [← hRecv]
+          unfold receiveGateRefuses receiveBoundRefuses notificationBoundElsewhere
+            syscallTargetAccepted objectKindIs
+          simp only [SystemState.getObject?, SystemState.getNotification?, hFillObj]
         exact Platform.FFI.syscallCapFaultOf_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ tid ke
           tcb decoded inRecv hTcbRegs' hDec hPhase
           (by simp [syscallOperandLookup, hResolve, hRecv'])
+          (by rw [← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]; exact hReplyF)
     rw [hNoFault] at hD
     simp only at hD
     rw [syscallDispatchCrossCoreStep_of_ok hD]

@@ -368,7 +368,9 @@ theorem notificationWaitCrossCoreDispatchChecked {ctx : LabelingContext} {nid : 
       c st).1 := by
   unfold _root_.SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore hInv hW
+  · split
+    · exact refl hInv
+    · exact notificationWaitOnCore hInv hW
   · exact refl hInv
 
 end RecordsStep

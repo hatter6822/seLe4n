@@ -2423,7 +2423,7 @@ theorem replyCapRightsFrom_subset (r : AccessRightSet) :
 /-- WS-SM SM6.D (PR #822 review, Phase H): **mint a reply capability** from an
 `.object` capability that targets a `.reply` object.  The in-place retype retypes
 an ObjId in place, so after retyping Untyped → Reply the holder's authority is still an
-`.object target` cap; the receive-with-reply ABI (`resolveRecvReplyId`/`extractReplyId`)
+`.object target` cap; the receive-with-reply ABI (`resolveRecvReplyId`/`lookupReplyCap`)
 needs a `.replyCap rid`.  This is the production path that derives it: given an
 `.object target` cap at `src` where `target` holds a Reply object (`getReply?
 (ReplyId.ofObjId target)` resolves), install `.replyCap (ReplyId.ofObjId target)` at

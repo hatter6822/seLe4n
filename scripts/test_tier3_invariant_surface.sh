@@ -5965,8 +5965,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
 run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^        let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*        if slotEmpty c then onLookup \(\.invalidCapability 0\) st\n        else\n([ \t]*(--[^\n]*)?\n)*          let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n          if receiveRefusedAt sid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^@\[noinline\] def receiveSlotRefused \(sid : SyscallId\) \(st : @& SystemState\)\n    \(c : @& Option Capability\) : Bool :=\n  match c with\n  \| some cap => receiveGateRefuses sid st cap\n  \| none => false$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^        let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*        if slotEmpty c then onLookup \(\.invalidCapability 0\) st\n        else\n([ \t]*(--[^\n]*)?\n)*          let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n          if receiveRefusedAt sid tid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def receiveSlotRefused \(sid : SyscallId\) \(tid : SeLe4n\.ThreadId\) \(st : @& SystemState\)\n    \(c : @& Option Capability\) : Bool :=\n  match c with\n  \| some cap => receiveGateRefuses sid tid st cap\n  \| none => false$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -6045,8 +6045,17 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispat
 # (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
 # to the flow-checked delivery, as the abort entry does.
 run_check "INVARIANT" rg -n '^        match syscallOperandLookup decoded\.syscallId gate st with' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e => \.error e\n  \| \.ok \(cap, _\) => if receiveGateRefuses sid st cap then \.error \(\.invalidCapability 0\) else \.ok \(\)$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '^def receiveGateRefuses \(sid : SyscallId\) \(st : SystemState\) \(cap : Capability\) : Bool :=\n  syscallReceivesOnCap sid &&\n    \(!syscallTargetAccepted sid st cap \|\| !cap\.hasRight \(syscallRequiredRight sid\)\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e => \.error e\n  \| \.ok \(cap, _\) =>\n      if receiveGateRefuses sid gate\.callerId st cap then \.error \(\.invalidCapability 0\) else \.ok \(\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def receiveGateRefuses \(sid : SyscallId\) \(tid : SeLe4n\.ThreadId\) \(st : SystemState\)\n    \(cap : Capability\) : Bool :=\n  syscallReceivesOnCap sid &&\n    \(!syscallTargetAccepted sid st cap \|\| !cap\.hasRight \(syscallRequiredRight sid\) \|\|\n      receiveBoundRefuses sid tid st cap\)$' SeLe4n/Kernel/API.lean
+# A receive's reply capability follows seL4-MCS lookupReply: a failed lookup is
+# the receive-phase capability fault carrying its own lookup fault, a
+# notification bound to another thread refuses the Wait as a capability fault,
+# and the entry's fault classifier re-runs the reply lookup on the words.
+run_check "INVARIANT" rg -n -U '^      match lookupReplyCap \{ gate with capAddr := rargs\.replyCPtr \} st with\n      \| \.error lf => \.error \(\.failedLookup false lf\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^  \| \.notificationWait, \.object id => notificationBoundElsewhere st id tid$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^    if names && !w then\n      match lookupReplyCap \(replyCapGate tid \(callerCspaceRoot s tid\) replyAddr\) s with\n      \| \.error lf. => if lf. = lf then onReply lf s else kArm' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n 'match receiveReplyFaultsW gate decoded st d w0 w1 w2 w3 w4 with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem receiveReplyFaultsW_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean

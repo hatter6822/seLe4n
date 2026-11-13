@@ -1276,7 +1276,9 @@ theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingC
       (notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st).1 := by
   unfold notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore_readyKeptStage _ _ _ _ P.current P.notIdle
+  · split
+    · exact .refl _
+    · exact notificationWaitOnCore_readyKeptStage _ _ _ _ P.current P.notIdle
   · exact .refl _
 
 

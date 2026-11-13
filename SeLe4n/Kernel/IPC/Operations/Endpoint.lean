@@ -9748,6 +9748,17 @@ def notificationSignalSuccessor? (st : SystemState) (notificationId : SeLe4n.Obj
   | some waiter => ntfnSuccessor? st waiter
   | none => none
 
+/-- **A notification bound to a thread other than `waiter`** (seL4's
+`handleRecv`, `boundTCB && boundTCB != ksCurThread`): a wait on it is refused
+as a capability fault with `missingCapability 0`.  Read on the bound thread's
+code, so nothing is built. -/
+@[inline] def notificationBoundElsewhere (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : Bool :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      ntfn.boundTCBCode != 0 && ntfn.boundTCBCode != SeLe4n.ThreadId.optCode (some waiter)
+  | none => false
+
 /-- Block on a notification or consume its pending badge.
 
 The park (`notificationWaitPark`) does everything but the queue links: it

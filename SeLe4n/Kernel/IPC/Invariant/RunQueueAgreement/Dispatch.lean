@@ -833,7 +833,9 @@ theorem notificationWaitCrossCoreDispatchChecked_runQueueEntryStage (ctx : Label
       (notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st).1 := by
   unfold notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore_runQueueEntryStage _ _ _ _ P.current P.notIdle
+  · split
+    · exact (RunQueueStage.refl _).entry
+    · exact notificationWaitOnCore_runQueueEntryStage _ _ _ _ P.current P.notIdle
   · exact (RunQueueStage.refl _).entry
 
 /-- The declassified signal: the bound signal, then the audit records, which

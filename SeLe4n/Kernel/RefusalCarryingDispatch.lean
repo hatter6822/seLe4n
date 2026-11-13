@@ -550,6 +550,7 @@ writes the same way; every other wait takes the specification's form. -/
     match cap.target with
     | .object notifId =>
         if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) then
+          if notificationBoundElsewhere st notifId tid then .error (.invalidCapability 0, st) else
           match st.getNotification? notifId with
           | some ntfn =>
               match ntfn.pendingBadge with
@@ -604,8 +605,12 @@ theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
     simp only [notificationWaitCrossCoreDispatchChecked]
     by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
     · simp only [hFlow, ↓reduceIte]
+      by_cases hBound : notificationBoundElsewhere st notifId tid = true
+      · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
+      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
       have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
       simp only [RefusalCarrying.ofKernel] at hGen ⊢
+      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
       split
       · next ntfn hN =>
         split
