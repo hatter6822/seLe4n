@@ -249,8 +249,8 @@ def setPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidTh
         let oldPriority := getCurrentPriority st targetTcb
         applyPriorityChangeOnCore st vTargetTid.val targetTcb newPriority executingCore
           (decide (newPriority.val < oldPriority.val))
-      | none => .error .invalidArgument
-  | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
+  | none => .error (.invalidArgument 0)
 
 /-- WS-SM SM8.B (operation): **set a thread's maximum controlled priority, across
 cores.**  `setMCPriorityOp`'s per-core form; the capping rule is unchanged, and
@@ -276,8 +276,8 @@ def setMCPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.Valid
           applyPriorityChangeOnCore stMcp vTargetTid.val targetTcb' newMCP executingCore true
         else
           .ok (stMcp, none)
-      | none => .error .invalidArgument
-  | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
+  | none => .error (.invalidArgument 0)
 
 /-- WS-ZA ZA5.2: `setMCPriorityOnCore`'s checks for the case that writes only
 the ceiling, read before anything is written: both threads are stored TCBs, the
@@ -445,7 +445,7 @@ theorem setPriorityOnCore_no_caller (st : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
     (executingCore : CoreId) (hCaller : st.getTcb? vCallerTid.val = none) :
     setPriorityOnCore st vCallerTid vTargetTid newPriority executingCore
-      = .error .invalidArgument := by
+      = .error (.invalidArgument 0) := by
   simp [setPriorityOnCore, hCaller]
 
 /-- WS-SM SM8.B: **a raise surfaces no SGI.**  Preemption is gated on the

@@ -546,8 +546,9 @@ rewrites it there.
     and their neighbours).
 - `heapAdmitted` is **retired, not replaced**: UC6's `canAllocate` is the bound.
 - **Cells.** None.
-- **Boundary.** Replace the `untyped-retype-heap-refused` scenario with an
-  `untyped-retype-region-exhausted` scenario at UC6's boundary.
+- **Boundary.** Retire the `untyped-retype-heap-refused` scenario.  The
+  `untyped-retype-region-exhausted` scenario, which WS-SX SX1 (`v0.37.20`)
+  added, already measures a carve the region cannot hold; UC6 keeps it.
 - **Acceptance.**
   - Every pin holds.
   - The new scenario refuses.

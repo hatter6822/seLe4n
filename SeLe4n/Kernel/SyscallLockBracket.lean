@@ -160,9 +160,11 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
                           ipcBufferAddr spEl0 x30) elr spsr)
              | none =>
-                 .ok (.returns (Architecture.errorFrame ke),
+                 .ok (.returns (Architecture.errorFrameFor
+                        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke),
                       Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
-                        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                        (Architecture.recordErrorOverflow
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke))
          | .ok ((), st') =>
              .ok (Platform.FFI.syscallReturnOutcome syscallId st' tid, st')) := by
   unfold abiEntryPlan at h

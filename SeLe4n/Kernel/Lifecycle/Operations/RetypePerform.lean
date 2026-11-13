@@ -226,6 +226,148 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         rfl
     | _ => rw [hT] at hRest; cases hRest
 
+/-- `cspaceDstRefusal`, inlined, so its caller reads the destination's two
+words and builds no slot reference. -/
+@[inline] def untypedRetypeDstRefusal (dst : CSpaceAddr) (st : SystemState) :
+    Except KernelError Unit :=
+  match st.getCNode? dst.cnode with
+  | some cn =>
+      if !cn.slotAddressable dst.slot then .error (.invalidArgument 0)
+      else
+        match cn.lookup dst.slot with
+        | some _ => .error .targetSlotOccupied
+        | none => .ok ()
+  | none => .error .objectNotFound
+
+theorem untypedRetypeDstRefusal_eq (dst : CSpaceAddr) (st : SystemState) :
+    untypedRetypeDstRefusal dst st = cspaceDstRefusal dst st := rfl
+
+/-- **The refusal `untypedRetypeObject` answers**, read from the checks'
+results in the specification's order, without building the request or
+running the carve: the heap's (`heapOk`), the request's (`admissibleOk`), the
+issuing slot's, the destination's, then `retypeFromUntyped`'s.  Every result
+is a word or a shared constant.  An admitted carve has no refusal, and reads
+`illegalState` here (`untypedRetypeObject_refused` holds only for a refused
+one). -/
+@[inline] def untypedRetypeRefusalWith (st : SystemState) (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (heapOk admissibleOk : Bool) (ty : KernelObjectType)
+    (size : Nat) : KernelError :=
+  if !heapOk then .untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64 else
+  if !admissibleOk then .illegalState else
+  match SystemState.lookupSlotCap st src with
+  | none =>
+    match st.getCNode? src.cnode with
+    | some _ => .invalidCapability 0
+    | none => .objectNotFound
+  | some utCap =>
+    match utCap.target with
+    | .object untypedId =>
+      if !lifecycleRetypeAuthority utCap untypedId then .illegalAuthority else
+      match st.getUntyped? untypedId with
+      | none => .untypedTypeMismatch
+      | some ut =>
+        match untypedRetypeDstRefusal dst st with
+        | .error e => e
+        | .ok () =>
+          if st.objects.size ≥ maxObjects then .objectStoreCapacityExceeded
+          else if childId = untypedId then .childIdSelfOverwrite
+          else if (st.getObject? childId).isSome ||
+              isIrqNodeObjId InterruptLineSet.capacity childId then .childIdCollision
+          else if !childrenNameNone childId ut.children then .childIdCollision
+          else if ut.isDevice && !ty.deviceBackable then .untypedDeviceRestriction
+          else if !objectIdInAddressSpace st.machine childId then .addressOutOfBounds
+          else if size < objectTypeAllocSize ty then .untypedAllocSizeTooSmall
+          else if !retypeResetAdmitted st src ut then .revocationRequired
+          else if !ut.canAllocate (alignedCarveIndex ty size ut (retypeFreeIndex st src utCap)) size then
+            .untypedRegionExhausted (ut.regionSize - retypeFreeIndex st src utCap).toUInt64
+          else .illegalState
+    | _ => .invalidCapability 0
+
+/-- **A refused carve answers `untypedRetypeRefusalWith`**, and writes
+nothing: the compiled dispatch answers it without decoding the invocation
+again. -/
+theorem untypedRetypeObject_refused {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st : SystemState}
+    (hA : untypedRetypeAdmittedAt st src dst childId req = false) :
+    untypedRetypeObject src childId dst req st =
+      .error (untypedRetypeRefusalWith st src dst childId (req.heapAdmitted st)
+        (req.admissible st) req.objectType req.size) := by
+  unfold untypedRetypeAdmittedAt at hA
+  unfold untypedRetypeObject untypedRetypeRefusalWith
+  rw [untypedRetypeDstRefusal_eq]
+  simp only [childrenNameNone_eq, Bool.not_not]
+  cases hH : req.heapAdmitted st
+  · rfl
+  cases hM : req.admissible st
+  · simp
+  simp only [hH, hM, Bool.true_and, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hA ⊢
+  cases hL : SystemState.lookupSlotCap st src with
+  | none =>
+    cases hC : st.getCNode? src.cnode <;> simp [cspaceLookupSlot, hL, hC]
+  | some utCap =>
+    rw [hL] at hA
+    dsimp only at hA
+    have hLkS : cspaceLookupSlot src st = .ok (utCap, st) := by
+      unfold cspaceLookupSlot; rw [hL]
+    rw [hLkS]
+    dsimp only
+    cases hT : utCap.target with
+    | object untypedId =>
+      rw [hT] at hA
+      dsimp only at hA ⊢
+      cases hAu : lifecycleRetypeAuthority utCap untypedId
+      · simp
+      simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      cases hU : st.getUntyped? untypedId with
+      | none => rfl
+      | some ut =>
+        rw [hU] at hA
+        dsimp only at hA ⊢
+        have hUt : st.getObject? untypedId = some (.untyped ut) :=
+          (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hU
+        cases hD : cspaceDstRefusal dst st with
+        | error e => rfl
+        | ok u =>
+          have hDA := (cspaceDstRefusal_eq_ok_iff dst st).mp hD
+          rw [hDA, Bool.true_and] at hA
+          dsimp only
+          unfold retypeFromUntyped
+          rw [hUt, CarveRequest.object_objectType]
+          dsimp only
+          unfold retypeFromUntypedAdmitted at hA
+          rw [childrenNameNone_eq] at hA
+          have hLkS' : cspaceLookupSlot src st = .ok (utCap, st) := hLkS
+          by_cases h1 : st.objects.size ≥ maxObjects
+          · simp only [h1, ↓reduceIte]
+          by_cases h2 : childId = untypedId
+          · simp only [h1, h2, ↓reduceIte]
+          by_cases h3 : ((st.getObject? childId).isSome ||
+              isIrqNodeObjId InterruptLineSet.capacity childId) = true
+          · simp only [h1, h2, h3, ↓reduceIte]
+          rw [Bool.not_eq_true] at h3
+          by_cases h4 : (ut.children.any (fun c => c.objId == childId)) = true
+          · simp only [h1, h2, h3, h4, ↓reduceIte, Bool.false_eq_true]
+          rw [Bool.not_eq_true] at h4
+          by_cases h5 : (ut.isDevice && !req.objectType.deviceBackable) = true
+          · simp only [h1, h2, h3, h4, h5, ↓reduceIte, Bool.false_eq_true]
+          rw [Bool.not_eq_true] at h5
+          cases h6 : objectIdInAddressSpace st.machine childId
+          · simp only [h1, h2, h3, h4, h5, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+          by_cases h7 : req.size < objectTypeAllocSize req.objectType
+          · simp only [h1, h2, h3, h4, h5, h7, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
+          cases h8 : retypeResetAdmitted st src ut
+          · simp only [h1, h2, h3, h4, h5, h7, hLkS', hAu, ↓reduceIte, Bool.false_eq_true,
+              Bool.not_true, Bool.not_false]
+          cases h9 : ut.canAllocate (alignedCarveIndex req.objectType req.size ut
+              (retypeFreeIndex st src utCap)) req.size
+          · simp only [h1, h2, h3, h4, h5, h7, h9, hLkS', hAu, UntypedObject.allocate,
+              ↓reduceIte, Bool.false_eq_true, Bool.not_true, Bool.not_false]
+          · exfalso
+            simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, hAu, decide_false, Bool.not_false,
+              Bool.and_true, Bool.true_eq_false] at hA
+    | _ => rfl
+
+
 /-- **A carve the kernel heap cannot hold is not admitted**, so the compiled
 dispatch (`RefusalCarrying.ofChecked`) never runs its writes and answers the
 carve's own refusal (`untypedRetypeObject_heapRefused`) in the state it was
@@ -243,7 +385,7 @@ theorem untypedRetypeOfChecked_heapRefused {src dst : CSpaceAddr} {childId : SeL
     RefusalCarrying.ofChecked (untypedRetypeAdmittedAt st src dst childId req)
         (untypedRetypePerformAt src dst childId req)
         (untypedRetypeObject src childId dst req) st =
-      .error (.untypedRegionExhausted, st) := by
+      .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) := by
   unfold RefusalCarrying.ofChecked
   rw [untypedRetypeAdmittedAt_heapRefused hHeap,
     untypedRetypeObject_heapRefused src dst childId req st hHeap]
@@ -632,6 +774,29 @@ theorem untypedRetypeAdmittedCode_eq (st : SystemState) (src dst : CSpaceAddr)
     ← CarveRequest.objectTypeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
       (req.coreWord core0) (req.asidWord asid0),
     ← CarveRequest.sizeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0)]
+
+/-- **`untypedRetypeRefusalWith` read off the request's words.** -/
+@[inline] def untypedRetypeRefusalCode (st : SystemState) (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (k n : Nat) (asid : SeLe4n.ASID) : KernelError :=
+  untypedRetypeRefusalWith st src dst childId (CarveRequest.heapAdmittedW st k n)
+    (CarveRequest.admissibleW st k asid) (CarveRequest.objectTypeW k) (CarveRequest.sizeW k n)
+
+theorem untypedRetypeRefusalCode_eq (st : SystemState) (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (dom0 : SeLe4n.DomainId) (core0 : SeLe4n.Kernel.Concurrency.CoreId)
+    (asid0 : SeLe4n.ASID) (req : CarveRequest) :
+    untypedRetypeRefusalCode st src dst childId req.kindWord req.sizeWord (req.asidWord asid0) =
+      untypedRetypeRefusalWith st src dst childId (req.heapAdmitted st) (req.admissible st)
+        req.objectType req.size := by
+  conv => rhs; rw [← CarveRequest.ofWords_words dom0 core0 asid0 req]
+  unfold untypedRetypeRefusalCode
+  rw [CarveRequest.heapAdmittedW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    CarveRequest.admissibleW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    CarveRequest.objectTypeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    CarveRequest.sizeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
       (req.coreWord core0) (req.asidWord asid0)]
 
 /-- The carve's heap check, read off the request's words. -/

@@ -435,7 +435,7 @@ and the delivery handed them, so no fault, context or window record is built. -/
     if ectx.takenFromEl0 then
       if faultKindOfEsr ectx.esr = 0 then st
       else faultEntryDeliverWords lctx st (faultKindOfEsr ectx.esr) (faultFlagOfEsr ectx.esr)
-        (faultWord0OfEsr ectx.esr ectx.far) ectx.esr .invalidCapability ectx.elr ectx.spsr w
+        (faultWord0OfEsr ectx.esr ectx.far) ectx.esr (.invalidCapability 0) ectx.elr ectx.spsr w
         ⟨coreId.toNat, h⟩
     else st
   else st
@@ -464,7 +464,7 @@ window's `x7`). -/
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
   if h : coreId.toNat < numCores then
     if ectx.takenFromEl0 then
-      faultEntryDeliverWords lctx st 3 false w.x7 0 .invalidCapability
+      faultEntryDeliverWords lctx st 3 false w.x7 0 (.invalidCapability 0)
         (Platform.FFI.svcFaultIP ectx.elr) ectx.spsr w ⟨coreId.toNat, h⟩
     else st
   else st

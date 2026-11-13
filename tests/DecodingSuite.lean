@@ -315,7 +315,7 @@ private def sad003_cspaceCopy : IO Unit := do
       | .error .truncatedMessage => true | _ => false)
   expect "SAD-003g copy stray bit past the mask"
     (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨2097152⟩]) with
-      | .error .invalidArgument => true | _ => false)
+      | .error (.invalidArgument _) => true | _ => false)
 
 /-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
 private def sad004_cspaceMove : IO Unit := do
@@ -324,7 +324,7 @@ private def sad004_cspaceMove : IO Unit := do
   expect "SAD-004a move ok" result.isOk
   expect "SAD-004b move stray rights bit"
     (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, ⟨CNodeOpWord.pack 2 2 1⟩]) with
-      | .error .invalidArgument => true | _ => false)
+      | .error (.invalidArgument _) => true | _ => false)
 
 /-- SAD-005: decodeCSpaceDeleteArgs — valid and insufficient. -/
 private def sad005_cspaceDelete : IO Unit := do

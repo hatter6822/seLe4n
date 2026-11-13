@@ -432,7 +432,7 @@ rather than on a representative. -/
 private def allFaultKinds : List Fault :=
   [ .vmFault 0xDEAD_0000 0x9600_0007 false
   , .vmFault 0xBEEF_1000 0x8200_000F true
-  , .capFault 0x2A false .invalidCapability
+  , .capFault 0x2A false (.invalidCapability 0)
   , .capFault 0x2B true .objectNotFound
   , .unknownSyscall 0xFFFF
   , .userException 0x22 0x0100_0000 ]
@@ -548,7 +548,7 @@ private def runResolutionChecks : IO Unit := do
   | .error e =>
       assertBool s!"faulter's handler must resolve (got {repr e})" false
   assertBool "a thread with no faultHandler does not resolve"
-    (resolveErr stRunning orphan == some .invalidCapability)
+    (resolveErr stRunning orphan == some (.invalidCapability 0))
   assertBool "a read-only handler capability is refused on rights"
     (resolveErr stRunning weak == some .illegalAuthority)
   assertBool "a thread that is not a TCB does not resolve"
@@ -1232,7 +1232,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
   -- are admitted, a read-only capability (slot 1) is refused on rights, and an
   -- empty slot (3) is refused as no capability at all.
   assertBool "pre: the orphan has no fault handler"
-    (resolveErr stRunning orphan == some .invalidCapability)
+    (resolveErr stRunning orphan == some (.invalidCapability 0))
   match dispatchWithCap (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stRunning with
   | .ok (_, st1) =>
       assertBool "the live tcbSetFaultHandler arm installs the CPtr on the target"
@@ -1260,9 +1260,9 @@ private def runConfigureAndResumeChecks : IO Unit := do
   assertBool "a read-only capability is refused at set time on rights"
     (errorOf (dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
       == some .illegalAuthority)
-  assertBool "an empty slot is refused at set time as no capability"
+  assertBool "an empty slot is refused at set time as no capability, naming the handler"
     (errorOf (dispatchWithCap (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
-      == some .invalidCapability)
+      == some (.invalidCapability 1))
   assertBool "a refused configuration leaves the field as it was"
     (match dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
      | .ok _ => false
@@ -1406,7 +1406,7 @@ private def seamErrorFrame (r : Except KernelError (SyscallOutcome × SystemStat
     (ke : KernelError) : Bool :=
   match r with
   | .ok (.returns f, st) =>
-      decide (f = errorFrame ke) && pendingFaultOf st faulter == none
+      decide (f = errorFrame ke false) && pendingFaultOf st faulter == none
   | _ => false
 
 /-- Did the seam block the caller with exactly the fault `f` recorded on it? -/
@@ -1430,7 +1430,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
         (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
       assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"
         ((pendingFaultOf s.afterFault faulter).map (·.fault)
-          == some (.capFault 3 false .invalidCapability))
+          == some (.capFault 3 false (.invalidCapability 0)))
       assertBool "the restart PC is the SVC instruction (ELR - 4), never the return address"
         ((pendingFaultOf s.afterFault faulter).map (·.context.faultIP) == some (svcElr - 4))
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
@@ -1448,7 +1448,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
         ((deliveredMessageOf s.afterRecv handler).map (·.registers) ==
           some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat 3,
                  SeLe4n.RegValue.ofNat 0,
-                 SeLe4n.RegValue.ofNat (KernelError.toDiscriminant .invalidCapability)])
+                 SeLe4n.RegValue.ofNat (KernelError.toDiscriminant (.invalidCapability 0))])
       assertBool "a payload-free reply restarts the caller AT the SVC — the syscall is re-issued"
         (s.replyOutcome.restartPC? == some (svcElr - 4) &&
           savedPcOf s.afterReply faulter == some (svcElr - 4).toNat)
@@ -1460,16 +1460,16 @@ private def runSyscallCapFaultChecks : IO Unit := do
   -- not the object invoked: every `seL4_Call` invocation faults, `seL4_Signal`
   -- is `seL4_Send`, and the receive-side syscalls set the phase flag.
   assertBool "a Receive at the same CPtr faults IN the receive phase"
-    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true .invalidCapability))
+    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.invalidCapability 0)))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
     (seamCapFault (seamDispatch seamCtx .notificationSignal 3)
-      (.capFault 3 false .invalidCapability))
+      (.capFault 3 false (.invalidCapability 0)))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
-    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false .invalidCapability))
+    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false (.invalidCapability 0)))
   -- A short message: the lookup comes first, as in seL4, so an unresolvable
   -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
   assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
-    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false .invalidCapability))
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false (.invalidCapability 0)))
   -- A CNode capability parked at slot 3 of the caller's root: the delete's
   -- type.  The checks run lookup, type, right, length.
   let cnodeCapAt3 (rights : List AccessRight) : SystemState :=
@@ -1484,20 +1484,20 @@ private def runSyscallCapFaultChecks : IO Unit := do
   assertBool "a delete through a CNode capability that lacks its right is refused on the right before the length"
     (seamErrorFrame (deleteAt3 (cnodeCapAt3 [.read])) .illegalAuthority)
   assertBool "a delete through a capability of the wrong type is refused invalidCapability before its right and its length (seL4 decodeInvocation dispatches on the type)"
-    (seamErrorFrame (seamDispatch seamCtx .cspaceDelete 1) .invalidCapability)
+    (seamErrorFrame (seamDispatch seamCtx .cspaceDelete 1) (.invalidCapability 0))
   -- …and what is NOT a capability fault.
   assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault (seL4 decodeInvocation: no CanSend answers InvalidCapability)"
-    (seamErrorFrame (seamDispatch seamCtx .call 1) .invalidCapability)
+    (seamErrorFrame (seamDispatch seamCtx .call 1) (.invalidCapability 0))
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
     (seamErrorFrame (seamDispatch permissiveCtx .call 3) .policyDenied)
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
     (match seamDispatch seamCtx .declassify 3 with
      | .ok (.returns f, st) =>
-         decide (f = errorFrame KernelError.invalidCapability) &&
+         decide (f = errorFrame (KernelError.invalidCapability 0) false) &&
            pendingFaultOf st faulter == none &&
            (match st.declassificationRefusals.recent.get
                stRunning.declassificationRefusals.nextSlot with
-            | some r => decide (r.reason = KernelError.invalidCapability) &&
+            | some r => decide (r.reason = (KernelError.invalidCapability 0)) &&
                         decide (r.syscall = SyscallId.declassify)
             | none => false)
      | _ => false)

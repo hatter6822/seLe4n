@@ -60,7 +60,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .cspaceMove =>
     match cap.target with
     | .object cnodeId =>
@@ -72,7 +72,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceMoveChecked ctx src dst st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .cspaceDelete =>
     match cap.target with
     | .object cnodeId =>
@@ -82,7 +82,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlotZombie executingCore addr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .cspaceRevoke =>
     match cap.target with
     | .object cnodeId =>
@@ -92,7 +92,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceRevokeCdtFinalising executingCore addr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .mintReplyCap =>
     match cap.target with
     | .object cnodeId =>
@@ -103,15 +103,15 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .untypedRetype =>
     match cap.target with
     | .object _ => untypedRetypeFromCap tid executingCore capAddr (decodeUntypedRetypeArgsBy (msgRegOfFile layout regs)) st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .untypedReset =>
     match cap.target with
     | .object _ => untypedResetFromCap tid capAddr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .vspaceMap =>
     match cap.target with
     | .object _ =>
@@ -122,7 +122,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               .error .illegalAuthority
             else
               vspaceMapOrRemapFromFrameCap tid executingCore args st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .vspaceUnmap =>
     match cap.target with
     | .object _ =>
@@ -134,7 +134,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
           else
             Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
               executingCore args.asid args.vaddr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .vspaceUnifyInstruction =>
     match cap.target with
     | .object _ =>
@@ -145,15 +145,15 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             .error .illegalAuthority
           else
             Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .serviceRevoke =>
     match cap.target with
     | .object epId => revokeServiceChecked ctx tid epId st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .serviceQuery =>
     match cap.target with
     | .object epId => serviceQueryStaged ctx tid epId st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .schedContextBind =>
     match cap.target with
     | .object scId =>
@@ -164,7 +164,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
           | .error e => .error e
           | .ok vScId =>
               SchedContextOps.schedContextBind vScId vThreadId st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .schedContextUnbind =>
     match cap.target with
     | .object scId =>
@@ -175,7 +175,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                   executingCore st with
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .schedContextConsumed =>
     match cap.target with
     | .object scId =>
@@ -186,7 +186,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                   executingCore st with
               | .ok st' => .ok ((), st')
               | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .schedContextYieldTo =>
     match cap.target with
     | .object scId =>
@@ -197,26 +197,26 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                   (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
               | .ok st' => .ok ((), st')
               | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .irqHandlerAck =>
     match cap.target with
     | .irqHandler line => Architecture.irqHandlerAck line st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .irqControlGet =>
     match cap.target with
     | .irqControl _ =>
         irqControlGetFromCap tid capAddr (decodeIrqControlGetArgsBy (msgRegOfFile layout regs)) st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .irqHandlerSetNotification =>
     match cap.target with
     | .irqHandler line =>
         irqHandlerSetNotificationFromCap tid executingCore line
           (decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs)) st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .irqHandlerClear =>
     match cap.target with
     | .irqHandler line => irqHandlerClear executingCore line st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
@@ -234,23 +234,23 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 capDepth      := rootCn.depth
                 requiredRight := .write
               }
-              match syscallLookupCap ntfnGate st with
+              match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
               | .error e => .error e
               | .ok (ntfnCap, _) =>
                 match ntfnCap.target with
                 | .object notifId =>
                     bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-                | _ => .error .invalidCapability
-            | none => .error .invalidCapability
+                | _ => .error .illegalState
+            | none => .error (.invalidCapability bindNotificationCapNumber)
           | none => .error .objectNotFound
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbUnbindNotification =>
     match cap.target with
     | .object tcbObjId =>
         match unbindNotification (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
         | .error e => .error e
         | .ok ((), st') => .ok ((), st')
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSuspend =>
     match cap.target with
     | .object objId =>
@@ -261,7 +261,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbResume =>
     match cap.target with
     | .object objId =>
@@ -273,7 +273,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetPriority =>
     match cap.target with
     | .object objId =>
@@ -291,7 +291,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                     (Priority.ofNat args.newPriority) executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetMCPriority =>
     match cap.target with
     | .object objId =>
@@ -309,7 +309,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                     (Priority.ofNat args.newMCP) executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetIPCBuffer =>
     match cap.target with
     | .object objId =>
@@ -323,7 +323,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 vtid args.bufferAddr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetAffinity =>
     match cap.target with
     | .object objId =>
@@ -340,7 +340,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                         executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetFaultHandler =>
     match cap.target with
     | .object objId =>
@@ -353,7 +353,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             match setThreadFaultHandlerOp st vtid args.handlerCPtr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .tcbSetSpace =>
     match cap.target with
     | .object objId =>
@@ -369,7 +369,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .pageTableMap =>
     match cap.target with
     | .object objId =>
@@ -377,13 +377,13 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
       | .error e => .error e
       | .ok args =>
           match resolveCallerCapObject tid args.vspaceRoot .write st with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap Architecture.pageTableMapRootCapNumber)
           | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | .pageTableUnmap =>
     match cap.target with
     | .object objId => Architecture.pageTableUnmap objId st
-    | _ => .error .invalidCapability
+    | _ => .error (.invalidCapability 0)
   | _ => .error .illegalState
 
 /-- What routing an invocation rests on: it is inert, records no
@@ -518,7 +518,7 @@ refusal is read where it is, never rebuilt. -/
               (fun st => SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid
                 vTargetTid (Priority.ofNat args.newPriority) executingCore)
               (fun r => .ok ((), r.1)) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSetMCPriority =>
     match cap.target with
     | .object objId =>
@@ -539,7 +539,7 @@ refusal is read where it is, never rebuilt. -/
               (fun st => SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid
                 vTargetTid (Priority.ofNat args.newMCP) executingCore)
               (fun r => .ok ((), r.1)) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSetIPCBuffer =>
     match cap.target with
     | .object objId =>
@@ -554,7 +554,7 @@ refusal is read where it is, never rebuilt. -/
             (fun st => st.updateTcb vtid.val (fun t => { t with ipcBuffer := args.bufferAddr }))
             (fun st => Architecture.IpcBufferValidation.setIPCBufferOp st vtid args.bufferAddr)
             (fun st' => .ok ((), st')) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSetAffinity =>
     match cap.target with
     | .object objId =>
@@ -571,7 +571,7 @@ refusal is read where it is, never rebuilt. -/
                 (fun st => setThreadCpuAffinityOnCore st vtid affinity executingCore)
                 (fun r => .ok ((), r.1)) st)
             (fun e => .error (e, st))
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSuspend =>
     match cap.target with
     | .object objId =>
@@ -582,7 +582,7 @@ refusal is read where it is, never rebuilt. -/
           (fun st => Lifecycle.Suspend.suspendPerform st vtid executingCore)
           (fun st => Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore)
           (fun r => .ok ((), r.1)) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbResume =>
     match cap.target with
     | .object objId =>
@@ -595,7 +595,7 @@ refusal is read where it is, never rebuilt. -/
           (fun st => Lifecycle.Suspend.resumeThreadOnCore
             (retirePendingFaultForResume st vtid.val) vtid executingCore)
           (fun r => .ok ((), r.1)) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSetFaultHandler =>
     match cap.target with
     | .object objId =>
@@ -610,7 +610,7 @@ refusal is read where it is, never rebuilt. -/
               (fun t => { t with faultHandlerSet := true, faultHandlerWord := args.handlerCPtr }))
             (fun st => setThreadFaultHandlerOp st vtid args.handlerCPtr)
             (fun st' => .ok ((), st')) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbSetSpace =>
     match cap.target with
     | .object objId =>
@@ -625,7 +625,7 @@ refusal is read where it is, never rebuilt. -/
               (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS })
               (fun st => copyThreadSpacesZombiePerform executingCore st vtid cnC cnS vrC vrS)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .schedContextBind =>
     match cap.target with
     | .object scObjId =>
@@ -637,18 +637,18 @@ refusal is read where it is, never rebuilt. -/
           match st.getCNode? callerTcb.cspaceRoot with
           | some rootCn =>
             resolveCapAddressKUnrolled callerTcb.cspaceRoot args.tcbCPtr rootCn.depth st
-              (fun e => .error (e, st))
+              (KernelError.argumentCapRefusal bindThreadCapNumber (fun e => .error (e, st)))
               (fun cnode slot =>
                 match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-                | none => .error (.invalidCapability, st)
+                | none => .error (.invalidCapability bindThreadCapNumber, st)
                 | some tcbCap =>
                   if SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap then
-                    .error (.invalidCapability, st)
+                    .error (.invalidCapability bindThreadCapNumber, st)
                   else if tcbCap.hasRight .write then
                     match tcbCap.target with
                     | .object tcbObjId =>
                       match st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
-                      | none => .error (.invalidCapability, st)
+                      | none => .error (.invalidCapability bindThreadCapNumber, st)
                       | some _ =>
                         match validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                         | .error e => .error (e, st)
@@ -660,11 +660,11 @@ refusal is read where it is, never rebuilt. -/
                               (SchedContextOps.schedContextBindAdmitted st vScId vThreadId)
                               (fun st => SchedContextOps.schedContextBindPerform st vScId vThreadId)
                               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-                    | _ => .error (.invalidCapability, st)
+                    | _ => .error (.invalidCapability bindThreadCapNumber, st)
                   else .error (.illegalAuthority, st))
-          | none => .error (.invalidCapability, st)
+          | none => .error (.invalidCapability bindThreadCapNumber, st)
         | none => .error (.objectNotFound, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .schedContextUnbind =>
     match cap.target with
     | .object scObjId =>
@@ -679,7 +679,7 @@ refusal is read where it is, never rebuilt. -/
                 (SchedContextOps.schedContextRunningCore? st vScId.val) executingCore true with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .schedContextConsumed =>
     match cap.target with
     | .object scObjId =>
@@ -692,7 +692,7 @@ refusal is read where it is, never rebuilt. -/
             executingCore)
           (schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (fun st' => .ok ((), st')) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .schedContextYieldTo =>
     match cap.target with
     | .object scObjId =>
@@ -707,7 +707,7 @@ refusal is read where it is, never rebuilt. -/
           (SchedContextOps.schedContextYieldToOnCore
             (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (fun st' => .ok ((), st')) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA6.32: the acknowledge refuses only a line that is no device line
   -- of this board (`deviceInterruptLine`, the board's line count), read
   -- before the write, so the mask is written in place.
@@ -717,7 +717,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (Architecture.deviceInterruptLine st line)
           (fun st => Architecture.setInterruptLineMask st line false)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA6.32: the issue reads the decode, the line checks and the two
   -- slots, then the destination's emptiness, before it writes the line and
   -- the handler capability in place (`irqControlGetPerformAt`, on the slots'
@@ -736,7 +736,7 @@ refusal is read where it is, never rebuilt. -/
               RefusalCarrying.ofChecked (irqControlGetAdmittedAt dstCnode dstSlot args.line st)
                 (fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args.line st)
                 (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA6.32: the bind reads the decode, the named capability's slot, its
   -- notification and send right, the line's node and the node slot's delete
   -- (a plain one, or the final delete of a notification capability) before any
@@ -748,12 +748,13 @@ refusal is read where it is, never rebuilt. -/
       match decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        resolveCallerCapSlotK tid args.notificationCPtr .write st (fun e => .error (e, st))
+        resolveCallerCapSlotK tid args.notificationCPtr .write st
+          (KernelError.argumentCapRefusal irqHandlerNotificationCapNumber (fun e => .error (e, st)))
           (fun srcCnode srcSlot ncap _ =>
             RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
               (fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA6.32: the clear reads the line's node, then empties its slot by
   -- the zombie delete every slot delete is (`zombieDeleteAt`).
   | .irqHandlerClear =>
@@ -762,7 +763,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (cnodeInvoked (irqNodeAddr line).cnode st)
           (fun st => zombieDeleteAt executingCore (irqNodeAddr line).cnode (irqNodeAddr line).slot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
@@ -774,13 +775,13 @@ refusal is read where it is, never rebuilt. -/
           match st.getCNode? callerTcb.cspaceRoot with
           | some rootCn =>
             resolveCapAddressKUnrolled callerTcb.cspaceRoot args.notificationCPtr rootCn.depth st
-              (fun e => .error (e, st))
+              (KernelError.argumentCapRefusal bindNotificationCapNumber (fun e => .error (e, st)))
               (fun cnode slot =>
                 match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-                | none => .error (.invalidCapability, st)
+                | none => .error (.invalidCapability bindNotificationCapNumber, st)
                 | some ntfnCap =>
                   if SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap then
-                    .error (.invalidCapability, st)
+                    .error (.invalidCapability bindNotificationCapNumber, st)
                   else if ntfnCap.hasRight .write then
                     match ntfnCap.target with
                     | .object notifId =>
@@ -789,11 +790,11 @@ refusal is read where it is, never rebuilt. -/
                         (fun st => storeBindNotification st notifId
                           (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
                         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-                    | _ => .error (.invalidCapability, st)
+                    | _ => .error (.illegalState, st)
                   else .error (.illegalAuthority, st))
-          | none => .error (.invalidCapability, st)
+          | none => .error (.invalidCapability bindNotificationCapNumber, st)
         | none => .error (.objectNotFound, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .tcbUnbindNotification =>
     match cap.target with
     | .object tcbObjId =>
@@ -804,26 +805,24 @@ refusal is read where it is, never rebuilt. -/
         (fun st => storeUnbindNotification st (SeLe4n.ThreadId.ofNat tcbObjId.toNat)
           notificationId)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .cspaceMove =>
     match cap.target with
     | .object cnodeId =>
       match decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
+        if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun _ =>
-            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
-            | .error e => .error (e, st)
-            | .ok r => .ok r)
+          (fun e => .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
                 cspaceMoveAdmittedAt srcCNode srcSlot dstCNode dstSlot st)
               (fun st => cspaceMovePerformAt srcCNode srcSlot dstCNode dstSlot st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .cspaceDelete =>
     match cap.target with
     | .object cnodeId =>
@@ -834,7 +833,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (cnodeInvoked addr.cnode st)
           (fun st => zombieDeleteAt executingCore cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .cspaceRevoke =>
     match cap.target with
     | .object cnodeId =>
@@ -845,7 +844,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (cspaceRevokeAdmitted addr st)
           (fun st => cspaceRevokePerformAt executingCore cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .mintReplyCap =>
     match cap.target with
     | .object cnodeId =>
@@ -857,26 +856,24 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (mintReplyCapAdmittedAt cnodeId args.srcSlot args.dstSlot st)
           (fun st => mintReplyCapPerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .cspaceCopy =>
     match cap.target with
     | .object cnodeId =>
       match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
+        if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun _ =>
-            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
-            | .error e => .error (e, st)
-            | .ok r => .ok r)
+          (fun e => .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
                 cspaceCopyAdmittedAt srcCNode srcSlot dstCNode dstSlot args.rights st)
               (fun st => cspaceCopyPerformAt srcCNode srcSlot dstCNode dstSlot args.rights st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .vspaceMap =>
     match cap.target with
     | .object rootId =>
@@ -908,7 +905,7 @@ refusal is read where it is, never rebuilt. -/
                   (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
                     args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
                   (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .vspaceUnmap =>
     match cap.target with
     | .object rootId =>
@@ -924,7 +921,7 @@ refusal is read where it is, never rebuilt. -/
           RefusalCarrying.ofChecked (vspaceUnmapAdmittedAt st args.asid args.vaddr rootId)
             (fun st => vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st)
             (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .vspaceUnifyInstruction =>
     match cap.target with
     | .object _ =>
@@ -936,19 +933,20 @@ refusal is read where it is, never rebuilt. -/
           RefusalCarrying.ofChecked (vspaceUnifyAdmittedAt st args.asid args.vaddr)
             (fun st => vspaceUnifyPerformAt args.asid args.vaddr st)
             (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .pageTableMap =>
     match cap.target with
     | .object objId =>
       match decodePageTableMapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        resolveCallerCapObjectK tid args.vspaceRoot .write st (fun e => .error (e, st))
+        resolveCallerCapObjectK tid args.vspaceRoot .write st
+          (KernelError.argumentCapRefusal Architecture.pageTableMapRootCapNumber (fun e => .error (e, st)))
           (fun _ rootId =>
             RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
               (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- The in-use refusal is read on the table's words (`pageTableUnmapInUseAt`),
   -- so it builds no install record or slot.
   | .pageTableUnmap =>
@@ -959,7 +957,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
           (fun st => pageTableUnmapPerformAt objId st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .untypedRetype =>
     match cap.target with
     | .object _ =>
@@ -972,7 +970,7 @@ refusal is read where it is, never rebuilt. -/
         carveRequestWordsK st executingCore args.newType args.sizeBits (fun e => .error (e, st))
           (fun k n dom core asid =>
           match validateObjIdArg args.childId with
-          | .error e => .error (e, st)
+          | .error e => .error (e.forArgumentWord UntypedRetypeArgs.childIdWord, st)
           | .ok vChild =>
             resolveIssuingSlotsK tid capAddr args.dstCNode args.dstSlot st (fun e => .error (e, st))
               (fun srcCnode srcSlot dstCnode dstSlot =>
@@ -980,14 +978,18 @@ refusal is read where it is, never rebuilt. -/
                 -- arm was handed: the carve's first check, so the general
                 -- path it would otherwise fall back to (which decodes the
                 -- invocation again) never runs for it.
-                if !CarveRequest.heapAdmittedW st k n then .error (.untypedRegionExhausted, st) else
-                RefusalCarrying.ofChecked
-                  (untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
-                    k n asid)
-                  (fun st => untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
+                if !CarveRequest.heapAdmittedW st k n then .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) else
+                -- Every other refusal is read from the checks' words as well
+                -- (`untypedRetypeRefusalCode`), so the general path, which
+                -- decodes the invocation again, never runs here.
+                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
+                    k n asid then
+                  .ok ((), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
                     vChild.val k n dom core asid st)
-                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st))
-    | _ => .error (.invalidCapability, st)
+                else
+                  .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
+                    vChild.val k n asid, st)))
+    | _ => .error (.invalidCapability 0, st)
   | .untypedReset =>
     match cap.target with
     | .object _ =>
@@ -996,7 +998,7 @@ refusal is read where it is, never rebuilt. -/
           RefusalCarrying.ofChecked (untypedResetAdmittedAt st srcCnode srcSlot)
             (fun st => untypedResetPerformAt srcCnode srcSlot st)
             (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA5.5: the revoke and the query through the endpoint read its
   -- recorded registration first and then write in place.
   | .serviceRevoke =>
@@ -1006,7 +1008,7 @@ refusal is read where it is, never rebuilt. -/
         (serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId)
         (fun st => revokeServiceByRecordedRegistrationPerform st epId)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | .serviceQuery =>
     match cap.target with
     | .object epId =>
@@ -1016,7 +1018,7 @@ refusal is read where it is, never rebuilt. -/
         (lookupServiceChecked ctx tid epId)
         (fun r => .ok ((), Architecture.writeReturnFrameToTcb r.2 tid
           (Architecture.returnFrameOfWord r.1.sid.val.toUInt64))) st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -1209,55 +1211,58 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             cases hRes : resolveCapAddress callerTcb.cspaceRoot args.tcbCPtr rootCn.depth st with
             | error e =>
               simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
-                hD, hC, hN, syscallLookupCap, syscallResolveCap, hRes]
+                hD, hC, hN, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes]
             | ok ref =>
               obtain ⟨cnode, slot⟩ := ref
               dsimp only
               cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
               | none =>
                 simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
-                  hD, hC, hN, syscallLookupCap, syscallResolveCap, hRes, hL]
+                  hD, hC, hN, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL]
               | some tcbCap =>
                 dsimp only
                 by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap = true
                 · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                    syscallResolveCap, hRes, hL, hIdle]
+                    resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                    syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle]
                 · by_cases hRight : tcbCap.hasRight .write = true
                   · cases hTg : tcbCap.target with
                     | object tcbObjId =>
                       cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                       | none =>
                         simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                          resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT]
+                          resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                          syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg, hT]
                       | some _ =>
                         cases hV : validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                         | error e =>
                           simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                            resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                            syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV]
+                            resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                            syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg, hT, hV]
                         | ok vThreadId =>
                           cases hS : validateObjIdArg objId with
                           | error e =>
                             simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                              resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                              syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV, hS]
+                              resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                              syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg, hT, hV, hS]
                           | ok vScId =>
                             simp only [hIdle, hRight, hTg, hT, hV, hS, Bool.false_eq_true,
                               ↓reduceIte]
                             apply RefusalCarrying.ofChecked_eq
                             intro hA
                             simp only [dispatchInvocationBy, resolveSchedContextBindThread, hD, hC,
-                              hN, syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight,
+                              hN, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
                               hTg, hT, hV, hS, Bool.false_eq_true, ↓reduceIte,
                               SchedContextOps.schedContextBind_of_admitted _ _ _ hA]
                     | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                      syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
+                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                      syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg]
                   · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
-                      syscallResolveCap, hRes, hL, hIdle, hRight]
+                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                      syscallResolveCap, KernelError.forArgumentCap, hRes, hL, hIdle, hRight]
     all_goals rfl
   case schedContextUnbind =>
     cases target
@@ -1351,7 +1356,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCallerCapSlot tid args.notificationCPtr .write st with
         | error e =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap,
-            hD, hR]
+            hD, hR, KernelError.argumentCapRefusal]
         | ok r =>
           obtain ⟨src, ncap, oid⟩ := r
           obtain ⟨_, _, _, _, _, hLk, _, _⟩ :=
@@ -1394,33 +1399,36 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             cases hRes : resolveCapAddress callerTcb.cspaceRoot args.notificationCPtr
                 rootCn.depth st with
             | error e =>
-              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
-                syscallResolveCap, hRes]
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                syscallResolveCap, KernelError.forArgumentCap, hRes]
             | ok ref =>
               obtain ⟨cnode, slot⟩ := ref
               dsimp only
               cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
               | none =>
-                simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
-                  syscallResolveCap, hRes, hL]
+                simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+                  syscallResolveCap, KernelError.forArgumentCap, hRes, hL]
               | some ntfnCap =>
                 dsimp only
                 by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap = true
                 · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
-                    syscallLookupCap, syscallResolveCap, hRes, hL, hIdle]
+                    syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle]
                 · by_cases hRight : ntfnCap.hasRight .write = true
                   · cases hTg : ntfnCap.target with
                     | object notifId =>
                       simp only [hIdle, hRight, hTg, Bool.false_eq_true, ↓reduceIte]
                       apply RefusalCarrying.ofChecked_eq
                       intro hA
-                      simp only [dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
-                        syscallResolveCap, hRes, hL, hIdle, hRight, hTg, Bool.false_eq_true,
+                      simp only [dispatchInvocationBy, hD, hC, hN, syscallLookupArgumentCap, syscallLookupCap,
+                        syscallResolveCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg, Bool.false_eq_true,
                         ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
                     | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
-                      syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
+                      syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight, hTg]
                   · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
-                      syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight]
+                      syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+                  KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight]
     all_goals rfl
   case tcbUnbindNotification =>
     cases target
@@ -1442,12 +1450,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | error e =>
-          simp only [RefusalCarrying.ofKernel]
-          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
-          cases r <;> rfl
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR]
+          cases cnodeInvoked cnodeId st <;> rfl
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
+          rw [show cnodeInvoked cnodeId st = true from
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           apply RefusalCarrying.ofChecked_eq
           intro hA
           simp only [Bool.and_eq_true] at hA
@@ -1506,12 +1516,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | error e =>
-          simp only [RefusalCarrying.ofKernel]
-          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
-          cases r <;> rfl
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR]
+          cases cnodeInvoked cnodeId st <;> rfl
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
+          rw [show cnodeInvoked cnodeId st = true from
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           apply RefusalCarrying.ofChecked_eq
           intro hA
           simp only [Bool.and_eq_true] at hA
@@ -1611,7 +1623,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only
         rw [resolveCallerCapObjectK_eq]
         cases hRs : resolveCallerCapObject tid args.vspaceRoot .write st with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs]
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs,
+            KernelError.argumentCapRefusal]
         | ok pr =>
           obtain ⟨_, rootId⟩ := pr
           dsimp only
@@ -1659,7 +1672,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               obtain ⟨src, dst⟩ := pr
               dsimp only
               rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
-                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
+                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req,
+                untypedRetypeRefusalCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
               have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
                   vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
                   (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
@@ -1671,10 +1685,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
                   hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
               · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-                apply RefusalCarrying.ofChecked_eq
-                intro hA
-                simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
-                  untypedRetypeObject_of_admitted hA]
+                cases hA : untypedRetypeAdmittedAt st src dst vChild.val req
+                · simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel,
+                    dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR, hH,
+                    untypedRetypeObject_refused hA]
+                · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchInvocationBy,
+                    untypedRetypeFromCap, hD, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
     all_goals rfl
   case untypedReset =>
     cases target
@@ -1725,10 +1741,10 @@ there is none. -/
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight sid) then
           dispatchInvocationByR ctx sid capAddr SeLe4n.arm64DefaultLayout regs tid
             executingCore cap st
@@ -1812,8 +1828,8 @@ register file `regs` through `layout` and then the overflow word `w`
         if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
           SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
             args.priority args.deadline args.domain st
-        else .error .invalidCapability
-  | _ => .error .invalidCapability
+        else .error (.invalidCapability 0)
+  | _ => .error (.invalidCapability 0)
 
 theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -1856,8 +1872,8 @@ core among them; a refusal is in the state handed in (`dispatchConfigureByR_eq`)
               args.budget args.period args.priority args.deadline args.domain)
             (SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
               args.priority args.deadline args.domain) st
-        else .error (.invalidCapability, st))
-  | _ => .error (.invalidCapability, st)
+        else .error (.invalidCapability 0, st))
+  | _ => .error (.invalidCapability 0, st)
 
 theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (w : UInt64) (tid : SeLe4n.ThreadId) (cap : Capability) (st : SystemState) :
@@ -1902,10 +1918,10 @@ then `dispatchConfigureByR`. -/
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .schedContextConfigure st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .schedContextConfigure st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight .schedContextConfigure) then
           dispatchConfigureByR SeLe4n.arm64DefaultLayout regs w tid cap st
         else .error (syscallMissingRightError .schedContextConfigure, st)
@@ -1980,7 +1996,7 @@ register file `regs` through `layout` and then the overflow word `w`
                      maxResponseSize := args.maxResponseSize
                      requiresGrant := args.requiresGrant }
           endpointCap := cap } st
-  | _ => .error .invalidCapability
+  | _ => .error (.invalidCapability 0)
 
 theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -2024,7 +2040,7 @@ alone (`registerServicePerform`); a refusal is in the state handed in
         (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg)
         (fun st => registerServicePerform st reg)
         (registerServiceChecked ctx tid reg) st
-  | _ => .error (.invalidCapability, st)
+  | _ => .error (.invalidCapability 0, st)
 
 theorem dispatchServiceRegisterByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
@@ -2097,7 +2113,7 @@ the decoded words and the capability, so no registration is built
   else if code = 2 then .illegalState
   else if code = 3 then .objectNotFound
   else if code = 4 then .illegalAuthority
-  else .invalidCapability
+  else (.invalidCapability 0)
 
 /-- A register the checks refuse is refused with the error its code names. -/
 theorem registerServiceChecked_refused (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
@@ -2163,7 +2179,7 @@ to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
       else
         .error (registerServiceRefusalError
           (registerServiceRefusalCode ctx tid epId args.interfaceId cap st), st)
-  | _ => .error (.invalidCapability, st)
+  | _ => .error (.invalidCapability 0, st)
 
 @[csimp] theorem dispatchServiceRegisterByR_eq_impl :
     @dispatchServiceRegisterByR = @dispatchServiceRegisterByRImpl := by
@@ -2227,10 +2243,10 @@ right, then `dispatchServiceRegisterByR`. -/
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .serviceRegister st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .serviceRegister st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight .serviceRegister) then
           dispatchServiceRegisterByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
         else .error (syscallMissingRightError .serviceRegister, st)
@@ -2308,7 +2324,7 @@ register file `regs` through `layout` and then the overflow word `w`
         let badge : Option SeLe4n.Badge :=
           if args.badge.val = 0 then none else some args.badge
         cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
-  | _ => .error .invalidCapability
+  | _ => .error (.invalidCapability 0)
 
 theorem dispatchWithCapChecked_eq_mintBy (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -2342,12 +2358,10 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
     match decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) with
     | .error e => .error (e, st)
     | .ok args =>
+      if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
       resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
         args.srcIndex args.srcDepth st
-        (fun _ =>
-          match dispatchMintBy ctx tid layout regs w cap st with
-          | .error e => .error (e, st)
-          | .ok r => .ok r)
+        (fun e => .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
           RefusalCarrying.ofChecked
             (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -2356,7 +2370,7 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
             (fun st' => cspaceMintPerformAt srcCNode srcSlot dstCNode dstSlot
                 (mintMaskedRights st ⟨srcCNode, srcSlot⟩ args.rights) args.badge st')
             (dispatchMintBy ctx tid layout regs w cap) st)
-  | _ => .error (.invalidCapability, st)
+  | _ => .error (.invalidCapability 0, st)
 
 theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
@@ -2375,12 +2389,14 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
       cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st with
       | error e =>
-        simp only [RefusalCarrying.ofKernel]
-        generalize dispatchMintBy _ _ _ _ _ _ st = r
-        cases r <;> rfl
+        simp only [RefusalCarrying.ofKernel, dispatchMintBy, hT, hD, hR]
+        cases cnodeInvoked cnodeId st <;> rfl
       | ok p =>
         obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
         dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]
+        rw [show cnodeInvoked cnodeId st = true from
+          cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+        simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA
@@ -2407,10 +2423,10 @@ then `dispatchMintByR`. -/
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .cspaceMint st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .cspaceMint st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight .cspaceMint) then
           dispatchMintByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
         else .error (syscallMissingRightError .cspaceMint, st)

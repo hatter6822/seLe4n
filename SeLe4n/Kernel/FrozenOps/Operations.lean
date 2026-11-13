@@ -470,7 +470,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                 -- carries the signaller's provenance until something takes it.
                 .ok ((), frozenTaintFlow stored notificationId signaller.toObjId)
             | .error e => .error e
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen notification wait — consume badge or block caller.
@@ -545,7 +545,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                       | .error e => .error e
                       | .ok st'' => .ok (none, st'')
                   | .error e => .error e
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
@@ -772,7 +772,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 -- PR #873 round 15: a blocked sender leaves the run queue, as
                 -- the live `endpointSendDual` does with `removeRunnable`.
                 | .ok st'' => .ok ((), frozenRemoveRunnable st'' sender)
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint receive — receive message via frozen endpoint.
@@ -882,7 +882,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                     -- `removeRunnable`.
                     | .ok st'' => .ok (receiver, frozenRemoveRunnable st'' receiver)
             | none => .error .objectNotFound
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint call — send then block for reply.
@@ -945,7 +945,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     -- as the live `endpointCall` does with `removeRunnable`.
                     | .ok st'' => .ok ((), frozenRemoveRunnable st'' caller)
             | none => .error .objectNotFound
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
@@ -1136,7 +1136,7 @@ guards exist for. -/
 def frozenApplyReplyDonation (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     Except KernelError FrozenSystemState :=
-  if holder.isReserved then .error .invalidArgument
+  if holder.isReserved then .error (.invalidArgument 0)
   else
     match frozenReturnDonatedSchedContextResolved st holder scId originalOwner with
     | .error e => .error e
@@ -1279,7 +1279,7 @@ def frozenCspaceLookup (st : FrozenSystemState) (cptr : SeLe4n.CPtr)
       let slot := SeLe4n.Slot.ofNat (cptr.slotBits 0 cn.radixWidth)
       match cn.slots.lookup slot with
       | some cap => .ok cap
-      | none => .error .invalidCapability
+      | none => .error (.invalidCapability 0)
   | some _ => .error .objectNotFound
   | none => .error .objectNotFound
 
@@ -1504,14 +1504,14 @@ reservation, and the gate says so rather than this arm assuming it. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
-    -- Parameter validation (mirrors SchedContextOps.validateSchedContextParams)
-    -- AK6-A (SC-H01): reject zero-budget to preserve replenishmentListWellFormed.
-    if period == 0 then .error .invalidArgument
-    else if budget == 0 then .error .invalidArgument
-    else if budget > period then .error .invalidArgument
-    else if priority > 255 then .error .invalidArgument
-    else if domain ≥ 16 then .error .invalidArgument
-    else
+    -- Parameter validation: the live operation's own
+    -- (`SchedContextOps.validateSchedContextParams`), so the two answer every
+    -- refusal with one error and payload.  AK6-A (SC-H01): a zero budget is
+    -- refused, preserving replenishmentListWellFormed.
+    match SeLe4n.Kernel.SchedContextOps.validateSchedContextParams budget period priority
+        deadline domain with
+    | .error e => .error e
+    | .ok () =>
       match st.getObject? scId with
       | some (.schedContext sc) =>
         -- WS-ZA ZA6.4: the live configure's refills (`configuredSchedContext`):
@@ -1655,7 +1655,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
           -- AE3-A/U-11: the domain filter reads `tcb.domain` while effective
           -- priority resolves from `sc.domain`, so a cross-domain bind would let
           -- a thread pass the filter by one and be prioritised by the other.
-          if tcb.domain != sc.domain then .error .invalidArgument
+          if tcb.domain != sc.domain then .error (.invalidArgument 0)
           -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
           -- live stack is owed a context by the pop that reaches that frame, and
           -- that pop writes its binding; a second context now would be
@@ -2160,7 +2160,7 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
               | .ok st' => .ok ((), st')
               | .error e => .error e
           | none => .error .translationFault
-        | _ => .error .invalidArgument
+        | _ => .error (.invalidArgument 0)
 
 -- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check

@@ -46,9 +46,9 @@ def returnUnheldSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
   | some sc =>
     if sc.boundThreadCode != 0 then .error .illegalState
     else
-    if !outerCallerAcceptable st owner owner newOwner? then .error .invalidArgument
+    if !outerCallerAcceptable st owner owner newOwner? then .error (.invalidArgument 0)
     else
-    if !donationRecipientAcceptable st owner then .error .invalidArgument
+    if !donationRecipientAcceptable st owner then .error (.invalidArgument 0)
     else
     match donationHeadOf? st scId sc with
     | .error e => .error e

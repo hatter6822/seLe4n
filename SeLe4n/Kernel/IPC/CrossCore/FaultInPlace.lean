@@ -994,7 +994,7 @@ theorem faultOfExceptionContext_words (ectx : ExceptionContext) (f : Fault)
     (ThreadFaultWords.ofFault f {}).flag = faultFlagOfEsr ectx.esr ∧
     (ThreadFaultWords.ofFault f {}).word0 = faultWord0OfEsr ectx.esr ectx.far ∧
     (ThreadFaultWords.ofFault f {}).word1 = ectx.esr ∧
-    (ThreadFaultWords.ofFault f {}).lookup = .invalidCapability := by
+    (ThreadFaultWords.ofFault f {}).lookup = (.invalidCapability 0) := by
   unfold faultOfExceptionContext classifySynchronousException at h
   unfold faultKindOfEsr faultFlagOfEsr faultWord0OfEsr
   cases hc : classifySynchronousExceptionOfEsr ectx.esr <;> rw [hc] at h <;> cases h <;>

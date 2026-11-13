@@ -21,7 +21,7 @@
 //! everything else the caller's own stale registers — is retired.
 
 use crate::MessageInfo;
-use sele4n_types::{Badge, KernelError, KernelResult, ERROR_LABEL_BASE};
+use sele4n_types::{Badge, KernelError, KernelResult, SyscallError, ERROR_LABEL_BASE};
 
 /// A decoded successful syscall response.
 ///
@@ -74,6 +74,23 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         msg_info,
         msg_regs: [regs[2], regs[3], regs[4], regs[5]],
     })
+}
+
+/// Decode an error frame with its payload (ABI v5): the code from `x1`'s
+/// label, the payload from `x2`-`x5` and, for a fifth word, `mr4` — the
+/// caller's IPC buffer `msg[4]`, read by the caller (seL4's `seL4_GetMR(4)`),
+/// counted only when `x1`'s length says the kernel wrote it.  `None` for a
+/// frame that is not an error, or whose length is too short for its code.
+pub fn decode_error(regs: [u64; 7], mr4: u64) -> Option<SyscallError> {
+    let msg_info = MessageInfo::decode(regs[1]).ok()?;
+    let label = msg_info.label();
+    if label < ERROR_LABEL_BASE {
+        return None;
+    }
+    let code = KernelError::from_u32((label - ERROR_LABEL_BASE) as u32)?;
+    let words = [regs[2], regs[3], regs[4], regs[5], mr4];
+    let len = (msg_info.length() as usize).min(words.len());
+    SyscallError::decode(code, &words[..len])
 }
 
 impl SyscallResponse {
@@ -205,7 +222,7 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // 60 is DepthMismatch.  The first unrecognized discriminant is
+        // 60 is FailedLookup.  The first unrecognized discriminant is
         // 61 (label BASE + 61) → UnknownKernelError, still an Err —
         // fail-closed.
         let regs = [0, error_x1(61), 0, 0, 0, 0, 0];
@@ -235,7 +252,46 @@ mod tests {
         let regs = [0, error_x1(59), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::RangeError));
         let regs = [0, error_x1(60), 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::DepthMismatch));
+        assert_eq!(decode_response(regs), Err(KernelError::FailedLookup));
+    }
+
+    #[test]
+    fn decode_error_payload_frames() {
+        use sele4n_types::LookupFault;
+        // Copy at depth 65: RangeError(1, 64), length 2.
+        let regs = [0, error_x1(59) | 2, 1, 64, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::RangeError));
+        assert_eq!(
+            decode_error(regs, 0),
+            Some(SyscallError::RangeError { min: 1, max: 64 })
+        );
+        // An empty source: FailedLookup(source, MissingCapability 64), length 3.
+        let regs = [0, error_x1(60) | 3, 1, 2, 64, 0, 0];
+        assert_eq!(
+            decode_error(regs, 0),
+            Some(SyscallError::FailedLookup {
+                was_source: true,
+                fault: LookupFault::MissingCapability { bits_left: 64 },
+            })
+        );
+        // A guard mismatch: five words, the fifth from the buffer.
+        let regs = [0, error_x1(60) | 5, 0, 4, 64, 2, 0];
+        assert_eq!(
+            decode_error(regs, 58),
+            Some(SyscallError::FailedLookup {
+                was_source: false,
+                fault: LookupFault::GuardMismatch {
+                    bits_left: 64,
+                    guard_found: 2,
+                    bits_found: 58
+                },
+            })
+        );
+        // …clamped to four when no buffer took it: undecodable, not wrong.
+        let regs = [0, error_x1(60) | 4, 0, 4, 64, 2, 0];
+        assert_eq!(decode_error(regs, 58), None);
+        // A success frame is no error.
+        assert_eq!(decode_error([0, 0, 0, 0, 0, 0, 0], 0), None);
     }
 
     #[test]

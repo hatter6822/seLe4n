@@ -169,7 +169,7 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' =
-      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
+      .error (if (st.getCNode? addr.cnode).isSome then (.invalidCapability 0) else .objectNotFound) := by
   obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
   have hPost := storeObject_objects_eq st st' addr.cnode _ hObjInv hS
   have hNone := (cspaceDeleteSlotCore_authority_reduction st st' addr hObjInv hStep).2
@@ -186,7 +186,7 @@ theorem cspaceDeleteSlot_lookup_eq_none
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' =
-      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
+      .error (if (st.getCNode? addr.cnode).isSome then (.invalidCapability 0) else .objectNotFound) := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
   rw [cspaceLookupSlot_of_agree

@@ -1070,6 +1070,39 @@ structure MachineState where
       arm's own and no specification reads the word.  Every committed state
       holds what the entry was handed: `0` from boot. -/
   entryReport : Nat := 0
+  /-- **The report's payload words**, beside the report word: a refusal's
+      five payload words (`KernelError.payloadWord`, seL4's message-register
+      order), so that a refusal carrying data hands it on as scalars rather
+      than as a built error (D2b).  Each is the top of a stack pushed and
+      popped with the report word (`SystemState.pushEntryReport`): the top
+      word itself, unboxed, and the words beneath it in `entryReportBelow0`
+      (radix `2^64`), so a push followed by its pop is the identity on these
+      too.  The top is a `UInt64`, never a `Nat`: a `Nat` at or above `2^63`
+      is a heap cell, and a payload word is a full machine word (a
+      `rangeError`'s maximum `0xFFFF_FFFF_FFFF_FFFF`).  A committed result
+      pushes `0`s.  `0` from boot. -/
+  entryReportWord0 : UInt64 := 0
+  /-- The report's payload word 1's top (see `entryReportWord0`). -/
+  entryReportWord1 : UInt64 := 0
+  /-- The report's payload word 2's top (see `entryReportWord0`). -/
+  entryReportWord2 : UInt64 := 0
+  /-- The report's payload word 3's top (see `entryReportWord0`). -/
+  entryReportWord3 : UInt64 := 0
+  /-- The report's payload word 4's top (see `entryReportWord0`). -/
+  entryReportWord4 : UInt64 := 0
+  /-- **The words beneath `entryReportWord0`'s top**, radix `2^64`: `0` while
+      at most one report is pushed, which is every state the entry holds (an
+      arm pushes one report and the entry pops it), so the push and the pop
+      leave it `0` without a conversion (`reportBelowPush_eq_fast`). -/
+  entryReportBelow0 : Nat := 0
+  /-- The words beneath `entryReportWord1` (see `entryReportBelow0`). -/
+  entryReportBelow1 : Nat := 0
+  /-- The words beneath `entryReportWord2` (see `entryReportBelow0`). -/
+  entryReportBelow2 : Nat := 0
+  /-- The words beneath `entryReportWord3` (see `entryReportBelow0`). -/
+  entryReportBelow3 : Nat := 0
+  /-- The words beneath `entryReportWord4` (see `entryReportBelow0`). -/
+  entryReportBelow4 : Nat := 0
   /-- **The kernel heap's free bytes**, as the HAL last reported them: its free
       pages times the page size (`lean_heap::kernel_heap_free_bytes`, read
       through `Platform.FFI.ffiKernelHeapFreeBytes`).  The syscall entry

@@ -185,7 +185,7 @@ def schedContextConsumedOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.Core
   | none => .error .illegalState
   | some caller =>
     match st.getSchedContext? s with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some _ => .ok (setConsumed st s caller)
 
 /-- A Consumed invocation that succeeds is `setConsumed` for the core's current

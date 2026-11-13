@@ -3541,7 +3541,7 @@ def setThreadCpuAffinity (st : SystemState) (targetTid : SeLe4n.ThreadId)
   | some ⟨tcb, h⟩ =>
       .ok (st.rewriteObject targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity })
         (SystemState.rewriteAdmissible_tcb h _))
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 /-- WS-SM SM8.B.2: after the affinity write the thread's home core **is** the
 requested affinity (boot when unbound) — the bridge that lets a write set or a

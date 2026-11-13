@@ -64,7 +64,9 @@ mapping. -/
 CNode, in which `receiveIndex` resolves `receiveDepth` bits deep (seL4's
 `lookupTargetSlot`, a depth from 1 to the word's 64 bits) to a slot that is
 empty.  Any failure names no slot, and a transfer then installs nothing; seL4
-raises no fault for it. -/
+raises no fault for it.  The depth is a word of the receiver's buffer, so it is
+range-checked as the word (`receiveDepthRefused_eq`) and made a number only
+once it is at most 64: a full-width word is never a heap `Nat`. -/
 def receivePathSlot? (st : SystemState) (tcb : TCB) (cnodeWord indexWord depthWord : UInt64) :
     Option CSpaceAddr :=
   match st.getCNode? tcb.cspaceRoot with
@@ -81,7 +83,7 @@ def receivePathSlot? (st : SystemState) (tcb : TCB) (cnodeWord indexWord depthWo
           match st.getCNode? cnodeId with
           | none => none
           | some _ =>
-            if depthWord.toNat = 0 ∨ 64 < depthWord.toNat then none else
+            if depthWord == 0 || (64 : UInt64) < depthWord then none else
             match resolveCapAddress cnodeId (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st with
             | .error _ => none
             | .ok slot =>

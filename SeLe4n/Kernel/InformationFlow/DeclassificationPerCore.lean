@@ -3316,7 +3316,7 @@ theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
     (st : SystemState) (trail : AuditRing)
     (hTrail : trail.toList = st.declassificationAuditLog) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability ∧
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) ∧
     auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
     (auditReadWord (liftLegacyContext ctx) none reader
@@ -3428,10 +3428,13 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
       recordDeclassificationChecked trail e = none) ∧
     -- (2) the outcome the boundary hands the refused caller is the error frame
-    -- computed from `ke` alone — it names no component of the ledger
+    -- computed from `ke` and the caller's own IPC buffer — it names no
+    -- component of the ledger
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
-      = Except.ok (.returns (Architecture.errorFrame ke))) ∧
+      = Except.ok (.returns (Architecture.errorFrameFor
+          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          tid ke))) ∧
     -- (3) the ledger write is invisible to the projection
     (projectState ctx observer
         (SeLe4n.Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0 st)

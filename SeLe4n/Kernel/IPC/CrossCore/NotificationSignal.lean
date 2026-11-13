@@ -116,7 +116,7 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA1.6: a signal with no waiter, as an update of the notification's
@@ -248,16 +248,19 @@ the waiter path is the specification's. -/
             (storeSignalPending st notificationId badge,
              .ok none)
           else
+          -- The badge itself, the word `ofNatMasked badge.toNat` is
+          -- (`Badge.ofNatMasked_toNat`): no round trip through a `Nat`, which
+          -- a badge at or above `2^63` would make a heap number.
           let mergedBadge : SeLe4n.Badge :=
             match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
-            | none => SeLe4n.Badge.ofNatMasked badge.toNat
+            | none => badge
           (st.withObjectStored notificationId (.notification {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
               boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }), .ok none)
   | none =>
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 @[csimp] theorem notificationSignalOnCore_eq_impl :
@@ -292,7 +295,8 @@ the waiter path is the specification's. -/
           simp only [signalPendingObject, Notification.pendingBadge, hp, ↓reduceIte,
             Bool.false_eq_true, SeLe4n.Badge.ofNatMasked_toNat badge (SeLe4n.Badge.valid_of_word badge)]
       · rw [if_neg hL]
-        simp only [SystemState.storeObject_eq_withObjectStored]
+        simp only [SystemState.storeObject_eq_withObjectStored,
+          SeLe4n.Badge.ofNatMasked_toNat badge (SeLe4n.Badge.valid_of_word badge)]
   · rfl
 
 /-- WS-SM SM6.B.1 (plan §3.1): notification wait across cores.
@@ -355,7 +359,7 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4: a wait consuming its notification's pending badge, as an update
@@ -488,7 +492,7 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
                         | .error e => (st, .error e)
                         | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
   | none =>
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4: the guarded badge-consume path is the specification's. -/

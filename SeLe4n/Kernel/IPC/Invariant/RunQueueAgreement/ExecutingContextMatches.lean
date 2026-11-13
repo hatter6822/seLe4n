@@ -91,9 +91,10 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     · cases h
       refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
       exact (contextMatchesCurrentOnCore_frame
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq])
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)).mpr hSp
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine])
+        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_objects _ _ _))).mpr hSp
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB

@@ -1185,7 +1185,7 @@ theorem resumeThreadOnCore_rejects_non_inactive (st : SystemState) (vtid : SeLe4
 `invalidArgument` — the typed `getTcb?` returns `none` for both. -/
 theorem resumeThreadOnCore_rejects_non_tcb (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (ec : CoreId) (hGet : st.getTcb? vtid.val = none) :
-    resumeThreadOnCore st vtid ec = .error .invalidArgument := by
+    resumeThreadOnCore st vtid ec = .error (.invalidArgument 0) := by
   simp only [resumeThreadOnCore, hGet]
 
 /-- WS-SM SM5.F.6 (PR #811 P2-5): a LOCAL complete resume (home = executing core)

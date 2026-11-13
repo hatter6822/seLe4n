@@ -197,7 +197,7 @@ def endpointSendCheckedArmGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadI
             .ok ((), Architecture.stageWokenDelivery (clearWokenReceiverStashPure woken? st')
               woken? summary.capInfo)
         | (st', .error e) => .error (e, st')
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 /-- The general send arm is the specification's for a sender whose frame asks
 to transfer no capability: a refusal then precedes every write
@@ -1216,7 +1216,7 @@ the general arm. -/
                     cap.badgeWord cap.badged (cap.rights.mem .grant))
                 else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointSendCheckedArmGeneralR ctx tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 /-- WS-ZA ZA6.35: **what a send's frame routes as**, read for the sender `tid`
 whose saved registers `rf` are: a capability-free send of at most four words,
@@ -1454,10 +1454,10 @@ operand resolved to, every refusal carrying the state it was handed
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .send st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .send st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -1555,7 +1555,7 @@ def endpointCallCheckedArmGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadI
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' woken? summary.capInfo)
         | (_, .error e) => .error (e, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointCallCheckedArmGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -1630,7 +1630,7 @@ does; any other call takes the general arm. -/
                     cap.badgeWord cap.badged (cap.rights.mem .grant))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 /-- The fast call arm is the general one for a caller whose saved registers
 `rf` route as a capability-free call: the words it writes in place are the
@@ -1740,10 +1740,10 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .call st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .call st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -1867,7 +1867,7 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
                     cap.badgeWord cap.badged (cap.rights.mem .grant))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 /-- The long call arm is the general one for a caller whose saved registers
 `rf` route as a capability-free long call whose overflow slots all read: the
@@ -1981,10 +1981,10 @@ Every refusal carries the state it was handed (`callLongOperandArmThenTaintR_eq`
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .call st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .call st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -2123,7 +2123,7 @@ def endpointReplyCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInfo)
               | .ok ((), st') => .ok ((), st')
               | .error e => .error (e, st)
             else .error (.replyCapInvalid, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyCheckedArmGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -2565,7 +2565,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
         | none =>
             endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
               tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
@@ -2742,10 +2742,10 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .reply st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .reply st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -2848,7 +2848,7 @@ def endpointSendCapsGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
             .ok ((), Architecture.stageWokenDelivery (clearWokenReceiverStashPure woken? st')
               woken? summary.capInfo)
         | (_, .error e) => .error (e, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointSendCapsGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -2934,7 +2934,7 @@ into the receiver's (`performSendCapsDeliveredLong`). -/
                     cap.badgeWord cap.badged (cap.rights.mem .grant))
                 else endpointSendCapsGeneralR ctx tid executingCore cap st
         | none => endpointSendCapsGeneralR ctx tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
@@ -3153,7 +3153,7 @@ write. -/
                     cap.badgeWord cap.badged (cap.rights.mem .grant))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
@@ -3351,10 +3351,10 @@ does (`sendTaintStep`).  Every refusal carries the state it was handed
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -3564,7 +3564,7 @@ makes, takes the general arm. -/
                     executingCore cap st
             | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid executingCore cap st
         | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -3730,10 +3730,10 @@ carries the state it was handed (`replyLongOperandArmThenTaintR_eq`). -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .reply st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .reply st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -3863,11 +3863,11 @@ alone, with the gate the caller's own CSpace gives
       capAddr := replyAddr
       capDepth := callerCspaceDepth st tid
       requiredRight := .write }
-  match syscallLookupCap gate st with
+  match syscallLookupArgumentCap recvReplyCapNumber gate st with
   | .error e => .error e
   | .ok (rcap, _) =>
       match extractReplyId rcap with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap recvReplyCapNumber)
       | .ok rid =>
           match st.getReply? rid with
           | some r =>
@@ -3902,9 +3902,9 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
 @[inline] def recvReplyCapK {α : Type} (st : SystemState) (cap? : Option Capability)
     (onErr : KernelError → α) (onOk : Nat → α) : α :=
   match cap? with
-  | none => onErr .invalidCapability
+  | none => onErr (.invalidCapability 0)
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr (.invalidCapability 0)
       else if !cap.hasRight .write then onErr .illegalAuthority
       else
         match cap.target with
@@ -3914,7 +3914,7 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
                 if r.caller.isNone && !st.replyStashedAt rid r then onOk (rid.val + 1)
                 else onErr .replyCapInvalid
             | none => onErr .replyCapInvalid
-        | _ => onErr .invalidCapability
+        | _ => onErr (.invalidCapability 0)
 
 /-- `resolveRecvReplyIdR` in continuation form, the reply object as its code
 (`resolveRecvReplyK_eq`): the slot is resolved through
@@ -3924,10 +3924,10 @@ slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. 
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
   if len = 0 then onOk 0 else
   resolveCapAddressKUnrolled (callerCspaceRoot st tid) (replyAddr)
-    (callerCspaceDepth st tid) st onErr
+    (callerCspaceDepth st tid) st (KernelError.argumentCapRefusal recvReplyCapNumber onErr)
     (fun cnode slot =>
       recvReplyCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-        onErr onOk)
+        (KernelError.argumentCapRefusal recvReplyCapNumber onErr) onOk)
 
 theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
@@ -3938,7 +3938,8 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
   unfold resolveRecvReplyK resolveRecvReplyIdR
   by_cases h0 : len = 0
   · simp only [h0, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
-  · simp only [h0, ↓reduceIte, syscallLookupCap, syscallResolveCap]
+  · simp only [h0, ↓reduceIte, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+      KernelError.argumentCapRefusal]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) (replyAddr)
         (callerCspaceDepth st tid) st with
@@ -3950,7 +3951,7 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | some cap =>
         simp only []
         by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-        · simp only [hIdle, ↓reduceIte]
+        · simp only [hIdle, ↓reduceIte] <;> rfl
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
             unfold extractReplyId
@@ -3962,7 +3963,7 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
             | some r =>
               simp only []
               split <;> rfl
-          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 /-- The checked receive arm's rendezvous through the specification: the
 WithCaps receive, the rendezvous hand-off, then the woken sender's completion
@@ -4391,7 +4392,7 @@ included, precedes the first write; a receive that blocks in place
       else
       let resolved := fun replyCode => endpointReceiveResolvedR epId tid replyCode executingCore st
       resolveRecvReplyK st tid len replyAddr (fun e => .error (e, st)) resolved
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -4545,10 +4546,10 @@ operand resolved to, every refusal carrying the state it was handed
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .receive st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .receive st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>

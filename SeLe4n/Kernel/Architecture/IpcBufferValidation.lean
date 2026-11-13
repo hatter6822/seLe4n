@@ -100,7 +100,7 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
             .error .addressOutOfBounds
           else .ok ()
         | none => .error .translationFault
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
     | none => .error .objectNotFound
 
 -- ============================================================================

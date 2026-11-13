@@ -97,7 +97,7 @@ def untypedResetSlot (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) : Kernel 
     if hasCdtChildren st { cnode := srcCnode, slot := srcSlot } then .error .revocationRequired
     else
       match SystemState.lookupSlotCap st { cnode := srcCnode, slot := srcSlot } with
-      | none => .error .invalidCapability
+      | none => .error (.invalidCapability 0)
       | some cap =>
         match cap.target with
         | .object untypedId =>
@@ -107,7 +107,7 @@ def untypedResetSlot (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) : Kernel 
             if ut.children.isEmpty then
               .ok ((), setCapFreeIndex st { cnode := srcCnode, slot := srcSlot } 0)
             else .error .revocationRequired
-        | _ => .error .invalidCapability
+        | _ => .error (.invalidCapability 0)
 
 /-- **An admitted reset is its write.** -/
 theorem untypedResetSlot_of_admitted {st : SystemState} {srcCnode : SeLe4n.ObjId}

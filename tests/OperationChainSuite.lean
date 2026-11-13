@@ -395,7 +395,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
 
   expectErr "chain9: grandchild cannot mint additional write right"
     (SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) } (AccessRightSet.ofList [.read, .write]) none st2)
-    .invalidCapability
+    (.invalidCapability 0)
 
   let noGrantGate : SeLe4n.Kernel.SyscallGate := {
     callerId := ⟨42⟩
@@ -413,10 +413,10 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   -- lookup's refusal above.
   expectErr "chain9: grandchild cannot mint via syscall gate without grant"
     (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } (fun cap =>
-      if cap.target ≠ .object grandSlot.cnode then fun _ => .error .invalidCapability
+      if cap.target ≠ .object grandSlot.cnode then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) }
         (AccessRightSet.ofList [.read]) none) st2)
-    .invalidCapability
+    (.invalidCapability 0)
 
   let (_, st3) ← expectOkSt "chain9: revoke root cascades descendants"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st2)
@@ -2573,18 +2573,20 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       [(cnodeTarget, .cnode), (epId, .endpoint)]
       [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stBad with
-    | .error err => expect s!"chain27: {label} refused {toString want}" (err == want)
+    | .error err => expect s!"chain27: {label} refused {toString want} (got {toString err})" (err == want)
     | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
-  copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] .rangeError
-  copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] .rangeError
+  copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] (.rangeError 1 64)
+  copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] (.rangeError 1 64)
   copyRefusal "copy whose destination depth stops short of the radix"
-    [(2, 2), (3, 0), (4, 0), (5, 3 + 4 * 256)] .depthMismatch
+    [(2, 2), (3, 0), (4, 0), (5, 3 + 4 * 256)] (.failedLookup false (.depthMismatch 3 4))
   copyRefusal "copy into an occupied destination"
     [(2, 0), (3, 0), (4, 0), (5, 4 + 4 * 256)] .targetSlotOccupied
   copyRefusal "copy whose source root names an endpoint"
-    [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] .invalidCapability
+    [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] (.failedLookup true .invalidRoot)
+  copyRefusal "copy from an empty source slot"
+    [(2, 2), (3, 0), (4, 5), (5, 4 + 4 * 256)] (.failedLookup true (.missingCapability 4))
   copyRefusal "copy whose operation word sets a bit past the rights"
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] .invalidArgument
+    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 3)
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
 
@@ -2885,7 +2887,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- 5b: Non-endpoint target (notification)
   let regNonEp : ServiceRegistration := { iface := iface1, endpointCap := nonEpCap }
   expectErr "chain33: registerService non-endpoint target"
-    (SeLe4n.Kernel.registerService regNonEp st2) .invalidCapability
+    (SeLe4n.Kernel.registerService regNonEp st2) (.invalidCapability 0)
   -- 5c: Missing write right
   let regNoWrite : ServiceRegistration := { iface := iface1, endpointCap := noWriteCap }
   expectErr "chain33: registerService no write right"
@@ -2897,7 +2899,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights }
   let regMissingEp : ServiceRegistration := { iface := iface1, endpointCap := missingEpCap }
   expectErr "chain33: registerService non-existent endpoint"
-    (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
+    (SeLe4n.Kernel.registerService regMissingEp st2) (.invalidCapability 0)
   -- The registration is recorded on the endpoint it names, so a final delete
   -- can read the endpoint instead of walking the registry
   -- (`SystemState.tableBackLinksClear`).

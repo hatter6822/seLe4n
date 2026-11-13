@@ -1341,10 +1341,12 @@ caller received.**
 The reader reuses WS-RA's numbering, so a monitor decoding a record's reason
 and the caller reading its own `x1` label are reading the same number — which
 is what lets an operator correlate a user-space report with the kernel's own
-record without a second table to keep in step. -/
+record without a second table to keep in step.  The word carries the code, not
+the payload: it decodes to the reason with its payload erased
+(`KernelError.erasePayload`), the error code the caller's label names. -/
 theorem refusalTagsWord_reason_is_abi_discriminant (r : DeclassificationRefusal) :
     KernelError.ofDiscriminant? (refusalTagsWord r / refusalTagSlots / refusalTagSlots)
-      = some r.reason := by
+      = some r.reason.erasePayload := by
   rw [(refusalTagsWord_roundtrip r).2.2]
   exact KernelError.ofDiscriminant?_toDiscriminant r.reason
 
@@ -1437,6 +1439,18 @@ theorem refusalCountersWord_fits (attempts dropped : Nat)
 -- §4c  SM9.A.2 — the reader
 -- ============================================================================
 
+/-- The message word an audit read's index (or ring slot, or later entry) is
+read from (MR1), the word an index naming nothing the caller can read names
+(`invalidArgument`). -/
+def auditReadIndexWord : UInt64 := 1
+
+/-- The message word an audit read's chunk (or earlier entry, or archived
+timestamp) is read from (MR2), the word a chunk past the value's last (a
+refusal naming no receiver has 0 receiver chunks, so any chunk is past it), an
+earlier entry not below the later one, or a timestamp not yet archived names
+(`invalidArgument`). -/
+def auditReadChunkWord : UInt64 := 2
+
 /-- WS-SM SM9.A.2: **the audit read.**  A pure function of the reader's
 clearance, the configured monitor clearance, the state and the requested
 sub-operation, returning one word or a fail-closed error.
@@ -1455,37 +1469,39 @@ def auditReadWord (ctx : GenericLabelingContext)
       .ok (auditStatusWord view.length (if isMonitor then st.declassificationAuditEpoch else 0))
   | .fieldChunkCount index f =>
       match view[index]? with
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument auditReadIndexWord)
       | some e =>
           match auditFieldChunkCount? (auditExportedFieldValue isMonitor index e f) with
           | none => .error .auditFieldTooLarge
           | some n => .ok n
   | .field index f chunk =>
       match view[index]? with
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument auditReadIndexWord)
       | some e =>
           let v := auditExportedFieldValue isMonitor index e f
           match auditFieldChunkCount? v with
           | none => .error .auditFieldTooLarge
-          | some n => if chunk < n then .ok (auditFieldChunk v chunk) else .error .invalidArgument
+          | some n =>
+              if chunk < n then .ok (auditFieldChunk v chunk)
+              else .error (.invalidArgument auditReadChunkWord)
   | .coreAndTrust index =>
       match view[index]? with
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument auditReadIndexWord)
       | some e => .ok (auditCoreAndTrustWord e)
   | .basisByteCount index =>
       match view[index]? with
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument auditReadIndexWord)
       | some e =>
           let n := (auditBasisBytes e).length
           if n ≤ maxAuditDesignationBytes then .ok n else .error .auditFieldTooLarge
   | .basisChunk index chunk =>
       match view[index]? with
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument auditReadIndexWord)
       | some e =>
           let bs := auditBasisBytes e
           if bs.length ≤ maxAuditDesignationBytes then
             (if chunk < auditBasisChunkCount bs.length then .ok (auditBasisChunkValue bs chunk)
-             else .error .invalidArgument)
+             else .error (.invalidArgument auditReadChunkWord))
           else .error .auditFieldTooLarge
   -- WS-SM SM9.B.10: the refusal ledger's arms.  Every one of them opens with
   -- the **configured** monitor gate, and refuses a caller it does not admit —
@@ -1510,33 +1526,34 @@ def auditReadWord (ctx : GenericLabelingContext)
       if isMonitor then
         (if h : slot < refusalRingSize then
           match st.declassificationRefusals.slotView ⟨slot, h⟩ with
-          | none => .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
           | some r => .ok (refusalTagsWord r)
-         else .error .invalidArgument)
+         else .error (.invalidArgument auditReadIndexWord))
       else .error .illegalAuthority
   | .refusalSlotFieldChunkCount slot f =>
       if isMonitor then
         (if h : slot < refusalRingSize then
           match st.declassificationRefusals.slotView ⟨slot, h⟩ with
-          | none => .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
           | some r =>
               match auditFieldChunkCount? (refusalExportedFieldValue r f) with
               | none => .error .auditFieldTooLarge
               | some n => .ok n
-         else .error .invalidArgument)
+         else .error (.invalidArgument auditReadIndexWord))
       else .error .illegalAuthority
   | .refusalSlotField slot f chunk =>
       if isMonitor then
         (if h : slot < refusalRingSize then
           match st.declassificationRefusals.slotView ⟨slot, h⟩ with
-          | none => .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
           | some r =>
               let v := refusalExportedFieldValue r f
               match auditFieldChunkCount? v with
               | none => .error .auditFieldTooLarge
               | some n =>
-                  if chunk < n then .ok (auditFieldChunk v chunk) else .error .invalidArgument
-         else .error .invalidArgument)
+                  if chunk < n then .ok (auditFieldChunk v chunk)
+                  else .error (.invalidArgument auditReadChunkWord)
+         else .error (.invalidArgument auditReadIndexWord))
       else .error .illegalAuthority
   -- WS-SM SM9.C.1: the refused receiver — the ledger's one optional export.
   -- Absence is in-band: chunk count 0 means "no receiver named", which no
@@ -1545,7 +1562,7 @@ def auditReadWord (ctx : GenericLabelingContext)
       if isMonitor then
         (if h : slot < refusalRingSize then
           match st.declassificationRefusals.slotView ⟨slot, h⟩ with
-          | none => .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
           | some r =>
               match r.refusedReceiver with
               | none => .ok 0
@@ -1553,23 +1570,23 @@ def auditReadWord (ctx : GenericLabelingContext)
                   match auditFieldChunkCount? receiver.val with
                   | none => .error .auditFieldTooLarge
                   | some n => .ok n
-         else .error .invalidArgument)
+         else .error (.invalidArgument auditReadIndexWord))
       else .error .illegalAuthority
   | .refusalReceiverChunk slot chunk =>
       if isMonitor then
         (if h : slot < refusalRingSize then
           match st.declassificationRefusals.slotView ⟨slot, h⟩ with
-          | none => .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
           | some r =>
               match r.refusedReceiver with
-              | none => .error .invalidArgument
+              | none => .error (.invalidArgument auditReadChunkWord)
               | some receiver =>
                   match auditFieldChunkCount? receiver.val with
                   | none => .error .auditFieldTooLarge
                   | some n =>
                       if chunk < n then .ok (auditFieldChunk receiver.val chunk)
-                      else .error .invalidArgument
-         else .error .invalidArgument)
+                      else .error (.invalidArgument auditReadChunkWord)
+         else .error (.invalidArgument auditReadIndexWord))
       else .error .illegalAuthority
   -- WS-SM SM9.D.14: the causality verdict.  One bit about a pair of entries
   -- the caller already holds — never the tags themselves, which are global
@@ -1580,22 +1597,27 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .chainNamesPredecessor index =>
       match view[index]?, view[index - 1]? with
       | some later, some earlier =>
-          if index = 0 then .error .invalidArgument
+          if index = 0 then .error (.invalidArgument auditReadIndexWord)
           else .ok (if declassificationEventNames later earlier then 1 else 0)
-      | _, _ => .error .invalidArgument
+      | _, _ => .error (.invalidArgument auditReadIndexWord)
   -- WS-SM SM9.D.14: the general causality verdict — the same one opaque bit for
   -- an arbitrary visible pair `earlier < later` rather than the adjacent one, so
   -- a hop split out of adjacency by an unrelated interleaved event is still
   -- queryable.  `earlier ≥ later` names no predecessor and is refused as the
   -- adjacent form refuses `index = 0`.  Reads only `view[later]` and
   -- `view[earlier]`, so it opens no channel the adjacency verdict did not.
+  --
+  -- The pair is read before either entry: `earlier ≥ later` names the earlier
+  -- index's word, and with `earlier < later` an entry missing is the later one
+  -- (a view holding `later` holds every index below it), so it names the later
+  -- index's word.
   | .chainNamesEntry later earlier =>
-      match view[later]?, view[earlier]? with
-      | some laterEvent, some earlierEvent =>
-          if earlier < later then
+      if earlier < later then
+        match view[later]?, view[earlier]? with
+        | some laterEvent, some earlierEvent =>
             .ok (if declassificationEventNames laterEvent earlierEvent then 1 else 0)
-          else .error .invalidArgument
-      | _, _ => .error .invalidArgument
+        | _, _ => .error (.invalidArgument auditReadIndexWord)
+      else .error (.invalidArgument auditReadChunkWord)
   -- WS-SM SM9.D: the chain across a drain.  The gate is checked **before**
   -- anything else, so a caller it refuses learns nothing about the trail's
   -- extent — the drain's own two gates share one error for the same reason.
@@ -1616,8 +1638,8 @@ def auditReadWord (ctx : GenericLabelingContext)
           match view[later]? with
           | some laterEvent =>
               .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0)
-          | none => .error .invalidArgument
-        else .error .invalidArgument
+          | none => .error (.invalidArgument auditReadIndexWord)
+        else .error (.invalidArgument auditReadChunkWord)
       else .error .illegalAuthority
 
 /-- WS-SM SM9.D.14: **the causality verdict, characterised.**
@@ -1645,7 +1667,7 @@ theorem chainVerdict_index_zero_refused (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st : SystemState) :
     auditReadWord ctx monitorClearance reader st (.chainNamesPredecessor 0) =
-      .error .invalidArgument := by
+      .error (.invalidArgument auditReadIndexWord) := by
   unfold auditReadWord
   cases h : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[0]? <;> simp [h]
 
@@ -1687,22 +1709,16 @@ theorem chainEntryVerdict_ok (ctx : GenericLabelingContext)
   simp only [hLater, hEarlier, if_pos hLt]
 
 /-- WS-SM SM9.D.14: `earlier ≥ later` names no valid predecessor, and is refused
-with the same error the adjacent verdict gives `index = 0` — the question does
-not exist, rather than having the answer "no". -/
+as the adjacent verdict refuses `index = 0` — the question does not exist,
+rather than having the answer "no" — naming the earlier index's word, before
+either entry is read. -/
 theorem chainEntryVerdict_refused (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st : SystemState) (later earlier : Nat) (hGe : later ≤ earlier) :
     auditReadWord ctx monitorClearance reader st (.chainNamesEntry later earlier) =
-      .error .invalidArgument := by
+      .error (.invalidArgument auditReadChunkWord) := by
   unfold auditReadWord
-  cases hL : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? with
-  | none => simp [hL]
-  | some le =>
-    cases hE : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[earlier]? with
-    | none => simp [hL, hE]
-    | some ee =>
-        simp only [hL, hE]
-        exact if_neg (Nat.not_lt.mpr hGe)
+  exact if_neg (Nat.not_lt.mpr hGe)
 
 /-- WS-SM SM9.D.14: **the general verdict is a function of the reader's own
 view**, the same no-channel argument `chainVerdict_view_local` makes for the
@@ -1769,7 +1785,7 @@ theorem chainArchivedVerdict_refuses_live_timestamp (ctx : GenericLabelingContex
     (hMon : auditMonitorAuthorized ctx monitorClearance reader = true)
     (hLive : st.declassificationAuditEpoch ≤ timestamp) :
     auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
-      .error .invalidArgument := by
+      .error (.invalidArgument auditReadChunkWord) := by
   unfold auditReadWord
   simp only [hMon, Nat.not_lt.mpr hLive, if_true, if_false]
 

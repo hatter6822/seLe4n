@@ -131,7 +131,7 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
   | .schedContextConfigure => configureOperandArmR rf w tid
   | .serviceRegister => serviceRegisterOperandArmR ctx tid rf w
   | .cspaceMint => mintOperandArmR ctx tid rf w
-  | _ => fun _ st => .error (.invalidCapability, st)
+  | _ => fun _ st => .error (.invalidCapability 0, st)
 
 /-- Every overflowed call is the operand dispatch of its arm. -/
 theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
@@ -145,7 +145,7 @@ theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : Sys
 /-- The overflowed arm refuses a missing operand as the operand check does. -/
 theorem overflowedArmOf_none (ctx : LabelingContext) (sid : SyscallId)
     (rf : SeLe4n.RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) (s : SystemState) :
-    overflowedArmOf ctx sid rf w tid none s = .error (.invalidCapability, s) := by
+    overflowedArmOf ctx sid rf w tid none s = .error (.invalidCapability 0, s) := by
   unfold overflowedArmOf
   cases sid <;> rfl
 
@@ -219,7 +219,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
     (hT : decoded.msgInfo.length < truncationMinimum decoded.syscallId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       .error (if truncationTarget decoded.syscallId cap.target then .truncatedMessage
-        else .invalidCapability) := by
+        else (.invalidCapability 0)) := by
   rcases cap with ⟨target, rights, badge, mapping⟩
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   cases hS : decoded.syscallId <;> rw [hS] at hR hT <;>
@@ -260,10 +260,10 @@ before any argument word. -/
 @[inline] def shortArgsOperandArmR (sid : SyscallId) : Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight sid) then .error (.truncatedMessage, st)
         else .error (syscallMissingRightError sid, st)
 

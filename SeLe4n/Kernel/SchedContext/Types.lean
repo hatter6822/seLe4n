@@ -102,6 +102,22 @@ end Bandwidth
 instance : BEq Bandwidth where
   beq a b := a.budget == b.budget && a.period == b.period
 
+/-- **The least budget, and least period, a configure admits**, in ticks:
+seL4-MCS's `MIN_BUDGET`, the `rangeErrorMin` of every configure refusal of a
+budget or a period (`decodeSchedControl_ConfigureFlags`). -/
+def configureMinBudget : UInt64 := 1
+
+/-- **The greatest period a configure admits**, in ticks: seL4-MCS's
+`MAX_PERIOD_US`, the `rangeErrorMax` of a configure refusal of a budget or a
+period below the least.  This kernel bounds a period by its word alone, so the
+greatest is the word's greatest value. -/
+def configureMaxPeriod : UInt64 := 0xFFFFFFFFFFFFFFFF
+
+/-- **The configure's parameter word**: the message word that carries the
+priority (bits 0–7) and the domain (bits 8–11), the word an out-of-range
+priority or domain names (`invalidArgument`). -/
+def configureSchedParamsWord : UInt64 := 3
+
 -- ============================================================================
 -- Z1-E: ReplenishmentEntry structure
 -- ============================================================================

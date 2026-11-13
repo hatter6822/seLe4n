@@ -267,7 +267,9 @@ impl SyscallId {
 /// `x2`-`x5` message registers).  Version 1 was the retired bit-63
 /// protocol; version 2 carried the status as label `d + 1`, which made a
 /// delivered fault message's `seL4_Fault_tag` decode as a kernel error
-/// (retired at WS-RR RR4).  Mirrors
+/// (retired at WS-RR RR4); version 4 took seL4's `seL4_MessageInfo_t`
+/// layout; version 5 carries seL4's error payload in an error frame's
+/// message registers, with its length in `x1`.  Mirrors
 /// `sele4n-types::SYSCALL_ABI_VERSION` and Lean's
 /// `Architecture.syscallAbiVersion`.  The HAL carries zero runtime
 /// dependencies by design (the mirror discipline documented in
@@ -278,7 +280,7 @@ impl SyscallId {
 /// side — so a half-bumped tree cannot build its own test lane, let
 /// alone pass it (plan §3.6).  The Lean side is a `decide` theorem
 /// (`syscallAbiVersion_pinned`), failing the kernel build itself.
-pub const SYSCALL_ABI_VERSION: u64 = 4;
+pub const SYSCALL_ABI_VERSION: u64 = 5;
 
 /// WS-RR RR4 (ABI v3): the first kernel-status label — `2^52 - 256`, the
 /// top 256 labels of seL4's 52-bit field.  Hand-duplicated from
@@ -837,7 +839,7 @@ mod tests {
     fn syscall_abi_version_matches_canonical_pin() {
         // The literal itself, pinned at runtime so a coordinated bump of
         // both mirrors without a protocol change still surfaces here.
-        assert_eq!(SYSCALL_ABI_VERSION, 4);
+        assert_eq!(SYSCALL_ABI_VERSION, 5);
         assert_eq!(ERROR_LABEL_BASE, 0xF_FFFF_FFFF_FF00);
     }
 
@@ -922,7 +924,7 @@ mod tests {
         // 0..=60, and exactly the Rust-only `UnknownKernelError` sentinel.
         // The range position is a compile-time assert at the constant's
         // definition; these GROUND the 60 against the canonical KernelError
-        // space (`DepthMismatch` is the last real discriminant, 61 the
+        // space (`FailedLookup` is the last real discriminant, 61 the
         // first unknown) and the 255 against the sentinel variant.
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
         assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);

@@ -595,7 +595,7 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    // 61 discriminants (0–60), DepthMismatch at 60.
+    // 61 discriminants (0–60), FailedLookup at 60.
     for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
@@ -922,7 +922,7 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // 61 discriminants (0–60) roundtrip, DepthMismatch at 60.
+    // 61 discriminants (0–60) roundtrip, FailedLookup at 60.
     for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none());
@@ -1004,7 +1004,7 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 61 — first unrecognized after DepthMismatch (60).
+    // Discriminant 61 — first unrecognized after FailedLookup (60).
     let base = sele4n_types::ERROR_LABEL_BASE;
     let regs = [0, (base + 61) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
@@ -1204,7 +1204,7 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (discriminants 0-60, DepthMismatch the
+/// variant count matches Lean (discriminants 0-60, FailedLookup the
 /// last at 60).  Detects Lean-Rust enum divergence automatically.
 #[test]
 fn kernel_error_variant_count() {
@@ -1659,7 +1659,7 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
     assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
     assert!(KernelError::from_u32(59).is_some()); // RangeError
-    assert!(KernelError::from_u32(60).is_some()); // DepthMismatch
+    assert!(KernelError::from_u32(60).is_some()); // FailedLookup
     assert!(KernelError::from_u32(61).is_none());
 }
 
@@ -2146,7 +2146,7 @@ fn sys_sched_context_module_exports() {
 /// and a half-bumped tree fails whichever suite still reads the old value.
 #[test]
 fn syscall_abi_version_pinned() {
-    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 4);
+    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 5);
 }
 
 /// WS-RR RR4 (ABI v3): the status-range base, pinned as a literal on the
@@ -2512,6 +2512,85 @@ fn abi_layout_matches_the_lean_table() {
             Err(_) => "reserved",
         };
         rendered.push_str(&std::format!("cnodeMoveBit {j} {owner}\n"));
+    }
+    // The error payload's message-register layout, measured as the Lean side
+    // measures it: each shape is built with the sentinels `0xA1`, `0xA2`,
+    // `0xA3` in its numeric fields, and MR `i` is owned by the field whose
+    // sentinel it holds, by `wasSource` when it moves with that flag alone, and
+    // is otherwise a constant (a lookup fault's type word).
+    type Build = fn(bool, u64, u64, u64) -> SyscallError;
+    let shapes: [(&str, &[&str], Build); 9] = [
+        ("invalidCapability", &["capNumber"], |_, a, _, _| {
+            SyscallError::InvalidCapability { cap_number: a }
+        }),
+        ("invalidArgument", &["argNumber"], |_, a, _, _| {
+            SyscallError::InvalidArgument { arg_number: a }
+        }),
+        ("rangeError", &["rangeMin", "rangeMax"], |_, a, b, _| {
+            SyscallError::RangeError { min: a, max: b }
+        }),
+        ("untypedRegionExhausted", &["memoryLeft"], |_, a, _, _| {
+            SyscallError::UntypedRegionExhausted { memory_left: a }
+        }),
+        ("failedLookup.invalidRoot", &[], |ws, _, _, _| {
+            SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::InvalidRoot,
+            }
+        }),
+        (
+            "failedLookup.missingCapability",
+            &["bitsLeft"],
+            |ws, a, _, _| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::MissingCapability { bits_left: a },
+            },
+        ),
+        (
+            "failedLookup.depthMismatch",
+            &["bitsLeft", "bitsFound"],
+            |ws, a, b, _| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::DepthMismatch {
+                    bits_left: a,
+                    bits_found: b,
+                },
+            },
+        ),
+        (
+            "failedLookup.guardMismatch",
+            &["bitsLeft", "guardFound", "bitsFound"],
+            |ws, a, b, c| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::GuardMismatch {
+                    bits_left: a,
+                    guard_found: b,
+                    bits_found: c,
+                },
+            },
+        ),
+        ("illegalState", &[], |_, _, _, _| {
+            SyscallError::Code(KernelError::IllegalState)
+        }),
+    ];
+    for (name, fields, build) in shapes {
+        let (words, len) = build(true, 0xA1, 0xA2, 0xA3).payload();
+        let (other, _) = build(false, 0xA1, 0xA2, 0xA3).payload();
+        rendered.push_str(&std::format!("errorPayload {name} length {len}"));
+        for i in 0..len {
+            let w = words[i];
+            let owner = match [0xA1u64, 0xA2, 0xA3]
+                .iter()
+                .zip(fields.iter())
+                .find(|(s, _)| **s == w)
+            {
+                Some((_, n)) => std::string::String::from(*n),
+                None if w != other[i] => std::string::String::from("wasSource"),
+                None => std::format!("const {w}"),
+            };
+            rendered.push_str(&std::format!(" mr{i} {owner}"));
+        }
+        rendered.push('\n');
     }
     assert_eq!(
         rendered, LEAN_TABLE,

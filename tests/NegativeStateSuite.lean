@@ -256,7 +256,7 @@ private def runBaselineLookupNegativeChecks : IO Unit := do
 
   expectErr "lookup path guard mismatch"
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
-    .invalidCapability
+    (.invalidCapability 0)
 
 
 /-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, and the
@@ -363,7 +363,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
 private def runVSpaceAndNotificationF03NegativeChecks : IO SystemState := do
   expectErr "dual-queue receive on non-endpoint object"
     (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) none baseState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   expectErr "dual-queue receive on missing object"
     (SeLe4n.Kernel.endpointReceiveDual (SeLe4n.ObjId.ofNat 9999) (SeLe4n.ThreadId.ofNat 1) none baseState)
@@ -505,7 +505,7 @@ private def runBadgeTruncationNegativeChecks : IO Unit := do
 
   expectErr "notification wait wrong object type"
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   expectErr "dual-queue send on missing object"
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
@@ -921,11 +921,12 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       (.endpoint {}) 64 f2UntypedState)
     .untypedTypeMismatch
 
-  -- F2-NEG-03: retype exhausts region
+  -- F2-NEG-03: retype exhausts region; seL4's `memoryLeft` is the region's 256
+  -- free bytes.
   expectErr "F2 retype region exhausted (oversized)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 512 f2UntypedState)
-    .untypedRegionExhausted
+    (.untypedRegionExhausted 256)
 
   -- F2-NEG-04: device restriction (non-untyped child from device untyped)
   expectErr "F2 device untyped restricts non-untyped child"
@@ -1776,7 +1777,7 @@ private def runAuditCoverageChecks : IO Unit := do
   -- NEG-MUTATE-02: mutate with rights not a subset (escalation attempt)
   expectErr "cspaceMutate rights escalation denied"
     (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read, .write, .grant]) none baseState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   -- POS-MUTATE: attenuate rights successfully
   let (_, stMutated) ← expectOkSt "cspaceMutate attenuate to read-only"
@@ -2117,7 +2118,7 @@ private def runWSH15Checks : IO Unit := do
   }
   expectErr "H15 syscallLookupCap valid CSpace missing capability"
     (SeLe4n.Kernel.syscallLookupCap missingSlotGate st)
-    .invalidCapability
+    (.invalidCapability 0)
 
   -- H15-NEG-03: syscallLookupCap with valid capability but wrong right
   let wrongRightGate : SeLe4n.Kernel.SyscallGate := {
@@ -2148,9 +2149,9 @@ private def runWSH15Checks : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } (fun cap =>
-      if cap.target ≠ .object epId then fun _ => .error .invalidCapability
+      if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
-    .invalidCapability
+    (.invalidCapability 0)
 
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
   let zeroDepthGate : SeLe4n.Kernel.SyscallGate := {
@@ -2243,17 +2244,17 @@ def runRetypeHeapCapacityChecks : IO Unit := do
   let low := roomy.withKernelHeapFreeBytes 4096
   expectCond "heap" "the default capacity is the whole arena"
     (roomy.machine.kernelHeapFreeBytes == kernelHeapArenaBytes)
-  expectErr "carve the kernel heap cannot hold" (carve low) .untypedRegionExhausted
+  expectErr "carve the kernel heap cannot hold" (carve low) (.untypedRegionExhausted 4096)
   expectErr "carve one byte short of its need"
-    (carve (roomy.withKernelHeapFreeBytes (need - 1))) .untypedRegionExhausted
+    (carve (roomy.withKernelHeapFreeBytes (need - 1))) (.untypedRegionExhausted (need - 1).toUInt64)
   -- The refusal precedes every other check: through an empty slot it is
   -- still the heap's.
   expectErr "the heap refusal precedes the capability lookup"
     (SeLe4n.Kernel.untypedRetypeObject (slotAt 3) ⟨155⟩ (slotAt 1) .notification low)
-    .untypedRegionExhausted
+    (.untypedRegionExhausted 4096)
   expectCond "heap" "the refusal is answered in the state it was handed"
     (match RefusalCarrying.ofKernel carve low with
-     | .error (e, s) => e == .untypedRegionExhausted &&
+     | .error (e, s) => e == (.untypedRegionExhausted 4096) &&
          s.objectIds == low.objectIds &&
          s.machine.kernelHeapFreeBytes == low.machine.kernelHeapFreeBytes &&
          (s.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isNone
@@ -2536,7 +2537,7 @@ def runWSH16LifecycleChecks : IO Unit := do
     expectErr "H16 retypeFromUntyped exhausted untyped"
       (SeLe4n.Kernel.retypeFromUntyped fullRegionAuthSlot fullRegionUntypedId ⟨162⟩
         (.endpoint {}) 16 fullRegionState)
-      .untypedRegionExhausted
+      (.untypedRegionExhausted 0)
 
   -- H16-NEG-08: retypeFromUntyped with non-untyped source → untypedTypeMismatch
   -- Plan REQ: "retypeFromUntyped with invalid object type → expect error"
@@ -2825,7 +2826,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "K-G-NEG-06 cspaceCopy source slot empty"
     (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot .full emptyCnodeState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   IO.println "CSpace negative tests passed"
 
@@ -2877,7 +2878,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- capability) → invalidCapability.
   expectErr "K-G-NEG-10 carve through a non-object capability"
     (SeLe4n.Kernel.untypedRetypeObject (carveAt 2) ⟨510⟩ (carveAt 3) .endpoint carveState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let threeRegDecode : SyscallDecodeResult := {
@@ -3301,7 +3302,7 @@ private def runWSM4GuardOnlyChecks : IO Unit := do
   -- Wrong guard: addr=0xB (guard extracted = 0xB ≠ 0xA)
   let resultBad := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot (SeLe4n.CPtr.ofNat 0xB) 4 stGuardOnly
   match resultBad with
-  | .error .invalidCapability =>
+  | .error (.invalidCapability _) =>
       IO.println "check passed [guard-only CNode rejects wrong guard]"
   | .error e =>
       throw <| IO.userError s!"expected invalidCapability, got {toString e}"
@@ -3415,7 +3416,7 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
   -- Wrong guard at level 1: guard1=2 instead of 1
   let resultWrongMid := SeLe4n.Kernel.resolveCapAddress lvl0 (SeLe4n.CPtr.ofNat 0xC87) 12 stMidGuard
   match resultWrongMid with
-  | .error .invalidCapability =>
+  | .error (.invalidCapability _) =>
       IO.println "check passed [guard mismatch at intermediate level returns invalidCapability]"
   | .error e =>
       throw <| IO.userError s!"expected invalidCapability for wrong mid guard, got {toString e}"
@@ -3470,7 +3471,7 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
   -- Since slot 0 is empty in our CNodes → invalidCapability.
   let result65 := SeLe4n.Kernel.resolveCapAddress maxDepthIds[0]! addr64 65 stMaxDepth
   match result65 with
-  | .error .invalidCapability =>
+  | .error (.invalidCapability _) =>
       IO.println "check passed [65-bit overflow returns invalidCapability (empty slot)]"
   | .error e =>
       throw <| IO.userError s!"overflow: expected invalidCapability, got {toString e}"
@@ -3504,7 +3505,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
   -- Slot 0 is empty → invalidCapability (intermediate recursion path, line 106).
   let resultEmptyMid := SeLe4n.Kernel.resolveCapAddress emptyMidRoot (SeLe4n.CPtr.ofNat 0xC0) 10 stEmptyMid
   match resultEmptyMid with
-  | .error .invalidCapability =>
+  | .error (.invalidCapability _) =>
       IO.println "check passed [empty slot at intermediate level returns invalidCapability]"
   | .error e =>
       throw <| IO.userError s!"expected invalidCapability, got {toString e}"
@@ -3565,7 +3566,7 @@ private def runWSM4WrapperIntegrationChecks : IO Unit := do
   -- Wrapper negative: nonexistent slot → invalidCapability
   let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 15) 4 stLeaf
   match resultWrapperBad with
-  | .error .invalidCapability =>
+  | .error (.invalidCapability _) =>
       IO.println "check passed [cspaceLookupMultiLevel empty slot returns invalidCapability]"
   | .error e =>
       throw <| IO.userError s!"neg: expected invalidCapability, got {toString e}"
@@ -3615,7 +3616,7 @@ def runRevocationRefusalChecks : IO Unit := do
     .objectNotFound
   expectErr "revoke of an empty slot"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId r2EmptySlot r2State)
-    .invalidCapability
+    (.invalidCapability 0)
   IO.println "all revocation refusal checks passed"
 
 /-- A CNode invocation reaches a CNode's slots only, as seL4 decodes a CNode
@@ -3724,7 +3725,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
       }
       expectErr "register service targeting non-endpoint"
         (SeLe4n.Kernel.registerService regTcb stIface2)
-        .invalidCapability
+        (.invalidCapability 0)
 
     -- R4-NEG-03: a registered endpoint records its registration, so the final
     -- delete's retire refuses it until the service is revoked (WS-ZA ZA5.4 part 31)
@@ -3821,7 +3822,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   expectErr "cspaceMint rights exceed source"
     (SeLe4n.Kernel.cspaceMint mintSrc mintDst
       (AccessRightSet.ofList [.read, .write]) (badge := none) readOnlyState)
-    .invalidCapability
+    (.invalidCapability 0)
 
   -- S2-G-02: cspaceCopy to occupied destination slot → targetSlotOccupied
   -- slot0 is already occupied in baseState; copy to it should fail
@@ -3960,7 +3961,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
   expectErr "retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
       (.endpoint {}) 16 exhaustedState)
-    .untypedRegionExhausted
+    (.untypedRegionExhausted 0)
 
   -- S2-H-05: retypeFromUntyped with childId that collides with existing object
   -- Use f2UntypedAuthCnode as the childId — it already exists in f2UntypedState
@@ -4203,12 +4204,12 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
     objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "configure zero period"
     (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 50 0 0 stWithSc)
-    .invalidArgument
+    (.rangeError SeLe4n.Kernel.configureMinBudget SeLe4n.Kernel.configureMaxPeriod)
 
   -- Z8-L-03: Configure with budget > period
   expectErr "configure budget>period"
     (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 50 0 0 stWithSc)
-    .invalidArgument
+    (.rangeError SeLe4n.Kernel.configureMinBudget 100)
 
   -- Z8-L-04: Bind to non-existent SchedContext
   let tid : SeLe4n.ThreadId := ⟨9902⟩
@@ -4577,14 +4578,14 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- DEFECT: a destination the CNode's radix cannot address is refused.
   expectErr "RR8-CSR-02 cspaceCopy to an unaddressable destination slot"
     (SeLe4n.Kernel.cspaceCopy rangeSrc outOfRangeDst .full rangeState)
-    .invalidArgument
+    (.invalidArgument 0)
   expectErr "RR8-CSR-03 cspaceMint to an unaddressable destination slot"
     (SeLe4n.Kernel.cspaceMint rangeSrc outOfRangeDst
       (AccessRightSet.ofList [.read]) (badge := none) rangeState)
-    .invalidArgument
+    (.invalidArgument 0)
   expectErr "RR8-CSR-04 cspaceMove to an unaddressable destination slot"
     (SeLe4n.Kernel.cspaceMove rangeSrc outOfRangeDst rangeState)
-    .invalidArgument
+    (.invalidArgument 0)
 
   -- A CNode at capacity: four capabilities in four addressable slots.
   let fullCnodeId : SeLe4n.ObjId := ⟨72⟩
@@ -4629,7 +4630,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   expectErr "RR8-CSR-06 ipcTransferSingleCap into an unaddressable receive slot"
     (SeLe4n.Kernel.ipcTransferSingleCap occupied
       { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 } fullOutOfRangeDst fullState)
-    .invalidArgument
+    (.invalidArgument 0)
 
   IO.println "all WS-RR RR8.16 CSpace slot-range checks passed"
 

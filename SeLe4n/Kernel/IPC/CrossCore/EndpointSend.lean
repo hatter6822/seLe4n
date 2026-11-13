@@ -111,7 +111,7 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? endpointId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -326,7 +326,7 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
                   (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
                     payload.badge payload.grant, .ok none)
   | none =>
-      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? endpointId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 @[csimp] theorem endpointSendDualOnCore_eq_impl :

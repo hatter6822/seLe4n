@@ -263,10 +263,10 @@ over the ring's next slot in place — or its refusal, read before any write
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-      else if !syscallTargetAccepted .declassify st cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+      else if !syscallTargetAccepted .declassify st cap then .error (.invalidCapability 0, st)
       else if cap.hasRight (syscallRequiredRight .declassify) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object targetId, some actorTid =>
@@ -586,8 +586,8 @@ theorem auditedArmSpec_audit_not_trail (ctx : LabelingContext) (sid : SyscallId)
     (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
     (hSid : sid = .auditRead ∨ sid = .auditDrain)
     (hT : ∀ code, cap.target ≠ .auditTrail code) :
-    auditedArmSpec ctx sid capAddr regs tid executingCore cap st = .error .invalidCapability := by
-  have hA : extractAuditAuthority cap = .error .invalidCapability := by
+    auditedArmSpec ctx sid capAddr regs tid executingCore cap st = .error (.invalidCapability 0) := by
+  have hA : extractAuditAuthority cap = .error (.invalidCapability 0) := by
     unfold extractAuditAuthority
     cases h : cap.target <;> first | rfl | exact absurd h (hT _)
   rcases hSid with rfl | rfl <;>
@@ -604,7 +604,7 @@ audit capability (`auditTargetGeneralR_eq`). -/
   fun st =>
     match cap.target with
     | .auditTrail _ => auditGeneralR ctx sid regs capAddr tid executingCore cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem auditTargetGeneralR_eq (ctx : LabelingContext) (sid : SyscallId)
     (regs : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
@@ -627,9 +627,9 @@ length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
       else if auditTruncated .auditDrain regs cap then .error (.truncatedMessage, st)
       else if auditDrainAdmitted ctx st executingCore cap then
         .ok ((), auditDrainPerform tid (auditedArgWord regs 0).toNat st)
@@ -653,9 +653,9 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st =
       match SystemState.lookupSlotCap st ref with
-      | none => .error (.invalidCapability, st)
+      | none => .error (.invalidCapability 0, st)
       | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
         else auditGeneralR ctx decoded.syscallId regs decoded.capAddr tid executingCore cap st := by
   have hR : routedAudited decoded.syscallId = true := by
     rcases hSid with h | h <;> rw [h] <;> rfl
@@ -1523,9 +1523,9 @@ ring's live window and staged in place — or the general one
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
       else if auditTruncated .auditRead regs cap then .error (.truncatedMessage, st)
       else
         match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
@@ -2110,7 +2110,7 @@ ordinary signal does (`auditedArmSpec_declassifySignal_absent`). -/
 
 /-- The error an absent notification's code names. -/
 @[inline] def declassifySignalAbsentRefusalError (code : Nat) : KernelError :=
-  if code = 1 then .invalidCapability else .objectNotFound
+  if code = 1 then (.invalidCapability 0) else .objectNotFound
 
 theorem declassifySignalAbsentRefusal_ne_zero {st : SystemState} {nid : SeLe4n.ObjId}
     (h : declassifySignalAbsentRefusal st nid ≠ 0) : st.getNotification? nid = none := by
@@ -2244,10 +2244,10 @@ writing the records its one or two downgrades owe), or else the general one
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-      else if !syscallTargetAccepted .declassifySignal st cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+      else if !syscallTargetAccepted .declassifySignal st cap then .error (.invalidCapability 0, st)
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>

@@ -468,7 +468,7 @@ private def fo008_cspaceLookupMissing : IO Unit := do
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   match frozenCspaceLookup fst (SeLe4n.CPtr.ofNat 5) ⟨10⟩ with
   | .ok _ => throw <| IO.userError "should fail"
-  | .error e => expect "empty slot → invalidCapability" (e == .invalidCapability)
+  | .error e => expect "empty slot → invalidCapability" (e == (.invalidCapability 0))
 
 -- ============================================================================
 -- TPH-008: Frozen VSpace Resolve
@@ -541,7 +541,7 @@ private def fo013_cspaceDelete : IO Unit := do
       -- After delete, lookup should fail
       match frozenCspaceLookup fst' (SeLe4n.CPtr.ofNat 3) ⟨10⟩ with
       | .ok _ => throw <| IO.userError "deleted slot should be empty"
-      | .error e => expect "deleted → invalidCapability" (e == .invalidCapability)
+      | .error e => expect "deleted → invalidCapability" (e == (.invalidCapability 0))
   | .error _ => throw <| IO.userError "delete should succeed"
 
 /-- FO-013b (WS-BP BP7.1, `v0.36.7`): frozenCspaceDelete refuses a capability
@@ -2635,10 +2635,10 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
       (do
         let vSc ← match diffScId.toObjId.toValid? with
                   | some v => pure v
-                  | none => throw KernelError.invalidArgument
+                  | none => throw (KernelError.invalidArgument 0)
         let vTid ← match diffA.toValid? with
                    | some v => pure v
-                   | none => throw KernelError.invalidArgument
+                   | none => throw (KernelError.invalidArgument 0)
         SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid ist.state))
 
 /-- FO-047b: the unbind half — both arms of the live unbind clear the origin. -/
@@ -2840,10 +2840,10 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) otherDomainTcb) (diffTcb 63))
     diffScId scDomainZero
   expect "FO-047c control: the live bind refuses a cross-domain bind"
-    (liveErr istDomain.state == some KernelError.invalidArgument)
+    (liveErr istDomain.state == some (KernelError.invalidArgument 0))
   expect "FO-047c: ...and the frozen bind refuses it identically"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain))
-      == some KernelError.invalidArgument)
+      == some (KernelError.invalidArgument 0))
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
   -- pop that reaches it will write this thread's binding.
   let ownRid : SeLe4n.ReplyId := ⟨71⟩

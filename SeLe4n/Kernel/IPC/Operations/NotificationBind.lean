@@ -180,7 +180,9 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
 /-- WS-SM SM6.B (`NotificationBind`): bind notification `notificationId` to TCB
 `tcbId`, setting **both** directions of the relation (`Notification.boundTCB` and
 `TCB.boundNotification`).  Fails with `.illegalState` if either end is already
-bound (the seL4 single-binding discipline). -/
+bound (the seL4 single-binding discipline), and with `.illegalState` if the
+object is not a notification (seL4's `decodeBindNotification` answers a
+capability that is not a notification capability `seL4_IllegalOperation`). -/
 def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
     Kernel Unit :=
   fun st =>
@@ -201,7 +203,7 @@ def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
                   | .error e => .error e
                   | .ok ((), st2) => .ok ((), st2)
     | none =>
-        if (st.getObject? notificationId).isSome then .error .invalidCapability
+        if (st.getObject? notificationId).isSome then .error .illegalState
         else .error .objectNotFound
 
 /-- WS-SM SM6.B (`UnbindNotification`): unbind TCB `tcbId` from its bound

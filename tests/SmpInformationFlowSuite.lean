@@ -2889,7 +2889,7 @@ example (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingC
 -- exactly the v0.32.97 class.
 example (oid : SeLe4n.ObjId) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability :=
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) :=
   extractAuditAuthority_rejects_non_audit_capability oid
 
 -- SM9.A.10: an idle core cannot read the trail — there is no subject whose
@@ -8694,7 +8694,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
      | some r => decide (r.reason = KernelError.auditLogCapacityExceeded))
   assertBool "NEGATIVE: an exempt syscall's refusal leaves the ledger untouched"
     (decide ((Platform.FFI.recordSyscallRefusal ctx c1 sendId highCurrent
-        .invalidCapability 5 niState).declassificationRefusals
+        (.invalidCapability 0) 5 niState).declassificationRefusals
       = niState.declassificationRefusals))
   assertBool "NEGATIVE: an undecodable syscall number records nothing — fail-closed"
     (decide ((Platform.FFI.recordSyscallRefusal ctx c1 9999 highCurrent
@@ -8727,7 +8727,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
-          | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied)
+          | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied false)
           | .blocks | .faulted => false) &&
          (match committed.declassificationRefusals.recent.get
              niState.declassificationRefusals.nextSlot with
@@ -8802,11 +8802,11 @@ private def runRefusalReaderChecks : IO Unit := do
   assertBool "an empty ring slot reads as absent, and a slot past the ring is refused"
     ((match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
         (.refusalSlotTags 1) with
-      | .error e => decide (e = KernelError.invalidArgument)
+      | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
       | .ok _ => false) &&
      (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
         (.refusalSlotTags refusalRingSize) with
-      | .error e => decide (e = KernelError.invalidArgument)
+      | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
       | .ok _ => false))
   -- The gate.  Unlike the trail there is no filtered view to fall back to: a
   -- ring evicts, so a hidden refusal would remove a lower reader's entry.
@@ -9013,7 +9013,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
          | none => false
          | some recorded =>
              (match outcome with
-              | .returns f => decide (f = Architecture.errorFrame recorded.reason)
+              | .returns f => decide (f = Architecture.errorFrame recorded.reason false)
               | .blocks | .faulted => false) &&
              decide (recorded.reason = KernelError.policyDenied) &&
              decide (recorded.syscall = SyscallId.declassify) &&
@@ -9045,7 +9045,7 @@ private def refusalLedgerTraceLines : List String :=
   let seamPost := Platform.FFI.recordSyscallRefusal liveDeclassLabeling c1
     (SyscallId.declassify.toNat.toUInt32) highCurrent .declassificationDenied 5 niState
   let exemptPost := Platform.FFI.recordSyscallRefusal liveDeclassLabeling c1
-    (SyscallId.send.toNat.toUInt32) highCurrent .invalidCapability 5 niState
+    (SyscallId.send.toNat.toUInt32) highCurrent (.invalidCapability 0) 5 niState
   [ s!"[smp-information-flow] refusal ledger: ring={refusalRingSize} \
 ceiling={maxRefusalCount} bootAttempts={RefusalLedger.initial.attemptCount.val} \
 bootVersion={RefusalLedger.initial.version}"
@@ -9231,7 +9231,7 @@ private def runAuditReaderClassChecks : IO Unit := do
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditPartialReader auditMixedState (.coreAndTrust 2) with
      | .ok _ => false
-     | .error e => decide (e = KernelError.invalidArgument))
+     | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord)))
   assertBool "…while the monitor, whose view is longer, reads the same index"
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditMonitorReader auditMixedState (.coreAndTrust 2) with
@@ -9269,7 +9269,7 @@ private def runAuditReaderClassChecks : IO Unit := do
   assertBool "NEGATIVE: a chunk past the field's width is refused"
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditMonitorReader auditMixedState (.field 0 .srcDomain 1) with
-     | .error e => decide (e = KernelError.invalidArgument)
+     | .error e => decide (e = (KernelError.invalidArgument auditReadChunkWord))
      | .ok _ => false)
   -- The live entry point's 2^64 guard, exercised for effect: at an epoch that
   -- pushes the status word past the return register, `auditReadFromCore`
@@ -9478,7 +9478,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "NEGATIVE: an ordinary capability carrying every right is rejected"
     ((match extractAuditAuthority
         { target := .object lowNotification, rights := AccessRightSet.ofList AccessRight.all, } with
-      | .error e => decide (e = KernelError.invalidCapability)
+      | .error e => decide (e = (KernelError.invalidCapability 0))
       | .ok _ => false) &&
      (match extractAuditAuthority Capability.auditTrailRead with
       | .ok _ => true
@@ -10263,7 +10263,7 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
       | .error _ => false) &&
      (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
         (.refusalReceiverChunk 0 0) with
-      | .error e => decide (e = KernelError.invalidArgument)
+      | .error e => decide (e = (KernelError.invalidArgument auditReadChunkWord))
       | .ok _ => false))
   assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 30"
     (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
@@ -10364,7 +10364,7 @@ private def runDeclassifiedSignalTargetGateChecks : IO Unit := do
      decide ((declassSignalState.getObjectType? lowEndpoint).isSome = true) &&
      (match runAuth.2, runDeny.2 with
       | .error e₁, .error e₂ =>
-          decide (e₁ = KernelError.invalidCapability) && decide (e₁ = e₂)
+          decide (e₁ = (KernelError.invalidCapability 0)) && decide (e₁ = e₂)
       | _, _ => false) &&
      decide (runAuth.1.declassificationAuditLog
        = declassSignalState.declassificationAuditLog))
@@ -10932,7 +10932,7 @@ private def runCausalReaderChecks : IO Unit := do
      | some (_, st₂) =>
          match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
              st₂ (.chainNamesPredecessor 0) with
-         | .error e => decide (e = KernelError.invalidArgument)
+         | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
          | .ok _ => false)
   assertBool "an index past the view is refused with the same error"
     (match declassHop2 with
@@ -10940,7 +10940,7 @@ private def runCausalReaderChecks : IO Unit := do
      | some (_, st₂) =>
          match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
              st₂ (.chainNamesPredecessor 9) with
-         | .error e => decide (e = KernelError.invalidArgument)
+         | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
          | .ok _ => false)
   -- Reading it at every index reconstructs `declassificationChainCausal` over
   -- the whole view — the property `chainVerdict_reconstructs_causal` states.
@@ -11500,7 +11500,7 @@ private def runDeclassifyingSeamBoundaryChecks : IO Unit := do
   assertBool "the denied signal's frame is exactly the receiver refusal's error frame"
     (match deniedSignalDispatchOutcome with
      | .ok (.returns f, _) =>
-         decide (f = Architecture.errorFrame KernelError.declassificationDeniedAtReceiver)
+         decide (f = Architecture.errorFrame KernelError.declassificationDeniedAtReceiver false)
      | _ => false)
   assertBool "…and the committed record names the signal syscall, the receiver and the operand"
     (match deniedSignalDispatchOutcome with
@@ -11518,7 +11518,7 @@ private def runDeclassifyingSeamBoundaryChecks : IO Unit := do
   assertBool "the denied declassify at the same state is the POLICY's refusal, recorded receiverless"
     (match deniedDeclassifyDispatchOutcome with
      | .ok (.returns f, committed) =>
-         decide (f = Architecture.errorFrame KernelError.declassificationDenied) &&
+         decide (f = Architecture.errorFrame KernelError.declassificationDenied false) &&
          (match committed.declassificationRefusals.recent.get
              seamBoundaryState.declassificationRefusals.nextSlot with
           | some r =>

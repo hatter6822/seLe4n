@@ -254,16 +254,21 @@ def _root_.SeLe4n.Model.VSpaceRoot.withoutTableSlot (root : VSpaceRoot) (inst : 
     !(s.level == inst.level && s.index == inst.index && s.table == table)
   { root with tables := root.tables.filter keep }
 
+/-- The address space a `.pageTableMap` names at MR0: its argument capability
+`0` (seL4's `decodeARMPageTableInvocation` answers a VSpace capability that names
+no address space `invalidCapNumber = 1`). -/
+def pageTableMapRootCapNumber : UInt64 := 1
+
 /-- **`seL4_ARM_PageTable_Map`**: install the page table `tableId` in the address
 space `rootId` at the shallowest level the walk to `vaddr` is missing. -/
 def pageTableMap (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st =>
     match st.getPageTable? tableId, st.getVSpaceRoot? rootId with
-    | none, _ => .error .invalidCapability
-    | _, none => .error .invalidCapability
+    | none, _ => .error (.invalidCapability 0)
+    | _, none => .error (.invalidCapability pageTableMapRootCapNumber)
     | some table, some root =>
-      if pageTableInstallLive st tableId then .error .invalidCapability
-      else if root.tableBase.isNone then .error .invalidArgument
+      if pageTableInstallLive st tableId then .error (.invalidCapability 0)
+      else if root.tableBase.isNone then .error (.invalidArgument 0)
       else if !pageTableAddressable vaddr then .error .addressOutOfBounds
       else
         match root.missingLevel? vaddr with
@@ -284,7 +289,7 @@ answers that call with success too. -/
 def pageTableUnmap (tableId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
     match st.getPageTable? tableId with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some table =>
       match table.installedIn with
       | none => .ok ((), st)

@@ -1837,7 +1837,7 @@ private def runLiveDispatchChecks : IO Unit := do
   -- NO CAP: empty slot 0 → the CSpace lookup fails closed.
   assertBool "a live .vspaceUnmap with no cap fails with invalidCapability"
     (match udDispatch [] with
-      | .error .invalidCapability => true | _ => false)
+      | .error (.invalidCapability _) => true | _ => false)
   -- READ-ONLY cap: the authority gate rejects (.vspaceUnmap needs .write).
   assertBool "a live .vspaceUnmap with a read-only cap fails with illegalAuthority"
     (match udDispatch [(SeLe4n.Slot.ofNat 0, udCapRO)] with

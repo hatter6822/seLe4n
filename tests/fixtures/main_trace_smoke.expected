@@ -22,13 +22,13 @@
 [SRG-007] lookup by cap found sid: 30
 [SRG-008] lookup non-matching: SeLe4n.Model.KernelError.objectNotFound
 [SRG-003] unknown interface: SeLe4n.Model.KernelError.objectNotFound
-[SRG-004] invalid endpoint: SeLe4n.Model.KernelError.invalidCapability
+[SRG-004] invalid endpoint: SeLe4n.Model.KernelError.invalidCapability 0
 [SRG-006] revoke non-existent: SeLe4n.Model.KernelError.objectNotFound
 [SRG-009] chain success: iface=true svc=true
 [SST-021] deep cnode radix fixture: some 12
 [SST-023] deep cnode path lookup rights: { bits := 3 }
 [SST-024] deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
-[SST-026] deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
+[SST-026] deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability 0
 [SST-028] large runnable queue length: 2
 [SST-030] large queue scheduled current: some 1
 [SST-032] context switch regs match incoming: true
@@ -85,7 +85,7 @@
 [UMT-004] untyped children count: 1
 [UMT-007] untyped free index after second retype: 32
 [UMT-009] retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
-[UMT-011] retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
+[UMT-011] retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted 16384
 [UMT-013] retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
 [UMT-015] retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
 [UMT-017] retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
@@ -94,8 +94,8 @@
 [UMT-023] retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
 [SGT-001] H15e syscall gate send (correct): ok
 [SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
-[SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.invalidCapability
-[SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
+[SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.invalidCapability 0
+[SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability 0
 [SGT-009] H15e syscall gate retype: ok
 [RCF-001] F7 timerOnly timer success: 3
 [RCF-003] F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented
@@ -139,11 +139,11 @@
 [MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
 [MEI-006] multi-ep all 3 endpoints drained: true
 [SCO-001] validateSchedContextParams valid: Except.ok ()
-[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
-[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
-[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument)
-[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument)
-[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.rangeError 1 18446744073709551615)
+[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.rangeError 1 1000)
+[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument 3)
+[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument 3)
+[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.rangeError 1 18446744073709551615)
 [SCO-006] schedContextConfigure success budget=100 period=1000
 [SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
 [SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState
@@ -166,7 +166,7 @@
 [SCO-023] timeoutThread blocked: ready=true threadStateKept=true budgetCleared=true errCode=true linksCleared=true
 [SCO-024] timeoutThread not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-025] timeoutThread re-enqueue: in_runQueue=true
-[SCO-026] endpointQueueRemove non-endpoint: SeLe4n.Model.KernelError.invalidCapability
+[SCO-026] endpointQueueRemove non-endpoint: SeLe4n.Model.KernelError.invalidCapability 0
 [SCO-027] timeoutBlockedThreads: tid1_timed_out=true
 [SCO-028] timeoutBlockedThreads non-matching: still_blocked=true
 [SCO-029] timeoutAwareReceive timeout-detect: timedOut=true

@@ -393,14 +393,22 @@ Returns error if any parameter violates well-formedness constraints:
   starves its bound thread)
 - `budget ≤ period` (cannot use more than 100% of a period)
 - `priority ≤ maxPriority` (within valid priority range)
-- `domain < numDomains` (within valid domain range) -/
-def validateSchedContextParams (budget period priority _deadline domain : Nat)
+- `domain < numDomains` (within valid domain range)
+
+Each refusal is seL4-MCS's (`decodeSchedControl_ConfigureFlags`): a budget or
+period below the least is `seL4_RangeError` with `MIN_BUDGET` and `MAX_PERIOD`
+(`configureMinBudget`, `configureMaxPeriod`), and a budget above its period
+`seL4_RangeError` with `MIN_BUDGET` and the period.  The priority and the domain
+share the parameter word (`configureSchedParamsWord`), which an out-of-range one
+names (`invalidArgument`).  The configure's decode answers the budget and
+period refusals first, in this order (`decodeSchedContextConfigureArgsChecked`). -/
+@[inline] def validateSchedContextParams (budget period priority _deadline domain : Nat)
     : Except KernelError Unit :=
-  if period == 0 then .error .invalidArgument
-  else if budget == 0 then .error .invalidArgument
-  else if budget > period then .error .invalidArgument
-  else if priority > maxPriorityVal then .error .invalidArgument
-  else if domain ≥ numDomainsVal then .error .invalidArgument
+  if period == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if budget == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if budget > period then .error (.rangeError configureMinBudget (UInt64.ofNat period))
+  else if priority > maxPriorityVal then .error (.invalidArgument configureSchedParamsWord)
+  else if domain ≥ numDomainsVal then .error (.invalidArgument configureSchedParamsWord)
   else .ok ()
 
 -- ============================================================================
@@ -1411,7 +1419,7 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- but effective priority resolves from sc.domain. Mismatched domains would
           -- cause a thread to pass the domain filter by TCB domain but be prioritized
           -- by SchedContext domain.
-          if tcb.domain != sc.domain then .error .invalidArgument
+          if tcb.domain != sc.domain then .error (.invalidArgument 0)
           -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
           -- live stack (`next.isSome`) is owed a context by the pop that reaches
           -- that frame, and the pop writes its binding; giving it a second
@@ -2766,7 +2774,7 @@ def schedContextYieldToOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.CoreI
   | none => .error .illegalState
   | some caller =>
     match st.getSchedContext? s with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some sc =>
       match sc.boundThreadCode with
       | 0 => .error .illegalState

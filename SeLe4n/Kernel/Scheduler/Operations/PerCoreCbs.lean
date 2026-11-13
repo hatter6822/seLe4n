@@ -668,7 +668,7 @@ theorem schedContextReplMigration_consistent
 theorem setThreadCpuAffinityWithMigration_error_of_no_tcb (st : SystemState)
     (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
     (hTcb : st.getTcb? targetTid = none) :
-    setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .error .invalidArgument := by
+    setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .error (.invalidArgument 0) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb]
 
 /-- WS-SM SM5.H.4: for a SchedContext-**bound** target, the full composite's state
@@ -787,7 +787,7 @@ theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core
     (executingCore : CoreId)
     (hUndeclared : c.val ≥ st.machine.declaredCoreCount) :
     setThreadCpuAffinityWithMigration st targetTid (some c) executingCore
-      = .error .invalidArgument := by
+      = .error (.invalidArgument 0) := by
   unfold setThreadCpuAffinityWithMigration
   cases hTcb : st.getTcb? targetTid with
   | none => rfl

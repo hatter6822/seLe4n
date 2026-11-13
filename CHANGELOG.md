@@ -1,3 +1,182 @@
+## v0.37.20 — error payloads and the `LookupFault` type
+
+WS-SX SX1 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D2, D2b, D3). A refusal
+now returns seL4's error payload in the message registers, in
+`setMRs_syscall_error`'s order. The label is unchanged until SX10.
+
+- **The payload codes.** `invalidCapability` carries the capability's number,
+  `invalidArgument` the argument's, `rangeError` its min and max, and
+  `untypedRegionExhausted` the memory left. Each field is a machine word
+  (`UInt64`), as seL4's are. `depthMismatch` retires into
+  `failedLookup (wasSource) (LookupFault)`, with seL4's four lookup faults:
+  `invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft
+  bitsFound` and `guardMismatch bitsLeft guardFound bitsFound`.
+- **Every site sets its number.** The decoders name the word that failed. A
+  VSpace remap at another ASID is `invalidCapability 1`, and one at another
+  address is `invalidArgument 1`. A page-table map whose root is not an
+  address space is `invalidCapability 1`. A carve the region cannot hold
+  answers its free bytes. A carve the kernel heap cannot hold answers the
+  heap's free bytes.
+- **The CNode operations refuse as seL4's do**, in `decodeCNodeInvocation`'s
+  order:
+  1. the destination's range, its walk and its emptiness;
+  2. the source root (`failedLookup true invalidRoot` when it is not a CNode);
+  3. the source's range and its walk;
+  4. an empty source (`failedLookup true (missingCapability srcDepth)`).
+
+  A walk that runs out of bits reports the guard before the depth, as
+  `resolveAddressBits` does.
+- **The frame** (`errorFrame`) carries the payload in x2–x5 and its length in
+  x1, as `setMR` returns it. A guard mismatch has a fifth word. It is written
+  to the caller's IPC buffer `msg[4]` when the buffer resolves
+  (`recordErrorOverflow`, D3). When the buffer does not resolve, the length
+  clamps to 4. `syscallAbiVersion` is 5.
+- **No refusal builds an error (D2b).** A routed arm pushes a refusal's
+  discriminant and its five payload words beside its report code. Each word
+  goes onto a stack of its own: its top is an unboxed `UInt64` field
+  (`MachineState.entryReportWord0`–`4`) and the words beneath it a `Nat`
+  (`entryReportBelow0`–`4`, radix 2^64), so a push followed by its pop is
+  still the identity on every state.
+  The ABI entry hands a refusal to the caller's frame as those words
+  (`entryReportOutcomeW`, `abiEntryFinishW`, `errorRefusalWordsW`). It
+  rebuilds the error only where the declassification ledger records one.
+  `syscallEntryRoutedWith_eq` proves the routed entry equal to the continued
+  entry for any join point that keeps the report's three laws.
+- **No payload word is a `Nat` (Codex review, PR #1079).** The report's
+  stacks first held each payload word as a `Nat`, and Lean's runtime makes a
+  `Nat` at or above 2^63 a heap cell, so a configure with budget 0
+  (`rangeError 1 0xFFFF_FFFF_FFFF_FFFF`) allocated at the push. The top of
+  each stack is now the word itself, and the words beneath it stay `0` on
+  every state the entry holds: the push and the pop keep them `0` with no
+  conversion (`reportBelowPush_eq_fast`, `reportStackPop_eq_fast`), and a
+  push over a pending report takes the old top in two 32-bit halves. The
+  three report laws are restated over the new fields
+  (`entryReportCode_pushEntryReport`, `entryReportWords_pushEntryReport`,
+  `popEntryReport_pushEntryReport`). The configure decode tests its budget
+  and period for zero on the words (`word_toNat_eq_zero_iff`), the service
+  register and the priority decodes compare their bounds on the words, and a
+  retype reads its type and size from the word's low byte and the rest, so
+  none of those refusals converts a full-width word. The signal's fast form
+  stores a first badge as itself rather than as `ofNatMasked badge.toNat`.
+  New QEMU scenarios, each held to 0: `configure-zero-budget-max-period`
+  (`rangeError 1 0xFFFF_FFFF_FFFF_FFFF`) and
+  `configure-budget-over-wide-period` (`rangeError 1 2^63`). The other
+  conversions from a full-width word to a `Nat` on the entry path are listed
+  and registered in `docs/REGISTERED_DEBT.md`.
+- **A refusal with a payload reaches the report as words.** The invocation,
+  one-overflow-word and overflowed arms hand their operand arm's result to a
+  continuation on words (`dispatchOperandCheckedKW`, `longOperandKW`,
+  `overflowOneOperandKW`): `noCapRefusalW` takes the refusal apart, each
+  payload constructor down to its words, so the join point the arm's refusal
+  sites meet at takes the code and the words as scalars and no lookup fault,
+  failed lookup or carve refusal is built on the way (`noCapRefusalW_eq`,
+  `dispatchOperandCheckedKW_eq`). The CNode Copy, Move and Mint arms ask that
+  the invoked object is a CNode before the walk, so their refusal goes straight
+  to that join point. The generated `RoutedArms` C allocates no error.
+- **Comparing errors builds nothing.** With payload constructors, the derived
+  `DecidableEq KernelError` compares two errors of one constructor through a
+  closure it builds on every comparison, so the ledger's test for a
+  receiver-side declassification refusal built a cell. `KernelError` no longer
+  derives `DecidableEq`: its instance is `KernelError.eqWords`, which compares
+  the discriminant and the payload words (`eqWords_iff`), so every module that
+  compares errors (`Fault`, `RefusalRecord` among them) compiles the same
+  instance and the generated C holds no derived one.
+  `validateSchedContextParams` is inlined, so a configure's refusal returns its
+  closed constant rather than a copy of it.
+- **A carve's refusal is read from the checks' words.** A refused
+  `UntypedRetype` fell back to the general dispatch, which decoded the
+  invocation again and built 13 cells (304 bytes) before it answered.
+  `untypedRetypeRefusalWith` reads the refusal `untypedRetypeObject` answers
+  from the checks in their order, without building the request
+  (`untypedRetypeObject_refused`, `untypedRetypeRefusalCode_eq`), so the
+  region's refusal (`untypedRegionExhausted` with the bytes left) and every
+  other carve refusal build nothing. It is inlined into the arm and reads the
+  destination and the untyped's children without a slot reference or a
+  closure (`untypedRetypeDstRefusal`, `childrenNameNone`), so the carves that
+  succeed build nothing more either.
+- **seL4's IllegalOperation.** A `TCB_SetSpace` whose CSpace or VSpace root
+  capability names an object of the wrong kind, and a `TCB_BindNotification`
+  whose capability is not a notification, are refused `.illegalState`, the
+  model's code for seL4's `seL4_IllegalOperation` (`decodeSetSpace`,
+  `decodeBindNotification`), where they were `invalidCapability`.
+- **Each refusal names its own argument.** A review found sites still at the
+  placeholder `0`; every one that names an argument now carries its number.
+  - A configure refuses as `decodeSchedControl_ConfigureFlags` does, in its
+    order and in the decode, before the context's capability is looked at. A
+    budget or period below the least is `rangeError configureMinBudget
+    configureMaxPeriod` (`1` and the word's greatest value). A budget above
+    its period is `rangeError configureMinBudget period`. The parameter word
+    is `invalidArgument 3`. `validateSchedContextParams` and the frozen
+    configure, which now calls it, answer the same.
+  - An argument capability's refusal names it (`KernelError.forArgumentCap`):
+    `0` is the invoked capability and `i + 1` is argument capability `i`, in
+    the current word layout. These are `invalidCapability 1`: the configure's
+    context, the bind's thread, the bound notification, the frame a map names
+    (the remap's other-ASID refusal reads the same number), a page-table map's
+    root, an issue's destination CNode, an interrupt handler's notification
+    and a fault handler, and the reply capability a receive or a
+    reply-receive names at MR0 (the endpoint is the invoked capability; a
+    reply's own reply capability is invoked and stays `0`). A set-space's
+    CSpace root is `1` and its VSpace root `2`. A failed lookup of the
+    argument, an empty or reserved slot, and the wrong kind of object all
+    carry the number. A missing right stays `illegalAuthority`.
+  - Every argument capability is resolved through one boundary, so a new
+    site cannot answer the invoked capability's number:
+    `syscallLookupArgumentCap capNumber gate` in the specification and
+    `KernelError.argumentCapRefusal capNumber onErr` as the compiled forms'
+    refusal continuation (`resolveRecvReplyK`, `resolveReplyRecvK`, the
+    bind, configure, set-space, issue, interrupt and page-table resolvers),
+    each reading the argument's number constant (`recvReplyCapNumber`,
+    `replyRecvReplyCapNumber`, …). `syscallLookupArgumentCap_ok_iff`: the
+    boundary renumbers refusals only. A suite group drives a wrong-kind and
+    an empty argument capability at each site, on the specification's
+    resolver and its compiled form, and checks the number.
+  - A retype's child id is `invalidArgument 1`. An audit read names its index
+    word (`1`) or its chunk word (`2`); a causal-pair read checks `earlier <
+    later` before it reads either entry.
+  - Each number has one owner (`configureContextCapNumber`,
+    `vspaceMapFrameCapNumber`, `UntypedRetypeArgs.childIdWord`, …). The
+    specification and its compiled continuation form both read it, and the
+    `_eq` proofs join them.
+  - The QEMU `configure-refused-*` scenarios check the range error's two
+    words.
+- **Proofs.**
+  - `ofDiscriminant?_toDiscriminant` (the code round trip, the payload
+    erased).
+  - `ofPayloadWords_payloadWord` (an error is its discriminant and its words).
+  - `errorFrame_payload_roundtrip`.
+  - `errorFrame_x1_decodes`, which now gains the length.
+  - The boundary's error-path theorems are restated over the fifth word's
+    write. It moves only the physical-write ledger, and no return frame
+    (`readReturnFrame_recordErrorOverflow`).
+- **Rust.**
+  - `sele4n-types` gains `LookupFault` and `SyscallError` (code plus payload),
+    and `DepthMismatch` becomes `FailedLookup`.
+  - `sele4n-abi` gains `decode_error`.
+  - `SYSCALL_ABI_VERSION` is 5.
+  - The QEMU exerciser checks x2–x5, and gains `range-error-payload`,
+    `failed-lookup-depth-mismatch`, `failed-lookup-missing-source`,
+    `failed-lookup-guard-mismatch`, `untyped-retype-region-exhausted` (a
+    2^46-byte child untyped) and `untyped-retype-slot-occupied`. The guard
+    mismatch's fifth word lands in the root task's buffer `msg[4]`, which a
+    later five-word call reads as an argument (a configure's deadline), so the
+    scenario names the buffer (the window's frame, where the root task's
+    buffer points at that step) and the word goes back to zero after it.
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive). Two runs of
+  `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each PASS, with
+  the serial log kept. The two runs' 2264 reading lines are byte-identical.
+  - Every pin is unchanged: endpoint 6 / 248, notification 6 / 240, reply
+    10 / 256, tcb 19 / 2040, sched-context 8 / 440, cnode 23 / 1128, frame
+    6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped 7 / 184.
+  - The owned-CNode window allocates 23 and frees 23.
+  - Every other reading is 0, the new payload scenarios and both carve
+    refusals (`untyped-retype-region-exhausted`, `untyped-retype-slot-occupied`)
+    among them.
+- **Boot heap** (the same runs, identical in both): 758 pages (103384 live
+  allocations) after the library initializer and 1350 pages (109488) after
+  the install, one page more than at `v0.37.19`: the payload's closed
+  constants and code.
+
 ## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
 
 Docs only. No code changes. This registers WS-SX, which makes the syscall and

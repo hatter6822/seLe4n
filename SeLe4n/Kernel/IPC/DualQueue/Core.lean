@@ -392,7 +392,7 @@ def endpointQueuePopHead
                     match storeTcbQueueLinks st2 tid none none none with
                     | .error e => .error e
                     | .ok st3 => .ok (tid, headTcb, st3)
-  | some _ => .error .invalidCapability
+  | some _ => .error (.invalidCapability 0)
   | none => .error .objectNotFound
 
 /-- WS-RR RR2.6: the thread a successful `endpointQueuePopHead` returns **is**
@@ -506,7 +506,7 @@ def endpointQueueEnqueue
                         match storeTcbQueueLinks st1 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some tid) with
                         | .error e => .error e
                         | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) (some (.tcbNext tailTid)) none
-  | some _ => .error .invalidCapability
+  | some _ => .error (.invalidCapability 0)
   | none => .error .objectNotFound
 
 /-- endpointQueuePopHead preserves objects.invExt. -/
@@ -965,7 +965,7 @@ def endpointQueueRemove
       -- primitive differs (a raw insert here, `storeObject` there).
       let objs := objs.insert tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none))
       .ok { st with objects := objs }
-  | some _ => .error .invalidCapability
+  | some _ => .error (.invalidCapability 0)
   | none => .error .objectNotFound
 
 /-- Z6-K: endpointQueueRemove does not modify the scheduler. -/

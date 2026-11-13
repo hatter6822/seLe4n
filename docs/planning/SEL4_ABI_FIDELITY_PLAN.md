@@ -1,7 +1,8 @@
 # WS-SX — seL4 ABI fidelity
 
 > **Workstream**: WS-SX (the syscall and invocation ABI made seL4's).
-> **Status**: **PLANNED** — registered at `v0.37.19` (this plan, docs only).
+> **Status**: **ACTIVE** — registered at `v0.37.19` (this plan, docs only);
+> SX1 landed at `v0.37.20`.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX11, numbered in the order they are implemented, one PR each.
@@ -189,11 +190,19 @@ land in that sub-task.
 
 ### SX1 — Error payloads (D2, D2b, D3)
 
+**LANDED at `v0.37.20`.** Payload fields are machine words (`UInt64`, seL4's
+`word_t`), so a refusal is its discriminant and five payload words. The routed
+entry report carries five word stacks beside its code stack, and the FFI words
+entry hands a refusal on as those words; the error is rebuilt only in the
+declassification ledger's records branch. The QEMU exerciser also runs
+`failed-lookup-guard-mismatch`, which checks x1–x5; its MR4 (`bitsFound`) goes to the
+buffer's `msg[4]`, which the scenario does not read.
+
 The label is unchanged until SX10.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX1.1 | `LookupFault` (`invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft bitsFound`, `guardMismatch bitsLeft guardFound bitsFound`, seL4's `lookup_fault`). The D2 payload fields; `depthMismatch` retires into `failedLookup`. Every site sets its number. The CNode-op refusals take seL4's: an empty source is `failedLookup true (missingCapability srcDepth)` (`cnode.c:111`). | The discriminant round trip over codes (`toDiscriminant`, `ofDiscriminant?`), the payload ignored; every `cases e <;> decide` restated per code. | `main_trace_smoke.expected` (error `Repr`); Tier 3 `KernelError` anchors; the `rust/sele4n-types/src/error.rs` mirror; `test_rust_conformance.sh` |
+| SX1.1 | `LookupFault` (`invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft bitsFound`, `guardMismatch bitsLeft guardFound bitsFound`, seL4's `lookup_fault`). The D2 payload fields; `depthMismatch` retires into `failedLookup`. Every site sets its number: `invalidCapability` is `0` for the invoked capability and `i + 1` for argument capability `i`, and every argument capability (a receive's or reply-receive's reply capability included) is resolved through one boundary that applies it (`syscallLookupArgumentCap`, and `KernelError.argumentCapRefusal` in the compiled forms). The CNode-op refusals take seL4's: an empty source is `failedLookup true (missingCapability srcDepth)` (`cnode.c:111`). | The discriminant round trip over codes (`toDiscriminant`, `ofDiscriminant?`), the payload ignored; every `cases e <;> decide` restated per code. | `main_trace_smoke.expected` (error `Repr`); Tier 3 `KernelError` anchors; the `rust/sele4n-types/src/error.rs` mirror; `test_rust_conformance.sh` |
 | SX1.2 | `errorFrame` carries the payload in seL4's MR order (x2–x5), with MR4 written to the caller's buffer `msg[4]` (D3) and the length as `setMR` returns it. Compiled refusal arms pass the payload unboxed (D2b). `syscallAbiVersion` 4 → 5. | `errorFrame_payload_roundtrip`. The error path's frame theorem restated: it changes only the caller's `msg[4]`, on a 5-word payload with a buffer. `errorFrame_x1_decodes` gains the length. | `syscall_return_abi.expected`; `abi_layout.expected` (version, payload offsets); `rust/sele4n-abi` frame decode |
 
 **Acceptance (QEMU):**
@@ -281,7 +290,7 @@ Every sub-task re-derives `maxLockSetSize` for the lookup paths it adds.
 | SX7.1 | The lookup itself. CNode Copy, Mint and Move: `srcRoot` is extra capability 0, and the words follow seL4 (D12); `CNodeOpWord` retires. | The decode round trips and `_error_iff`; the `capFaultReceivePhase?` send-phase case; the CNode arms' preservation. | `abi_layout.expected` (`cnodeCopyBit` block out, caps base in); `sele4n-abi` `args/cspace.rs`, `encode.rs` |
 | SX7.2 | Untyped_Retype (D9), IRQControl_Get (D10), PageTable_Map, Page_Map on the frame capability (D6). | The retype loop's carve theorems; the map arms' preservation; the mapping-record stage. | `args/lifecycle.rs`, `args/vspace.rs` |
 | SX7.3 | SetPriority and SetMCPriority with an authority TCB (D11); BindNotification; SchedContext_Bind; SchedControl_ConfigureFlags; IRQHandler_SetNotification. | The MCP authority theorems restated over the authority capability. | `args/tcb.rs`, `args/sched_context.rs` |
-| SX7.4 | SetSpace in the MCS shape: the fault endpoint, CSpace root and VSpace root as extra capabilities 0–2, with root data through `updateCapData`. A TCB fault-handler slot (D8). `tcbSetFaultHandler` retires. Fault delivery reads the slot, and answers `missingCapability 0` when it holds no endpoint (`faulthandler.c:99`). | The fault-delivery family over the slot; the slot invariants; `cnodeCapGeometry` kept by SetSpace. | `fault_handling_4core.expected` |
+| SX7.4 | SetSpace in the MCS shape: the fault endpoint, CSpace root and VSpace root as extra capabilities 0–2, with root data through `updateCapData`. A TCB fault-handler slot (D8). `tcbSetFaultHandler` retires. Fault delivery reads the slot, and answers `missingCapability 0` when it holds no endpoint (`faulthandler.c:99`). A CSpace or VSpace root argument whose slot is empty or holds no object capability gets seL4's answer for it, where SX1 still answers `invalidCapability` through `resolveCallerCapSlot`. | The fault-delivery family over the slot; the slot invariants; `cnodeCapGeometry` kept by SetSpace. | `fault_handling_4core.expected` |
 | SX7.5 | SetIPCBuffer: the frame capability is derived into SX5.2's slot (D7). Every buffer read goes through `lookupIPCBuffer`. `ipcBufferWordPAddr?` and `tlbFillIpcBufferOnCore` retire. | Every theorem citing the retired read, restated over the frame capability. The buffer-in-one-frame fact taken from the capability. | Tier 3 IPC-buffer anchors; `syscall_return_abi.expected` |
 
 **Acceptance:**

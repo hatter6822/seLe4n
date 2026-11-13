@@ -472,7 +472,7 @@ private def runRunLoopStepChecks : IO Unit := do
   -- seed core 0's lastTimeoutErrors with a stale record, then a valid-core step
   -- runs the SM5.D.9 clear so the post-step record is empty — proving the step
   -- took the valid-core branch and installed the new state, not `(st, none)`.
-  let staleErrs : List (ThreadId × KernelError) := [(ThreadId.ofNat 1, KernelError.invalidArgument)]
+  let staleErrs : List (ThreadId × KernelError) := [(ThreadId.ofNat 1, (KernelError.invalidArgument 0))]
   let stStale : SystemState :=
     { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore bootCoreId staleErrs }
   assertBool "step on valid core 0 commits the tick (SM5.D.9 clears lastTimeoutErrors)"

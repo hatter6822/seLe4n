@@ -1083,7 +1083,7 @@ once, on the slot's contents, as `dispatchOperandCheckedR` runs it. -/
     (r : Except (KernelError × SystemState) (Unit × SystemState)) : β :=
   match r with
   | .error (e, s) =>
-    if noCap = true ∧ e = .invalidCapability then onLookup e s else kArm (.error (e, s))
+    if noCap = true ∧ e = (.invalidCapability 0) then onLookup e s else kArm (.error (e, s))
   | .ok v => kArm (.ok v)
 
 /-- **`dispatchOperandCheckedR`, continued**: a refusal before the operand's
@@ -1112,14 +1112,14 @@ operand's address and the error, so the lookup runs once. -/
           let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
           -- an empty slot is the resolution's refusal, handed on without
           -- running the arm, so no refusal is built as a value
-          if slotEmpty c then onLookup .invalidCapability st
+          if slotEmpty c then onLookup (.invalidCapability 0) st
           else
             -- a receive's capability of the wrong type or without its right
             -- is the lookup's failure (seL4 `handleRecv`), asked before the
             -- arm takes the state; the arm runs once on either branch
             let k := fun noCap => noCapRefusal noCap kArm onLookup (arm c st)
             if receiveRefusedAt sid st c then k true else k (capHeldNone c))
-    | some _ => kPre (.error (.invalidCapability, st))
+    | some _ => kPre (.error (.invalidCapability 0, st))
     | none => kPre (.error (.objectNotFound, st))
   | some _ => kPre (.error (.illegalState, st))
   | none => kPre (.error (.objectNotFound, st))
@@ -1134,7 +1134,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
     (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) (rr : AccessRight)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) :
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre kArm onLookup =
         kPre (dispatchOperandCheckedR capAddr tid executingCore arm st) ∨
       ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
@@ -1181,9 +1181,9 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
                 else noCapRefusal (capHeldNone (some cap)) kArm onLookup (arm (some cap) st)) =
                 noCapRefusal noCap kArm onLookup (arm (some cap) st) ∧
               (noCap = true → syscallOperandLookup sid
-                ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error .invalidCapability) ∧
+                ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st = .error (.invalidCapability 0)) ∧
               (∀ e, syscallOperandLookup sid ⟨tid, tcb.cspaceRoot, capAddr, rootCn.depth, rr⟩ st =
-                .error e → noCap = true ∧ e = .invalidCapability) := by
+                .error e → noCap = true ∧ e = (.invalidCapability 0)) := by
             rw [receiveRefusedAt_some]
             by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
             · refine ⟨true, by split <;> simp [capHeldNone, hIdle], fun _ => ?_, fun e h => ?_⟩
@@ -1201,7 +1201,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
           rw [hK]
           unfold noCapRefusal
           rcases hA : arm (some cap) st with ⟨e, s⟩ | v <;> (try dsimp only)
-          · by_cases hX : noCap = true ∧ e = .invalidCapability
+          · by_cases hX : noCap = true ∧ e = (.invalidCapability 0)
             · rw [if_pos hX]
               refine .inr ⟨e, s, rfl, rfl, ?_⟩
               rw [hX.2]; exact hLk.1 hX.1
@@ -1214,7 +1214,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
           · exact .inl ⟨rfl, fun ke s' h => by cases h⟩
         | none =>
           rw [if_pos (by simp only [slotEmpty, Option.isNone])]
-          exact .inr ⟨.invalidCapability, st, rfl, hNone st,
+          exact .inr ⟨(.invalidCapability 0), st, rfl, hNone st,
             by simp only [syscallOperandLookup, syscallResolveCap, hRes, hC]⟩
 
 /-- A refusal of an operand dispatch run on the state whose TLB the entry
@@ -1322,7 +1322,7 @@ theorem dispatchOperandFilledK_spec {β : Type} (sid : SyscallId) (capAddr : SeL
     (hF : stF = { st with perCoreTlb := t })
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) (rr : AccessRight)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) :
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     let R := undoFillRefusal held executingCore n0
       (dispatchOperandCheckedR capAddr tid executingCore arm stF)
     dispatchOperandFilledK sid capAddr tid executingCore arm held n0 stF kPre kArm onLookup =
@@ -1413,7 +1413,7 @@ theorem longOperandK_spec {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr) 
     (n : Nat) (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) (rr : AccessRight)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) (hn0 : 0 < n)
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) (hn0 : 0 < n)
     (hn : n ≤ SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots) :
     longOperandK sid capAddr tid executingCore arm n st kPre kArm onLookup =
         kPre (longOperandSpecR capAddr tid executingCore arm n st) ∨
@@ -1465,7 +1465,7 @@ syscall is routed here (`routedOverflowOne`,
 
 theorem overflowOneOperandArmR_none (ctx : LabelingContext) (sid : SyscallId)
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) (s : SystemState) :
-    overflowOneOperandArmR ctx sid regs w tid none s = .error (.invalidCapability, s) := by
+    overflowOneOperandArmR ctx sid regs w tid none s = .error (.invalidCapability 0, s) := by
   unfold overflowOneOperandArmR
   cases sid <;> rfl
 
@@ -1511,7 +1511,7 @@ theorem overflowOneOperandK_spec {β : Type} (sid : SyscallId) (capAddr : SeLe4n
     (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) (rr : AccessRight)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) :
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     overflowOneOperandK sid capAddr tid executingCore arm st kPre kArm onLookup =
         kPre (overflowOneOperandSpecR capAddr tid executingCore arm st) ∨
       ∃ tcb rootCn, st.getObject? tid.toObjId = some (.tcb tcb) ∧
@@ -1793,7 +1793,7 @@ theorem entryOperandOutcome_of_dispatch {β : Type} (ctx : LabelingContext)
     (hSid : decoded.syscallId = sid)
     (hR : syscallEntryCheckedR ctx executingCore st =
       dispatchOperandCheckedR decoded.capAddr tid executingCore arm st)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) :
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     dispatchOperandCheckedK sid decoded.capAddr tid executingCore arm st kGen kRes
         (kLook sid decoded.capAddr) = kGen (syscallEntryCheckedR ctx executingCore st) ∨
       EntryOperandOutcome ctx executingCore st kRes kLook
@@ -1823,7 +1823,7 @@ theorem entryOperandOutcome_of_long {β : Type} (ctx : LabelingContext)
     (hSid : decoded.syscallId = sid) (hCap : decoded.capAddr = capAddr)
     (hR : syscallEntryCheckedR ctx executingCore st =
       longOperandSpecR capAddr tid executingCore arm n st)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) (hn0 : 0 < n)
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) (hn0 : 0 < n)
     (hn : n ≤ SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots) :
     longOperandK sid capAddr tid executingCore arm n st kGen kRes (kLook sid capAddr) =
         kGen (syscallEntryCheckedR ctx executingCore st) ∨
@@ -1854,7 +1854,7 @@ theorem entryOperandOutcome_of_overflowOne {β : Type} (ctx : LabelingContext)
     (hSid : decoded.syscallId = sid) (hCap : decoded.capAddr = capAddr)
     (hR : syscallEntryCheckedR ctx executingCore st =
       overflowOneOperandSpecR capAddr tid executingCore arm st)
-    (hNone : ∀ s, arm none s = .error (.invalidCapability, s)) :
+    (hNone : ∀ s, arm none s = .error (.invalidCapability 0, s)) :
     overflowOneOperandK sid capAddr tid executingCore arm st kGen kRes (kLook sid capAddr) =
         kGen (syscallEntryCheckedR ctx executingCore st) ∨
       EntryOperandOutcome ctx executingCore st kRes kLook

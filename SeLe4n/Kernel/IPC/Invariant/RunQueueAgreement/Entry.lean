@@ -515,12 +515,15 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
           (E2.dequeued.runnable (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1)).activeAt)).toOn _
     · cases h
       exact (hW.trans (RunQueueStage.of_frame
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry.toOn _
+        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+          (Architecture.recordErrorOverflow_objects _ _ _))
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+        (hRes := by
+          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+          split <;> (try split) <;> (try split) <;> rfl))).entry.toOn _
   · rename_i hE
     cases h
     rw [← SystemState.currentObjOn_congr (st' := Platform.FFI.writeFfiRegistersToTcb st tid syscallId

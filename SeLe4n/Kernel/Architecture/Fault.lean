@@ -524,11 +524,11 @@ The context-independence is the point: the contextual words seL4 splices in
 word occupies, so a handler's view of *which fault this is* cannot be
 perturbed by the faulting thread's register content. -/
 theorem decodeFault_encodeFault (f : Fault) (ctx : FaultContext) :
-    decodeFault (encodeFault f ctx).1 (encodeFault f ctx).2 = some f := by
+    decodeFault (encodeFault f ctx).1 (encodeFault f ctx).2 = some f.codeOnly := by
   cases f with
   | vmFault address status prefetch =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault]
+        FaultLabel.vmFault, Fault.codeOnly]
   | capFault capAddress inReceivePhase lookupFailure =>
       have hLt : KernelError.toDiscriminant lookupFailure < KernelError.kernelErrorEncodingBound :=
         KernelError.toDiscriminant_lt lookupFailure
@@ -536,21 +536,23 @@ theorem decodeFault_encodeFault (f : Fault) (ctx : FaultContext) :
           = KernelError.toDiscriminant lookupFailure :=
           Nat.mod_eq_of_lt (by rw [show KernelError.kernelErrorEncodingBound = 61 from rfl] at hLt; omega)
       have hDisc : KernelError.ofDiscriminant? (KernelError.toDiscriminant lookupFailure)
-          = some lookupFailure := KernelError.ofDiscriminant?_toDiscriminant lookupFailure
+          = some lookupFailure.erasePayload :=
+        KernelError.ofDiscriminant?_toDiscriminant lookupFailure
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault, FaultLabel.capFault, hMod, hDisc]
+        FaultLabel.vmFault, FaultLabel.capFault, hMod, hDisc, Fault.codeOnly]
   | unknownSyscall syscallNumber =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall]
+        FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall, Fault.codeOnly]
   | userException number code =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
         FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall,
-        FaultLabel.userException]
+        FaultLabel.userException, Fault.codeOnly]
 
-/-- WS-RR RR4.5 (corollary): the encoding is injective — two faults that
-encode to the same message under the same context are the same fault. -/
+/-- WS-RR RR4.5 (corollary): the encoding is injective on what it carries —
+two faults that encode to the same message under the same context are the
+same fault, a capability fault's error up to its payload (`Fault.codeOnly`). -/
 theorem encodeFault_injective (f g : Fault) (ctx : FaultContext)
-    (h : encodeFault f ctx = encodeFault g ctx) : f = g := by
+    (h : encodeFault f ctx = encodeFault g ctx) : f.codeOnly = g.codeOnly := by
   have hf := decodeFault_encodeFault f ctx
   have hg := decodeFault_encodeFault g ctx
   rw [h] at hf

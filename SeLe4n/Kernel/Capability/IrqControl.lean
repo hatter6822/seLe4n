@@ -208,6 +208,11 @@ def irqHandlerSetNotificationBindAt (executingCore : Concurrency.CoreId) (line :
     irqHandlerSetNotificationPerform line ⟨srcCnode, srcSlot⟩ st
   else irqHandlerSetNotificationOverFinalPerform executingCore line ⟨srcCnode, srcSlot⟩ st
 
+/-- The notification an `.irqHandlerSetNotification` names at MR0: its argument
+capability `0` (seL4's `decodeIRQHandlerInvocation` answers a capability that is
+no notification capability with the send right `invalidCapNumber = 1`). -/
+def irqHandlerNotificationCapNumber : UInt64 := 1
+
 /-- **`seL4_IRQHandler_SetNotification`**: the capability in `src` (the
 notification capability the caller named) bound to line `line`: refused unless it
 is a notification capability with the send right and the line has its node;
@@ -224,9 +229,10 @@ def irqHandlerSetNotification (executingCore : Concurrency.CoreId) (line : Nat)
     (src : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.lookupSlotCap src with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability irqHandlerNotificationCapNumber)
     | some cap =>
-      if !irqNotificationCapAdmitted st cap then .error .invalidCapability
+      if !irqNotificationCapAdmitted st cap then
+        .error (.invalidCapability irqHandlerNotificationCapNumber)
       else if !cnodeInvoked (irqNodeId line) st then .error .objectNotFound
       else if irqHandlerSetNotificationInPlace st line src.cnode cap then
         .ok ((), irqHandlerSetNotificationPerform line src st)

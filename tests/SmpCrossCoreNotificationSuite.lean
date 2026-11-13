@@ -537,13 +537,13 @@ private def runErrorChecks : IO Unit := do
   -- Wrong-kind object (a TCB id) ⇒ invalidCapability; absent id ⇒ objectNotFound.
   assertBool "signal on a non-notification object fails with invalidCapability"
     (match (notificationSignalOnCore signallerTid.toObjId badge bootCoreId stBase).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   assertBool "signal on an absent object fails with objectNotFound"
     (match (notificationSignalOnCore ⟨9999⟩ badge bootCoreId stBase).2 with
      | .error .objectNotFound => true | _ => false)
   assertBool "wait on a non-notification object fails with invalidCapability"
     (match (notificationWaitOnCore signallerTid.toObjId waiterLocalTid bootCoreId stBase).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   assertBool "wait on an absent object fails with objectNotFound"
     (match (notificationWaitOnCore ⟨9999⟩ waiterLocalTid bootCoreId stBase).2 with
      | .error .objectNotFound => true | _ => false)

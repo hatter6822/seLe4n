@@ -207,7 +207,7 @@ pre-RR4 defect) and become what the kernel says about a fault it could not
 attribute. -/
 def unhandledFaultError : Fault → KernelError
   | .vmFault _ _ _     => .vmFault
-  | .capFault _ _ _    => .invalidCapability
+  | .capFault _ _ _    => (.invalidCapability 0)
   | .unknownSyscall _  => .invalidSyscallNumber
   | .userException _ _ => .userException
 

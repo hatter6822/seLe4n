@@ -53,11 +53,11 @@ def resolveReplyRecvReplyR (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat
           capAddr := SeLe4n.CPtr.ofNat r0.val
           capDepth := callerCspaceDepth st tid
           requiredRight := .write }
-      match syscallLookupCap gate st with
+      match syscallLookupArgumentCap replyRecvReplyCapNumber gate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
           | .ok rid =>
               match replyAnsweredCaller? st rid with
               | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
@@ -108,7 +108,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
               | .error e => .error (e, st)
             else .error (.replyCapInvalid, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -150,9 +150,9 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
     (onErr : KernelError → α)
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   match cap? with
-  | none => onErr .invalidCapability
+  | none => onErr (.invalidCapability 0)
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr (.invalidCapability 0)
       else if !cap.hasRight .write then onErr .illegalAuthority
       else
         match cap.target with
@@ -160,7 +160,7 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
             match replyAnsweredCaller? st rid with
             | some c => onOk rid c cap.badge (cap.rights.mem .grant)
             | none => onErr .replyCapInvalid
-        | _ => onErr .invalidCapability
+        | _ => onErr (.invalidCapability 0)
 
 /-- `resolveReplyRecvReplyR` in continuation form (`resolveReplyRecvK_eq`), on
 the message length and the first message register: the slot is resolved
@@ -170,10 +170,10 @@ through `resolveCapAddressKUnrolled`, as the operand is.  WS-ZA ZA4.7. -/
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   if len = 0 then onErr .replyCapInvalid else
   resolveCapAddressKUnrolled (callerCspaceRoot st tid) replyAddr
-    (callerCspaceDepth st tid) st onErr
+    (callerCspaceDepth st tid) st (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr)
     (fun cnode slot =>
       replyRecvCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-        onErr onOk)
+        (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr) onOk)
 
 theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (regs : Array SeLe4n.RegValue)
@@ -193,8 +193,8 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       obtain ⟨hs, hv⟩ := h
       simp only [requireMsgReg, hs, ↓reduceDIte, hv]
     have hL : (len == 0) = false := by simp [h0]
-    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupCap, syscallResolveCap,
-      SeLe4n.CPtr.ofNat_toNat]
+    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupArgumentCap, syscallLookupCap,
+      syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.CPtr.ofNat_toNat]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) replyAddr
         (callerCspaceDepth st tid) st with
@@ -206,7 +206,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | some cap =>
         simp only []
         by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-        · simp only [hIdle, ↓reduceIte]
+        · simp only [hIdle, ↓reduceIte] <;> rfl
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
             unfold extractReplyId
@@ -214,7 +214,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
             rename_i rid
             simp only []
             cases replyAnsweredCaller? st rid <;> rfl
-          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
 then blocks, every write in its slot: the caller's reply leg may write in place
@@ -1305,7 +1305,7 @@ resolved in continuation form; a reply-receive that may block in place
           (fun e => .error (e, st)) resolved
       else endpointReplyRecvCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore
           cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
@@ -1651,10 +1651,10 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf len
@@ -2172,7 +2172,7 @@ replier's overflow words into the caller's buffer
           (fun e => .error (e, st))
           (fun rid c badge grant =>
             replyRecvLongResolvedR ctx epId tid c rid badge grant rf len label executingCore st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -2291,10 +2291,10 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap SeLe4n.arm64DefaultLayout rf len

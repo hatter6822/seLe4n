@@ -102,7 +102,7 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
       match reg.endpointCap.target with
       | .object epId =>
         match hObj : st.getObject? epId with
-        | none => .error .invalidCapability
+        | none => .error (.invalidCapability 0)
         -- R4-C.2 (L-09): Target must be an endpoint object
         | some (.endpoint ep) =>
           -- R4-C.1 (M-14): Capability authority check — require Write right
@@ -116,8 +116,8 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
             .ok ((), st.rewriteObject epId
                 (.endpoint (ep.withService (EndpointService.ofRegistration reg)))
                 ⟨_, hObj, rfl, rfl⟩)
-        | some _ => .error .invalidCapability
-      | _ => .error .invalidCapability
+        | some _ => .error (.invalidCapability 0)
+      | _ => .error (.invalidCapability 0)
 
 /-- **WS-ZA ZA5.5**: `registerService`'s checks, read from the state before
 anything is written, in its order (seL4's decode half). -/

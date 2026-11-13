@@ -249,7 +249,7 @@ def syscallResolveCap (gate : SyscallGate) : Kernel Capability :=
     | .error e => .error e
     | .ok ref =>
       match SystemState.lookupSlotCap st ref with
-      | none => .error .invalidCapability
+      | none => .error (.invalidCapability 0)
       | some cap =>
         -- PR #889 review round 2: a capability naming a kernel-reserved idle
         -- object is not a capability user space may hold — seL4 has none to
@@ -258,7 +258,7 @@ def syscallResolveCap (gate : SyscallGate) : Kernel Capability :=
         -- (`syscallLookupCap` is defined as it plus the rights gate), which
         -- is what makes `syscallResolveCap_ok_not_reserved` a statement about
         -- every syscall rather than about the arms that happen to check.
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0)
         else .ok (cap, st)
 
 /-- WS-H15c/A-42: Resolve and validate a capability from a syscall gate.
@@ -281,13 +281,46 @@ def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
       then .ok (cap, st')
       else .error .illegalAuthority
 
+/-- **The one resolution of an argument capability**: `syscallLookupCap` on the
+argument's gate, its refusals renumbered for argument capability `capNumber`
+(`KernelError.forArgumentCap`; `i + 1` for argument capability `i`, seL4's
+`invalidCapNumber`).  The invoked capability is resolved by `syscallLookupCap`
+itself and answers `invalidCapability 0`; every capability an argument word or
+an extra capability names is resolved here, so no arm can resolve one and
+answer the invoked capability's number.  A compiled resolver of the same
+argument hands its refusals to `KernelError.argumentCapRefusal` with the same
+number constant.  A wrong-kind argument capability is refused by the arm with
+`.invalidCapability capNumber` (or, through an extractor shared with the
+invoked capability, the extractor's refusal renumbered by `forArgumentCap`). -/
+@[inline] def syscallLookupArgumentCap (capNumber : UInt64) (gate : SyscallGate) :
+    Kernel Capability :=
+  fun st =>
+    match syscallLookupCap gate st with
+    | .error e => .error (e.forArgumentCap capNumber)
+    | .ok p => .ok p
+
+/-- An argument capability resolves exactly when `syscallLookupCap` resolves it,
+to the same capability and state: the boundary renumbers refusals only. -/
+theorem syscallLookupArgumentCap_ok_iff (capNumber : UInt64) (gate : SyscallGate)
+    (st : SystemState) (p : Capability × SystemState) :
+    syscallLookupArgumentCap capNumber gate st = .ok p ↔ syscallLookupCap gate st = .ok p := by
+  unfold syscallLookupArgumentCap
+  cases syscallLookupCap gate st <;> simp
+
+/-- A refused argument capability is refused with `syscallLookupCap`'s refusal,
+renumbered. -/
+theorem syscallLookupArgumentCap_error (capNumber : UInt64) (gate : SyscallGate)
+    (st : SystemState) (e : KernelError) (h : syscallLookupCap gate st = .error e) :
+    syscallLookupArgumentCap capNumber gate st = .error (e.forArgumentCap capNumber) := by
+  unfold syscallLookupArgumentCap; rw [h]
+
 /-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
 single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
 if the capability does not target a reply object. -/
 def extractReplyId (cap : Capability) : Except KernelError SeLe4n.ReplyId :=
   match cap.target with
   | .replyCap rid => .ok rid
-  | _ => .error .invalidCapability
+  | _ => .error (.invalidCapability 0)
 
 /-- WS-SM SM6.D: resolve a reply capability held at a CSpace slot to its
 `ReplyId`.  Under faithful seL4-MCS the *server* passes the reply *capability*
@@ -329,7 +362,7 @@ checked before the right for the audit pair as for every syscall, with
 def extractAuditAuthority (cap : Capability) : Except KernelError Unit :=
   match cap.target with
   | .auditTrail _ => .ok ()
-  | _ => .error .invalidCapability
+  | _ => .error (.invalidCapability 0)
 
 /-- WS-SM SM9.A.9: the authority check succeeds exactly on an audit
 capability. -/
@@ -347,7 +380,14 @@ fully-rights-bearing capability to an ordinary object — the shape every thread
 holds to its own TCB — fails the check. -/
 theorem extractAuditAuthority_rejects_non_audit_capability (oid : SeLe4n.ObjId) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability := rfl
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) := rfl
+
+/-- The reply object a `.receive` names at MR0: its argument capability `0`. -/
+def recvReplyCapNumber : UInt64 := 1
+
+/-- The reply object a `.replyRecv` names at MR0: its argument capability `0`
+(the endpoint is the invoked capability). -/
+def replyRecvReplyCapNumber : UInt64 := 1
 
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
 reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
@@ -373,11 +413,11 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
   | .ok rargs =>
       let replyGate : SyscallGate :=
         { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
-      match syscallLookupCap replyGate st with
+      match syscallLookupArgumentCap recvReplyCapNumber replyGate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap recvReplyCapNumber)
           | .ok rid =>
               -- PR #822 review: validate the reply object exists AND is FREE before
               -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
@@ -599,11 +639,11 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
       -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
       -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
       -- object with no outstanding caller (mirrors `resolveRecvReplyId`).
-      match syscallLookupCap replyGate st with
+      match syscallLookupArgumentCap replyRecvReplyCapNumber replyGate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
           | .ok rid =>
               -- WS-RR RR7.11: one resolution of "which thread does this reply
               -- capability answer", shared with the `.reply` arm and with the
@@ -1007,8 +1047,8 @@ entry delivers as that fault (`syscallCapFaultOf`).  Every other right is an
 seLe4n extension, checked after the type and before the length, and answers
 `.illegalAuthority`.  No wildcard: a new syscall states its answer. -/
 def syscallMissingRightError : SyscallId → KernelError
-  | .send | .call | .notificationSignal | .declassifySignal => .invalidCapability
-  | .receive | .notificationWait | .replyRecv => .invalidCapability
+  | .send | .call | .notificationSignal | .declassifySignal => (.invalidCapability 0)
+  | .receive | .notificationWait | .replyRecv => (.invalidCapability 0)
   | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .declassify | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
@@ -1029,7 +1069,7 @@ def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
     match syscallResolveCap gate st with
     | .error e => .error e
     | .ok (cap, st') =>
-      if !syscallTargetAccepted sid st' cap then .error .invalidCapability
+      if !syscallTargetAccepted sid st' cap then .error (.invalidCapability 0)
       else if cap.hasRight gate.requiredRight then op cap st'
       else .error (syscallMissingRightError sid)
 
@@ -1068,7 +1108,7 @@ def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (st : SystemStat
     Except KernelError Unit :=
   match syscallResolveCap gate st with
   | .error e => .error e
-  | .ok (cap, _) => if receiveGateRefuses sid st cap then .error .invalidCapability else .ok ()
+  | .ok (cap, _) => if receiveGateRefuses sid st cap then .error (.invalidCapability 0) else .ok ()
 
 theorem syscallOperandLookup_error_of_not_receive (sid : SyscallId) (gate : SyscallGate)
     (st : SystemState) (e : KernelError) (h : syscallReceivesOnCap sid = false) :
@@ -1198,10 +1238,10 @@ thread id — the caller's own, which the priority arms pass through it, and any
 operand a future arm reads out of a message register. -/
 @[inline] def validateThreadIdArg (tid : SeLe4n.ThreadId) :
     Except KernelError SeLe4n.ValidThreadId :=
-  if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument
+  if SeLe4n.Kernel.isIdleThreadId tid then .error (.invalidArgument 0)
   else
     match tid.toValid? with
-    | none => .error .invalidArgument
+    | none => .error (.invalidArgument 0)
     | some v => .ok v
 
 /-- **PR #889 review round 11**: a validated raw thread operand is never a
@@ -1221,7 +1261,7 @@ answer an out-of-range id gives, so it discloses nothing about the
 reservation. -/
 theorem validateThreadIdArg_idle_refused (tid : SeLe4n.ThreadId)
     (h : SeLe4n.Kernel.isIdleThreadId tid = true) :
-    validateThreadIdArg tid = .error .invalidArgument := by
+    validateThreadIdArg tid = .error (.invalidArgument 0) := by
   unfold validateThreadIdArg
   simp [h]
 
@@ -1248,7 +1288,7 @@ theorem validateThreadIdArg_ok_toValid? (tid : SeLe4n.ThreadId)
 @[inline] private def validateSchedContextIdArg (scId : SeLe4n.SchedContextId) :
     Except KernelError SeLe4n.ValidSchedContextId :=
   match scId.toValid? with
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
   | some v => .ok v
 
 /-- WS-AL AL8 (cascades AK7-E): lift a raw `ObjId` to `ValidObjId`.
@@ -1257,10 +1297,10 @@ Used by dispatch arms whose handlers operate on `ObjId` directly (e.g.,
 going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
 @[inline] def validateObjIdArg (oid : SeLe4n.ObjId) :
     Except KernelError SeLe4n.ValidObjId :=
-  if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument
+  if SeLe4n.Kernel.isIdleObjId oid then .error (.invalidArgument 0)
   else
     match oid.toValid? with
-    | none => .error .invalidArgument
+    | none => .error (.invalidArgument 0)
     | some v => .ok v
 
 /-- **WS-LS LS2.3**: a validated object operand carries the raw id it was
@@ -1375,6 +1415,41 @@ theorem vspaceCapAuthorizesAsid_false_of_not_object {cap : Capability}
   case object rid => exact absurd hc (hcap rid)
   all_goals cases Architecture.resolveAsidRoot st asid <;> rfl
 
+/-! ### Argument-capability numbers
+
+seL4 numbers the capability a refusal names (`invalidCapNumber`): `0` for the
+invoked capability and `i + 1` for argument capability `i`.  Each operation's
+argument capabilities, in the current word layout's order, are numbered here,
+once (an operation below this module numbers its own: `pageTableMapRootCapNumber`,
+`irqHandlerNotificationCapNumber`, `faultHandlerCapNumber`, the `.tcbSetSpace`
+roots' `setSpaceCSpaceRootCapNumber` and `setSpaceVSpaceRootCapNumber`); the
+specification's resolver and its compiled continuation form both read the
+number, so the two cannot answer a refusal with different numbers.  A
+resolution failure of the argument (`resolveCapAddress`, an empty or reserved
+slot, the caller's CSpace root) and an argument capability of the wrong kind
+are refused `invalidCapability` with its number (`KernelError.forArgumentCap`);
+a missing right stays `illegalAuthority`. -/
+
+/-- The context a `.schedContextConfigure` names at MR0: its argument
+capability `0` (seL4's `decodeSchedControl_ConfigureFlags` answers a target
+that is no scheduling context `invalidCapNumber = 1`). -/
+def configureContextCapNumber : UInt64 := 1
+
+/-- The thread a `.schedContextBind` names at MR0: its argument capability `0`
+(seL4's `decodeSchedContext_Bind`, `invalidCapNumber = 1`). -/
+def bindThreadCapNumber : UInt64 := 1
+
+/-- The frame a `.vspaceMap` names at MR2: its argument capability `0`. -/
+def vspaceMapFrameCapNumber : UInt64 := 1
+
+/-- The notification a `.tcbBindNotification` names at MR0: its argument
+capability `0`. -/
+def bindNotificationCapNumber : UInt64 := 1
+
+/-- The destination CNode an issuing invocation names (a carve's MR2, a handler
+issue's MR1): its argument capability `0`. -/
+def issuingDestinationCapNumber : UInt64 := 1
+
 /-- **`v0.35.204`: the thread a `.schedContextBind` binds is a CAPABILITY the
 caller holds, resolved through the caller's own CSpace — never a raw thread id.**
 
@@ -1398,8 +1473,7 @@ its extra capability: `syscallLookupCap` on a gate at the caller's CSpace root a
 depth, requiring `.write` — so the reserved-idle refusal is the chokepoint's own
 (`syscallResolveCap_ok_not_reserved`) rather than a second lift-point check — and
 the resolved capability must target a **TCB** the store holds (a capability to any
-other kind of object is `.invalidCapability`, the answer `bindNotification` gives a
-non-notification target).  `validateThreadIdArg` still promotes the id, so the
+other kind of object is `.invalidCapability`).  `validateThreadIdArg` still promotes the id, so the
 sentinel is refused where every raw operand is and `schedContextBind`'s
 `ValidThreadId` signature is met without a second proof.
 
@@ -1419,7 +1493,7 @@ def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
     | none => .error .objectNotFound
     | some callerTcb =>
       match st.getCNode? callerTcb.cspaceRoot with
-      | none => .error .invalidCapability
+      | none => .error (.invalidCapability bindThreadCapNumber)
       | some rootCn =>
         let tcbGate : SyscallGate := {
           callerId      := callerTid
@@ -1428,15 +1502,15 @@ def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
           capDepth      := rootCn.depth
           requiredRight := .write
         }
-        match syscallLookupCap tcbGate st with
+        match syscallLookupArgumentCap bindThreadCapNumber tcbGate st with
         | .error e => .error e
         | .ok (tcbCap, _) =>
           match tcbCap.target with
           | .object tcbObjId =>
             match st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
-            | none => .error .invalidCapability
+            | none => .error (.invalidCapability bindThreadCapNumber)
             | some _ => validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat)
-          | _ => .error .invalidCapability
+          | _ => .error (.invalidCapability bindThreadCapNumber)
 
 /-- **`v0.35.204` (the authority fact)**: a thread the resolver answers is one
 the caller holds a **writable capability** to, found at MR0's address in the
@@ -1460,7 +1534,7 @@ theorem resolveSchedContextBindThread_ok_authorised
       tcbCap.hasRight .write = true ∧
       tcbCap.target = .object v.val.toObjId ∧
       (∃ tcb, st.getTcb? v.val = some tcb) := by
-  unfold resolveSchedContextBindThread at h
+  unfold resolveSchedContextBindThread syscallLookupArgumentCap at h
   cases hArgs : args? with
   | error e => rw [hArgs] at h; cases h
   | ok args =>
@@ -1545,7 +1619,7 @@ def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat
   | none => .error .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability configureContextCapNumber)
     | some rootCn =>
       let scGate : SyscallGate := {
         callerId      := callerTid
@@ -1554,17 +1628,17 @@ def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat
         capDepth      := rootCn.depth
         requiredRight := .write
       }
-      match syscallLookupCap scGate st with
+      match syscallLookupArgumentCap configureContextCapNumber scGate st with
       | .error e => .error e
       | .ok (scCap, _) =>
         match scCap.target with
         | .object scObjId =>
           match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
-          | none => .error .invalidCapability
+          | none => .error (.invalidCapability configureContextCapNumber)
           | some _ =>
             if core < SeLe4n.Kernel.Concurrency.numCores then validateObjIdArg scObjId
-            else .error .invalidCapability
-        | _ => .error .invalidCapability
+            else .error (.invalidCapability 0)
+        | _ => .error (.invalidCapability configureContextCapNumber)
 
 /-- **WS-ZA ZA6.4 (the authority fact)**: a context the resolver answers is one the
 caller holds a **writable capability** to, found at `scCPtr` in the caller's own
@@ -1585,7 +1659,7 @@ theorem resolveSchedControlConfigureTarget_ok_authorised
       scCap.target = .object v.val ∧
       st.getSchedContext? (SchedContextId.ofObjId v.val) = some sc ∧
       core < SeLe4n.Kernel.Concurrency.numCores := by
-  unfold resolveSchedControlConfigureTarget at h
+  unfold resolveSchedControlConfigureTarget syscallLookupArgumentCap at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
   | some callerTcb =>
@@ -1643,7 +1717,8 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
       rootCn.depth st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some idleCap)
     (hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject idleCap = true) :
-    resolveSchedContextBindThread callerTid args? st = .error .invalidCapability := by
+    resolveSchedContextBindThread callerTid args? st =
+      .error (.invalidCapability bindThreadCapNumber) := by
   unfold resolveSchedContextBindThread
   rw [hArgs]
   simp only
@@ -1651,8 +1726,8 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
   simp only
   rw [hRoot]
   simp only
-  unfold syscallLookupCap syscallResolveCap
-  simp only [hRef, hSlot, hIdle, if_true]
+  unfold syscallLookupArgumentCap syscallLookupCap syscallResolveCap
+  simp only [hRef, hSlot, hIdle, if_true, KernelError.forArgumentCap]
 
 /-- **WS-BP BP7.1 (`v0.36.4`): the frame a `.vspaceMap` installs is one the
 caller holds a capability to, resolved through the caller's own CSpace — never
@@ -1678,7 +1753,7 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
   | none => .error .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability vspaceMapFrameCapNumber)
     | some rootCn =>
       let frameGate : SyscallGate := {
         callerId      := callerTid
@@ -1687,22 +1762,22 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
         capDepth      := rootCn.depth
         requiredRight := .read
       }
-      match syscallLookupCap frameGate st with
+      match syscallLookupArgumentCap vspaceMapFrameCapNumber frameGate st with
       | .error e => .error e
       | .ok (frameCap, _) =>
         match frameCap.target with
         | .object frameObjId =>
           match st.getFrame? frameObjId with
-          | none => .error .invalidCapability
+          | none => .error (.invalidCapability vspaceMapFrameCapNumber)
           | some frame =>
             -- WS-BP BP7.1 (`v0.36.7`): the slot the capability sits in, which
             -- is where the mapping is recorded.  The same pure resolution the
             -- gate's lookup ran (`resolveVSpaceMapFrame_ok_slot`), so it names
             -- the slot the capability was read from.
             match resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
-            | .error e => .error e
+            | .error e => .error (e.forArgumentCap vspaceMapFrameCapNumber)
             | .ok frameSlot => .ok (frameSlot, frameCap, frame)
-        | _ => .error .invalidCapability
+        | _ => .error (.invalidCapability vspaceMapFrameCapNumber)
 
 /-- **WS-BP BP7.1 (`v0.36.11`): the slot a capability address names in the
 caller's own CSpace**, with the capability it holds and the object that
@@ -1721,19 +1796,19 @@ reads part of the answer builds no triple. -/
   | none => .error .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some rootCn =>
       match resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st with
       | .error e => .error e
       | .ok ref =>
         match SystemState.lookupSlotCap st ref with
-        | none => .error .invalidCapability
+        | none => .error (.invalidCapability 0)
         | some cap =>
-          if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability
+          if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0)
           else if cap.hasRight right then
             match cap.target with
             | .object oid => .ok (ref, cap, oid)
-            | _ => .error .invalidCapability
+            | _ => .error (.invalidCapability 0)
           else .error .illegalAuthority
 
 /-- What `resolveCallerCapSlot` answers is a slot of the caller's CSpace holding
@@ -1825,23 +1900,25 @@ slots, so it is authority to pass capabilities on — the right `.cspaceMint` an
 `.cspaceCopy` gate on — and to change what the CNode holds.  MR1 addresses a
 capability to the new **VSpace root**, held with `.write`, the right
 `.vspaceMap` gates a change to an address space on.  Each must name an object of
-its kind; the operation checks the kinds again against the store, so a resolver
-and an operation that disagreed about them would refuse rather than install.
+its kind, or the call is refused `.illegalState` (seL4's `decodeSetSpace` answers
+a CNode or VSpace capability of the wrong kind `seL4_IllegalOperation`); the
+operation checks the kinds again against the store, so a resolver and an
+operation that disagreed about them would refuse rather than install.
 The slots are returned, not the objects: the operation copies each slot's
 capability into the thread's slot, derived from it. -/
 def resolveSetSpace (callerTid : SeLe4n.ThreadId)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState) :
     Except KernelError (CSpaceAddr × CSpaceAddr) :=
   match resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
-  | .error e => .error e
+  | .error e => .error (e.forArgumentCap setSpaceCSpaceRootCapNumber)
   | .ok (cnSrc, cnCap, cnId) =>
     if !cnCap.hasRight .write then .error .illegalAuthority
-    else if (st.getCNode? cnId).isNone then .error .invalidCapability
+    else if (st.getCNode? cnId).isNone then .error .illegalState
     else
       match resolveCallerCapSlot callerTid args.vspaceRoot .write st with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap setSpaceVSpaceRootCapNumber)
       | .ok (vrSrc, _, vrId) =>
-        if (st.getVSpaceRoot? vrId).isNone then .error .invalidCapability
+        if (st.getVSpaceRoot? vrId).isNone then .error .illegalState
         else .ok (cnSrc, vrSrc)
 
 /-- `resolveCallerCapSlot` in continuation form: the slot is resolved through
@@ -1855,18 +1932,18 @@ gate, slot reference or result triple is built (`resolveCallerCapSlotK_eq`). -/
   | none => onErr .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => onErr .invalidCapability
+    | none => onErr (.invalidCapability 0)
     | some rootCn =>
       resolveCapAddressKUnrolled callerTcb.cspaceRoot addr rootCn.depth st onErr
         (fun cnode slot =>
           match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-          | none => onErr .invalidCapability
+          | none => onErr (.invalidCapability 0)
           | some cap =>
-            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
+            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr (.invalidCapability 0)
             else if cap.hasRight right then
               match cap.target with
               | .object oid => onOk cnode slot cap oid
-              | _ => onErr .invalidCapability
+              | _ => onErr (.invalidCapability 0)
             else onErr .illegalAuthority)
 
 theorem resolveCallerCapSlotK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
@@ -1932,15 +2009,16 @@ result cell is built, so the configure's resolution allocates nothing
 @[inline] def resolveSchedControlConfigureTargetK {α : Type} (callerTid : SeLe4n.ThreadId)
     (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) (onErr : KernelError → α)
     (onOk : SeLe4n.ValidObjId → α) : α :=
-  resolveCallerCapObjectK callerTid scCPtr .write st onErr (fun _ scObjId =>
+  resolveCallerCapObjectK callerTid scCPtr .write st
+    (KernelError.argumentCapRefusal configureContextCapNumber onErr) (fun _ scObjId =>
     match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
-    | none => onErr .invalidCapability
+    | none => onErr (.invalidCapability configureContextCapNumber)
     | some _ =>
       if core < SeLe4n.Kernel.Concurrency.numCores then
         match validateObjIdArg scObjId with
         | .error e => onErr e
         | .ok v => onOk v
-      else onErr .invalidCapability)
+      else onErr (.invalidCapability 0))
 
 theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
     (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) (onErr : KernelError → α)
@@ -1952,7 +2030,7 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
   unfold resolveSchedControlConfigureTargetK
   rw [resolveCallerCapObjectK_eq]
   unfold resolveCallerCapObject resolveCallerCapSlot resolveSchedControlConfigureTarget
-    syscallLookupCap syscallResolveCap
+    syscallLookupArgumentCap syscallLookupCap syscallResolveCap KernelError.argumentCapRefusal
   cases st.getTcb? callerTid with
   | none => rfl
   | some callerTcb =>
@@ -1994,12 +2072,14 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
-  resolveCallerCapSlotK callerTid args.cspaceRoot .grant st onErr (fun cnC cnS cnCap cnId =>
+  resolveCallerCapSlotK callerTid args.cspaceRoot .grant st
+    (KernelError.argumentCapRefusal setSpaceCSpaceRootCapNumber onErr) (fun cnC cnS cnCap cnId =>
     if !cnCap.hasRight .write then onErr .illegalAuthority
-    else if (st.getCNode? cnId).isNone then onErr .invalidCapability
+    else if (st.getCNode? cnId).isNone then onErr .illegalState
     else
-      resolveCallerCapSlotK callerTid args.vspaceRoot .write st onErr (fun vrC vrS _ vrId =>
-        if (st.getVSpaceRoot? vrId).isNone then onErr .invalidCapability
+      resolveCallerCapSlotK callerTid args.vspaceRoot .write st
+        (KernelError.argumentCapRefusal setSpaceVSpaceRootCapNumber onErr) (fun vrC vrS _ vrId =>
+        if (st.getVSpaceRoot? vrId).isNone then onErr .illegalState
         else onOk cnC cnS vrC vrS))
 
 theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
@@ -2044,21 +2124,23 @@ result triple is built (`resolveVSpaceMapFrameK_eq`). -/
   | none => onErr .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => onErr .invalidCapability
+    | none => onErr (.invalidCapability vspaceMapFrameCapNumber)
     | some rootCn =>
-      resolveCapAddressKUnrolled callerTcb.cspaceRoot args.frame rootCn.depth st onErr
+      resolveCapAddressKUnrolled callerTcb.cspaceRoot args.frame rootCn.depth st
+        (KernelError.argumentCapRefusal vspaceMapFrameCapNumber onErr)
         (fun cnode slot =>
           match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-          | none => onErr .invalidCapability
+          | none => onErr (.invalidCapability vspaceMapFrameCapNumber)
           | some cap =>
-            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
+            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then
+              onErr (.invalidCapability vspaceMapFrameCapNumber)
             else if cap.hasRight .read then
               match cap.target with
               | .object frameObjId =>
                 match st.getFrame? frameObjId with
-                | none => onErr .invalidCapability
+                | none => onErr (.invalidCapability vspaceMapFrameCapNumber)
                 | some frame => onOk cnode slot cap frame
-              | _ => onErr .invalidCapability
+              | _ => onErr (.invalidCapability vspaceMapFrameCapNumber)
             else onErr .illegalAuthority)
 
 theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
@@ -2076,7 +2158,8 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
     cases st.getCNode? callerTcb.cspaceRoot with
     | none => rfl
     | some rootCn =>
-      simp only [syscallLookupCap, syscallResolveCap]
+      simp only [syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+        KernelError.argumentCapRefusal]
       rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
       cases hRes : resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
       | error e => rfl
@@ -2088,7 +2171,7 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
         | some cap =>
           simp only []
           by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-          · simp only [hIdle, ↓reduceIte]
+          · simp only [hIdle, ↓reduceIte, KernelError.forArgumentCap]
           · by_cases hR : cap.hasRight .read = true
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
               cases cap.target with
@@ -2098,7 +2181,7 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
                 | none => rfl
                 | some frame => simp only [hRes]
               | _ => rfl
-            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte, KernelError.forArgumentCap]
 
 /-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root's
 source is a slot of the caller's CSpace holding a capability with `.grant` and
@@ -2167,7 +2250,7 @@ def resolveIssuingSlots (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
   | none => .error .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some rootCn =>
       match resolveCapAddress callerTcb.cspaceRoot srcAddr rootCn.depth st with
       | .error e => .error e
@@ -2179,15 +2262,15 @@ def resolveIssuingSlots (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
           capDepth      := rootCn.depth
           requiredRight := .write
         }
-        match syscallLookupCap dstGate st with
+        match syscallLookupArgumentCap issuingDestinationCapNumber dstGate st with
         | .error e => .error e
         | .ok (dstCap, _) =>
           match dstCap.target with
           | .object cnodeId =>
             match st.getCNode? cnodeId with
-            | none => .error .invalidCapability
+            | none => .error (.invalidCapability issuingDestinationCapNumber)
             | some _ => .ok (src, { cnode := cnodeId, slot := dstSlot })
-          | _ => .error .invalidCapability
+          | _ => .error (.invalidCapability issuingDestinationCapNumber)
 
 /-- WS-ZA ZA5.4: `resolveIssuingSlots` in continuation form: the source slot
 through `resolveCapAddressKUnrolled` and the destination CNode through
@@ -2201,13 +2284,14 @@ result cell is built (`resolveIssuingSlotsK_eq`). -/
   | none => onErr .objectNotFound
   | some callerTcb =>
     match st.getCNode? callerTcb.cspaceRoot with
-    | none => onErr .invalidCapability
+    | none => onErr (.invalidCapability 0)
     | some rootCn =>
       resolveCapAddressKUnrolled callerTcb.cspaceRoot srcAddr rootCn.depth st onErr
         (fun srcCnode srcSlot =>
-          resolveCallerCapObjectK callerTid dstCNode .write st onErr (fun _ cnodeId =>
+          resolveCallerCapObjectK callerTid dstCNode .write st
+            (KernelError.argumentCapRefusal issuingDestinationCapNumber onErr) (fun _ cnodeId =>
             match st.getCNode? cnodeId with
-            | none => onErr .invalidCapability
+            | none => onErr (.invalidCapability issuingDestinationCapNumber)
             | some _ => onOk srcCnode srcSlot cnodeId dstSlot))
 
 theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
@@ -2234,7 +2318,8 @@ theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
         simp only []
         rw [resolveCallerCapObjectK_eq]
         unfold resolveCallerCapObject resolveCallerCapSlot
-        simp only [hT, hC, syscallLookupCap, syscallResolveCap]
+        simp only [hT, hC, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+          KernelError.argumentCapRefusal]
         cases resolveCapAddress callerTcb.cspaceRoot dstCNode rootCn.depth st with
         | error e => rfl
         | ok dst =>
@@ -2270,34 +2355,34 @@ domain and affinity, the core's current domain and the core itself, as seL4's
 def carveRequestOf? (st : SystemState) (executingCore : Concurrency.CoreId)
     (newType : KernelObjectType) (sizeBits : Nat) : Except KernelError CarveRequest :=
   match newType with
-  | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
+  | .frame => if sizeBits = 0 then .ok .frame else .error (.invalidArgument 0)
   -- WS-BP BP7.1 (`v0.36.12`): a page table is one page, like a frame.
-  | .pageTable => if sizeBits = 0 then .ok .pageTable else .error .invalidArgument
+  | .pageTable => if sizeBits = 0 then .ok .pageTable else .error (.invalidArgument 0)
   | .untyped =>
       if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         .ok (.untyped sizeBits)
-      else .error .invalidArgument
+      else .error (.invalidArgument 0)
   | .vspaceRoot =>
       if sizeBits = 0 then
         match freshAsid? st with
         | some asid => .ok (.vspaceRoot asid)
         | none => .error .resourceExhausted
-      else .error .invalidArgument
+      else .error (.invalidArgument 0)
   | .tcb =>
       if sizeBits = 0 then
         .ok (.tcb (st.scheduler.activeDomainOnCore executingCore) executingCore)
-      else .error .invalidArgument
-  | .endpoint => if sizeBits = 0 then .ok .endpoint else .error .invalidArgument
-  | .notification => if sizeBits = 0 then .ok .notification else .error .invalidArgument
-  | .reply => if sizeBits = 0 then .ok .reply else .error .invalidArgument
+      else .error (.invalidArgument 0)
+  | .endpoint => if sizeBits = 0 then .ok .endpoint else .error (.invalidArgument 0)
+  | .notification => if sizeBits = 0 then .ok .notification else .error (.invalidArgument 0)
+  | .reply => if sizeBits = 0 then .ok .reply else .error (.invalidArgument 0)
   | .cnode =>
       if hB : minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
         .ok (.cnode sizeBits (Nat.le_trans hB.2 maxCNodeRadixBits_le_maxCSpaceDepth))
-      else .error .invalidArgument
+      else .error (.invalidArgument 0)
   | .schedContext =>
       if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         .ok (.schedContext sizeBits)
-      else .error .invalidArgument
+      else .error (.invalidArgument 0)
 
 /-- **WS-BP BP7.1**: the requests the decode accepts — each kind at the size
 bounds the decode states, a VSpace root under an ASID `freshAsid?` answered and
@@ -2380,37 +2465,37 @@ domain `0` and the executing core, and one other than a VSpace root the ASID
     (kOk : Nat → Nat → SeLe4n.DomainId → Concurrency.CoreId → SeLe4n.ASID → α) : α :=
   match newType with
   | .frame =>
-      if sizeBits = 0 then kOk 0 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+      if sizeBits = 0 then kOk 0 0 (.ofNat 0) executingCore (.ofNat 0) else kErr (.invalidArgument 0)
   | .pageTable =>
-      if sizeBits = 0 then kOk 3 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+      if sizeBits = 0 then kOk 3 0 (.ofNat 0) executingCore (.ofNat 0) else kErr (.invalidArgument 0)
   | .untyped =>
       if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         kOk 1 sizeBits (.ofNat 0) executingCore (.ofNat 0)
-      else kErr .invalidArgument
+      else kErr (.invalidArgument 0)
   | .vspaceRoot =>
       if sizeBits = 0 then
         match freshAsidCodeFrom st st.machine.maxASID 1 with
         | 0 => kErr .resourceExhausted
         | a + 1 => kOk 2 0 (.ofNat 0) executingCore (SeLe4n.ASID.ofNat a)
-      else kErr .invalidArgument
+      else kErr (.invalidArgument 0)
   | .tcb =>
       if sizeBits = 0 then
         kOk 4 0 (st.scheduler.activeDomainOnCore executingCore) executingCore (.ofNat 0)
-      else kErr .invalidArgument
+      else kErr (.invalidArgument 0)
   | .endpoint =>
-      if sizeBits = 0 then kOk 5 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+      if sizeBits = 0 then kOk 5 0 (.ofNat 0) executingCore (.ofNat 0) else kErr (.invalidArgument 0)
   | .notification =>
-      if sizeBits = 0 then kOk 6 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+      if sizeBits = 0 then kOk 6 0 (.ofNat 0) executingCore (.ofNat 0) else kErr (.invalidArgument 0)
   | .reply =>
-      if sizeBits = 0 then kOk 8 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+      if sizeBits = 0 then kOk 8 0 (.ofNat 0) executingCore (.ofNat 0) else kErr (.invalidArgument 0)
   | .cnode =>
       if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
         kOk 7 sizeBits (.ofNat 0) executingCore (.ofNat 0)
-      else kErr .invalidArgument
+      else kErr (.invalidArgument 0)
   | .schedContext =>
       if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         kOk 9 sizeBits (.ofNat 0) executingCore (.ofNat 0)
-      else kErr .invalidArgument
+      else kErr (.invalidArgument 0)
 
 theorem carveRequestWordsK_eq {α : Type} (st : SystemState) (executingCore : Concurrency.CoreId)
     (newType : KernelObjectType) (sizeBits : Nat) (kErr : KernelError → α)
@@ -2452,7 +2537,7 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.Co
       | .error e => .error e
       | .ok req =>
         match validateObjIdArg args.childId with
-        | .error e => .error e
+        | .error e => .error (e.forArgumentWord UntypedRetypeArgs.childIdWord)
         | .ok vChild =>
           match resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
           | .error e => .error e
@@ -2491,7 +2576,7 @@ def irqHandlerSetNotificationFromCap (tid : SeLe4n.ThreadId)
     | .error e => .error e
     | .ok args =>
       match resolveCallerCapSlot tid args.notificationCPtr .write st with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap irqHandlerNotificationCapNumber)
       | .ok (src, _, _) => irqHandlerSetNotification executingCore line src st
 
 /-- **WS-ZA ZA6.32**: what a successful `.irqControlGet` consists of — the
@@ -2657,7 +2742,7 @@ theorem resolveVSpaceMapFrame_ok_authorised
       st.getFrame? frameObjId = some frame ∧
       resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st = .ok frameSlot ∧
       SystemState.lookupSlotCap st frameSlot = some frameCap := by
-  unfold resolveVSpaceMapFrame at h
+  unfold resolveVSpaceMapFrame syscallLookupArgumentCap at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
   | some callerTcb =>
@@ -2832,7 +2917,8 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.C
         -- entry 0 of every user root is the kernel's own window, installed
         -- beside the thread's tables in `TTBR0_EL1`.
         if !args.vaddr.inUserWindow then .error .addressOutOfBounds
-        else if capabilityMappingLive st frameCap then .error .invalidCapability
+        else if capabilityMappingLive st frameCap then
+          .error (.invalidCapability vspaceMapFrameCapNumber)
         -- WS-BP BP7.1 (`v0.36.12`): a carved address space maps a frame only
         -- where every level of its walk is present — seL4's
         -- `seL4_FailedLookup` from `seL4_ARM_Page_Map` when a table is missing.
@@ -3031,8 +3117,8 @@ a remap that passes these is refused by nothing the unmap leaves behind. -/
   | none => .error .asidNotBound
   | some (_, root) =>
     if !Architecture.pageMappingAligned args.vaddr frame.base then .error .alignmentError
-    else if frameCap.mapAsid != args.asid then .error .invalidCapability
-    else if frameCap.mapVaddr != args.vaddr then .error .invalidArgument
+    else if frameCap.mapAsid != args.asid then .error (.invalidCapability vspaceMapFrameCapNumber)
+    else if frameCap.mapVaddr != args.vaddr then .error (.invalidArgument 1)
     else if !root.translationReady args.vaddr then .error .translationFault
     else
       match frameMappingAdmissible frameCap frame args.perms with
@@ -3154,7 +3240,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- mapping is removed with it, through the `.vspaceUnmap` arm's own
             -- transition, the invoking thread's core initiating the shootdown.
             cspaceDeleteSlotZombie executingCore addr st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`, the arm the
   -- revocation family had never had.
   --
@@ -3182,7 +3268,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- WS-BP BP7.1 (`v0.36.7`): the finalising revocation — every
             -- mapping a destroyed frame capability recorded is removed with it.
             cspaceRevokeCdtFinalising executingCore addr st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Two slots of the
   -- invoked CNode (`decodeMintReplyCapArgs`); the cap names the CNode, and
   -- `mintReplyCapWithCdt` derives `.replyCap (ReplyId.ofObjId target)` at the dst slot
@@ -3198,7 +3284,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype` — the only path by
   -- which an object comes to exist on a live state (since WS-ZA ZA5.4 part 14
   -- every kind, as in seL4): the caller presents an untyped capability, names a
@@ -3209,7 +3295,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object _ =>
         untypedRetypeFromCap tid executingCore decoded.capAddr (decodeUntypedRetypeArgs decoded)
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap`.  The free index is the
   -- invoked capability's, so the arm resets through the invoked slot
   -- (`untypedResetFromCap`): refused while that slot has a derivation child or
@@ -3219,7 +3305,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .untypedReset =>
     some <| match cap.target with
     | .object _ => untypedResetFromCap tid decoded.capAddr
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceMap =>
     some <| match cap.target with
     | .object _ =>
@@ -3246,7 +3332,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               -- resolved through the caller's own CSpace; its address is the
               -- frame's own `base`, never a register value.
               vspaceMapOrRemapFromFrameCap tid executingCore args st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceUnmap =>
     some <| match cap.target with
     | .object _ =>
@@ -3283,7 +3369,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- unmap owes nothing and is provably inert.
             Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
               executingCore args.asid args.vaddr st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceUnifyInstruction =>
     some <| match cap.target with
     | .object _ =>
@@ -3309,14 +3395,14 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             .error .illegalAuthority
           else
             Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .serviceRevoke =>
     -- The revoke removes the registration the invoked endpoint records: the
     -- capability to the endpoint is the authority, and no service id is read
     -- from the caller's registers (`revokeServiceByRecordedRegistration`).
     some <| match cap.target with
     | .object epId => fun st => revokeServiceByRecordedRegistration epId st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .serviceQuery =>
     some <| match cap.target with
     | .object epId =>
@@ -3330,7 +3416,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             .ok ((), Architecture.writeReturnFrameToTcb st' tid
               (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
         | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- Z5-J: SchedContext configure — decode args, validate, configure
   -- AK3-J (A-M07 / MEDIUM): Use `decodeSchedContextConfigureArgsChecked` to
   -- enforce priority ≤ 255, domain < 16, budget > 0, period > 0 at decode
@@ -3360,8 +3446,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
                 SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget
                   args.period args.priority args.deadline args.domain st
-              else .error .invalidCapability
-    | _ => fun _ => .error .invalidCapability
+              else .error (.invalidCapability 0)
+    | _ => fun _ => .error (.invalidCapability 0)
   -- Z5-J: SchedContext bind — the SchedContext from the capability target, the
   -- thread from a TCB CAPABILITY the caller holds (`v0.35.204`; a raw thread id
   -- until then — see `resolveSchedContextBindThread` for what that let a
@@ -3379,7 +3465,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           | .error e => .error e
           | .ok vScId =>
               SchedContextOps.schedContextBind vScId vThreadId st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- Z5-J: SchedContext unbind — no extra args, SchedContext from cap target
   | .schedContextUnbind =>
     some <| match cap.target with
@@ -3408,7 +3494,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                   executingCore st with
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.9: seL4-MCS's `seL4_SchedContext_Consumed` — no arguments; the
   -- context from the capability target, the caller the executing core's
   -- current thread (`schedContextConsumedOnCore`).
@@ -3422,7 +3508,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               executingCore st with
           | .ok st' => .ok ((), st')
           | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.29: seL4-MCS's `seL4_SchedContext_YieldTo` — no arguments; the
   -- context from the capability target, the caller the executing core's
   -- current thread (`schedContextYieldToOnCore`).
@@ -3436,21 +3522,21 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
           | .ok st' => .ok ((), st')
           | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_Ack` — no arguments; the line from
   -- the capability target, unmasked at the interrupt controller
   -- (`Architecture.irqHandlerAck`, seL4's `invokeIRQHandler_AckIRQ`).
   | .irqHandlerAck =>
     some <| match cap.target with
     | .irqHandler line => Architecture.irqHandlerAck line
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQControl_Get` — the interrupt-control
   -- capability issues line MR0's handler capability into slot MR2 of the CNode
   -- MR1 names, as a derivation child of the invoked slot (`irqControlGetFromCap`).
   | .irqControlGet =>
     some <| match cap.target with
     | .irqControl _ => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_SetNotification` — the notification
   -- capability at MR0's address bound to the handler's line
   -- (`irqHandlerSetNotificationFromCap`).
@@ -3459,13 +3545,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .irqHandler line =>
         irqHandlerSetNotificationFromCap tid executingCore line
           (decodeIrqHandlerSetNotificationArgs decoded)
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_Clear` — no arguments; the line's
   -- node slot emptied (`irqHandlerClear`).
   | .irqHandlerClear =>
     some <| match cap.target with
     | .irqHandler line => irqHandlerClear executingCore line
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
   -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
   | .tcbBindNotification =>
@@ -3493,16 +3579,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 capDepth      := rootCn.depth
                 requiredRight := .write
               }
-              match syscallLookupCap ntfnGate st with
+              match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
               | .error e => .error e
               | .ok (ntfnCap, _) =>
                 match ntfnCap.target with
                 | .object notifId =>
                     bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-                | _ => .error .invalidCapability
-            | none => .error .invalidCapability
+                | _ => .error .illegalState
+            | none => .error (.invalidCapability bindNotificationCapNumber)
           | none => .error .objectNotFound
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
   | .tcbUnbindNotification =>
     some <| match cap.target with
@@ -3511,7 +3597,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match unbindNotification (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
         | .error e => .error e
         | .ok ((), st') => .ok ((), st')
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- D1: TCB suspend — target thread from capability
   -- WS-SM SM6.E (live cross-core wiring): route through the per-core
   -- `suspendThreadOnCore` — the victim is descheduled on its *home* core
@@ -3535,7 +3621,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- D1: TCB resume — target thread from capability
   | .tcbResume =>
     some <| match cap.target with
@@ -3575,7 +3661,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- AE1-A: D2-K TCB setPriority — priority from message register, target from capability
   -- Moved here from explicit dispatch arms to unify checked/unchecked paths (U-01 fix).
   | .tcbSetPriority =>
@@ -3605,7 +3691,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                     (Priority.ofNat args.newPriority) executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- AE1-A: D2-K TCB setMCPriority — MCP from message register, target from capability
   | .tcbSetMCPriority =>
     some <| match cap.target with
@@ -3630,7 +3716,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                     (Priority.ofNat args.newMCP) executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- AE1-B: D3-H TCB setIPCBuffer — buffer address from message register, target from capability
   -- Moved here from duplicate arms in both dispatch paths (U-06 fix).
   | .tcbSetIPCBuffer =>
@@ -3648,7 +3734,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 vtid args.bufferAddr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM5.H.4: TCB setAffinity — affinity word from message register, target
   -- from capability.  Authority is the `.write` right on the target TCB
   -- (`syscallRequiredRight .tcbSetAffinity = .write`, identical to setPriority).
@@ -3674,7 +3760,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                         executingCore with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- Review round (PR #887): `seL4_TCB_SetSpace`'s fault endpoint.  The CPtr
   -- is interpreted in the *target* thread's CSpace and validated at set time
   -- by the same resolution the fault path runs (`resolveFaultHandlerCPtr`),
@@ -3693,7 +3779,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match setThreadFaultHandlerOp st vtid args.handlerCPtr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace` — the target from the
   -- invoked TCB capability (with the write right), the two roots from MR0/MR1
   -- resolved through the *caller's* CSpace (`resolveSetSpace`).  The target must
@@ -3713,7 +3799,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Map` — the table from the
   -- invoked capability (with the write right), the address space from MR0
   -- resolved through the *caller's* CSpace with `.write`, the address from MR1.
@@ -3724,15 +3810,15 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       | .error e => .error e
       | .ok args =>
           match resolveCallerCapObject tid args.vspaceRoot .write st with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap Architecture.pageTableMapRootCapNumber)
           | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Unmap` — the table from the
   -- invoked capability; the address space is the one its own record names.
   | .pageTableUnmap =>
     some <| match cap.target with
     | .object objId => fun st => Architecture.pageTableUnmap objId st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | _ => none
 
 /-- WS-RR RR3.23: the pre-state quiescence facts `dispatchCapabilityOnly`'s
@@ -4070,6 +4156,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | some rootCn =>
                   simp only [hRoot] at hStep
                   try dsimp only [] at hStep
+                  simp only [syscallLookupArgumentCap] at hStep
                   cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
                   | error e => simp only [hCap2] at hStep; cases hStep
                   | ok pair =>
@@ -4391,7 +4478,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- transfer reports zero, never the number of addresses the sender named.
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
                           summary.capInfo)
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .receive =>
     match cap.target with
     | .object epId =>
@@ -4483,7 +4570,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                           (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
                           summary.capInfo)
           | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
     match cap.target with
@@ -4516,7 +4603,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
                       summary.capInfo)
         | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
     match cap.target with
@@ -4553,7 +4640,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- with its saved PC still addressing the instruction that faulted.
             replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
               { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -4578,7 +4665,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 let badge : Option SeLe4n.Badge :=
                   if args.badge.val = 0 then none else some args.badge
                 cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .cspaceCopy =>
     match cap.target with
     | .object cnodeId =>
@@ -4590,7 +4677,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceCopy src dst args.rights st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   | .cspaceMove =>
     match cap.target with
     | .object cnodeId =>
@@ -4602,7 +4689,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceMove src dst st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
   -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
@@ -4626,7 +4713,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             endpointCap := cap
           }
           registerService reg st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A: Notification signal — badge merge or wake a waiter.
   -- The notification object comes from the capability target, and so does the
   -- badge: the one minted into the capability, zero for an unbadged one
@@ -4669,7 +4756,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                             (Architecture.stageWokenDelivery st'' woken? 0)
                             plainWaiter? 0)
           | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A: Notification wait — consume pending badge or block.
   -- The notification object comes from the capability target, waiter is current thread.
   | .notificationWait =>
@@ -4689,7 +4776,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
               (Architecture.returnFrameOfBadge badge))
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-C: ReplyRecv — compound reply + receive in one transition.
   -- Cap targets the endpoint for the receive leg. Reply target from MR[0].
   -- Message body for the reply leg comes from the standard message registers.
@@ -4735,7 +4822,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             | .ok (summary, st') =>
                 .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
             | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
   --
   -- Every other arm here is the unchecked twin of a policy-gated one: it derives
@@ -4924,7 +5011,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- unchecked arm.
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
                           summary.capInfo)
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
     match cap.target with
@@ -5002,7 +5089,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                             (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
                             summary.capInfo)
             | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
   -- operations, rather than an ad-hoc inline `securityFlowsTo` guard.
@@ -5038,7 +5125,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
                       summary.capInfo)
         | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
   -- In seL4, the reply capability is single-use authority consumed upon use.
   -- The flow check here is a defense-in-depth measure ensuring the reply path
@@ -5082,7 +5169,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
                 { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
             else .error .replyCapInvalid
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
   -- semantics where badge 0 indicates an unbadged capability.
@@ -5101,7 +5188,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 let badge : Option SeLe4n.Badge :=
                   if args.badge.val = 0 then none else some args.badge
                 cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- T6-I: CSpace copy — checked for source→destination CNode flow
   | .cspaceCopy =>
     match cap.target with
@@ -5114,7 +5201,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- T6-I: CSpace move — checked for source→destination CNode flow
   | .cspaceMove =>
     match cap.target with
@@ -5127,7 +5214,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceMoveChecked ctx src dst st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
   -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
@@ -5150,7 +5237,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             endpointCap := cap
           }
           registerServiceChecked ctx tid reg st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A/T6-I: Notification signal — checked for signaler→notification flow
   | .notificationSignal =>
     match cap.target with
@@ -5177,7 +5264,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                             (Architecture.stageWokenDelivery st'' woken? 0)
                             plainWaiter? 0)
           | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
   | .notificationWait =>
     match cap.target with
@@ -5194,7 +5281,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               (Architecture.returnFrameOfBadge badge))
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
   | .replyRecv =>
     match cap.target with
@@ -5242,7 +5329,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                     .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
                 | .error e => .error e
               else .error .replyCapInvalid
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM8.C.9: **the live declassification.**
   --
   -- The capability names the target object, so there is no confused deputy: the
@@ -5262,7 +5349,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         fun st =>
           declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
             executingCore targetId st
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM9.C.8: **the live data-carrying declassification.**
   --
   -- Structurally the `.notificationSignal` arm — same capability target, same
@@ -5302,7 +5389,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                             (Architecture.stageWokenDelivery st'' woken? 0)
                             plainWaiter? 0)
           | (_, .error e) => .error e
-    | _ => fun _ => .error .invalidCapability
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM9.A.10: **the live audit read.**
   --
   -- The authority is `extractAuditAuthority` — the capability must *target* the
@@ -5468,7 +5555,7 @@ def dispatchSyscallChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok ((), stPost) =>
             .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
-      | some _ => .error .invalidCapability
+      | some _ => .error (.invalidCapability 0)
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
@@ -5587,7 +5674,7 @@ def dispatchSyscallCheckedImpl (ctx : LabelingContext)
           requiredRight := syscallRequiredRight decoded.syscallId
         }
         dispatchCheckedArmThenTaintFused ctx decoded tid executingCore gate st
-      | some _ => .error .invalidCapability
+      | some _ => .error (.invalidCapability 0)
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
@@ -6300,7 +6387,7 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         | .error e => .error e
         | .ok ((), stPost) =>
             .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
-      | some _ => .error .invalidCapability
+      | some _ => .error (.invalidCapability 0)
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
@@ -8134,7 +8221,7 @@ theorem dispatchWithCapChecked_audit_rejects_non_audit_capability
     (gate : SyscallGate) (cap : Capability) (oid : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
     (hTarget : cap.target = .object oid) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .invalidCapability := by
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error (.invalidCapability 0) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rcases hSyscall with h | h <;> rw [h] <;> simp only [extractAuditAuthority, hTarget]
 
@@ -8171,7 +8258,7 @@ theorem dispatchSyscallChecked_type_before_rights
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hType : syscallTargetAccepted decoded.syscallId st cap = false) :
-    dispatchSyscallChecked ctx decoded tid executingCore st = .error .invalidCapability := by
+    dispatchSyscallChecked ctx decoded tid executingCore st = .error (.invalidCapability 0) := by
   simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
     SystemState.getObject?,
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
@@ -8508,7 +8595,7 @@ theorem unconfiguredDeployment_has_no_audit_reader
     (∀ (anyCap : Capability) (st' : SystemState),
       dispatchWithCapChecked ctx decoded tid executingCore gate anyCap st ≠ .ok ((), st')) ∧
     dispatchWithCapChecked ctx decoded tid executingCore gate
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } st = .error .invalidCapability ∧
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } st = .error (.invalidCapability 0) ∧
     (∀ (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
         (child : Capability) (code : Nat),
       mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail code →

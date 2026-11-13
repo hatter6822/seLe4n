@@ -415,7 +415,7 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? endpointId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 -- ============================================================================

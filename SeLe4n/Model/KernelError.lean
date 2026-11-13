@@ -37,7 +37,69 @@ is what makes it placeable below every consumer.
 
 namespace SeLe4n.Model
 
+/-- **seL4's `lookup_fault`** (`include/object/structures_64.bf`): why a
+capability-address resolution stopped.  A `seL4_FailedLookup` error and (from
+WS-SX SX2) a capability fault carry one, and `setMRs_lookup_failure`
+(`src/api/faults.c`) writes it as its type plus one, then its fields in this
+order.
+
+- `invalidRoot`: the root capability is not a CNode capability.
+- `missingCapability bitsLeft`: the slot the address names holds no capability
+  of the kind the operation needs, with `bitsLeft` bits of the address
+  unresolved.
+- `depthMismatch bitsLeft bitsFound`: the walk stopped with `bitsLeft` bits
+  left, at a level that resolves `bitsFound` (`0` where it stopped at a slot
+  that names no CNode).
+- `guardMismatch bitsLeft guardFound bitsFound`: the address's guard bits do
+  not match the CNode capability's guard `guardFound`, `bitsFound` bits wide,
+  with `bitsLeft` bits left. -/
+inductive LookupFault where
+  | invalidRoot
+  | missingCapability (bitsLeft : UInt64)
+  | depthMismatch (bitsLeft bitsFound : UInt64)
+  | guardMismatch (bitsLeft guardFound bitsFound : UInt64)
+  deriving Repr, DecidableEq
+
+namespace LookupFault
+
+/-- seL4's lookup-failure type word, `lufType + 1`: `seL4_InvalidRoot` (1),
+`seL4_MissingCapability` (2), `seL4_DepthMismatch` (3), `seL4_GuardMismatch` (4). -/
+@[inline] def typeWord : LookupFault → UInt64
+  | .invalidRoot => 1
+  | .missingCapability _ => 2
+  | .depthMismatch _ _ => 3
+  | .guardMismatch _ _ _ => 4
+
+/-- The words `setMRs_lookup_failure` writes: the type word and the fields. -/
+@[inline] def wordCount : LookupFault → Nat
+  | .invalidRoot => 1
+  | .missingCapability _ => 2
+  | .depthMismatch _ _ => 3
+  | .guardMismatch _ _ _ => 4
+
+/-- Word `i` of the fault, in `setMRs_lookup_failure`'s order: the type word,
+then `bitsLeft`, then `bitsFound` (a depth mismatch) or `guardFound` and
+`bitsFound` (a guard mismatch); `0` past the last. -/
+@[inline] def word (f : LookupFault) (i : Nat) : UInt64 :=
+  match f, i with
+  | f, 0 => f.typeWord
+  | .missingCapability l, 1 => l
+  | .depthMismatch l _, 1 => l
+  | .depthMismatch _ b, 2 => b
+  | .guardMismatch l _ _, 1 => l
+  | .guardMismatch _ g _, 2 => g
+  | .guardMismatch _ _ b, 3 => b
+  | _, _ => 0
+
+end LookupFault
+
 /-- F-04: Kernel error codes. This inductive has 60 variants.
+Five carry seL4's error payload (`setMRs_syscall_error`, `src/object/tcb.c`):
+`invalidCapability`, `invalidArgument`, `rangeError`, `failedLookup` and
+`untypedRegionExhausted`.  The payload rides in the message registers of the
+error frame, never in its label (`Architecture.errorFrame`).  Each payload
+field is a machine word (`UInt64`), as seL4's `current_syscall_error` fields
+are `word_t`: a payload is exactly the words the caller reads back.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
 patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow
@@ -52,7 +114,9 @@ error handling in donation/lifecycle wrappers (documented by AC3-A/I-02 atomicit
 contract), or (c) seL4-compatible `resolveExtraCaps` silent-drop (documented by
 AC3-D/API-01). -/
 inductive KernelError where
-  | invalidCapability
+  /-- seL4's `seL4_InvalidCapability`: `capNumber` names the capability, `0` for
+  the invoked one and `i + 1` for argument capability `i`. -/
+  | invalidCapability (capNumber : UInt64)
   | objectNotFound
   | illegalState
   | illegalAuthority
@@ -72,7 +136,9 @@ inductive KernelError where
   | notImplemented
   | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state, or replier not authorized (WS-H1/M-02)
-  | untypedRegionExhausted   -- WS-F2: not enough space in untyped region
+  /-- WS-F2: not enough space in the untyped region — seL4's
+  `seL4_NotEnoughMemory`, carrying the bytes the untyped has left. -/
+  | untypedRegionExhausted (memoryLeft : UInt64)
   | untypedTypeMismatch      -- WS-F2: source object is not an UntypedObject
   | untypedDeviceRestriction -- WS-F2: device untyped cannot back kernel objects
   | untypedAllocSizeTooSmall -- WS-F2: allocSize smaller than minimum for object type
@@ -97,7 +163,9 @@ inductive KernelError where
   -- up to the object's boundary.  It is reserved and never reassigned
   -- (`KernelError.retiredDiscriminants`).
   | revocationRequired    -- U-H03: destroying an object or mapping still in use (unmap, cancel or revoke first)
-  | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
+  /-- U5-E/U-M07: a syscall argument the operation refuses — seL4's
+  `seL4_InvalidArgument`, carrying the argument's number (its message word). -/
+  | invalidArgument (argNumber : UInt64)
   | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
   | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
   | ipcTimeout             -- WS-Z Z6: IPC blocked thread timed out due to SchedContext budget expiry
@@ -211,21 +279,86 @@ inductive KernelError where
                            -- any argument is read, as seL4's `decode*Invocation`
                            -- answers `length < n`.  The model's own discriminant
                            -- (58), not seL4's numeric code.
-  | rangeError            -- seL4's `seL4_RangeError`: an invocation argument
-                           -- outside the range its operation admits — a CNode
-                           -- operation's depth outside `1 .. 64` (seL4's
-                           -- `rangeCheck` in `lookupSlotForCNodeOp`), refused
-                           -- before the lookup it would bound.  The model's own
-                           -- discriminant (59); seL4 also returns the range's
-                           -- bounds, which this kernel's error return does not
-                           -- carry.
-  | depthMismatch         -- seL4's `seL4_FailedLookup` with a depth-mismatch
-                           -- lookup fault: a CNode operation's address that,
-                           -- resolved to its stated depth, stops at a slot whose
-                           -- capability is no CNode with bits still to resolve, or
-                           -- reaches a CNode whose level needs more bits than
-                           -- remain (`resolveCNodeOpSlot`).  The model's own
-                           -- discriminant (60).
-  deriving Repr, DecidableEq
+  | rangeError (rangeMin rangeMax : UInt64)
+                           -- seL4's `seL4_RangeError`: an invocation argument
+                           -- outside the range `rangeMin .. rangeMax` its
+                           -- operation admits — a CNode operation's depth
+                           -- outside `1 .. 64` (seL4's `rangeCheck` in
+                           -- `lookupSlotForCNodeOp`), refused before the lookup
+                           -- it would bound.  The model's own discriminant (59);
+                           -- the bounds are the error's payload.
+  | failedLookup (wasSource : Bool) (lookupFault : LookupFault)
+                           -- seL4's `seL4_FailedLookup`: a CNode operation's
+                           -- address that does not resolve (`lookupSlotForCNodeOp`)
+                           -- or names an empty source slot, with whether it was
+                           -- the source's and seL4's lookup fault.  The model's
+                           -- own discriminant (60).
+  deriving Repr
+
+/-- The error's code with its payload cleared: every field `0`, `false` or
+`invalidRoot`.  Two errors share a code exactly when their payload-cleared
+forms are equal; the error label carries the code alone
+(`KernelError.ofDiscriminant?_toDiscriminant`). -/
+def KernelError.erasePayload : KernelError → KernelError
+  | .invalidCapability _ => .invalidCapability 0
+  | .invalidArgument _ => .invalidArgument 0
+  | .rangeError _ _ => .rangeError 0 0
+  | .failedLookup _ _ => .failedLookup false .invalidRoot
+  | .untypedRegionExhausted _ => .untypedRegionExhausted 0
+  | e => e
+
+/-- **A refusal met resolving an argument capability**, numbered as seL4
+numbers it (`invalidCapNumber`): an invalid capability names that argument,
+`capNumber` (`i + 1` for argument capability `i`); every other refusal is its
+own.  The resolution an argument shares with the invoked capability's
+(`resolveCapAddress`, an empty or reserved slot) answers
+`invalidCapability 0`, the invoked capability's number; this renumbers it.
+Inlined, so a refusal built at its site is renumbered at its site. -/
+@[inline] def KernelError.forArgumentCap (capNumber : UInt64) : KernelError → KernelError
+  | .invalidCapability _ => .invalidCapability capNumber
+  | e => e
+
+/-- **The refusal continuation of an argument capability's resolution**: every
+refusal the resolution hands on is renumbered for argument capability
+`capNumber` (`forArgumentCap`) before `onErr` sees it.  A compiled resolver of
+an argument capability passes this as its refusal continuation, and the
+specification's resolver (`syscallLookupArgumentCap`) applies the same
+renumbering, so the number an argument's refusal carries has one owner: the
+argument's number constant, read through this boundary on both paths. -/
+@[inline] def KernelError.argumentCapRefusal {α : Type} (capNumber : UInt64)
+    (onErr : KernelError → α) : KernelError → α :=
+  fun e => onErr (e.forArgumentCap capNumber)
+
+/-- **A refusal met validating an argument word**: an invalid argument names
+that word, `argNumber` (its message word in the operation's layout); every
+other refusal is its own.  For a validator shared between ids read from words
+and ids read from capabilities (`validateObjIdArg`). -/
+@[inline] def KernelError.forArgumentWord (argNumber : UInt64) : KernelError → KernelError
+  | .invalidArgument _ => .invalidArgument argNumber
+  | e => e
+
+/-- **Equality of errors, decided field by field**: a payload constructor
+compares its fields, any other pair its constructor index.  The derived
+`DecidableEq` compared two errors of one constructor through a generated
+same-constructor matcher whose alternatives are a closure, built on every
+such comparison, so a refusal compared against a constant (the refusal
+ledger's `declassificationDeniedAtReceiver`) built a cell; this compares
+scalars (`eqWords_iff`), and is the instance. -/
+@[inline] def KernelError.eqWords : KernelError → KernelError → Bool
+  | .invalidCapability n, .invalidCapability m => n == m
+  | .invalidArgument n, .invalidArgument m => n == m
+  | .rangeError a b, .rangeError c d => a == c && b == d
+  | .untypedRegionExhausted n, .untypedRegionExhausted m => n == m
+  | .failedLookup w f, .failedLookup v g => w == v && f == g
+  | a, b => a.ctorIdx == b.ctorIdx
+
+theorem KernelError.eqWords_iff (a b : KernelError) : a.eqWords b = true ↔ a = b := by
+  cases a <;> cases b <;> simp [KernelError.eqWords, KernelError.ctorIdx]
+
+/-- **`DecidableEq KernelError` is `eqWords`**, not derived: the derived
+instance compares through a closure it builds on every comparison of two errors
+of one constructor. -/
+instance : DecidableEq KernelError := fun a b =>
+  decidable_of_iff _ (KernelError.eqWords_iff a b)
 
 end SeLe4n.Model

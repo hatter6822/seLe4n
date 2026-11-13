@@ -903,7 +903,7 @@ def frozenCutReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
       match st.getReply? above with
       | none => .error .objectNotFound
       | some a =>
-        if a.prev != some rid then .error .invalidArgument
+        if a.prev != some rid then .error (.invalidArgument 0)
         else frozenCutReplyFrameStores st rid above r a
     | some (.head _) => .ok st
     | none =>
@@ -1006,7 +1006,7 @@ def frozenDonationHeadOf? (st : FrozenSystemState) (scId : SeLe4n.SchedContextId
   | some rid =>
     match st.getReply? rid with
     | some r =>
-      if r.next != some (.head scId) then .error .invalidArgument
+      if r.next != some (.head scId) then .error (.invalidArgument 0)
       else .ok (some (rid, r))
     | none => .error .objectNotFound
 
@@ -1071,7 +1071,7 @@ def frozenReplyStackOuterCaller? (st : FrozenSystemState)
         match st.getReply? below with
         | none => .error .objectNotFound
         | some b =>
-          if b.next != some (.frame headRid) then .error .invalidArgument
+          if b.next != some (.frame headRid) then .error (.invalidArgument 0)
           else
             match b.caller with
             | none => .error .illegalState
@@ -1159,9 +1159,9 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
   match st.getSchedContext? scId with
   | none => .error .objectNotFound
   | some sc =>
-    if sc.boundThread != some serverTid then .error .invalidArgument
+    if sc.boundThread != some serverTid then .error (.invalidArgument 0)
     else if !frozenOuterCallerAcceptable st serverTid originalOwner newOwner? then
-      .error .invalidArgument
+      .error (.invalidArgument 0)
     -- **WS-HP HP4.7**: and the recipient, in the live order -- after the outer
     -- caller, before any write.  The head-driven trigger hands the context to the
     -- answered caller rather than to a binding's recorded owner, so this is the
@@ -1170,7 +1170,7 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
     -- succeeds where the kernel refuses, which `frozenRunAgrees` would report as a
     -- disagreement on exactly that state.
     else if !frozenDonationRecipientAcceptable st originalOwner then
-      .error .invalidArgument
+      .error (.invalidArgument 0)
     else
       match frozenDonationHeadOf? st scId sc with
       | .error e => .error e
@@ -1377,8 +1377,8 @@ def frozenReturnUnheldSchedContext (st : FrozenSystemState)
   | none => .error .objectNotFound
   | some sc =>
     if sc.boundThreadCode != 0 then .error .illegalState
-    else if !frozenOuterCallerAcceptable st owner owner newOwner? then .error .invalidArgument
-    else if !frozenDonationRecipientAcceptable st owner then .error .invalidArgument
+    else if !frozenOuterCallerAcceptable st owner owner newOwner? then .error (.invalidArgument 0)
+    else if !frozenDonationRecipientAcceptable st owner then .error (.invalidArgument 0)
     else
       match frozenDonationHeadOf? st scId sc with
       | .error e => .error e
@@ -1626,7 +1626,7 @@ def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
             .error .illegalState
           else
           frozenQueuePushTailObjects st endpointId isReceiveQ tid ep tcb
-  | some _ => .error .invalidCapability
+  | some _ => .error (.invalidCapability 0)
   | none => .error .objectNotFound
 
 /-- **WS-SM SM6.B (PR #873 round 8): unlink a thread from an endpoint queue.**
@@ -1760,7 +1760,7 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                           | none => some .endpointHead
                           | some prevTid => some (.tcbNext prevTid)) })
                   | _ => .error .objectNotFound
-  | some _ => .error .invalidCapability
+  | some _ => .error (.invalidCapability 0)
   | none => .error .objectNotFound
 
 /-- T1-E: Key structural lemma: `frozenQueuePushTail` only modifies `objects`.
