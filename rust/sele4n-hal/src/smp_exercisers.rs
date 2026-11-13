@@ -2952,7 +2952,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             "cnode-multi-level-copy-delete",
             CSPACE_DELETE,
             CNODE_CAP,
-            [cap_address(WALK_COPY_SLOT), 0, 0, 0],
+            [WALK_COPY_SLOT, 0, 0, 0],
         ),
         cnode_refusal(
             "lookup-stops-at-non-cnode",
@@ -2969,13 +2969,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             "cnode-mint-guardless-delete",
             CSPACE_DELETE,
             CNODE_CAP,
-            [cap_address(GUARDLESS_CNODE_SLOT), 0, 0, 0],
+            [GUARDLESS_CNODE_SLOT, 0, 0, 0],
         ),
         invocation(
             "cnode-mint-guard-delete",
             CSPACE_DELETE,
             CNODE_CAP,
-            [cap_address(GUARDED_CNODE_SLOT), 0, 0, 0],
+            [GUARDED_CNODE_SLOT, 0, 0, 0],
         ),
         mint(
             "cnode-mint-badged-endpoint",
@@ -3011,7 +3011,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             "cnode-mint-badged-endpoint-delete",
             CSPACE_DELETE,
             CNODE_CAP,
-            [cap_address(GUARDED_CNODE_SLOT), 0, 0, 0],
+            [GUARDED_CNODE_SLOT, 0, 0, 0],
         ),
     ],
     &[
