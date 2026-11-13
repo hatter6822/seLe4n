@@ -5,7 +5,7 @@ addresses now resolve as seL4's `cspace.c` resolves them, a capability fault
 carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
 
 - **The guard is in the capability.** `Capability` gains `cnodeGuard` and
-  `cnodeGuardSize`; `CNode` keeps only its radix. The boot configurations move
+  `cnodeGuardSize`, machine words (below); `CNode` keeps only its radix. The boot configurations move
   each root guard into the root capability. `cnodeCapGeometry` (guard size plus
   radix at most 64, the guard below `2^guardSize`) replaces
   `cspaceDepthConsistent` as the fourth conjunct of
@@ -94,30 +94,45 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   the kernel does not provide, so the archive build refused. The import is
   gone, and `ofStored_stored` is proved with `Nat.shiftLeft_add_eq_or_of_lt`
   and `omega`.
+- **The guard is held as machine words.** `cnodeGuard` is a `UInt64` and
+  `cnodeGuardSize` a `UInt8`, as seL4's `cap_cnode_cap` holds them, so the
+  record keeps both unboxed and a guard at or above `2^63` is no heap number.
+  The resolver compares the address's guard bits with the guard as a word
+  (`CPtr.guardWord`). `capDataGuard` and `capDataGuardSize` return the words.
+- **A recorded refusal builds no error.** The declassification seam rebuilt
+  each refusal it records as a `KernelError` from its words
+  (`withPayloadWordsFast`), so a refused lookup's `failedLookup` allocated its
+  error and its lookup fault. A ledger slot now holds the error as its
+  discriminant and five payload words (`RefusalSlot.reasonCode`, `reasonW0` to
+  `reasonW4`, read through `RefusalSlot.reason`), and `recordSyscallRefusalW`
+  writes them as handed (`recordSyscallRefusalW_eq`). The words' functions move
+  below the state, to `Model/KernelErrorWords.lean`. New QEMU scenario:
+  `declassify-guard-mismatch-refused`.
 - **Two carve pins move**, with their cell counts unchanged:
-  - tcb/0 goes from 19 / 2040 to 19 / 2072.
-  - cnode/2 goes from 23 / 1128 to 23 / 1168.
+  - tcb/0 goes from 19 / 2040 to 19 / 2056.
+  - cnode/2 goes from 23 / 1128 to 23 / 1136.
 
-  The cause is the `Capability` record, which has two more object fields,
-  `cnodeGuard` and `cnodeGuardSize`. The generated C builds it with
-  `lean_alloc_ctor(0, 8, 10)`, 88 bytes, where it was 72. A carve builds each
-  slot cell once, unshared (`unshareSpaceCell`, `unshareSlotCell`), so that
-  every later write is in place:
-  - a TCB has two slot cells, +32 bytes;
-  - a radix-2 CNode has four, +64 bytes, and its record lost `depth`,
-    `guardWidth` and `guardValue`, 80 bytes to 56, so +40 in all.
+  The cause is the `Capability` record, which holds the guard and its size.
+  The generated C builds it with `lean_alloc_ctor(0, 6, 19)`: six object
+  fields and 19 scalar bytes, 75 bytes rounded to 80. At v0.37.20 it was
+  `(0, 6, 10)`, 66 bytes rounded to 72. A carve builds each slot cell once,
+  unshared (`unshareSpaceCell`, `unshareSlotCell`), so that every later write
+  is in place:
+  - a TCB has two slot cells, +16 bytes;
+  - a radix-2 CNode has four, +32 bytes, and its record lost `depth`,
+    `guardWidth` and `guardValue`, 80 bytes to 56, so +8 in all.
 
-  No other entry allocates.
+  This is the least any guard in the capability costs. The 72-byte record had
+  6 spare bytes; the guard and its size need 9, and even seL4's packed form (a
+  58-bit guard and a 6-bit size in one word) needs 8. No other entry
+  allocates.
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
-  - tcb 19 / 2072, sched-context 8 / 440, cnode 23 / 1168;
+  - tcb 19 / 2056, sched-context 8 / 440, cnode 23 / 1136;
   - frame 6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped
     7 / 184;
   - `owned-cnode-retire` 23 / 23.
-
-  Boot heap: 760 pages (103535 live) after the initializer, and 1352
-  (109639) after the install.
 
 ## v0.37.21 — a user word at or above 2^63 stays a word on the entry path
 
