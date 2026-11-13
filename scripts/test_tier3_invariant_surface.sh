@@ -812,7 +812,7 @@ run_check "INVARIANT" rg -n '^theorem sweptAndRestored_dualQueueSystemInvariant(
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*hCoh : sweptThreadBoundaryCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # Link integrity holds over the **composite**, not over the sweep alone: the swept
 # thread's own links still name its old neighbours until the restore clears them.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity[^\n]*(\n([ \t][^\n]*)?)*tcbQueueLinkIntegrity \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity[^\n]*(\n([ \t][^\n]*)?)*tcbQueueLinkIntegrity \(sweptAndRestored st v restart\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # NEGATIVE: no link-integrity claim about the bare sweep.
 run_negative_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity \(removeFromAllEndpointQueues' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # WS-RR RR7.22 (residual, whole bundle): all three coherence clauses are stated
