@@ -12885,7 +12885,13 @@ fn fault_entries() -> Option<bool> {
             );
             return Some(false);
         }
-        if !restarted_as("cap-fault-guard-mismatch-reply", &resumed, fault_restart(2))
+        // A capability fault resumes its own context: the guard-mismatched
+        // address it trapped with in `x0`.
+        let restart = FaultRestart {
+            x0: EMPTY_SLOT,
+            ..fault_restart(2)
+        };
+        if !restarted_as("cap-fault-guard-mismatch-reply", &resumed, restart)
             || !unmeasured(&wake_handler, "the waiting handler was not woken")
             || !suspend_partner()
         {
