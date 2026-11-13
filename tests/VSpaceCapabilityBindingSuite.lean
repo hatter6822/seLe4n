@@ -519,11 +519,11 @@ private def runFrameCapabilityChecks : IO Unit := do
         && nothingMapped rRaw)
     -- Naming memory without holding a frame capability, every other way.
     let rNotFrame := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotNotFrame) attacker Concurrency.bootCoreId st
-    assertBool "a capability to a non-frame object is refused (invalidCapability)"
-      (isErr (.invalidCapability 0) rNotFrame && nothingMapped rNotFrame)
+    assertBool "a capability to a non-frame object is refused (invalidCapability 1, the frame operand)"
+      (isErr (.invalidCapability 1) rNotFrame && nothingMapped rNotFrame)
     let rEmpty := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotEmpty) attacker Concurrency.bootCoreId st
-    assertBool "an empty CSpace slot is refused (invalidCapability)"
-      (isErr (.invalidCapability 0) rEmpty && nothingMapped rEmpty)
+    assertBool "an empty CSpace slot is refused (invalidCapability 1, the frame operand)"
+      (isErr (.invalidCapability 1) rEmpty && nothingMapped rEmpty)
     let rNoRead := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameNoRead) attacker Concurrency.bootCoreId st
     assertBool "a frame capability without `.read` is refused (illegalAuthority)"
       (isErr .illegalAuthority rNoRead && nothingMapped rNoRead)
@@ -767,8 +767,8 @@ private def runCarveChecks : IO Unit := do
     (isErr .childIdCollision
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag carveVsp.toNat slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
-  assertBool "the reserved sentinel as a child id is refused (invalidArgument)"
-    (isErr (.invalidArgument 0)
+  assertBool "the reserved sentinel as a child id is refused (invalidArgument 1, the child id's word)"
+    (isErr (.invalidArgument 1)
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 0 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- The syscall gate checks the capability's type before its right (seL4

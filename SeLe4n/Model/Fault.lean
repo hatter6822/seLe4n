@@ -58,7 +58,7 @@ thread's saved register file and are spliced in by
 
   seL4 carries the reason as a separate `lookup_fault_t` with its own
   four-word tail; this model already has a total, typed vocabulary for
-  exactly that — the `KernelError` `resolveCapAddress` returns — so the
+  exactly that — the `KernelError` the lookup (`lookupSlot`) is refused with — so the
   reason rides as that error rather than as a second inductive whose
   constructors would duplicate it.  The fault message carries the error's
   code, as the discriminant `KernelError.toDiscriminant` pins and

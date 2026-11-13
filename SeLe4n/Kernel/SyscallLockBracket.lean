@@ -49,8 +49,8 @@ its target into `SyscallLockOperands`.  It is fail-closed four times over:
 
 * the caller must resolve to a TCB with a CNode root, since the footprint's CNode
   member *is* that root;
-* the resolution must be **single-level** (`rootCn.depth = guardWidth +
-  radixWidth`, and the resolved reference must land in the root).  A multi-level
+* the resolution must be **single-level** (`rootCapGuardSize tcb +
+  rootCn.radixWidth = 64`, and the resolved reference must land in the root).  A multi-level
   walk selects the target through interior CNodes the footprint holds no lock on,
   so a concurrent writer could redirect the resolution without conflicting with
   the declared set.  A `LockSet` is capped at `maxLockSetSize` and a CSpace path

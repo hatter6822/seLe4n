@@ -143,6 +143,7 @@ from the receiver's CSpace root slot `croot` (`TCB.spaceCells` slot 0). -/
         match SystemState.lookupSlotCap st ⟨cn, sl⟩ with
         | none => kNone ()
         | some cap =>
+          if depthWord == 0 || (64 : UInt64) < depthWord then kNone () else
           lookupSlotForCNodeOpK false cap (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st
             (fun _ => kNone ())
             (fun cn' sl' =>
@@ -168,6 +169,9 @@ theorem receivePathSlotK_eq {α : Type} (st : SystemState) (tcb : TCB) (c i d : 
       cases SystemState.lookupSlotCap st ⟨ref.cnode, ref.slot⟩ with
       | none => rfl
       | some cap =>
+        simp only []
+        split
+        · rfl
         simp only [lookupSlotForCNodeOpK_eq]
         cases lookupSlotForCNodeOp false cap (SeLe4n.CPtr.ofWord i) d.toNat st with
         | error _ => rfl

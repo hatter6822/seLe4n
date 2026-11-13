@@ -322,6 +322,26 @@ def KernelError.erasePayload : KernelError → KernelError
   | .untypedRegionExhausted _ => .untypedRegionExhausted 0
   | e => e
 
+/-- **A refusal met resolving an argument capability**, numbered as seL4
+numbers it (`invalidCapNumber`): an invalid capability names that argument,
+`capNumber` (`i + 1` for argument capability `i`); every other refusal is its
+own.  The resolution an argument shares with the invoked capability's
+(an empty or reserved slot) answers `invalidCapability 0`, the invoked
+capability's number; this renumbers it.  A lookup fault is seL4's
+`failedLookup` and keeps its own payload.
+Inlined, so a refusal built at its site is renumbered at its site. -/
+@[inline] def KernelError.forArgumentCap (capNumber : UInt64) : KernelError → KernelError
+  | .invalidCapability _ => .invalidCapability capNumber
+  | e => e
+
+/-- **A refusal met validating an argument word**: an invalid argument names
+that word, `argNumber` (its message word in the operation's layout); every
+other refusal is its own.  For a validator shared between ids read from words
+and ids read from capabilities (`validateObjIdArg`). -/
+@[inline] def KernelError.forArgumentWord (argNumber : UInt64) : KernelError → KernelError
+  | .invalidArgument _ => .invalidArgument argNumber
+  | e => e
+
 /-- **Equality of errors, decided field by field**: a payload constructor
 compares its fields, any other pair its constructor index.  The derived
 `DecidableEq` compared two errors of one constructor through a generated

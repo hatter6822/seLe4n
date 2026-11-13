@@ -153,12 +153,14 @@ short. -/
 -- silently mutated.
 -- ============================================================================
 
-/-- Row: `validateSchedContextParams` rejects period == 0 with
-`.invalidArgument`. -/
-private def row_invalidArgument_period_zero : KernelErrorRejection :=
+/-- Row: `validateSchedContextParams` rejects period == 0 with seL4-MCS's
+`seL4_RangeError` and the configure's bounds (`configureMinBudget`,
+`configureMaxPeriod`). -/
+private def row_rangeError_period_zero : KernelErrorRejection :=
   { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 0)
-    scenarioTag   := "AN11A.2.invalidArgument.period_zero"
+    expectedError := (.rangeError SeLe4n.Kernel.configureMinBudget
+      SeLe4n.Kernel.configureMaxPeriod)
+    scenarioTag   := "AN11A.2.rangeError.period_zero"
     scenarioDesc  := "SchedContext configure with period=0 must reject" ++
                      " (zero-period SC cannot make progress; would violate" ++
                      " replenishmentListWellFormed downstream)"
@@ -528,12 +530,14 @@ private def row_alreadyWaiting_enqueue_blocked : KernelErrorRejection :=
           (.endpoint ep)).insert tid.toObjId (.tcb blocked) }
       runUnit (SeLe4n.Kernel.endpointQueueEnqueue endpointId false tid st) }
 
-/-- Row: `validateSchedContextParams` rejects budget == 0 with
-`.invalidArgument`.  AK6-A (SC-H01) closed this defense-in-depth gate. -/
-private def row_invalidArgument_budget_zero : KernelErrorRejection :=
+/-- Row: `validateSchedContextParams` rejects budget == 0 with seL4-MCS's
+`seL4_RangeError` and the configure's bounds.  AK6-A (SC-H01) closed this
+defense-in-depth gate. -/
+private def row_rangeError_budget_zero : KernelErrorRejection :=
   { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 0)
-    scenarioTag   := "AN11A.4.invalidArgument.budget_zero"
+    expectedError := (.rangeError SeLe4n.Kernel.configureMinBudget
+      SeLe4n.Kernel.configureMaxPeriod)
+    scenarioTag   := "AN11A.4.rangeError.budget_zero"
     scenarioDesc  := "AK6-A: SchedContext configure with budget=0 is" ++
                      " rejected (would violate replenishmentListWellFormed" ++
                      " — every replenishment amount must be positive)"
@@ -542,12 +546,12 @@ private def row_invalidArgument_budget_zero : KernelErrorRejection :=
         (budget := 0) (period := 1000) (priority := 5) (_deadline := 0)
         (domain := 0) }
 
-/-- Row: `validateSchedContextParams` rejects budget > period with
-`.invalidArgument`. -/
-private def row_invalidArgument_budget_over_period : KernelErrorRejection :=
+/-- Row: `validateSchedContextParams` rejects budget > period with seL4-MCS's
+`seL4_RangeError`, the least budget and the period. -/
+private def row_rangeError_budget_over_period : KernelErrorRejection :=
   { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 0)
-    scenarioTag   := "AN11A.4.invalidArgument.budget_over_period"
+    expectedError := (.rangeError SeLe4n.Kernel.configureMinBudget 1000)
+    scenarioTag   := "AN11A.4.rangeError.budget_over_period"
     scenarioDesc  := "SchedContext budget must be ≤ period (cannot use" ++
                      " more than 100% of a period)"
     runScenario   := fun _ =>
@@ -556,10 +560,10 @@ private def row_invalidArgument_budget_over_period : KernelErrorRejection :=
         (domain := 0) }
 
 /-- Row: `validateSchedContextParams` rejects priority > 255 with
-`.invalidArgument`. -/
+`.invalidArgument` naming the parameter word (MR3). -/
 private def row_invalidArgument_priority_overflow : KernelErrorRejection :=
   { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 0)
+    expectedError := (.invalidArgument 3)
     scenarioTag   := "AN11A.4.invalidArgument.priority_overflow"
     scenarioDesc  := "SchedContext priority must be ≤ maxPriorityVal (255)"
     runScenario   := fun _ =>
@@ -568,10 +572,10 @@ private def row_invalidArgument_priority_overflow : KernelErrorRejection :=
         (domain := 0) }
 
 /-- Row: `validateSchedContextParams` rejects domain ≥ 16 with
-`.invalidArgument`. -/
+`.invalidArgument` naming the parameter word (MR3). -/
 private def row_invalidArgument_domain_overflow : KernelErrorRejection :=
   { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 0)
+    expectedError := (.invalidArgument 3)
     scenarioTag   := "AN11A.4.invalidArgument.domain_overflow"
     scenarioDesc  := "SchedContext domain must be < numDomainsVal (16)"
     runScenario   := fun _ =>
@@ -981,7 +985,7 @@ private def row_untypedDeviceRestriction : KernelErrorRejection :=
 /-- AN11-A — full matrix of KernelError rejection scenarios. -/
 def errorMatrix : List KernelErrorRejection :=
   [ -- AN11-A.2 baseline
-    row_invalidArgument_period_zero,
+    row_rangeError_period_zero,
     row_alignmentError_ipcBuffer,
     row_objectNotFound_ipcBuffer_missing_tcb,
     row_invalidArgument_mint_rights,
@@ -1006,8 +1010,8 @@ def errorMatrix : List KernelErrorRejection :=
     row_invalidCapability_send_to_nonEndpoint,
     row_objectNotFound_send_missing,
     row_alreadyWaiting_enqueue_blocked,
-    row_invalidArgument_budget_zero,
-    row_invalidArgument_budget_over_period,
+    row_rangeError_budget_zero,
+    row_rangeError_budget_over_period,
     row_invalidArgument_priority_overflow,
     row_invalidArgument_domain_overflow,
     row_illegalAuthority_priority_over_hw,

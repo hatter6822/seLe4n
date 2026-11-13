@@ -32,14 +32,37 @@ now returns seL4's error payload in the message registers, in
   (`recordErrorOverflow`, D3). When the buffer does not resolve, the length
   clamps to 4. `syscallAbiVersion` is 5.
 - **No refusal builds an error (D2b).** A routed arm pushes a refusal's
-  discriminant and its five payload words beside its report code. The words
-  go onto one stack per word (`MachineState.entryReportWord0`–`4`, radix
-  2^64), so a push followed by its pop is still the identity on every state.
+  discriminant and its five payload words beside its report code. Each word
+  goes onto a stack of its own: its top is an unboxed `UInt64` field
+  (`MachineState.entryReportWord0`–`4`) and the words beneath it a `Nat`
+  (`entryReportBelow0`–`4`, radix 2^64), so a push followed by its pop is
+  still the identity on every state.
   The ABI entry hands a refusal to the caller's frame as those words
   (`entryReportOutcomeW`, `abiEntryFinishW`, `errorRefusalWordsW`). It
   rebuilds the error only where the declassification ledger records one.
   `syscallEntryRoutedWith_eq` proves the routed entry equal to the continued
   entry for any join point that keeps the report's three laws.
+- **No payload word is a `Nat` (Codex review, PR #1079).** The report's
+  stacks first held each payload word as a `Nat`, and Lean's runtime makes a
+  `Nat` at or above 2^63 a heap cell, so a configure with budget 0
+  (`rangeError 1 0xFFFF_FFFF_FFFF_FFFF`) allocated at the push. The top of
+  each stack is now the word itself, and the words beneath it stay `0` on
+  every state the entry holds: the push and the pop keep them `0` with no
+  conversion (`reportBelowPush_eq_fast`, `reportStackPop_eq_fast`), and a
+  push over a pending report takes the old top in two 32-bit halves. The
+  three report laws are restated over the new fields
+  (`entryReportCode_pushEntryReport`, `entryReportWords_pushEntryReport`,
+  `popEntryReport_pushEntryReport`). The configure decode tests its budget
+  and period for zero on the words (`word_toNat_eq_zero_iff`), the service
+  register and the priority decodes compare their bounds on the words, and a
+  retype reads its type and size from the word's low byte and the rest, so
+  none of those refusals converts a full-width word. The signal's fast form
+  stores a first badge as itself rather than as `ofNatMasked badge.toNat`.
+  New QEMU scenarios, each held to 0: `configure-zero-budget-max-period`
+  (`rangeError 1 0xFFFF_FFFF_FFFF_FFFF`) and
+  `configure-budget-over-wide-period` (`rangeError 1 2^63`). The other
+  conversions from a full-width word to a `Nat` on the entry path are listed
+  and registered in `docs/REGISTERED_DEBT.md`.
 - **A refusal with a payload reaches the report as words.** The invocation,
   one-overflow-word and overflowed arms hand their operand arm's result to a
   continuation on words (`dispatchOperandCheckedKW`, `longOperandKW`,
@@ -76,6 +99,34 @@ now returns seL4's error payload in the message registers, in
   whose capability is not a notification, are refused `.illegalState`, the
   model's code for seL4's `seL4_IllegalOperation` (`decodeSetSpace`,
   `decodeBindNotification`), where they were `invalidCapability`.
+- **Each refusal names its own argument.** A review found sites still at the
+  placeholder `0`; every one that names an argument now carries its number.
+  - A configure refuses as `decodeSchedControl_ConfigureFlags` does, in its
+    order and in the decode, before the context's capability is looked at. A
+    budget or period below the least is `rangeError configureMinBudget
+    configureMaxPeriod` (`1` and the word's greatest value). A budget above
+    its period is `rangeError configureMinBudget period`. The parameter word
+    is `invalidArgument 3`. `validateSchedContextParams` and the frozen
+    configure, which now calls it, answer the same.
+  - An argument capability's refusal names it (`KernelError.forArgumentCap`):
+    `0` is the invoked capability and `i + 1` is argument capability `i`, in
+    the current word layout. These are `invalidCapability 1`: the configure's
+    context, the bind's thread, the bound notification, the frame a map names
+    (the remap's other-ASID refusal reads the same number), a page-table map's
+    root, an issue's destination CNode, an interrupt handler's notification
+    and a fault handler. A set-space's CSpace root is `1` and its VSpace root
+    `2`. A failed lookup of the argument, an empty or reserved slot, and the
+    wrong kind of object all carry the number. A missing right stays
+    `illegalAuthority`.
+  - A retype's child id is `invalidArgument 1`. An audit read names its index
+    word (`1`) or its chunk word (`2`); a causal-pair read checks `earlier <
+    later` before it reads either entry.
+  - Each number has one owner (`configureContextCapNumber`,
+    `vspaceMapFrameCapNumber`, `UntypedRetypeArgs.childIdWord`, …). The
+    specification and its compiled continuation form both read it, and the
+    `_eq` proofs join them.
+  - The QEMU `configure-refused-*` scenarios check the range error's two
+    words.
 - **Proofs.**
   - `ofDiscriminant?_toDiscriminant` (the code round trip, the payload
     erased).
@@ -108,8 +159,8 @@ now returns seL4's error payload in the message registers, in
   - Every other reading is 0, the new payload scenarios and both carve
     refusals (`untyped-retype-region-exhausted`, `untyped-retype-slot-occupied`)
     among them.
-- **Boot heap** (the same runs, identical in both): 758 pages (103357 live
-  allocations) after the library initializer and 1350 pages (109461) after
+- **Boot heap** (the same runs, identical in both): 758 pages (103384 live
+  allocations) after the library initializer and 1350 pages (109488) after
   the install, one page more than at `v0.37.19`: the payload's closed
   constants and code.
 

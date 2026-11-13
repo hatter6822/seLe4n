@@ -8803,11 +8803,11 @@ private def runRefusalReaderChecks : IO Unit := do
   assertBool "an empty ring slot reads as absent, and a slot past the ring is refused"
     ((match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
         (.refusalSlotTags 1) with
-      | .error e => decide (e = (KernelError.invalidArgument 0))
+      | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
       | .ok _ => false) &&
      (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
         (.refusalSlotTags refusalRingSize) with
-      | .error e => decide (e = (KernelError.invalidArgument 0))
+      | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
       | .ok _ => false))
   -- The gate.  Unlike the trail there is no filtered view to fall back to: a
   -- ring evicts, so a hidden refusal would remove a lower reader's entry.
@@ -9232,7 +9232,7 @@ private def runAuditReaderClassChecks : IO Unit := do
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditPartialReader auditMixedState (.coreAndTrust 2) with
      | .ok _ => false
-     | .error e => decide (e = (KernelError.invalidArgument 0)))
+     | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord)))
   assertBool "…while the monitor, whose view is longer, reads the same index"
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditMonitorReader auditMixedState (.coreAndTrust 2) with
@@ -9270,7 +9270,7 @@ private def runAuditReaderClassChecks : IO Unit := do
   assertBool "NEGATIVE: a chunk past the field's width is refused"
     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditMonitorReader auditMixedState (.field 0 .srcDomain 1) with
-     | .error e => decide (e = (KernelError.invalidArgument 0))
+     | .error e => decide (e = (KernelError.invalidArgument auditReadChunkWord))
      | .ok _ => false)
   -- The live entry point's 2^64 guard, exercised for effect: at an epoch that
   -- pushes the status word past the return register, `auditReadFromCore`
@@ -10264,7 +10264,7 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
       | .error _ => false) &&
      (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
         (.refusalReceiverChunk 0 0) with
-      | .error e => decide (e = (KernelError.invalidArgument 0))
+      | .error e => decide (e = (KernelError.invalidArgument auditReadChunkWord))
       | .ok _ => false))
   assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 30"
     (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
@@ -10933,7 +10933,7 @@ private def runCausalReaderChecks : IO Unit := do
      | some (_, st₂) =>
          match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
              st₂ (.chainNamesPredecessor 0) with
-         | .error e => decide (e = (KernelError.invalidArgument 0))
+         | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
          | .ok _ => false)
   assertBool "an index past the view is refused with the same error"
     (match declassHop2 with
@@ -10941,7 +10941,7 @@ private def runCausalReaderChecks : IO Unit := do
      | some (_, st₂) =>
          match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
              st₂ (.chainNamesPredecessor 9) with
-         | .error e => decide (e = (KernelError.invalidArgument 0))
+         | .error e => decide (e = (KernelError.invalidArgument auditReadIndexWord))
          | .ok _ => false)
   -- Reading it at every index reconstructs `declassificationChainCausal` over
   -- the whole view — the property `chainVerdict_reconstructs_causal` states.

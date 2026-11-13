@@ -9305,6 +9305,14 @@ const fn refused_with(
 const RANGE_ERROR: u64 = 59;
 #[cfg(feature = "hw_target")]
 const FAILED_LOOKUP: u64 = 60;
+/// The least budget a configure admits (`configureMinBudget`, seL4-MCS's
+/// `MIN_BUDGET`): the `rangeErrorMin` of a configure's budget refusal.
+#[cfg(feature = "hw_target")]
+const CONFIGURE_MIN_BUDGET: u64 = 1;
+/// A period past `2^63` (its top bit set), the word a configure's budget
+/// refusal answers when the budget is above it.
+#[cfg(feature = "hw_target")]
+const WIDE_PERIOD: u64 = 1 << 63;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -11831,13 +11839,53 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         SCHED_CONTEXT_PERIOD,
         PARTNER_PRIORITY,
     ];
+    // A budget above its period is seL4-MCS's `seL4_RangeError` with
+    // `MIN_BUDGET` and the period (`decodeSchedControl_ConfigureFlags`): the
+    // payload carries the period the caller passed, a word read at the entry.
+    let budget_over_period = refused_with(
+        RANGE_ERROR,
+        2,
+        [
+            Some(CONFIGURE_MIN_BUDGET),
+            Some(SCHED_CONTEXT_PERIOD),
+            None,
+            None,
+        ],
+    );
     let refused_fills = RoundTrip {
-        returns: refused(INVALID_ARGUMENT),
+        returns: budget_over_period,
         ..configure("configure-refused-fills", refused_args)
     };
     let refused_held = RoundTrip {
-        returns: refused(INVALID_ARGUMENT),
+        returns: budget_over_period,
         ..configure("configure-refused-held", refused_args)
+    };
+    // Full-width payload words through the report (seL4-MCS
+    // `decodeSchedControl_ConfigureFlags`): a budget of zero answers
+    // `MIN_BUDGET` and `MAX_PERIOD`, `0xFFFF_FFFF_FFFF_FFFF`; a budget above a
+    // period past `2^63` answers that period.  Each payload word is at or
+    // above `2^63`, the least word a `Nat` holds only as a heap number.
+    let zero_budget = RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(CONFIGURE_MIN_BUDGET), Some(u64::MAX), None, None],
+        ),
+        ..configure(
+            "configure-zero-budget-max-period",
+            [SCHED_CONTEXT_CAP, 0, SCHED_CONTEXT_PERIOD, PARTNER_PRIORITY],
+        )
+    };
+    let wide_period = RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(CONFIGURE_MIN_BUDGET), Some(WIDE_PERIOD), None, None],
+        ),
+        ..configure(
+            "configure-budget-over-wide-period",
+            [SCHED_CONTEXT_CAP, u64::MAX, WIDE_PERIOD, PARTNER_PRIORITY],
+        )
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
     let held = configure("configure-held-ipc-buffer", admitted_args);
@@ -11906,6 +11954,8 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             which,
         )
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
+        && heap_allocations_round_trip(&zero_budget, which) == Some(true)
+        && heap_allocations_round_trip(&wide_period, which) == Some(true)
         && heap_allocations_round_trip(&held, which) == Some(true)
         && queued_overflow_cap_fault(
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),

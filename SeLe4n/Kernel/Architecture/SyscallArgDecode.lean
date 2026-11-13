@@ -281,6 +281,10 @@ structure UntypedRetypeArgs where
   dstSlot  : Slot
   deriving Repr, DecidableEq
 
+/-- The message word a retype's child id is read from (MR1), the word a child
+id the kernel refuses names (`invalidArgument`). -/
+def UntypedRetypeArgs.childIdWord : UInt64 := 1
+
 /-- Per-syscall argument structure for `vspaceMap`.
     Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
     T6-C/M-ARCH-1: `perms` is typed as `PagePermissions` instead of raw `Nat`.
@@ -344,6 +348,40 @@ the depths and the rights mask, which must set no bit past the mask
           srcDepth := CNodeOpWord.srcDepth w
           rights := AccessRightSet.ofNat (CNodeOpWord.rights w) }
   else .error (.invalidArgument 3)
+
+/-- `cnodeOpArgsOfWords` on the word itself: a word past the two depths is
+refused before it is made a number, so a full-width word (a heap `Nat` at or
+above `2^63`) is never converted (`cnodeOpArgsOfWordsW_eq`). -/
+@[inline] def cnodeOpArgsOfWordsW (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
+    Except KernelError CNodeOpArgs :=
+  if w < 65536 then cnodeOpArgsOfWords destIndex srcRoot srcIndex w.toNat
+  else .error (.invalidArgument 3)
+
+theorem cnodeOpArgsOfWordsW_eq (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
+    cnodeOpArgsOfWordsW destIndex srcRoot srcIndex w =
+      cnodeOpArgsOfWords destIndex srcRoot srcIndex w.toNat := by
+  unfold cnodeOpArgsOfWordsW cnodeOpArgsOfWords CNodeOpWord.addressingFits
+  by_cases h : w < 65536
+  · rw [if_pos h]
+  · have h' : ¬ w.toNat < 65536 := fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
+    simp only [h, h', decide_false, Bool.false_eq_true, ↓reduceIte]
+
+/-- `cnodeCopyArgsOfWords` on the word itself: a word past the depths and the
+rights mask is refused before it is made a number
+(`cnodeCopyArgsOfWordsW_eq`). -/
+@[inline] def cnodeCopyArgsOfWordsW (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
+    Except KernelError CSpaceCopyArgs :=
+  if w < 2097152 then cnodeCopyArgsOfWords destIndex srcRoot srcIndex w.toNat
+  else .error (.invalidArgument 3)
+
+theorem cnodeCopyArgsOfWordsW_eq (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
+    cnodeCopyArgsOfWordsW destIndex srcRoot srcIndex w =
+      cnodeCopyArgsOfWords destIndex srcRoot srcIndex w.toNat := by
+  unfold cnodeCopyArgsOfWordsW cnodeCopyArgsOfWords CNodeOpWord.rightsFits
+  by_cases h : w < 2097152
+  · rw [if_pos h]
+  · have h' : ¬ w.toNat < 2097152 := fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
+    simp only [h, h', decide_false, Bool.false_eq_true, ↓reduceIte]
 
 /-- Decode CSpace copy arguments from message registers.
     Requires 4 message registers (destIndex, srcRoot, srcIndex, the depths and
@@ -1493,15 +1531,26 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
     - period > 0       (CBS replenishment math requires positive period)
 
-    Rejects violations with `.invalidArgument`. The underlying
+    - budget ≤ period  (a server cannot hold more than its period)
+
+    Each refusal is seL4-MCS's, in its order
+    (`decodeSchedControl_ConfigureFlags`): the budget and the period first, each
+    below the least refused `seL4_RangeError` with `MIN_BUDGET` and
+    `MAX_PERIOD` (`configureMinBudget`, `configureMaxPeriod`), then a budget
+    above its period `seL4_RangeError` with `MIN_BUDGET` and the period, all
+    before the context's capability is looked at; the parameter word, which
+    seL4's configure does not carry, last (`invalidArgument`, naming the word,
+    `configureSchedParamsWord`).  The underlying
     `decodeSchedContextConfigureArgs` remains unchanged so existing error
     theorems and round-trip proofs are preserved. -/
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.schedParams ≥ 4096 then .error (.invalidArgument 3)
-  else if args.budget = 0 then .error (.invalidArgument 1)
-  else if args.period = 0 then .error (.invalidArgument 2)
+  if args.budget = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if args.period = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if args.budget > args.period then
+    .error (.rangeError configureMinBudget (UInt64.ofNat args.period))
+  else if args.schedParams ≥ 4096 then .error (.invalidArgument configureSchedParamsWord)
   else pure args
 
 /-- AK3-J: A successful checked configure decode satisfies all CBS invariants. -/
@@ -1522,15 +1571,17 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
       · simp at hOk
       · split at hOk
         · simp at hOk
-        · rename_i hD hB hPer
-          simp only [pure, Except.pure, Except.ok.injEq] at hOk
-          subst hOk
-          have hW := Nat.not_le.mp hD
-          refine ⟨hW, ?_, ?_, ?_, ?_⟩
-          · unfold SchedContextConfigureArgs.priority; omega
-          · unfold SchedContextConfigureArgs.domain; omega
-          · omega
-          · omega
+        · split at hOk
+          · simp at hOk
+          · rename_i hB hPer _ hD
+            simp only [pure, Except.pure, Except.ok.injEq] at hOk
+            subst hOk
+            have hW := Nat.not_le.mp hD
+            refine ⟨hW, ?_, ?_, ?_, ?_⟩
+            · unfold SchedContextConfigureArgs.priority; omega
+            · unfold SchedContextConfigureArgs.domain; omega
+            · omega
+            · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
     Requires 1 message register (`tcbCPtr`, the TCB capability's address in
@@ -2237,7 +2288,7 @@ word (`CPtr.ofWord`), every other field from its number, as the decode does. -/
   let r1 ← get 1
   let r2 ← get 2
   let r3 ← get 3
-  cnodeCopyArgsOfWords (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3.toNat
+  cnodeCopyArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3
 
 theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2252,7 +2303,7 @@ theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat]
+      cnodeCopyArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat]
 
 @[inline] def decodeCSpaceMoveArgsBy (get : MsgRegReader)
     : Except KernelError CSpaceMoveArgs := do
@@ -2260,7 +2311,7 @@ theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
   let r1 ← get 1
   let r2 ← get 2
   let r3 ← get 3
-  cnodeOpArgsOfWords (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3.toNat
+  cnodeOpArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3
 
 theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2275,7 +2326,7 @@ theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat]
+      cnodeOpArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat]
 
 @[inline] def decodeMintReplyCapArgsBy (get : MsgRegReader)
     : Except KernelError MintReplyCapArgs := do
@@ -2323,10 +2374,10 @@ theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
   let r1 ← get 1
   let r2 ← get 2
   let r3 ← get 3
-  match KernelObjectType.ofNat? (r0.toNat % 256) with
+  match KernelObjectType.ofNat? (r0 % 256).toNat with
   | some objType =>
     pure { newType  := objType
-           sizeBits := r0.toNat / 256
+           sizeBits := (r0 / 256).toNat
            childId  := ObjId.ofNat r1.toNat
            dstCNode := CPtr.ofWord r2
            dstSlot  := Slot.ofNat r3.toNat }
@@ -2345,7 +2396,8 @@ theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
+      UInt64.toNat_mod, UInt64.toNat_div]
 
 @[inline] def decodeVSpaceMapArgsBy (get : MsgRegReader) (maxASID : Nat)
     : Except KernelError VSpaceMapArgs := do
@@ -2469,9 +2521,18 @@ theorem schedParams_ge_iff (w : UInt64) : 4096 ≤ w.toNat ↔ 4096 ≤ w := by
   rw [UInt64.le_iff_toNat_le]
   simp only [UInt64.toNat_ofNat]
 
+/-- A word reads as the number `0` exactly when it is the word `0`: the check
+read on the machine word, so a full-width word is compared without being made a
+`Nat` (a heap number at or above `2^63`). -/
+theorem word_toNat_eq_zero_iff (w : UInt64) : w.toNat = 0 ↔ w = 0 := by
+  rw [← UInt64.toNat_inj]
+  rfl
+
 /-- WS-ZA ZA5.2: `decodeSchedContextConfigureArgsChecked` over a reader, each
 check in the decode's order.  WS-ZA ZA6.4: the context capability's address is
-read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
+read as its word (`CPtr.ofWord`), as the bind reads its thread's.  The budget
+and the period are tested on their words (`word_toNat_eq_zero_iff`): a refusal
+of a full-width word converts nothing. -/
 @[inline] def decodeSchedContextConfigureArgsCheckedBy (get : MsgRegReader)
     : Except KernelError SchedContextConfigureArgs := do
   let r0 ← get 0
@@ -2479,9 +2540,10 @@ read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if 4096 ≤ r3 then .error (.invalidArgument 3)
-  else if r1.toNat = 0 then .error (.invalidArgument 1)
-  else if r2.toNat = 0 then .error (.invalidArgument 2)
+  if r1 = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if r2 = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if r2 < r1 then .error (.rangeError configureMinBudget r2)
+  else if 4096 ≤ r3 then .error (.invalidArgument configureSchedParamsWord)
   else pure { scCPtr := SeLe4n.CPtr.ofWord r0, budget := r1.toNat, period := r2.toNat,
               schedParams := r3.toNat, deadline := r4.toNat }
 
@@ -2501,7 +2563,8 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat]
+      schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat, UInt64.lt_iff_toNat_lt, UInt64.ofNat_toNat,
+      word_toNat_eq_zero_iff]
 
 /-- `decodeCSpaceMintArgs` over a reader: a copy's four words, then the badge,
 the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/
@@ -2512,7 +2575,7 @@ the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  match cnodeCopyArgsOfWords (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3.toNat with
+  match cnodeCopyArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3 with
   | .error e => .error e
   | .ok c => .ok { c with badge := Badge.ofWord r4 }
 
@@ -2531,7 +2594,7 @@ theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout)
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      cnodeCopyArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
 
 /-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
 decode's order. -/
@@ -2542,10 +2605,10 @@ decode's order. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if r1.toNat > serviceMaxMethodCount then .error (.invalidArgument 1)
-  else if r2.toNat > serviceMaxMessageSize then .error (.invalidArgument 2)
-  else if r3.toNat > serviceMaxMessageSize then .error (.invalidArgument 3)
-  else if r4.toNat ≥ 2 then .error .invalidMessageInfo
+  if serviceMaxMethodCount.toUInt64 < r1 then .error (.invalidArgument 1)
+  else if serviceMaxMessageSize.toUInt64 < r2 then .error (.invalidArgument 2)
+  else if serviceMaxMessageSize.toUInt64 < r3 then .error (.invalidArgument 3)
+  else if 2 ≤ r4 then .error .invalidMessageInfo
   else
     pure { interfaceId    := InterfaceId.ofNat r0.toNat
            methodCount    := r1.toNat
@@ -2567,7 +2630,9 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
   simp only [requireMsgReg_map_readReg_push]
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      UInt64.lt_iff_toNat_lt, UInt64.le_iff_toNat_le, serviceMaxMethodCount,
+      serviceMaxMessageSize, Nat.toUInt64_eq]
 
 @[inline] def decodeTcbBindNotificationArgsBy (get : MsgRegReader)
     : Except KernelError TcbBindNotificationArgs := do
@@ -2635,7 +2700,7 @@ theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayou
 @[inline] def decodeSetPriorityArgsBy (get : MsgRegReader)
     : Except KernelError SetPriorityArgs := do
   let r0 ← get 0
-  if r0.toNat > 0xFF then .error (.invalidArgument 0)
+  if 0xFF < r0 then .error (.invalidArgument 0)
   else pure { newPriority := r0.toNat }
 
 theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -2651,12 +2716,13 @@ theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
+      UInt64.lt_iff_toNat_lt]
 
 @[inline] def decodeSetMCPriorityArgsBy (get : MsgRegReader)
     : Except KernelError SetMCPriorityArgs := do
   let r0 ← get 0
-  if r0.toNat > 0xFF then .error (.invalidArgument 0)
+  if 0xFF < r0 then .error (.invalidArgument 0)
   else pure { newMCP := r0.toNat }
 
 theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -2672,7 +2738,8 @@ theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
+      UInt64.lt_iff_toNat_lt]
 
 @[inline] def decodeSetIPCBufferArgsBy (get : MsgRegReader)
     : Except KernelError SetIPCBufferArgs := do

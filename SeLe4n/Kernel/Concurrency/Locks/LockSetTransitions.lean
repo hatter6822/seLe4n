@@ -4653,7 +4653,7 @@ CPtr names is an endpoint before the CPtr is stored — the kind check
 reason: without it a concurrent endpoint retype has no conflicting lock and
 races the check, so a handler could be recorded from a state that was never
 coherently validated.  The caller pre-resolves the capability's target the way
-`resolveFaultHandlerCPtr` does — the slot `resolveCapAddress` names through the
+`resolveFaultHandlerCPtr` does — the slot `lookupSlot` names through the
 target's root, its capability's `.object` target — and passes that `ObjId`;
 `none` when the walk fails or the target is not an object, since the operation
 then refuses before reading any endpoint.  Read mode, as the operation never
