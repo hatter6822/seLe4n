@@ -9836,15 +9836,16 @@ const FLOW_DENIED: u64 = 13;
 /// a refused lookup whose error carries a payload (a guard mismatch) recorded in
 /// the refusal ledger from its words, so neither the error nor the record is
 /// built on the entry path.  The address is a bare slot number, below the root
-/// guard.  The root task's IPC buffer is unmapped here, so the fifth word
-/// (`GuardFound`'s size) is not written and the length is 4.
+/// guard.  The fifth word (`GuardFound`'s size) goes to the root task's IPC
+/// buffer, so the length is 5; the buffer is not at `FRAME_VADDR` in this
+/// phase, so the word itself is not probed.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
     name: "declassify-guard-mismatch-refused",
     cptr: 1,
     returns: refused_with(
         FAILED_LOOKUP,
-        4,
+        5,
         [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
     ),
     ..DECLASSIFICATION_REFUSAL
