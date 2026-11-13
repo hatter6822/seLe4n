@@ -73,7 +73,7 @@ structure IntermediateState where
   hAllTables : state.allTablesInvExtK
   hPerObjectSlots : perObjectSlotsInvariant state
   hPerObjectMappings : perObjectMappingsInvariant state
-  hLifecycleConsistent : state.bookkeepingAgrees
+  hLifecycleConsistent : state.bookkeepingAgreesUnbounded
 
 /-- Q3-A: The boot's empty object store satisfies the per-object CNode slots
 invariant (vacuously — no objects exist). -/
@@ -106,7 +106,7 @@ def mkEmptyIntermediateState (_ : Unit) : IntermediateState where
   hAllTables := SystemState.bootEmpty_allTablesInvExtK
   hPerObjectSlots := perObjectSlotsInvariant_bootEmpty
   hPerObjectMappings := perObjectMappingsInvariant_bootEmpty
-  hLifecycleConsistent := SystemState.bootEmpty_bookkeepingAgrees
+  hLifecycleConsistent := SystemState.bootEmpty_bookkeepingAgreesUnbounded
 
 /-- Q3-A: `mkEmptyIntermediateState` is well-formed. -/
 theorem mkEmptyIntermediateState_valid :
@@ -114,7 +114,7 @@ theorem mkEmptyIntermediateState_valid :
     e.state.allTablesInvExtK ∧
     perObjectSlotsInvariant e.state ∧
     perObjectMappingsInvariant e.state ∧
-    e.state.bookkeepingAgrees :=
+    e.state.bookkeepingAgreesUnbounded :=
   ⟨(mkEmptyIntermediateState ()).hAllTables,
    (mkEmptyIntermediateState ()).hPerObjectSlots,
    (mkEmptyIntermediateState ()).hPerObjectMappings,

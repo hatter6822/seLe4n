@@ -1116,6 +1116,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.advanceDomainOnCore
   , `SeLe4n.Kernel.advanceDomainOnCoreN
   , `SeLe4n.Kernel.applyReplyDonation
+  -- An audit call's general form: the specification's arm, refusal-carrying,
+  -- that `auditOperand_spec` and `auditReadTrailR_eq` state the routed audit
+  -- arms equal to.  Since the trail read and the drain refuse in place
+  -- (`auditReadTrailR`, `auditedArmSpec_auditDrain_refused`) no arm runs it.
+  , `SeLe4n.Kernel.auditGeneralR
   , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread

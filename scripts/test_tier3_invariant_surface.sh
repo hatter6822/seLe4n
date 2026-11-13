@@ -3637,7 +3637,7 @@ run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectTypeMetadataCo
 run_check "INVARIANT" rg -n '^theorem withObjectStored_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem default_systemState_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_objectTypeMetadataConsistent\b' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  hLifecycleConsistent : state\.bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent : state\.bookkeepingAgreesUnbounded$' SeLe4n/Model/IntermediateState.lean
 run_negative_check "INVARIANT" rg -n 'lifecycleInvariantBundle_of_metadata_consistent|lifecycleMetadataConsistent_of_lifecycleInvariantBundle|default_systemState_lifecycleConsistent' SeLe4n tests
 
 # ============================================================================
@@ -6441,11 +6441,26 @@ run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerAdmitted|faultHandler
 # (`auditReadFastRefusal`, proven the specification's refusal), not through
 # the specification's payload fallback.
 run_check "INVARIANT" rg -n '^@\[inline\] def auditReadTrailR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
-run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusal ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusalW ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# A read's index and chunk are read as words: no word past `2 ^ 63` is made a
+# number.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditReadCode[^\n]*\n[^\n]*\n\s*auditReadFastCodeW ctx readerDomain st \(auditedArgWord regs 0\)\.toNat\n\s*\(auditedArgWord regs 1\) \(auditedArgWord regs 2\)$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastCodeW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastRefusalW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditReadFastCode ctx readerDomain st|\.error \(auditReadFastRefusal ctx \(embedLegacyLabel' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem auditReadTrailR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem auditReadFastRefusal_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n -U '\| \.auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_negative_check "INVARIANT" rg -n 'auditReadAdmitted' SeLe4n
+# A drain the trail does not admit is refused in place, and an admitted drain's
+# count is read on the word.
+run_check "INVARIANT" rg -n '^theorem auditedArmSpec_auditDrain_refused($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'else match cap\.target with\n\s*\| \.auditTrail _ => \.error \(\.illegalAuthority, st\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '\.ok \(\(\), auditDrainPerform tid\n\s*\(auditDrainCountW st\.declassificationAudit\.length \(auditedArgWord regs 0\)\) st\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditDrainPerform_countW($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditDrainPerform tid \(auditedArgWord regs 0\)\.toNat st\)$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# On a live state no object-table resize is due.
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objects_noResizeDue($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
@@ -9816,7 +9831,17 @@ run_negative_check "INVARIANT" rg -n 'st\.bookkeepingAgrees ∧' SeLe4n/Kernel/A
 # table, established by the boot's empty state, carried by every kernel entry through
 # its mapping-record stages, and transported by the taint-word frame.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^  hLifecycleConsistent := SystemState\.bootEmpty_bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent := SystemState\.bootEmpty_bookkeepingAgreesUnbounded$' SeLe4n/Model/IntermediateState.lean
+# The 22nd conjunct bounds the object count: the agreement extends the builder's
+# unbounded one with the index bound, a store of a new key needs room, the carve
+# passed its capacity check, and the boot bundle takes the started boot's bound.
+run_check "INVARIANT" rg -n -U '^structure SystemState\.bookkeepingAgrees \(st : SystemState\) : Prop\n    extends toUnbounded : SystemState\.bookkeepingAgreesUnbounded st where\n  countBounded : st\.objectIndex\.length ≤ maxObjects$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n -U '^theorem storeObject_preserves_bookkeepingAgrees\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hFit : \(st\.objects\[id\]\?\)\.isSome ∨ st\.objectIndex\.length < maxObjects\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_size_lt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩⟩' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objectCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n -U 'theorem proofLayerInvariantBundle\.objects_noResizeDue[^\n]*\n[^\n]*hS' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-UC UC3: the boot's object and ASID tables are boot-sized, built where the
 # boot calls for them and never as a module constant: the boot builder's empty
 # state and the tables it holds are `never_extract` calls.

@@ -272,11 +272,15 @@ for driver in drivers:
         # the exerciser (smp_exercisers.rs) must change this set too, so the
         # evidence cannot disappear while the gate stays green.
         expected = {
-            "audit-drain", "audit-drain-first", "audit-read-basis-chunk",
+            "audit-drain", "audit-drain-first",
+            "audit-drain-read-only-refused", "audit-drain-wide-count", "audit-read-basis-chunk",
             "audit-read-basis-count", "audit-read-chain-archived", "audit-read-chain-entry",
             "audit-read-chain-predecessor", "audit-read-entry",
             "audit-read-entry-chunk-past", "audit-read-entry-index-past",
             "audit-read-refusal-slot-past", "audit-read-unknown-op", "audit-read-refusal-counters",
+            "audit-read-entry-index-wide", "audit-read-entry-chunk-wide",
+            "audit-read-refusal-slot-wide", "audit-read-chain-wide",
+            "audit-read-archived-chunk-wide",
             "audit-read-refusal-domain", "audit-read-refusal-domain-count",
             "audit-read-refusal-receiver", "audit-read-refusal-receiver-count",
             "audit-read-refusal-status",

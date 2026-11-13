@@ -2820,6 +2820,12 @@ const READ_WRITE_RIGHTS: u64 = 0x3;
 /// and may not receive.
 #[cfg(feature = "hw_target")]
 const WRITE_ONLY_RIGHTS: u64 = 0x2;
+/// The read right alone (`AccessRight.read`, bit 0).
+#[cfg(feature = "hw_target")]
+const READ_ONLY_RIGHTS: u64 = 0x1;
+/// `KernelError.illegalAuthority`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const ILLEGAL_AUTHORITY: u64 = 3;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -9842,6 +9848,21 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
     ),
     ..DECLASSIFICATION_REFUSAL
 };
+/// A root slot no other scenario names: the read-only audit capability's.
+#[cfg(feature = "hw_target")]
+const READ_ONLY_AUDIT_SLOT: u64 = 60;
+/// The boot audit capability minted read-only into [`READ_ONLY_AUDIT_SLOT`],
+/// unmeasured, while the root task's IPC buffer holds the mint's fifth word
+/// (after [`PARTNER_SETUP`]); deleted with the boot audit capability.
+#[cfg(feature = "hw_target")]
+const READ_ONLY_AUDIT_MINT: RoundTrip = mint(
+    "mint-read-only-audit-capability",
+    AUDIT_SLOT,
+    READ_ONLY_AUDIT_SLOT,
+    READ_ONLY_RIGHTS,
+    0,
+    ROOT_IPC_BUFFER,
+);
 /// **The audit monitor's reads** (WS-ZA ZA5.13, every opcode family at
 /// ZA6.35), through the boot audit capability ([`AUDIT_CAP`]): the trail's
 /// first entry drained, so the trail has an epoch for the archived verdict to
@@ -9852,7 +9873,7 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
 /// past the last), each answered in place; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 26] = [
+const AUDIT_SCENARIO: [RoundTrip; 33] = [
     // A drain and a read a word short of their arguments, through the audit
     // capability: refused `TruncatedMessage` once the target and the right
     // are checked, the trail untouched.
@@ -10144,6 +10165,104 @@ const AUDIT_SCENARIO: [RoundTrip; 26] = [
         caps_or_badges: None,
         overflow: None,
         returns: refused(INVALID_SYSCALL_ARGUMENT),
+    },
+    // Reads whose index or chunk word is at or above `2 ^ 63`, each read on
+    // the word (`auditReadFastCodeW`, `auditReadFastRefusalW`), so no word is
+    // made a number: an entry index (`InvalidArgument` of the index word),
+    RoundTrip {
+        name: "audit-read-entry-index-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a chunk of the first visible entry's target object (the chunk word),
+    RoundTrip {
+        name: "audit-read-entry-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // a refusal-ledger slot (the index word),
+    RoundTrip {
+        name: "audit-read-refusal-slot-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a causality verdict between two wide entries, compared on the words
+    // (the index word),
+    RoundTrip {
+        name: "audit-read-chain-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [28, WIDE_WORD + 1, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // and an archived predecessor past the epoch (the chunk word).
+    RoundTrip {
+        name: "audit-read-archived-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [29, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // A drain through the read-only copy of the audit capability
+    // ([`READ_ONLY_AUDIT_MINT`]), which cannot drain
+    // (`syscallRequiredRight .auditDrain` is the write right): refused
+    // `IllegalAuthority` in place (`auditedArmSpec_auditDrain_refused`).
+    RoundTrip {
+        name: "audit-drain-read-only-refused",
+        syscall: AUDIT_DRAIN,
+        cptr: cap_address(READ_ONLY_AUDIT_SLOT),
+        msg_len: 1,
+        msg: [256, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(ILLEGAL_AUTHORITY),
+    },
+    // A drain whose count is at or above `2 ^ 63`: the whole trail, the count
+    // read on the word (`auditDrainCountW`).
+    RoundTrip {
+        name: "audit-drain-wide-count",
+        syscall: AUDIT_DRAIN,
+        cptr: AUDIT_CAP,
+        msg_len: 1,
+        msg: [WIDE_WORD, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: None,
     },
     RoundTrip {
         name: "audit-drain",
@@ -11089,6 +11208,12 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             return Some(false);
         }
     }
+    if !unmeasured(
+        &READ_ONLY_AUDIT_MINT,
+        "the read-only audit capability was not minted",
+    ) {
+        return Some(false);
+    }
     for scenario in PARTNER_SCENARIOS.iter() {
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
@@ -11168,6 +11293,18 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if !ok {
             return Some(false);
         }
+    }
+    let delete_read_only_audit = invocation(
+        "delete-read-only-audit-capability",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [READ_ONLY_AUDIT_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(
+        &delete_read_only_audit,
+        "the read-only audit capability was not deleted",
+    ) {
+        return Some(false);
     }
     let delete_audit = invocation(
         "delete-audit-capability",

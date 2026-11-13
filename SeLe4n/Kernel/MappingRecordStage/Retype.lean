@@ -83,7 +83,10 @@ theorem untypedRetypeObject_mappingStage {src dst : CSpaceAddr} {childId : SeLe4
         (fun j hj => storeObject_objects_ne _ _ _ _ _ hj hInvUt hStCh)
         (CarveRequest.object_noMappingEpoch _ _ _ _ req)
         (CarveRequest.object_threadSlotsEmpty _ _ _ _ req))
-      fun _ hB => storeObject_preserves_bookkeepingAgrees _ _ _ _ hB hInvUt hStCh
+      fun _ hB => storeObject_preserves_bookkeepingAgrees _ _ _ _ hB hInvUt hStCh (.inr (by
+        rw [← hB.objects_size_eq hInvUt]
+        exact Nat.lt_of_le_of_lt (storeObject_size_le_of_some hStUt hInv hUt)
+          (retypeFromUntyped_ok_size_lt src untypedId childId _ _ st st1 hRt)))
   rw [← CNode.setFreeIndex_of_lookup hLk, setCapFreeIndex_eq_storeObject hOCh] at hStIdx
   cases hStIdx
   refine (((((k1.trans k2).trans ?_).trans

@@ -286,6 +286,44 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   word (`auditReadTrailR_eq`). New QEMU scenarios:
   `audit-read-entry-chunk-past`, `audit-read-entry-index-past`,
   `audit-read-refusal-slot-past` and `audit-read-unknown-op`.
+- **A refused audit drain answers in place.** A drain on an audit-trail
+  capability that is not admitted answered through the specification's
+  general form. The drain arm now refuses `illegalAuthority` in place
+  (`auditedArmSpec_auditDrain_refused`). Its count word is compared to the
+  trail's length on the word (`natLeWord`, `auditDrainCountW`, proven by
+  `auditDrainPerform_countW`), so a count at or above `2^63` is not made a
+  number. New QEMU scenarios: `audit-drain-read-only-refused` (through a
+  read-only copy of the audit capability, minted unmeasured into slot 60)
+  and `audit-drain-wide-count`.
+- **The audit general forms no export reaches.** `auditTargetGeneralR` and
+  its theorem are deleted. `auditGeneralR` stays, recorded proof-only in the
+  reachability census, because `auditOperand_spec` and `auditReadTrailR_eq`
+  are built on it.
+- **An audit read's index and chunk are read as words.** The trail arm
+  made its index and chunk words numbers (`UInt64.toNat`), so a word at or
+  above `2^63` built a big number. It now reads them through
+  `auditReadFastCodeW` and `auditReadFastRefusalW`. Every index and chunk a
+  read answers to is below `2^32`, so a wider word is read as `2^32`
+  (`auditWordIndex`), and the two reads that compare the words (the
+  causality pair and the archived predecessor) compare them as words.
+  Each is proven equal to the code and the refusal of the words' numbers
+  (`auditReadFastCodeW_eq`, `auditReadFastRefusalW_eq`). New QEMU
+  scenarios: `audit-read-entry-index-wide`, `audit-read-entry-chunk-wide`,
+  `audit-read-refusal-slot-wide`, `audit-read-chain-wide` and
+  `audit-read-archived-chunk-wide`.
+- **The invariant bundle bounds the object count.** The bookkeeping
+  agreement, the bundle's 22nd component, now carries the bound on the
+  ghost index (`countBounded`, at most `maxObjects`). A store over a stored
+  key keeps the index, the carve stores past its capacity check
+  (`retypeFromUntyped_ok_size_lt`), a retire shortens the index, and the
+  started boot leaves room for its interrupt nodes
+  (`bootFromPlatformCheckedStartedFor_objectIndex_length_le`). The boot's
+  builder carries the agreement without the bound
+  (`bookkeepingAgreesUnbounded`), since its inserts pass no capacity check.
+  So `proofLayerInvariantBundle.objectCountBounded`, `objects_noResizeDue`
+  and `objects_findsInPlace_iff` follow from the bundle alone: on a live
+  state the resize conjunct of `RHTable.findsInPlace` always holds, and the
+  in-place store predicate asks only whether the probe finds the key.
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
