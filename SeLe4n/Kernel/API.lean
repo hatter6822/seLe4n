@@ -347,6 +347,39 @@ def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
       then .ok (cap, st')
       else .error .illegalAuthority
 
+/-- **The one resolution of an argument capability**: `syscallLookupCap` on the
+argument's gate, its refusals renumbered for argument capability `capNumber`
+(`KernelError.forArgumentCap`; `i + 1` for argument capability `i`, seL4's
+`invalidCapNumber`).  The invoked capability is resolved by `syscallLookupCap`
+itself and answers `invalidCapability 0`; every capability an argument word or
+an extra capability names is resolved here, so no arm can resolve one and
+answer the invoked capability's number.  A compiled resolver of the same
+argument hands its refusals to `KernelError.argumentCapRefusal` with the same
+number constant.  A wrong-kind argument capability is refused by the arm with
+`.invalidCapability capNumber` (or, through an extractor shared with the
+invoked capability, the extractor's refusal renumbered by `forArgumentCap`). -/
+@[inline] def syscallLookupArgumentCap (capNumber : UInt64) (gate : SyscallGate) :
+    Kernel Capability :=
+  fun st =>
+    match syscallLookupCap gate st with
+    | .error e => .error (e.forArgumentCap capNumber)
+    | .ok p => .ok p
+
+/-- An argument capability resolves exactly when `syscallLookupCap` resolves it,
+to the same capability and state: the boundary renumbers refusals only. -/
+theorem syscallLookupArgumentCap_ok_iff (capNumber : UInt64) (gate : SyscallGate)
+    (st : SystemState) (p : Capability × SystemState) :
+    syscallLookupArgumentCap capNumber gate st = .ok p ↔ syscallLookupCap gate st = .ok p := by
+  unfold syscallLookupArgumentCap
+  cases syscallLookupCap gate st <;> simp
+
+/-- A refused argument capability is refused with `syscallLookupCap`'s refusal,
+renumbered. -/
+theorem syscallLookupArgumentCap_error (capNumber : UInt64) (gate : SyscallGate)
+    (st : SystemState) (e : KernelError) (h : syscallLookupCap gate st = .error e) :
+    syscallLookupArgumentCap capNumber gate st = .error (e.forArgumentCap capNumber) := by
+  unfold syscallLookupArgumentCap; rw [h]
+
 /-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
 single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
 if the capability does not target a reply object. -/
@@ -415,6 +448,13 @@ theorem extractAuditAuthority_rejects_non_audit_capability (oid : SeLe4n.ObjId) 
     extractAuditAuthority
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) := rfl
 
+/-- The reply object a `.receive` names at MR0: its argument capability `0`. -/
+def recvReplyCapNumber : UInt64 := 1
+
+/-- The reply object a `.replyRecv` names at MR0: its argument capability `0`
+(the endpoint is the invoked capability). -/
+def replyRecvReplyCapNumber : UInt64 := 1
+
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
 reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
 its `ReplyId`.  Crucially the reply cap lives at a **different** CSpace slot than
@@ -439,11 +479,11 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
   | .ok rargs =>
       let replyGate : SyscallGate :=
         { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
-      match syscallLookupCap replyGate st with
+      match syscallLookupArgumentCap recvReplyCapNumber replyGate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap recvReplyCapNumber)
           | .ok rid =>
               -- PR #822 review: validate the reply object exists AND is FREE before
               -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
@@ -665,11 +705,11 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
       -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
       -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
       -- object with no outstanding caller (mirrors `resolveRecvReplyId`).
-      match syscallLookupCap replyGate st with
+      match syscallLookupArgumentCap replyRecvReplyCapNumber replyGate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
           | .ok rid =>
               -- WS-RR RR7.11: one resolution of "which thread does this reply
               -- capability answer", shared with the `.reply` arm and with the
@@ -1522,8 +1562,8 @@ def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
         capAddr       := args.tcbCPtr
         requiredRight := .write
       }
-      match syscallLookupCap tcbGate st with
-      | .error e => .error (e.forArgumentCap bindThreadCapNumber)
+      match syscallLookupArgumentCap bindThreadCapNumber tcbGate st with
+      | .error e => .error e
       | .ok (tcbCap, _) =>
         match tcbCap.target with
         | .object tcbObjId =>
@@ -1553,7 +1593,7 @@ theorem resolveSchedContextBindThread_ok_authorised
       tcbCap.hasRight .write = true ∧
       tcbCap.target = .object v.val.toObjId ∧
       (∃ tcb, st.getTcb? v.val = some tcb) := by
-  unfold resolveSchedContextBindThread at h
+  unfold resolveSchedContextBindThread syscallLookupArgumentCap at h
   cases hArgs : args? with
   | error e => rw [hArgs] at h; cases h
   | ok args =>
@@ -1637,8 +1677,8 @@ def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat
       capAddr       := scCPtr
       requiredRight := .write
     }
-    match syscallLookupCap scGate st with
-    | .error e => .error (e.forArgumentCap configureContextCapNumber)
+    match syscallLookupArgumentCap configureContextCapNumber scGate st with
+    | .error e => .error e
     | .ok (scCap, _) =>
       match scCap.target with
       | .object scObjId =>
@@ -1667,7 +1707,7 @@ theorem resolveSchedControlConfigureTarget_ok_authorised
       scCap.target = .object v.val ∧
       st.getSchedContext? (SchedContextId.ofObjId v.val) = some sc ∧
       core < SeLe4n.Kernel.Concurrency.numCores := by
-  unfold resolveSchedControlConfigureTarget at h
+  unfold resolveSchedControlConfigureTarget syscallLookupArgumentCap at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
   | some callerTcb =>
@@ -1725,7 +1765,7 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
   simp only
   rw [hCaller]
   simp only
-  unfold syscallLookupCap syscallResolveCap
+  unfold syscallLookupArgumentCap syscallLookupCap syscallResolveCap
   simp only [SyscallGate.lookupSlot_mk, hRef, hSlot, hIdle, if_true, KernelError.forArgumentCap]
 
 /-- **WS-BP BP7.1 (`v0.36.4`): the frame a `.vspaceMap` installs is one the
@@ -1757,8 +1797,8 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       capAddr       := args.frame
       requiredRight := .read
     }
-    match syscallLookupCap frameGate st with
-    | .error e => .error (e.forArgumentCap vspaceMapFrameCapNumber)
+    match syscallLookupArgumentCap vspaceMapFrameCapNumber frameGate st with
+    | .error e => .error e
     | .ok (frameCap, _) =>
       match frameCap.target with
       | .object frameObjId =>
@@ -1770,7 +1810,7 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
           -- gate's lookup ran (`resolveVSpaceMapFrame_ok_slot`), so it names
           -- the slot the capability was read from.
           match lookupSlot callerTcb args.frame st with
-          | .error f => .error (.failedLookup false f)
+          | .error f => .error ((KernelError.failedLookup false f).forArgumentCap vspaceMapFrameCapNumber)
           | .ok frameSlot => .ok (frameSlot, frameCap, frame)
       | _ => .error (.invalidCapability vspaceMapFrameCapNumber)
 
@@ -1991,7 +2031,7 @@ result cell is built, so the configure's resolution allocates nothing
     (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) (onErr : KernelError → α)
     (onOk : SeLe4n.ValidObjId → α) : α :=
   resolveCallerCapObjectK callerTid scCPtr .write st
-    (fun e => onErr (e.forArgumentCap configureContextCapNumber)) (fun _ scObjId =>
+    (KernelError.argumentCapRefusal configureContextCapNumber onErr) (fun _ scObjId =>
     match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
     | none => onErr (.invalidCapability configureContextCapNumber)
     | some _ =>
@@ -2011,7 +2051,7 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
   unfold resolveSchedControlConfigureTargetK
   rw [resolveCallerCapObjectK_eq]
   unfold resolveCallerCapObject resolveCallerCapSlot resolveSchedControlConfigureTarget
-    syscallLookupCap syscallResolveCap
+    syscallLookupArgumentCap syscallLookupCap syscallResolveCap KernelError.argumentCapRefusal
   cases st.getTcb? callerTid with
   | none => rfl
   | some callerTcb =>
@@ -2050,12 +2090,12 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
   resolveCallerCapSlotK callerTid args.cspaceRoot .grant st
-    (fun e => onErr (e.forArgumentCap setSpaceCSpaceRootCapNumber)) (fun cnC cnS cnCap cnId =>
+    (KernelError.argumentCapRefusal setSpaceCSpaceRootCapNumber onErr) (fun cnC cnS cnCap cnId =>
     if !cnCap.hasRight .write then onErr .illegalAuthority
     else if (st.getCNode? cnId).isNone then onErr .illegalState
     else
       resolveCallerCapSlotK callerTid args.vspaceRoot .write st
-        (fun e => onErr (e.forArgumentCap setSpaceVSpaceRootCapNumber)) (fun vrC vrS _ vrId =>
+        (KernelError.argumentCapRefusal setSpaceVSpaceRootCapNumber onErr) (fun vrC vrS _ vrId =>
         if (st.getVSpaceRoot? vrId).isNone then onErr .illegalState
         else onOk cnC cnS vrC vrS))
 
@@ -2101,7 +2141,8 @@ result triple is built (`resolveVSpaceMapFrameK_eq`). -/
   | none => onErr .objectNotFound
   | some callerTcb =>
     lookupSlotK callerTcb args.frame st
-      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun t a b c => KernelError.argumentCapRefusal vspaceMapFrameCapNumber onErr
+        (.failedLookup false (LookupFault.ofWords t a b c)))
       (fun cnode slot =>
         match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
         | none => onErr (.invalidCapability vspaceMapFrameCapNumber)
@@ -2129,7 +2170,8 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
   | none => rfl
   | some callerTcb =>
     simp only []
-    simp only [syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk]
+    simp only [syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+      syscallResolveCap, SyscallGate.lookupSlot_mk]
     rw [lookupSlotK_eq]
     cases hRes : lookupSlot callerTcb args.frame st with
     | error f => simp only [LookupFault.ofWords_word, KernelError.forArgumentCap]
@@ -2228,8 +2270,8 @@ def resolveIssuingSlots (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
         capAddr       := dstCNode
         requiredRight := .write
       }
-      match syscallLookupCap dstGate st with
-      | .error e => .error (e.forArgumentCap issuingDestinationCapNumber)
+      match syscallLookupArgumentCap issuingDestinationCapNumber dstGate st with
+      | .error e => .error e
       | .ok (dstCap, _) =>
         match dstCap.target with
         | .object cnodeId =>
@@ -2253,7 +2295,7 @@ result cell is built (`resolveIssuingSlotsK_eq`). -/
       (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
       (fun srcCnode srcSlot =>
         resolveCallerCapObjectK callerTid dstCNode .write st
-          (fun e => onErr (e.forArgumentCap issuingDestinationCapNumber)) (fun _ cnodeId =>
+          (KernelError.argumentCapRefusal issuingDestinationCapNumber onErr) (fun _ cnodeId =>
           match st.getCNode? cnodeId with
           | none => onErr (.invalidCapability issuingDestinationCapNumber)
           | some _ => onOk srcCnode srcSlot cnodeId dstSlot))
@@ -2278,7 +2320,8 @@ theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
       simp only []
       rw [resolveCallerCapObjectK_eq]
       unfold resolveCallerCapObject resolveCallerCapSlot
-      simp only [hT, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk]
+      simp only [hT, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
+        syscallResolveCap, SyscallGate.lookupSlot_mk]
       cases lookupSlot callerTcb dstCNode st with
       | error f => rfl
       | ok dst =>
@@ -2700,7 +2743,7 @@ theorem resolveVSpaceMapFrame_ok_authorised
       st.getFrame? frameObjId = some frame ∧
       lookupSlot callerTcb args.frame st = .ok frameSlot ∧
       SystemState.lookupSlotCap st frameSlot = some frameCap := by
-  unfold resolveVSpaceMapFrame at h
+  unfold resolveVSpaceMapFrame syscallLookupArgumentCap at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
   | some callerTcb =>
@@ -3527,8 +3570,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               capAddr       := args.notificationCPtr
               requiredRight := .write
             }
-            match syscallLookupCap ntfnGate st with
-            | .error e => .error (e.forArgumentCap bindNotificationCapNumber)
+            match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
+            | .error e => .error e
             | .ok (ntfnCap, _) =>
               match ntfnCap.target with
               | .object notifId =>
@@ -4098,6 +4141,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | none => simp only [hCaller] at hStep; cases hStep
           | some callerTcb =>
               simp only [hCaller] at hStep
+              try dsimp only [] at hStep
+              simp only [syscallLookupArgumentCap] at hStep
               cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok pair =>

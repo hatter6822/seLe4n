@@ -231,8 +231,8 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               capAddr       := args.notificationCPtr
               requiredRight := .write
             }
-            match syscallLookupCap ntfnGate st with
-            | .error e => .error (e.forArgumentCap bindNotificationCapNumber)
+            match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
+            | .error e => .error e
             | .ok (ntfnCap, _) =>
               match ntfnCap.target with
               | .object notifId =>
@@ -631,7 +631,8 @@ refusal is read where it is, never rebuilt. -/
         match st.getTcb? tid with
         | some callerTcb =>
           lookupSlotK callerTcb args.tcbCPtr st
-            (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
+            (fun t a b c => KernelError.argumentCapRefusal bindThreadCapNumber (fun e => .error (e, st))
+              (.failedLookup false (LookupFault.ofWords t a b c)))
             (fun cnode slot =>
               match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
               | none => .error (.invalidCapability bindThreadCapNumber, st)
@@ -742,7 +743,7 @@ refusal is read where it is, never rebuilt. -/
       | .error e => .error (e, st)
       | .ok args =>
         resolveCallerCapSlotK tid args.notificationCPtr .write st
-          (fun e => .error (e.forArgumentCap irqHandlerNotificationCapNumber, st))
+          (KernelError.argumentCapRefusal irqHandlerNotificationCapNumber (fun e => .error (e, st)))
           (fun srcCnode srcSlot ncap _ =>
             RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
               (fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st)
@@ -766,7 +767,8 @@ refusal is read where it is, never rebuilt. -/
         match st.getTcb? tid with
         | some callerTcb =>
           lookupSlotK callerTcb args.notificationCPtr st
-            (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
+            (fun t a b c => KernelError.argumentCapRefusal bindNotificationCapNumber (fun e => .error (e, st))
+              (.failedLookup false (LookupFault.ofWords t a b c)))
             (fun cnode slot =>
               match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
               | none => .error (.invalidCapability bindNotificationCapNumber, st)
@@ -931,7 +933,7 @@ refusal is read where it is, never rebuilt. -/
       | .error e => .error (e, st)
       | .ok args =>
         resolveCallerCapObjectK tid args.vspaceRoot .write st
-          (fun e => .error (e.forArgumentCap Architecture.pageTableMapRootCapNumber, st))
+          (KernelError.argumentCapRefusal Architecture.pageTableMapRootCapNumber (fun e => .error (e, st)))
           (fun _ rootId =>
             RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
               (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
@@ -1196,19 +1198,19 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           cases hRes : lookupSlot callerTcb args.tcbCPtr st with
           | error e =>
             simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
-              hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap, hRes]
+              hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes]
           | ok ref =>
             obtain ⟨cnode, slot⟩ := ref
             dsimp only
             cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
             | none =>
               simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
-                hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap, hRes, hL]
+                hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL]
             | some tcbCap =>
               dsimp only
               by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap = true
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                  resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                  resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                   syscallResolveCap, hRes, hL, hIdle]
               · by_cases hRight : tcbCap.hasRight .write = true
                 · cases hTg : tcbCap.target with
@@ -1216,19 +1218,19 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                     cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                     | none =>
                       simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                        resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                        resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                         syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT]
                     | some _ =>
                       cases hV : validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                       | error e =>
                         simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                          resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                          resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                           syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV]
                       | ok vThreadId =>
                         cases hS : validateObjIdArg objId with
                         | error e =>
                           simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                            resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                            resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                             syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV, hS]
                         | ok vScId =>
                           simp only [hIdle, hRight, hTg, hT, hV, hS, Bool.false_eq_true,
@@ -1236,14 +1238,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                           apply RefusalCarrying.ofChecked_eq
                           intro hA
                           simp only [dispatchInvocationBy, resolveSchedContextBindThread, hD, hC,
-                            syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
+                            syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
                             hTg, hT, hV, hS, Bool.false_eq_true, ↓reduceIte,
                             SchedContextOps.schedContextBind_of_admitted _ _ _ hA]
                   | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
                 · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallResolveCap, hRes, hL, hIdle, hRight]
     all_goals rfl
   case schedContextUnbind =>
@@ -1338,7 +1340,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         cases hR : resolveCallerCapSlot tid args.notificationCPtr .write st with
         | error e =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap,
-            hD, hR]
+            hD, hR, KernelError.argumentCapRefusal]
         | ok r =>
           obtain ⟨src, ncap, oid⟩ := r
           obtain ⟨_, _, _, hLk, _, _⟩ :=
@@ -1377,18 +1379,18 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           cases hRes : lookupSlot callerTcb args.notificationCPtr st with
           | error e =>
             simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word,
-              KernelError.forArgumentCap, syscallResolveCap, hRes]
+              syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, syscallResolveCap, hRes]
           | ok ref =>
             obtain ⟨cnode, slot⟩ := ref
             dsimp only
             cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
             | none =>
-              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                 syscallResolveCap, hRes, hL]
             | some ntfnCap =>
               dsimp only
               by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap = true
-              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                   syscallLookupCap, syscallResolveCap, hRes, hL, hIdle]
               · by_cases hRight : ntfnCap.hasRight .write = true
                 · cases hTg : ntfnCap.target with
@@ -1396,12 +1398,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                     simp only [hIdle, hRight, hTg, Bool.false_eq_true, ↓reduceIte]
                     apply RefusalCarrying.ofChecked_eq
                     intro hA
-                    simp only [dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                    simp only [dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                       syscallResolveCap, hRes, hL, hIdle, hRight, hTg, Bool.false_eq_true,
                       ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
-                  | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                  | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
-                · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, KernelError.forArgumentCap,
+                · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight]
     all_goals rfl
   case tcbUnbindNotification =>
@@ -1601,7 +1603,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only
         rw [resolveCallerCapObjectK_eq]
         cases hRs : resolveCallerCapObject tid args.vspaceRoot .write st with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs]
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs,
+            KernelError.argumentCapRefusal]
         | ok pr =>
           obtain ⟨_, rootId⟩ := pr
           dsimp only

@@ -334,6 +334,17 @@ Inlined, so a refusal built at its site is renumbered at its site. -/
   | .invalidCapability _ => .invalidCapability capNumber
   | e => e
 
+/-- **The refusal continuation of an argument capability's resolution**: every
+refusal the resolution hands on is renumbered for argument capability
+`capNumber` (`forArgumentCap`) before `onErr` sees it.  A compiled resolver of
+an argument capability passes this as its refusal continuation, and the
+specification's resolver (`syscallLookupArgumentCap`) applies the same
+renumbering, so the number an argument's refusal carries has one owner: the
+argument's number constant, read through this boundary on both paths. -/
+@[inline] def KernelError.argumentCapRefusal {α : Type} (capNumber : UInt64)
+    (onErr : KernelError → α) : KernelError → α :=
+  fun e => onErr (e.forArgumentCap capNumber)
+
 /-- **A refusal met validating an argument word**: an invalid argument names
 that word, `argNumber` (its message word in the operation's layout); every
 other refusal is its own.  For a validator shared between ids read from words
