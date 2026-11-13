@@ -1325,8 +1325,8 @@ private def runConfigureAndResumeChecks : IO Unit := do
         ((List.range 8).all (fun i =>
           (stRes.getTcb? orphan).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
             some (fctxO.gprAt i).toNat))
-      assertBool "the resumed thread is Ready again"
-        (threadStateOf stRes orphan == some .Ready)
+      assertBool "the resumed thread is set to restart"
+        (threadStateOf stRes orphan == some .Restart)
       -- The recovery story: repair the configuration, resume, fault again —
       -- and this time it is delivered.
       match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stSusp with

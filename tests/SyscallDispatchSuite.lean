@@ -141,7 +141,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -160,6 +160,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_51_partialResolution"            .partialResolution            51
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
   pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
+  -- 57 is retired (the former `ipcCancelled`): a cancelled IPC answers with
+  -- no error, as seL4's does — the thread restarts its system call.
+  expect "sd001_57_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 57 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 57)).isNone)
+    "discriminant 57 is retired: it must decode to no error"
 
 /-- SD-002 (WS-RA shape): every `KernelError` discriminant 0..54 resolves
 through `ofDiscriminant?`, carries the **offset** label `disc + 1`, and its

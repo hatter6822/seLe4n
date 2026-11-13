@@ -261,7 +261,7 @@ example (st : SystemState) (c : CoreId) (tid t : SeLe4n.ThreadId) (hInv : st.obj
   updatePipBoostOnCore_preserves_determineTargetCore st c tid t hInv
 
 -- SM5.F.6 (F13): every successful complete per-core resume leaves the resumed thread
--- `.Ready` — including the PR #811 P2-5 inline local reschedule (which frames out the
+-- `.Restart` — including the PR #811 P2-5 inline local reschedule (which frames out the
 -- resumed thread, never the executing core's current).
 example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TCB)
     (st' : SystemState) (sgi : Option (CoreId × SgiKind))
@@ -269,7 +269,7 @@ example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TC
     (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
     (hNotCur : st.scheduler.currentOnCore ec ≠ some vtid.val)
     (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
-    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready :=
+    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Restart :=
   resumeThreadOnCore_sets_threadState st vtid ec tcb st' sgi hGet hInactive hInv hNotCur h
 
 -- SM5.F.4: the diff-based dispatch is inert on single-core (PR #831 review 4
@@ -392,11 +392,12 @@ private def runResumeChecks : IO Unit := do
   -- Resuming while executing on the home core 1 needs no SGI.
   assertBool "local resume (executing on the home core) emits NO SGI"
     (decide ((restoreToReadyWithWake st srv core1).2 = none))
-  -- PR #811 P2-3: the resume wake sets the resumed thread .Ready (not left .Inactive),
-  -- so the poked core never dispatches a still-inactive run-queue entry.
-  assertBool "P2-3 restoreToReadyWithWake leaves the resumed thread threadState = .Ready"
+  -- PR #811 P2-3: the resume wake sets the resumed thread to restart (not left
+  -- .Inactive; seL4's `restart`), so the poked core never dispatches a
+  -- still-inactive run-queue entry.
+  assertBool "P2-3 restoreToReadyWithWake leaves the resumed thread threadState = .Restart"
     (((restoreToReadyWithWake st srv core0).1.getTcb? srv).map (·.threadState)
-      == some ThreadState.Ready)
+      == some ThreadState.Restart)
 
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
@@ -541,14 +542,14 @@ private def runCompletionNonVacuityChecks : IO Unit := do
     (decide ((((pipBoostWithWake st srv core0).1.getTcb? srv).map
       (fun t => (effectiveSchedParams (pipBoostWithWake st srv core0).1 t).1.val)).getD 0 = 10))
   -- F13: the complete per-core resume of an Inactive thread (stNoRq, srv Inactive +
-  -- not enqueued) sets threadState := .Ready AND returns the remote .reschedule SGI.
+  -- not enqueued) sets threadState := .Restart AND returns the remote .reschedule SGI.
   -- (The match returns a Bool directly — SystemState has no DecidableEq, so we do not
   -- `decide` over the Except result; we project the observable Bool facts.)
-  assertBool "F13 resumeThreadOnCore: Inactive→Ready + remote (core1, .reschedule) SGI"
+  assertBool "F13 resumeThreadOnCore: Inactive→Restart + remote (core1, .reschedule) SGI"
     (match resumeThreadOnCore stNoRq ((ThreadId.ofNat 200).toValid (by decide)) core0 with
      | .ok (st', sgi) =>
        (sgi == some (core1, SgiKind.reschedule)) &&
-       ((st'.getTcb? srv).map (·.threadState) == some ThreadState.Ready)
+       ((st'.getTcb? srv).map (·.threadState) == some ThreadState.Restart)
      | .error _ => false)
   -- F13: resume of a non-existent (non-TCB) target → invalidArgument (rejection path).
   assertBool "F13 resumeThreadOnCore: a non-TCB target → invalidArgument"
@@ -596,7 +597,7 @@ private def runP2MaterialityChecks : IO Unit := do
 /-- §3.12: WS-SM SM5.F.6 (PR #811 P2-5) — the inline LOCAL reschedule.  A resume whose
 home core IS the executing core processes the reschedule **inline** (the exact handler
 the remote core would otherwise run on the `.reschedule` SGI): the resumed thread is
-dispatched to current on that core, keeps `threadState = .Ready`, and NO cross-core SGI
+dispatched to current on that core, keeps `threadState = .Restart`, and NO cross-core SGI
 is emitted.  A resume from a *remote* executing core returns the SGI instead. -/
 private def runP5LocalRescheduleChecks : IO Unit := do
   IO.println "--- §3.12 SM5.F.6 P2-5 inline local reschedule ---"
@@ -605,8 +606,8 @@ private def runP5LocalRescheduleChecks : IO Unit := do
   | .ok (st4, sgi) =>
     assertBool "P2-5 local resume succeeds with NO cross-core SGI (reschedule done inline)"
       (sgi == none)
-    assertBool "P2-5 local resume leaves the resumed thread threadState = .Ready"
-      ((st4.getTcb? srv).map (·.threadState) == some ThreadState.Ready)
+    assertBool "P2-5 local resume leaves the resumed thread threadState = .Restart"
+      ((st4.getTcb? srv).map (·.threadState) == some ThreadState.Restart)
     assertBool "P2-5 local resume dispatches the resumed thread to current on its core"
       (st4.scheduler.currentOnCore core1 == some srv)
   | .error _ =>

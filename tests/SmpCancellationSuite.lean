@@ -1833,8 +1833,11 @@ private def runDiffSeamEdfChecks : IO Unit := do
 private def staleRequestRegs : SeLe4n.RegisterFile :=
   SeLe4n.RegisterFile.withGprs 0x4000 0x9000 (fun r => 0xBAD0 + r.toUInt64)
 
+/-- The victim is a running thread (`.Running`, not the record's `.Inactive`
+default): it is placed runnable and then blocks, and a stopped thread neither
+runs nor restarts. -/
 private def mkTcbWithStaleRegs (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { mkTcb tid prio aff with registerContext := staleRequestRegs }
+  { mkTcb tid prio aff with registerContext := staleRequestRegs, threadState := .Running }
 
 /-- The endpoint-blocked scenario, with the victim carrying the stale window. -/
 private def stCallBlockedStale? : Option SystemState :=

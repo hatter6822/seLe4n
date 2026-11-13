@@ -25,7 +25,13 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   (`cancelledEndpointWaiterTcb`).
 - **Suspend and Resume (SX4.2).** A suspended blocked thread is `Inactive`
   with its PC at its restart PC; Resume sets `Restart` (`resumeReadyMidState`,
-  `resumeThreadReady`), so it re-issues the call it was suspended in.
+  `resumeThreadReady`), so it re-issues the call it was suspended in. The
+  frozen resume (`frozenResumeThread`) sets `Restart` too, as the live one
+  does.
+- **Fixed along the way:** the cancellation suite's stale-register victim was
+  built with the record's `Inactive` default while placed runnable; it is now
+  `Running`, so the restart check reads a thread that was running when it
+  blocked. The dispatch suite pins discriminant 57 as retired.
 - **Retired:** `KernelError.ipcCancelled` (discriminant 57 reserved:
   `retiredDiscriminants = [35, 37, 57]`, `ofDiscriminant?_retired_ipcCancelled`;
   Rust `KernelError::IpcCancelled` and `RETIRED`), `cancelledIpcFrame`,

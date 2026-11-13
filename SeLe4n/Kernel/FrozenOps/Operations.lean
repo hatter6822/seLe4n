@@ -1913,7 +1913,7 @@ def frozenResumeContext (st : FrozenSystemState) (t : TCB) :
       | .ok st' => .ok (sc'.budgetRemaining.isPositive, st')
       | .error e => .error e
 
-/-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
+/-- D1: Frozen thread resume — transition a thread from Inactive to Restart (seL4's `restart`), as the live `resumeThread` does.
 Mirrors `resumeThread` in frozen state.
 
 PR #873 round 15: the thread also **enters the run queue**, for the reason its
@@ -1982,7 +1982,7 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
         | .ok stCleared =>
           -- (2) the boost re-derived from the post-restore blocking graph.
           let tcb' := { tcb.restoredToReady with
-                          threadState := .Ready
+                          threadState := .Restart
                           pipBoostCode := SeLe4n.Priority.optCode (frozenComputeMaxWaiterPriority stCleared tid) }
           match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
           | .ok stored =>
