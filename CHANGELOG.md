@@ -1,3 +1,82 @@
+## v0.37.22 — the guard in the capability, and seL4's `resolveAddressBits`
+
+WS-SX SX2 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D4, D5, D17). Capability
+addresses now resolve as seL4's `cspace.c` resolves them, a capability fault
+carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
+
+- **The guard is in the capability.** `Capability` gains `cnodeGuard` and
+  `cnodeGuardSize`; `CNode` keeps only its radix. The boot configurations move
+  each root guard into the root capability. `cnodeCapGeometry` (guard size plus
+  radix at most 64, the guard below `2^guardSize`) replaces
+  `cspaceDepthConsistent` as the fourth conjunct of
+  `capabilityInvariantBundle`.
+- **One resolver.** `resolveAddressBits nodeCap cptr nBits` follows
+  `cspace.c`: `invalidRoot` for a root that is not a CNode, the guard checked
+  before the depth, and a stop at a slot that holds no CNode capability.
+  `lookupSlot` resolves the full 64 bits from the thread's CSpace root, and
+  `lookupSlotForCNodeOp` refuses a walk that stops early as
+  `depthMismatch bitsLeft 0`. The old path resolvers and their theorems are
+  deleted. A `LookupFault`'s `bitsLeft` and `bitsFound` are `UInt8`, seL4's
+  six-bit fields, so no lookup fault holds a `Nat`.
+- **A capability fault carries its `LookupFault`.** The fault message is
+  seL4's `seL4_CapFault_*` words, four to seven of them: `IP`, `Addr`,
+  `InRecvPhase` and `LookupFailureType` in the registers, then the fault's own
+  words in the receiver's IPC buffer. Its length is what `setMR` returns, so a
+  receiver with no buffer reads 4. The fault reaches its handler from the
+  lookup's words (`deliverSyscallLookupFault_eq`).
+- **Security: Mint no longer rebadges.** Before this change, a thread holding
+  a badged endpoint or notification capability could Mint it again with any
+  badge, and so forge the badge a server trusts. With
+  data 0 it could also get an unbadged copy. Mint now applies seL4's
+  `updateCapData` to the parent's kind, read from the store
+  (`capDataKind`):
+  - An endpoint or notification capability takes the data as its badge only
+    when it carries none. A badged one is refused `illegalState` (seL4's
+    `IllegalOperation`), whatever the data, zero included
+    (`mintDerivedCap_rebadge_refused`).
+  - A CNode capability takes bits 63:6 as its guard and bits 5:0 as its size.
+    It is refused when they do not fit beside the radix
+    (`mintDerivedCap_keeps_cnodeCapGeometry`).
+  - Any other capability ignores the data.
+- **SetSpace takes `cspace_root_data`.** SetSpace has a third message word,
+  and `truncationMinimum .tcbSetSpace` is 3. The Rust `SetSpaceArgs` and
+  `tcb_set_space` carry the word too. When the word is nonzero, the CSpace
+  root's copy takes its guard from it (`TCB.spaceCopyOf`). It is refused
+  `illegalState` when the guard does not fit (`cspaceRootDataRefused`,
+  `cspaceRootSourceAdmitted_dataFits`). Zero keeps the source's guard. The
+  copy never takes the source's guard when data is given.
+- **A refused lookup builds nothing.** `resolveAddressBitsK` was a
+  `@[specialize]` recursion. Specialised at a routed arm, it returned the
+  arm's `Except` result, so every refusal of a second capability allocated:
+  the receive's and reply-receive's reply capability, the invocation and
+  overflow-one arms' argument capabilities, and the CNode operations. The
+  recursion is now `resolveAddressBitsWalk`, which returns only the capability
+  and the bits where the walk stops. `resolveAddressBitsLevel` answers that one
+  level with the caller's continuations. `resolveAddressBitsK_eq` keeps its
+  statement.
+- **`main_trace_smoke.expected`** changes four lines. Each now prints the seL4
+  lookup fault the resolver returns, where it used to print the old resolver's
+  error:
+  - ENT-003: `failedLookup false (depthMismatch 1 0)`, a walk that stops with
+    one bit left.
+  - SST-024: `depthMismatch 13 14`.
+  - SST-026: `guardMismatch 14 3 2`.
+  - SGT-004: `invalidRoot`, a root that is not a CNode, where it printed
+    `objectNotFound`.
+- **New QEMU heap-gate scenarios**, each pinned:
+  - The five second-capability guard-mismatch refusals:
+    `receive-reply-cap-`, `reply-recv-reply-cap-`,
+    `configure-sched-context-`, `set-space-root-` and
+    `bind-notification-guard-mismatch`.
+  - `cnode-mint-guard` and `cnode-mint-guardless`, then
+    `cnode-multi-level-copy` through both and its delete, and
+    `lookup-stops-at-non-cnode`.
+  - `cnode-mint-badged-endpoint`, then `cnode-mint-rebadge-refused` and
+    `cnode-mint-unbadge-refused`.
+  - `set-space-root-data` and `set-space-root-data-refused`.
+  - `cap-fault-guard-mismatch`, whose handler reads 7 words and
+    `LookupFailureType` 4, and its reply.
+
 ## v0.37.20 — error payloads and the `LookupFault` type
 
 WS-SX SX1 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D2, D2b, D3). A refusal

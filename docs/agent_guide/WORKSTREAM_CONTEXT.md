@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20; SX2 landed v0.37.22)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -149,7 +149,19 @@ new refusal sets seL4's payload (the argument's word index for
 refusal hands its payload on as words (`entryReportOutcomeW`,
 `abiEntryFinishW`), never as a boxed `KernelError` built on the entry path;
 a new `KernelError` constructor's payload words are closed constants or
-`UInt64` fields. SX2 is the next cut.
+`UInt64` fields.
+
+SX2 (`v0.37.22`) moved the guard into the capability and made the lookup seL4's
+`resolveAddressBits` (guard before depth, a stop at a non-CNode slot); a
+capability fault carries its `LookupFault` in seL4's `seL4_CapFault_*` words;
+Mint and SetSpace's `cspace_root_data` apply seL4's `updateCapData`, so a badged
+endpoint or notification is never rebadged. **Standing constraints for new
+code:** resolve a capability address only through `resolveAddressBits`
+(`lookupSlot`, `lookupSlotForCNodeOp`, or their K forms); a compiled resolver's
+recursion returns only values the walk already holds (`resolveAddressBitsWalk`),
+never the caller's result type, so a refused lookup builds nothing on the heap;
+a CNode capability's guard comes from its capability, never from the CNode.
+SX3 is the next cut.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 

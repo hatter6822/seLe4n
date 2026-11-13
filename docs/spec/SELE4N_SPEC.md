@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.20` (`lakefile.toml`) |
+| **Package version** | `0.37.22` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 629,256 across 625 Lean files |
 | **Test LoC** | 89,688 across 70 Lean test suites |
@@ -3179,6 +3179,39 @@ words entry (`abiEntryFinishW`) builds the frame from the discriminant and the
 words, rebuilding the error only where the declassification ledger records it,
 so a refusal reads 0 heap cells.  `syscallAbiVersion` is 5; the Rust mirror is
 `sele4n_types::{LookupFault, SyscallError}` and `sele4n_abi::decode_error`.
+
+**WS-SX SX2 (v0.37.22) — the guard in the capability, and seL4's
+`resolveAddressBits`.**  A CNode capability carries its guard and guard size
+(`cnodeGuard`, `cnodeGuardSize`); the CNode keeps only its radix, so two
+capabilities to one CNode resolve through it with their own guards.  One
+resolver, `resolveAddressBits nodeCap cptr nBits`, follows `cspace.c`: a
+non-CNode root is `invalidRoot`; at each level the guard is checked before the
+depth (`guardMismatch bitsLeft guardFound guardSize`, then `depthMismatch
+bitsLeft levelBits`); a level that consumes the last bits answers its slot; a
+slot holding anything but a CNode capability stops the walk with the bits still
+left.  `lookupSlot` resolves the full 64 bits from the thread's CSpace root
+capability, and `lookupSlotForCNodeOp` refuses a walk that stops early as
+`depthMismatch bitsLeft 0`.  A `LookupFault`'s `bitsLeft` and `bitsFound` are
+`UInt8` (seL4's six-bit fields).  `cnodeCapGeometry` (guard size plus radix at
+most 64, the guard below `2^guardSize`) is the fourth conjunct of
+`capabilityInvariantBundle`.  A capability fault carries its `LookupFault`, and
+its message is seL4's `seL4_CapFault_*` words, four to seven by the fault
+(`IP`, `Addr`, `InRecvPhase`, `LookupFailureType`, then the fault's own words in
+the receiver's IPC buffer), its length as `setMR` returns it.  Mint applies
+seL4's `updateCapData` to the parent's kind, read from the store: an endpoint or
+notification capability takes the data as its badge only when it carries none,
+and a badged one is refused `illegalState` (seL4's `IllegalOperation`) whatever
+the data, zero included (`mintDerivedCap_rebadge_refused`); a CNode capability
+takes bits 63:6 as its guard and bits 5:0 as its size, refused when they do not
+fit beside the radix (`mintDerivedCap_keeps_cnodeCapGeometry`).  SetSpace takes
+a third word, `cspace_root_data` (`truncationMinimum .tcbSetSpace` is 3): when
+nonzero, the CSpace root's copy takes its guard from it, refused `illegalState`
+when it does not fit (`cspaceRootSourceAdmitted_dataFits`); zero keeps the
+source capability's guard.  The compiled resolver (`resolveAddressBitsK`,
+`resolveAddressBitsK_eq`) recurses only for the capability and the bits where
+the walk stops (`resolveAddressBitsWalk`) and answers that one level with the
+caller's continuations (`resolveAddressBitsLevel`), so a refused lookup of an
+invoked or an argument capability builds no result on the heap.
 
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both

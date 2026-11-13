@@ -213,6 +213,16 @@ The label is unchanged until SX10.
 
 ### SX2 — The guard in the capability, and `resolveAddressBits` (D4, D5, D17)
 
+**LANDED at `v0.37.22`.** The compiled resolver recurses only for the
+capability and the bits where the walk stops (`resolveAddressBitsWalk`) and
+answers that level with the caller's continuations (`resolveAddressBitsLevel`),
+so a refused second-capability lookup builds no result on the heap. The QEMU
+heap gate also runs the five second-capability guard-mismatch refusals
+(`receive-reply-cap-`, `reply-recv-reply-cap-`, `configure-sched-context-`,
+`set-space-root-` and `bind-notification-guard-mismatch`), `cnode-mint-guardless`,
+`cnode-multi-level-copy`, `cnode-mint-unbadge-refused` (data zero) and
+`set-space-root-data`/`-refused` beside the acceptance scenarios below.
+
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX2.1 | One sub-task, because neither half compiles alone. **Capability:** `Capability` gains `cnodeGuard` and `cnodeGuardSize`; `CNode` loses `guardWidth`, `guardValue` and `depth`; the boot configs move each guard into the root capability (D5). **Resolver:** `resolveAddressBits (nodeCap) (cptr) (nBits) : Except LookupFault (SlotRef × Nat)` follows `cspace.c:126`: InvalidRoot; the guard checked before the depth; a stop at a non-CNode capability. `lookupSlot` resolves at 64 from the TCB's root capability. `lookupSlotForCNodeOp` follows `cspace.c:64`. **Deleted with their theorems:** `resolveCapAddress`, `resolveCNodeOpAddress`, `resolveCNodeOpSlot`, `resolveCNodeOpSrcRoot`, `cspaceResolvePath`, `cspaceLookupPath`, `cspaceLookupMultiLevel`, `CNode.resolveSlot`, `ResolveError`, the old K forms and `SyscallGate.capDepth`. IPC extra capabilities use `lookupSlot`, still at the rendezvous. | The resolver family restated: congruence, valid CNode, guard reject/match, `resolveAddressBits_callers_check_rights`. The new K forms by `@[csimp]`. Termination on bits, from a carve fact (radix ≥ 1). `cnodeCapGeometry` (guardSize + radix ≤ 64, guard < 2^guardSize) replaces `cspaceDepthConsistent` as the fourth conjunct of `capabilityInvariantBundle`, the position `cspaceDepthConsistent` held, so no other conjunct is re-indexed. Every lock footprint over the root's geometry re-derived. | Tier 3 :4106, :8371, :10988, :11350–:11355, :23522; `main_trace_smoke.expected` |
