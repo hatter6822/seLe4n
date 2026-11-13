@@ -9,7 +9,6 @@
 
 import SeLe4n.Machine
 import SeLe4n.Model.KernelError
-import Std.Tactic.BVDecide
 
 /-!
 # WS-RR RR4.1/RR4.2 — the `Fault` value a thread carries
@@ -354,13 +353,13 @@ theorem spill_word (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) (i : Nat
     | 33, _ => rfl
     | 34, _ => rfl
     | n + 35, h => exact absurd h (by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount; omega)
-  · have h8 : ¬ i < FaultContext.gprWindow := by
+  · have hMid : ¬ i < FaultContext.gprWindow := by
       unfold FaultContext.gprWindow SeLe4n.Kernel.Architecture.trapFrameWordCount at *; omega
     have hNe30 : i ≠ 30 := by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount at hi; omega
     have hLt31 : i ≠ SeLe4n.Kernel.Architecture.trapFrameSpWord := by
       unfold SeLe4n.Kernel.Architecture.trapFrameWordCount SeLe4n.Kernel.Architecture.trapFrameSpWord at *
       omega
-    rw [if_neg h8, if_neg hNe30, if_neg hLt31, SeLe4n.RegisterFile.word_of_ge _ i hi,
+    rw [if_neg hMid, if_neg hNe30, if_neg hLt31, SeLe4n.RegisterFile.word_of_ge _ i hi,
       SeLe4n.RegisterFile.word_of_ge _ i hi]
 
 /-- A register outside the window and the link register reads through to the
@@ -501,9 +500,77 @@ private theorem storedType_cases (lk : UInt64) :
   rcases storedType_cases lk with h | h | h | h <;>
     simp [ofStored, storedWordCount, h, wordCount]
 
+/-- The stored word's value: a type below 256 and two bytes above it, each in
+its own byte, so the `|||` of the three is their sum. -/
+private theorem toNat_storedPack (k : UInt64) (hk : k.toNat < 256) (l b : UInt8) :
+    (k ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)).toNat
+      = k.toNat + l.toNat * 256 + b.toNat * 65536 := by
+  have hl := l.toNat_lt; have hb := b.toNat_lt
+  have hMid : (l.toUInt64 <<< 8).toNat = l.toNat <<< 8 := by
+    simp only [UInt64.toNat_shiftLeft, UInt8.toNat_toUInt64]
+    rw [Nat.shiftLeft_eq]; simp; omega
+  have hHigh : (b.toUInt64 <<< 16).toNat = b.toNat <<< 16 := by
+    simp only [UInt64.toNat_shiftLeft, UInt8.toNat_toUInt64]
+    rw [Nat.shiftLeft_eq]; simp; omega
+  rw [UInt64.toNat_or, UInt64.toNat_or, hMid, hHigh, Nat.or_comm k.toNat,
+    ← Nat.shiftLeft_add_eq_or_of_lt (by omega), Nat.or_comm,
+    ← Nat.shiftLeft_add_eq_or_of_lt (by rw [Nat.shiftLeft_eq]; omega)]
+  simp only [Nat.shiftLeft_eq]; omega
+
+private theorem toNat_storedPack2 (k : UInt64) (hk : k.toNat < 256) (l : UInt8) :
+    (k ||| (l.toUInt64 <<< 8)).toNat = k.toNat + l.toNat * 256 := by
+  have h := toNat_storedPack k hk l 0
+  have h0 : ((0 : UInt8).toUInt64 <<< 16) = 0 := by decide
+  rw [h0, UInt64.or_zero] at h
+  simpa using h
+
+/-- The stored type byte of a word whose value is `n`. -/
+private theorem storedLow_eq (x : UInt64) (k : UInt64) (hk : k.toNat < 256)
+    (h : x.toNat % 256 = k.toNat) : (x &&& 0xFF) = k := by
+  apply UInt64.toNat.inj
+  rw [UInt64.toNat_and, show (0xFF : UInt64).toNat = 2 ^ 8 - 1 from rfl,
+    Nat.and_two_pow_sub_one_eq_mod]
+  exact h
+
+/-- The byte at bit `s` of a word whose value is `n`. -/
+private theorem storedByte_eq (x : UInt64) (s : UInt64) (hs : s.toNat < 64) (l : UInt8)
+    (h : x.toNat / 2 ^ s.toNat % 256 = l.toNat) : (x >>> s).toUInt8 = l := by
+  apply UInt8.toNat.inj
+  simp only [UInt64.toNat_toUInt8, UInt64.toNat_shiftRight, Nat.mod_eq_of_lt hs,
+    Nat.shiftRight_eq_div_pow]
+  exact h
+
 @[simp] theorem ofStored_stored (f : LookupFault) : ofStored f.storedWord f.guardWord = f := by
-  cases f <;> simp only [ofStored, storedType, storedWord, guardWord] <;>
-    (repeat' split) <;> first | rfl | (exfalso; bv_decide) | (congr 1 <;> bv_decide)
+  cases f with
+  | invalidRoot => rfl
+  | missingCapability l =>
+    have hl := l.toNat_lt
+    have hv := toNat_storedPack2 2 (by decide) l
+    have hT : ((2 : UInt64) ||| (l.toUInt64 <<< 8)) &&& 0xFF = 2 :=
+      storedLow_eq _ _ (by decide) (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    have hL : (((2 : UInt64) ||| (l.toUInt64 <<< 8)) >>> 8).toUInt8 = l :=
+      storedByte_eq _ _ (by decide) l (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    simp [ofStored, storedType, storedWord, guardWord, hT, hL]
+  | depthMismatch l b =>
+    have hl := l.toNat_lt; have hb := b.toNat_lt
+    have hv := toNat_storedPack 3 (by decide) l b
+    have hT : ((3 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) &&& 0xFF = 3 :=
+      storedLow_eq _ _ (by decide) (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    have hL : (((3 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) >>> 8).toUInt8 = l :=
+      storedByte_eq _ _ (by decide) l (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    have hB : (((3 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) >>> 16).toUInt8 = b :=
+      storedByte_eq _ _ (by decide) b (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    simp [ofStored, storedType, storedWord, guardWord, hT, hL, hB]
+  | guardMismatch l g b =>
+    have hl := l.toNat_lt; have hb := b.toNat_lt
+    have hv := toNat_storedPack 4 (by decide) l b
+    have hT : ((4 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) &&& 0xFF = 4 :=
+      storedLow_eq _ _ (by decide) (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    have hL : (((4 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) >>> 8).toUInt8 = l :=
+      storedByte_eq _ _ (by decide) l (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    have hB : (((4 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)) >>> 16).toUInt8 = b :=
+      storedByte_eq _ _ (by decide) b (by rw [hv]; simp only [UInt64.reduceToNat]; omega)
+    simp [ofStored, storedType, storedWord, guardWord, hT, hL, hB]
 
 @[simp] theorem storedMessageWord_stored (f : LookupFault) (i : Nat) :
     storedMessageWord f.storedWord f.guardWord i = f.word i := by
