@@ -8,7 +8,7 @@
 -/
 
 -- WS-SM SM6.A: PRODUCTION (LANDED). The pure `.call` dispatch ops below the API
--- layer; the live `API.dispatchWithCap{,Checked}` `.call` arm routes through
+-- layer; the live `API.dispatchWithCapChecked` `.call` arm routes through
 -- `endpointCallCrossCoreDispatch{,Checked}` here, passing the core the syscall
 -- trapped on, threaded from the entry point. (Former "STATUS: staged"
 -- marker replaced with this landing note per the implement-the-improvement rule;
@@ -82,7 +82,7 @@ The cross-core WithCaps call, then — if a receiver rendezvoused — the
 SchedContext **donation** to a passive server and priority-inheritance
 propagation. The cross-core `.reschedule` SGI is surfaced for the runtime to
 fire after the commit. Mirrors the live single-core `.call` dispatch arm
-(`API.dispatchWithCap`).
+(`API.dispatchWithCapChecked`).
 
 **WS-RR RR2.7**: the donation is `applyCallDonationOnCore`, not the boot-pinned
 `applyCallDonation`. The rebinding of the caller's SchedContext to the receiver

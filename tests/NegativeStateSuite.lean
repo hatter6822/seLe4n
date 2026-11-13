@@ -3655,7 +3655,7 @@ def runThreadSlotInvocationRefusalChecks : IO Unit := do
         { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 1, extraCaps := 0, label := 0 },
           syscallId := sid, msgRegs := #[SeLe4n.RegValue.ofNat slot] }
       expectErr s!"{name} on a thread capability, space slot {slot}"
-        (SeLe4n.Kernel.dispatchWithCap decoded ⟨6⟩ bootCoreId gate threadCap st)
+        (SeLe4n.Kernel.dispatchWithCapChecked SeLe4n.Kernel.harnessLabelingContext decoded ⟨6⟩ bootCoreId gate threadCap st)
         .objectNotFound
   -- A refusal commits nothing: the state it leaves is `st`, whose thread still
   -- holds both roots.

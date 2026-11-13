@@ -32,7 +32,7 @@ import SeLe4n.Kernel.Architecture.PageTableInstall
 /-!
 # `ipcInvariantFull` bundles for the non-IPC dispatch arms
 
-`dispatchWithCap` routes twenty-five syscalls, and before this module only the
+`dispatchWithCapChecked` routes twenty-five syscalls, and before this module only the
 IPC and donation arms carried `ipcInvariantFull` bundles — the capability,
 VSpace, service, sched-context, lifecycle and TCB arms had per-invariant
 fragments at best, so no theorem could carry the bundle across a syscall.

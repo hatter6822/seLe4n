@@ -5758,7 +5758,7 @@ hardware TLB consistency:
 - **Internal helpers**: The unflushed `vspaceMapPage`/`vspaceUnmapPage` are
   internal proof decomposition helpers only. They carry explicit warnings
   against direct use in production paths.
-- **API dispatch**: `dispatchWithCap` routes VSpace syscalls through the
+- **API dispatch**: `dispatchWithCapChecked` routes VSpace syscalls through the
   `WithFlush` variants exclusively.
 
 ### 8.8 Frozen IPC Queue Semantics
@@ -7051,8 +7051,8 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   uncached user alias of the same page is a mismatched-attribute alias (ARM ARM
   B2.8) that could observe the page's previous contents after the scrub.
 - **Composition**: `vspaceMapFromFrameCap` is the arm past its address-space
-  check; `dispatchWithCap_vspaceMap_requires_frame_cap` and
-  `dispatchWithCap_vspaceMap_maps_frame_base` state the two claims.
+  check; `dispatchWithCapChecked_vspaceMap_requires_frame_cap` and
+  `dispatchWithCapChecked_vspaceMap_maps_frame_base` state the two claims.
 - **No other source of memory authority**: every object is carved
   (`v0.36.125`; the in-place retype is retired), the boot refuses a configured
   frame (`bootSafeObject`), and the destroy cleanup refuses a frame
@@ -7798,8 +7798,7 @@ checks (both space slots, both calls, the roots kept).
 invoked capability, and zero for an unbadged one: seL4's
 `sendSignal(ntfn, cap_notification_cap_get_capNtfnBadge(cap))`.  The caller
 has no say in it.  seLe4n now does exactly this: every signal arm — the
-specification's unchecked and checked arms (`dispatchWithCap`,
-`dispatchWithCapChecked`), the refusal-carrying arms, the in-place woken and
+dispatcher's arm (`dispatchWithCapChecked`), the refusal-carrying arms, the in-place woken and
 bound fast forms, the routed and overflowed entry arms — ORs in
 `Capability.signalBadge` (`if cap.badged then cap.badgeWord else 0`), read from
 the operand's slot in place, so no `Option` or capability record is built.  No
@@ -7808,7 +7807,7 @@ accepted (the HAL prefilter's minimum for `NotificationSignal` and
 `DeclassifySignal` is 0).  The order of checks is the lookup, then the
 capability's target and right; there is no argument decode.
 
-`dispatchWithCap_notificationSignal_badge_of_cap` and its checked twin prove
+`dispatchWithCapChecked_notificationSignal_badge_of_cap` proves
 that two decodes naming the signal dispatch identically on the same
 capability, so no word the caller writes can set a badge bit.  Before
 `v0.37.12` the badge was taken from the first message register
@@ -8964,13 +8963,11 @@ inhabited by the boot state).  The top-level dispatch payoff **exists**:
 `dispatchCapabilityOnly_preserves_ipcInvariantFull` (`SeLe4n/Kernel/API.lean`,
 production) covers every capability-gated arm over the per-arm bundle layer
 `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, and
-`dispatchWithCap_preserves_ipcInvariantFull`
-(`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
-surface it composes) carries the bundle across the specification's capability
-dispatcher, and `dispatchWithCapChecked_preserves_ipcInvariantFull` /
+`dispatchWithCapChecked_preserves_ipcInvariantFull` /
 `dispatchSyscallChecked_preserves_ipcInvariantFull` carry it over the
-flow-checked tier the kernel runs — mirrored arms reduced to the
-`dispatchWithCap` payoff, the four
+flow-checked tier the kernel runs (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`,
+staged with the `.call` surface it composes) — each IPC arm's flow gate
+discharged before its per-transition bundle, the four
 live SM9 declassification/audit arms closed from their transitions' frames.
 Both dispatch packs carry machine-checked inhabitation witnesses.  The
 payoff holds under pre-state packs (`capabilityDispatchQuiescence`,
@@ -9741,7 +9738,7 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
 
   **And a coverage claim names the ARM, not the dispatch beneath it** (WS-RR
   RR8.12 Cut C6d, `v0.35.177`).  `replyTransferOnCore` — seL4's `doReplyTransfer`
-  branch, and what `API.dispatchWithCap`'s `.reply` arm actually runs — has a
+  branch, and what `API.dispatchWithCapChecked`'s `.reply` arm actually runs — has a
   post-state the dispatch does not: the delivered-message staging on an unfaulted
   caller, the decoded outcome on a faulted one, the latter either installing a
   restart frame or *descheduling* the faulted thread.  Five confinement theorems

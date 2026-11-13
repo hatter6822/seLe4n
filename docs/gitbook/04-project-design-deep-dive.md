@@ -80,7 +80,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
-**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 34 syscalls are fully wired — zero `.illegalState` stubs remain (25 at the WS-K closure; the surface has since grown through WS-SM SM9's `declassifySignal` = 33).
+**Dispatch integration:** `dispatchWithCapChecked` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 34 syscalls are fully wired — zero `.illegalState` stubs remain (25 at the WS-K closure; the surface has since grown through WS-SM SM9's `declassifySignal` = 33).
 
 **Service registry (WS-Q1):** The service subsystem uses a stateless registry model — a registration names the endpoint that serves it and is recorded on that endpoint. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates, and since `v0.36.145` no dependency graph: isolation between services comes from capabilities, as in seL4.
 
@@ -339,7 +339,7 @@ with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`); `.send
 **Layer 6 (completed, K-F v0.16.5):** Round-trip proofs, preservation composition,
 and NI integration. 7 encode functions + 7 round-trip theorems close the layer-2
 decode contract. `extractMessageRegisters_roundtrip` closes the layer-1 extraction
-gap. `dispatchWithCap_layer2_decode_pure` proves decode depends only on `msgRegs`.
+gap. `dispatchWithCapChecked_layer2_decode_pure` proves decode depends only on `msgRegs`.
 `retypeFromUntyped_preserves_lowEquivalent` completes the last deferred NI proof.
 **Layer 7 (completed, K-G v0.16.7):** Lifecycle NI proof completion.
 `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` completes the deferred

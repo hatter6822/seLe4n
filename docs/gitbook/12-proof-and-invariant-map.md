@@ -253,8 +253,7 @@ The payoff is at the dispatcher:
 | Theorem | Covers | Layer |
 |---------|--------|-------|
 | `dispatchCapabilityOnly_preserves_ipcInvariantFull` | every capability-gated arm | production, `Kernel/API.lean` |
-| `dispatchWithCap_preserves_ipcInvariantFull` | + the IPC fall-through arms | staged, `IPC/Invariant/DispatchPayoff.lean` |
-| `dispatchWithCapChecked_…` | the flow-checked mirror, built from the row above | staged, same module |
+| `dispatchWithCapChecked_preserves_ipcInvariantFull` | + the flow-gated IPC arms | staged, `IPC/Invariant/DispatchPayoff.lean` |
 | `dispatchSyscallChecked_…` | + the lookup/taint prologue, at the kernel's dispatcher | staged, same module |
 
 Each holds under a **pre-state quiescence pack** — every field dischargeable

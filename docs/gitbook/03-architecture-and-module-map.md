@@ -216,7 +216,7 @@ inventory was written:
     the exported seam,
   - 12 delegation theorems (WS-K-C/K-D/K-E): 4 CSpace + 3 lifecycle/VSpace +
     2 service + 3 IPC message population,
-  - `dispatchWithCap_layer2_decode_pure` (WS-K-F); the entry's bundle preservation
+  - `dispatchWithCapChecked_layer2_decode_pure` (WS-K-F); the entry's bundle preservation
     `syscallEntryChecked_preserves_proofLayerInvariantBundle`.
 
 ### Model

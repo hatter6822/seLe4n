@@ -254,12 +254,12 @@ private def routePrims : List String :=
   [@PRIMS@]
 
 /-- The syscall dispatch entry points, used only to disambiguate colliding
-short names.  They are found by stem, not by full name (the first three are
-`private`).  `dispatchYield` is the yield's own dispatcher: a yield invokes no
-capability, so it is dispatched before the capability tier and the other three
+short names.  They are found by stem, not by full name (a `private` one is
+mangled).  `dispatchYield` is the yield's own dispatcher: a yield invokes no
+capability, so it is dispatched before the capability tier and the other two
 never reach `yieldOnCore`. -/
 private def routeDispatch : List String :=
-  ["dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked", "dispatchYield"]
+  ["dispatchCapabilityOnly", "dispatchWithCapChecked", "dispatchYield"]
 
 private def routePinned : List String :=
   [@PINNED@]
@@ -1302,10 +1302,9 @@ def main() -> int:
         elif isinstance(alt, list):
             declared.update(alt)
         # An arm that performs *no operation at all* has no root to walk and
-        # cannot be boot-pinned — `.declassify`'s unchecked arm is the first
-        # (`fun _ => .error .declassificationDenied`: there is no unchecked
-        # declassification, because "unchecked" would mean "every downgrade
-        # authorized").  The exemption is **declared** in the aliases file under
+        # cannot be boot-pinned — the capability dispatcher's `.yield` arm
+        # (`fun _ => .error .illegalState`: the yield is dispatched before the
+        # capability tier).  The exemption is **declared** in the aliases file under
         # `<label>#inert` AND **verified** here: the arm must call nothing and
         # must produce an error.  A future edit that gives it a call stops
         # matching and the gate demands a root, so this cannot fail open.

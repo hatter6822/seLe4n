@@ -543,7 +543,7 @@ every IPC composite a candidate, which is the frontier this census deliberately
 stops at (a composite inherits its chain result by `donationChainFrame`'s
 algebra).  Measured rather than assumed: pairing this with the *transitive*
 constructor half reports 22 composites — `endpointCall`, `endpointReply`,
-`dispatchWithCap` among them.
+`dispatchWithCapChecked` among them.
 
 So **each disjunct of the frontier has one direct side**, which is what keeps a
 composite out: it builds no chain record in its own body.  A candidate either

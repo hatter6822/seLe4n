@@ -122,7 +122,7 @@ open SeLe4n.Kernel.Concurrency
 #check @ICacheInvalidation.unifyPage_toPaddr
 #check @ICacheInvalidation.unifyPage_covers_ivauPage
 #check @icacheLineMatches_unifyPage
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_delegates
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs_eq
 #check @SeLe4n.Kernel.Concurrency.lockSet_vspaceUnifyInstruction

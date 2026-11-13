@@ -138,11 +138,9 @@ PRE_STATE_PREDICATES = (
 # plan originally wrote `syscallDispatch`, which names nothing.  The theorem is
 # named for the function it is about.  The exported entry delegates to
 # `syscallEntryChecked` -> `dispatchSyscallChecked`; the unchecked top-level
-# dispatcher and its payoff were retired (owner decision 2026-11-13).  The
-# specification's capability tier `dispatchWithCap` stays required, because the
-# checked tier's payoff is built from its payoff.
+# dispatcher, the unchecked capability tier and their payoffs were retired
+# (owner decision 2026-11-13).
 PAYOFF_THEOREMS = (
-    "dispatchWithCap_preserves_ipcInvariantFull",
     "dispatchWithCapChecked_preserves_ipcInvariantFull",
     "dispatchSyscallChecked_preserves_ipcInvariantFull",
 )
@@ -3844,12 +3842,6 @@ CLEAN_BUNDLE = '''theorem endpointSendDual_preserves_ipcInvariantFull
 
 CLEAN_PAYOFF = '''namespace SeLe4n.Kernel
 
-theorem dispatchWithCap_preserves_ipcInvariantFull
-    (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchWithCap st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  exact sample st st' hInv hStep
-
 theorem dispatchWithCapChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
     (hStep : dispatchWithCapChecked st = .ok ((), st')) :
@@ -5284,7 +5276,7 @@ end σ""",
     # residual is how an exemption list stops describing the tree.
     stale_registration = _fixture()
     stale_registration[PENDING_FILE] = (
-        "dispatchWithCap_preserves_ipcInvariantFull | WS-RR RR3.15 | sized and deferred\n"
+        "dispatchWithCapChecked_preserves_ipcInvariantFull | WS-RR RR3.15 | sized and deferred\n"
     )
     cases.append(
         _Case(

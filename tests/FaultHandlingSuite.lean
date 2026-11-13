@@ -96,7 +96,7 @@ open SeLe4n.Testing
 #check @faultSuspend
 #check @faultSuspendOnCore
 #check @faultAbandonOnCore
-#check @faultDeliverOnCore
+#check @faultDeliverOnCoreChecked
 -- RR4.13–RR4.16: reply, restart frame, register writeback.
 #check @decodeFaultReply
 #check @faultRestartFrameOfContext
@@ -186,9 +186,11 @@ example (ctx : FaultContext) :
   decodeFault_encodeFault _ ctx
 
 /-- RR4.19: the progress theorem, at a concrete core. -/
-example (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) :
-    ¬ dispatchableOnCore (faultDeliverOnCore st tid f fctx bootCoreId).1 tid bootCoreId :=
-  faultDeliverOnCore_not_dispatchable st tid f fctx bootCoreId
+example (lctx : LabelingContext) (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
+    (fctx : FaultContext) :
+    ¬ dispatchableOnCore (faultDeliverOnCoreChecked lctx st tid f fctx bootCoreId).1 tid
+      bootCoreId :=
+  faultDeliverOnCoreChecked_not_dispatchable lctx st tid f fctx bootCoreId
 
 /-- RR4.20: a policy-refused fault suspends rather than errors, so the refusal
 inherits the progress guarantee instead of punching a hole in it. -/
@@ -581,7 +583,7 @@ private def runResolutionChecks : IO Unit := do
   match handlerRecvOnCore1 stRunning with
   | (stRecv, .ok _) =>
       let fctxG := faultContextOfThread stRecv grantReplyFaulter 0x4_0100 0x3C0
-      let (stG, resG) := faultDeliverOnCore stRecv grantReplyFaulter theFault fctxG c0
+      let (stG, resG) := faultDeliverOnCoreChecked harnessLabelingContext stRecv grantReplyFaulter theFault fctxG c0
       assertBool "a fault delivered through a send + grant-reply capability reaches the handler"
         (resG.disposition == .delivered epHandler)
       assertBool "…and the reply object links the faulting thread as its caller"
@@ -608,7 +610,7 @@ private def deliveryE : Except String Delivery := do
   let (afterRecv, _) ← stepPair "step1: handler recv on core 1"
     (handlerRecvOnCore1 stRunning)
   let fctx := faultContextOfThread afterRecv faulter dataAbortCtx.elr dataAbortCtx.spsr
-  let (afterFault, result) := faultDeliverOnCore afterRecv faulter theFault fctx c0
+  let (afterFault, result) := faultDeliverOnCoreChecked harnessLabelingContext afterRecv faulter theFault fctx c0
   let afterSgi ←
     match handleRescheduleSgiOnCore afterFault c1 with
     | .ok st => .ok st
@@ -681,7 +683,7 @@ private def runDeliveryChecks : IO Unit := do
 private def runNoHandlerChecks : IO Unit := do
   IO.println "--- §6b the fail-closed no-handler policy (RR4.9/RR4.10) ---"
   let fctxO := faultContextOfThread stRunning orphan 0x5_0000 0x3C0
-  let (stO, resO) := faultDeliverOnCore stRunning orphan theFault fctxO c2
+  let (stO, resO) := faultDeliverOnCoreChecked harnessLabelingContext stRunning orphan theFault fctxO c2
   assertBool "a thread with no fault handler is suspended, not delivered"
     (resO.disposition == .suspended)
   assertBool "the fail-closed path fires no SGI" (resO.sgi == none)
@@ -694,7 +696,7 @@ private def runNoHandlerChecks : IO Unit := do
   -- A resolvable-but-unusable handler takes the same path, which is what
   -- distinguishes "no handler" from "one that could never reply".
   let fctxW := faultContextOfThread stRunning weak 0x6_0000 0x3C0
-  let (stW, resW) := faultDeliverOnCore stRunning weak theFault fctxW c3
+  let (stW, resW) := faultDeliverOnCoreChecked harnessLabelingContext stRunning weak theFault fctxW c3
   assertBool "a read-only handler capability also suspends, fail-closed"
     (resW.disposition == .suspended)
   assertBool "the rights-refused thread is marked .Inactive"
@@ -707,8 +709,7 @@ private def runNoHandlerChecks : IO Unit := do
 -- ============================================================================
 
 /-- Everything `publicLabel`: the lattice admits the flow and no endpoint
-override exists, so the gate is `true` and the checked delivery is the
-unchecked one. -/
+override exists, so the gate is `true` and the checked delivery delivers. -/
 private def permissiveCtx : LabelingContext :=
   { objectLabelOf := fun _ => SecurityLabel.publicLabel
     threadLabelOf := fun _ => SecurityLabel.publicLabel
@@ -764,16 +765,13 @@ private def trapWindow : FaultRegisterWindow :=
 private def runFlowGateChecks : IO Unit := do
   IO.println "--- §6c the flow gate on the live delivery (RR4.20) ---"
   let fctx := faultContextOfThread stRunning faulter 0x4_0000 0x3C0
-  -- A permitted flow delivers, and delivers exactly what the unchecked arm
-  -- would: the gate is a precondition, not a second transition.
+  -- A permitted flow delivers: the gate is a precondition, not a second
+  -- transition (`faultDeliverOnCoreChecked_flow_allowed`).
   let (stP, resP) := faultDeliverOnCoreChecked permissiveCtx stRunning faulter theFault fctx c0
-  let (stU, resU) := faultDeliverOnCore stRunning faulter theFault fctx c0
   assertBool "a permitted flow delivers to the handler endpoint"
     (resP.disposition == .delivered epHandler)
-  assertBool "and the permitted arm is state-identical to the unchecked delivery"
-    (threadStateOf stP handler == threadStateOf stU handler &&
-     threadStateOf stP faulter == threadStateOf stU faulter &&
-     resP.sgi == resU.sgi)
+  assertBool "and the permitted delivery takes the faulter off the core it faulted on"
+    (!dispatchableOn stP faulter c0)
   -- A flow the global lattice denies takes the fail-closed suspend.
   let (stL, resL) := faultDeliverOnCoreChecked latticeDenyingCtx stRunning faulter theFault fctx c0
   assertBool "a lattice-denied flow does not deliver" (resL.disposition == .suspended)
@@ -874,7 +872,7 @@ private structure QueuedDelivery where
 
 private def queuedDeliveryE : Except String QueuedDelivery := do
   let fctx := faultContextOfThread stRunning faulter dataAbortCtx.elr dataAbortCtx.spsr
-  let (afterFault, result) := faultDeliverOnCore stRunning faulter theFault fctx c0
+  let (afterFault, result) := faultDeliverOnCoreChecked harnessLabelingContext stRunning faulter theFault fctx c0
   let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the fault)"
     (handlerRecvOnCore1 afterFault)
   let (afterReply, outcome) ←
@@ -1233,7 +1231,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
   -- empty slot (3) is refused as no capability at all.
   assertBool "pre: the orphan has no fault handler"
     (resolveErr stRunning orphan == some (.invalidCapability 0))
-  match dispatchWithCap (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stRunning with
+  match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stRunning with
   | .ok (_, st1) =>
       assertBool "the live tcbSetFaultHandler arm installs the CPtr on the target"
         ((st1.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0))
@@ -1248,23 +1246,23 @@ private def runConfigureAndResumeChecks : IO Unit := do
       match handlerRecvOnCore1 st1 with
       | (st2, .ok _) =>
           let fctx := faultContextOfThread st2 orphan 0x5_0000 0x3C0
-          let (_, res) := faultDeliverOnCore st2 orphan theFault fctx c2
+          let (_, res) := faultDeliverOnCoreChecked harnessLabelingContext st2 orphan theFault fctx c2
           assertBool "a fault on the freshly configured thread is delivered"
             (res.disposition == .delivered epHandler)
       | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
   | .error e => assertBool s!"tcbSetFaultHandler must succeed (got {repr e})" false
   assertBool "a send + grant-reply capability is admitted as a handler"
-    (match dispatchWithCap (setHandlerDecoded 2) handler c1 configGate orphanTcbCap stRunning with
+    (match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 2) handler c1 configGate orphanTcbCap stRunning with
      | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 2)
      | .error _ => false)
   assertBool "a read-only capability is refused at set time on rights"
-    (errorOf (dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
+    (errorOf (dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
       == some .illegalAuthority)
   assertBool "an empty slot is refused at set time as no capability, naming the handler"
-    (errorOf (dispatchWithCap (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
+    (errorOf (dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
       == some (.invalidCapability 1))
   assertBool "a refused configuration leaves the field as it was"
-    (match dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
+    (match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
      | .ok _ => false
      | .error _ => (stRunning.getTcb? orphan).bind (·.faultHandler) == none)
   -- The write right is checked by the real lookup path (`syscallLookupCap`
@@ -1291,13 +1289,13 @@ private def runConfigureAndResumeChecks : IO Unit := do
   -- that fault — restart at the faulting instruction — or its next ordinary
   -- Call would be answered through the reply seam's fault branch.
   let fctxO := faultContextOfThread stRunning orphan 0x5_0000 0x3C0
-  let (stSusp, resO) := faultDeliverOnCore stRunning orphan theFault fctxO c2
+  let (stSusp, resO) := faultDeliverOnCoreChecked harnessLabelingContext stRunning orphan theFault fctxO c2
   assertBool "pre: the orphan is suspended with its fault recorded"
     (resO.disposition == .suspended && (pendingFaultOf stSusp orphan).isSome &&
       threadStateOf stSusp orphan == some .Inactive)
   assertBool "pre: the reply seam would take the fault branch on it"
     (threadHasPendingFault stSusp orphan)
-  match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
+  match dispatchWithCapChecked harnessLabelingContext resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
   | .ok (_, stRes) =>
       assertBool "resuming a double-faulted thread retires its fault"
         (pendingFaultOf stRes orphan == none && !threadHasPendingFault stRes orphan)
@@ -1311,14 +1309,14 @@ private def runConfigureAndResumeChecks : IO Unit := do
         (threadStateOf stRes orphan == some .Ready)
       -- The recovery story: repair the configuration, resume, fault again —
       -- and this time it is delivered.
-      match dispatchWithCap (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stSusp with
+      match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stSusp with
       | .ok (_, stCfg) =>
-          match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stCfg with
+          match dispatchWithCapChecked harnessLabelingContext resumeTcbDecoded handler c1 configGate orphanTcbCap stCfg with
           | .ok (_, stRes2) =>
               match handlerRecvOnCore1 stRes2 with
               | (stRecv2, .ok _) =>
                   let fctx2 := faultContextOfThread stRecv2 orphan 0x5_0000 0x3C0
-                  let (stD, resD) := faultDeliverOnCore stRecv2 orphan theFault fctx2 c2
+                  let (stD, resD) := faultDeliverOnCoreChecked harnessLabelingContext stRecv2 orphan theFault fctx2 c2
                   assertBool "after repair + resume, the re-executed fault is delivered"
                     (resD.disposition == .delivered epHandler)
                   assertBool "…to a handler that receives the fresh fault, not the retired one"
@@ -1331,7 +1329,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
   let stPlain := faultSuspendOnCore stRunning weak c3
   assertBool "control: a plain suspend records no fault"
     ((pendingFaultOf stPlain weak).isNone)
-  match dispatchWithCap resumeTcbDecoded handler c1 configGate
+  match dispatchWithCapChecked harnessLabelingContext resumeTcbDecoded handler c1 configGate
       { orphanTcbCap with target := .object weak.toObjId } stPlain with
   | .ok (_, stW) =>
       assertBool "control: resuming an unfaulted thread does not touch its saved pc"
@@ -1543,7 +1541,7 @@ private def runRestartChecks : IO Unit := do
         assertBool s!"handler recv must succeed (got {repr e})" false
         throw (IO.userError "handler recv failed")
   let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
-  let (afterFault, resD) := faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+  let (afterFault, resD) := faultDeliverOnCoreChecked harnessLabelingContext afterRecv faulter (.unknownSyscall 0x2A) fctx c0
   assertBool "the unknown-syscall fault is delivered" (resD.disposition == .delivered epHandler)
   let (stR, res) := faultReplyOnCore handler faulter restartInfo restartRegs c1 afterFault
   match res with
@@ -1577,7 +1575,7 @@ private def runRestartChecks : IO Unit := do
         (savedPcOf stA faulter == some 0)
 
 -- ============================================================================
--- §7c  The reply seam is live: `dispatchWithCap` reaches the fault reply
+-- §7c  The reply seam is live: `dispatchWithCapChecked` reaches the fault reply
 -- ============================================================================
 
 /-- The `.reply` decode a fault handler issues: seL4's `seL4_Reply` on the reply
@@ -1610,7 +1608,7 @@ private def hasRunQueueWriteLock (fp : List (LockKey × Concurrency.AccessMode))
 
 /-- WS-RR RR4.14/RR4.15: the seam under test — a fault handler answers through
 the **ordinary reply syscall**, which is the only reply a handler has.  Before
-this seam existed, `dispatchWithCap` woke the faulted thread `.ready` with its
+this seam existed, the dispatcher woke the faulted thread `.ready` with its
 saved PC still addressing the faulting instruction and its fault never retired:
 the fault-reply mechanism was verified and unreachable. -/
 private def runReplySeamChecks : IO Unit := do
@@ -1619,7 +1617,7 @@ private def runReplySeamChecks : IO Unit := do
   | (afterRecv, .ok _) =>
       let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
       let (afterFault, resD) :=
-        faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+        faultDeliverOnCoreChecked harnessLabelingContext afterRecv faulter (.unknownSyscall 0x2A) fctx c0
       assertBool "pre: the fault is delivered and the faulter carries it"
         (resD.disposition == .delivered epHandler && (pendingFaultOf afterFault faulter).isSome)
       assertBool "pre: the reply object the handler holds names the faulted thread"
@@ -1661,7 +1659,7 @@ private def runReplySeamChecks : IO Unit := do
             = endpointReplyDispatchReplenishCores handler faulter IpcMessage.empty c1 afterFault)
           && (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault).isEmpty)
       -- The restart reply, through the live dispatch.
-      match dispatchWithCap replyDecoded handler c1 replyGate replyCapH afterFault with
+      match dispatchWithCapChecked harnessLabelingContext replyDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stD) =>
           assertBool "the live .reply dispatch moves the faulted thread's pc to the handler's choice"
             (savedPcOf stD faulter == some 0x9_9000)
@@ -1677,7 +1675,7 @@ private def runReplySeamChecks : IO Unit := do
       | .error e =>
           assertBool s!"the live .reply dispatch must succeed (got {repr e})" false
       -- A payload-free reply through the same seam is the plain resume.
-      match dispatchWithCap resumeDecoded handler c1 replyGate replyCapH afterFault with
+      match dispatchWithCapChecked harnessLabelingContext resumeDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stR) =>
           assertBool "a payload-free live reply resumes at the faulting instruction"
             (savedPcOf stR faulter == some 0x4_0000)
@@ -1794,7 +1792,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
               ((stC.getReply? replyS).bind (·.caller) == some faulter)
             assertBool "…and the faulter carries no fault into the Call"
               (!threadHasPendingFault stC faulter)
-            match dispatchWithCap serverReplyDecoded orphan c2 serverReplyGate serverReplyCap stC with
+            match dispatchWithCapChecked harnessLabelingContext serverReplyDecoded orphan c2 serverReplyGate serverReplyCap stC with
             | .error e => assertBool s!"the second server's reply must succeed (got {repr e})" false
             | .ok (_, stA) =>
               assertBool "the second server's reply is an ordinary reply: the faulter's PC is its own"
@@ -1810,7 +1808,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
   | (_, .error e) => assertBool s!"handler recv failed ({repr e})" false
   | (afterRecv, .ok _) =>
     let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
-    let (afterFault, _) := faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+    let (afterFault, _) := faultDeliverOnCoreChecked harnessLabelingContext afterRecv faulter (.unknownSyscall 0x2A) fctx c0
     match handleRescheduleSgiOnCore afterFault c1 >>= handlerReplyRecvOnCore1 1 with
     | .error e => assertBool s!"the abandoning ReplyRecv must succeed (got {repr e})" false
     | .ok (_, stAb) =>
@@ -1833,7 +1831,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
 -- binding names the faulted thread as owner in exactly the state it replies from.
 -- So the bundle was stated over a premise the path it is named for refutes.  It
 -- composes the `_establishes_` form now, and the reply below is the live
--- `dispatchWithCap` on that state.
+-- `dispatchWithCapChecked` on that state.
 
 private def scFaulter : SeLe4n.SchedContextId := SchedContextId.ofNat 1135
 
@@ -1883,7 +1881,7 @@ private def runFaultDonationChecks : IO Unit := do
       -- whose run-queue entry stage reads its state, which is the obligation
       -- `endpointReplyCrossCoreDispatch_ok_target_ready` discharges.
       let (afterFault, resD) :=
-        faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+        faultDeliverOnCoreChecked harnessLabelingContext afterRecv faulter (.unknownSyscall 0x2A) fctx c0
       assertBool "the fault is delivered to the waiting handler"
         (resD.disposition == .delivered epHandler)
       -- The measurement.  This is the state the handler replies from, and the
@@ -1901,7 +1899,7 @@ private def runFaultDonationChecks : IO Unit := do
         (threadHasPendingFault afterFault faulter)
       -- The live reply, on that state: the branch the payoff covers since
       -- `v0.35.195`, and the reservation comes home.
-      match dispatchWithCap replyDecoded handler c1 replyGate replyCapH afterFault with
+      match dispatchWithCapChecked harnessLabelingContext replyDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stD) =>
           assertBool "the live .reply dispatch answers a faulted caller that had donated"
             (pendingFaultOf stD faulter == none)
@@ -1917,7 +1915,7 @@ private def runFaultDonationChecks : IO Unit := do
       -- The **abandon** arm on the same donating state: the outcome whose
       -- idle-state obligation used to be `faultReplyOnCore_preserves_ipcInvariantFull`'s
       -- `hTargetIdleAllowed` hypothesis.
-      match dispatchWithCap abandonDecoded handler c1 replyGate replyCapH afterFault with
+      match dispatchWithCapChecked harnessLabelingContext abandonDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stA) =>
           assertBool "the live .reply dispatch abandons a faulted caller that had donated"
             (pendingFaultOf stA faulter == none && threadStateOf stA faulter == some .Inactive)
@@ -1941,7 +1939,7 @@ private def runFaultDonationChecks : IO Unit := do
       | (recvU, .ok _) =>
           let ctxU := faultContextOfThread recvU faulter 0x4_0000 0x3C0
           let (faultU, _) :=
-            faultDeliverOnCore recvU faulter (.unknownSyscall 0x2A) ctxU c0
+            faultDeliverOnCoreChecked harnessLabelingContext recvU faulter (.unknownSyscall 0x2A) ctxU c0
           assertBool "control: with no reservation to lend, the handler's binding stays `.unbound`"
             (bindingOf faultU handler == some .unbound)
       | (_, .error e) =>
@@ -1971,7 +1969,7 @@ private def runProgressChecks : IO Unit := do
         (savedPcOf d.afterFault faulter == some 0)
   -- The same, on the fail-closed arm: a thread with no handler is contained too.
   let fctxO := faultContextOfThread stRunning orphan 0x5_0000 0x3C0
-  let (stO, _) := faultDeliverOnCore stRunning orphan theFault fctxO c2
+  let (stO, _) := faultDeliverOnCoreChecked harnessLabelingContext stRunning orphan theFault fctxO c2
   assertBool "a suspended faulter is not dispatchable on any core"
     (!(dispatchableOn stO orphan c0 || dispatchableOn stO orphan c1 ||
        dispatchableOn stO orphan c2 || dispatchableOn stO orphan c3))
@@ -2033,9 +2031,9 @@ where
         let (sgis, stU) := unknownSyscallEntryStep permissiveCtx stRecv svcCtx trapWindow 0
         let fr := SeLe4n.Kernel.Architecture.readReturnFrame stU handler
         let (stSusp, _) :=
-          faultDeliverOnCore stRunning orphan theFault (faultContextOfThread stRunning orphan 0x5_0000 0x3C0) c2
+          faultDeliverOnCoreChecked harnessLabelingContext stRunning orphan theFault (faultContextOfThread stRunning orphan 0x5_0000 0x3C0) c2
         let resumed :=
-          match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
+          match dispatchWithCapChecked harnessLabelingContext resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
           | .ok (_, stRes) =>
               s!"resume of double-faulted orphan: fault retired = {repr (pendingFaultOf stRes orphan |>.isNone)} pc = {repr (savedPcOf stRes orphan)}"
           | .error e => s!"resume of double-faulted orphan FAILED {repr e}"

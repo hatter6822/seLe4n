@@ -621,12 +621,12 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_resolveAsidRoot_isSome
 -- SM7.F.4(b)(i)/(a): the live dispatch routes both VSpace arms through the
 -- per-core wrappers (the delegation theorems pin the exact call targets):
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates
 -- SM7.F.4(b)(iii)'s retype seam is RETIRED with the in-place retype
 -- (WS-ZA ZA5.4 part 14): an object is made only by the carve, which writes no
 -- translation in place, and the live `.untypedRetype` dispatch stands there:
-#check @SeLe4n.Kernel.dispatchWithCap_untypedRetype_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_untypedRetype_delegates
 -- The live catch-up fold's ORDER-INDEPENDENCE (the §6 stress group's
 -- concurrency claim): SM7.B proved commutativity for the single-view handler,
 -- but the live `completeShootdownRounds` seam folds the PER-CORE handler, so
@@ -2270,7 +2270,7 @@ private def runPerCoreTlbCoalescingOverflowChecks : IO Unit := do
 --         the deferred catch-up REMOVES the (now-stale) remote entry — under
 --         the pending-aware invariant, with a single serialized round.  The
 --         two wrappers exercised here are exactly what the live `.vspaceMap` /
---         `.vspaceUnmap` dispatch routes through (per the `dispatchWithCap_*
+--         `.vspaceUnmap` dispatch routes through (per the `dispatchWithCapChecked_*
 --         _delegates` theorems), so this is the end-to-end acceptance scenario.
 -- ----------------------------------------------------------------------------
 

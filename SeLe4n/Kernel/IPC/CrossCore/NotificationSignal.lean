@@ -9,7 +9,7 @@
 
 -- WS-SM SM6.B: PRODUCTION (LANDED).  `notificationSignalOnCore` entered the
 -- production import closure when the live bound-aware `.notificationSignal`
--- dispatch (`API.dispatchWithCap{,Checked}` →
+-- dispatch (`API.dispatchWithCapChecked` →
 -- `notificationSignalBoundCrossCoreDispatch{,Checked}`) was wired through it.
 -- (Former "STATUS: staged" marker replaced with this landing note per the
 -- implement-the-improvement rule; see WS-SM SM6 §3.1, §5.)

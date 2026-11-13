@@ -56,7 +56,7 @@ and `receiver` are now `ValidThreadId`.  The Lean type system enforces
 the dispatch-boundary discipline at this function's signature —
 construction of a `ValidThreadId` requires a non-sentinel proof, so
 calling `applyCallDonation st sentinel sentinel` is a compile-time
-error.  Production callers (`dispatchWithCap` in `API.lean`,
+error.  Production callers (`dispatchWithCapChecked` in `API.lean`,
 `endpointCallCrossCoreDispatch` in `IPC/CrossCore/EndpointCallDispatch.lean` —
 the single-core `endpointCallWithDonation` held this role until `v0.35.192`
 deleted it) construct

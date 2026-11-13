@@ -1,49 +1,67 @@
-## v0.37.23 — the unchecked syscall entry is retired
+## v0.37.23 — the unchecked syscall entry and dispatchers are retired
 
-Cleanup beside WS-SX (owner decision 2026-11-13). `syscallEntry` was the
-boot-pinned register-sourced entry with no labeling context: no `@[export]`
-seam reached it, only the trace harness, three suites and the exception
-model's SVC arm. Every caller now runs `syscallEntryChecked` with the
-deployment's labeling context, and the unchecked entry and its dispatcher are
+Cleanup beside WS-SX (owner decision 2026-11-13). `syscallEntry`,
+`dispatchSyscall` and `dispatchWithCap` were the boot-pinned register-sourced
+entry and the dispatchers with no labeling context: no `@[export]` seam
+reached them, only the trace harness, the suites, the exception model's SVC
+arm and proofs that used them as a stepping stone. Every caller now runs the
+flow-checked form with a labeling context, and the unchecked forms are
 deleted.
 
-- **One register-sourced entry.** The trace harness, `KernelErrorMatrixSuite`,
+- **One entry, one dispatcher.** The trace harness, `KernelErrorMatrixSuite`,
   `NegativeStateSuite`, `OperationChainSuite`, `FaultHandlingSuite` and
-  `SyscallDispatchSuite` call `syscallEntryChecked` (and
-  `dispatchSyscallChecked`) with `harnessLabelingContext`, the context under
-  which every fixture entity is public. `dispatchSynchronousException` and
-  `dispatchException` take the labeling context as a parameter (the policy
-  module imports the exception model, so it cannot be named there): the SVC
-  arm runs `syscallEntryChecked` on the executing core and the fault arm
-  runs `faultDeliverOnCoreChecked`.
-- **Deleted.** `syscallEntry`, `dispatchSyscall`, and the theorems that
-  covered only them: the decode/right/capability-held lemmas, the
-  proof-layer-bundle and projection preservation, the NI-step and per-core NI
+  `SyscallDispatchSuite` call `syscallEntryChecked`, `dispatchSyscallChecked`,
+  `dispatchWithCapChecked` and `faultDeliverOnCoreChecked` with
+  `harnessLabelingContext`, the context under which every fixture entity is
+  public. `dispatchSynchronousException` and `dispatchException` take the
+  labeling context as a parameter (the policy module imports the exception
+  model, so it cannot be named there): the SVC arm runs `syscallEntryChecked`
+  on the executing core and the fault arm runs `faultDeliverOnCoreChecked`.
+- **Deleted.** `syscallEntry`, `dispatchSyscall`, `dispatchWithCap`, and the
+  theorems that covered only them: the decode/right/capability-held lemmas,
+  the entry's bundle and projection preservation, NI-step and per-core NI
   bridges, the taint-plan, mismatched-core and caller-current lemmas, the
-  composition witness, `dispatchSyscall_preserves_ipcInvariantFull`, and the
-  unchecked run-queue and mapping-record stage lemmas (with
-  `replyTransferOnCore_mappingStage`, which only they used).
-- **Restated on the checked entry.** `syscallEntryChecked_preserves_proofLayerInvariantBundle`
-  and its error twin (API), and `syscallEntryChecked_error_yields_NI_step`,
+  composition witness, the eighteen `checkedDispatch_*_eq_unchecked` bridges,
+  the unchecked wildcard, send, signal-badge and fail-closed
+  (`_declassify_denied`, `_declassifySignal_denied`, `_auditRead_denied`)
+  lemmas, the unchecked IPC payoffs (`dispatchSyscall_preserves_ipcInvariantFull`,
+  `dispatchWithCap_preserves_ipcInvariantFull`), and the unchecked run-queue
+  and mapping-record stage lemmas (with `replyTransferOnCore_mappingStage`,
+  which only they used).
+- **Restated on the checked forms.**
+  `syscallEntryChecked_preserves_proofLayerInvariantBundle` and its error twin
+  (API); `syscallEntryChecked_error_yields_NI_step`,
   `syscallEntryChecked_success_yields_NI_step`,
   `syscallEntryChecked_preserves_projectionOnCore`,
   `syscallEntryChecked_success_perCore_NI` and
-  `syscallEntryChecked_error_perCore_NI` (FineLockFlow). The success forms
-  pass through the entry's IPC-buffer TLB fill.
-- **Kept.** `dispatchWithCap` (the specification the checked dispatcher and
-  its preservation proofs are built from) and `faultDeliverOnCore` (the body
-  `faultDeliverOnCoreChecked` gates); both stay reachable from the test
-  executables.
-- **Gates.** Tier 3 pins the two checked definitions and refuses a
-  reintroduced `def dispatchSyscall` or `def syscallEntry`; the per-core and
-  NI anchors name the restated theorems. The dethreading gate's payoff list,
-  the content-flow taint-consumer list and the reachability census pins drop
-  the deleted names.
+  `syscallEntryChecked_error_perCore_NI` (FineLockFlow), through the entry's
+  IPC-buffer TLB fill; every arm-delegation theorem
+  (`dispatchWithCapChecked_*_delegates`, `_unauthorized`, `_requires_frame_cap`,
+  `_maps_frame_base`, `_call_uses_crossCoreDispatch`, `_reply_populates_msg`,
+  `_layer2_decode_pure`) and the return-shape theorems (`dispatchArm_*`, with
+  the arm's flow gate as a hypothesis); `syscallDelegates`, whose every
+  obligation is now about `dispatchWithCapChecked`; and
+  `dispatchWithCapChecked_preserves_ipcInvariantFull`, which discharges each IPC
+  arm's flow gate and composes the per-transition bundle directly instead of
+  reducing to the unchecked payoff.
+- **Kept.** `dispatchCapabilityOnly` (the capability tier the checked
+  dispatcher runs first) and `faultDeliverOnCore` (the delivery body
+  `faultDeliverOnCoreChecked` and the in-place fault path run once the gate
+  admits; no other code calls it).
+- **Gates.** Tier 3 pins the checked definitions and refuses a reintroduced
+  `def syscallEntry`, `def dispatchSyscall` or `def dispatchWithCap`. The
+  content-flow gate walks the two live dispatchers and its fail-closed
+  exemption for unchecked arms is retired; the per-core routing gate's
+  dispatch seeds and `#inert` declarations drop the unchecked arms; the
+  dethreading gate's payoff list, the reachability census pins and the
+  store-reader baseline drop the deleted names.
 - **Tests and the trace fixture.** `tests/fixtures/main_trace_smoke.expected`
   is regenerated with `lake exe sele4n`: the register-decode trace lines name
   `syscallEntryChecked`, and the trace-equivalence line that compared the
   unchecked entry with the checked one is removed, since there is one entry
-  left to compare.
+  left to compare. The fault suite's comparison of the checked delivery with
+  the unchecked one becomes a check that the admitted delivery takes the
+  faulter off its core.
 
 ## v0.37.21 — a user word at or above 2^63 stays a word on the entry path
 

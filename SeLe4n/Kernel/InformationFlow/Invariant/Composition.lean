@@ -1472,7 +1472,7 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 36 constructors cover every operation reachable from `dispatchWithCap`
+The 36 constructors cover every operation reachable from `dispatchWithCapChecked`
 plus interrupt handling:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.retypeFromUntyped` (the carve)

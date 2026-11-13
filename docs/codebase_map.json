@@ -3337,8 +3337,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_cspaceMint_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_cspaceMint_delegates",
+          "name": "dispatchWithCapChecked_cspaceMint_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_cspaceMint_delegates",
           "line": 6595,
           "called": [
             "SeLe4n.Badge",
@@ -3360,8 +3360,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_cspaceCopy_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_cspaceCopy_delegates",
+          "name": "dispatchWithCapChecked_cspaceCopy_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_cspaceCopy_delegates",
           "line": 6617,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceCopyArgs",
@@ -3381,8 +3381,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_cspaceMove_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_cspaceMove_delegates",
+          "name": "dispatchWithCapChecked_cspaceMove_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_cspaceMove_delegates",
           "line": 6636,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMoveArgs",
@@ -3402,8 +3402,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_cspaceDelete_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_cspaceDelete_delegates",
+          "name": "dispatchWithCapChecked_cspaceDelete_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_cspaceDelete_delegates",
           "line": 6658,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs",
@@ -3423,8 +3423,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_cspaceRevoke_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_cspaceRevoke_delegates",
+          "name": "dispatchWithCapChecked_cspaceRevoke_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_cspaceRevoke_delegates",
           "line": 6676,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs",
@@ -3444,8 +3444,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceMap_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates",
+          "name": "dispatchWithCapChecked_vspaceMap_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates",
           "line": 6710,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
@@ -3466,8 +3466,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceUnifyInstruction_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_delegates",
+          "name": "dispatchWithCapChecked_vspaceUnifyInstruction_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_delegates",
           "line": 6739,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs",
@@ -3488,8 +3488,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates",
+          "name": "dispatchWithCapChecked_vspaceUnmap_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates",
           "line": 6771,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnmapArgs",
@@ -3510,8 +3510,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_untypedRetype_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_untypedRetype_delegates",
+          "name": "dispatchWithCapChecked_untypedRetype_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_untypedRetype_delegates",
           "line": 6792,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs",
@@ -3529,8 +3529,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_untypedReset_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_untypedReset_delegates",
+          "name": "dispatchWithCapChecked_untypedReset_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_untypedReset_delegates",
           "line": 6805,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -3547,8 +3547,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceMap_unauthorized",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceMap_unauthorized",
+          "name": "dispatchWithCapChecked_vspaceMap_unauthorized",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_unauthorized",
           "line": 6827,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
@@ -3568,8 +3568,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceMap_requires_frame_cap",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceMap_requires_frame_cap",
+          "name": "dispatchWithCapChecked_vspaceMap_requires_frame_cap",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_requires_frame_cap",
           "line": 6847,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
@@ -3577,7 +3577,7 @@
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates",
             "SeLe4n.Kernel.resolveVSpaceMapFrame",
             "SeLe4n.Kernel.vspaceCapAuthorizesAsid",
             "SeLe4n.Kernel.vspaceMapOrRemapFromFrameCap",
@@ -3592,8 +3592,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceMap_maps_frame_base",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceMap_maps_frame_base",
+          "name": "dispatchWithCapChecked_vspaceMap_maps_frame_base",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_maps_frame_base",
           "line": 6867,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
@@ -3605,7 +3605,7 @@
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.cspaceRecordFrameMapping",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates",
             "SeLe4n.Kernel.frameCapObjId",
             "SeLe4n.Kernel.resolveVSpaceMapFrame",
             "SeLe4n.Kernel.tagFrameMapping",
@@ -3623,8 +3623,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceUnmap_unauthorized",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_unauthorized",
+          "name": "dispatchWithCapChecked_vspaceUnmap_unauthorized",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_unauthorized",
           "line": 6916,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnmapArgs",
@@ -3644,8 +3644,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_vspaceUnifyInstruction_unauthorized",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_unauthorized",
+          "name": "dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized",
           "line": 6931,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs",
@@ -3687,8 +3687,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_call_uses_crossCoreDispatch",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_call_uses_crossCoreDispatch",
+          "name": "dispatchWithCapChecked_call_uses_crossCoreDispatch",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_call_uses_crossCoreDispatch",
           "line": 6981,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
@@ -3708,8 +3708,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_reply_populates_msg",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_reply_populates_msg",
+          "name": "dispatchWithCapChecked_reply_populates_msg",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_reply_populates_msg",
           "line": 7018,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
@@ -4145,8 +4145,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_layer2_decode_pure",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_layer2_decode_pure",
+          "name": "dispatchWithCapChecked_layer2_decode_pure",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_layer2_decode_pure",
           "line": 7525,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs",
@@ -4861,8 +4861,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_tcbSuspend_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates",
+          "name": "dispatchWithCapChecked_tcbSuspend_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_tcbSuspend_delegates",
           "line": 8621,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSuspendArgs",
@@ -4883,8 +4883,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_tcbSetSpace_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_tcbSetSpace_delegates",
+          "name": "dispatchWithCapChecked_tcbSetSpace_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetSpace_delegates",
           "line": 8641,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs",
@@ -4908,8 +4908,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_tcbResume_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_tcbResume_delegates",
+          "name": "dispatchWithCapChecked_tcbResume_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_tcbResume_delegates",
           "line": 8664,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeResumeArgs",
@@ -5006,8 +5006,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_tcbSetPriority_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_tcbSetPriority_delegates",
+          "name": "dispatchWithCapChecked_tcbSetPriority_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetPriority_delegates",
           "line": 8776,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
@@ -5030,8 +5030,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_schedContextUnbind_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_schedContextUnbind_delegates",
+          "name": "dispatchWithCapChecked_schedContextUnbind_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_schedContextUnbind_delegates",
           "line": 8802,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs",
@@ -5051,8 +5051,8 @@
         },
         {
           "kind": "theorem",
-          "name": "dispatchWithCap_tcbSetMCPriority_delegates",
-          "full_name": "SeLe4n.Kernel.dispatchWithCap_tcbSetMCPriority_delegates",
+          "name": "dispatchWithCapChecked_tcbSetMCPriority_delegates",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetMCPriority_delegates",
           "line": 8820,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
@@ -5271,7 +5271,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_tcbResume",
           "line": 9243,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_tcbResume_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_tcbResume_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5281,7 +5281,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_tcbSuspend",
           "line": 9249,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_tcbSuspend_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5291,7 +5291,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_vspaceMap",
           "line": 9255,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5341,7 +5341,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_vspaceUnmap",
           "line": 9285,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5351,7 +5351,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_untypedRetype",
           "line": 9292,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_untypedRetype_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_untypedRetype_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5361,7 +5361,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_untypedReset",
           "line": 9298,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_untypedReset_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_untypedReset_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5371,7 +5371,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_cspaceDelete",
           "line": 9304,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_cspaceDelete_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_cspaceDelete_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5381,7 +5381,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_cspaceRevoke",
           "line": 9310,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_cspaceRevoke_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_cspaceRevoke_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5391,7 +5391,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_tcbSetSpace",
           "line": 9317,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_tcbSetSpace_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetSpace_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5411,7 +5411,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_tcbSetPriority",
           "line": 9329,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_tcbSetPriority_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetPriority_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5421,7 +5421,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_tcbSetMCPriority",
           "line": 9336,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_tcbSetMCPriority_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_tcbSetMCPriority_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
@@ -5431,7 +5431,7 @@
           "full_name": "SeLe4n.Kernel.syscallDelegates_schedContextUnbind",
           "line": 9343,
           "called": [
-            "SeLe4n.Kernel.dispatchWithCap_schedContextUnbind_delegates",
+            "SeLe4n.Kernel.dispatchWithCapChecked_schedContextUnbind_delegates",
             "SeLe4n.Kernel.syscallDelegates"
           ]
         },
