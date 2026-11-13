@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-address-bits",
-      "commit_sha": "5fd6b7ffb9284ce76fb62076625e1e068c2d1afd",
-      "tree_sha": "2bfa44056854ba96bedaccc10d03fe0cba8b8402",
-      "committed_at_utc": "2026-11-13T12:37:17+00:00"
+      "commit_sha": "1a9384e89eb777a32a9334344bca0e69729dce92",
+      "tree_sha": "3ff40f8db0377c29386a4049c7368833595558a6",
+      "committed_at_utc": "2026-11-13T13:33:39+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "04565161fd445592629119198e7cbf2cbb72ce9cafd6f20a019e0e5b7d0421a8"
+    "source_digest": "c419e0882b2c15cc5aaa74df5319e0fbe3f054773482460bcc019c5b9ec75f47"
   },
   "summary": {
     "module_count": 696,
