@@ -2514,6 +2514,24 @@ const fn cnode_refusal(
     }
 }
 
+/// `trip` refused for a second capability whose address misses the root
+/// CNode's guard: `seL4_FailedLookup`, not the source, `GuardMismatch` (4),
+/// 64 bits left and the root's guard, its width (58) the fifth word, written
+/// to the root task's buffer `msg[4]` while the window's frame is that buffer
+/// ([`RoundTrip::overflow`], as `failed-lookup-guard-mismatch`).
+#[cfg(feature = "hw_target")]
+const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
+    RoundTrip {
+        overflow: Some((FRAME_VADDR, 0)),
+        returns: refused_with(
+            FAILED_LOOKUP,
+            5,
+            [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+        ),
+        ..trip
+    }
+}
+
 /// A root slot no scenario fills: the empty source a Copy is refused from.
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
@@ -2524,6 +2542,36 @@ const EMPTY_SOURCE_SLOT: u64 = 48;
 /// capability (`AUDIT_SLOT`) when the refusal scenarios run.
 #[cfg(feature = "hw_target")]
 const EMPTY_DEST_SLOT: u64 = 49;
+
+/// The root slots of the multi-level walk: the root CNode's capability minted
+/// with a 52-bit guard, minted with none, and the walk's copy.  None is filled
+/// at boot (the boot's own slots end at 36) and each is emptied again.
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_SLOT: u64 = 50;
+#[cfg(feature = "hw_target")]
+const GUARDLESS_CNODE_SLOT: u64 = 51;
+#[cfg(feature = "hw_target")]
+const WALK_COPY_SLOT: u64 = 52;
+
+/// A CNode capability's data word (seL4's `seL4_CNode_CapData`): the guard
+/// in bits 63:6 and its size in bits 5:0.  The 52-bit guard has its top bit
+/// set, so a guarded index is a word `≥ 2^63`.
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_GUARD: u64 = 1 << 51;
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_DATA: u64 = (GUARDED_CNODE_GUARD << 6) | 52;
+
+/// The root CNode's own guard and size as a data word: a SetSpace with it
+/// gives the partner's CSpace root the geometry it had.
+#[cfg(feature = "hw_target")]
+const ROOT_CNODE_DATA: u64 = ((ROOT_CNODE_GUARD >> 6) << 6) | 58;
+
+/// A 64-bit source index through the 52-bit-guarded capability: its guard,
+/// then `first` (the guarded level's slot), then `second` (the next level's).
+#[cfg(feature = "hw_target")]
+const fn guarded_index(first: u64, second: u64) -> u64 {
+    (GUARDED_CNODE_GUARD << 12) | (first << 6) | second
+}
 
 /// The long send's message length: four words in the sender's registers and
 /// two in its IPC buffer's overflow slots 0 and 1, which share a page.
@@ -2824,7 +2872,7 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     &[
         invocation(
             "cspace-copy",
@@ -2859,6 +2907,111 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CSPACE_REVOKE,
             CNODE_CAP,
             [NOTIFICATION_SLOT, 0, 0, 0],
+        ),
+    ],
+    // seL4's `updateCapData` under Mint and `resolveAddressBits` over more
+    // than one level: the root CNode's capability minted with a 52-bit guard
+    // (its top bit set) and with none, so a source index of the guard, the
+    // guardless capability's slot and a slot of the second level resolves
+    // through both to the notification, which is copied out and the copy
+    // deleted; an index naming the notification at the first level stops
+    // there with six bits left, a depth mismatch for a CNode operation
+    // (`lookupSlotForCNodeOp`).  Then a badged endpoint capability minted
+    // again with another badge, and with data zero, both refused (seL4's
+    // `updateCapData` answers a null capability for a badged endpoint,
+    // `IllegalOperation`): a badge is never rewritten nor stripped.
+    &[
+        mint(
+            "cnode-mint-guard",
+            CNODE_SLOT,
+            GUARDED_CNODE_SLOT,
+            ALL_RIGHTS,
+            GUARDED_CNODE_DATA,
+            ROOT_IPC_BUFFER,
+        ),
+        mint(
+            "cnode-mint-guardless",
+            CNODE_SLOT,
+            GUARDLESS_CNODE_SLOT,
+            ALL_RIGHTS,
+            0,
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "cnode-multi-level-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [
+                cap_address(WALK_COPY_SLOT),
+                cap_address(GUARDED_CNODE_SLOT),
+                guarded_index(GUARDLESS_CNODE_SLOT, NOTIFICATION_SLOT),
+                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+            ],
+        ),
+        invocation(
+            "cnode-multi-level-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [cap_address(WALK_COPY_SLOT), 0, 0, 0],
+        ),
+        cnode_refusal(
+            "lookup-stops-at-non-cnode",
+            [
+                cap_address(WALK_COPY_SLOT),
+                cap_address(GUARDED_CNODE_SLOT),
+                guarded_index(NOTIFICATION_SLOT, 0),
+                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+            ],
+            // The source; DepthMismatch (3), six bits left, none found.
+            refused_with(FAILED_LOOKUP, 4, [Some(1), Some(3), Some(6), Some(0)]),
+        ),
+        invocation(
+            "cnode-mint-guardless-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [cap_address(GUARDLESS_CNODE_SLOT), 0, 0, 0],
+        ),
+        invocation(
+            "cnode-mint-guard-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [cap_address(GUARDED_CNODE_SLOT), 0, 0, 0],
+        ),
+        mint(
+            "cnode-mint-badged-endpoint",
+            ENDPOINT_SLOT,
+            GUARDED_CNODE_SLOT,
+            ALL_RIGHTS,
+            5,
+            ROOT_IPC_BUFFER,
+        ),
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..mint(
+                "cnode-mint-rebadge-refused",
+                GUARDED_CNODE_SLOT,
+                GUARDLESS_CNODE_SLOT,
+                ALL_RIGHTS,
+                6,
+                ROOT_IPC_BUFFER,
+            )
+        },
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..mint(
+                "cnode-mint-unbadge-refused",
+                GUARDED_CNODE_SLOT,
+                GUARDLESS_CNODE_SLOT,
+                ALL_RIGHTS,
+                0,
+                ROOT_IPC_BUFFER,
+            )
+        },
+        invocation(
+            "cnode-mint-badged-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [cap_address(GUARDED_CNODE_SLOT), 0, 0, 0],
         ),
     ],
     &[
@@ -2918,6 +3071,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PARTNER_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
+        // The CSpace root's guard taken from `cspace_root_data` (seL4's
+        // `updateCapData` in `decodeSetSpace`): the root's own 58-bit guard,
+        // so the partner's addresses resolve as before; then a guard size
+        // that does not fit beside the radix, refused.
+        invocation(
+            "set-space-root-data",
+            TCB_SET_SPACE,
+            PARTNER_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, ROOT_CNODE_DATA, 0],
+        ),
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..invocation(
+                "set-space-root-data-refused",
+                TCB_SET_SPACE,
+                PARTNER_TCB_CAP,
+                [CNODE_CAP, VSPACE_CAP, 59, 0],
+            )
+        },
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
     ],
@@ -3466,6 +3638,53 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
                 ),
             )
         },
+        // A second capability whose address misses the root CNode's guard,
+        // one per arm that resolves one (seL4's `lookupCap` of an argument,
+        // `seL4_FailedLookup` with the guard-mismatch words): the receive's
+        // and the reply-receive's reply capability, the configure's
+        // scheduling context (the `.overflowOne` route), and the SetSpace
+        // CSpace root and the bound notification an invocation resolves.
+        // Each is refused before anything changes, its fifth word in the
+        // buffer as above.
+        guard_mismatch_refusal(RoundTrip {
+            msg_len: 1,
+            ..invocation(
+                "receive-reply-cap-guard-mismatch",
+                RECEIVE,
+                ENDPOINT_CAP,
+                [REPLY_CAP_SLOT, 0, 0, 0],
+            )
+        }),
+        guard_mismatch_refusal(RoundTrip {
+            msg_len: 2,
+            ..invocation(
+                "reply-recv-reply-cap-guard-mismatch",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                [REPLY_CAP_SLOT, 0x99, 0, 0],
+            )
+        }),
+        guard_mismatch_refusal(configure(
+            "configure-sched-context-guard-mismatch",
+            [
+                SCHED_CONTEXT_SLOT,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        )),
+        guard_mismatch_refusal(invocation(
+            "set-space-root-guard-mismatch",
+            TCB_SET_SPACE,
+            PARTNER_TCB_CAP,
+            [CNODE_SLOT, VSPACE_CAP, 0, 0],
+        )),
+        guard_mismatch_refusal(invocation(
+            "bind-notification-guard-mismatch",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            [NOTIFICATION_SLOT, 0, 0, 0],
+        )),
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
@@ -12225,6 +12444,8 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
         Ordering::SeqCst,
     );
     let after = own_heap_allocations(core as usize);
+    TRAP_RESTORED_X1.store(frame.gprs[1], Ordering::SeqCst);
+    TRAP_RESTORED_X5.store(frame.gprs[5], Ordering::SeqCst);
     crate::interrupts::restore_interrupts(saved_daif);
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
     crate::fp_context::set_trap_for_resume(false);
@@ -12256,6 +12477,18 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     print_reading(name, core as usize, which, before, after, window_start());
     Some(true)
 }
+
+/// `x1` and `x5` of the context the last [`heap_allocations_trap`]'s entry
+/// restored: a delivered fault's message info and its fourth message word.
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X1: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X5: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// The `x1` a guard-mismatch capability fault reaches a handler with an IPC
+/// buffer: `seL4_Fault_CapFault` (1) and its seven words.
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_GUARD_MISMATCH_INFO: u64 = (1 << 12) | 7;
 
 /// Whether the last [`heap_allocations_trap`]'s entry loaded an FP/SIMD
 /// context: an access answered `.load`, where one answered `.retry` loads
@@ -12577,6 +12810,64 @@ fn fault_entries() -> Option<bool> {
             ) != Some(true)
             || heap_allocations_round_trip_resuming(&long_reply_recv, which, Some(fault_restart(2)))
                 != Some(true)
+            || !unmeasured(&wake_handler, "the waiting handler was not woken")
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
+    // A capability fault on an address that misses the root CNode's guard
+    // (seL4's `seL4_GuardMismatch`): delivered to the handler while its IPC
+    // buffer is mapped, so all seven `seL4_CapFault_*` words reach it (`IP`,
+    // `Addr`, `InRecvPhase`, `LookupFailureType`, then `BitsLeft`,
+    // `GuardMismatch_GuardFound` and `GuardMismatch_BitsFound` in the
+    // buffer), the length seven and `LookupFailureType` GuardMismatch (4).
+    // The three buffer words go back to zero before the handler's reply.
+    let guard_mismatch_reply = partner_step(
+        "cap-fault-guard-mismatch-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(
+                &TrapTrip {
+                    x0: EMPTY_SLOT,
+                    ..cap_fault("cap-fault-guard-mismatch")
+                },
+                which,
+            ) != Some(true)
+        {
+            return Some(false);
+        }
+        let info = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+        let lookup_type = TRAP_RESTORED_X5.load(Ordering::SeqCst);
+        if info != CAP_FAULT_GUARD_MISMATCH_INFO || lookup_type != 4 {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: cap-fault-guard-mismatch: the handler received x1={:#x} x5={:#x}",
+                info,
+                lookup_type
+            );
+            return Some(false);
+        }
+        if !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0])
+            || heap_allocations_round_trip(&guard_mismatch_reply, which) != Some(true)
+        {
+            return Some(false);
+        }
+        let (waited, _, _, resumed) = dispatch_round_trip(&handler_waits_again);
+        if !matches!(waited, Dispatched::Blocked) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: cap-fault-guard-mismatch-reply: the handler did not wait again"
+            );
+            return Some(false);
+        }
+        if !restarted_as("cap-fault-guard-mismatch-reply", &resumed, fault_restart(2))
             || !unmeasured(&wake_handler, "the waiting handler was not woken")
             || !suspend_partner()
         {
