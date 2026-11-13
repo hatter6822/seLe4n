@@ -1202,7 +1202,6 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _mr := @SeLe4n.Kernel.misconfiguredDeployment_cannot_read
      have _rd := @SeLe4n.Kernel.dispatchWithCapChecked_auditRead_default_denied
      have _ns := @SeLe4n.Kernel.unconfiguredDeployment_audit_never_succeeds
-     have _n := @SeLe4n.Kernel.dispatchWithCap_auditRead_denied
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
        ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
@@ -1381,9 +1380,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
     (-- The arm is tied to the dispatch by a theorem, not by a reading of the arm.
      have _dl := @SeLe4n.Kernel.dispatchWithCapChecked_declassifySignal_delegates
      have _sd := @SeLe4n.Kernel.syscallDelegates_declassifySignal
-     -- There is no unchecked declassifying signal, and an unconfigured
-     -- deployment performs no downgrade through the checked one.
-     have _un := @SeLe4n.Kernel.dispatchWithCap_declassifySignal_denied
+     -- An unconfigured deployment performs no downgrade through the arm.
      have _df := @SeLe4n.Kernel.dispatchWithCapChecked_declassifySignal_default_no_downgrade
      -- The lock-set footprint: the ordinary signal's, plus the state-level write
      -- the trail append needs, tied to the signal's set by name.

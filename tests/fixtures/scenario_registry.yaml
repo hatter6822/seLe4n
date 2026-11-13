@@ -537,22 +537,22 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace
     subsystem: Architecture
-    description: "syscallEntry send success, endpoint has sender: true"
+    description: "syscallEntryChecked send success, endpoint has sender: true"
   RDT-006:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace
     subsystem: Architecture
-    description: "syscallEntry invalid syscall decode error: SeLe4n.Model.KernelError.invalidSy"
+    description: "syscallEntryChecked invalid syscall decode error: SeLe4n.Model.KernelError.inv"
   RDT-008:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace
     subsystem: Architecture
-    description: "syscallEntry malformed msgInfo decode error: SeLe4n.Model.KernelError.invalid"
+    description: "syscallEntryChecked malformed msgInfo decode error: SeLe4n.Model.KernelError.i"
   RDT-010:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace
     subsystem: Architecture
-    description: "syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidReg"
+    description: "syscallEntryChecked out-of-bounds layout error: SeLe4n.Model.KernelError.inval"
   KSD-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runSyscallDispatchTrace
@@ -613,11 +613,6 @@ scenarios:
     function: runCheckedPipelineTrace
     subsystem: InformationFlow
     description: "V8-A5 post-dispatch invariants preserved"
-  PIP-006:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runCheckedPipelineTrace
-    subsystem: InformationFlow
-    description: "V8-A6 trace equivalence: checked vs unchecked"
   MOV-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runCspaceMoveTrace

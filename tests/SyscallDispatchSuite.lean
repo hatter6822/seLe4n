@@ -937,7 +937,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
 
-/-- **The caller and the executing core are one fact.**  Both dispatchers refuse a
+/-- **The caller and the executing core are one fact.**  The dispatcher refuses a
 pair whose `tid` is not the thread current on `executingCore` with `.illegalState`,
 before any lookup — so the declassification and audit arms, which read their
 subject off `currentOnCore executingCore`, can never act for a different thread
@@ -969,25 +969,21 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
     match r with | .error .illegalState => true | _ => false
   -- Another thread is current on the boot core: the pair (caller, boot core) is refused.
   let stOther := SeLe4n.Testing.withCurrentOnCore base bootCoreId other
-  expect "dispatch_mismatched_core_refused_unchecked"
-    (isIllegalState (dispatchSyscall decoded caller bootCoreId stOther))
-    "dispatchSyscall must refuse a caller that is not current on the executing core"
-  expect "dispatch_mismatched_core_refused_checked"
+  expect "dispatch_mismatched_core_refused"
     (isIllegalState (dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther))
     "dispatchSyscallChecked must refuse a caller that is not current on the executing core"
   -- The caller IS current, but on core 1: naming the boot core is still a mismatch.
   let stElsewhere := SeLe4n.Testing.withCurrentOnCore base core1 caller
   expect "dispatch_caller_current_on_other_core_refused"
-    (isIllegalState (dispatchSyscall decoded caller bootCoreId stElsewhere) &&
-     isIllegalState (dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stElsewhere))
+    (isIllegalState (dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stElsewhere))
     "a caller current on another core must be refused on the named core"
   -- No thread current at all on the named core: refused, not defaulted.
   expect "dispatch_no_current_on_core_refused"
-    (isIllegalState (dispatchSyscall decoded caller bootCoreId base))
+    (isIllegalState (dispatchSyscallChecked harnessLabelingContext decoded caller bootCoreId base))
     "a core with no current thread must refuse every caller"
   -- Positive control: the same bind with the caller current on the named core succeeds.
   expect "dispatch_consistent_pair_admitted"
-    (match dispatchSyscall decoded caller core1 stElsewhere with
+    (match dispatchSyscallChecked harnessLabelingContext decoded caller core1 stElsewhere with
      | .ok ((), st') => (st'.getTcb? other).any (fun t => decide (t.boundNotification = some ntfnId))
      | .error _ => false)
     "the consistent (caller, core) pair must dispatch the authorised bind"
@@ -1335,7 +1331,7 @@ in any of them leaves it green.  That is the finding: an "end-to-end" claim over
 a path that stops short of the entry point.
 
 This case is the missing half, and every check below goes through
-`dispatchSyscall`.  One CNode, self-referential at slot 0 so the dispatcher can
+`dispatchSyscallChecked`.  One CNode, self-referential at slot 0 so the dispatcher can
 resolve the capability that names it (seL4's own root-CNode arrangement); slot 1
 holds the `.object` cap to a Reply object — the mint's source; slot 2 is the
 destination; slot 3 holds an `.object` cap to a notification, which is what the
@@ -1650,7 +1646,7 @@ operand that way.
 
 The caller's CNode holds the SchedContext capability at slot 0, a writable TCB
 capability at slot 1, a **read-only** one to the same TCB at slot 2 and a
-capability to the CNode itself at slot 3.  Through `dispatchSyscall`: slot 1
+capability to the CNode itself at slot 3.  Through `dispatchSyscallChecked`: slot 1
 binds (the SchedContext names the thread and the thread names it back); slot 2
 is `.illegalAuthority`; slot 3 is `.invalidCapability` (not a TCB); and the
 RETIRED reading — the target's raw thread id in MR0 — is refused, because `70`
@@ -1737,7 +1733,7 @@ handed, period after period.
 The caller's CNode holds a writable capability to an unbound context at slot 0,
 core 0's and core 1's scheduling controls at slots 1 and 2, a capability to the
 CNode at slot 3 and a writable capability to a second context, bound to a thread
-homed on core 0, at slot 4.  Through `dispatchSyscall`: the configure invoked on
+homed on core 0, at slot 4.  Through `dispatchSyscallChecked`: the configure invoked on
 the context's own capability is refused (`.invalidCapability`) and changes
 nothing; through core 0's control it configures the context MR0 names; core 0's
 control configures the context whose thread is homed on core 0 in place; core 1's
@@ -1830,7 +1826,7 @@ untyped through the live dispatch.**
 
 seL4 creates every object with `seL4_Untyped_Retype`; since this cut so does
 this kernel, and the in-place retype (syscall 8) is gone — its number stays
-reserved, so it decodes to no syscall at all.  Through `dispatchSyscall`, from
+reserved, so it decodes to no syscall at all.  Through `dispatchSyscallChecked`, from
 one untyped at `0x100000`: a TCB, an endpoint, a notification, a two-slot CNode,
 a 128-byte scheduling context and a reply are each carved at a fresh child id,
 the child holds the requested kind, and the destination slot holds a capability

@@ -611,8 +611,8 @@ set_option maxRecDepth 8192
 #check @migrateRunQueueBucketOnCore_preserves_projection
 #check @setPriorityOnCore_preserves_projection
 #check @setMCPriorityOnCore_preserves_projection
-#check @SeLe4n.Kernel.dispatchWithCap_tcbSetPriority_delegates
-#check @SeLe4n.Kernel.dispatchWithCap_tcbSetMCPriority_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_tcbSetPriority_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_tcbSetMCPriority_delegates
 #check @SeLe4n.Kernel.syscallDelegates_tcbSetPriority
 #check @SeLe4n.Kernel.syscallDelegates_tcbSetMCPriority
 #check @SeLe4n.Kernel.schedulingCapacityRun
@@ -682,7 +682,7 @@ set_option maxRecDepth 8192
 #check @resumeReadyMidState_confinedToCores
 #check @resumeThreadOnCore_confinedToCores
 #check @resumeThreadOnCore_crossCoreNonInterference
-#check @SeLe4n.Kernel.dispatchWithCap_tcbResume_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_tcbResume_delegates
 #check @SeLe4n.Kernel.syscallDelegates_tcbResume
 #check @crossCoreLiveArmEvidence_syscall_matches
 #check @CrossCoreTransition.mem_all
@@ -775,7 +775,7 @@ set_option maxRecDepth 8192
 -- Round 16: the send bridge that actually mentions the single-core transition.
 #check @SeLe4n.Kernel.endpointSendDualOnCore_absent_endpoint
 #check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_block_eq_single
-#check @SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_tcbSuspend_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_receive_delegates
 -- SM8.B (PR #861 review round 10): the live `.send` arm, rerouted off the
 -- boot-pinned `endpointSendDualWithCaps`, and the per-core audit it owes.
@@ -793,7 +793,6 @@ set_option maxRecDepth 8192
 #check @endpointSendCrossCoreDispatchChecked_confinedToCores
 #check @endpointSendDualWithCapsOnCore_crossCoreNonInterference
 #check @endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
-#check @SeLe4n.Kernel.dispatchWithCap_send_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_send_delegates
 #check @SeLe4n.Kernel.syscallDelegates_send
 #check @crossCoreEnforcementEntries
@@ -813,9 +812,9 @@ set_option maxRecDepth 8192
 #check @endpointFlowCheckAtCore_is_not_constant
 #check @endpointFlowCheck_restricted_subset_perCore
 #check @endpointPolicyRestricted_perCore_is_necessary
-#check @syscallEntry_preserves_projectionOnCore
-#check @syscallEntry_success_perCore_NI
-#check @syscallEntry_error_perCore_NI
+#check @syscallEntryChecked_preserves_projectionOnCore
+#check @syscallEntryChecked_success_perCore_NI
+#check @syscallEntryChecked_error_perCore_NI
 #check @nonInterference_release_of_perCore
 #check @nonInterference_release_of_perCore_observer
 
@@ -1012,7 +1011,6 @@ set_option maxRecDepth 8192
 #check @declassifyObjectFromCore_confinedToCores
 #check @declassifyObjectFromCore_crossCoreNonInterference
 #check @dispatchWithCapChecked_declassify_delegates
-#check @dispatchWithCap_declassify_denied
 -- PR #863 review: the faithful lift of the legacy 2x2 lattice.  `liftLegacyContext`
 -- carried `.linearOrder`, a strict over-approximation; these are the exact policy,
 -- its faithfulness equality, and the counterexample that keeps a regression to the
@@ -1494,7 +1492,6 @@ set_option maxRecDepth 8192
 #check @dispatchWithCapChecked_auditRead_delegates
 #check @dispatchWithCapChecked_auditDrain_delegates
 #check @dispatchWithCapChecked_audit_rejects_non_audit_capability
-#check @dispatchWithCap_auditRead_denied
 #check @dispatchWithCapChecked_auditDrain_default_denied
 #check @dispatchWithCapChecked_auditRead_default_denied
 #check @unconfiguredDeployment_audit_never_succeeds
@@ -1839,7 +1836,6 @@ set_option maxRecDepth 8192
 
 -- SM9.C.8 / SM9.C.9 — the ABI, the live arm and its registries.
 #check @dispatchWithCapChecked_declassifySignal_delegates
-#check @dispatchWithCap_declassifySignal_denied
 #check @dispatchWithCapChecked_declassifySignal_default_no_downgrade
 #check @syscallDelegates_declassifySignal
 #check @clearWokenReceiverStash_declassificationAuditLog_eq
@@ -10157,10 +10153,9 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
   -- the lattice DENIES and the declassification policy authorizes.  An entry
   -- shared between them would report the second as covered by an audit of the
   -- first.  (Classifying it capability-only would be the other error — that the
-  -- capability alone authorizes the downgrade, which it does not; the unchecked
-  -- arm accordingly fails closed with `.declassificationDenied`, pinned by
-  -- `dispatchWithCap_declassifySignal_denied` and by the per-core routing gate's
-  -- verified `#inert` declaration.)
+  -- capability alone authorizes the downgrade, which it does not; the arm runs
+  -- only under the deployment's declassification policy,
+  -- `dispatchWithCapChecked_declassifySignal_delegates`.)
   assertBool "NEGATIVE: it does not share the ordinary signal's boundary entry, and is not capability-only"
     (decide (SyscallId.declassifySignal ≠ SyscallId.notificationSignal) &&
      decide (syscallIdToEnforcementName .declassifySignal

@@ -477,7 +477,7 @@ run_check_with_timeout "TRACE" lake exe smp_cache_maintenance_suite
 # *a* capability carrying the required right, never that the capability named
 # the address space being operated on, so a thread holding a writable capability
 # to any object (its own TCB) could unmap pages in an arbitrary address space.
-# Every scenario drives the live `dispatchSyscall` path, since the defect lived
+# Every scenario drives the live `dispatchSyscallChecked` path, since the defect lived
 # in dispatch and only dispatch can witness it.
 run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite
 

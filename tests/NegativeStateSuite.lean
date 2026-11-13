@@ -2740,10 +2740,11 @@ def runWSJ1DecodeChecks : IO Unit := do
   unless decoded.msgRegs.size == 4 do
     throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
-  -- J1-NEG-18: Full syscallEntry with no current thread → illegalState
+  -- J1-NEG-18: Full syscallEntryChecked with no current thread → illegalState
   let emptyState : SystemState := BootstrapBuilder.empty.buildChecked
-  expectErr "J1 syscallEntry no current thread"
-    (SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 emptyState)
+  expectErr "J1 syscallEntryChecked no current thread"
+    (SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+      SeLe4n.arm64DefaultLayout bootCoreId 32 emptyState)
     .illegalState
 
   IO.println "all WS-J1-E register decode negative checks passed"
@@ -3654,7 +3655,7 @@ def runThreadSlotInvocationRefusalChecks : IO Unit := do
         { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 1, extraCaps := 0, label := 0 },
           syscallId := sid, msgRegs := #[SeLe4n.RegValue.ofNat slot] }
       expectErr s!"{name} on a thread capability, space slot {slot}"
-        (SeLe4n.Kernel.dispatchWithCap decoded ⟨6⟩ bootCoreId gate threadCap st)
+        (SeLe4n.Kernel.dispatchWithCapChecked SeLe4n.Kernel.harnessLabelingContext decoded ⟨6⟩ bootCoreId gate threadCap st)
         .objectNotFound
   -- A refusal commits nothing: the state it leaves is `st`, whose thread still
   -- holds both roots.

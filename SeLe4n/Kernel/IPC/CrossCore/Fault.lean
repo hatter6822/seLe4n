@@ -954,7 +954,7 @@ theorem faultDeliverOnCoreChecked_delivered_flows (ctx : LabelingContext)
 -- §6  WS-RR RR8.12 Cut C3a — the live `.reply` ARM's scheduler-domain footprint
 -- ============================================================================
 --
--- The arm `API.dispatchWithCap` runs is `replyTransferOnCore`, not the dispatch
+-- The arm `API.dispatchWithCapChecked` runs is `replyTransferOnCore`, not the dispatch
 -- alone: seL4's `doReplyTransfer` branch (RR4.14/RR4.15).  On an unfaulted caller
 -- it is the dispatch plus the delivered-message staging, which writes a register
 -- context and no scheduler slot; on a faulted one it is the dispatch at the empty

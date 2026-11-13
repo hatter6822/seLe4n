@@ -357,7 +357,7 @@ theorem checkedMapWrappers_reject_unaligned
     `perms` parameter with `readOnly` as the default. The internal
     `vspaceMapPage` function's `readOnly` default is never invoked without
     an explicit caller-supplied permission — all production dispatch paths
-    (`dispatchWithCap`, `dispatchWithCapChecked`) decode permissions from
+    (`dispatchWithCapChecked`) decode permissions from
     the syscall's register file via `SyscallArgDecode.decodeVSpaceMapArgs`.
 
     This theorem documents that the default is `readOnly` (least privilege)

@@ -113,17 +113,15 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A/X2-E: production uses state-aware WithFlush variant) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
-| ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiEndpointCall`, `apiEndpointReply`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiCspaceDelete`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable (unchecked — for proofs and internal kernel paths) |
+| ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiEndpointCall`, `apiEndpointReply`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiCspaceDelete`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
 | `syscallEntryChecked` | Syscall dispatch (T6-I) | Stable (**production entry point** — information-flow-checked) |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
-| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable (unchecked internal) |
 | `dispatchSyscallChecked` | Syscall dispatch (T6-I) | Stable (checked internal) |
 
 ## Deferred operations (WS-F5/D3)
@@ -202,17 +200,19 @@ The raw kernel operations above (e.g., `endpointSendDual`, `cspaceMint`) are
 IPC subsystem, lifecycle engine). They do not perform capability checks because
 the kernel itself is the trusted computing base.
 
-The production syscall path is `syscallEntry → dispatchSyscall →
-syscallInvokeTyped → dispatchWithCap`, which reads the caller's register file, decodes typed
-arguments, resolves capabilities, and dispatches to the appropriate internal
-operation. The legacy `api*` wrappers were removed in S5-A (v0.19.4).
+The production syscall path is `syscallEntryChecked → dispatchSyscallChecked →
+syscallInvokeTyped → dispatchWithCapChecked`, which reads the caller's register
+file, decodes typed arguments, resolves capabilities, gates each cross-domain
+flow, and dispatches to the appropriate internal operation. The legacy `api*`
+wrappers were removed in S5-A (v0.19.4); the unchecked, boot-pinned entry and
+its dispatcher were retired by owner decision (2026-11-13).
 
 ### Internal vs syscall operations
 
 | Category | Capability check? | Invoked by |
 |---|---|---|
 | **Internal** (`schedule`, `endpointSendDual`, etc.) | No | Kernel paths |
-| **Syscall** (`syscallEntry` → `dispatchSyscall`) | Yes | User-space |
+| **Syscall** (`syscallEntryChecked` → `dispatchSyscallChecked`) | Yes | User-space |
 | **Scheduler** (`schedule`, `handleYield`, `timerTick`) | No | Timer IRQ, kernel |
 -/
 
@@ -840,7 +840,8 @@ theorem syscallLookupCap_implies_capability_held
 -- apiCspaceMove, apiCspaceDelete, apiLifecycleRetype, apiVspaceMap,
 -- apiVspaceUnmap, apiServiceRegister, apiServiceRevoke, apiServiceQuery)
 -- were removed in S5-A. The production syscall path is:
---   syscallEntry → dispatchSyscall → syscallInvokeTyped → dispatchWithCap
+--   syscallEntryChecked → dispatchSyscallChecked → syscallInvokeTyped →
+--   dispatchWithCapChecked
 -- Test migration was completed in S2-J (v0.19.1).
 -- ============================================================================
 
@@ -958,8 +959,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
   -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
   | .mintReplyCap          => .grant
-  -- WS-ZA ZA4.3: a yield invokes no capability — `dispatchSyscall` and
-  -- `dispatchSyscallChecked` run it before any gate is built — so no right is
+  -- WS-ZA ZA4.3: a yield invokes no capability — `dispatchSyscallChecked`
+  -- runs it before any gate is built — so no right is
   -- ever checked for it.  `.read`, the weakest, is the value a gate would carry.
   | .yield                 => .read
   -- WS-ZA ZA6.9: the Consumed invocation writes the context (its consumed time
@@ -1073,7 +1074,6 @@ def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
       else if cap.hasRight gate.requiredRight then op cap st'
       else .error (syscallMissingRightError sid)
 
-
 /-- **The syscalls that receive on the invoked capability**, seL4's
 `handleRecv`: the receive, the notification wait, and the receive half of the
 reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
@@ -1159,7 +1159,7 @@ theorem syscallInvokeTyped_requires_right (sid : SyscallId)
 
 /-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
     rights checks. Any successful `syscallInvokeTyped` — the sole gateway used
-    by both `dispatchSyscall` and `dispatchSyscallChecked` — implies the
+    by `dispatchSyscallChecked` — implies the
     resolved capability holds the required access right. The gate composes
     `resolveCapAddress` → `lookupSlotCap` → the type → `hasRight` before any
     operation is executed. -/
@@ -1280,7 +1280,6 @@ theorem validateThreadIdArg_ok_toValid? (tid : SeLe4n.ThreadId)
       rw [hV]
       injection h with h
       rw [h]
-
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
@@ -3215,8 +3214,8 @@ theorem vspaceMapOrRemapFromFrameCap_closed {tid : SeLe4n.ThreadId}
 
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these arms
 derive authority entirely from capability possession and require no
-information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
-delegate to this helper for: `.cspaceDelete`, `.vspaceMap`,
+information-flow checks. `dispatchWithCapChecked` delegates to this helper
+for: `.cspaceDelete`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
 `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`,
 `.tcbSetPriority` (AE1-A), `.tcbSetMCPriority` (AE1-A), `.tcbSetIPCBuffer` (AE1-B).
@@ -4401,480 +4400,6 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       exact pageTableUnmap_preserves_ipcInvariantFull objId st st' hObjInv hInv hStep
     all_goals try cases hStep
 
-/-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
-kernel operation using the resolved capability's target. Called after cap
-resolution succeeds inside `syscallInvokeTyped`.
-
-WS-K-C: Accepts full `SyscallDecodeResult` so dispatch arms can extract
-per-syscall arguments from `decoded.msgRegs` via the typed decode functions
-in `SyscallArgDecode`.
-
-WS-K-D: Lifecycle and VSpace stubs replaced with full dispatch. All 13
-syscalls now route to real kernel operations — zero `.illegalState` stubs
-remain.
-
-V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`, behind the
-two service arms' flow gates (`dispatchCapabilityOnlyChecked`): the query reads the
-registration its endpoint records, and the revoke removes it.
-
-**W6-D (L-8): Two-tier dispatch design rationale.** The dispatch is split into
-`dispatchCapabilityOnly` (handles syscalls needing only the resolved capability
-and no additional decoded arguments) and this explicit match (handles syscalls
-requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
-1. Shares a single checked/unchecked dispatch implementation (V8-H)
-2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 25 `SyscallId` variants are handled by one of the two tiers
-3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
-The wildcard `| _ =>` arm is provably dead code (W2-C).
-
-**The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
-Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
-first step refuses a `tid` that is not current on `executingCore`
-(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
-so it only ever runs on a consistent pair. -/
-def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
-  match dispatchCapabilityOnly decoded cap tid executingCore with
-  | some k => k
-  | none =>
-  match decoded.syscallId with
-  -- WS-K-E/M-D01: IPC send — message body + extra caps from decoded message registers.
-  | .send =>
-    match cap.target with
-    | .object epId =>
-      fun st =>
-        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
-        -- the grant bit of the invoked capability.  The words are read from the
-        -- sender's own frame at delivery, and the extra capabilities are looked up
-        -- only on the arm that delivers (a send that blocks resolves none; its
-        -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
-        -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
-        -- wake, so its server-first reply stash is cleared once it leaves
-        -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
-        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        -- WS-SM SM8.B (PR #861 review round 10): route through the **per-core**
-        -- send transition, like `.call`/`.receive`/`.reply`.  The single-core
-        -- `endpointSendDual` wakes a rendezvous receiver with the boot-pinned
-        -- `ensureRunnable` and deschedules a blocking sender with the boot-pinned
-        -- `removeRunnable`, so on a multi-core system a receiver woken by a remote
-        -- sender lands on a run queue its own core never dispatches from, and a
-        -- sender blocking on a secondary core stays current/runnable there.
-        -- `endpointSendDualWithCapsOnCore … executingCore` wakes the receiver on
-        -- *its* home core and removes the sender from *its own* core; on the boot
-        -- core it is the single-core transition.
-        match endpointSendDualWithCapsOnCore epId tid payload executingCore st with
-        | (_, .error e) => .error e
-        | (st', .ok (summary, _)) =>
-            match clearWokenReceiverStash wokenReceiver? st' with
-            | .error e => .error e
-            | .ok ((), st'') =>
-                -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the
-                -- message in its `pendingMessage`; stage its return frame now
-                -- (its own boundary crossing ended `.blocks` — delivery is the
-                -- context restore, WS-BP BP7.6).  Inert when the send parked instead.
-                -- PR #866 round-2: the frame's `extraCaps` is the transfer
-                -- summary's INSTALLED count — a grant-denied or slot-exhausted
-                -- transfer reports zero, never the number of addresses the sender named.
-                .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
-                          summary.capInfo)
-    | _ => fun _ => .error (.invalidCapability 0)
-  | .receive =>
-    match cap.target with
-    | .object epId =>
-      -- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): the
-      -- server supplies a Reply object capability at `RecvArgs.replyCPtr`
-      -- (msgRegs[0]) — a *separate* CPtr from the endpoint receive cap, resolved
-      -- from the caller's own CSpace via a gate whose `capAddr` is that slot.
-      -- On a `Call` rendezvous (the popped sender lands `.blockedOnReply`) the
-      -- kernel links that caller to the server's reply object so the server's
-      -- later `.reply` resolves authority through `reply.caller`.
-      fun st =>
-        -- PR #822 review: an explicit (length ≥ 1) but bad reply cap fails BEFORE
-        -- the receive, so a server is never blocked as a plain receive on a
-        -- stale/non-reply CPtr (only length 0 means "no reply object").
-        match resolveRecvReplyId gate decoded st with
-        | .error e => .error e
-        | .ok replyIdOpt =>
-          -- WS-SM SM6.D (PR #822 review): route through the **per-core** receive
-          -- transition (like `.call`/`.replyRecv`).  The single-core `endpointReceiveDual`
-          -- block path removes the receiver with the boot-core `removeRunnable`, so a
-          -- server receiving on a non-boot core could block `.blockedOnReceive` yet stay
-          -- current/runnable on its actual core; `endpointReceiveDualOnCore … executingCore`
-          -- removes it from *its own* core and routes a woken `blockedOnSend` sender to
-          -- *its* home core.  On the boot core this is definitionally `endpointReceiveDual`.
-          -- WS-SM SM6.D (#7.2 fold): the resolved reply object is threaded into the
-          -- per-core receive transition, which links a dequeued `Call` caller to it
-          -- atomically (the former post-receive `linkReceivedCaller` step).
-          -- WS-RA RA.B.5b: capture the send-queue head the consume will dequeue —
-          -- a *plain* sender's send completes at the rendezvous (woken `.ready`,
-          -- payload consumed) and is owed the unit success frame; a `Call` sender
-          -- lands `.blockedOnReply` and the completion stager's guard skips it.
-          let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-          -- PR #873 round 6: route through the **WithCaps** per-core receive, so
-          -- a send that parked before its receiver arrived delivers its
-          -- capabilities too.  It did not: the bare `endpointReceiveDualOnCore`
-          -- moves the parked sender's `pendingMessage` across wholesale and
-          -- installs nothing, while an immediate rendezvous transferred the
-          -- capabilities through `endpointSendDualWithCapsOnCore` — so whether a
-          -- capability arrived depended on which side reached the endpoint
-          -- first.  The authority is the sender's, recorded on its blocked
-          -- thread state (`TCB.ipcCanGrant`, seL4's `blockingIPCCanGrant`) and
-          -- read by the request the receive resolves (`blockedSenderCapRequest`),
-          -- which is what makes the two orderings agree rather than merely both
-          -- do something.
-          match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
-          | (st', .ok (dequeued, summary, _sgi)) =>
-              -- **WS-OD OD3.6: seL4-MCS's `maybeDonateSchedContext`.**  A receive
-              -- that rendezvoused with a queued `Call` hands the caller's
-              -- scheduling context to this receiver, so a passive server runs the
-              -- request on the client's own reservation.  This arm performed no
-              -- donation at all: a passive server taking its FIRST request with
-              -- `seL4_Recv` got no budget, while the same server taking its second
-              -- and later requests with `seL4_ReplyRecv` was charged correctly —
-              -- one condition, two API paths, and the asymmetric one silently
-              -- defeating the budget enforcement the CBS surface exists to
-              -- provide.  Literally the step `replyRecvPostReceiveDonation`
-              -- runs, so the two arms cannot drift.
-              --
-              -- Guarded and total: `rendezvousDequeuedCall` is false for a receive
-              -- that blocked (the returned id is the receiver itself, which is
-              -- `.blockedOnReceive`) and for a plain `Send` rendezvous (the woken
-              -- sender is `.ready`), and `applyCallDonation` is itself the
-              -- identity unless the receiver is `.unbound` and the donor `.bound`.
-              --
-              -- **WS-OD OD3.14: and the priority the donation does not carry.**
-              -- The dequeued caller is `.blockedOnReply _ (some tid)`, and
-              -- `resolveEffectivePrioDeadline` is `max basePrio pipBoost` -- the
-              -- donation moves the SchedContext, hence the *base* priority, and
-              -- moves no boost at all, so a chain blocked behind that caller
-              -- stopped dead at it.  This arm ran no chain walk while `.call`
-              -- (`endpointCallCrossCoreDispatch`) and `.replyRecv` both did:
-              -- one condition, three API paths, and the two that dequeue a
-              -- parked `Call` disagreeing about it.  `applyReceiveRendezvousHandoff`
-              -- is the donation and the walk under ONE reading of the guard.
-              match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
-              | .error e => .error e
-              | .ok stDon =>
-                -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
-                -- own `pendingMessage`; stage it as the return frame (badge → x0,
-                -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
-                -- that blocked stages nothing (the `.ready` guard inside) — its
-                -- frame is owed by the unblocking transition per plan §3.5.
-                -- PR #866 round-2 / PR #873 round 6: the `extraCaps` count is the
-                -- transfer summary's INSTALLED count, the same honest figure the
-                -- send and call paths report.  It was hardcoded to zero while the
-                -- receive installed nothing; now it says what actually arrived, so
-                -- a grant-denied or slot-exhausted transfer still reports zero.
-                .ok ((), Architecture.stageDeliveredMessage
-                          (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                          summary.capInfo)
-          | (_, .error e) => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
-  | .call =>
-    match cap.target with
-    | .object epId =>
-      fun st =>
-        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
-        -- the grant bit of the invoked capability.  The words are read from the
-        -- sender's own frame at delivery, and the extra capabilities are looked up
-        -- only on the arm that delivers (a send that blocks resolves none; its
-        -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
-        -- WS-SM SM6.A (live cross-core `.call`): route the unchecked `.call`
-        -- through the cross-core dispatch (receiver woken on its *home* core,
-        -- surfacing a `.reschedule` SGI). `endpointCallCrossCoreDispatch` is the
-        -- cross-core analogue of `endpointCallWithCaps` + inline donation; the
-        -- caller is descheduled from its own core (derived from the live state).
-        -- WS-SM SM6.D (#7.3b fold): the server-first reply linkage is now atomic
-        -- with the rendezvous — `endpointCallOnCore` itself links the caller to the
-        -- server's stashed reply object (`linkServerStashedReply`) at the moment the
-        -- caller lands `.blockedOnReply`, so there is no separate post-dispatch step.
-        -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the call
-        -- message in its `pendingMessage`; stage its return frame (the CALLER
-        -- itself always blocks — §3.5 — and is owed its frame by the reply path).
-        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid payload executingCore st with
-        -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
-        -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
-        -- transfers), never the number of addresses the sender named.
-        | (st', .ok (summary, _)) =>
-            .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
-                      summary.capInfo)
-        | (_, .error e) => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- WS-K-E: IPC reply — message body populated from decoded message registers.
-  | .reply =>
-    match cap.target with
-    | .replyCap rid =>
-      fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        -- WS-SM SM6.D (seL4-MCS reply object): resolve the reply cap's `ReplyId`
-        -- to its recorded caller (`reply.caller`), reply to that caller through
-        -- the cross-core dispatch (the `blockedOnReply` caller woken on its
-        -- *home* core via `wakeThread`, donated SchedContext returned, PIP
-        -- reverted cross-core; replier descheduled on `executingCore`).  The
-        -- single-use linkage consume (`reply.caller := none` +
-        -- `caller.replyObject := none`) is **folded into `endpointReplyOnCore`**
-        -- (PR #827 review #3) — atomic with the delivery, no separate dispatch
-        -- step.  Fails closed (`.replyCapInvalid`) on a dangling reply or an
-        -- unlinked caller.
-        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
-        -- expression the declared footprint resolver reads.  The two-level
-        -- match this replaces collapsed a dangling reply and an unlinked one
-        -- onto the same error, so this is that arm verbatim with the
-        -- resolution named once.
-        match replyAnsweredCaller? st rid with
-        | none => .error .replyCapInvalid
-        | some callerTid =>
-            -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branches on the
-            -- answered thread's `tcbFault` before it transfers anything.  On an
-            -- unfaulted caller this is the pre-RR4 arm verbatim — the cross-core
-            -- reply plus the RA.B.5b delivered-message staging
-            -- (`replyTransferOnCore_of_no_fault`).  On a faulted one it is the
-            -- fault reply: the handler's message is decoded against the fault the
-            -- thread carries and the thread is restarted at a chosen PC or
-            -- abandoned, with no delivered message to stage.  Without this branch
-            -- the fault handler's reply would wake the faulted thread `.ready`
-            -- with its saved PC still addressing the instruction that faulted.
-            replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- WS-K-C: CSpace operations — cap targets a CNode, message registers
-  -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
-  -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
-  -- semantics where badge 0 indicates an unbadged capability. This means callers
-  -- cannot explicitly set badge 0 — a deliberate simplification that matches
-  -- seL4's treatment of zero-valued badges as "no badge specified".
-  -- X5-I (L-5): Confirmed v0.22.17 audit — badge zero indistinguishability
-  -- matches seL4 semantics. No security impact.
-  -- C-01: Uses cspaceMintWithCdt for CDT-tracked derivation so minted
-  -- capabilities are revocable via cspaceRevoke.
-  | .cspaceMint =>
-    match cap.target with
-    | .object cnodeId =>
-        fun st => match decodeCSpaceMintArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
-                args.srcIndex args.srcDepth st with
-            | .error e => .error e
-            | .ok (src, dst) =>
-                let badge : Option SeLe4n.Badge :=
-                  if args.badge.word = 0 then none else some args.badge
-                cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st
-    | _ => fun _ => .error (.invalidCapability 0)
-  | .cspaceCopy =>
-    match cap.target with
-    | .object cnodeId =>
-        fun st => match decodeCSpaceCopyArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
-                args.srcIndex args.srcDepth st with
-            | .error e => .error e
-            | .ok (src, dst) => cspaceCopy src dst args.rights st
-    | _ => fun _ => .error (.invalidCapability 0)
-  | .cspaceMove =>
-    match cap.target with
-    | .object cnodeId =>
-        fun st => match decodeCSpaceMoveArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
-                args.srcIndex args.srcDepth st with
-            | .error e => .error e
-            | .ok (src, dst) => cspaceMove src dst st
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
-  -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
-  -- WS-Q1-D: Service register — decode interface spec from message registers,
-  -- construct ServiceRegistration, and register the service.
-  | .serviceRegister =>
-    match cap.target with
-    | .object epId =>
-      fun st => match decodeServiceRegisterArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-          let iface : InterfaceSpec := {
-            ifaceId         := args.interfaceId
-            methodCount     := args.methodCount
-            maxMessageSize  := args.maxMessageSize
-            maxResponseSize := args.maxResponseSize
-            requiresGrant   := args.requiresGrant
-          }
-          let reg : ServiceRegistration := {
-            iface := iface
-            endpointCap := cap
-          }
-          registerService reg st
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- V2-A: Notification signal — badge merge or wake a waiter.
-  -- The notification object comes from the capability target, and so does the
-  -- badge: the one minted into the capability, zero for an unbadged one
-  -- (`Capability.signalBadge`, seL4's `sendSignal(ntfn, capNtfnBadge)`).  No
-  -- message register is read and no length is checked, as in seL4.
-  | .notificationSignal =>
-    match cap.target with
-    | .object notifId =>
-      fun st =>
-          -- WS-SM SM6.B (live bound-aware cross-core signal): route through
-          -- `notificationSignalBoundCrossCoreDispatch` — when the notification is
-          -- bound to a `BlockedOnReceive` TCB the badge is delivered directly to
-          -- it, otherwise the cross-core `notificationSignalOnCore` runs (head
-          -- waiter woken on its home core).  The surfaced cross-core SGI is
-          -- re-derived from the committed state diff by the runtime entry.
-          -- WS-SM SM6.D (PR #822 review): a bound delivery wakes a `.blockedOnReceive`
-          -- bound TCB to `.ready`; if that server stashed a server-first reply object,
-          -- clear the stash (it lives only on a blocked receiver) — symmetric to the
-          -- plain-Send wake (`clearWokenReceiverStash`).  No-op when no bound receiver
-          -- is woken or it carries no stash, so the trace is byte-identical.
-          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
-          -- WS-RA RA.B.5b: the wait-before-signal ordering — a signal waking a
-          -- blocked plain waiter (the head of the wait queue) or a bound
-          -- `.blockedOnReceive` TCB delivers the badge into its
-          -- `pendingMessage`; stage the woken thread's return frame (its own
-          -- wait blocked with no frame — §3.5's split, now closed on the
-          -- staging side; delivery is the context restore (WS-BP BP7.6)).  The two
-          -- targets are mutually exclusive (the bound path requires an empty
-          -- wait queue), and each stager is inert when its target was not
-          -- woken.
-          let plainWaiter? := notificationSignalWaiter? st notifId
-          match notificationSignalBoundCrossCoreDispatch notifId cap.signalBadge executingCore st with
-          | (st', .ok _) =>
-              match clearWokenReceiverStash woken? st' with
-              | .error e => .error e
-              | .ok ((), st'') =>
-                  -- Installed count 0 for both stagers: a notification wake
-                  -- delivers a badge-only message (no caps, no unwrap).
-                  .ok ((), Architecture.stageWokenDelivery
-                            (Architecture.stageWokenDelivery st'' woken? 0)
-                            plainWaiter? 0)
-          | (_, .error e) => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- V2-A: Notification wait — consume pending badge or block.
-  -- The notification object comes from the capability target, waiter is current thread.
-  | .notificationWait =>
-    match cap.target with
-    | .object notifId =>
-      fun st =>
-        -- WS-SM SM6.B: route through the per-core cross-core wait so the blocked
-        -- caller is descheduled on *its own* core (not the boot core).
-        match notificationWaitCrossCoreDispatch notifId tid executingCore st with
-        | (st', .ok (some badge)) =>
-            -- WS-RA RA.B.5 (the SM9.C.0 closure, signal-before-wait ordering):
-            -- the consumed pending badge is staged into the caller's return
-            -- frame instead of being discarded.  The blocking arm (`.ok none`)
-            -- stages nothing — the badge does not exist yet, and the signal
-            -- path owes the waiter's frame per plan §3.5.
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfBadge badge))
-        | (st', .ok none) => .ok ((), st')
-        | (_, .error e) => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- V2-C: ReplyRecv — compound reply + receive in one transition.
-  -- Cap targets the endpoint for the receive leg. Reply target from MR[0].
-  -- Message body for the reply leg comes from the standard message registers.
-  | .replyRecv =>
-    match cap.target with
-    | .object epId =>
-      -- WS-SM SM6.D (faithful seL4-MCS `.replyRecv`): resolve the server-supplied
-      -- reply cap (`ReplyRecvArgs.replyCPtr`) to its `(rid, prevCaller)` — authority
-      -- flows from *holding* the reply cap (`reply.caller`), exactly like `.reply`,
-      -- closing the prior raw-thread bypass.  `replyRecvTransferOnCore` then replies to the
-      -- prev caller, **consumes** the answered reply link, receives the next
-      -- message, and **re-links** the same reply object to the next caller.
-      fun st =>
-        match resolveReplyRecvReply gate decoded st with
-        | .error e => .error e
-        | .ok (rid, prevCaller, replyBadge, replyGrant) =>
-            -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
-            -- register), so the reply *payload* delivered to the previous caller is
-            -- MR1.. — strip the leading control register before building the reply.
-            -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
-            -- endpoint receive cap's, matching the `.reply` arm.
-            let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-            let body := full.extract 1 full.size
-            let msg : IpcMessage := { registers := body, badge := replyBadge }
-            -- WS-RA RA.B.6: the receive leg may have consumed a queued sender
-            -- into the caller's `pendingMessage`; stage it as the return frame.
-            -- A caller that blocked on the receive leg stages nothing (the
-            -- `.ready` guard inside `stageDeliveredMessage`).
-            -- A caller carrying a fault (fault delivery is a Call, so a faulted
-            -- thread is the Reply's recorded caller) is answered as `.reply`
-            -- answers it — restart or abandon, fault record cleared
-            -- (`replyRecvTransferOnCore`, seL4's `doReplyTransfer` fault branch).
-            match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-            replyGrant executingCore st with
-            -- PR #873 round 7: the receive leg inside `endpointReplyRecvOnCore` now runs
-            -- the **WithCaps** per-core receive, so a capability-bearing sender
-            -- that parked before this `.replyRecv` delivers its capabilities
-            -- too — the arrival-order dependence the `.receive` arms shed one
-            -- round earlier, closed in the arm that is a receive without being
-            -- spelled `.receive`.  `extraCaps` is the summary's INSTALLED
-            -- count, the same honest figure `.send`, `.call` and `.receive`
-            -- report; it was hardcoded to zero while this leg installed nothing.
-            | .ok (summary, st') =>
-                .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
-            | .error e => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- WS-SM SM8.C.9: **there is no unchecked declassification.**
-  --
-  -- Every other arm here is the unchecked twin of a policy-gated one: it derives
-  -- authority from the capability and skips a `securityFlowsTo` guard the caller
-  -- has opted out of.  Declassification cannot work that way — its authority
-  -- *is* a policy (the base lattice must deny the flow and the declassification
-  -- policy must permit it), so "unchecked" would mean "every downgrade is
-  -- authorized", which is the opposite of what the operation exists to control.
-  --
-  -- So this path fails closed with the error a denied downgrade produces.  A
-  -- deployment that wants declassification enters through `dispatchSyscallChecked`
-  -- with a configured `LabelingContext.declassificationPolicy`.
-  | .declassify => fun _ => .error .declassificationDenied
-  -- WS-SM SM9.C.8: **and there is no unchecked declassifying signal**, for the
-  -- same reason one step over — and one more.
-  --
-  -- Its authority is a policy at *two* hops, so an unchecked arm would mean
-  -- "every downgrade into this notification, and every onward delivery out of
-  -- it, is authorized".  The second half is the sharper one: the ordinary
-  -- checked `.notificationSignal` already gates notification → receiver (the
-  -- v0.31.73 badge-leak closure), so an unchecked declassifying variant would
-  -- be strictly *weaker* than the syscall it wraps while carrying stronger
-  -- authority — a downgrade path that skips a gate the ordinary path enforces.
-  | .declassifySignal => fun _ => .error .declassificationDenied
-  -- WS-SM SM9.A.10: **there is no unchecked audit read either**, and the reason
-  -- is the same shape one step over.
-  --
-  -- Every value the reader returns is selected by the caller's *clearance*: the
-  -- visible view is `auditLogVisibleTo` at the running subject's domain, and
-  -- whether the caller sees a global identity or a view-local index turns on the
-  -- configured monitor clearance.  Both live in the `LabelingContext`, which the
-  -- unchecked path does not carry.  An unchecked arm would therefore have to
-  -- pick a clearance, and the only clearances available are "the caller's, from
-  -- a context we do not have" and "all of them" — the second being an audit
-  -- reader that hands every entry to every capability holder.
-  --
-  -- So this path fails closed.  A deployment that wants audit reads enters
-  -- through `dispatchSyscallChecked` with a configured
-  -- `LabelingContext.auditMonitorClearance`, and mints a `.auditTrail`
-  -- capability from its boot/CSpace layer.
-  | .auditRead | .auditDrain => fun _ => .error .illegalAuthority
-  -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
-  -- by dispatchCapabilityOnly above. Together with cspaceDelete,
-  -- vspaceMap, vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
-  -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 13 total arms
-  -- handled by dispatchCapabilityOnly. The wildcard satisfies Lean's exhaustiveness
-  -- checker and is provably unreachable (dispatchWithCap_wildcard_unreachable).
-  -- WS-ZA ZA4.3: a yield invokes no capability, so `dispatchSyscall` runs it
-  -- before this tier (`dispatchYield`) and this tier never receives one.
-  | .yield => fun _ => .error .illegalState
-  | _ => fun _ => .error .illegalState
-
 -- ============================================================================
 -- T6-I/M-IF-1: Information-flow-checked dispatch
 -- ============================================================================
@@ -4968,10 +4493,10 @@ in the `SyscallId` enum and wired into both dispatch paths. The checked variants
 V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`.
 
 **The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
-Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
-first step refuses a `tid` that is not current on `executingCore`
-(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
-so it only ever runs on a consistent pair. -/
+The entry reaches it through `dispatchSyscallChecked`, whose first step refuses
+a `tid` that is not current on `executingCore`
+(`dispatchSyscallChecked_ok_caller_current`), so it only ever runs on a
+consistent pair. -/
 def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
@@ -5483,7 +5008,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume) are handled by
   -- dispatchCapabilityOnly returning `some` above. This wildcard is provably
   -- unreachable (see dispatchWithCapChecked_wildcard_unreachable below).
-  -- WS-ZA ZA4.3: as in `dispatchWithCap`, a yield never reaches this tier.
+  -- WS-ZA ZA4.3: a yield never reaches this tier (`dispatchYield` runs it first).
   | .yield => fun _ => .error .illegalState
   | _ => fun _ => .error .illegalState
 
@@ -5504,10 +5029,9 @@ def dispatchYield (executingCore : Concurrency.CoreId) : Kernel Unit :=
     **WS-SM SM9.D.7 (PR #873 round 6): the taint seam is applied here, not at the
     entry above it.**
 
-    It used to live in `syscallEntryChecked`, one layer up — which was wrong for a
-    reason this function's own sibling documents: `dispatchSyscall`'s docstring
-    tells integrators that "for production user-space entry points, use
-    `dispatchSyscallChecked`".  An integrator who took that advice called *this*
+    It used to live in `syscallEntryChecked`, one layer up — which was wrong
+    because this function is what an integrator writing a production
+    user-space entry calls.  An integrator who did so called *this*
     function directly and never reached the seam, so a successful send or receive
     moved tagged content with no provenance following it, and a successful retype
     kept the replaced object's tags on its replacement.  The recommendation was
@@ -5752,9 +5276,11 @@ theorem dispatchCheckedArmThenTaintFused_eq (ctx : LabelingContext)
     all four entity classes. This prevents accidental deployment with a context
     that defeats all information-flow enforcement.
 
-    This is the recommended entry point for production systems with
-    information-flow policies. The unchecked `syscallEntry` remains
-    available for trusted kernel paths and backward compatibility. -/
+    This is the kernel's one register-sourced syscall entry: the live seam
+    (`Platform.FFI.syscallDispatchFromAbi`) runs it with the deployment's
+    labeling context, and the model's exception dispatch, the trace harness
+    and the suites run it too.  The unchecked, boot-pinned entry it once sat
+    beside was retired (owner decision 2026-11-13). -/
 def syscallEntryChecked (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
     (executingCore : Concurrency.CoreId)
@@ -5793,9 +5319,9 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- returning what comes back — the same plan, the same pre-state, the
           -- same post-state as when the two lines lived here.
           --
-          -- It moved down one layer in PR #873 round 6.  `dispatchSyscall`'s own
-          -- docstring points integrators at `dispatchSyscallChecked` for
-          -- production user-space entry, and an integrator who took that advice
+          -- It moved down one layer in PR #873 round 6.  `dispatchSyscallChecked`
+          -- is what an integrator writing a production user-space entry calls,
+          -- and an integrator who did so
           -- called the dispatcher directly and never reached a seam that sat
           -- above it: content moved with no provenance, and a retype kept the
           -- destroyed object's tags.  Putting the seam at the dispatcher makes
@@ -5829,46 +5355,6 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02/V8-H/D1: The capability-only syscalls are handled identically by
-both checked and unchecked dispatch paths, since both delegate to
-`dispatchCapabilityOnly`. These arms derive authority entirely from
-capability possession and do not cross security domains.
-
-The shared arms are: `.cspaceDelete`, `.vspaceMap`,
-`.vspaceUnmap`, `.schedContextConfigure`,
-`.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.  The
-two service arms, `.serviceRevoke` and `.serviceQuery`, are the unchecked arm
-behind a flow gate (`dispatchCapabilityOnlyChecked`), equal to it when the gate
-admits.
-
-V8-H/D3: With the shared helper extraction, each per-arm theorem follows
-directly from the shared `dispatchCapabilityOnly` delegation. -/
-theorem checkedDispatch_cspaceDelete_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .cspaceDelete) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- U5-A/V8-H: Structural equivalence for `.vspaceMap`. -/
-theorem checkedDispatch_vspaceMap_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .vspaceMap) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- U5-A/V8-H: Structural equivalence for `.vspaceUnmap`. -/
-theorem checkedDispatch_vspaceUnmap_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .vspaceUnmap) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
 /-- The checked `.serviceRevoke` arm is the unchecked one behind the write gate:
 the policy-checked revoke `revokeServiceChecked` at the endpoint the capability
 names. -/
@@ -5881,18 +5367,6 @@ theorem dispatchWithCapChecked_serviceRevoke_eq
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     dispatchCapabilityOnlyChecked]
 
-/-- ...and when the write is admitted it is the unchecked arm. -/
-theorem checkedDispatch_serviceRevoke_eq_unchecked_of_admitted
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
-    (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  funext st
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-    dispatchCapabilityOnlyChecked, revokeServiceChecked, hAdm]
-
 /-- The checked `.serviceQuery` arm is the unchecked one behind the read gate:
 `serviceQueryStaged`, the arm's staging over the policy-checked lookup
 `lookupServiceChecked`. -/
@@ -5904,19 +5378,6 @@ theorem dispatchWithCapChecked_serviceQuery_eq
       serviceQueryStaged ctx tid epId := by
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     dispatchCapabilityOnlyChecked]
-
-/-- ...and when the read is admitted it is the unchecked arm. -/
-theorem checkedDispatch_serviceQuery_eq_unchecked_of_admitted
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .object epId)
-    (hAdm : serviceEndpointReadAdmitted ctx tid epId = true) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  funext st
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-    dispatchCapabilityOnlyChecked, serviceQueryStaged, lookupServiceChecked, hAdm]
-  rfl
 
 /-- **The query refuses an endpoint the caller may not read**, before any lookup:
 whatever the endpoint records, and whether it records anything, the checked
@@ -5997,218 +5458,9 @@ theorem dispatchWithCapChecked_serviceRegister_refuses_unwritable_endpoint
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hArgs,
     registerServiceChecked, registrationWriteAdmitted, hAdm]
 
-/-- Z5-J: Structural equivalence for `.schedContextConfigure`. -/
-theorem checkedDispatch_schedContextConfigure_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .schedContextConfigure) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- Z5-J: Structural equivalence for `.schedContextBind`. -/
-theorem checkedDispatch_schedContextBind_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .schedContextBind) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- Z5-J: Structural equivalence for `.schedContextUnbind`. -/
-theorem checkedDispatch_schedContextUnbind_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .schedContextUnbind) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- D1: Structural equivalence for `.tcbSuspend`. -/
-theorem checkedDispatch_tcbSuspend_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .tcbSuspend) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- D1: Structural equivalence for `.tcbResume`. -/
-theorem checkedDispatch_tcbResume_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .tcbResume) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- AE1-A: Structural equivalence for `.tcbSetPriority`. -/
-theorem checkedDispatch_tcbSetPriority_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .tcbSetPriority) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- AE1-A: Structural equivalence for `.tcbSetMCPriority`. -/
-theorem checkedDispatch_tcbSetMCPriority_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .tcbSetMCPriority) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- AE1-B: Structural equivalence for `.tcbSetIPCBuffer`. -/
-theorem checkedDispatch_tcbSetIPCBuffer_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .tcbSetIPCBuffer) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- **WS-SM SM7.D** (PR #845 review, P2): Structural equivalence for
-`.vspaceUnifyInstruction`.  Its arm lives in the shared `dispatchCapabilityOnly`
-helper like its siblings, so the checked and unchecked paths are identical. -/
-theorem checkedDispatch_vspaceUnifyInstruction_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .vspaceUnifyInstruction) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- **PR #822 Phase H** (PR #845 review, P2): Structural equivalence for
-`.mintReplyCap` — the other arm that was handled by `dispatchCapabilityOnly`
-without a per-arm equivalence theorem. -/
-theorem checkedDispatch_mintReplyCap_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .mintReplyCap) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- U5-D/U-L20/V8-H/Z5-J/D1/AE1-A/AE1-B: Complete dispatch equivalence — for ALL
-capability-only syscalls, the checked and unchecked dispatch paths produce identical
-results.
-
-Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 13 arms, making structural identity
-trivial; the two service arms are the shared arm behind a flow gate, equal to
-it when the gate admits (`checkedDispatch_serviceQuery_eq_unchecked_of_admitted`,
-`checkedDispatch_serviceRevoke_eq_unchecked_of_admitted`).  PR #845 review (P2): `.vspaceUnifyInstruction` (WS-SM SM7.D) and
-`.mintReplyCap` (PR #822 Phase H) were handled by the shared helper but had been
-omitted from this enumeration, so a theorem advertised as *complete* did not in
-fact cover them.
-
-**Production recommendation**: Use `syscallEntryChecked` for user-space entry.
-The unchecked `syscallEntry` is retained for backward compatibility with
-existing proofs and internal kernel paths that operate within the TCB. -/
-theorem checkedDispatch_capabilityOnly_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hCapOnly : decoded.syscallId = .cspaceDelete ∨
-                decoded.syscallId = .vspaceMap ∨
-                decoded.syscallId = .vspaceUnmap ∨
-                decoded.syscallId = .schedContextConfigure ∨
-                decoded.syscallId = .schedContextBind ∨
-                decoded.syscallId = .schedContextUnbind ∨
-                decoded.syscallId = .tcbSuspend ∨
-                decoded.syscallId = .tcbResume ∨
-                decoded.syscallId = .tcbSetPriority ∨
-                decoded.syscallId = .tcbSetMCPriority ∨
-                decoded.syscallId = .tcbSetIPCBuffer ∨
-                decoded.syscallId = .mintReplyCap ∨
-                decoded.syscallId = .vspaceUnifyInstruction) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-    simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
-
 -- ============================================================================
 -- AJ1-D (M-01): Reply/ReplyRecv conditional equivalence theorems
 -- ============================================================================
-
-/-- AJ1-D (M-01) / WS-SM SM6.C: When the information flow policy allows the reply,
-checked and unchecked `.reply` dispatch produce identical results. The checked path
-(`endpointReplyCrossCoreDispatchChecked`) gates on `securityFlowsTo replierLabel
-targetLabel`; when this condition holds it is *exactly* the unchecked cross-core
-dispatch (`endpointReplyCrossCoreDispatchChecked_flow_allowed`), so the two arms —
-which apply the identical outer `match … | (st', .ok _) => …` wrapping to the same
-dispatch — coincide.
-
-This is a conditional equivalence: unlike the capability-only arms which are
-structurally identical (unconditional), `.reply` requires the flow hypothesis.
-
-WS-SM SM6.D: the reply cap names a `ReplyId`; both arms perform the identical
-`getReply? rid → reply.caller` resolution, differing only in the
-checked-vs-unchecked cross-core dispatch (the single-use consume is folded into
-`endpointReplyOnCore` — PR #827 review #3 — so it is identical by construction).
-The equivalence therefore holds, at a state where the resolution yields
-`callerTid`, exactly when the flow to that resolved caller is allowed. -/
-theorem checkedDispatch_reply_eq_unchecked_when_allowed
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .reply)
-    (rid : SeLe4n.ReplyId)
-    (hCap : cap.target = .replyCap rid)
-    (st : SystemState)
-    (reply : SeLe4n.Kernel.Reply) (callerTid : SeLe4n.ThreadId)
-    (hReply : st.getReply? rid = some reply)
-    (hCaller : reply.caller = some callerTid)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = true)
-    : dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-    dispatchWithCap decoded tid executingCore gate cap st := by
-  -- Unfold both dispatch to the `.reply` arm; resolve the reply linkage with the
-  -- resolution hypotheses so both arms reduce to the same cross-core dispatch
-  -- (which folds the consume), then collapse checked → unchecked under the flow
-  -- guard.
-  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
-    hSyscall, hCap, replyAnsweredCaller?, hReply, hCaller, Option.bind,
-    hFlow, if_true]
-  -- WS-RR RR4.14: the seam collapses on *both* branches under the same flow
-  -- guard, so the fault branch costs this proof nothing.
-  rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid
-    decoded.msgInfo decoded.msgRegs _ _ _ st hFlow]
-
-/-- AJ1-D (M-01) / WS-SM SM6.D: When the information-flow policy allows both legs
-(reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
-results.  Faithful seL4-MCS: the reply target is the reply object's recorded
-`caller` resolved from the server-supplied reply cap
-(`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm gates both
-legs — (1) endpoint → receiver (receive leg, checked first, ahead of the reply
-probe), (2) receiver → prevCaller (reply leg) — around the *same* `replyRecvTransferOnCore`
-the unchecked arm runs, so when both flows hold the two arms coincide. -/
-theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .replyRecv)
-    (epId : SeLe4n.ObjId)
-    (hCap : cap.target = .object epId)
-    (st : SystemState)
-    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
-    (replyGrant : Bool)
-    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
-    (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
-    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
-    -- WS-SM SM8.C: the receive leg also consults this endpoint's configured
-    -- override, so the two arms coincide only when that admits the flow too.
-    (hOverrideRecv : endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
-      (ctx.threadLabelOf tid) = true) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-    dispatchWithCap decoded tid executingCore gate cap st := by
-  have hGate := endpointFlowGate_of ctx epId _ _ hFlowRecv hOverrideRecv
-  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
-    hSyscall, hCap, hResolve]
-  -- The checked arm now gates in two nested steps: the receive leg (`!flowRecv →
-  -- .flowDenied`) outermost, then the reply leg (`flowReply → replyRecvTransferOnCore`,
-  -- else `.replyCapInvalid`).  With both flows `true` the outer `!true` is `false`
-  -- (else branch) and the inner `if true` selects the same `replyRecvTransferOnCore` the
-  -- unchecked arm runs.
-  simp [hGate, hFlowReply]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.reply` whose replier→caller
 flow is **denied** returns `.replyCapInvalid` — the *same* error the `none`/unlinked
@@ -6271,57 +5523,14 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 -- ============================================================================
--- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
+-- W2-C (MED-04): the dispatcher's wildcard arm is unreachable
 -- ============================================================================
-
-/-- W2-C (MED-04)/D1/D2/D3/AE1-A/AE1-B: Every `SyscallId` variant is handled by either
-    `dispatchCapabilityOnly` (returning `some`) or one of the 11 explicit match
-    arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
-    wildcard arm is unreachable at runtime.
-
-    The proof enumerates every `SyscallId` constructor.  The partition is
-    `dispatchCapabilityOnly`'s own `match` — which arms it answers `some` for —
-    and `dispatchWithCap`'s explicit arms
-    (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
-    `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`, `.declassify`, `.declassifySignal`, `.auditRead`,
-    `.auditDrain`); everything else is capability-only.
-
-    `v0.35.190`: the two hand-kept totals that used to open this paragraph
-    ("15 … the remaining 11") were stale — they summed to 26 against a
-    `SyscallId.count` that has been past that since SM9, and neither list was
-    the definition's.  A number beside a `match` is a second answer to a
-    question the `match` already decides, which is the substitution this project
-    retires everywhere else; the list below is the inventory, and `cases sid`
-    is what makes it exhaustive.
-
-    AE1-D: The same completeness proof applies to `dispatchWithCapChecked`
-    (see `dispatchWithCapChecked_wildcard_unreachable` below). -/
-theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
-    sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
-            .cspaceMove, .cspaceDelete, .vspaceMap,
-            .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-            .notificationSignal, .notificationWait, .replyRecv,
-            .schedContextConfigure, .schedContextBind,
-            .schedContextUnbind, .tcbSuspend, .tcbResume,
-            .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-            .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
-            .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
-            .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
-            .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
-  cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
     (returning `some`) or one of the 11 explicit match arms in
-    `dispatchWithCapChecked`. This proves the wildcard arm is unreachable.
-
-    This is the checked-dispatch counterpart of `dispatchWithCap_wildcard_unreachable`.
-    The proof is identical because both functions share `dispatchCapabilityOnly` and
-    have the same set of explicit match arms (modulo checked wrappers). -/
+    `dispatchWithCapChecked`. This proves the wildcard arm is unreachable:
+    the proof enumerates every `SyscallId` constructor, so a new constructor
+    that neither tier handles fails it. -/
 theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
             .cspaceMove, .cspaceDelete, .vspaceMap,
@@ -6340,233 +5549,9 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
-/-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
-kernel operation. Looks up the caller's TCB and CSpace root, constructs a
-`SyscallGate`, and dispatches via `syscallInvokeTyped`.
-
-**Note (T6-I)**: This is the UNCHECKED dispatch path. It does not perform
-information-flow checks. For production user-space entry points, use
-`dispatchSyscallChecked` which gates cross-domain operations via
-`securityFlowsTo` wrappers. This function is retained for:
-1. Backward compatibility with existing dispatch delegation theorems
-2. Internal kernel paths that operate within the TCB
-3. Proof infrastructure (delegation/preservation theorems reference this)
-
-**WS-SM SM9.D.7 (PR #873 round 6): it does carry the taint seam.**  "Unchecked"
-names what it does not *gate* — no `securityFlowsTo` wrapper decides whether a
-flow is permitted — and provenance is not a gate: it records where content came
-from, whatever authority moved it.  A path that skipped it would leave content
-moved through this dispatcher untraceable, which is worse on the unchecked route
-than on the checked one, not better.  So both dispatchers apply the plan and both
-entries inherit it, and the seam is one sentence rather than a list of call sites
-that each have to remember. -/
-def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : Kernel Unit :=
-  fun st =>
-    -- Symmetric with `dispatchSyscallChecked`: the caller must be the thread
-    -- current on the executing core, or the pair is refused before any lookup
-    -- (`dispatchSyscall_ok_caller_current`).
-    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
-    -- WS-ZA ZA4.3: a yield invokes no capability, so it runs before the
-    -- caller's CSpace is consulted and moves no content (`contentFlowClass
-    -- .yield = .inert`), so no taint step follows it.
-    else if decoded.syscallId = .yield then dispatchYield executingCore st
-    else
-    match st.getObject? tid.toObjId with
-    | some (.tcb tcb) =>
-      match st.getObject? tcb.cspaceRoot with
-      | some (.cnode rootCn) =>
-        let gate : SyscallGate := {
-          callerId     := tid
-          cspaceRoot   := tcb.cspaceRoot
-          capAddr      := decoded.capAddr
-          capDepth     := rootCn.depth
-          requiredRight := syscallRequiredRight decoded.syscallId
-        }
-        match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCap decoded tid executingCore gate)) st with
-        | .error e => .error e
-        | .ok ((), stPost) =>
-            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
-      | some _ => .error (.invalidCapability 0)
-      | none   => .error .objectNotFound
-    | some _ => .error .illegalState
-    | none   => .error .objectNotFound
-
-/-- WS-J1-C: Top-level register-sourced syscall entry point.
-
-Reads the current thread's register file, decodes raw register values into
-typed kernel references (merging IPC-buffer overflow for 5+ arg syscalls via
-`decodeSyscallArgsFromState` — AK4-A), and dispatches to the appropriate
-kernel operation. This is the single authoritative user-space → kernel
-transition boundary.
-
-The `regCount` parameter (default 32 for ARM64) should match
-`MachineConfig.registerCount` of the active platform binding. It is used by
-`decodeSyscallArgs` (the legacy register-only decoder that
-`decodeSyscallArgsFromState` wraps) to validate that all layout register
-indices are within architectural bounds. -/
-def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
-    (regCount : Nat := 32) : Kernel Unit :=
-  fun st =>
-    match (st.scheduler.currentOnCore bootCoreId) with
-    | none => .error .illegalState
-    | some tid =>
-      match lookupThreadRegisterContext tid st with
-      | .error e => .error e
-      | .ok (regs, _) =>
-        -- AK4-A.6 (R-ABI-C01): Use state-aware decode so 5-arg syscalls
-        -- merge IPC-buffer overflow registers into `msgRegs`.
-        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                st tid layout regs regCount with
-        | .error e => .error e
-        | .ok decoded =>
-          -- WS-SM SM7.F.5: deliberately **no** access-time `perCoreTlb` fill
-          -- here.  This is the boot-pinned pre-SMP entry, whose TLB view is
-          -- the scalar `st.tlb`; `perCoreTlb` is its per-core refinement and
-          -- is filled at the per-core entry (`syscallEntryChecked`), which is
-          -- what the SMP dispatch path actually runs.  Filling the per-core
-          -- model from the boot-pinned entry would mix the two models.
-          --
-          -- WS-SM SM9.D.7: the taint seam applies on this route **too**, and
-          -- for the opposite reason to the TLB fill above.  The per-core TLB
-          -- model is a refinement this entry deliberately does not participate
-          -- in; taint is not — provenance is a property of the content a syscall
-          -- moves, and this entry moves the same content through the same
-          -- transitions.  The modelled SVC route
-          -- (`dispatchSynchronousException`) reaches the kernel through here, so
-          -- leaving the step out let a send or receive taken by that route carry
-          -- content without its provenance following.
-          --
-          -- PR #873 round 6: inherited from `dispatchSyscall` rather than
-          -- repeated here, the same way `syscallEntryChecked` inherits it from
-          -- the checked dispatcher.  Both dispatchers carry the seam and both
-          -- entries delegate, so the rule is one sentence — *the taint seam sits
-          -- at the dispatcher* — instead of a list of entry points that each
-          -- have to remember.  An entry written tomorrow inherits it; a caller
-          -- who enters at a dispatcher gets it too.
-          dispatchSyscall decoded tid bootCoreId st
-
 -- ============================================================================
 -- WS-J1-C: Soundness theorems
 -- ============================================================================
-
-/-- WS-J1-C / AK4-A.6: If `syscallEntry` succeeds, the state-aware register
-    decode (including IPC-buffer overflow merge) returned `.ok`. -/
-theorem syscallEntry_requires_valid_decode
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
-    ∃ tid regs decoded,
-      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-        st tid layout regs regCount = .ok decoded := by
-  unfold syscallEntry at hOk
-  split at hOk
-  · simp at hOk
-  next tid hCurrent =>
-    split at hOk
-    · simp at hOk
-    next regs _st_regs hLookup =>
-      split at hOk
-      · simp at hOk
-      next decoded hDecode =>
-        have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
-          split at hLookup <;> simp at hLookup
-          exact hLookup.2.symm
-        subst hStEq
-        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode⟩
-
-/-- WS-J1-C: If `dispatchSyscall` succeeds, the caller held a capability
-with the required access right for the invoked syscall. Threads through
-`syscallInvokeTyped_requires_right`. -/
-theorem dispatchSyscall_requires_right
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (st : SystemState) (st' : SystemState)
-    (hCap : decoded.syscallId ≠ .yield)
-    (hOk : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
-      ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
-        ∃ cap ref,
-          resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
-          SystemState.lookupSlotCap st ref = some cap ∧
-          cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  -- `simp only` rather than `unfold`: the gate binding elaborates to a `have`,
-  -- which is opaque to `split` (the same distinction `syscallEntryChecked`
-  -- records above), and the seam's `match` sits inside it.
-  simp only [dispatchSyscall, SystemState.getObject?] at hOk
-  -- The caller/core guard: a mismatched pair is refused before any lookup.
-  split at hOk
-  · exact absurd hOk (by simp)
-  split at hOk
-  next tcb hTcb =>
-    refine ⟨tcb, hTcb, ?_⟩
-    split at hOk
-    next rootCn hRoot =>
-      refine ⟨rootCn, hRoot, ?_⟩
-      -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher,
-      -- so the invoke's own success has to be opened before it can be used.
-      split at hOk
-      · simp at hOk
-      next stPost hInvokeOk =>
-        have hInvoke := syscallInvokeTyped_requires_right decoded.syscallId
-          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          (dispatchWithCap decoded tid executingCore
-            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
-          st () stPost hInvokeOk
-        obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
-        exact ⟨cap, ref, hResolve, hSlot, hRight⟩
-    · simp at hOk
-    · simp at hOk
-  · simp at hOk
-  · simp at hOk
-
-/-- WS-J1-C: If `syscallEntry` succeeds for a capability-gated operation,
-the caller held the required access right. Threads through the existing
-`syscallInvokeTyped_requires_right` theorem via `dispatchSyscall_requires_right`.
-
-The conclusion proves the full chain: there exists a current thread with a
-valid TCB and CSpace root CNode, the register decode succeeded, and a
-capability with the required access right was resolved from the decoded
-capAddr through the caller's CSpace. -/
-theorem syscallEntry_implies_capability_held
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
-    ∃ tid regs decoded,
-      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-        st tid layout regs regCount = .ok decoded ∧
-      (decoded.syscallId ≠ .yield →
-      ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
-        ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
-          ∃ cap ref,
-            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
-            SystemState.lookupSlotCap st ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
-  unfold syscallEntry at hOk
-  split at hOk
-  · simp at hOk
-  next tid hCurrent =>
-    split at hOk
-    · simp at hOk
-    next regs _st_regs hLookup =>
-      split at hOk
-      · simp at hOk
-      next decoded hDecode =>
-        have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
-          split at hLookup <;> simp at hLookup
-          exact hLookup.2.symm
-        -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
-        -- delegates and this hypothesis IS the dispatch's own success.
-        subst hStEq
-        refine ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap => ?_⟩
-        exact dispatchSyscall_requires_right decoded tid bootCoreId _ st' hCap hOk
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
@@ -6592,14 +5577,14 @@ is invoked with the source and destination slots the arguments name
 by the source capability's (`mintMaskedRights`, seL4's `maskCapRights`) and
 the badge. CDT-tracked (C-01).  The arm first refuses with `.objectNotFound`
 unless the invoked object is a CNode (`cnodeInvoked`). -/
-theorem dispatchWithCap_cspaceMint_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_cspaceMint_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceMintArgs)
     (hSyscall : decoded.syscallId = .cspaceMint)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
         match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
@@ -6607,46 +5592,46 @@ theorem dispatchWithCap_cspaceMint_delegates
         | .ok (src, dst) =>
             let badge : Option SeLe4n.Badge :=
               if args.badge.word = 0 then none else some args.badge
-            cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+            cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
 is invoked with the source and destination slots the arguments name
 (`resolveCNodeOpSlots`, seL4's CNode addressing) and the rights mask, once the
 invoked object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
-theorem dispatchWithCap_cspaceCopy_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_cspaceCopy_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceCopyArgs)
     (hSyscall : decoded.syscallId = .cspaceCopy)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceCopyArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
         match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | .error e => .error e
-        | .ok (src, dst) => cspaceCopy src dst args.rights st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+        | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
 is invoked with the source and destination slots the arguments name
 (`resolveCNodeOpSlots`, seL4's CNode addressing), once the invoked object is a
 CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
-theorem dispatchWithCap_cspaceMove_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_cspaceMove_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceMoveArgs)
     (hSyscall : decoded.syscallId = .cspaceMove)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMoveArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
         match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
             args.srcIndex args.srcDepth st with
         | .error e => .error e
-        | .ok (src, dst) => cspaceMove src dst st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+        | .ok (src, dst) => cspaceMoveChecked ctx src dst st := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C / WS-BP BP7.1 (`v0.36.7`): When cspaceDelete dispatch succeeds, the
 **finalising** delete runs on the decoded target slot, with the invoking thread's
@@ -6655,36 +5640,36 @@ deleted and the mapping it recorded, if it records one, is removed.  The arm
 first refuses with `.objectNotFound` unless the invoked object is a CNode
 (`cnodeInvoked`): a thread's root slots are reachable only by its own TCB
 invocations and the kernel's internal teardown. -/
-theorem dispatchWithCap_cspaceDelete_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_cspaceDelete_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .cspaceDelete)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       if !cnodeInvoked cnodeId st then .error .objectNotFound else
         cspaceDeleteSlotZombie executingCore
           { cnode := cnodeId, slot := args.targetSlot } st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode]
 
 /-- WS-BP BP7.1 (`v0.36.7`): When cspaceRevoke dispatch succeeds, the
 **finalising** CDT revocation runs on the decoded source slot: every derivation
 of the capability is destroyed, and every mapping a destroyed frame capability
 recorded is removed.  The arm first refuses with `.objectNotFound` unless the
 invoked object is a CNode (`cnodeInvoked`). -/
-theorem dispatchWithCap_cspaceRevoke_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_cspaceRevoke_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .cspaceRevoke)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       if !cnodeInvoked cnodeId st then .error .objectNotFound else
         cspaceRevokeCdtFinalising executingCore
           { cnode := cnodeId, slot := args.targetSlot } st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
@@ -6707,8 +5692,8 @@ stale initiator entry (SM7.F.4(b)(ii)).  This is projection-invisible —
 T6-C: Permissions are now typed as `PagePermissions` (validated at decode).
 WS-BP BP7.1 retired AK3-E's decode-time PA bound with the physical-address
 operand it bounded. -/
-theorem dispatchWithCap_vspaceMap_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceMap_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st : SystemState)
@@ -6720,9 +5705,9 @@ theorem dispatchWithCap_vspaceMap_delegates
     -- unauthorized caller is now rejected with `.illegalAuthority` before the
     -- transition runs.
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       vspaceMapOrRemapFromFrameCap tid executingCore args st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
 `vspaceUnifyInstructionPage` is invoked with the decoded ASID and vaddr.
@@ -6736,8 +5721,8 @@ maintenance is issued domain-wide, since a remote PE may hold lines from a
 previous incarnation of the same physical page.  It modifies no page table
 (`vspaceUnifyInstructionPage_frame`), so its lock set takes the VSpaceRoot in
 **read** mode (`lockSet_vspaceUnifyInstruction`). -/
-theorem dispatchWithCap_vspaceUnifyInstruction_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceUnifyInstruction_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs)
     (st : SystemState)
@@ -6747,9 +5732,9 @@ theorem dispatchWithCap_vspaceUnifyInstruction_delegates
     -- PR #845 review (P1): the capability must name the operand ASID's VSpace
     -- root; an unauthorized caller is rejected with `.illegalAuthority`.
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-K-D/S6-A / WS-SM SM7.B.9 / SM7.F.4(b)(i) / SM7.D.1: When vspaceUnmap
 dispatch succeeds, `vspaceUnmapPageWithShootdownAndIcacheBroadcast` is invoked
@@ -6768,8 +5753,8 @@ added layers are projection-invisible — `perCoreTlb`, `perCoreICache ∉
 projectState` — so the delegation stays trace-equivalent to the plain
 `vspaceUnmapPageWithShootdown` on every observable field (`tlbShootdown`
 posting, page-table erasure, scalar flush all unchanged). -/
-theorem dispatchWithCap_vspaceUnmap_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceUnmap_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
     (st : SystemState)
@@ -6780,36 +5765,36 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     -- PR #845 review (P1): the capability must name the operand ASID's VSpace
     -- root; an unauthorized caller is rejected with `.illegalAuthority`.
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
         executingCore args.asid args.vaddr st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-ZA ZA5.4 part 14: the live `.untypedRetype` arm *is* the carve — every
 kernel object is made this way — at the invoking thread's executing core, whose
 domain and affinity a carved thread takes, and the untyped the capability names.
 The arm's operands are the decoded message registers. -/
-theorem dispatchWithCap_untypedRetype_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_untypedRetype_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .untypedRetype)
     (hTarget : cap.target = .object untypedId) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       untypedRetypeFromCap tid executingCore decoded.capAddr
         (decodeUntypedRetypeArgs decoded) st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* the reset, through
 the invoked slot (`untypedResetFromCap`), for a capability naming an object.  The
 arm decodes no message register: the capability is the whole operand. -/
-theorem dispatchWithCap_untypedReset_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_untypedReset_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .untypedReset)
     (hTarget : cap.target = .object untypedId) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       untypedResetFromCap tid decoded.capAddr st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 -- ============================================================================
 -- PR #845 review (P1) — the fail-closed duals of the three VSpace delegations
@@ -6824,8 +5809,8 @@ theorem dispatchWithCap_untypedReset_delegates
 
 /-- **Fail-closed**: `.vspaceMap` dispatch rejects a capability that does not
 name the operand ASID's VSpace root, without running the transition. -/
-theorem dispatchWithCap_vspaceMap_unauthorized
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceMap_unauthorized
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st : SystemState)
@@ -6833,8 +5818,8 @@ theorem dispatchWithCap_vspaceMap_unauthorized
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- **WS-BP BP7.1 (fail-closed, the vulnerability's closure)**: authority over
 the address space is not authority over the memory.  A caller whose capability
@@ -6844,8 +5829,8 @@ caller's own CSpace with `.read`, to a capability naming a frame the store
 holds: the resolver's error is returned and no page table is touched.  Before
 this version the arm mapped a raw physical address from MR2, so that VSpace
 capability alone was authority over every page of physical memory. -/
-theorem dispatchWithCap_vspaceMap_requires_frame_cap
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceMap_requires_frame_cap
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st : SystemState) (e : KernelError)
@@ -6854,8 +5839,8 @@ theorem dispatchWithCap_vspaceMap_requires_frame_cap
     (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
     (hNoFrame : resolveVSpaceMapFrame tid args st = .error e) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error e := by
-  rw [dispatchWithCap_vspaceMap_delegates decoded tid executingCore gate cap objId args st
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error e := by
+  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth]
   simp [vspaceMapOrRemapFromFrameCap, hNoFrame]
 
@@ -6864,8 +5849,8 @@ holds a capability to — the physical address is that frame's `base`, taken fro
 the object the capability names and from nothing the caller wrote.  A remap
 first takes the capability's own mapping down (`st0`), and the frame is
 resolved and installed from the state that leaves. -/
-theorem dispatchWithCap_vspaceMap_maps_frame_base
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceMap_maps_frame_base
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st st' : SystemState)
@@ -6873,7 +5858,7 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
-    (hOk : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
+    (hOk : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     ∃ (st0 : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
       (st1 : SystemState),
       (st0 = st ∨ Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
@@ -6886,7 +5871,7 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
         tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
         cspaceRecordFrameMapping frameSlot
           { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
-  rw [dispatchWithCap_vspaceMap_delegates decoded tid executingCore gate cap objId args st
+  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth] at hOk
   have hFresh : ∀ s, vspaceMapFromFrameCap tid executingCore args s = .ok ((), st') →
       ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
@@ -6913,8 +5898,8 @@ name the operand ASID's VSpace root, leaving the address space intact.  This is
 the theorem that would have failed before the binding landed: a caller holding a
 writable capability to *any* object could unmap pages in an address space it had
 no capability for. -/
-theorem dispatchWithCap_vspaceUnmap_unauthorized
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceUnmap_unauthorized
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
     (st : SystemState)
@@ -6922,14 +5907,14 @@ theorem dispatchWithCap_vspaceUnmap_unauthorized
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- **Fail-closed**: `.vspaceUnifyInstruction` dispatch rejects a capability that
 does not name the operand ASID's VSpace root, so the cache-maintenance path
 cannot be used to probe another address space's mappings. -/
-theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs)
     (st : SystemState)
@@ -6937,53 +5922,24 @@ theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 -- ============================================================================
 -- WS-K-E: Service policy and IPC message population delegation theorems
 -- ============================================================================
-
-/-- WS-K-E/M-D01 / WS-SM SM8.B: When send dispatch is invoked, the IPC message
-includes resolved extra capabilities and routes through the **cross-core**
-WithCaps send (`endpointSendDualWithCapsOnCore` — the per-core send with home-core
-receiver wake and executing-core sender deschedule), at `executingCore` — the
-core the syscall trapped on, threaded from the entry. -/
-theorem dispatchWithCap_send_uses_withCaps
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (epId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .send)
-    (hTarget : cap.target = .object epId) :
-    dispatchWithCap decoded tid executingCore gate cap =
-      fun st =>
-        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
-        -- the grant bit of the invoked capability.  The words are read from the
-        -- sender's own frame at delivery, and the extra capabilities are looked up
-        -- only on the arm that delivers (a send that blocks resolves none; its
-        -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
-        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualWithCapsOnCore epId tid payload executingCore st with
-        | (_, .error e) => .error e
-        | (st', .ok (summary, _)) =>
-            match clearWokenReceiverStash wokenReceiver? st' with
-            | .error e => .error e
-            | .ok ((), st'') =>
-                .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
-                          summary.capInfo) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
 includes resolved extra capabilities and routes through the **cross-core** call
 dispatch (`endpointCallCrossCoreDispatch` — the WithCaps call with home-core
 receiver wake + donation), at `executingCore` — the core the syscall trapped
 on, threaded from the entry. -/
-theorem dispatchWithCap_call_uses_crossCoreDispatch
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_call_uses_crossCoreDispatch
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .call)
     (hTarget : cap.target = .object epId) :
-    dispatchWithCap decoded tid executingCore gate cap =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st =>
         -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
         -- the grant bit of the invoked capability.  The words are read from the
@@ -6996,12 +5952,12 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- separate post-dispatch link step.
         -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid payload executingCore st with
+        match endpointCallCrossCoreDispatchChecked ctx epId tid payload executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
                       summary.capInfo)
         | (_, .error e) => .error e := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E / WS-SM SM6.D: When reply dispatch is invoked, the IPC message body is
 populated from decoded message registers via `extractMessageRegisters`; the reply
@@ -7015,12 +5971,12 @@ staging; on a faulted one it is the fault reply, decoding the handler's message
 against the fault the thread carries.  The single-use linkage consume is folded into
 `endpointReplyOnCore` (PR #827 review #3) — atomic with the delivery.  Fails
 closed on a dangling reply or an unlinked caller. -/
-theorem dispatchWithCap_reply_populates_msg
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_reply_populates_msg
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (rid : SeLe4n.ReplyId)
     (hSyscall : decoded.syscallId = .reply)
     (hTarget : cap.target = .replyCap rid) :
-    dispatchWithCap decoded tid executingCore gate cap =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
@@ -7035,9 +5991,11 @@ theorem dispatchWithCap_reply_populates_msg
             -- answered thread's `tcbFault`.  On an unfaulted caller this is the
             -- pre-RR4 body verbatim — cross-core reply plus the RA.B.5b
             -- delivered-message staging (`replyTransferOnCore_of_no_fault`).
-            replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+            if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
+              replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
+                { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
+            else .error .replyCapInvalid := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
 -- WS-RA RA.B.8 — the arms and the return-shape classification cannot disagree
@@ -7065,22 +6023,23 @@ theorem dispatchWithCap_reply_populates_msg
 /-- RA.B.8, `.notificationWait` (`.badge`): the arm's badge-consume path
 stages exactly the consumed badge, and the boundary read recovers it. -/
 theorem dispatchArm_notificationWait_matches_returnShape
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (notifId : SeLe4n.ObjId) (st st1 : SystemState)
     (badge : SeLe4n.Badge) (tcb : TCB)
     (hSyscall : decoded.syscallId = .notificationWait)
     (hTarget : cap.target = .object notifId)
-    (hDispatch : notificationWaitCrossCoreDispatch notifId tid executingCore st = (st1, .ok (some badge)))
+    (hDispatch : notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st
+        = (st1, .ok (some badge)))
     (hTcb : st1.getTcb? tid = some tcb)
     (hObjInv : st1.objects.invExt) :
     Architecture.syscallReturnShape .notificationWait = .badge ∧
-    ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfBadge badge := by
   refine ⟨rfl,
     Architecture.writeReturnFrameToTcb st1 tid (Architecture.returnFrameOfBadge badge),
     ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch]
   · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
@@ -7091,23 +6050,24 @@ first draft concluded only the arm's generic function equality and never
 consumed `hLookup` — the decorative-hypothesis defect class SM8.D's
 review history records). -/
 theorem dispatchArm_serviceQuery_matches_returnShape
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId) (st st' : SystemState)
     (reg : ServiceRegistration) (tcb : TCB)
     (hSyscall : decoded.syscallId = .serviceQuery)
     (hTarget : cap.target = .object epId)
-    (hLookup : lookupServiceByRecordedRegistration epId st = .ok (reg, st'))
+    (hLookup : lookupServiceChecked ctx tid epId st = .ok (reg, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .serviceQuery = .word ∧
-    ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfWord reg.sid.val.toUInt64 := by
   refine ⟨rfl,
     Architecture.writeReturnFrameToTcb st' tid
       (Architecture.returnFrameOfWord reg.sid.val.toUInt64),
     ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hLookup]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked,
+      serviceQueryStaged, hSyscall, hTarget, hLookup]
   · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
 
 /-- RA.B.8 / WS-SM SM9.A.10, `.auditRead` (`.word`): the arm stages **the
@@ -7180,13 +6140,14 @@ caller's staged arguments.  The delivery hypotheses are read at the state
 the caller-staging runs from (post the sender-completion staging, which
 writes only the *sender's* saved context). -/
 theorem dispatchArm_receive_matches_returnShape
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (replyIdOpt : Option SeLe4n.ReplyId) (st st' stDon : SystemState)
     (next : SeLe4n.ThreadId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (summary : CapTransferSummary) (msg : IpcMessage) (tcb : TCB)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
@@ -7211,7 +6172,7 @@ theorem dispatchArm_receive_matches_returnShape
     (hObjInv : (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt) :
     Architecture.syscallReturnShape .receive = .message ∧
-    ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
@@ -7221,7 +6182,7 @@ theorem dispatchArm_receive_matches_returnShape
       (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.capInfo,
     ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch, hDon]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -7230,14 +6191,16 @@ the delivered message for the server exactly as `.receive` does — and, since
 PR #873 round 7, with the same honest `extraCaps`: the transfer summary the
 WithCaps receive leg returns, not a zero. -/
 theorem dispatchArm_replyRecv_matches_returnShape
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
     (replyGrant : Bool)
     (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
+    (hReplyFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
@@ -7248,12 +6211,13 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : stB.objects.invExt) :
     Architecture.syscallReturnShape .replyRecv = .message ∧
-    ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites stB tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hResolve,
+      hReplyFlow, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -7277,7 +6241,7 @@ The frame reports the reply's capability transfer (`replyTransferCaps`, seL4's
 the boundary reads the delivered reply with the transfer's `capInfo`, in the
 state the transfer leaves. -/
 theorem dispatchArm_call_frame_delivered_by_reply
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (rid : SeLe4n.ReplyId) (reply : Reply)
     (callerTid : SeLe4n.ThreadId) (st st1 : SystemState)
     (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
@@ -7287,7 +6251,8 @@ theorem dispatchArm_call_frame_delivered_by_reply
     (hReply : st.getReply? rid = some reply)
     (hCaller : reply.caller = some callerTid)
     (hNoFault : threadHasPendingFault st callerTid = false)
-    (hDispatch : endpointReplyCrossCoreDispatch tid callerTid
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = true)
+    (hDispatch : endpointReplyCrossCoreDispatchChecked ctx tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := cap.badge }
         executingCore st = (st1, .ok sgi))
@@ -7298,13 +6263,13 @@ theorem dispatchArm_call_frame_delivered_by_reply
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : stX.objects.invExt) :
     Architecture.syscallReturnShape .call = .message ∧
-    ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost callerTid
         = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites stX tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stX callerTid summary.capInfo, ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-      replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch, hX]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
+      replyAnsweredCaller?, hReply, hCaller, hFlow, replyTransferOnCoreChecked, hNoFault, hDispatch, hX]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stX callerTid tcb msg summary.capInfo
       hTcb hReady hMsg hObjInv
 
@@ -7336,16 +6301,6 @@ theorem syscallLookupReplyId_preserves_state
       simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
       exact hOk.2 ▸ syscallLookupCap_preserves_state gate st st'' cap hLook
 
-/-- WS-J1-D: `syscallEntry` error paths preserve `proofLayerInvariantBundle`
-trivially — the state is unchanged on error. -/
-theorem syscallEntry_error_preserves_proofLayerInvariantBundle
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (e : KernelError)
-    (hInv : Architecture.proofLayerInvariantBundle st)
-    (_hErr : syscallEntry layout regCount st = .error e) :
-    Architecture.proofLayerInvariantBundle st :=
-  hInv
-
 /-- WS-J1-D: `lookupThreadRegisterContext` preserves `proofLayerInvariantBundle`
 because it is read-only. -/
 theorem lookupThreadRegisterContext_preserves_proofLayerInvariantBundle
@@ -7357,39 +6312,54 @@ theorem lookupThreadRegisterContext_preserves_proofLayerInvariantBundle
   have hEq := lookupThreadRegisterContext_state_unchanged tid st regs st' hOk
   subst hEq; exact hInv
 
-/-- WS-J1-D: `syscallEntry` success path — if the pre-state satisfies
-`proofLayerInvariantBundle` and the underlying dispatched operation preserves
-it, then the post-state also satisfies the bundle.
+/-- WS-J1-D: a refused `syscallEntryChecked` commits no state, so the bundle the
+pre-state satisfied is the bundle the caller is left with. -/
+theorem syscallEntryChecked_error_preserves_proofLayerInvariantBundle
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (e : KernelError)
+    (hInv : Architecture.proofLayerInvariantBundle st)
+    (_hErr : syscallEntryChecked ctx layout executingCore regCount st = .error e) :
+    Architecture.proofLayerInvariantBundle st :=
+  hInv
 
-This theorem is compositional: it factors the proof into (1) pure decode
-(no state change), (2) read-only cap lookup (no state change), and
-(3) the underlying operation's preservation property. The caller provides
-the operation-level preservation hypothesis. -/
-theorem syscallEntry_preserves_proofLayerInvariantBundle
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
+/-- WS-J1-D: the success path of the live syscall entry — if the pre-state
+satisfies `proofLayerInvariantBundle` and the flow-checked dispatcher preserves
+it, the post-state satisfies it.
+
+Compositional: the context check is state-free, the register lookup is
+read-only, the decode is pure, and the access-time TLB fill the entry runs
+before it dispatches preserves the whole bundle
+(`tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle`), so the
+dispatcher is handed a state that satisfies it.  The caller provides the
+dispatcher's preservation, which composes its per-arm results with the taint
+seam's (`applySyscallTaint_preserves_proofLayerInvariantBundle`). -/
+theorem syscallEntryChecked_preserves_proofLayerInvariantBundle
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
     (st st' : SystemState)
     (hInv : Architecture.proofLayerInvariantBundle st)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
     (hDispatchPres : ∀ decoded tid stD stD',
         Architecture.proofLayerInvariantBundle stD →
-        dispatchSyscall decoded tid bootCoreId stD = .ok ((), stD') →
+        dispatchSyscallChecked ctx decoded tid executingCore stD = .ok ((), stD') →
         Architecture.proofLayerInvariantBundle stD') :
     Architecture.proofLayerInvariantBundle st' := by
-  -- Extract the successful decode chain
-  obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
-    syscallEntry_requires_valid_decode layout regCount st st' hOk
-  -- The dispatch operates on the original state (decode is pure, lookup is read-only)
-  unfold syscallEntry at hOk
-  rw [hCur] at hOk; simp at hOk
-  rw [hLookup] at hOk; simp at hOk
-  rw [hDecode] at hOk; simp at hOk
-  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
-  -- post-state IS the dispatcher's and this is a delegation.  The seam's own
-  -- bundle preservation has not gone anywhere — it is
-  -- `applySyscallTaint_preserves_proofLayerInvariantBundle` (the table write and,
-  -- since WS-ZA ZA5.11, the taint-word write), which is what a discharger of
-  -- `hDispatchPres` composes with its per-arm result.
-  exact hDispatchPres decoded tid st st' hInv hOk
+  unfold syscallEntryChecked at hOk
+  split at hOk
+  · exact absurd hOk (by simp)
+  · split at hOk
+    · exact absurd hOk (by simp)
+    · next tid _ =>
+      split at hOk
+      · exact absurd hOk (by simp)
+      · split at hOk
+        · exact absurd hOk (by simp)
+        · next decoded _ =>
+          dsimp only at hOk
+          exact hDispatchPres decoded tid _ st'
+            (Architecture.tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle
+              st executingCore tid decoded.overflowCount hInv) hOk
 
 -- ============================================================================
 -- WS-J1-D: Non-interference theorems for the syscall decode path
@@ -7443,75 +6413,11 @@ theorem syscallLookupCap_preserves_projection
   have hEq := syscallLookupCap_preserves_state gate st st' cap hOk
   subst hEq; rfl
 
-/-- WS-J1-D: `syscallEntry` preserves the observer's projection when the
-projection is preserved for any outcome. This follows from the compositional
-structure: decode is pure (no state change), register lookup is read-only,
-and the dispatch delegates to an existing operation.
-
-The hypothesis `hDispatchProj` must be supplied by the caller with knowledge
-of which operation was dispatched and its projection-preservation proof. -/
-theorem syscallEntry_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid stPost,
-        dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-        projectState ctx observer stPost = projectState ctx observer st) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
-    syscallEntry_requires_valid_decode layout regCount st st' hOk
-  unfold syscallEntry at hOk
-  rw [hCur] at hOk; simp at hOk
-  rw [hLookup] at hOk; simp at hOk
-  rw [hDecode] at hOk; simp at hOk
-  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
-  -- post-state IS the dispatcher's and the hypothesis applies directly.  The
-  -- seam is still projection-invisible — `applySyscallTaint_preserves_projection`
-  -- holds by `rfl` — which is what lets a discharger of `hDispatchProj` reduce it
-  -- to a statement about the transition the arm ran.
-  exact hDispatchProj decoded tid st' hOk
-
--- ============================================================================
--- WS-J1-D: NonInterferenceStep bridge theorems for syscallEntry
--- ============================================================================
-
-/-- WS-J1-D: A failed `syscallEntry` (decode error, lookup error, etc.)
-yields a `syscallDecodeError` NI step since the state is unchanged. -/
-theorem syscallEntry_error_yields_NI_step
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (e : KernelError)
-    (_hErr : syscallEntry layout regCount st = .error e) :
-    NonInterferenceStep ctx observer st st :=
-  .syscallDecodeError rfl
-
-/-- WS-J1-D: A successful `syscallEntry` where the current thread is
-non-observable yields a `syscallDispatchHigh` NI step, provided the
-dispatched operation preserves the projection.
-
-This is the primary bridge theorem: it composes the pure decode (no state
-change), read-only register lookup, and the dispatched operation's
-projection-preservation proof into a single `NonInterferenceStep`. -/
-theorem syscallEntry_success_yields_NI_step
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
-        threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid stPost,
-        dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-        projectState ctx observer stPost = projectState ctx observer st) :
-    NonInterferenceStep ctx observer st st' :=
-  .syscallDispatchHigh hCurrentHigh
-    (syscallEntry_preserves_projection ctx observer layout regCount st st' hOk hDispatchProj)
-
 -- ============================================================================
 -- WS-K-F4: Dispatch decode purity and preservation composition
 -- ============================================================================
 
-/-- WS-K-F4: Layer 2 decode functions within `dispatchWithCap` are pure —
+/-- WS-K-F4: Layer 2 decode functions within `dispatchWithCapChecked` are pure —
 they operate on the `SyscallDecodeResult` value and never access or modify
 `SystemState`. This means any decode failure is a state-preserving error,
 and any decode success passes the original state unmodified to the delegated
@@ -7522,7 +6428,7 @@ Proved by showing that two `SyscallDecodeResult` values with the same
 for all 6 structures — confirming that decode depends only on `msgRegs` and
 the length its truncation check reads (`requireMessageLength`), not on
 `capAddr`, the rest of `msgInfo`, or `syscallId`. -/
-theorem dispatchWithCap_layer2_decode_pure
+theorem dispatchWithCapChecked_layer2_decode_pure
     (d₁ d₂ : SyscallDecodeResult) (hRegs : d₁.msgRegs = d₂.msgRegs)
     (hLen : d₁.msgInfo.length = d₂.msgInfo.length) :
     (decodeCSpaceMintArgs d₁ = decodeCSpaceMintArgs d₂) ∧
@@ -7537,29 +6443,6 @@ theorem dispatchWithCap_layer2_decode_pure
       decodeCSpaceDeleteArgs, requireMessageLength, requireMsgReg, hRegs, hLen]) <;>
     (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       requireMessageLength, requireMsgReg, hRegs, hLen])
-
-/-- WS-K-F4: Composition verification — `syscallEntry_preserves_proofLayerInvariantBundle`
-composes decode purity (no state change), read-only cap lookup (state unchanged),
-and the delegated operation's preservation property. The `hDispatchPres` hypothesis
-is dischargeable per-dispatch-arm using existing subsystem preservation theorems:
-
-- CSpace mint/copy/move/delete: `Capability/Invariant/Preservation.lean`
-- Untyped carve: `Lifecycle/Operations/ScrubAndUntyped.lean`
-- VSpace map/unmap: `Architecture/VSpaceInvariant.lean`
-- Service register/revoke: `Service/Registry/Invariant.lean`
-- IPC send/call/reply/recv: `IPC/Invariant/EndpointPreservation.lean`
-
-This theorem witnesses that the composition is structurally complete. -/
-theorem dispatchWithCap_preservation_composition_witness :
-    (∀ layout regCount st st' (_hInv : Architecture.proofLayerInvariantBundle st)
-        (_hOk : syscallEntry layout regCount st = .ok ((), st'))
-        (_hDispatchPres : ∀ decoded tid stD stD',
-            Architecture.proofLayerInvariantBundle stD →
-            dispatchSyscall decoded tid bootCoreId stD = .ok ((), stD') →
-            Architecture.proofLayerInvariantBundle stD'),
-        Architecture.proofLayerInvariantBundle st') :=
-  fun layout regCount st st' hInv hOk hDP =>
-    syscallEntry_preserves_proofLayerInvariantBundle layout regCount st st' hInv hOk hDP
 
 -- ============================================================================
 -- AK6-F (NI-H02): Composed projection preservation for dispatchCapabilityOnly
@@ -7742,34 +6625,6 @@ theorem dispatchSyscallChecked_applies_taint_plan
   · exact absurd h (by simp)
   · exact absurd h (by simp)
 
-/-- **And no success path through the unchecked dispatcher skips it either.**
-
-The twin of the theorem above, and the reason the two are stated as a pair: the
-seam sits at the dispatcher on *both* routes, so "which entry did the caller
-use" stops being a question provenance depends on. -/
-theorem dispatchSyscall_applies_taint_plan
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (st st' : SystemState)
-    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
-  simp only [dispatchSyscall, SystemState.getObject?] at h
-  -- The caller/core guard: a mismatched pair is refused before any lookup.
-  split at h
-  · exact absurd h (by simp)
-  -- WS-ZA ZA4.3: a yield's plan is inert, so the step leaves its state as is.
-  by_cases hY : decoded.syscallId = .yield
-  · exact ⟨st', by rw [syscallTaintPlan_yield st tid decoded hY, applySyscallTaint_inert]⟩
-  rw [if_neg hY] at h
-  split at h
-  · split at h
-    · split at h
-      · exact absurd h (by simp)
-      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
-    · exact absurd h (by simp)
-    · exact absurd h (by simp)
-  · exact absurd h (by simp)
-  · exact absurd h (by simp)
-
 /-- **The caller and the executing core are one fact.**  A mismatched pair —
 `tid` not the thread current on `executingCore` — is refused `.illegalState`
 by the checked dispatcher before any lookup.
@@ -7786,15 +6641,6 @@ theorem dispatchSyscallChecked_refuses_mismatched_core
     dispatchSyscallChecked ctx decoded tid executingCore st = .error .illegalState := by
   simp only [dispatchSyscallChecked, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
 
-/-- The unchecked twin of `dispatchSyscallChecked_refuses_mismatched_core`: the
-two dispatchers carry the same caller/core guard. -/
-theorem dispatchSyscall_refuses_mismatched_core
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (st : SystemState)
-    (hMismatch : st.scheduler.currentOnCore executingCore ≠ some tid) :
-    dispatchSyscall decoded tid executingCore st = .error .illegalState := by
-  simp only [dispatchSyscall, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
-
 /-- **A successful checked dispatch acted as the executing core's current
 thread.**  Every arm's subject — `tid` for resolution and flow checks,
 `currentOnCore executingCore` for the declassification and audit arms — is
@@ -7810,17 +6656,6 @@ theorem dispatchSyscallChecked_ok_caller_current
       hCur] at h
     exact absurd h (by simp)
 
-/-- The unchecked twin of `dispatchSyscallChecked_ok_caller_current`. -/
-theorem dispatchSyscall_ok_caller_current
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    st.scheduler.currentOnCore executingCore = some tid := by
-  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-  · exact hCur
-  · rw [dispatchSyscall_refuses_mismatched_core decoded tid executingCore st hCur] at h
-    exact absurd h (by simp)
-
 /-- The entry never trips the guard: `syscallEntryChecked` resolves `tid` as
 `currentOnCore executingCore` and dispatches on the IPC-buffer-filled state,
 whose scheduler is the pre-state's (`tlbFillIpcBufferOnCore_scheduler`), so the
@@ -7832,7 +6667,6 @@ theorem syscallEntryChecked_dispatch_caller_current
         overflowCount).scheduler.currentOnCore executingCore = some tid := by
   rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler]
   exact hCur
-
 
 -- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
@@ -7958,20 +6792,6 @@ theorem dispatchWithCapChecked_declassify_delegates
   rw [hSyscall]
   simp only [hTarget]
 
-/-- **WS-SM SM8.C.9: there is no unchecked declassification.**
-
-The unchecked dispatch fails closed with the error a denied downgrade produces.
-Stated as a theorem rather than left to the reader of the arm, because "the
-unchecked path skips the flow check" is the pattern every *other* arm follows,
-and following it here would authorize every downgrade. -/
-theorem dispatchWithCap_declassify_denied
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (st : SystemState)
-    (hSyscall : decoded.syscallId = .declassify) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .declassificationDenied := by
-  unfold dispatchWithCap dispatchCapabilityOnly
-  rw [hSyscall]
-
 /-- **WS-SM SM8.C.9**: an unconfigured deployment cannot declassify.
 
 `LabelingContext.declassificationPolicy` defaults to deny-all, so the checked
@@ -8037,38 +6857,6 @@ theorem dispatchWithCapChecked_declassifySignal_delegates
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
   simp only [hTarget]
-
-/-- **WS-SM SM9.C.8: there is no unchecked declassifying signal.**
-
-The dual of `dispatchWithCapChecked_declassifySignal_delegates`, and the
-stronger of the pair to state explicitly: the unchecked path is the one an arm
-author would be tempted to fill in by analogy with `.notificationSignal`, and
-doing so would produce a signal that skips *both* declassification gates while
-carrying the authority to cross a boundary the lattice denies. -/
-theorem dispatchWithCap_declassifySignal_denied
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (st : SystemState)
-    (hSyscall : decoded.syscallId = .declassifySignal) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .declassificationDenied := by
-  unfold dispatchWithCap dispatchCapabilityOnly
-  rw [hSyscall]
-
-/-- **A signal's badge is its capability's.**  The unchecked signal arm reads
-nothing of the decode but its syscall: two decodes that both name
-`.notificationSignal` — whatever message registers, length or overflow words
-each carries — dispatch identically on the same capability, so no word the
-caller writes can set a badge bit.  The bits ORed in are `cap.signalBadge`, the
-badge minted into the capability and zero for an unbadged one, as seL4's
-`sendSignal` takes `capNtfnBadge`. -/
-theorem dispatchWithCap_notificationSignal_badge_of_cap
-    (decoded decoded' : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (h : decoded.syscallId = .notificationSignal)
-    (h' : decoded'.syscallId = .notificationSignal) :
-    dispatchWithCap decoded tid executingCore gate cap =
-      dispatchWithCap decoded' tid executingCore gate cap := by
-  unfold dispatchWithCap dispatchCapabilityOnly
-  rw [h, h']
 
 /-- The checked signal arm's badge is its capability's too
 (`dispatchWithCap_notificationSignal_badge_of_cap`'s checked twin). -/
@@ -8293,14 +7081,14 @@ theorem dispatchSyscallChecked_right_after_type
     syscallInvokeTyped, syscallResolveCap, hResolve, hLookup]
   simp [hNotReserved, hType, hRight]
 
-
 -- ============================================================================
 -- WS-RR RR7.3: the capability-held guarantee on the LIVE checked dispatch path
 --
--- Register §4 finding 5: `syscallEntry_implies_capability_held` and
--- `dispatchSyscall_requires_right` are stated over the *legacy* entry, which is
--- `bootCoreId`-pinned and whose only non-test callers are the trace harness and
--- the exception model.  The path the hardware takes is
+-- Register §4 finding 5: the capability-held guarantee was stated over the
+-- *legacy* entry, which was `bootCoreId`-pinned and whose only non-test callers
+-- were the trace harness and the exception model (that entry was retired by
+-- owner decision 2026-11-13, its callers moved here).  The path the hardware
+-- takes is
 -- `@[export lean_syscall_dispatch_cross_core]` → `syscallDispatchCrossCoreEntry`
 -- → `Platform.FFI.syscallDispatchFromAbi` → `syscallEntryChecked` →
 -- `dispatchSyscallChecked`, and nothing covered it.  These are the analogues,
@@ -8313,8 +7101,7 @@ theorem dispatchSyscallChecked_right_after_type
 /-- **WS-RR RR7.3**: if the **flow-checked** dispatch succeeds, the caller held a
 capability with the required access right for the invoked syscall.
 
-The live-path analogue of `dispatchSyscall_requires_right`, through the typed
-gate every arm runs behind (`syscallInvokeTyped_requires_right`). -/
+Stated through the typed gate every arm runs behind (`syscallInvokeTyped_requires_right`). -/
 theorem dispatchSyscallChecked_requires_right
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
@@ -8351,10 +7138,11 @@ theorem dispatchSyscallChecked_requires_right
   · simp at hOk
 
 /-- **WS-RR RR7.3**: if the **flow-checked** syscall entry succeeds, the caller
-held the required access right — the live-path analogue of
-`syscallEntry_implies_capability_held`.
+held the required access right.  It also states that the register decode
+succeeded on the caller's own register file, which subsumes the retired
+entry's decode-validity theorem.
 
-Three differences from the legacy statement, all of them the point:
+Three properties of the statement, all of them the point:
 
 * the caller is identified on the **executing** core (`currentOnCore
   executingCore`), not on `bootCoreId`, so the guarantee covers a syscall issued
@@ -8414,7 +7202,6 @@ theorem syscallEntryChecked_implies_capability_held
           exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl, fun hCap =>
             dispatchSyscallChecked_requires_right ctx decoded tid executingCore _ st' hCap hOk⟩
 
-
 /-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
 caller trapped in.
 
@@ -8458,21 +7245,6 @@ theorem syscallEntryChecked_implies_capability_held_of_pre_state
   · simpa only [SystemState.getCNode?, hObjects] using hRoot
   · rw [← resolveCapAddress_congr_objects _ st hObjects]; exact hResolve
   · rw [← lookupSlotCap_congr_objects _ st ref hObjects]; exact hSlot
-
-/-- **WS-SM SM9.A.10: there is no unchecked audit read.**
-
-The unchecked dispatch fails closed on both audit syscalls.  Stated as a theorem
-because "the unchecked path skips the flow check" is the pattern every *other*
-arm follows, and following it here would mean picking a clearance — and the only
-clearance available without a context is "all of them", which is an audit reader
-that hands every entry to every capability holder. -/
-theorem dispatchWithCap_auditRead_denied
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (st : SystemState)
-    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  unfold dispatchWithCap dispatchCapabilityOnly
-  rcases hSyscall with h | h <;> rw [h]
 
 /-- **WS-SM SM9.A.10**: an unconfigured deployment cannot drain.
 
@@ -8616,30 +7388,29 @@ theorem unconfiguredDeployment_has_no_audit_reader
   exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st
 
 /-- **The live `.tcbSuspend` arm routes to `suspendThreadOnCore`.**  Capability-only,
-so this covers both `dispatchWithCap` and `dispatchWithCapChecked` (the latter
-consults `dispatchCapabilityOnly` first). -/
-theorem dispatchWithCap_tcbSuspend_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+and `dispatchWithCapChecked` consults `dispatchCapabilityOnly` first. -/
+theorem dispatchWithCapChecked_tcbSuspend_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .tcbSuspend)
     (hTarget : cap.target = .object objId)
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeSuspendArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match Lifecycle.Suspend.suspendThreadOnCore st vtid
               executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
   obtain ⟨a, hD⟩ := hDecode
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hD, hValid]
 
 /-- WS-ZA ZA5.4 part 22: **the live `.tcbSetSpace` arm is the space change** at
 the invoking thread's executing core, on the thread the capability names and the
 two roots resolved through the caller's CSpace (`resolveSetSpace`).  It takes
 the core for the retire of what each slot's old capability took with it. -/
-theorem dispatchWithCap_tcbSetSpace_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+theorem dispatchWithCapChecked_tcbSetSpace_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
     (cnSrc vrSrc : CSpaceAddr) (st : SystemState)
@@ -8648,11 +7419,11 @@ theorem dispatchWithCap_tcbSetSpace_delegates
     (hDecode : Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid)
     (hResolve : resolveSetSpace tid args st = .ok (cnSrc, vrSrc)) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
        | .ok st' => .ok ((), st')
        | .error e => .error e) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hValid, hResolve]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hValid, hResolve]
 
 /-- **The live `.tcbResume` arm routes to `resumeThreadOnCore`.**
 
@@ -8661,22 +7432,22 @@ Round 10 of the PR #861 review found this arm still calling the boot-pinned
 `cpuAffinity` — so resuming a thread homed on a secondary core put it on the
 wrong run queue.  The reroute is the fix; this theorem is what stops the
 inventory claiming the arm is covered while it points somewhere else. -/
-theorem dispatchWithCap_tcbResume_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_tcbResume_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .tcbResume)
     (hTarget : cap.target = .object objId)
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match Lifecycle.Suspend.resumeThreadOnCore
               (retirePendingFaultForResume st vtid.val) vtid
               executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
   obtain ⟨a, hD⟩ := hDecode
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hD, hValid]
 
 /-- **The live `.receive` arm routes to `endpointReceiveDualOnCore`.**
 
@@ -8717,33 +7488,6 @@ theorem dispatchWithCapChecked_receive_delegates
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
 
-/-- **The live unchecked `.send` arm routes to `endpointSendDualWithCapsOnCore`.**
-
-Round 10 of the PR #861 review found this arm still calling the boot-pinned
-`endpointSendDualWithCaps`, whose two scheduling effects both target `bootCoreId`:
-a rendezvous receiver is woken with `ensureRunnable` (wrong run queue when the
-receiver is homed elsewhere), and a sender with no receiver is descheduled with
-`removeRunnable` (so a sender blocking on a secondary core stays current and
-runnable there).  The reroute is the fix; this theorem is the tie that stops the
-per-core inventory claiming the arm is covered while it points somewhere else. -/
-theorem dispatchWithCap_send_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .send)
-    (hTarget : cap.target = .object epId) :
-    dispatchWithCap decoded tid executingCore gate cap st =
-      (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
-              executingCore st with
-       | (_, .error e) => .error e
-       | (st', .ok (summary, _)) =>
-           match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with
-           | .error e => .error e
-           | .ok ((), st'') =>
-               .ok ((), Architecture.stageWokenDelivery st''
-                         ((st.getEndpoint? epId).bind (·.receiveQ.head))
-                         summary.capInfo)) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
-
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
 cross-core operation (the `sender → endpoint` flow check), exactly as
@@ -8773,8 +7517,8 @@ which is boot-pinned twice: `migrateRunQueueBucket` tests membership in
 `runQueueOnCore bootCoreId` — so for a target queued on any other core the
 re-bucket is a silent no-op and the run queue keeps the *old* priority band —
 and the preemption check reads `currentOnCore bootCoreId`. -/
-theorem dispatchWithCap_tcbSetPriority_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_tcbSetPriority_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (args : Architecture.SyscallArgDecode.SetPriorityArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .tcbSetPriority)
@@ -8782,12 +7526,12 @@ theorem dispatchWithCap_tcbSetPriority_delegates
     (hDecode : decodeSetPriorityArgs decoded = .ok args)
     (hCaller : validateThreadIdArg tid = .ok vCallerTid)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
               (SeLe4n.Priority.ofNat args.newPriority) executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hCaller, hValid]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hCaller, hValid]
 
 /-- **The live `.schedContextUnbind` arm routes to `schedContextUnbindOnCore`.**
 
@@ -8799,26 +7543,26 @@ for the executing core — so the thread returned to userspace still running whi
 the model recorded its core as having no current thread, and its next syscall is
 refused (`vacatedCore_next_syscall_rejected`; round 43 corrected the earlier
 claim of a boot-core misroute, which caller resolution rules out). -/
-theorem dispatchWithCap_schedContextUnbind_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_schedContextUnbind_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .schedContextUnbind)
     (hTarget : cap.target = .object scId)
     (hDecode : ∃ a, decodeSchedContextUnbindArgs decoded = .ok a)
     (hValid : validateObjIdArg scId = .ok vScId) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match SchedContextOps.schedContextUnbindOnCore vScId
               executingCore st with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
   obtain ⟨a, hArgs⟩ := hDecode
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hArgs, hValid]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hArgs, hValid]
 
 /-- **The live `.tcbSetMCPriority` arm routes to `setMCPriorityOnCore`.**  Same
 reroute, reached whenever the new ceiling caps the target's current priority. -/
-theorem dispatchWithCap_tcbSetMCPriority_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+theorem dispatchWithCapChecked_tcbSetMCPriority_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (args : Architecture.SyscallArgDecode.SetMCPriorityArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .tcbSetMCPriority)
@@ -8826,19 +7570,19 @@ theorem dispatchWithCap_tcbSetMCPriority_delegates
     (hDecode : decodeSetMCPriorityArgs decoded = .ok args)
     (hCaller : validateThreadIdArg tid = .ok vCallerTid)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
-    dispatchWithCap decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
               (SeLe4n.Priority.ofNat args.newMCP) executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hCaller, hValid]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hCaller, hValid]
 
 /-- **The delegation obligation for a syscall, as a proposition indexed by it.**
 
 PR #861 review round 11: the first cut of this mechanism recorded delegation
 evidence as a `String` validated by `niName!`.  That checks only that *some*
 declaration by that name exists — the `.receive` entry could have cited
-`dispatchWithCap_tcbSuspend_delegates` and every count would still have passed.
+`dispatchWithCapChecked_tcbSuspend_delegates` and every count would still have passed.
 It was the same defect the mechanism existed to prevent, one level up: a claim
 ("this theorem backs this arm") held by prose rather than by a type.
 
@@ -8850,13 +7594,13 @@ cannot be fabricated, so the inventory's backed/unbacked split is enforced by
 the type checker rather than by a `Bool` someone can flip. -/
 def syscallDelegates : SyscallId → Prop
   | .send =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .send →
         cap.target = .object epId →
-        dispatchWithCap decoded tid executingCore gate cap st =
-          (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
-                  executingCore st with
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+          (match endpointSendCrossCoreDispatchChecked ctx epId tid
+                  (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>
                match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with
@@ -8866,7 +7610,7 @@ def syscallDelegates : SyscallId → Prop
                              ((st.getEndpoint? epId).bind (·.receiveQ.head))
                              summary.capInfo))
   | .tcbSetPriority =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
         (args : Architecture.SyscallArgDecode.SetPriorityArgs) (st : SystemState),
@@ -8875,13 +7619,13 @@ def syscallDelegates : SyscallId → Prop
         decodeSetPriorityArgs decoded = .ok args →
         validateThreadIdArg tid = .ok vCallerTid →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
                   (SeLe4n.Priority.ofNat args.newPriority) executingCore with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .tcbSetMCPriority =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
         (args : Architecture.SyscallArgDecode.SetMCPriorityArgs) (st : SystemState),
@@ -8890,7 +7634,7 @@ def syscallDelegates : SyscallId → Prop
         decodeSetMCPriorityArgs decoded = .ok args →
         validateThreadIdArg tid = .ok vCallerTid →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
                   (SeLe4n.Priority.ofNat args.newMCP) executingCore with
            | .ok (st', _) => .ok ((), st')
@@ -8928,63 +7672,63 @@ def syscallDelegates : SyscallId → Prop
                               summary.capInfo))
            | (_, .error e) => .error e)
   | .tcbSuspend =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
         (st : SystemState),
         decoded.syscallId = .tcbSuspend →
         cap.target = .object objId →
         (∃ a, Architecture.SyscallArgDecode.decodeSuspendArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match Lifecycle.Suspend.suspendThreadOnCore st vtid
                   executingCore with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .tcbResume =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
         (st : SystemState),
         decoded.syscallId = .tcbResume →
         cap.target = .object objId →
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match Lifecycle.Suspend.resumeThreadOnCore
                   (retirePendingFaultForResume st vtid.val) vtid
                   executingCore with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .schedContextUnbind =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
         (st : SystemState),
         decoded.syscallId = .schedContextUnbind →
         cap.target = .object scId →
         (∃ a, decodeSchedContextUnbindArgs decoded = .ok a) →
         validateObjIdArg scId = .ok vScId →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContextOps.schedContextUnbindOnCore vScId
                   executingCore st with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .vspaceMap =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st : SystemState),
         decoded.syscallId = .vspaceMap →
         cap.target = .object objId →
         decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args →
         vspaceCapAuthorizesAsid cap args.asid st = true →
-        dispatchWithCap decoded tid executingCore gate cap st = vspaceMapOrRemapFromFrameCap tid executingCore args st
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st = vspaceMapOrRemapFromFrameCap tid executingCore args st
   | .vspaceUnmap =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs) (st : SystemState),
         decoded.syscallId = .vspaceUnmap →
         cap.target = .object objId →
         decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args →
         vspaceCapAuthorizesAsid cap args.asid st = true →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
             executingCore args.asid args.vaddr st
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
@@ -9064,49 +7808,49 @@ def syscallDelegates : SyscallId → Prop
   -- reset's refusals are its own, and the conclusion names the whole operation.
   -- WS-ZA ZA5.4 part 14: the carve, the one way a kernel object is made.
   | .untypedRetype =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .untypedRetype →
         cap.target = .object untypedId →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           untypedRetypeFromCap tid executingCore decoded.capAddr
             (decodeUntypedRetypeArgs decoded) st
   | .untypedReset =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .untypedReset →
         cap.target = .object untypedId →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           untypedResetFromCap tid decoded.capAddr st
   -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
   -- composite — the delete or the revocation, then the removal of every mapping a
   -- destroyed frame capability recorded — at the invoking thread's core.
   | .cspaceDelete =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (cnodeId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
         decoded.syscallId = .cspaceDelete →
         cap.target = .object cnodeId →
         decodeCSpaceDeleteArgs decoded = .ok args →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           if !cnodeInvoked cnodeId st then .error .objectNotFound else
             cspaceDeleteSlotZombie executingCore
               { cnode := cnodeId, slot := args.targetSlot } st
   | .cspaceRevoke =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (cnodeId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
         decoded.syscallId = .cspaceRevoke →
         cap.target = .object cnodeId →
         decodeCSpaceDeleteArgs decoded = .ok args →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           if !cnodeInvoked cnodeId st then .error .objectNotFound else
             cspaceRevokeCdtFinalising executingCore
               { cnode := cnodeId, slot := args.targetSlot } st
   -- WS-ZA ZA5.4 part 22: the space change, which retires what each slot's old
   -- capability took with it at the invoking thread's core.
   | .tcbSetSpace =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
         (cnSrc vrSrc : CSpaceAddr) (st : SystemState),
@@ -9115,31 +7859,30 @@ def syscallDelegates : SyscallId → Prop
         Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         resolveSetSpace tid args st = .ok (cnSrc, vrSrc) →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
-  -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the
+  -- WS-ZA ZA4.3: the capability-free yield.  The dispatcher runs it from the
   -- guard ahead of the caller's CSpace lookup, so the obligation is stated
-  -- over the dispatchers themselves: once the caller is current on the
-  -- executing core, each IS the yield's own transition.
+  -- over the dispatcher itself: once the caller is current on the executing
+  -- core, it IS the yield's own transition.
   | .yield =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (executingCore : Concurrency.CoreId) (st : SystemState),
         decoded.syscallId = .yield →
         st.scheduler.currentOnCore executingCore = some tid →
-        dispatchSyscall decoded tid executingCore st = dispatchYield executingCore st ∧
         dispatchSyscallChecked ctx decoded tid executingCore st = dispatchYield executingCore st
   -- WS-ZA ZA6.9: the Consumed arm IS the Consumed invocation of the context the
   -- capability names, on the executing core.
   | .schedContextConsumed =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
         (st : SystemState),
         decoded.syscallId = .schedContextConsumed →
         cap.target = .object scId →
         validateObjIdArg scId = .ok vScId →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val)
                   executingCore st with
            | .ok st' => .ok ((), st')
@@ -9147,13 +7890,13 @@ def syscallDelegates : SyscallId → Prop
   -- WS-ZA ZA6.29: the yieldTo arm IS the yieldTo invocation of the context the
   -- capability names, on the executing core.
   | .schedContextYieldTo =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
         (st : SystemState),
         decoded.syscallId = .schedContextYieldTo →
         cap.target = .object scId →
         validateObjIdArg scId = .ok vScId →
-        dispatchWithCap decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContextOps.schedContextYieldToOnCore
                   (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
            | .ok st' => .ok ((), st')
@@ -9161,77 +7904,77 @@ def syscallDelegates : SyscallId → Prop
   -- WS-ZA ZA6.32: the acknowledge arm IS the acknowledge of the line the
   -- capability names.
   | .irqHandlerAck =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (line : Nat),
         decoded.syscallId = .irqHandlerAck →
         cap.target = .irqHandler line →
-        dispatchWithCap decoded tid executingCore gate cap = Architecture.irqHandlerAck line
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap = Architecture.irqHandlerAck line
   -- WS-ZA ZA6.32: the issue arm IS the issue from the invoked interrupt-control
   -- capability's slot.
   | .irqControlGet =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (code : Nat),
         decoded.syscallId = .irqControlGet →
         cap.target = .irqControl code →
-        dispatchWithCap decoded tid executingCore gate cap =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap =
           irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
   -- WS-ZA ZA6.32: the bind arm IS the bind of the line the capability names.
   | .irqHandlerSetNotification =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (line : Nat),
         decoded.syscallId = .irqHandlerSetNotification →
         cap.target = .irqHandler line →
-        dispatchWithCap decoded tid executingCore gate cap =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap =
           irqHandlerSetNotificationFromCap tid executingCore line
             (decodeIrqHandlerSetNotificationArgs decoded)
   -- WS-ZA ZA6.32: the clear arm IS the clear of the line the capability names.
   | .irqHandlerClear =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (line : Nat),
         decoded.syscallId = .irqHandlerClear →
         cap.target = .irqHandler line →
-        dispatchWithCap decoded tid executingCore gate cap = irqHandlerClear executingCore line
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap = irqHandlerClear executingCore line
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
 theorem syscallDelegates_yield : syscallDelegates .yield := by
   intro ctx decoded tid executingCore st hSyscall hCur
-  exact ⟨by simp [dispatchSyscall, hSyscall, hCur], by simp [dispatchSyscallChecked, hSyscall, hCur]⟩
+  simp [dispatchSyscallChecked, hSyscall, hCur]
 
 /-- WS-ZA ZA6.9: the `.schedContextConsumed` obligation, discharged. -/
 theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextConsumed := by
-  intro decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hValid]
+  intro ctx decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hValid]
 
 /-- WS-ZA ZA6.29: the `.schedContextYieldTo` obligation, discharged. -/
 theorem syscallDelegates_schedContextYieldTo : syscallDelegates .schedContextYieldTo := by
-  intro decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hValid]
+  intro ctx decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hValid]
 
 /-- WS-ZA ZA6.32: the `.irqHandlerAck` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by
-  intro decoded tid executingCore gate cap line hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap line hSyscall hTarget
   funext st
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-ZA ZA6.32: the `.irqControlGet` obligation, discharged. -/
 theorem syscallDelegates_irqControlGet : syscallDelegates .irqControlGet := by
-  intro decoded tid executingCore gate cap code hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap code hSyscall hTarget
   funext st
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-ZA ZA6.32: the `.irqHandlerSetNotification` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerSetNotification :
     syscallDelegates .irqHandlerSetNotification := by
-  intro decoded tid executingCore gate cap line hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap line hSyscall hTarget
   funext st
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-ZA ZA6.32: the `.irqHandlerClear` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerClear : syscallDelegates .irqHandlerClear := by
-  intro decoded tid executingCore gate cap line hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap line hSyscall hTarget
   funext st
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by
@@ -9241,20 +7984,20 @@ theorem syscallDelegates_receive : syscallDelegates .receive := by
 
 /-- The `.tcbResume` obligation, discharged. -/
 theorem syscallDelegates_tcbResume : syscallDelegates .tcbResume := by
-  intro decoded tid executingCore gate cap objId vtid st hSyscall hTarget hDecode hValid
-  exact dispatchWithCap_tcbResume_delegates decoded tid executingCore gate cap objId vtid st
+  intro ctx decoded tid executingCore gate cap objId vtid st hSyscall hTarget hDecode hValid
+  exact dispatchWithCapChecked_tcbResume_delegates ctx decoded tid executingCore gate cap objId vtid st
     hSyscall hTarget hDecode hValid
 
 /-- The `.tcbSuspend` obligation, discharged. -/
 theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
-  intro decoded tid executingCore gate cap objId vtid st hSyscall hTarget hDecode hValid
-  exact dispatchWithCap_tcbSuspend_delegates decoded tid executingCore gate cap objId vtid st
+  intro ctx decoded tid executingCore gate cap objId vtid st hSyscall hTarget hDecode hValid
+  exact dispatchWithCapChecked_tcbSuspend_delegates ctx decoded tid executingCore gate cap objId vtid st
     hSyscall hTarget hDecode hValid
 
 /-- WS-SM SM8.B: the `.vspaceMap` obligation, discharged. -/
 theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
-  intro decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
-  exact dispatchWithCap_vspaceMap_delegates decoded tid executingCore gate cap objId args st
+  intro ctx decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
+  exact dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth
 
 /-- WS-SM SM8.C.9: the `.declassify` obligation, discharged. -/
@@ -9283,66 +8026,66 @@ theorem syscallDelegates_auditDrain : syscallDelegates .auditDrain := by
 
 /-- WS-SM SM8.B: the `.vspaceUnmap` obligation, discharged. -/
 theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
-  intro decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
-  exact dispatchWithCap_vspaceUnmap_delegates decoded tid executingCore gate cap objId args st
+  intro ctx decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
+  exact dispatchWithCapChecked_vspaceUnmap_delegates ctx decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth
 
 /-- WS-ZA ZA5.4 part 14: the `.untypedRetype` obligation, discharged — the
 carve's cross-core inventory entry rests on it. -/
 theorem syscallDelegates_untypedRetype : syscallDelegates .untypedRetype := by
-  intro decoded tid executingCore gate cap untypedId st hSyscall hTarget
-  exact dispatchWithCap_untypedRetype_delegates decoded tid executingCore gate cap untypedId st
+  intro ctx decoded tid executingCore gate cap untypedId st hSyscall hTarget
+  exact dispatchWithCapChecked_untypedRetype_delegates ctx decoded tid executingCore gate cap untypedId st
     hSyscall hTarget
 
 /-- WS-BP BP7.1 (slice 3): the `.untypedReset` obligation, discharged. -/
 theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by
-  intro decoded tid executingCore gate cap untypedId st hSyscall hTarget
-  exact dispatchWithCap_untypedReset_delegates decoded tid executingCore gate cap untypedId st
+  intro ctx decoded tid executingCore gate cap untypedId st hSyscall hTarget
+  exact dispatchWithCapChecked_untypedReset_delegates ctx decoded tid executingCore gate cap untypedId st
     hSyscall hTarget
 
 /-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceDelete` obligation, discharged. -/
 theorem syscallDelegates_cspaceDelete : syscallDelegates .cspaceDelete := by
-  intro decoded tid executingCore gate cap cnodeId args st hSyscall hTarget hDecode
-  exact dispatchWithCap_cspaceDelete_delegates decoded tid executingCore gate cap cnodeId args st
+  intro ctx decoded tid executingCore gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCapChecked_cspaceDelete_delegates ctx decoded tid executingCore gate cap cnodeId args st
     hSyscall hTarget hDecode
 
 /-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceRevoke` obligation, discharged. -/
 theorem syscallDelegates_cspaceRevoke : syscallDelegates .cspaceRevoke := by
-  intro decoded tid executingCore gate cap cnodeId args st hSyscall hTarget hDecode
-  exact dispatchWithCap_cspaceRevoke_delegates decoded tid executingCore gate cap cnodeId args st
+  intro ctx decoded tid executingCore gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCapChecked_cspaceRevoke_delegates ctx decoded tid executingCore gate cap cnodeId args st
     hSyscall hTarget hDecode
 
 /-- WS-ZA ZA5.4 part 22: the `.tcbSetSpace` obligation, discharged — the space
 change's cross-core inventory entry rests on it. -/
 theorem syscallDelegates_tcbSetSpace : syscallDelegates .tcbSetSpace := by
-  intro decoded tid executingCore gate cap objId args vtid cnSrc vrSrc st hSyscall hTarget hDecode
+  intro ctx decoded tid executingCore gate cap objId args vtid cnSrc vrSrc st hSyscall hTarget hDecode
     hValid hResolve
-  exact dispatchWithCap_tcbSetSpace_delegates decoded tid executingCore gate cap objId args vtid
+  exact dispatchWithCapChecked_tcbSetSpace_delegates ctx decoded tid executingCore gate cap objId args vtid
     cnSrc vrSrc st hSyscall hTarget hDecode hValid hResolve
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by
-  intro decoded tid executingCore gate cap epId st hSyscall hTarget
-  exact dispatchWithCap_send_delegates decoded tid executingCore gate cap epId st hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap epId st hSyscall hTarget
+  exact dispatchWithCapChecked_send_delegates ctx decoded tid executingCore gate cap epId st hSyscall hTarget
 
 /-- The `.tcbSetPriority` obligation, discharged. -/
 theorem syscallDelegates_tcbSetPriority : syscallDelegates .tcbSetPriority := by
-  intro decoded tid executingCore gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
+  intro ctx decoded tid executingCore gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
     hCaller hValid
-  exact dispatchWithCap_tcbSetPriority_delegates decoded tid executingCore gate cap objId vCallerTid
+  exact dispatchWithCapChecked_tcbSetPriority_delegates ctx decoded tid executingCore gate cap objId vCallerTid
     vTargetTid args st hSyscall hTarget hDecode hCaller hValid
 
 /-- The `.tcbSetMCPriority` obligation, discharged. -/
 theorem syscallDelegates_tcbSetMCPriority : syscallDelegates .tcbSetMCPriority := by
-  intro decoded tid executingCore gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
+  intro ctx decoded tid executingCore gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
     hCaller hValid
-  exact dispatchWithCap_tcbSetMCPriority_delegates decoded tid executingCore gate cap objId vCallerTid
+  exact dispatchWithCapChecked_tcbSetMCPriority_delegates ctx decoded tid executingCore gate cap objId vCallerTid
     vTargetTid args st hSyscall hTarget hDecode hCaller hValid
 
 /-- The `.schedContextUnbind` obligation, discharged. -/
 theorem syscallDelegates_schedContextUnbind : syscallDelegates .schedContextUnbind := by
-  intro decoded tid executingCore gate cap scId vScId st hSyscall hTarget hDecode hValid
-  exact dispatchWithCap_schedContextUnbind_delegates decoded tid executingCore gate cap scId vScId st
+  intro ctx decoded tid executingCore gate cap scId vScId st hSyscall hTarget hDecode hValid
+  exact dispatchWithCapChecked_schedContextUnbind_delegates ctx decoded tid executingCore gate cap scId vScId st
     hSyscall hTarget hDecode hValid
 
 /-- **`v0.35.204`: the bind arm IS the resolved bind.**  Under a SchedContext

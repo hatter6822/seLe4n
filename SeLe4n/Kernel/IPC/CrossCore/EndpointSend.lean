@@ -9,7 +9,7 @@
 
 -- WS-SM SM6: PRODUCTION. The cross-core `Send` transition. Enters the
 -- production import closure through the live `.send` dispatch arm
--- (`API.dispatchWithCap{,Checked}` via `endpointSendDualWithCaps`).
+-- (`API.dispatchWithCapChecked` via `endpointSendDualWithCaps`).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointEnqueueInPlace

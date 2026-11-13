@@ -19,7 +19,7 @@ import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 
 Audit blocker 3: `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` contained **zero**
 occurrences of `preserves_ipcInvariantFull`, while its call-side sibling carried
-seven — and `endpointSendDualWithCapsOnCore` is what `API.dispatchWithCap`'s
+seven — and `endpointSendDualWithCapsOnCore` is what `API.dispatchWithCapChecked`'s
 `.send` arm actually calls, since PR #861 round 12 re-routed `.send` at
 `v0.33.5`. SM8's registered debt (b) named the gap correctly; SM6.D's scope note
 did not, citing `endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore` —
@@ -331,7 +331,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.14 (the live arm)**: `endpointSendDualWithCapsOnCore` — the
-transition `API.dispatchWithCap{,Checked}`'s `.send` arm really calls — preserves
+transition `API.dispatchWithCapChecked`'s `.send` arm really calls — preserves
 the whole IPC invariant bundle.
 
 The composition is the point: §4's bare cross-core bundle, then

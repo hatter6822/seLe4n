@@ -41,7 +41,7 @@ arm before the transition runs.
 
 ## What this suite pins
 
-Every scenario drives the **live** `dispatchSyscall` path — CSpace resolution,
+Every scenario drives the **live** `dispatchSyscallChecked` path — CSpace resolution,
 rights gate, and the new binding — rather than calling the transitions directly,
 because the defect lived in dispatch and only dispatch can witness it.
 
@@ -121,16 +121,16 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_ne
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_unbound
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_not_object
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_delegates
 #check @SeLe4n.Kernel.resolveVSpaceMapFrame_ok_authorised
 #check @SeLe4n.Kernel.vspaceMapFromFrameCap_ok
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_requires_frame_cap
-#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_maps_frame_base
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_requires_frame_cap
+#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_maps_frame_base
 #check @SeLe4n.Kernel.frameMappingAdmissible_write
 #check @SeLe4n.Kernel.frameMappingAdmissible_device
 #check @SeLe4n.Kernel.untypedRetypeObject
@@ -585,7 +585,7 @@ private def runFrameCapabilityChecks : IO Unit := do
 /-! The owner holds an untyped (RAM, three pages at `0x200000`), a device
 untyped (one page at `0x300000`), a writable capability to its own CSpace root,
 and its own VSpace root.  `.untypedRetype` is driven through the live
-`dispatchSyscall`, and the frame it mints is then mapped by `.vspaceMap` — the
+`dispatchSyscallChecked`, and the frame it mints is then mapped by `.vspaceMap` — the
 end-to-end path that did not exist before this version, when no reachable state
 held a frame at all. -/
 

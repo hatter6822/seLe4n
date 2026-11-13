@@ -130,7 +130,7 @@ pub fn vspace_unmap(vspace_cap: CPtr, asid: Asid, vaddr: VAddr) -> KernelResult<
 /// instruction views of one mapped page.
 ///
 /// Lean: `Architecture.vspaceUnifyInstructionPage` (PerCoreCacheModel.lean),
-/// live through `API.dispatchWithCap`.  seLe4n's equivalent of seL4's
+/// live through `API.dispatchWithCapChecked`.  seLe4n's equivalent of seL4's
 /// `seL4_ARM_Page_Unify_Instruction`.
 ///
 /// **When you need this.**  After writing code through a *writable* mapping — a

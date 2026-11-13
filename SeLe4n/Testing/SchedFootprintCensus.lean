@@ -100,7 +100,7 @@ in its own right, related to its sibling by theorem — which is why they are
 registered rather than deleted. -/
 def resolverExemptions : List (Name × String) :=
   [ (``SeLe4n.Kernel.schedLockSet_notificationSignalOnCore,
-      "the BARE signal's footprint.  `API.dispatchWithCap{,Checked}` routes \
+      "the BARE signal's footprint.  `API.dispatchWithCapChecked` routes \
        `.notificationSignal` through `notificationSignalBoundCrossCoreDispatch`, so the \
        resolver names `schedLockSet_notificationSignalBoundOnCore`; the two genuinely \
        differ, because on the bound-delivery path the woken thread is the BOUND TCB, \

@@ -1505,11 +1505,11 @@ def commitKernelAction {α : Type} (k : Kernel α) (s : SystemState) :
 information-flow-checked syscall entry preserves the observer's projection when
 the operation it dispatches does.
 
-SM8.B.12 stated this for `syscallEntry`, the boot-pinned pre-SMP entry, because
-that is where the release-grade witness lived; the entry the SMP dispatch seam
-actually calls is `syscallEntryChecked`, and it had none.  The three steps
-before the dispatch are the same as the unchecked entry's — the context check
-is state-free, the register lookup is read-only, the decode is pure — plus the
+SM8.B.12 first stated this for the boot-pinned pre-SMP entry (retired by owner
+decision 2026-11-13), because that is where the release-grade witness lived;
+the entry the SMP dispatch seam actually calls is `syscallEntryChecked`, and it
+had none.  The steps before the dispatch — the context check is state-free,
+the register lookup is read-only, the decode is pure — are followed by the
 SM7.F.5 access-time TLB fill, which writes `perCoreTlb` and nothing else
 (`tlbFillIpcBufferOnCore_eq_setPerCoreTlb`) and is invisible by
 `perCoreTlb_write_preserves_projection`.
@@ -1559,6 +1559,124 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
               decoded.overflowCount
           rw [hEq]
           exact perCoreTlb_write_preserves_projection ctx observer st t
+
+/-- WS-J1-D (the `NonInterferenceStep` bridge, on the live entry): a refused
+`syscallEntryChecked` commits no state, so it is a `syscallDecodeError` step. -/
+theorem syscallEntryChecked_error_yields_NI_step (ctx : LabelingContext)
+    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (st : SystemState) (e : KernelError)
+    (_hErr : syscallEntryChecked ctx layout executingCore regCount st = .error e) :
+    NonInterferenceStep ctx observer st st :=
+  .syscallDecodeError rfl
+
+/-- WS-J1-D (the `NonInterferenceStep` bridge, on the live entry): a successful
+`syscallEntryChecked` whose boot-core current thread the observer cannot see is
+a `syscallDispatchHigh` step, provided the dispatch preserves the projection of
+the state it is handed (`syscallEntryChecked_preserves_projection`). -/
+theorem syscallEntryChecked_success_yields_NI_step (ctx : LabelingContext)
+    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (st st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
+    (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
+        threadObservable ctx observer t = false)
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
+        dispatchSyscallChecked ctx decoded tid executingCore
+            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+              decoded.overflowCount) = .ok ((), stPost) →
+        projectState ctx observer stPost
+          = projectState ctx observer
+              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+                decoded.overflowCount)) :
+    NonInterferenceStep ctx observer st st' :=
+  .syscallDispatchHigh hCurrentHigh
+    (syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
+      st st' hOk hDispatchProj)
+
+/-- SM8.B.12 (up): the live entry's non-interference witness lifts to every
+core, given that the entry's writes stay on the boot core.
+
+`syscallEntryChecked_preserves_projection` is the release-grade statement at
+the live entry: the context check is state-free, the register lookup is
+read-only, the decode is pure, the TLB fill writes `perCoreTlb` alone, and the
+caller supplies the dispatched operation's projection-preservation proof.  This
+lifts it from the boot-core observer to all of them.
+
+The confinement premise is not decoration.  The *live* SMP entry is
+`syscallDispatchCrossCoreEntry`, whose cross-core arms genuinely write a remote
+core's run queue, so a per-core statement cannot be free.  Where the premise
+comes from depends on which arm ran:
+
+* for a dispatch that stays on the executing core, §4 of
+  `NonInterferencePerCore` derives boot-core confinement from the operation's
+  own semantics;
+* for a dispatch that routes cross-core (`.call`, `.reply`,
+  `.notificationSignal`, the `descheduleThread` leg of `.tcbSuspend`), the
+  premise is **false in general** — those transitions really do write a remote
+  core.  What holds instead is the set-of-cores statement, which the production
+  `SlotConfinement` modules prove for each of them, and
+  `NonInterferenceCrossCore` turns each into the remote observer's statement.
+  The live `.call` arm writes more than its below-API transition's write set
+  (the donation and the priority-inheritance chain), so a statement about it is
+  made against `endpointCallLiveWriteSet`. -/
+theorem syscallEntryChecked_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (st st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
+        dispatchSyscallChecked ctx decoded tid executingCore
+            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+              decoded.overflowCount) = .ok ((), stPost) →
+        projectState ctx observer stPost
+          = projectState ctx observer
+              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+                decoded.overflowCount))
+    (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
+    lowEquivalent_smp ctx observer st' st :=
+  lowEquivalent_smp_of_projection_and_confinement ctx observer
+    (syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
+      st st' hOk hDispatchProj)
+    hConfined
+
+/-- SM8.B.12 (up, the `NonInterferenceStep` form): a successful live syscall
+entry through a non-observable current thread yields a per-core
+non-interference result, composing the WS-J1-D bridge with §3 of
+`NonInterferencePerCore`. -/
+theorem syscallEntryChecked_success_perCore_NI (ctx : LabelingContext)
+    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
+    (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
+      threadObservable ctx observer t = false)
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
+        dispatchSyscallChecked ctx decoded tid executingCore
+            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+              decoded.overflowCount) = .ok ((), stPost) →
+        projectState ctx observer stPost
+          = projectState ctx observer
+              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+                decoded.overflowCount))
+    (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
+    lowEquivalent_smp ctx observer st' st :=
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+    (syscallEntryChecked_success_yields_NI_step ctx observer layout executingCore regCount
+      st st' hOk hCurrentHigh hDispatchProj)
+    hConfined
+
+/-- SM8.B.12 (up): a *refused* live syscall entry changes nothing, so it is
+per-core non-interfering with no premise at all — the fail-closed half of the
+bridge. -/
+theorem syscallEntryChecked_error_perCore_NI (ctx : LabelingContext)
+    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (st : SystemState) (e : KernelError)
+    (_hErr : syscallEntryChecked ctx layout executingCore regCount st = .error e) :
+    lowEquivalent_smp ctx observer st st :=
+  lowEquivalent_smp_of_projection_and_confinement ctx observer rfl
+    (observableSlotsConfinedToCore_refl st bootCoreId)
 
 -- ============================================================================
 -- §4b  WS-SM SM9.D.18 — the taint propagation carries the non-interference

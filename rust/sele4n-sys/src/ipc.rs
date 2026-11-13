@@ -6,7 +6,7 @@
 //! - `endpoint_reply_recv` (compound: reply + blocking receive)
 //! - `endpoint_reply_recv_checked` (AF6-B: rejects truncation)
 //!
-//! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscall` → `dispatchWithCap`.
+//! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscallChecked` → `dispatchWithCapChecked`.
 
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{Badge, CPtr, KernelResult, SyscallId};
@@ -207,9 +207,9 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 /// minted with (another client's, or an interrupt handler's).  The call sends
 /// an empty message; the kernel checks no length, as seL4's does not.
 ///
-/// Lean: the `.notificationSignal` arm of `dispatchWithCap` /
-/// `dispatchWithCapChecked` (API.lean), which ORs in `Capability.signalBadge`;
-/// `dispatchWithCap_notificationSignal_badge_of_cap` proves no word of the
+/// Lean: the `.notificationSignal` arm of `dispatchWithCapChecked`
+/// (API.lean), which ORs in `Capability.signalBadge`;
+/// `dispatchWithCapChecked_notificationSignal_badge_of_cap` proves no word of the
 /// decoded message reaches it.  Requires the **write** right.
 #[inline]
 pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {

@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -162,6 +162,22 @@ that keeps a `Nat` is built only after that test; `.val` on a register is for
 specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
 raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
 still convert, under the narrowed `docs/REGISTERED_DEBT.md` row. SX2 is the next cut.
+
+Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
+decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked
+capability tier `dispatchWithCap` are deleted, the
+trace harness, the suites and the exception model run `syscallEntryChecked`
+with a labeling context (`harnessLabelingContext` for fixtures), and the
+exception model's fault arm runs `faultDeliverOnCoreChecked`. **Standing
+constraints for new code:** a register-sourced syscall runs
+`syscallEntryChecked` and a decoded one `dispatchSyscallChecked`, each with
+the deployment's labeling context, and a fault is delivered through
+`faultDeliverOnCoreChecked`; no unchecked dispatcher or entry is reintroduced
+(Tier 3 refuses `def dispatchWithCap`, `def dispatchSyscall`, `def
+syscallEntry`); `faultDeliverOnCore` is the delivery body the checked
+delivery and the in-place fault path run once the gate admits, and nothing
+else calls it; a theorem about the syscall entry or dispatch is stated on the
+checked form.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -2588,9 +2604,9 @@ code may assume:
   `docs/spec/SELE4N_SPEC.md` and `CHANGELOG.md`, not here.  Four things new code must respect.  (1) **Cite the
   right tier.**  `dispatchCapabilityOnly_preserves_ipcInvariantFull`
   (`SeLe4n/Kernel/API.lean`) is **production** and covers every capability-gated
-  arm; `dispatchWithCap_preserves_ipcInvariantFull`,
-  `dispatchSyscall_preserves_ipcInvariantFull` and their two `…Checked` twins
-  (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) are **staged**, because the
+  arm; the two dispatch payoffs (`dispatchWithCapChecked_…`,
+  `dispatchSyscallChecked_…`;
+  `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) are **staged**, because the
   `.call` arm composes the staged `EndpointCallInvariant` surface, and production
   code must not cite them; they relocate when that surface promotes.  (2) **The
   payoff holds *under the packs***: every field of
@@ -5292,7 +5308,7 @@ code may assume:
 
   (4) **A coverage claim names the arm the live dispatch reaches.**
   `.notificationSignal`'s is stated of the **bound** arm, which is what the
-  resolver names and what `API.dispatchWithCap{,Checked}` routes to; the bare
+  resolver names and what `API.dispatchWithCapChecked` routes to; the bare
   signal's footprint is registered as superseded in `SchedFootprintCensus`, and a
   coverage theorem for it would be a claim about a transition no syscall reaches.
 - **...and the first three core-naming segments are covered, with the `_ne`
@@ -5359,7 +5375,7 @@ code may assume:
 - **...and a coverage claim names the ARM, not the dispatch beneath it** (WS-RR
   RR8.12 Cut C6d, `v0.35.177`).  `schedLockSet_replyTransferOnCore` had nothing
   behind it because the confinement surface stopped at
-  `endpointReplyCrossCoreDispatch`, and the arm `API.dispatchWithCap` runs is
+  `endpointReplyCrossCoreDispatch`, and the arm `API.dispatchWithCapChecked` runs is
   `replyTransferOnCore` — seL4's `doReplyTransfer` branch — whose **post-state is
   not the dispatch's**: it adds the delivered-message staging on an unfaulted
   caller and the decoded outcome on a faulted one, the latter either installing a
