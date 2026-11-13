@@ -451,24 +451,55 @@ theorem LookupFault.words_beq_iff (f g : LookupFault) :
     rw [← LookupFault.ofWords_word f, ← LookupFault.ofWords_word g, h0, h1, h2, h3]
   · rintro rfl; simp
 
+/-- Whether the reply capability `replyAddr` names, looked up from `tid`'s
+CSpace root on `st` (`lookupReplyCapK`), fails with the lookup fault whose
+words are `w1`–`w4`.  It borrows the state, so the lookup leaves the state's
+count as it found it and the refusal that follows writes it in place. -/
+@[noinline] def replyLookupFailsWith (tid : SeLe4n.ThreadId) (replyAddr : SeLe4n.CPtr)
+    (st : @& SystemState) (w1 w2 w3 w4 : UInt64) : Bool :=
+  lookupReplyCapK (replyCapGate tid (callerCspaceRoot st tid) replyAddr) st
+    (fun t a b c => t == w1 && a == w2 && b == w3 && c == w4) false
+
+theorem replyLookupFailsWith_eq (tid : SeLe4n.ThreadId) (replyAddr : SeLe4n.CPtr)
+    (st : SystemState) (lf : LookupFault) :
+    replyLookupFailsWith tid replyAddr st (lf.word 0) (lf.word 1) (lf.word 2) (lf.word 3) =
+      match lookupReplyCap (replyCapGate tid (callerCspaceRoot st tid) replyAddr) st with
+      | .error lf' => decide (lf' = lf)
+      | .ok _ => false := by
+  unfold replyLookupFailsWith
+  rw [lookupReplyCapK_eq]
+  cases lookupReplyCap (replyCapGate tid (callerCspaceRoot st tid) replyAddr) st with
+  | ok _ => rfl
+  | error lf' =>
+    dsimp only
+    by_cases hEq : lf' = lf
+    · subst hEq
+      rw [(LookupFault.words_beq_iff lf' lf').mpr rfl]
+      simp
+    · have hB : (lf'.word 0 == lf.word 0 && lf'.word 1 == lf.word 1 &&
+          lf'.word 2 == lf.word 2 && lf'.word 3 == lf.word 3) = false := by
+        cases hc : (lf'.word 0 == lf.word 0 && lf'.word 1 == lf.word 1 &&
+            lf'.word 2 == lf.word 2 && lf'.word 3 == lf.word 3)
+        · rfl
+        · exact absurd ((LookupFault.words_beq_iff lf' lf).mp hc) hEq
+      rw [hB]
+      simp [hEq]
+
 /-- **`replyLookupRefusal` into a continuation on words**: a refusal whose
 discriminant is `failedLookup` (its source bit clear), on a receive that names a
 reply capability (`names`), whose lookup fault's four words are the ones the
-reply capability's own lookup through `gate` raises on the refusal's state
-(`lookupReplyCapK`), goes to `onReplyW` with those words; any other to `kErr`
-(`liftReport_replyLookupRefusalW`). -/
+reply capability's own lookup raises on the refusal's state
+(`replyLookupFailsWith`), goes to `onReplyW` with those words; any other to
+`kErr` (`liftReport_replyLookupRefusalW`). -/
 @[inline] def replyLookupRefusalW {β : Type} (names : Bool) (tid : SeLe4n.ThreadId)
     (replyAddr : SeLe4n.CPtr)
     (kErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (onReplyW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) :
     Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β :=
   fun d w0 w1 w2 w3 w4 s =>
-    if names && d == (KernelError.failedLookup false .invalidRoot).toDiscriminant && w0 == 0 then
-      lookupReplyCapK (replyCapGate tid (callerCspaceRoot s tid) replyAddr) s
-        (fun t a b c =>
-          if t == w1 && a == w2 && b == w3 && c == w4 then onReplyW w1 w2 w3 w4 s
-          else kErr d w0 w1 w2 w3 w4 s)
-        (kErr d w0 w1 w2 w3 w4 s)
+    if names && d == (KernelError.failedLookup false .invalidRoot).toDiscriminant && w0 == 0 &&
+        replyLookupFailsWith tid replyAddr s w1 w2 w3 w4 then
+      onReplyW w1 w2 w3 w4 s
     else kErr d w0 w1 w2 w3 w4 s
 
 theorem liftReport_replyLookupRefusalW {β : Type} (names : Bool) (tid : SeLe4n.ThreadId)
@@ -489,24 +520,13 @@ theorem liftReport_replyLookupRefusalW {β : Type} (names : Bool) (tid : SeLe4n.
       · cases w
         · simp only [liftReport, replyLookupRefusalW, replyLookupRefusal, KernelError.payloadWord,
             Bool.true_and, beq_self_eq_true, ↓reduceIte, Bool.false_eq_true, Bool.not_false,
-            Bool.and_self, lookupReplyCapK_eq]
+            Bool.and_self, replyLookupFailsWith_eq]
           cases lookupReplyCap (replyCapGate tid (callerCspaceRoot s tid) replyAddr) s with
           | ok _ => rfl
           | error lf' =>
-            dsimp only
             by_cases hEq : lf' = lf
-            · subst hEq
-              rw [(LookupFault.words_beq_iff lf' lf').mpr rfl]
-              simp only [↓reduceIte]
-              exact hW lf' s
-            · have hB : (lf'.word 0 == lf.word 0 && lf'.word 1 == lf.word 1 &&
-                  lf'.word 2 == lf.word 2 && lf'.word 3 == lf.word 3) = false := by
-                cases hc : (lf'.word 0 == lf.word 0 && lf'.word 1 == lf.word 1 &&
-                    lf'.word 2 == lf.word 2 && lf'.word 3 == lf.word 3)
-                · rfl
-                · exact absurd ((LookupFault.words_beq_iff lf' lf).mp hc) hEq
-              rw [hB]
-              simp [hEq, KernelError.payloadWord]
+            · subst hEq; simp only [decide_true, ↓reduceIte]; exact hW lf' s
+            · simp [hEq, KernelError.payloadWord]
         · simp [liftReport, replyLookupRefusalW, replyLookupRefusal, KernelError.payloadWord]
     | _ =>
       simp only [liftReport, replyLookupRefusalW, replyLookupRefusal, KernelError.toDiscriminant]
