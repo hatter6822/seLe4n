@@ -1,3 +1,50 @@
+## v0.37.23 — the unchecked syscall entry is retired
+
+Cleanup beside WS-SX (owner decision 2026-11-13). `syscallEntry` was the
+boot-pinned register-sourced entry with no labeling context: no `@[export]`
+seam reached it, only the trace harness, three suites and the exception
+model's SVC arm. Every caller now runs `syscallEntryChecked` with the
+deployment's labeling context, and the unchecked entry and its dispatcher are
+deleted.
+
+- **One register-sourced entry.** The trace harness, `KernelErrorMatrixSuite`,
+  `NegativeStateSuite`, `OperationChainSuite`, `FaultHandlingSuite` and
+  `SyscallDispatchSuite` call `syscallEntryChecked` (and
+  `dispatchSyscallChecked`) with `harnessLabelingContext`, the context under
+  which every fixture entity is public. `dispatchSynchronousException` and
+  `dispatchException` take the labeling context as a parameter (the policy
+  module imports the exception model, so it cannot be named there): the SVC
+  arm runs `syscallEntryChecked` on the executing core and the fault arm
+  runs `faultDeliverOnCoreChecked`.
+- **Deleted.** `syscallEntry`, `dispatchSyscall`, and the theorems that
+  covered only them: the decode/right/capability-held lemmas, the
+  proof-layer-bundle and projection preservation, the NI-step and per-core NI
+  bridges, the taint-plan, mismatched-core and caller-current lemmas, the
+  composition witness, `dispatchSyscall_preserves_ipcInvariantFull`, and the
+  unchecked run-queue and mapping-record stage lemmas (with
+  `replyTransferOnCore_mappingStage`, which only they used).
+- **Restated on the checked entry.** `syscallEntryChecked_preserves_proofLayerInvariantBundle`
+  and its error twin (API), and `syscallEntryChecked_error_yields_NI_step`,
+  `syscallEntryChecked_success_yields_NI_step`,
+  `syscallEntryChecked_preserves_projectionOnCore`,
+  `syscallEntryChecked_success_perCore_NI` and
+  `syscallEntryChecked_error_perCore_NI` (FineLockFlow). The success forms
+  pass through the entry's IPC-buffer TLB fill.
+- **Kept.** `dispatchWithCap` (the specification the checked dispatcher and
+  its preservation proofs are built from) and `faultDeliverOnCore` (the body
+  `faultDeliverOnCoreChecked` gates); both stay reachable from the test
+  executables.
+- **Gates.** Tier 3 pins the two checked definitions and refuses a
+  reintroduced `def dispatchSyscall` or `def syscallEntry`; the per-core and
+  NI anchors name the restated theorems. The dethreading gate's payoff list,
+  the content-flow taint-consumer list and the reachability census pins drop
+  the deleted names.
+- **Tests and the trace fixture.** `tests/fixtures/main_trace_smoke.expected`
+  is regenerated with `lake exe sele4n`: the register-decode trace lines name
+  `syscallEntryChecked`, and the trace-equivalence line that compared the
+  unchecked entry with the checked one is removed, since there is one entry
+  left to compare.
+
 ## v0.37.21 — a user word at or above 2^63 stays a word on the entry path
 
 WS-SX SX1.3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A Lean `Nat` at or

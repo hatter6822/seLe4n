@@ -994,7 +994,7 @@ composes.)
 syscall gate in front of them — the `.grant` requirement, the CSpace resolution of the primary
 capability, the `.object`-target check and the two-register ABI are all invisible here.  That
 half lives in `sd058_mintReplyCapThroughTheSyscallGate` (`tests/SyscallDispatchSuite.lean`),
-which drives `.mintReplyCap` through `dispatchSyscall`; the two together are the end-to-end
+which drives `.mintReplyCap` through `dispatchSyscallChecked`; the two together are the end-to-end
 claim, and neither is it alone. -/
 def reply_cap_end_to_end_carve_mint_link : IO Unit := do
   let target : SeLe4n.ObjId := ⟨400⟩

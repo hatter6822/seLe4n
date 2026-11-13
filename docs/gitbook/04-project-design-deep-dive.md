@@ -288,12 +288,15 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
    identifiers are now typed wrappers. **WS-J1 portfolio fully completed.**
 
 ```
-User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry
-    → SyscallGate → syscallInvokeTyped → dispatchWithCap → internal kernel operation
+User space → hardware trap → RegisterDecode.decodeSyscallArgsFromState → syscallEntryChecked
+    → dispatchSyscallChecked → SyscallGate → syscallInvokeTyped → dispatchWithCapChecked
+    → internal kernel operation
 ```
 
 (The `api*` wrapper layer this section originally described was removed in
-S5-A; the capability-gated dispatch pipeline above is the single surface.) `syscallEntry`
+S5-A, and the unchecked `syscallEntry` → `dispatchSyscall` route WS-J1-C
+introduced was retired at `v0.37.23`; the capability-gated, flow-checked
+dispatch pipeline above is the single surface.) `syscallEntryChecked`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.
 

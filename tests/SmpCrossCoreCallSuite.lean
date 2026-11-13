@@ -558,7 +558,6 @@ private def runRendezvousChecks : IO Unit := do
 #check @dispatchCapabilityOnly_preserves_ipcInvariantFull
 #check @syscallDispatchQuiescence
 #check @dispatchWithCap_preserves_ipcInvariantFull
-#check @dispatchSyscall_preserves_ipcInvariantFull
 -- WS-RR RR3.22 (third item) — the flow-checked dispatch tier: the checked
 -- dispatcher's payoffs (mirrored arms reduced to the unchecked payoff, the
 -- four SM9 arms closed from their frames), and the packs' inhabitation

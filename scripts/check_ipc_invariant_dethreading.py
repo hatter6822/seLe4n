@@ -134,17 +134,15 @@ PRE_STATE_PREDICATES = (
 # a de-threaded bundle family with no top-level consumer proves nothing about
 # the live kernel, which is the gap RR3.15/RR3.16 close.
 #
-# `dispatchSyscall` is the tree's name for the top-level dispatcher; the plan
-# originally wrote `syscallDispatch`, which names nothing.  The theorem is named
-# for the function it is about.
-# The checked pair is required too (PR #886 review): `dispatchSyscall` is the
-# unchecked compatibility/proof path, while the exported entry delegates to
-# `syscallEntryChecked` -> `dispatchSyscallChecked` -- a gate satisfied by the
-# unchecked pair alone would report the live-kernel payoff complete while the
-# dispatcher handling production syscalls regressed unnoticed.
+# `dispatchSyscallChecked` is the tree's name for the top-level dispatcher; the
+# plan originally wrote `syscallDispatch`, which names nothing.  The theorem is
+# named for the function it is about.  The exported entry delegates to
+# `syscallEntryChecked` -> `dispatchSyscallChecked`; the unchecked top-level
+# dispatcher and its payoff were retired (owner decision 2026-11-13).  The
+# specification's capability tier `dispatchWithCap` stays required, because the
+# checked tier's payoff is built from its payoff.
 PAYOFF_THEOREMS = (
     "dispatchWithCap_preserves_ipcInvariantFull",
-    "dispatchSyscall_preserves_ipcInvariantFull",
     "dispatchWithCapChecked_preserves_ipcInvariantFull",
     "dispatchSyscallChecked_preserves_ipcInvariantFull",
 )
@@ -652,7 +650,7 @@ def _has_depth0_connective(text: str) -> bool:
     `∨`, `↔`, `→` and their ASCII spellings (`\\/`, `->`): a proposition
     under any of them is not entailed by the hypothesis that contains it,
     so both the step-equation validation and the equation-anchor harvest
-    refuse to read through one (PR #886 review: `dispatchSyscall st = .ok
+    refuse to read through one (PR #886 review: `dispatchSyscallChecked st = .ok
     ((), st') ∨ True` validated as a step after the connective cut kept
     only the arm).  `∧` is deliberately absent: conjunction entails its
     parts, and callers split on it first.
@@ -930,7 +928,7 @@ def _steps_function(
     split on depth-0 `∧` -- conjuncts are entailed -- and a part counts
     only when the hypothesis actually *establishes* its equation: the part
     carries no weaker depth-0 connective (`∨`/`↔`/`→` and their ASCII
-    spellings -- `dispatchSyscall st = .ok ((), st') ∨ True` is provable by
+    spellings -- `dispatchSyscallChecked st = .ok ((), st') ∨ True` is provable by
     its right arm and establishes no equality, yet the old connective cut
     validated the arm; PR #886 review), its head identifier is `function`
     (rejecting a dummy hypothesis that name-drops the dispatcher beside a
@@ -1013,7 +1011,7 @@ def _transport_hypothesis(binders: str, conclusion: str, state: str) -> bool:
     bare state-to-state equality on that state (`hEq : st' = st`, either
     orientation, in a binder or an unnamed premise) makes the theorem
     closable by transporting the invariant hypothesis around the step, so
-    the step it advertises is dead weight (PR #886 review: `dispatchSyscall
+    the step it advertises is dead weight (PR #886 review: `dispatchSyscallChecked
     stOther = .ok ((), st')` beside `hInv : ipcInvariantFull st` and `hEq :
     st' = st` proves the conclusion from `hInv` alone).  Only *bare* sides
     count: a step-shaped equation (`f st = st'`) has an application side
@@ -3621,7 +3619,7 @@ def run_checks(root: str) -> list[str]:
         problems.extend(payoff_status(names, pending))
 
     # A payoff that is merely *named* proves nothing: `theorem
-    # dispatchSyscall_preserves_ipcInvariantFull : True` would satisfy the
+    # dispatchSyscallChecked_preserves_ipcInvariantFull : True` would satisfy the
     # presence check while providing no top-level consumer (PR #886 review).
     # Each declared payoff must conclude an `ipcInvariantFull`-family
     # predicate of some state and hypothesise a step equation that carries
@@ -3852,12 +3850,6 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep
 
-theorem dispatchSyscall_preserves_ipcInvariantFull
-    (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  exact sample st st' hInv hStep
-
 theorem dispatchWithCapChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
     (hStep : dispatchWithCapChecked st = .ok ((), st')) :
@@ -4005,13 +3997,13 @@ def self_test() -> int:
     # presence alone must not satisfy the payoff check.
     stub = _fixture()
     stub["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
-    (st st' : SystemState) (hStep : dispatchSyscall st = .ok ((), st')) :
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
+    (st st' : SystemState) (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     True := by
   trivial""",
     )
@@ -4029,7 +4021,7 @@ def self_test() -> int:
     # but the function the theorem is named for is absent from the binders.
     unstepped = _fixture()
     unstepped["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        "    (hStep : dispatchSyscall st = .ok ((), st')) :\n"
+        "    (hStep : dispatchSyscallChecked st = .ok ((), st')) :\n"
         "    ipcInvariantFull st' := by\n"
         "  exact sample st st' hInv hStep",
         "    (hStep : someOtherFunction st = .ok ((), st')) :\n"
@@ -4145,14 +4137,14 @@ def self_test() -> int:
     # accepted this.
     namedrop = _fixture()
     namedrop["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hNote : mentions dispatchSyscall)
+    (hNote : mentions dispatchSyscallChecked)
     (hStep : someOtherOperation st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
@@ -4174,14 +4166,14 @@ def self_test() -> int:
     # dispatcher's result.
     detached_step = _fixture()
     detached_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st stMid st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), stMid))
+    (hStep : dispatchSyscallChecked st = .ok ((), stMid))
     (hRelay : someOtherOperation stMid = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st stMid st' hInv hStep hRelay""",
@@ -4202,16 +4194,16 @@ def self_test() -> int:
     # place of the deleted global.
     shadow_payoff = _fixture()
     shadow_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
         """namespace Shadow
 
-theorem dispatchSyscall_preserves_ipcInvariantFull
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep
 
@@ -4502,14 +4494,14 @@ end Shadow""",
     # of the returned component does not.
     mentioned_result = _fixture()
     mentioned_result["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st stMid st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((someMessageAbout st'), stMid))
+    (hStep : dispatchSyscallChecked st = .ok ((someMessageAbout st'), stMid))
     (hRelay : someOtherOperation stMid = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st stMid st' hInv hStep hRelay""",
@@ -4876,16 +4868,16 @@ end Shadow""",
     # canonical prefix and stood in for the deleted payoff.
     unicode_scope_payoff = _fixture()
     unicode_scope_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
         """namespace σ
 
-theorem dispatchSyscall_preserves_ipcInvariantFull
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep
 
@@ -5271,10 +5263,10 @@ end σ""",
     # a reference inside another proof, while the declaration is gone.
     payoff_mentioned = _fixture()
     payoff_mentioned["SeLe4n/Kernel/API.lean"] = (
-        "/-- See `dispatchSyscall_preserves_ipcInvariantFull` for the payoff. -/\n"
-        + CLEAN_PAYOFF.split("theorem dispatchSyscall_preserves_ipcInvariantFull")[0]
+        "/-- See `dispatchSyscallChecked_preserves_ipcInvariantFull` for the payoff. -/\n"
+        + CLEAN_PAYOFF.split("theorem dispatchSyscallChecked_preserves_ipcInvariantFull")[0]
         + "theorem otherName (st : SystemState) : True := by\n"
-        "  exact dispatchSyscall_preserves_ipcInvariantFull st\n"
+        "  exact dispatchSyscallChecked_preserves_ipcInvariantFull st\n"
     )
     cases.append(
         _Case(
@@ -5309,10 +5301,10 @@ end σ""",
     # and would sit in the file unread.
     dangling_registration = _fixture()
     dangling_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
-        "theorem dispatchSyscall_preserves_ipcInvariantFull"
+        "theorem dispatchSyscallChecked_preserves_ipcInvariantFull"
     )[0]
     dangling_registration[PENDING_FILE] = (
-        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 | blocked\n"
+        "dispatchSyscallChecked_preserves_ipcInvariantFull | WS-RR RR3.16 | blocked\n"
         "endpointSendDual_preserves_ipcInvariantFull | WS-RR RR3.16 | not a payoff\n"
     )
     cases.append(
@@ -5330,10 +5322,10 @@ end σ""",
     # parser that skipped what it cannot split would hold nobody to anything.
     malformed_registration = _fixture()
     malformed_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
-        "theorem dispatchSyscall_preserves_ipcInvariantFull"
+        "theorem dispatchSyscallChecked_preserves_ipcInvariantFull"
     )[0]
     malformed_registration[PENDING_FILE] = (
-        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 sized and deferred\n"
+        "dispatchSyscallChecked_preserves_ipcInvariantFull | WS-RR RR3.16 sized and deferred\n"
     )
     cases.append(
         _Case(
@@ -5349,9 +5341,9 @@ end σ""",
     # the gate reports rather than fails.  Accepted, not caught.
     honest_registration = _fixture()
     honest_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep
 
@@ -5359,7 +5351,7 @@ end σ""",
         "",
     )
     honest_registration[PENDING_FILE] = (
-        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 | sized and deferred\n"
+        "dispatchSyscallChecked_preserves_ipcInvariantFull | WS-RR RR3.16 | sized and deferred\n"
     )
     cases.append(
         _Case("a registered residual is reported, not failed", honest_registration, False)
@@ -5610,8 +5602,8 @@ end «shadow»""",
     # downstream modules cannot even name.
     private_payoff = _fixture()
     private_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        "theorem dispatchSyscall_preserves_ipcInvariantFull",
-        "private theorem dispatchSyscall_preserves_ipcInvariantFull",
+        "theorem dispatchSyscallChecked_preserves_ipcInvariantFull",
+        "private theorem dispatchSyscallChecked_preserves_ipcInvariantFull",
     )
     cases.append(
         _Case(
@@ -5810,14 +5802,14 @@ end «shadow»""",
     # pre-state.
     unrelated_step = _fixture()
     unrelated_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st stOther st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall stOther = .ok ((), st'))
+    (hStep : dispatchSyscallChecked stOther = .ok ((), st'))
     (hEq : st' = st) :
     ipcInvariantFull st' := by
   exact hEq ▸ hInv""",
@@ -5837,20 +5829,20 @@ end «shadow»""",
     # while presence saw the public one.
     private_shadow = _fixture()
     private_shadow["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull :
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull :
     True := trivial""",
     )
     private_shadow["SeLe4n/Kernel/ZzPrivateTwin.lean"] = (
         "namespace SeLe4n.Kernel\n"
         "\n"
-        "private theorem dispatchSyscall_preserves_ipcInvariantFull\n"
+        "private theorem dispatchSyscallChecked_preserves_ipcInvariantFull\n"
         "    (st st' : SystemState) (hInv : ipcInvariantFull st)\n"
-        "    (hStep : dispatchSyscall st = .ok ((), st')) :\n"
+        "    (hStep : dispatchSyscallChecked st = .ok ((), st')) :\n"
         "    ipcInvariantFull st' := by\n"
         "  exact sample st st' hInv hStep\n"
         "\n"
@@ -5924,14 +5916,14 @@ end «shadow»""",
     # only tying the step's input to a covered pre-state ends the class.
     wrapped_transport = _fixture()
     wrapped_transport["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st stOther st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall stOther = .ok ((), st'))
+    (hStep : dispatchSyscallChecked stOther = .ok ((), st'))
     (hEq : some st' = some st) :
     ipcInvariantFull st' := by
   exact (Option.some.inj hEq) ▸ hInv""",
@@ -5952,19 +5944,19 @@ end «shadow»""",
     # carrier derivation positively -- the live payoffs are this shape.
     pack_carried = _fixture()
     pack_carried["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
         """structure fixtureDispatchQuiescence (budget : Nat)
     (st : SystemState) : Prop where
   reachable : ipcInvariantFull st
 
-theorem dispatchSyscall_preserves_ipcInvariantFull
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (budget : Nat) (st st' : SystemState)
     (hPack : fixtureDispatchQuiescence budget st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hPack.reachable hStep""",
     )
@@ -6132,9 +6124,9 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
     # the verdict is unanimous across declarations.
     shadow_pack = _fixture()
     shadow_pack["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        """theorem dispatchSyscall_preserves_ipcInvariantFull
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep""",
         """structure fixtureQuiescencePack (st : SystemState) : Prop where
@@ -6147,10 +6139,10 @@ structure fixtureQuiescencePack (st : SystemState) : Prop where
 
 end ShadowView
 
-theorem dispatchSyscall_preserves_ipcInvariantFull
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (st st' : SystemState)
     (hPack : fixtureQuiescencePack st)
-    (hStep : dispatchSyscall st = .ok ((), st')) :
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hPack.trivialFact hStep""",
     )
@@ -6340,13 +6332,13 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         )
     )
 
-    # A disjunctive step hypothesis: `dispatchSyscall st = .ok ((), st') ∨
+    # A disjunctive step hypothesis: `dispatchSyscallChecked st = .ok ((), st') ∨
     # True` establishes no equality, yet the old connective cut validated
     # the arm it kept.
     disjunctive_step = _fixture()
     disjunctive_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
-        "    (hStep : dispatchSyscall st = .ok ((), st')) :",
-        "    (hStep : dispatchSyscall st = .ok ((), st') ∨ True) :",
+        "    (hStep : dispatchSyscallChecked st = .ok ((), st')) :",
+        "    (hStep : dispatchSyscallChecked st = .ok ((), st') ∨ True) :",
     )
     cases.append(
         _Case(

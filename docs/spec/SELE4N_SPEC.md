@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.21` (`lakefile.toml`) |
+| **Package version** | `0.37.23` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 629,612 across 625 Lean files |
 | **Test LoC** | 89,700 across 70 Lean test suites |
@@ -89,7 +89,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning; the per-core run queue links through TCB fields as seL4's does, with the abstract queue kept as an erased ghost and proven to agree with the links on every reachable state (`runQueueRefined`) |
 | **Revocation** | Silent error swallowing | seL4's `cteRevoke` loop (`cspaceRevokeCdtFinalising`, `v0.36.111`): the source's first CDT child is deleted and finalised until it has none, each delete admitted by a check read before its writes, so a revoke never refuses after it has written (§8.10) |
-| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field is seL4's 52 bits (bits 12-63); cap transfer into the one receive slot the receiver's IPC buffer names (`receiveSlot?`, seL4's `getReceiveSlots`; the V2-F/V2-G `capRecvSlot` base is retired) |
+| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntryChecked` register-sourced, flow-checked entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field is seL4's 52 bits (bits 12-63); cap transfer into the one receive slot the receiver's IPC buffer names (`receiveSlot?`, seL4's `getReceiveSlots`; the V2-F/V2-G `capRecvSlot` base is retired) |
 
 These are not abstract research extensions — they are design decisions that will be
 carried forward into the production kernel.
@@ -3045,10 +3045,13 @@ AG3-C) defines the hardware exception dispatch path:
 - **ESR_EL1 classification**: The Exception Syndrome Register EC field
   (bits [31:26]) routes synchronous exceptions to handlers
 - **SVC dispatch**: SVC instructions from EL0 enter `dispatchException` which
-  classifies the exception and routes to `syscallEntry`; since WS-RR RR4
-  (v0.34.44) every *other* lower-EL synchronous class routes to
-  `faultDeliverOnCore` instead of returning a `KernelError` — see the RR4
-  note below.  A current-EL abort (EC `0x25`/`0x21`, `.kernelAbort`, PR #887
+  classifies the exception and routes to `syscallEntryChecked` on the
+  executing core, under the labeling context the caller passes (the one the
+  live seams read from `Platform.FFI.getKernelLabelingContext`); since WS-RR
+  RR4 (v0.34.44) every *other* lower-EL synchronous class routes to fault
+  delivery instead of returning a `KernelError` — since `v0.37.23` the
+  flow-checked `faultDeliverOnCoreChecked`, the arm the live fault entry runs —
+  see the RR4 note below.  A current-EL abort (EC `0x25`/`0x21`, `.kernelAbort`, PR #887
   review round) is the kernel's own and is never delivered: the model answers
   `.illegalState` and the trap handler halts before classification
 - **Exception levels**: EL0 (user) ↔ EL1 (kernel) transitions are modeled
@@ -5819,17 +5822,18 @@ Every kernel object has a decidable well-formedness predicate:
 - **The executing core is a parameter, not a derivation** (v0.36.46).
   `syscallEntryChecked` receives the core the syscall trapped on and threads it
   through `dispatchSyscallChecked` → `dispatchWithCapChecked` /
-  `dispatchCapabilityOnly` to every arm as `executingCore`; the unchecked
-  `syscallEntry` (the boot-pinned pre-SMP entry, which resolves its caller on
-  `bootCoreId`) passes `bootCoreId`.  No arm re-derives the core by scanning
+  `dispatchCapabilityOnly` to every arm as `executingCore`.  (The unchecked,
+  boot-pinned pre-SMP entry that passed `bootCoreId` was retired at `v0.37.23`,
+  owner decision 2026-11-13; the trace harness, the suites and the exception
+  model run `syscallEntryChecked`.)  No arm re-derives the core by scanning
   `currentOnCore`, and there is no boot-core fallback: the state-scanning
   resolver that had one was deleted.
-- **The caller and the executing core are one fact.**  `dispatchSyscall` and
-  `dispatchSyscallChecked` refuse with `.illegalState`, before any lookup, a
+- **The caller and the executing core are one fact.**
+  `dispatchSyscallChecked` refuses with `.illegalState`, before any lookup, a
   caller `tid` that is not `currentOnCore executingCore`, so capability
   resolution, the flow checks and the declassification/audit arms (which read
   their subject off the core) always act for the same thread
-  (`dispatchSyscall{,Checked}_ok_caller_current`).
+  (`dispatchSyscallChecked_ok_caller_current`).
 - **IPC arms on the register file, written in place** (`v0.36.85`, WS-ZA ZA4.7).
   Send, receive, call and reply whose arguments sit in registers are routed on
   the caller's register file (`RegisterRoutedSyscall`) to their checked arms in
@@ -8028,7 +8032,7 @@ routes (`routedLongTail`).
   `ipcBufferReadMr`, `IpcBufferReadError`.
 - `SeLe4n/Kernel/Architecture/RegisterDecode.lean` —
   `decodeSyscallArgsFromState`.
-- `SeLe4n/Kernel/API.lean` — `syscallEntry`, `syscallEntryChecked`.
+- `SeLe4n/Kernel/API.lean` — `syscallEntryChecked`.
 
 ### 8.10.5a Truncated messages (`seL4_TruncatedMessage`)
 
@@ -8960,13 +8964,13 @@ inhabited by the boot state).  The top-level dispatch payoff **exists**:
 `dispatchCapabilityOnly_preserves_ipcInvariantFull` (`SeLe4n/Kernel/API.lean`,
 production) covers every capability-gated arm over the per-arm bundle layer
 `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, and
-`dispatchWithCap_preserves_ipcInvariantFull` /
-`dispatchSyscall_preserves_ipcInvariantFull`
+`dispatchWithCap_preserves_ipcInvariantFull`
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
-surface they compose) carry the bundle across the whole dispatcher, and
-`dispatchWithCapChecked_preserves_ipcInvariantFull` /
-`dispatchSyscallChecked_preserves_ipcInvariantFull` extend it over the
-flow-checked tier — mirrored arms reduced to the unchecked payoff, the four
+surface it composes) carries the bundle across the specification's capability
+dispatcher, and `dispatchWithCapChecked_preserves_ipcInvariantFull` /
+`dispatchSyscallChecked_preserves_ipcInvariantFull` carry it over the
+flow-checked tier the kernel runs — mirrored arms reduced to the
+`dispatchWithCap` payoff, the four
 live SM9 declassification/audit arms closed from their transitions' frames.
 Both dispatch packs carry machine-checked inhabitation witnesses.  The
 payoff holds under pre-state packs (`capabilityDispatchQuiescence`,
@@ -11391,7 +11395,7 @@ since been integrated:
    `@[export lean_handle_fault]` (`Kernel/FaultEntry.lean`, production).
    The `dispatchException` / `dispatchSynchronousException` *wrappers* remain
    staged, because they still import `Kernel/API.lean` for the SVC arm's
-   `syscallEntry`
+   `syscallEntryChecked`
 2. `InterruptDispatch.lean` — GIC-400 acknowledge→handle→EOI sequence
    (still staged)
 3. `TimerModel.lean` — Hardware timer binding (54 MHz RPi5) (still staged)
@@ -11490,7 +11494,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
-9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvokeTyped` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label is seL4's 52-bit field (bits 12-63).
+9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntryChecked` -> `dispatchSyscallChecked` -> `syscallInvokeTyped` -> `dispatchWithCapChecked` (S5-A: deprecated `api*` wrappers removed; the unchecked `syscallEntry` -> `dispatchSyscall` route retired at `v0.37.23`); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label is seL4's 52-bit field (bits 12-63).
 10. Hash-store equality for `VSpaceRoot` is order-independent (size + fold containment), `CNode` equality compares geometry and slot arrays (since `v0.36.102`), and the migrated state stores (`services`, `irqHandlers`, the derivation tree's child and parent maps until the slot links replaced them at `v0.36.106`; `cdtSlotNode` and `cdtNodeSlot` until the slot became the node at `v0.36.103`, `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
 
 ---

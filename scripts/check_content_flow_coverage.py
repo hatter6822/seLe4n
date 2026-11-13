@@ -198,17 +198,16 @@ DECLARED_FROZEN_TAINT_WRITERS = {
 # without being part of it — the live entry point that applies a plan, and the
 # planner that builds one.  Anything else naming the API is a finding.
 DECLARED_TAINT_CONSUMERS = {
-    # PR #873 round 6: the seam sits at the two **dispatchers**, not at the two
-    # entries above them.  It used to be the entries, and that was the defect:
-    # `dispatchSyscall`'s own docstring points integrators at
-    # `dispatchSyscallChecked` for production user-space entry, and an integrator
-    # who called it directly never reached a seam sitting one layer up — content
-    # moved with no provenance.
-    # Both dispatchers now apply the plan and both entries inherit it, which is
-    # why the entries no longer appear here: they name the dispatcher, not the
-    # API.
+    # PR #873 round 6: the seam sits at the **dispatcher**, not at the entry
+    # above it.  It used to be the entry, and that was the defect: an
+    # integrator writing a production user-space entry calls
+    # `dispatchSyscallChecked` directly and never reached a seam sitting one
+    # layer up — content moved with no provenance.
+    # The dispatcher now applies the plan and the entry inherits it, which is
+    # why the entry does not appear here: it names the dispatcher, not the
+    # API.  (The unchecked dispatcher that also applied it was retired, owner
+    # decision 2026-11-13.)
     "SeLe4n.Kernel.dispatchSyscallChecked",
-    "SeLe4n.Kernel.dispatchSyscall",
     # WS-ZA: the arm-then-apply steps inside the checked dispatchers' compiled
     # forms, each form proven equal to the dispatcher it replaces
     # (`dispatchSyscallChecked_eq_impl`; the refusal-carrying signal and wait

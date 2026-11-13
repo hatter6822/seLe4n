@@ -52,7 +52,7 @@ on the day it is written.
 ## Why one level rather than the transitive closure
 
 The plan's phrase is "every transition reaching a write of reply-stack data",
-and taken transitively that is the whole syscall dispatcher: `dispatchSyscall`
+and taken transitively that is the whole syscall dispatcher: `dispatchSyscallChecked`
 reaches `Reply.consumed` like everything below it.  The frontier this census
 uses is the **direct** one — a definition whose own `getUsedConstants` contains
 a chain-write primitive — and that loses nothing, because it is closed under

@@ -295,7 +295,7 @@ inductive NonInterferenceStep
       the underlying operation's NI properties).
 
       This constructor models the register-sourced syscall entry path
-      (`syscallEntry` in `Kernel/API.lean`): decode is pure (no state change),
+      (`syscallEntryChecked` in `Kernel/API.lean`): decode is pure (no state change),
       register lookup is read-only, and the dispatch delegates to an existing
       kernel operation whose NI step is already covered by other constructors. -/
   | syscallDispatchHigh
@@ -1490,9 +1490,10 @@ no new constructors are needed: decode failures produce no state change
 (covered by `syscallDecodeError`), and decode successes delegate to
 operations already covered by existing constructors.
 
-The `syscallEntry`-level bridge theorems are in `API.lean`:
-- `syscallEntry_error_yields_NI_step` — failed entry → `.syscallDecodeError`
-- `syscallEntry_success_yields_NI_step` — high-domain dispatch → `.syscallDispatchHigh`
+The entry-level bridge theorems are in `InformationFlow/FineLockFlow.lean`:
+- `syscallEntryChecked_error_yields_NI_step` — failed entry → `.syscallDecodeError`
+- `syscallEntryChecked_success_yields_NI_step` — high-domain dispatch →
+  `.syscallDispatchHigh`
 
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step

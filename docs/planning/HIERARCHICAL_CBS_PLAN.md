@@ -898,10 +898,10 @@ earlier deadline, or is **bound** to a SchedContext while queued (it leaves
 the legacy class for the EDF class and now outranks every legacy thread,
 possibly the current one).  CB1.3 generalises the seam to
 `keyRescheduleOnCore st c executingCore` — `executingCore` being the core the
-trap entry threads into `dispatchSyscall` / `dispatchSyscallChecked` and their
-helpers since `v0.36.46` (audit IPC-8: `determineExecutingCore` is deleted, and
-both dispatchers refuse a caller that is not current on the executing core with
-`.illegalState`, `dispatchSyscall{,Checked}_refuses_mismatched_core`), so the
+trap entry threads into `dispatchSyscallChecked` and its helpers since
+`v0.36.46` (audit IPC-8: `determineExecutingCore` is deleted, and the
+dispatcher refuses a caller that is not current on the executing core with
+`.illegalState`, `dispatchSyscallChecked_refuses_mismatched_core`), so the
 local/remote split below is decided on a parameter, never re-derived — which re-evaluates
 `candidateOutranksCurrentOnCore` on core `c` and applies the same decision,
 and every transition that can move a key **calls it on every core whose

@@ -113,17 +113,15 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A/X2-E: production uses state-aware WithFlush variant) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
-| ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiEndpointCall`, `apiEndpointReply`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiCspaceDelete`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable (unchecked — for proofs and internal kernel paths) |
+| ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiEndpointCall`, `apiEndpointReply`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiCspaceDelete`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
+| ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntryChecked` |
 | `syscallEntryChecked` | Syscall dispatch (T6-I) | Stable (**production entry point** — information-flow-checked) |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
-| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable (unchecked internal) |
 | `dispatchSyscallChecked` | Syscall dispatch (T6-I) | Stable (checked internal) |
 
 ## Deferred operations (WS-F5/D3)
@@ -202,17 +200,19 @@ The raw kernel operations above (e.g., `endpointSendDual`, `cspaceMint`) are
 IPC subsystem, lifecycle engine). They do not perform capability checks because
 the kernel itself is the trusted computing base.
 
-The production syscall path is `syscallEntry → dispatchSyscall →
-syscallInvokeTyped → dispatchWithCap`, which reads the caller's register file, decodes typed
-arguments, resolves capabilities, and dispatches to the appropriate internal
-operation. The legacy `api*` wrappers were removed in S5-A (v0.19.4).
+The production syscall path is `syscallEntryChecked → dispatchSyscallChecked →
+syscallInvokeTyped → dispatchWithCapChecked`, which reads the caller's register
+file, decodes typed arguments, resolves capabilities, gates each cross-domain
+flow, and dispatches to the appropriate internal operation. The legacy `api*`
+wrappers were removed in S5-A (v0.19.4); the unchecked, boot-pinned entry and
+its dispatcher were retired by owner decision (2026-11-13).
 
 ### Internal vs syscall operations
 
 | Category | Capability check? | Invoked by |
 |---|---|---|
 | **Internal** (`schedule`, `endpointSendDual`, etc.) | No | Kernel paths |
-| **Syscall** (`syscallEntry` → `dispatchSyscall`) | Yes | User-space |
+| **Syscall** (`syscallEntryChecked` → `dispatchSyscallChecked`) | Yes | User-space |
 | **Scheduler** (`schedule`, `handleYield`, `timerTick`) | No | Timer IRQ, kernel |
 -/
 
@@ -840,7 +840,8 @@ theorem syscallLookupCap_implies_capability_held
 -- apiCspaceMove, apiCspaceDelete, apiLifecycleRetype, apiVspaceMap,
 -- apiVspaceUnmap, apiServiceRegister, apiServiceRevoke, apiServiceQuery)
 -- were removed in S5-A. The production syscall path is:
---   syscallEntry → dispatchSyscall → syscallInvokeTyped → dispatchWithCap
+--   syscallEntryChecked → dispatchSyscallChecked → syscallInvokeTyped →
+--   dispatchWithCapChecked
 -- Test migration was completed in S2-J (v0.19.1).
 -- ============================================================================
 
@@ -958,8 +959,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
   -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
   | .mintReplyCap          => .grant
-  -- WS-ZA ZA4.3: a yield invokes no capability — `dispatchSyscall` and
-  -- `dispatchSyscallChecked` run it before any gate is built — so no right is
+  -- WS-ZA ZA4.3: a yield invokes no capability — `dispatchSyscallChecked`
+  -- runs it before any gate is built — so no right is
   -- ever checked for it.  `.read`, the weakest, is the value a gate would carry.
   | .yield                 => .read
   -- WS-ZA ZA6.9: the Consumed invocation writes the context (its consumed time
@@ -1073,7 +1074,6 @@ def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
       else if cap.hasRight gate.requiredRight then op cap st'
       else .error (syscallMissingRightError sid)
 
-
 /-- **The syscalls that receive on the invoked capability**, seL4's
 `handleRecv`: the receive, the notification wait, and the receive half of the
 reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
@@ -1159,7 +1159,7 @@ theorem syscallInvokeTyped_requires_right (sid : SyscallId)
 
 /-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
     rights checks. Any successful `syscallInvokeTyped` — the sole gateway used
-    by both `dispatchSyscall` and `dispatchSyscallChecked` — implies the
+    by `dispatchSyscallChecked` — implies the
     resolved capability holds the required access right. The gate composes
     `resolveCapAddress` → `lookupSlotCap` → the type → `hasRight` before any
     operation is executed. -/
@@ -1280,7 +1280,6 @@ theorem validateThreadIdArg_ok_toValid? (tid : SeLe4n.ThreadId)
       rw [hV]
       injection h with h
       rw [h]
-
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
@@ -4427,11 +4426,14 @@ requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C).
 
-**The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
-Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
-first step refuses a `tid` that is not current on `executingCore`
-(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
-so it only ever runs on a consistent pair. -/
+**The specification tier, not an entry.**  No entry runs this function: the
+syscall entry dispatches through `dispatchWithCapChecked`, which mirrors it arm
+for arm.  It is kept because the checked tier's proofs are built from it — the
+capability-only arms are shared (`checkedDispatch_*_eq_unchecked`), and the
+dispatch payoffs, run-queue and mapping stages of the checked tier reduce each
+mirrored arm to this one's.  It takes `tid` and `executingCore` as given; the
+checked dispatcher refuses a `tid` that is not current on `executingCore`
+before it reaches either tier (`dispatchSyscallChecked_ok_caller_current`). -/
 def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid executingCore with
@@ -4870,7 +4872,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
   -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 13 total arms
   -- handled by dispatchCapabilityOnly. The wildcard satisfies Lean's exhaustiveness
   -- checker and is provably unreachable (dispatchWithCap_wildcard_unreachable).
-  -- WS-ZA ZA4.3: a yield invokes no capability, so `dispatchSyscall` runs it
+  -- WS-ZA ZA4.3: a yield invokes no capability, so the dispatcher runs it
   -- before this tier (`dispatchYield`) and this tier never receives one.
   | .yield => fun _ => .error .illegalState
   | _ => fun _ => .error .illegalState
@@ -4968,10 +4970,10 @@ in the `SyscallId` enum and wired into both dispatch paths. The checked variants
 V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`.
 
 **The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
-Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
-first step refuses a `tid` that is not current on `executingCore`
-(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
-so it only ever runs on a consistent pair. -/
+The entry reaches it through `dispatchSyscallChecked`, whose first step refuses
+a `tid` that is not current on `executingCore`
+(`dispatchSyscallChecked_ok_caller_current`), so it only ever runs on a
+consistent pair. -/
 def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
@@ -5504,10 +5506,9 @@ def dispatchYield (executingCore : Concurrency.CoreId) : Kernel Unit :=
     **WS-SM SM9.D.7 (PR #873 round 6): the taint seam is applied here, not at the
     entry above it.**
 
-    It used to live in `syscallEntryChecked`, one layer up — which was wrong for a
-    reason this function's own sibling documents: `dispatchSyscall`'s docstring
-    tells integrators that "for production user-space entry points, use
-    `dispatchSyscallChecked`".  An integrator who took that advice called *this*
+    It used to live in `syscallEntryChecked`, one layer up — which was wrong
+    because this function is what an integrator writing a production
+    user-space entry calls.  An integrator who did so called *this*
     function directly and never reached the seam, so a successful send or receive
     moved tagged content with no provenance following it, and a successful retype
     kept the replaced object's tags on its replacement.  The recommendation was
@@ -5752,9 +5753,11 @@ theorem dispatchCheckedArmThenTaintFused_eq (ctx : LabelingContext)
     all four entity classes. This prevents accidental deployment with a context
     that defeats all information-flow enforcement.
 
-    This is the recommended entry point for production systems with
-    information-flow policies. The unchecked `syscallEntry` remains
-    available for trusted kernel paths and backward compatibility. -/
+    This is the kernel's one register-sourced syscall entry: the live seam
+    (`Platform.FFI.syscallDispatchFromAbi`) runs it with the deployment's
+    labeling context, and the model's exception dispatch, the trace harness
+    and the suites run it too.  The unchecked, boot-pinned entry it once sat
+    beside was retired (owner decision 2026-11-13). -/
 def syscallEntryChecked (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
     (executingCore : Concurrency.CoreId)
@@ -5793,9 +5796,9 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- returning what comes back — the same plan, the same pre-state, the
           -- same post-state as when the two lines lived here.
           --
-          -- It moved down one layer in PR #873 round 6.  `dispatchSyscall`'s own
-          -- docstring points integrators at `dispatchSyscallChecked` for
-          -- production user-space entry, and an integrator who took that advice
+          -- It moved down one layer in PR #873 round 6.  `dispatchSyscallChecked`
+          -- is what an integrator writing a production user-space entry calls,
+          -- and an integrator who did so
           -- called the dispatcher directly and never reached a seam that sat
           -- above it: content moved with no provenance, and a retype kept the
           -- destroyed object's tags.  Putting the seam at the dispatcher makes
@@ -6104,9 +6107,8 @@ it when the gate admits (`checkedDispatch_serviceQuery_eq_unchecked_of_admitted`
 omitted from this enumeration, so a theorem advertised as *complete* did not in
 fact cover them.
 
-**Production recommendation**: Use `syscallEntryChecked` for user-space entry.
-The unchecked `syscallEntry` is retained for backward compatibility with
-existing proofs and internal kernel paths that operate within the TCB. -/
+**The live entry is `syscallEntryChecked`**; `dispatchWithCap` is the
+specification tier the checked one is related to here, not an entry. -/
 theorem checkedDispatch_capabilityOnly_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability)
@@ -6340,233 +6342,9 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
-/-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
-kernel operation. Looks up the caller's TCB and CSpace root, constructs a
-`SyscallGate`, and dispatches via `syscallInvokeTyped`.
-
-**Note (T6-I)**: This is the UNCHECKED dispatch path. It does not perform
-information-flow checks. For production user-space entry points, use
-`dispatchSyscallChecked` which gates cross-domain operations via
-`securityFlowsTo` wrappers. This function is retained for:
-1. Backward compatibility with existing dispatch delegation theorems
-2. Internal kernel paths that operate within the TCB
-3. Proof infrastructure (delegation/preservation theorems reference this)
-
-**WS-SM SM9.D.7 (PR #873 round 6): it does carry the taint seam.**  "Unchecked"
-names what it does not *gate* — no `securityFlowsTo` wrapper decides whether a
-flow is permitted — and provenance is not a gate: it records where content came
-from, whatever authority moved it.  A path that skipped it would leave content
-moved through this dispatcher untraceable, which is worse on the unchecked route
-than on the checked one, not better.  So both dispatchers apply the plan and both
-entries inherit it, and the seam is one sentence rather than a list of call sites
-that each have to remember. -/
-def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : Kernel Unit :=
-  fun st =>
-    -- Symmetric with `dispatchSyscallChecked`: the caller must be the thread
-    -- current on the executing core, or the pair is refused before any lookup
-    -- (`dispatchSyscall_ok_caller_current`).
-    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
-    -- WS-ZA ZA4.3: a yield invokes no capability, so it runs before the
-    -- caller's CSpace is consulted and moves no content (`contentFlowClass
-    -- .yield = .inert`), so no taint step follows it.
-    else if decoded.syscallId = .yield then dispatchYield executingCore st
-    else
-    match st.getObject? tid.toObjId with
-    | some (.tcb tcb) =>
-      match st.getObject? tcb.cspaceRoot with
-      | some (.cnode rootCn) =>
-        let gate : SyscallGate := {
-          callerId     := tid
-          cspaceRoot   := tcb.cspaceRoot
-          capAddr      := decoded.capAddr
-          capDepth     := rootCn.depth
-          requiredRight := syscallRequiredRight decoded.syscallId
-        }
-        match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCap decoded tid executingCore gate)) st with
-        | .error e => .error e
-        | .ok ((), stPost) =>
-            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
-      | some _ => .error (.invalidCapability 0)
-      | none   => .error .objectNotFound
-    | some _ => .error .illegalState
-    | none   => .error .objectNotFound
-
-/-- WS-J1-C: Top-level register-sourced syscall entry point.
-
-Reads the current thread's register file, decodes raw register values into
-typed kernel references (merging IPC-buffer overflow for 5+ arg syscalls via
-`decodeSyscallArgsFromState` — AK4-A), and dispatches to the appropriate
-kernel operation. This is the single authoritative user-space → kernel
-transition boundary.
-
-The `regCount` parameter (default 32 for ARM64) should match
-`MachineConfig.registerCount` of the active platform binding. It is used by
-`decodeSyscallArgs` (the legacy register-only decoder that
-`decodeSyscallArgsFromState` wraps) to validate that all layout register
-indices are within architectural bounds. -/
-def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
-    (regCount : Nat := 32) : Kernel Unit :=
-  fun st =>
-    match (st.scheduler.currentOnCore bootCoreId) with
-    | none => .error .illegalState
-    | some tid =>
-      match lookupThreadRegisterContext tid st with
-      | .error e => .error e
-      | .ok (regs, _) =>
-        -- AK4-A.6 (R-ABI-C01): Use state-aware decode so 5-arg syscalls
-        -- merge IPC-buffer overflow registers into `msgRegs`.
-        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                st tid layout regs regCount with
-        | .error e => .error e
-        | .ok decoded =>
-          -- WS-SM SM7.F.5: deliberately **no** access-time `perCoreTlb` fill
-          -- here.  This is the boot-pinned pre-SMP entry, whose TLB view is
-          -- the scalar `st.tlb`; `perCoreTlb` is its per-core refinement and
-          -- is filled at the per-core entry (`syscallEntryChecked`), which is
-          -- what the SMP dispatch path actually runs.  Filling the per-core
-          -- model from the boot-pinned entry would mix the two models.
-          --
-          -- WS-SM SM9.D.7: the taint seam applies on this route **too**, and
-          -- for the opposite reason to the TLB fill above.  The per-core TLB
-          -- model is a refinement this entry deliberately does not participate
-          -- in; taint is not — provenance is a property of the content a syscall
-          -- moves, and this entry moves the same content through the same
-          -- transitions.  The modelled SVC route
-          -- (`dispatchSynchronousException`) reaches the kernel through here, so
-          -- leaving the step out let a send or receive taken by that route carry
-          -- content without its provenance following.
-          --
-          -- PR #873 round 6: inherited from `dispatchSyscall` rather than
-          -- repeated here, the same way `syscallEntryChecked` inherits it from
-          -- the checked dispatcher.  Both dispatchers carry the seam and both
-          -- entries delegate, so the rule is one sentence — *the taint seam sits
-          -- at the dispatcher* — instead of a list of entry points that each
-          -- have to remember.  An entry written tomorrow inherits it; a caller
-          -- who enters at a dispatcher gets it too.
-          dispatchSyscall decoded tid bootCoreId st
-
 -- ============================================================================
 -- WS-J1-C: Soundness theorems
 -- ============================================================================
-
-/-- WS-J1-C / AK4-A.6: If `syscallEntry` succeeds, the state-aware register
-    decode (including IPC-buffer overflow merge) returned `.ok`. -/
-theorem syscallEntry_requires_valid_decode
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
-    ∃ tid regs decoded,
-      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-        st tid layout regs regCount = .ok decoded := by
-  unfold syscallEntry at hOk
-  split at hOk
-  · simp at hOk
-  next tid hCurrent =>
-    split at hOk
-    · simp at hOk
-    next regs _st_regs hLookup =>
-      split at hOk
-      · simp at hOk
-      next decoded hDecode =>
-        have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
-          split at hLookup <;> simp at hLookup
-          exact hLookup.2.symm
-        subst hStEq
-        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode⟩
-
-/-- WS-J1-C: If `dispatchSyscall` succeeds, the caller held a capability
-with the required access right for the invoked syscall. Threads through
-`syscallInvokeTyped_requires_right`. -/
-theorem dispatchSyscall_requires_right
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (st : SystemState) (st' : SystemState)
-    (hCap : decoded.syscallId ≠ .yield)
-    (hOk : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
-      ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
-        ∃ cap ref,
-          resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
-          SystemState.lookupSlotCap st ref = some cap ∧
-          cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  -- `simp only` rather than `unfold`: the gate binding elaborates to a `have`,
-  -- which is opaque to `split` (the same distinction `syscallEntryChecked`
-  -- records above), and the seam's `match` sits inside it.
-  simp only [dispatchSyscall, SystemState.getObject?] at hOk
-  -- The caller/core guard: a mismatched pair is refused before any lookup.
-  split at hOk
-  · exact absurd hOk (by simp)
-  split at hOk
-  next tcb hTcb =>
-    refine ⟨tcb, hTcb, ?_⟩
-    split at hOk
-    next rootCn hRoot =>
-      refine ⟨rootCn, hRoot, ?_⟩
-      -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher,
-      -- so the invoke's own success has to be opened before it can be used.
-      split at hOk
-      · simp at hOk
-      next stPost hInvokeOk =>
-        have hInvoke := syscallInvokeTyped_requires_right decoded.syscallId
-          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          (dispatchWithCap decoded tid executingCore
-            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
-          st () stPost hInvokeOk
-        obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
-        exact ⟨cap, ref, hResolve, hSlot, hRight⟩
-    · simp at hOk
-    · simp at hOk
-  · simp at hOk
-  · simp at hOk
-
-/-- WS-J1-C: If `syscallEntry` succeeds for a capability-gated operation,
-the caller held the required access right. Threads through the existing
-`syscallInvokeTyped_requires_right` theorem via `dispatchSyscall_requires_right`.
-
-The conclusion proves the full chain: there exists a current thread with a
-valid TCB and CSpace root CNode, the register decode succeeded, and a
-capability with the required access right was resolved from the decoded
-capAddr through the caller's CSpace. -/
-theorem syscallEntry_implies_capability_held
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st')) :
-    ∃ tid regs decoded,
-      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-        st tid layout regs regCount = .ok decoded ∧
-      (decoded.syscallId ≠ .yield →
-      ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
-        ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
-          ∃ cap ref,
-            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
-            SystemState.lookupSlotCap st ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
-  unfold syscallEntry at hOk
-  split at hOk
-  · simp at hOk
-  next tid hCurrent =>
-    split at hOk
-    · simp at hOk
-    next regs _st_regs hLookup =>
-      split at hOk
-      · simp at hOk
-      next decoded hDecode =>
-        have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
-          split at hLookup <;> simp at hLookup
-          exact hLookup.2.symm
-        -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
-        -- delegates and this hypothesis IS the dispatch's own success.
-        subst hStEq
-        refine ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap => ?_⟩
-        exact dispatchSyscall_requires_right decoded tid bootCoreId _ st' hCap hOk
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
@@ -7336,16 +7114,6 @@ theorem syscallLookupReplyId_preserves_state
       simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
       exact hOk.2 ▸ syscallLookupCap_preserves_state gate st st'' cap hLook
 
-/-- WS-J1-D: `syscallEntry` error paths preserve `proofLayerInvariantBundle`
-trivially — the state is unchanged on error. -/
-theorem syscallEntry_error_preserves_proofLayerInvariantBundle
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (e : KernelError)
-    (hInv : Architecture.proofLayerInvariantBundle st)
-    (_hErr : syscallEntry layout regCount st = .error e) :
-    Architecture.proofLayerInvariantBundle st :=
-  hInv
-
 /-- WS-J1-D: `lookupThreadRegisterContext` preserves `proofLayerInvariantBundle`
 because it is read-only. -/
 theorem lookupThreadRegisterContext_preserves_proofLayerInvariantBundle
@@ -7357,39 +7125,54 @@ theorem lookupThreadRegisterContext_preserves_proofLayerInvariantBundle
   have hEq := lookupThreadRegisterContext_state_unchanged tid st regs st' hOk
   subst hEq; exact hInv
 
-/-- WS-J1-D: `syscallEntry` success path — if the pre-state satisfies
-`proofLayerInvariantBundle` and the underlying dispatched operation preserves
-it, then the post-state also satisfies the bundle.
+/-- WS-J1-D: a refused `syscallEntryChecked` commits no state, so the bundle the
+pre-state satisfied is the bundle the caller is left with. -/
+theorem syscallEntryChecked_error_preserves_proofLayerInvariantBundle
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (e : KernelError)
+    (hInv : Architecture.proofLayerInvariantBundle st)
+    (_hErr : syscallEntryChecked ctx layout executingCore regCount st = .error e) :
+    Architecture.proofLayerInvariantBundle st :=
+  hInv
 
-This theorem is compositional: it factors the proof into (1) pure decode
-(no state change), (2) read-only cap lookup (no state change), and
-(3) the underlying operation's preservation property. The caller provides
-the operation-level preservation hypothesis. -/
-theorem syscallEntry_preserves_proofLayerInvariantBundle
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
+/-- WS-J1-D: the success path of the live syscall entry — if the pre-state
+satisfies `proofLayerInvariantBundle` and the flow-checked dispatcher preserves
+it, the post-state satisfies it.
+
+Compositional: the context check is state-free, the register lookup is
+read-only, the decode is pure, and the access-time TLB fill the entry runs
+before it dispatches preserves the whole bundle
+(`tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle`), so the
+dispatcher is handed a state that satisfies it.  The caller provides the
+dispatcher's preservation, which composes its per-arm results with the taint
+seam's (`applySyscallTaint_preserves_proofLayerInvariantBundle`). -/
+theorem syscallEntryChecked_preserves_proofLayerInvariantBundle
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
     (st st' : SystemState)
     (hInv : Architecture.proofLayerInvariantBundle st)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
     (hDispatchPres : ∀ decoded tid stD stD',
         Architecture.proofLayerInvariantBundle stD →
-        dispatchSyscall decoded tid bootCoreId stD = .ok ((), stD') →
+        dispatchSyscallChecked ctx decoded tid executingCore stD = .ok ((), stD') →
         Architecture.proofLayerInvariantBundle stD') :
     Architecture.proofLayerInvariantBundle st' := by
-  -- Extract the successful decode chain
-  obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
-    syscallEntry_requires_valid_decode layout regCount st st' hOk
-  -- The dispatch operates on the original state (decode is pure, lookup is read-only)
-  unfold syscallEntry at hOk
-  rw [hCur] at hOk; simp at hOk
-  rw [hLookup] at hOk; simp at hOk
-  rw [hDecode] at hOk; simp at hOk
-  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
-  -- post-state IS the dispatcher's and this is a delegation.  The seam's own
-  -- bundle preservation has not gone anywhere — it is
-  -- `applySyscallTaint_preserves_proofLayerInvariantBundle` (the table write and,
-  -- since WS-ZA ZA5.11, the taint-word write), which is what a discharger of
-  -- `hDispatchPres` composes with its per-arm result.
-  exact hDispatchPres decoded tid st st' hInv hOk
+  unfold syscallEntryChecked at hOk
+  split at hOk
+  · exact absurd hOk (by simp)
+  · split at hOk
+    · exact absurd hOk (by simp)
+    · next tid _ =>
+      split at hOk
+      · exact absurd hOk (by simp)
+      · split at hOk
+        · exact absurd hOk (by simp)
+        · next decoded _ =>
+          dsimp only at hOk
+          exact hDispatchPres decoded tid _ st'
+            (Architecture.tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle
+              st executingCore tid decoded.overflowCount hInv) hOk
 
 -- ============================================================================
 -- WS-J1-D: Non-interference theorems for the syscall decode path
@@ -7443,70 +7226,6 @@ theorem syscallLookupCap_preserves_projection
   have hEq := syscallLookupCap_preserves_state gate st st' cap hOk
   subst hEq; rfl
 
-/-- WS-J1-D: `syscallEntry` preserves the observer's projection when the
-projection is preserved for any outcome. This follows from the compositional
-structure: decode is pure (no state change), register lookup is read-only,
-and the dispatch delegates to an existing operation.
-
-The hypothesis `hDispatchProj` must be supplied by the caller with knowledge
-of which operation was dispatched and its projection-preservation proof. -/
-theorem syscallEntry_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid stPost,
-        dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-        projectState ctx observer stPost = projectState ctx observer st) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
-    syscallEntry_requires_valid_decode layout regCount st st' hOk
-  unfold syscallEntry at hOk
-  rw [hCur] at hOk; simp at hOk
-  rw [hLookup] at hOk; simp at hOk
-  rw [hDecode] at hOk; simp at hOk
-  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
-  -- post-state IS the dispatcher's and the hypothesis applies directly.  The
-  -- seam is still projection-invisible — `applySyscallTaint_preserves_projection`
-  -- holds by `rfl` — which is what lets a discharger of `hDispatchProj` reduce it
-  -- to a statement about the transition the arm ran.
-  exact hDispatchProj decoded tid st' hOk
-
--- ============================================================================
--- WS-J1-D: NonInterferenceStep bridge theorems for syscallEntry
--- ============================================================================
-
-/-- WS-J1-D: A failed `syscallEntry` (decode error, lookup error, etc.)
-yields a `syscallDecodeError` NI step since the state is unchanged. -/
-theorem syscallEntry_error_yields_NI_step
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) (e : KernelError)
-    (_hErr : syscallEntry layout regCount st = .error e) :
-    NonInterferenceStep ctx observer st st :=
-  .syscallDecodeError rfl
-
-/-- WS-J1-D: A successful `syscallEntry` where the current thread is
-non-observable yields a `syscallDispatchHigh` NI step, provided the
-dispatched operation preserves the projection.
-
-This is the primary bridge theorem: it composes the pure decode (no state
-change), read-only register lookup, and the dispatched operation's
-projection-preservation proof into a single `NonInterferenceStep`. -/
-theorem syscallEntry_success_yields_NI_step
-    (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
-        threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid stPost,
-        dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-        projectState ctx observer stPost = projectState ctx observer st) :
-    NonInterferenceStep ctx observer st st' :=
-  .syscallDispatchHigh hCurrentHigh
-    (syscallEntry_preserves_projection ctx observer layout regCount st st' hOk hDispatchProj)
-
 -- ============================================================================
 -- WS-K-F4: Dispatch decode purity and preservation composition
 -- ============================================================================
@@ -7537,29 +7256,6 @@ theorem dispatchWithCap_layer2_decode_pure
       decodeCSpaceDeleteArgs, requireMessageLength, requireMsgReg, hRegs, hLen]) <;>
     (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       requireMessageLength, requireMsgReg, hRegs, hLen])
-
-/-- WS-K-F4: Composition verification — `syscallEntry_preserves_proofLayerInvariantBundle`
-composes decode purity (no state change), read-only cap lookup (state unchanged),
-and the delegated operation's preservation property. The `hDispatchPres` hypothesis
-is dischargeable per-dispatch-arm using existing subsystem preservation theorems:
-
-- CSpace mint/copy/move/delete: `Capability/Invariant/Preservation.lean`
-- Untyped carve: `Lifecycle/Operations/ScrubAndUntyped.lean`
-- VSpace map/unmap: `Architecture/VSpaceInvariant.lean`
-- Service register/revoke: `Service/Registry/Invariant.lean`
-- IPC send/call/reply/recv: `IPC/Invariant/EndpointPreservation.lean`
-
-This theorem witnesses that the composition is structurally complete. -/
-theorem dispatchWithCap_preservation_composition_witness :
-    (∀ layout regCount st st' (_hInv : Architecture.proofLayerInvariantBundle st)
-        (_hOk : syscallEntry layout regCount st = .ok ((), st'))
-        (_hDispatchPres : ∀ decoded tid stD stD',
-            Architecture.proofLayerInvariantBundle stD →
-            dispatchSyscall decoded tid bootCoreId stD = .ok ((), stD') →
-            Architecture.proofLayerInvariantBundle stD'),
-        Architecture.proofLayerInvariantBundle st') :=
-  fun layout regCount st st' hInv hOk hDP =>
-    syscallEntry_preserves_proofLayerInvariantBundle layout regCount st st' hInv hOk hDP
 
 -- ============================================================================
 -- AK6-F (NI-H02): Composed projection preservation for dispatchCapabilityOnly
@@ -7742,34 +7438,6 @@ theorem dispatchSyscallChecked_applies_taint_plan
   · exact absurd h (by simp)
   · exact absurd h (by simp)
 
-/-- **And no success path through the unchecked dispatcher skips it either.**
-
-The twin of the theorem above, and the reason the two are stated as a pair: the
-seam sits at the dispatcher on *both* routes, so "which entry did the caller
-use" stops being a question provenance depends on. -/
-theorem dispatchSyscall_applies_taint_plan
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (st st' : SystemState)
-    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
-  simp only [dispatchSyscall, SystemState.getObject?] at h
-  -- The caller/core guard: a mismatched pair is refused before any lookup.
-  split at h
-  · exact absurd h (by simp)
-  -- WS-ZA ZA4.3: a yield's plan is inert, so the step leaves its state as is.
-  by_cases hY : decoded.syscallId = .yield
-  · exact ⟨st', by rw [syscallTaintPlan_yield st tid decoded hY, applySyscallTaint_inert]⟩
-  rw [if_neg hY] at h
-  split at h
-  · split at h
-    · split at h
-      · exact absurd h (by simp)
-      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
-    · exact absurd h (by simp)
-    · exact absurd h (by simp)
-  · exact absurd h (by simp)
-  · exact absurd h (by simp)
-
 /-- **The caller and the executing core are one fact.**  A mismatched pair —
 `tid` not the thread current on `executingCore` — is refused `.illegalState`
 by the checked dispatcher before any lookup.
@@ -7786,15 +7454,6 @@ theorem dispatchSyscallChecked_refuses_mismatched_core
     dispatchSyscallChecked ctx decoded tid executingCore st = .error .illegalState := by
   simp only [dispatchSyscallChecked, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
 
-/-- The unchecked twin of `dispatchSyscallChecked_refuses_mismatched_core`: the
-two dispatchers carry the same caller/core guard. -/
-theorem dispatchSyscall_refuses_mismatched_core
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (st : SystemState)
-    (hMismatch : st.scheduler.currentOnCore executingCore ≠ some tid) :
-    dispatchSyscall decoded tid executingCore st = .error .illegalState := by
-  simp only [dispatchSyscall, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
-
 /-- **A successful checked dispatch acted as the executing core's current
 thread.**  Every arm's subject — `tid` for resolution and flow checks,
 `currentOnCore executingCore` for the declassification and audit arms — is
@@ -7810,17 +7469,6 @@ theorem dispatchSyscallChecked_ok_caller_current
       hCur] at h
     exact absurd h (by simp)
 
-/-- The unchecked twin of `dispatchSyscallChecked_ok_caller_current`. -/
-theorem dispatchSyscall_ok_caller_current
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    st.scheduler.currentOnCore executingCore = some tid := by
-  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-  · exact hCur
-  · rw [dispatchSyscall_refuses_mismatched_core decoded tid executingCore st hCur] at h
-    exact absurd h (by simp)
-
 /-- The entry never trips the guard: `syscallEntryChecked` resolves `tid` as
 `currentOnCore executingCore` and dispatches on the IPC-buffer-filled state,
 whose scheduler is the pre-state's (`tlbFillIpcBufferOnCore_scheduler`), so the
@@ -7832,7 +7480,6 @@ theorem syscallEntryChecked_dispatch_caller_current
         overflowCount).scheduler.currentOnCore executingCore = some tid := by
   rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler]
   exact hCur
-
 
 -- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
@@ -8293,14 +7940,14 @@ theorem dispatchSyscallChecked_right_after_type
     syscallInvokeTyped, syscallResolveCap, hResolve, hLookup]
   simp [hNotReserved, hType, hRight]
 
-
 -- ============================================================================
 -- WS-RR RR7.3: the capability-held guarantee on the LIVE checked dispatch path
 --
--- Register §4 finding 5: `syscallEntry_implies_capability_held` and
--- `dispatchSyscall_requires_right` are stated over the *legacy* entry, which is
--- `bootCoreId`-pinned and whose only non-test callers are the trace harness and
--- the exception model.  The path the hardware takes is
+-- Register §4 finding 5: the capability-held guarantee was stated over the
+-- *legacy* entry, which was `bootCoreId`-pinned and whose only non-test callers
+-- were the trace harness and the exception model (that entry was retired by
+-- owner decision 2026-11-13, its callers moved here).  The path the hardware
+-- takes is
 -- `@[export lean_syscall_dispatch_cross_core]` → `syscallDispatchCrossCoreEntry`
 -- → `Platform.FFI.syscallDispatchFromAbi` → `syscallEntryChecked` →
 -- `dispatchSyscallChecked`, and nothing covered it.  These are the analogues,
@@ -8313,8 +7960,7 @@ theorem dispatchSyscallChecked_right_after_type
 /-- **WS-RR RR7.3**: if the **flow-checked** dispatch succeeds, the caller held a
 capability with the required access right for the invoked syscall.
 
-The live-path analogue of `dispatchSyscall_requires_right`, through the typed
-gate every arm runs behind (`syscallInvokeTyped_requires_right`). -/
+Stated through the typed gate every arm runs behind (`syscallInvokeTyped_requires_right`). -/
 theorem dispatchSyscallChecked_requires_right
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
@@ -8351,10 +7997,11 @@ theorem dispatchSyscallChecked_requires_right
   · simp at hOk
 
 /-- **WS-RR RR7.3**: if the **flow-checked** syscall entry succeeds, the caller
-held the required access right — the live-path analogue of
-`syscallEntry_implies_capability_held`.
+held the required access right.  It also states that the register decode
+succeeded on the caller's own register file, which subsumes the retired
+entry's decode-validity theorem.
 
-Three differences from the legacy statement, all of them the point:
+Three properties of the statement, all of them the point:
 
 * the caller is identified on the **executing** core (`currentOnCore
   executingCore`), not on `bootCoreId`, so the guarantee covers a syscall issued
@@ -8413,7 +8060,6 @@ theorem syscallEntryChecked_implies_capability_held
           subst hStEq
           exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl, fun hCap =>
             dispatchSyscallChecked_requires_right ctx decoded tid executingCore _ st' hCap hOk⟩
-
 
 /-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
 caller trapped in.
@@ -9119,16 +8765,15 @@ def syscallDelegates : SyscallId → Prop
           (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
-  -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the
+  -- WS-ZA ZA4.3: the capability-free yield.  The dispatcher runs it from the
   -- guard ahead of the caller's CSpace lookup, so the obligation is stated
-  -- over the dispatchers themselves: once the caller is current on the
-  -- executing core, each IS the yield's own transition.
+  -- over the dispatcher itself: once the caller is current on the executing
+  -- core, it IS the yield's own transition.
   | .yield =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (executingCore : Concurrency.CoreId) (st : SystemState),
         decoded.syscallId = .yield →
         st.scheduler.currentOnCore executingCore = some tid →
-        dispatchSyscall decoded tid executingCore st = dispatchYield executingCore st ∧
         dispatchSyscallChecked ctx decoded tid executingCore st = dispatchYield executingCore st
   -- WS-ZA ZA6.9: the Consumed arm IS the Consumed invocation of the context the
   -- capability names, on the executing core.
@@ -9196,7 +8841,7 @@ def syscallDelegates : SyscallId → Prop
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
 theorem syscallDelegates_yield : syscallDelegates .yield := by
   intro ctx decoded tid executingCore st hSyscall hCur
-  exact ⟨by simp [dispatchSyscall, hSyscall, hCur], by simp [dispatchSyscallChecked, hSyscall, hCur]⟩
+  simp [dispatchSyscallChecked, hSyscall, hCur]
 
 /-- WS-ZA ZA6.9: the `.schedContextConsumed` obligation, discharged. -/
 theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextConsumed := by

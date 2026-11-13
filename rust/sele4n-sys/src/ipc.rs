@@ -6,7 +6,7 @@
 //! - `endpoint_reply_recv` (compound: reply + blocking receive)
 //! - `endpoint_reply_recv_checked` (AF6-B: rejects truncation)
 //!
-//! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscall` → `dispatchWithCap`.
+//! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscallChecked` → `dispatchWithCapChecked`.
 
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{Badge, CPtr, KernelResult, SyscallId};

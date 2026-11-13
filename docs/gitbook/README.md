@@ -5,7 +5,7 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.37.21 (Lean v4.28.0).
+- **Version:** 0.37.23 (Lean v4.28.0).
 - **Codebase metrics:** 629,612 production LoC across 625 Lean files, 89,700 test LoC across 70 suites, 24,115 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.
 - **Registered debt:** [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — every deferred item, with an owner and a closure target.
 - **Hardware target:** Raspberry Pi 5 (ARM64).

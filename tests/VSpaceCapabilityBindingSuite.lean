@@ -41,7 +41,7 @@ arm before the transition runs.
 
 ## What this suite pins
 
-Every scenario drives the **live** `dispatchSyscall` path — CSpace resolution,
+Every scenario drives the **live** `dispatchSyscallChecked` path — CSpace resolution,
 rights gate, and the new binding — rather than calling the transitions directly,
 because the defect lived in dispatch and only dispatch can witness it.
 
@@ -585,7 +585,7 @@ private def runFrameCapabilityChecks : IO Unit := do
 /-! The owner holds an untyped (RAM, three pages at `0x200000`), a device
 untyped (one page at `0x300000`), a writable capability to its own CSpace root,
 and its own VSpace root.  `.untypedRetype` is driven through the live
-`dispatchSyscall`, and the frame it mints is then mapped by `.vspaceMap` — the
+`dispatchSyscallChecked`, and the frame it mints is then mapped by `.vspaceMap` — the
 end-to-end path that did not exist before this version, when no reachable state
 held a frame at all. -/
 

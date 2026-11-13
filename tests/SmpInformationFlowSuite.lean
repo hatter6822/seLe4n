@@ -813,9 +813,9 @@ set_option maxRecDepth 8192
 #check @endpointFlowCheckAtCore_is_not_constant
 #check @endpointFlowCheck_restricted_subset_perCore
 #check @endpointPolicyRestricted_perCore_is_necessary
-#check @syscallEntry_preserves_projectionOnCore
-#check @syscallEntry_success_perCore_NI
-#check @syscallEntry_error_perCore_NI
+#check @syscallEntryChecked_preserves_projectionOnCore
+#check @syscallEntryChecked_success_perCore_NI
+#check @syscallEntryChecked_error_perCore_NI
 #check @nonInterference_release_of_perCore
 #check @nonInterference_release_of_perCore_observer
 

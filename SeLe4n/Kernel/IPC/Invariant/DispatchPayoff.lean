@@ -17,12 +17,13 @@ import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
 /-!
 # The dispatch-tier `ipcInvariantFull` payoffs
 
-The two theorems the de-threading closure exists to make possible:
+The theorems the de-threading closure exists to make possible:
 `dispatchWithCap_preserves_ipcInvariantFull` — the bundle carried across every
-syscall the capability dispatcher routes — and
-`dispatchSyscall_preserves_ipcInvariantFull`, the same fact one tier up at the
-kernel's syscall entry, through the capability resolution and the taint
-application.
+syscall the specification's capability dispatcher routes — its flow-checked
+mirror `dispatchWithCapChecked_preserves_ipcInvariantFull`, built from it, and
+`dispatchSyscallChecked_preserves_ipcInvariantFull`, the same fact one tier up
+at the kernel's syscall dispatcher, through the capability resolution and the
+taint application.
 
 **Staged, deliberately**: the `.call` arm composes
 `endpointCallCrossCoreDispatch_preserves_ipcInvariantFull`
@@ -1071,67 +1072,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
         all_goals try cases hStep
       all_goals cases hStep
 
--- ============================================================================
--- §5  The `dispatchSyscall` payoff
--- ============================================================================
-
-/-- WS-RR RR3.25 (**the syscall-entry payoff**): `dispatchSyscall` preserves
-`ipcInvariantFull` — the capability resolution is read-only, the dispatch tier
-is RR3.24's payoff, and the taint application writes only the taint map. -/
-theorem dispatchSyscall_preserves_ipcInvariantFull
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hPack : ∀ (gate : SyscallGate) (cap : Capability),
-      syscallLookupCap gate st = .ok (cap, st) →
-      syscallDispatchQuiescence decoded tid executingCore gate cap st)
-    (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
-    (hStep : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  -- The caller/core guard passed (a success implies it), so discharge it.
-  have hCur := dispatchSyscall_ok_caller_current decoded tid executingCore st st' hStep
-  unfold dispatchSyscall SystemState.getObject? at hStep
-  simp only [hCur, ne_eq, not_true_eq_false, ↓reduceIte] at hStep
-  -- WS-ZA ZA4.3: the capability-free yield runs before any lookup.
-  by_cases hY : decoded.syscallId = .yield
-  · simp only [hY, ↓reduceIte, dispatchYield] at hStep
-    have hReach := hYieldReach hY
-    split at hStep
-    · cases hStep
-    · rename_i hYieldOk
-      cases hStep
-      exact yieldOnCore_preserves_ipcInvariantFull st executingCore _
-        hReach.objects_invExt hReach.ipcInvariantFull hYieldOk
-  simp only [hY, ↓reduceIte] at hStep
-  cases hT : st.objects[tid.toObjId]? with
-  | none => simp only [hT] at hStep; cases hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb =>
-          simp only [hT] at hStep
-          cases hRoot : st.objects[tcb.cspaceRoot]? with
-          | none => simp only [hRoot] at hStep; cases hStep
-          | some rootObj =>
-              cases rootObj with
-              | cnode rootCn =>
-                  simp only [hRoot] at hStep
-                  cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCap decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
-                  | error e => rw [hInvk] at hStep; cases hStep
-                  | ok pair =>
-                      obtain ⟨u, stPost⟩ := pair; cases u
-                      rw [hInvk] at hStep
-                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      obtain ⟨cap, hLk, -, hInvk⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hInvk
-                      have hInvPost := dispatchWithCap_preserves_ipcInvariantFull
-                        decoded tid executingCore _ cap st stPost (hPack _ cap hLk) hInvk
-                      rw [← hStep]
-                      exact ipcInvariantFull_of_objectsAgreeOffTaint
-                        (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
-              | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
-      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hT] at hStep; cases hStep
-
-
-/-! ## §6  The flow-checked dispatch tier (WS-RR RR3.22, third item)
+/-! ## §5  The flow-checked dispatch tier (WS-RR RR3.22, third item)
 
 `dispatchWithCapChecked` mirrors `dispatchWithCap` arm for arm: the
 capability tier is *shared* (both dispatchers match `dispatchCapabilityOnly`
@@ -1573,10 +1514,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
             case isFalse => cases hStep
       all_goals cases hStep
 
-
-/-- The checked top-level dispatcher preserves `ipcInvariantFull`.  Mirrors
-`dispatchSyscall_preserves_ipcInvariantFull`: both dispatchers gate through
-`syscallInvokeTyped`, and the checked pack is conditioned on
+/-- The checked top-level dispatcher preserves `ipcInvariantFull`.  The
+dispatcher gates through `syscallInvokeTyped`, and the checked pack is
+conditioned on
 `syscallResolveCap`, which every successful rights-gated lookup implies
 (`syscallResolveCap_of_lookup`). -/
 theorem dispatchSyscallChecked_preserves_ipcInvariantFull
@@ -1633,8 +1573,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hT] at hStep; cases hStep
 
-
-/-! ## §7  The packs are inhabited (non-vacuity witnesses)
+/-! ## §6  The packs are inhabited (non-vacuity witnesses)
 
 `ipcReachable` carries its own inhabitation witness (`ipcReachable_default`,
 RR3.14) precisely because an unsatisfiable bundle makes every theorem taking
@@ -1832,7 +1771,6 @@ private theorem witnessInv3 : ipcInvariantFull witnessSt3 := by
             cases hLk
             exact absurd (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h2)).symm hNe
         · cases hLk
-
 
 private theorem witnessSt3_getTcb :
     witnessSt3.getTcb? witnessTid = some witnessTcbBound := by
@@ -2054,7 +1992,7 @@ steps (a fresh ready TCB, then a fresh SchedContext) and one
 first inhabitant is also those levers' first end-to-end consumer.  This
 instance exercises the state-shaped fields; its `.send`-shaped decode and
 `.replyCap` target leave the *indexed* fields vacuous, which is what the
-per-arm instances in §7b below exist to close (PR #886 review). -/
+per-arm instances in §6b below exist to close (PR #886 review). -/
 theorem syscallDispatchQuiescence_inhabited :
     syscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate witnessCap
       witnessSt3 := by
@@ -2090,7 +2028,7 @@ theorem checkedSyscallDispatchQuiescence_inhabited :
     simp [witnessDecoded] at hSy⟩
 
 -- ============================================================================
--- §7b  Per-arm exercise of the indexed pack fields (PR #886 review)
+-- §6b  Per-arm exercise of the indexed pack fields (PR #886 review)
 -- ============================================================================
 
 /-! The base witness above inhabits both packs, but its `.send`-shaped decode

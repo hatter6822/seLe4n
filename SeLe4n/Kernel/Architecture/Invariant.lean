@@ -1509,7 +1509,7 @@ decode path (a pure function over the register file), not a state invariant
 over kernel objects. It is preserved trivially by all operations that do not
 modify the current thread's register context, and substantively by context
 switch operations that maintain `contextMatchesCurrent`. The predicate is
-stated separately for composability with `syscallEntry` soundness theorems. -/
+stated separately for composability with `syscallEntryChecked` soundness theorems. -/
 
 /-- WS-J1-D: Register decode consistency — if the current thread has a TCB,
 its register context is available for syscall decode. This is the bridge

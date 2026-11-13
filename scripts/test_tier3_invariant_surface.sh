@@ -241,24 +241,23 @@ run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held($
 # W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
 # syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
 run_check "INVARIANT" rg -n '^theorem syscallInvokeTyped_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
-# presence of production syscall dispatch path.
-run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallEntry($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# The caller and the executing core are one fact (PR #911 review): both
-# dispatchers refuse, before any lookup, a `tid` that is not the thread current
+# S5-A: Deprecated api* wrappers removed in v0.19.4. Verify the presence of the
+# production syscall dispatch path.  The unchecked, boot-pinned entry and its
+# dispatcher were retired (owner decision 2026-11-13); they must not return.
+run_check "INVARIANT" rg -n '^def dispatchSyscallChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallEntryChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '^def (dispatchSyscall|syscallEntry)($|[ ({:\[\]])' SeLe4n/
+# The caller and the executing core are one fact (PR #911 review): the
+# dispatcher refuses, before any lookup, a `tid` that is not the thread current
 # on `executingCore` -- the declassification and audit arms read their subject
 # off `currentOnCore executingCore`, so a mismatched pair would have let one
 # core's subject authorize a downgrade for another core's caller.  The guard is
-# pinned as the FIRST step of each dispatcher's body (the relation, not the
+# pinned as the FIRST step of the dispatcher's body (the relation, not the
 # token), ahead of the capability-free yield branch and the caller lookup; the
-# refusal and success-implies-current theorems state it, and the suite drives a mismatched pair through both dispatchers.
-run_check "INVARIANT" rg -n -U 'def dispatchSyscall \(decoded[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+# refusal and success-implies-current theorems state it, and the suite drives a mismatched pair through the dispatcher.
 run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscall_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscall_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_dispatch_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_scheduler($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 run_check "INVARIANT" rg -n '^private def dispatcherRefusesCallerNotCurrentOnCore($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
@@ -268,8 +267,8 @@ run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabe
 # dispatchWithCapChecked: the dispatch payoff theorems
 # (IPC/Invariant/DispatchPayoff.lean) must name both tiers from outside the
 # module, so the anchor pins their presence as public defs — matching the
-# dispatchSyscall/syscallEntry pins above — rather than a privacy that is no
-# longer true.  (The old `^private def dispatchWithCap` pin had been
+# dispatcher and entry pins above — rather than a privacy that is no longer
+# true.  (The old `^private def dispatchWithCap` pin had been
 # satisfied by the Checked twin's line alone since the first
 # de-privatization: a presence check standing in for the wrong relation.)
 run_check "INVARIANT" rg -n '^def dispatchWithCap ' SeLe4n/Kernel/API.lean
@@ -4263,8 +4262,6 @@ run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroad
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscall_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
@@ -7522,9 +7519,9 @@ run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_is_not_constant($|
 run_negative_check "INVARIANT" rg -n 'endpointFlowCheck_state_independent' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_restricted_subset_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_is_necessary($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_success_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_success_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_error_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # The confinement premise of the four catch-all NI constructors must stay an
@@ -8625,8 +8622,7 @@ run_check "INVARIANT" rg -n '^theorem authorityIntegrity_underLockSet($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem writeRules_differ($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockPhases_integrity_clean_on_every_core($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.5: the witness, and the per-core live-entry preservation theorem SM8.B.12
-# lacked (`syscallEntry_preserves_projection` covers the boot-pinned entry; the
-# SMP dispatch seam calls the checked one).
+# lacked (the SMP dispatch seam calls the checked entry).
 run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def syscallEntryUnderLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -10429,13 +10425,12 @@ run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained($|[ ({:\[\]])'
 # the same id, so a framed retype would leave a destroyed object's tags on its
 # replacement.  The two imprecisions must not be conflated.
 run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# The live write sites: BOTH dispatchers, applied to the state each was given.
-# PR #873 round 6 moved the seam down from the two entries, because
-# `dispatchSyscall`'s docstring points integrators at `dispatchSyscallChecked`
-# for production entry and a seam above it was one an integrator never reached.
+# The live write site: the dispatcher, applied to the state it was given.
+# PR #873 round 6 moved the seam down from the entry, because
+# `dispatchSyscallChecked` is what an integrator writing a production entry
+# calls and a seam above it was one an integrator never reached.
 run_check "INVARIANT" rg -n 'applySyscallTaint' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_applies_taint_plan($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # That the entries do NOT re-apply it is enforced where it can be enforced
 # exactly: `DECLARED_TAINT_CONSUMERS` in the Tier-1 content-flow gate names the
 # two dispatchers and fails on any other constant that reaches the taint API, so
@@ -12084,15 +12079,15 @@ run_check "INVARIANT" rg -n '^theorem registerDecodeConsistent_of_proofLayerInva
 run_check "INVARIANT" rg -n '^theorem default_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem writeRegisterState_preserves_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-# WS-J1-D: syscallEntry invariant preservation and NI theorems in API.lean.
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# WS-J1-D: syscall entry invariant preservation and NI theorems (API.lean;
+# the entry-level NI bridges sit beside its projection witness in FineLockFlow).
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_error_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lookupThreadRegisterContext_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_success_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_error_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_success_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # WS-J1-D: NonInterferenceStep constructors for decode path.
 run_check "INVARIANT" rg -n 'syscallDecodeError' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'syscallDispatchHigh' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
@@ -12172,9 +12167,8 @@ run_check "INVARIANT" rg -n '^theorem decode_layer2_roundtrip_all($|[ ({:\[\]])'
 # WS-K-F3: Layer 1 extraction round-trip.
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 
-# WS-K-F4: Dispatch preservation and decode purity.
+# WS-K-F4: Dispatch decode purity.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_layer2_decode_pure($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_preservation_composition_witness($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 
 # WS-K-F5: Lifecycle NI proofs.
 run_check "INVARIANT" rg -n 'retypeFromUntyped_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -13953,13 +13947,10 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 -- WS-J1-D: New decode/dispatch NI theorems
 #check @SeLe4n.Kernel.Architecture.registerDecodeConsistent
 #check @SeLe4n.Kernel.Architecture.registerDecodeConsistent_of_proofLayerInvariantBundle
-#check @SeLe4n.Kernel.syscallEntry_preserves_proofLayerInvariantBundle
+#check @SeLe4n.Kernel.syscallEntryChecked_preserves_proofLayerInvariantBundle
 #check @SeLe4n.Kernel.decodeSyscallArgs_preserves_lowEquivalent
 #check @SeLe4n.Kernel.lookupThreadRegisterContext_preserves_lowEquivalent
 #check @SeLe4n.Kernel.syscallLookupCap_preserves_projection
-#check @SeLe4n.Kernel.syscallEntry_preserves_projection
-#check @SeLe4n.Kernel.syscallEntry_error_yields_NI_step
-#check @SeLe4n.Kernel.syscallEntry_success_yields_NI_step
 -- WS-K-A: Message register extraction theorems
 -- W3: encodeMsgRegs and decodeMsgRegs_roundtrip removed (dead code — identity function)
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_length
@@ -14021,9 +14012,8 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
 -- WS-K-F3: Layer 1 extraction round-trip
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_roundtrip
--- WS-K-F4: Dispatch preservation and decode purity
+-- WS-K-F4: Dispatch decode purity
 #check @SeLe4n.Kernel.dispatchWithCap_layer2_decode_pure
-#check @SeLe4n.Kernel.dispatchWithCap_preservation_composition_witness
 -- WS-K-F5: Lifecycle NI proofs
 #check @SeLe4n.Kernel.retypeFromUntyped_preserves_lowEquivalent
 -- WS-K-F6: NI coverage verification

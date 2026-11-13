@@ -225,15 +225,15 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (tc
 
 /-- RR4.21: a data abort no longer *returns* a VM fault to the thread that
 took it — it delivers one, and the thread is not dispatchable afterwards. -/
-example (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
+example (ctx : LabelingContext) (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
     (hK : classifySynchronousException ectx ≠ .kernelAbort)
     (hFp : classifySynchronousException ectx ≠ .fpAccess)
     (hCur : st.scheduler.currentOnCore c = some tid)
-    (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
+    (hStep : dispatchSynchronousException ctx ectx st c = .ok (sgi?, st')) :
     ¬ dispatchableOnCore st' tid c :=
-  dispatchSynchronousException_nonSvc_thread_not_dispatchable ectx st c tid sgi? st'
+  dispatchSynchronousException_nonSvc_thread_not_dispatchable ctx ectx st c tid sgi? st'
     hCls hK hFp hCur hStep
 
 -- ============================================================================
@@ -1269,7 +1269,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
      | .error _ => (stRunning.getTcb? orphan).bind (·.faultHandler) == none)
   -- The write right is checked by the real lookup path (`syscallLookupCap`
   -- against `requiredRight .tcbSetFaultHandler = .write`), so it is exercised
-  -- through `dispatchSyscall` with a TCB capability parked in the caller's
+  -- through `dispatchSyscallChecked` with a TCB capability parked in the caller's
   -- CSpace: slot 3 of the handler's root CNode holds a capability to the
   -- orphan, once read-only and once read + write.
   let orphanCapAt3 (rights : List AccessRight) : SystemState :=
@@ -1278,7 +1278,8 @@ private def runConfigureAndResumeChecks : IO Unit := do
     let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
     { stRunning with objects := stRunning.objects.insert cnRoot cn }
   let viaLookup (st : SystemState) :=
-    dispatchSyscall { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler c1 st
+    dispatchSyscallChecked harnessLabelingContext
+      { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler c1 st
   assertBool "a capability without the write right cannot configure a handler"
     (errorOf (viaLookup (orphanCapAt3 [.read])) == some .illegalAuthority)
   assertBool "…and with the write right the real lookup path installs it"
@@ -1979,7 +1980,7 @@ private def runProgressChecks : IO Unit := do
   -- thread left runnable.
   match handlerRecvOnCore1 stRunning with
   | (stRecv, .ok _) =>
-      match dispatchSynchronousException dataAbortCtx stRecv c0 with
+      match dispatchSynchronousException harnessLabelingContext dataAbortCtx stRecv c0 with
       | .ok (_, stD) =>
           assertBool "dispatchSynchronousException delivers the abort rather than erroring" true
           assertBool "and leaves the faulter undispatchable on the core it faulted on"
@@ -1990,7 +1991,8 @@ private def runProgressChecks : IO Unit := do
       assertBool s!"handler recv must succeed (got {repr e})" false
   -- An abort the kernel cannot attribute (no current thread) is still reported.
   assertBool "an unattributable data abort is reported as .vmFault"
-    (errorOf (dispatchSynchronousException dataAbortCtx stFault c0) == some .vmFault)
+    (errorOf (dispatchSynchronousException harnessLabelingContext dataAbortCtx stFault c0)
+      == some .vmFault)
 
 -- ============================================================================
 -- §9  Golden trace (RR4.27)

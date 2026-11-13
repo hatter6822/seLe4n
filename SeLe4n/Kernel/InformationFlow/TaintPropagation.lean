@@ -22,17 +22,15 @@ Three things move a tag, and exactly three:
   every object is carved into a fresh one.
 
 **Where the write happens, and why there.**  `applySyscallTaint` runs once per
-syscall, in each of the two **dispatchers** — `API.dispatchSyscall` and
-`API.dispatchSyscallChecked` — on the state that dispatcher committed.  Both
-entries inherit it by delegating, so the rule is one sentence rather than a list
-of entry points that each have to remember it.
+syscall, in the **dispatcher** — `API.dispatchSyscallChecked` — on the state it
+committed.  The entry inherits it by delegating, so the rule is one sentence
+rather than a list of entry points that each have to remember it.
 
 It sat at `syscallEntryChecked` until PR #873 round 6, one layer above the
-function `dispatchSyscall`'s own docstring recommends for production user-space
-entry — so an integrator who followed that advice never reached the seam, and a
-successful send moved tagged content with no provenance.
-`dispatchSyscallChecked_applies_taint_plan` and its unchecked twin pin that no
-success path skips it.
+dispatcher an integrator writing a production user-space entry calls — so an
+integrator who did so never reached the seam, and a successful send moved
+tagged content with no provenance.  `dispatchSyscallChecked_applies_taint_plan`
+pins that no success path skips it.
 
 The placement is the SM7.F.5 seam one layer down: the entry already threads a
 projection-invisible model write (`tlbFillIpcBufferOnCore`) around the dispatch

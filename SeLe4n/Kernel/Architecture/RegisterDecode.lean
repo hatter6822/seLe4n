@@ -798,8 +798,7 @@ theorem decodeSyscallArgsFromState_syscallId_eq
 
     This is the top-level NI witness for Phase AK4 — it lifts the
     `ipcBufferReadMr_reads_only_caller_tcb` witness from `IpcBufferRead.lean`
-    to the decode wrapper consumed by `syscallEntry` /
-    `syscallEntryChecked`. Together with the fact that `decodeSyscallArgs`
+    to the decode wrapper consumed by `syscallEntryChecked`. Together with the fact that `decodeSyscallArgs`
     depends only on `regs`, this proves the decode path has no
     cross-domain channel beyond the caller's own thread state. -/
 theorem decodeSyscallArgsFromState_reads_only_caller

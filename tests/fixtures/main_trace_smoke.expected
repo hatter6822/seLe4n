@@ -104,10 +104,10 @@
 [RCF-009] F7 readOnlyMemory timer denied: SeLe4n.Model.KernelError.notImplemented
 [RCF-011] F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented
 [RDT-002] register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0, msgRegs=4
-[RDT-003] syscallEntry send success, endpoint has sender: true
-[RDT-006] syscallEntry invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
-[RDT-008] syscallEntry malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
-[RDT-010] syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
+[RDT-003] syscallEntryChecked send success, endpoint has sender: true
+[RDT-006] syscallEntryChecked invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
+[RDT-008] syscallEntryChecked malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
+[RDT-010] syscallEntryChecked out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
 [KSD-001] cspaceMint via decoded regs destination populated: true
 [KSD-002] cspaceCopy via decoded regs target matches: true
 [KSD-003] cspaceDelete via decoded regs slot cleared: true
@@ -120,7 +120,6 @@
 [PIP-003] A3 send first msgReg=42: true
 [PIP-004] A4 syscallEntryChecked send success, endpoint has sender: true
 [PIP-005] A5 post-dispatch invariants preserved (46 checks)
-[PIP-006] A6 trace equivalence: objects=true scheduler=true
 [MOV-001] cspaceMove decode ok: src=slot0 dst=slot2
 [MOV-002] cspaceMove source empty: true
 [MOV-003] cspaceMove dest populated: true
