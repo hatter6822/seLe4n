@@ -297,7 +297,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
             ((setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hS).stepCoversInv (e := e')
               (hRes := by rw [setThreadFaultHandlerOp_machine_eq hS])
               (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hS])))
-        | exact hO (copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hB hS).1
+        | exact hO (copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ hB hS).1
             (copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS))
 
 /-- WS-ZA ZA6.28: **every arm `dispatchWithCapChecked` routes keeps the executing
