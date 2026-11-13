@@ -50,7 +50,7 @@ def resolveReplyRecvReplyR (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat
       let gate : SyscallGate :=
         { callerId := tid
           cspaceRoot := callerCspaceRoot st tid
-          capAddr := SeLe4n.CPtr.ofNat r0.val
+          capAddr := SeLe4n.CPtr.ofWord r0.word
           capDepth := callerCspaceDepth st tid
           requiredRight := .write }
       match syscallLookupArgumentCap replyRecvReplyCapNumber gate st with
@@ -81,7 +81,7 @@ theorem resolveReplyRecvReplyR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       rcases gate with ⟨c, r, a, d, rr⟩
       simp only at hCaller hRoot hDepth
       subst hCaller hRoot hDepth
-      rfl
+      simp only [SeLe4n.RegValue.val, SeLe4n.CPtr.ofWord_eq_ofNat] <;> rfl
 
 /-- The checked reply-receive arm (`dispatchWithCapChecked`'s `.replyRecv`
 case) through the specification's path, refusing in the state it was handed
@@ -195,7 +195,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
     have hL : (len == 0) = false := by simp [h0]
     simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupArgumentCap, syscallLookupCap,
       syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.RegValue.val_mk,
-      SeLe4n.CPtr.ofNat_word_toNat]
+      SeLe4n.CPtr.ofNat_word_toNat, SeLe4n.CPtr.ofWord]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) replyAddr
         (callerCspaceDepth st tid) st with

@@ -1,3 +1,53 @@
+## v0.37.21 — a user word at or above 2^63 stays a word on the entry path
+
+WS-SX SX1.3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A Lean `Nat` at or
+above `2^63` is a heap cell, so a hostile register word made a `Nat` on the
+entry path allocated. This cut closes the families the
+`docs/REGISTERED_DEBT.md` row of `v0.37.20` named, except the raw-slot
+decodes later SX phases re-decode, which keep a narrowed row.
+
+- **`RegValue` is a machine word** (`RegValue.word : UInt64`; `.val` is its
+  `toNat`, kept for the specifications). The syscall number, the message info
+  and the capability address are decoded from the word: `@[csimp]`
+  `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and
+  `decodeCapPtr_eq_word` join the specification decoders to word forms, beside
+  the router's `registerRoutedSyscallOf_eq_word`.
+- **Range tests on the word.** The VSpace map and unmap decodes test the ASID
+  against the configured bound and the address against the canonical bound
+  on the word (`wordLtNat`) before making a `Nat`, and a map's permissions
+  through `pagePermissionsOfWord?`. An affinity is a word
+  (`SetAffinityArgs.affinityRaw : UInt64`), and `decodeAffinity` tests it
+  against the core count on the word.
+- **A mint's badge is tested on its word** (`badge.word = 0`) in the routed
+  arm, the API arms and the declassification ledger.
+- **Fault and overflow words.** The overflow-word reads compare words
+  (`pairAddrIs`, `syncedWordFromW` under `@[csimp] syncedWordFrom_eq_w`), and
+  the delivered frames read registers as words.
+- **A configure refuses what seL4-MCS refuses.** A budget or period above
+  `MAX_PERIOD` (`UINT64_MAX / 8` ticks, `configureMaxPeriod`) is
+  `rangeError MIN_BUDGET MAX_PERIOD`, and a deadline word above it is
+  `invalidArgument 4`, so no stored time reaches `2^63`. Every value seL4
+  accepts is still accepted.
+- **Proofs restated.** The register round trips on the word
+  (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`);
+  the affinity round trip without its word hypothesis;
+  `decodeSchedContextConfigureArgsChecked_invariants` and
+  `validateSchedContextParams_implies_wellFormed` with the new bound;
+  `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and
+  reply-receive decode theorems on `replyAddr.word`. No `sorry`, no `axiom`.
+- **QEMU.** New heap-gate scenarios, each with a word `≥ 2^63` and each
+  reading 0: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`,
+  `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`,
+  `configure-wide-budget-and-period`, `configure-wide-deadline`, and
+  `mint-wide-badged-notification`, now measured. `configure-zero-budget` and
+  `configure-budget-over-wide-period` expect the `MAX_PERIOD` refusal.
+- **Debt.** The `v0.37.20` row is deleted and replaced by a narrowed one: the
+  raw-slot and model-only decodes (CNode delete and revoke, the reply-cap
+  mint, retype's child and slot, the interrupt-control slot, the page-table
+  map's address, the IPC-buffer address, the service interface id and the
+  audit index and chunk) still make a `Nat` of a word; SX9.1, SX7.2, SX7.5
+  and SX6.1 re-decode them.
+
 ## v0.37.20 — error payloads and the `LookupFault` type
 
 WS-SX SX1 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D2, D2b, D3). A refusal

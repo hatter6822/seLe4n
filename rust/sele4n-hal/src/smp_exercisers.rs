@@ -11940,7 +11940,12 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     let max_period_refusal = refused_with(
         RANGE_ERROR,
         2,
-        [Some(CONFIGURE_MIN_BUDGET), Some(CONFIGURE_MAX_PERIOD), None, None],
+        [
+            Some(CONFIGURE_MIN_BUDGET),
+            Some(CONFIGURE_MAX_PERIOD),
+            None,
+            None,
+        ],
     );
     let zero_budget = RoundTrip {
         returns: max_period_refusal,
@@ -11960,7 +11965,12 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         returns: max_period_refusal,
         ..configure(
             "configure-wide-budget-and-period",
-            [SCHED_CONTEXT_CAP, WIDE_PERIOD, WIDE_PERIOD, PARTNER_PRIORITY],
+            [
+                SCHED_CONTEXT_CAP,
+                WIDE_PERIOD,
+                WIDE_PERIOD,
+                PARTNER_PRIORITY,
+            ],
         )
     };
     let wide_deadline = RoundTrip {

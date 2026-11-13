@@ -118,6 +118,30 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
     simp [hc]
 
+/-- `decodeMsgInfo` as compiled: read off the register's word
+(`decodeMsgInfoWord`), so no heap number is built (WS-SX SX1.3). -/
+@[inline] def decodeMsgInfoOfWord (rv : RegValue) : Except KernelError MessageInfo :=
+  decodeMsgInfoWord rv.word
+
+@[csimp] theorem decodeMsgInfo_eq_word : @decodeMsgInfo = @decodeMsgInfoOfWord := by
+  funext rv
+  unfold decodeMsgInfoOfWord
+  rw [decodeMsgInfoWord_eq]
+
+/-- `decodeCapPtr` as compiled: a register's word is always within the word
+bound, so the capability address is the word itself (WS-SX SX1.3). -/
+@[inline] def decodeCapPtrWord (rv : RegValue) : Except KernelError CPtr :=
+  .ok (CPtr.ofWord rv.word)
+
+@[csimp] theorem decodeCapPtr_eq_word : @decodeCapPtr = @decodeCapPtrWord := by
+  funext rv
+  unfold decodeCapPtr decodeCapPtrWord
+  have h : isWord64Dec rv.val = true := by
+    unfold isWord64Dec machineWordMax machineWordBits
+    exact decide_eq_true (RegValue.val_lt rv)
+  rw [if_pos h, CPtr.ofWord_eq_ofNat]
+  rfl
+
 /-- A register's message info, decoded off its word, is its decode. -/
 theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
     decodeMsgInfoWord (readRegWord rf r) = decodeMsgInfo (readReg rf r) := by
@@ -129,6 +153,38 @@ theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
   match SyscallId.ofNat? rv.val with
   | some sid => .ok sid
   | none     => .error .invalidSyscallNumber
+
+/-- No number at or above `SyscallId.encodingBound` names a syscall. -/
+theorem syscallId_ofNat?_eq_none_of_ge {k : Nat} (hk : SyscallId.encodingBound ≤ k) :
+    SyscallId.ofNat? k = none := by
+  have h := SyscallId.ofNat?_isSome_iff k
+  simp only [show ¬ k < SyscallId.encodingBound from Nat.not_lt.mpr hk, decide_false,
+    Bool.false_and] at h
+  exact Option.not_isSome_iff_eq_none.mp (by simp [h])
+
+/-- `decodeSyscallId` as compiled: the register's word is tested against
+`2 ^ 32` before it is made a number, so a full-width word is refused as no
+syscall's without a heap number (WS-SX SX1.3). -/
+@[inline] def decodeSyscallIdWord (rv : RegValue) : Except KernelError SyscallId :=
+  if rv.word < 0x100000000 then
+    match SyscallId.ofNat? rv.word.toNat with
+    | some sid => .ok sid
+    | none     => .error .invalidSyscallNumber
+  else .error .invalidSyscallNumber
+
+@[csimp] theorem decodeSyscallId_eq_word : @decodeSyscallId = @decodeSyscallIdWord := by
+  funext rv
+  unfold decodeSyscallId decodeSyscallIdWord RegValue.val
+  by_cases h : rv.word < 0x100000000
+  · rw [if_pos h]
+  · rw [if_neg h]
+    have hk : SyscallId.encodingBound ≤ rv.word.toNat := by
+      have h' : ¬ rv.word.toNat < (0x100000000 : UInt64).toNat :=
+        fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
+      simp only [UInt64.reduceToNat] at h'
+      show 48 ≤ rv.word.toNat
+      omega
+    rw [syscallId_ofNat?_eq_none_of_ge hk]
 
 /-- Validate that a register name is within architectural bounds.
     Returns `invalidRegister` if the index exceeds `registerCount`. -/
