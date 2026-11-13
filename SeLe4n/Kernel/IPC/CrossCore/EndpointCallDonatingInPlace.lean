@@ -441,14 +441,14 @@ theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe
   · unfold callDonatingStaged
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
 
-/-- **The checked donating call dispatch, in place**: under the flow gate and
+/-- **The donating call dispatch, in place**: under
 `callDonatesInPlace`, a call that finds a passive server and transfers no
 capability commits `performCallDonating`'s state with an empty transfer
 summary: the rendezvous, `schedContext_donate` and `reply_push` each in its
 slot, the replenishment migrated from the donor's home core to the server's
 (both read off the pre-state, as the dispatch reads them), then the priority
 walk. -/
-theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : SystemState)
+theorem callDispatch_donating_inPlace (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
     (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
     (core : Concurrency.CoreId)
@@ -456,10 +456,8 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     (hReq : sendCapRequest st endpointId caller payload = none)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
-    (hG : callDonatesInPlace st endpointId caller r rt rid = true)
-    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
-      (ctx.endpointLabelOf endpointId) = true) :
-    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
+    (hG : callDonatesInPlace st endpointId caller r rt rid = true) :
+    ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload core st =
       (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller)
         (determineTargetCore st caller) (determineTargetCore st r) msg core,
        .ok ({ results := #[] }, sgi)) := by
@@ -566,8 +564,6 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
   have hrv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hrv
   refine ⟨(wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
     (callReceiverTcb msg)) r core).2, ?_⟩
-  unfold endpointCallCrossCoreDispatchChecked
-  rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
@@ -577,6 +573,26 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
   rw [hDon]
   unfold performCallDonating
   rw [hScId, hSt']
+
+/-- The checked form of `callDispatch_donating_inPlace`, under the flow gate. -/
+theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hM : sendPayloadMessage st caller payload = msg)
+    (hReq : sendCapRequest st endpointId caller payload = none)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
+    (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hG : callDonatesInPlace st endpointId caller r rt rid = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) = true) :
+    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
+      (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller)
+        (determineTargetCore st caller) (determineTargetCore st r) msg core,
+       .ok ({ results := #[] }, sgi)) := by
+  obtain ⟨sgi, h⟩ := callDispatch_donating_inPlace st endpointId ep caller r rt rid payload msg
+    core hM hReq hE hH hT hRid hG
+  exact ⟨sgi, by unfold endpointCallCrossCoreDispatchChecked; rw [if_pos hFlow]; exact h⟩
 
 /-- **The in-place donation keeps the chain**: on the states whose checks pass
 it is `donateSchedContext`'s state (`donateSchedContext_eq_inPlace`), so it

@@ -510,6 +510,62 @@ theorem receiveCallTakeState_eq_hold (st : SystemState) (endpointId : SeLe4n.Obj
       holdMessage_receiverReady]
   rw [hHold, linkReplyWaiter_msg]
 
+/-- **The receive's take leaves the receiver ready**: under
+`receiveCallTakesInPlace` the receiver, untouched by the pop and the caller's
+block and link, is made ready in its slot and stays ready on the reply waiter
+queue. -/
+theorem storeReceiveCallReady_ready (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (s : SeLe4n.ThreadId)
+    (sTcb : TCB)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true) :
+    ipcStateHolds (storeReceiveCallReady st endpointId s sTcb.queueNextCode receiver rid) receiver
+      (· = .ready) := by
+  have hG' := hG
+  simp only [receiveCallTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, -⟩, hRS⟩, hRN⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hRT⟩, -⟩, -⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨rt, hRTo⟩ : ∃ rt, st.objects[receiver.toObjId]? = some (.tcb rt) := by
+    split at hRT
+    · next rt h => exact ⟨rt, (SystemState.getTcb?_eq_some_iff _ _ _).mp h⟩
+    · cases hRT
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRTo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hSR : s ≠ receiver := fun h => hRS h.symm
+  obtain ⟨-, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE hH hT hSG
+  have hO1 := (hFr.other _ hNeER hNeSR hNxR).trans hRTo
+  unfold storeReceiveCallReady
+  dsimp only
+  rw [TCB.ofOptCode_queueNextCode]
+  have hNo1 := storePopHead_noResizeDue st endpointId false s sTcb.queueNext hNo
+  generalize storePopHead st endpointId false s sTcb.queueNext = S1 at hO1 hNo1
+  have h1 : ipcStateHolds S1 receiver (fun _ => True) :=
+    ⟨rt, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO1, trivial⟩
+  have h2 := ipcStateHolds.updateTcb_ne (callCallerTcb endpointId receiver) hNo1 hSR h1
+  have hNo2 := updateTcb_noResizeDue S1 s (callCallerTcb endpointId receiver) hNo1
+  have h3 := ipcStateHolds.of_carried (ipcStateCarried_modifyObject _ rid.toObjId
+    (replyWithCaller s) hNo2 (fun _ => rfl)) h2
+  have hNo3 := modifyObject_noResizeDue _ rid.toObjId (replyWithCaller s) hNo2
+  have h4 := ipcStateHolds.updateTcb_ne
+    (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hNo3 hSR h3
+  have hNo4 := updateTcb_noResizeDue _ s
+    (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hNo3
+  obtain ⟨x, hx, -⟩ := h4
+  have h5 := ipcStateHolds_updateTcb_self (P := (· = .ready)) receiverReady hNo4 hx
+    (by simp only [receiverReady, TCB.ipcState_setIpcState])
+  exact ipcStateHolds.of_carried
+    (ipcStateCarried_of_agree (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ s receiver)) h5
+
 /-- **The receive's take of a queued fault, delivered**: the caller popped,
 blocked on the reply and linked, the receiver made ready holding no message,
 the receiver's priority walk, then the fault delivered in place from the
@@ -623,6 +679,8 @@ theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId
     rw [hMsg]
     unfold performFaultReceiveDelivered
     exact (deliverFaultFrame_eq _ receiver sTcb.faultWords f hf _ _
-      (propagatePipChainCrossCore_noResizeDue _ receiver core hNoS)).symm
+      (propagatePipChainCrossCore_noResizeDue _ receiver core hNoS)
+      (ipcStateHolds.of_carried (propagatePipChainCrossCore_ipcStateCarried _ receiver core hNoS)
+        (storeReceiveCallReady_ready st endpointId ep receiver rid s sTcb hE hH hT hG))).symm
 
 end SeLe4n.Kernel
