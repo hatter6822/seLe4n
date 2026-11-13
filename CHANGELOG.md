@@ -167,6 +167,30 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   `failedLookup` and `LookupFault`. It now reads the discriminant off the
   slot's code (`KernelError.discriminantOfCode`,
   `toDiscriminant_ofPayloadWords`, `refusalTagsSlotCode_eq`).
+- **The decoded routed arm is gone.** `decodedRoutedArm` ran the whole
+  `syscallEntryChecked` for the `.viaDecode` route, which the default layout
+  never returns (`registerRoutedSyscall_viaDecode`). The routed entry now
+  discharges that arm by the theorem and compiles none
+  (`syscallEntryRoutedWith_eq`); the route stays in the specification.
+  `RefusalCarrying.ofKernel`, whose last executed caller it was, is recorded
+  as proof-only in the reachability census.
+- **A refused fault-handler set builds nothing.** The routed
+  `tcbSetFaultHandler` arm runs `setThreadFaultHandlerOpK`: the handler's
+  lookup refuses through the lookup's failure words, as the bound
+  notification's does (`failedLookup` of the argument, seL4's lookup of an
+  extra capability), and the rest of the checks answer in place
+  (`setThreadFaultHandlerOpK_eq`). `setThreadFaultHandlerAdmitted` and
+  `faultHandlerResolves` are deleted. New QEMU scenario:
+  `set-fault-handler-guard-mismatch`.
+- **A refused audit read rebuilds no error.** A read whose code refuses
+  answered through the specification's read, which built the refusal from
+  its payload words (`withPayloadWordsFast`). The trail arm
+  (`auditReadTrailR`) now reads the refusal off the read's own inputs
+  (`auditReadFastRefusal`, proven the specification's refusal by
+  `auditReadFastRefusal_spec`), and refuses an opcode past the last on the
+  word (`auditReadTrailR_eq`). New QEMU scenarios:
+  `audit-read-entry-chunk-past`, `audit-read-entry-index-past`,
+  `audit-read-refusal-slot-past` and `audit-read-unknown-op`.
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;

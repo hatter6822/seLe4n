@@ -6173,7 +6173,10 @@ Every kernel object has a decidable well-formedness predicate:
   a refusal without the specification's general arm (`declassifyRefusal`,
   `declassifySignalPlanRefusal`, `declassifySignalPresentRefusal`, each proven
   equal to `auditedArmSpec`), and the audit read splits a slot on its receiver
-  flag instead of building the optional receiver.  A refused declassification
+  flag instead of building the optional receiver.  A refused audit read
+  answers from the read's own inputs (`auditReadFastRefusal`, proven the
+  specification's refusal by `auditReadFastRefusal_spec`), not from its
+  payload words.  A refused declassification
   read 19 to 25 heap cells before; it reads 0.
 - **The timer tick, the reschedule SGI and each core's first entry allocate
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore
