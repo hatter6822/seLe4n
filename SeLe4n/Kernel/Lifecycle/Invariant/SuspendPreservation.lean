@@ -404,8 +404,8 @@ theorem resumeThread_pipBoost_consistent_post_restore
     let newPipBoost := PriorityInheritance.computeMaxWaiterPriority stPostRestore tid
     let tcb' :=
       match stPostRestore.getTcb? tid with
-      | some t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
-      | none => (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
+      | some t => { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
+      | none => (TCB.setIpcState { tcb with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
     tcb'.pipBoost = newPipBoost := by
   -- Both record-update branches set the boost's code directly.
   simp only []
@@ -458,9 +458,9 @@ theorem resumeThread_pipBoost_consistent_post_restore
     RHTable external invariant) on the `objects` field. -/
 theorem restoreToReadyStaging_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (hObjInv : st.objects.invExt) :
-    (restoreToReadyStaging st tid frame).objects.invExt := by
+    (restoreToReadyStaging st tid restart).objects.invExt := by
   unfold restoreToReadyStaging
   exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
@@ -468,7 +468,7 @@ theorem restoreToReady_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) :
     (restoreToReady st tid).objects.invExt :=
-  restoreToReadyStaging_invExt st tid none hObjInv
+  restoreToReadyStaging_invExt st tid false hObjInv
 
 /-- **WS-RR RR7.14**: and the cancellation spelling — the staged frame is one
 more field of the same single TCB insert. -/
@@ -487,10 +487,10 @@ and so needs the completeness that theorem asks of the state the teardown runs
 on. -/
 theorem restoreToReadyStaging_preserves_objectIndexSetComplete
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (hObjInv : st.objects.invExt)
     (hComplete : SeLe4n.Model.objectIndexSetComplete st) :
-    SeLe4n.Model.objectIndexSetComplete (restoreToReadyStaging st tid frame) := by
+    SeLe4n.Model.objectIndexSetComplete (restoreToReadyStaging st tid restart) := by
   unfold restoreToReadyStaging
   exact SystemState.updateTcb_preserves_objectIndexSetComplete _ _ _ hObjInv hComplete
 
@@ -1128,23 +1128,23 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 every key — the conditional rewrite clears IPC and queue-link fields only. -/
 theorem restoreToReadyStaging_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
-    ∃ t' : TCB, (restoreToReadyStaging st tid frame).objects[k]? = some (.tcb t')
+    ∃ t' : TCB, (restoreToReadyStaging st tid restart).objects[k]? = some (.tcb t')
       ∧ t'.placement = t0.placement := by
   unfold restoreToReadyStaging
   cases hT : st.getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact ⟨t0, hPre, rfl⟩
   | some t =>
     rw [SystemState.updateTcb_eq_of_some hT]
-    cases frame with
-    | none =>
+    cases restart with
+    | false =>
         exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
-    | some f =>
+    | true =>
         exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
@@ -1155,7 +1155,7 @@ theorem restoreToReady_tcb_lookup
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
       ∧ t'.placement = t0.placement :=
-  restoreToReadyStaging_tcb_lookup st tid none k t0 hInv hPre
+  restoreToReadyStaging_tcb_lookup st tid false k t0 hInv hPre
 
 /-- **WS-RR RR7.14**: and the cancellation spelling.  The staged frame writes
 `registerContext`, which is neither the object's kind nor its `TCB.placement`. -/
@@ -1247,9 +1247,9 @@ theorem cancelIpcBlocking_tcb_lookup
 to no TCB — the rewrite is guarded on the TCB read. -/
 theorem restoreToReadyStaging_eq_self_of_getTcb?_none
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (h : st.getTcb? tid = none) :
-    restoreToReadyStaging st tid frame = st := by
+    restoreToReadyStaging st tid restart = st := by
   unfold restoreToReadyStaging
   exact SystemState.updateTcb_eq_self_of_none h _
 
@@ -1257,7 +1257,7 @@ theorem restoreToReady_eq_self_of_getTcb?_none
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (h : st.getTcb? tid = none) :
     restoreToReady st tid = st :=
-  restoreToReadyStaging_eq_self_of_getTcb?_none st tid none h
+  restoreToReadyStaging_eq_self_of_getTcb?_none st tid false h
 
 /-- **WS-RR RR7.14**: and the cancellation spelling — the frame is staged into
 a TCB, so no TCB means nothing to stage into and nothing written. -/
@@ -1401,9 +1401,9 @@ theorem cancelDonation_preserves_objects_invExt
 is a `.tcb` rewrite. -/
 theorem restoreToReadyStaging_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (restoreToReadyStaging st tid frame) := by
+    ipcInvariant (restoreToReadyStaging st tid restart) := by
   unfold restoreToReadyStaging
   cases hT : st.getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hIpc
@@ -1415,7 +1415,7 @@ theorem restoreToReady_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (restoreToReady st tid) :=
-  restoreToReadyStaging_preserves_ipcInvariant st tid none hInv hIpc
+  restoreToReadyStaging_preserves_ipcInvariant st tid false hInv hIpc
 
 /-- **WS-RR RR7.14**: and the cancellation spelling — still a single `.tcb`
 rewrite, so still notification-safe. -/

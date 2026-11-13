@@ -69,15 +69,15 @@ staging restore writes ends `.ready`.
 Factored out because three of the four arms end in a restore and the fourth is
 the identity, so this is the only place the field is actually established. -/
 private theorem restoreVictimReady (v : SeLe4n.ThreadId)
-    (s : SystemState) (tV : TCB) (f : Option Architecture.SyscallReturnFrame)
+    (s : SystemState) (tV : TCB) (restart : Bool)
     (hI : s.objects.invExt) (hL : lookupTcb s v = some tV) :
-    ∀ t', (Lifecycle.Suspend.restoreToReadyStaging s v f).objects[v.toObjId]? = some (.tcb t') →
+    ∀ t', (Lifecycle.Suspend.restoreToReadyStaging s v restart).objects[v.toObjId]? = some (.tcb t') →
       t'.ipcState = ThreadIpcState.ready := by
   intro t' h
-  rcases restoreToReadyStaging_tcb_pullback s v f tV hI hL v.toObjId t' h with ⟨hne, _⟩ | ⟨_, rfl⟩
+  rcases restoreToReadyStaging_tcb_pullback s v restart tV hI hL v.toObjId t' h with ⟨hne, _⟩ | ⟨_, rfl⟩
   · exact absurd rfl hne
   · unfold restoredTcb
-    cases f <;> rfl
+    cases restart <;> rfl
 
 /-- **WS-RR RR8.10**: a cancelled victim ends `.ready`, on every arm.
 
@@ -152,9 +152,9 @@ theorem cancelIpcBlocking_victim_ready_of_ipcState
     have hGetX : (cutThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).getTcb? v = some tR :=
       (SystemState.getTcb?_eq_some_iff _ v tR).mpr hAtX
-    have hAtY := restoreToReadyStaging_objects_self _ v (some Architecture.cancelledIpcFrame) tR
+    have hAtY := restoreToReadyStaging_objects_self _ v true tR
       hIX hGetX
-    have hReadyY : (restoredTcb tR (some Architecture.cancelledIpcFrame)).ipcState
+    have hReadyY : (restoredTcb tR true).ipcState
         = ThreadIpcState.ready := by
       unfold restoredTcb; rfl
     -- the teardown then clears the reply link, which moves no other field
@@ -177,7 +177,7 @@ theorem cancelIpcBlocking_victim_ready_of_ipcState
       have hIY : (Lifecycle.Suspend.restoreToReadyStaging
           (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v
-          (some Architecture.cancelledIpcFrame)).objects.invExt :=
+          true).objects.invExt :=
         Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hIX
       have hPost := SystemState.consumeCallerReply_tcb_caller _ _ v rid hIY
         (SystemState.consumeCallerReply_eq_link _ v rid) _ hAtY
@@ -340,9 +340,9 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
 /-- WS-RR RR8.11: the restore writes one TCB, so it writes no scheduling
 context. -/
 theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (tid : SeLe4n.ThreadId) (restart : Bool)
     (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getSchedContext? scId
+    (Lifecycle.Suspend.restoreToReadyStaging st tid restart).getSchedContext? scId
       = st.getSchedContext? scId := by
   refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
   rw [restoreToReadyStaging_eq]
@@ -354,14 +354,14 @@ theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
       -- side of the reading is a scheduling context
       rw [hk, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT,
         show (({ st with objects :=
-              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) } :
+              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb restart)) } :
               SystemState).objects[tid.toObjId]?)
-            = some (.tcb (restoredTcb tcb frame)) from
+            = some (.tcb (restoredTcb tcb restart)) from
           SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _
             hInv]
       simp
     · rw [show (({ st with objects :=
-              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) } :
+              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb restart)) } :
               SystemState).objects[scId.toObjId]?) = st.objects[scId.toObjId]? from
         SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId
           scId.toObjId _ (by simpa using Ne.symm hk) hInv]
@@ -533,7 +533,7 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
   refine ⟨?_, by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st v tcbV]; rfl⟩
   have hEp : ∀ e s, (Lifecycle.Suspend.restoreToReadyStaging
       (removeFromBlockingEndpoint st v e) v
-      (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
+      true).getSchedContext? s = st.getSchedContext? s :=
     fun e s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
           (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
@@ -578,10 +578,15 @@ theorem tcbRefillView_bind_of_threadState {a b : SystemState} {t : SeLe4n.Thread
 /-- WS-ZA ZA6.33: the restore keeps every refill view: it writes one thread and
 leaves its suspension alone. -/
 theorem restoreToReadyStaging_refillViewsKept (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    RefillViewsKept (Lifecycle.Suspend.restoreToReadyStaging st tid frame) st := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    RefillViewsKept (Lifecycle.Suspend.restoreToReadyStaging st tid restart) st := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
-  exact .updateTcb _ _ _ hInv (fun x h => by cases frame <;> exact h)
+  exact .updateTcb _ _ _ hInv fun x h => by
+    cases restart with
+    | false => exact h
+    | true =>
+      intro hx; apply h
+      simp [TCB.restoredToRestart, TCB.restartState, hx]
 
 /-- WS-ZA ZA6.33: the cancelled caller's donation return keeps every context's
 refills off the returned one (`returnDonatedSchedContext_refillsKeptOff`). -/
@@ -620,7 +625,7 @@ theorem cancelIpcBlocking_refillViewsKept_of_return (st : SystemState) (v : SeLe
       Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV
   have hEp : ∀ e, RefillViewsKept (Lifecycle.Suspend.restoreToReadyStaging
-      (removeFromBlockingEndpoint st v e) v (some Architecture.cancelledIpcFrame)) st :=
+      (removeFromBlockingEndpoint st v e) v true) st :=
     fun e => (restoreToReadyStaging_refillViewsKept _ v _
       (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans
       (.of_getSchedContext?_eq (removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv)
@@ -648,7 +653,7 @@ theorem cancelIpcBlocking_refillViewsKept_of_return (st : SystemState) (v : SeLe
     have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
-      (some Architecture.cancelledIpcFrame) hS
+      true hS
     dsimp only
     refine (RefillViewsKept.of_agreeOffRunLinks
       (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _)).trans ?_
@@ -685,10 +690,10 @@ theorem cancelIpcBlocking_refillsKeptOff (st : SystemState) (v : SeLe4n.ThreadId
 /-- WS-ZA ZA6.6: the restore writes one thread's IPC fields and frame, not its
 yield code. -/
 theorem restoreToReadyStaging_yieldLinksKept (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    YieldLinksKept (Lifecycle.Suspend.restoreToReadyStaging st tid frame) st := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    YieldLinksKept (Lifecycle.Suspend.restoreToReadyStaging st tid restart) st := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
-  exact .updateTcb st tid _ hInv fun _ => by cases frame <;> rfl
+  exact .updateTcb st tid _ hInv fun _ => by cases restart <;> rfl
 
 /-- WS-ZA ZA6.6: the cancelled caller's donation return keeps every yield code
 (`returnDonatedSchedContext_yieldLinksKept`). -/
@@ -723,7 +728,7 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
         exact spliceOutMidQueueNode_tcbField_frame TCB.yieldToCode
           (fun _ _ _ _ _ _ => rfl) st v hInv t)
       (removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv)
-  have hEpR := fun e => (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
+  have hEpR := fun e => (restoreToReadyStaging_yieldLinksKept _ v true
     (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans (hEp e)
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
@@ -743,7 +748,7 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
     have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
-      (some Architecture.cancelledIpcFrame) hS
+      true hS
     dsimp only
     refine YieldLinksKept.trans (.of_map KernelObject.withoutReplyLinks
       (fun o => by cases o <;> rfl)
@@ -922,8 +927,8 @@ theorem cutThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB
 
 /-- The restore rewrites its thread. -/
 theorem restoreToReadyStaging_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    SystemState.TableReferenceFrame st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (Lifecycle.Suspend.restoreToReadyStaging st tid restart) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact .updateTcb _ _ _ hInv
 
@@ -970,11 +975,11 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
     have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ victim
-      (some Architecture.cancelledIpcFrame) hS
+      true hS
     dsimp only
     have f3 := ((returnDonationToCancelledCaller_tableReferenceFrame st victim tcb hInv).trans
       (cutThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
-      (restoreToReadyStaging_tableReferenceFrame _ victim (some Architecture.cancelledIpcFrame) hS)
+      (restoreToReadyStaging_tableReferenceFrame _ victim true hS)
     have f4 := f3.trans (consumeReplyLink_tableReferenceFrame _ victim tcb hU)
     exact f4.trans (.of_agreeOffRunLinks
       (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))

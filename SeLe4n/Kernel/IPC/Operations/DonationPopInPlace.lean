@@ -652,7 +652,7 @@ off the store. -/
 /-- **A head reply's caller cancelled, each object written in its slot**
 (seL4-MCS's `reply_remove` head branch): the context handed back to the caller
 `c` by the pop (`returnDonatedSchedContextInPlace`, `reply_pop`), the caller
-restored with the cancellation frame, its reply link consumed and it taken off
+restored and set to restart, its reply link consumed and it taken off
 its server's reply-waiter queue (`cancelReplyArmInPlace`, from the caller's
 reply code `code` and its server's `serverCode`), the context settled on the
 home of the thread it is now bound to (`settleReturnedContext`, the tail of

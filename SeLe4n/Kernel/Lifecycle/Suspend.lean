@@ -35,7 +35,9 @@ These are the seL4 equivalents of `seL4_TCB_Suspend` and `seL4_TCB_Resume`.
 ## Resumption sequence (D1-H)
 
 1. Validate thread exists and is Inactive
-2. Set `threadState := .Ready`, `ipcState := .ready`
+2. Set `threadState := .Restart` (WS-SX SX4: seL4's `restart`, so the thread
+   resumes at its saved PC, which a suspend of a blocked thread moved to its
+   restart PC), `ipcState := .ready`
 3. Insert into run queue at effective priority
 4. If resumed thread has higher priority than current, reschedule
 -/
@@ -67,7 +69,7 @@ are already cleared (record-update of `none ← none` is a no-op).
 Used by:
   * `cancelIpcBlocking` (suspend flow G2) after the thread has been
     removed from any endpoint/notification queue it was waiting on.
-  * `resumeThread` (H3) on transition from `.Inactive` → `.Ready`, where
+  * `resumeThread` (H3) on transition from `.Inactive` → `.Restart`, where
     the IPC fields were nominally cleared by `clearPendingState` during
     suspend but the explicit re-clearing acts as defense-in-depth and
     makes the post-resume invariant locally observable.
@@ -78,7 +80,7 @@ R5.D promoted the helper to a shared top-level name and consolidated the
 resume path through it; the private alias R5.D kept for the old name was
 deleted once nothing named it. -/
 def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
+    (restart : Bool) : SystemState :=
   -- The lookup is the rewrite's own witness (`SystemState.updateTcb`): one TCB
   -- rewritten in place, no bookkeeping touched, the identity when `tid`
   -- resolves to no TCB.
@@ -92,101 +94,91 @@ def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
     -- (server-first) receive also relinquishes its stashed reply object, else
     -- `replyIsStashed` keeps the Reply permanently in-use and later lifecycle
     -- cleanup of it returns `revocationRequired` even though no receive is still
-    -- pending.
-    let cleared : TCB := tcb'.restoredToReady
-    match frame with
-    | some f => cleared.withReturnFrame f
-    | none => cleared
+    -- pending.  WS-SX SX4: a cancellation is the same clear with the thread set
+    -- to restart (`TCB.restoredToRestart`).
+    if restart then tcb'.restoredToRestart else tcb'.restoredToReady
 
-/-- The restore that stages **nothing** — `resumeThread`'s spelling.  A resumed
-thread keeps its own register window: `.tcbResume` restarts it where it was
-(WS-RR RR4.11's `retirePendingFaultForResume` is the fault half of the same
-posture), so overwriting `x0`-`x5` here would destroy the state the restart is
-supposed to preserve.  The cancellation arms of `cancelIpcBlocking` pass
-`some Architecture.cancelledIpcFrame` instead — see there for why the two call
-sites of one helper answer differently. -/
+/-- The restore that leaves the thread's registers alone — `resumeThread`'s
+spelling.  A resumed thread keeps its own register window: `.tcbResume`
+restarts it where its saved context says (WS-RR RR4.11's
+`retirePendingFaultForResume` is the fault half of the same posture), so
+overwriting `x0`-`x5` here would destroy the state the restart is supposed to
+preserve. -/
 def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  restoreToReadyStaging st tid none
+  restoreToReadyStaging st tid false
 
-/-- **WS-RR RR7.14**: the restore that stages the **cancellation error frame** —
-`cancelIpcBlocking`'s spelling on all four of its blocked arms.
+/-- **WS-SX SX4: the restore of a cancelled IPC** — `cancelIpcBlocking`'s
+spelling on all four of its blocked arms.  The operation the thread was blocked
+in is destroyed under it, and seL4 restarts the thread: `cancelIPC` then
+`setThreadState(Restart)` (`cancelAllIPC`, `cancelAllSignals`), whose
+`activateThread` resumes it at its restart PC (`getRestartPC`), the `SVC` it was
+blocked in, so it re-issues the system call.  The thread's saved program counter
+is moved to that restart PC here (`TCB.restartPc`) and its state set `.Restart`
+(`TCB.restoredToRestart`); a suspend then makes it `.Inactive`, as seL4's
+`suspend` does after its `cancelIPC`, and the program counter stays the restart
+PC its later resume runs it at.
 
-A thread whose blocking IPC is destroyed under it has no value to receive, and
-until this row it was handed no answer at all: its boundary crossing ended in
-`.blocks`, so `x0`-`x5` still held its own argument spill (or the trap layer's
-fail-closed sentinel), and the context restore (WS-BP BP7.6) would have delivered that
-back as a return value.  The frame is `.ipcCancelled`, deliberately not
-`.ipcTimeout` (which the timeout path stages): a timed-out caller may reissue,
-a cancelled one may be looking at an endpoint that no longer exists, and a
-userspace library cannot write a correct retry against a conflated code.
+It replaces the `.ipcCancelled` frame WS-RR RR7.14 staged here: that frame
+answered a cancelled IPC with an error seL4 never returns (discriminant `57` is
+retired, `KernelError.retiredDiscriminants`).
 
-Staged **inside** the field clear rather than as a second write, so the arms
+Written **inside** the field clear rather than as a second write, so the arms
 still commit exactly one TCB object.  On the `.blockedOnReply` arm the later
 `consumeReplyLink` re-reads the TCB and record-updates `replyObject` alone, so
-the staged `registerContext` survives it. -/
+the restart PC survives it. -/
 def restoreToReadyCancelled (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  restoreToReadyStaging st tid (some Architecture.cancelledIpcFrame)
+  restoreToReadyStaging st tid true
 
-/-- **WS-RR RR7.14**: the cancellation restore is the plain restore's
-frame-staged twin — the *same* cleared TCB, with the frame staged on top.
-Proved rather than asserted, so a field added to the clear in one and not the
-other fails to elaborate.  Stated on the TCB the two write rather than on the
-whole state: `restoreToReadyCancelled` commits **one** object write where the
-`stage ∘ restore` composition would commit two, which is the point of folding
-the staging inward and not a difference the invariants may see. -/
+/-- **WS-SX SX4**: a cancelled thread's TCB is the restarted record of the TCB it
+had — the plain restore's clear, with its program counter at its restart PC
+and its state `.Restart`. -/
 theorem restoreToReadyCancelled_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     (restoreToReadyCancelled st tid).getTcb? tid
-      = ((restoreToReady st tid).getTcb? tid).map
-          (·.withReturnFrame Architecture.cancelledIpcFrame) := by
-  unfold restoreToReadyCancelled restoreToReady restoreToReadyStaging
-  rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+      = (st.getTcb? tid).map TCB.restoredToRestart := by
+  unfold restoreToReadyCancelled restoreToReadyStaging
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv]
   cases st.getTcb? tid <;> rfl
 
-/-- **WS-RR RR7.14 (the payoff)**: a cancelled thread reads the cancellation
-frame back out of its own register context — so the context restore (WS-BP BP7.6)
-delivers `.ipcCancelled`, not the thread's own stale argument spill. -/
-theorem restoreToReadyCancelled_readReturnFrame (st : SystemState)
+/-- **WS-SX SX4 (the payoff)**: a cancelled thread restarts — its state is
+`.Restart` and its saved program counter is its restart PC, the `SVC` it was
+blocked in (or its fault's restart PC), so the context restore (WS-BP BP7.6)
+resumes it there and it re-issues the system call.  A thread blocked in IPC
+is never `.Inactive` (seL4 queues none), which is the hypothesis. -/
+theorem restoreToReadyCancelled_restarts (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hActive : tcb.threadState ≠ .Inactive)
     (hInv : st.objects.invExt) :
-    Architecture.readReturnFrame (restoreToReadyCancelled st tid) tid
-      = Architecture.cancelledIpcFrame := by
-  unfold restoreToReadyCancelled restoreToReadyStaging Architecture.readReturnFrame
-  rw [SystemState.updateTcb_eq_of_some hTcb]
-  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-  rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-  simp only
-  generalize Architecture.cancelledIpcFrame = frame
-  obtain ⟨h0, h1, h2, h3, h4, h5⟩ :=
-    (tcb.restoredToReady.registerContext).stageReturnFrame_reads_back frame
-  simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
+    ∃ t', (restoreToReadyCancelled st tid).getTcb? tid = some t' ∧
+      t'.threadState = .Restart ∧ t'.registerContext.pc = tcb.restartPc ∧
+      t'.ipcState = .ready := by
+  rw [restoreToReadyCancelled_tcb st tid hInv, hTcb]
+  exact ⟨_, rfl, by simp [TCB.restoredToRestart, TCB.restartState, hActive], rfl,
+    by simp [TCB.restoredToRestart]⟩
 
-/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
+/-- **WS-RR RR7.14**: the framing holds for **every** restore — stated once
 on `restoreToReadyStaging` so the plain and cancellation spellings cannot
-answer "what else does this write" differently.  A staged frame moves the
-target TCB's `registerContext` and nothing outside `objects`. -/
+answer "what else does this write" differently.  A restore moves the target
+TCB and nothing outside `objects`. -/
 theorem restoreToReadyStaging_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoreToReadyStaging st tid frame).scheduler = st.scheduler := by
+    (restart : Bool) :
+    (restoreToReadyStaging st tid restart).scheduler = st.scheduler := by
   unfold restoreToReadyStaging; exact SystemState.updateTcb_scheduler _ _ _
 
 /-- Helper: restoreToReady preserves the scheduler. -/
 theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).scheduler = st.scheduler :=
-  restoreToReadyStaging_scheduler_eq st tid none
+  restoreToReadyStaging_scheduler_eq st tid false
 
 /-- **WS-RR RR7.14**: and the cancellation spelling. -/
 theorem restoreToReadyCancelled_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReadyCancelled st tid).scheduler = st.scheduler :=
   restoreToReadyStaging_scheduler_eq st tid _
 
-/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
-on `restoreToReadyStaging` so the plain and cancellation spellings cannot
-answer "what else does this write" differently.  A staged frame moves the
-target TCB's `registerContext` and nothing outside `objects`. -/
+/-- **WS-RR RR7.14**: the machine is framed by every restore. -/
 theorem restoreToReadyStaging_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoreToReadyStaging st tid frame).machine = st.machine := by
+    (restart : Bool) :
+    (restoreToReadyStaging st tid restart).machine = st.machine := by
   unfold restoreToReadyStaging; exact SystemState.updateTcb_machine _ _ _
 
 /-- WS-SM SM8.B: `restoreToReady` only writes `objects` — the machine, and hence
@@ -196,26 +188,23 @@ well as the scheduler slots, so a scheduler frame alone does not bound a step's
 observable writes. -/
 theorem restoreToReady_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).machine = st.machine :=
-  restoreToReadyStaging_machine_eq st tid none
+  restoreToReadyStaging_machine_eq st tid false
 
 /-- **WS-RR RR7.14**: and the cancellation spelling. -/
 theorem restoreToReadyCancelled_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReadyCancelled st tid).machine = st.machine :=
   restoreToReadyStaging_machine_eq st tid _
 
-/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
-on `restoreToReadyStaging` so the plain and cancellation spellings cannot
-answer "what else does this write" differently.  A staged frame moves the
-target TCB's `registerContext` and nothing outside `objects`. -/
+/-- **WS-RR RR7.14**: the lifecycle is framed by every restore. -/
 theorem restoreToReadyStaging_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoreToReadyStaging st tid frame).lifecycle = st.lifecycle := by
+    (restart : Bool) :
+    (restoreToReadyStaging st tid restart).lifecycle = st.lifecycle := by
   unfold restoreToReadyStaging; exact SystemState.updateTcb_lifecycle _ _ _
 
 /-- Helper: restoreToReady preserves lifecycle. -/
 theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).lifecycle = st.lifecycle :=
-  restoreToReadyStaging_lifecycle_eq st tid none
+  restoreToReadyStaging_lifecycle_eq st tid false
 
 /-- **WS-RR RR7.14**: and the cancellation spelling. -/
 theorem restoreToReadyCancelled_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -247,7 +236,7 @@ to the operation by a `rfl` theorem — one question answered twice, with the
 answer held together by a pin.  `resumeReadyMidState` is its
 `threadState`-setting twin on the resume path.
 
-Deliberately does NOT set `threadState := .Ready` — that transition is
+Deliberately does NOT set `threadState := .Restart` — that transition is
 `resumeThread`'s H3c concern, kept out of the IPC-clearing helper exactly as the
 single-core `restoreToReady` does. -/
 def restoreToReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
@@ -274,7 +263,7 @@ Three steps mirroring the resume path, lifted to an explicit home core:
 
 Steps 1–2 are `restoreToReadyMidState`, and this operation is that prefix
 followed by the enqueue by definition.  Note this is the per-core analogue of
-resume's restore+enqueue and deliberately does NOT set `threadState := .Ready`
+resume's restore+enqueue and deliberately does NOT set `threadState := .Restart`
 — that transition is `resumeThread`'s H3c concern, kept out of the IPC-clearing
 helper exactly as the single-core `restoreToReady` does.
 `restoreToReadyOnCore st bootCoreId tid` is the single-core re-ready (bucket on
@@ -286,7 +275,7 @@ def restoreToReadyOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
   enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid
 
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" — IPC transients cleared
-(`restoreToReady`), `threadState` set to `.Ready`, and `pipBoost` recomputed from the
+(`restoreToReady`), `threadState` set to `.Restart`, and `pipBoost` recomputed from the
 GLOBAL post-restore blocking graph — *before* the per-core run-queue enqueue.  Factored
 out (parallel to `restoreToReadyMidState`) so the resume's `threadState`/`pipBoost`
 effect is provable independently of the run-queue insertion.  When `tid` has no TCB
@@ -296,7 +285,7 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
   let st1 := restoreToReady st tid
   let newPipBoost : Option SeLe4n.Priority :=
     PriorityInheritance.computeMaxWaiterPriority st1 tid
-  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
+  st1.updateTcb tid fun t => { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
 
 /-- `resumeReadyMidState` as it is compiled: the boost written as the waiter
 walk's code (`PriorityInheritance.computeMaxWaiterCode`), so a resumed thread
@@ -305,7 +294,7 @@ that callers wait on builds no `some` cell for its boost
 def resumeReadyMidStateImpl (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   let st1 := restoreToReady st tid
   let newCode := PriorityInheritance.computeMaxWaiterCode st1 tid
-  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := newCode }
+  st1.updateTcb tid fun t => { t with threadState := .Restart, pipBoostCode := newCode }
 
 @[csimp] theorem resumeReadyMidState_eq_impl :
     @resumeReadyMidState = @resumeReadyMidStateImpl := by
@@ -515,7 +504,7 @@ core is not running the resume, so it must be poked to re-evaluate (the resumed
 thread may outrank its current).  A local resume (home = executing) needs no SGI.
 
 PR #811 P2-3: the state path goes through `resumeReadyMidState` (which sets
-`threadState := .Ready` and recomputes the GLOBAL `pipBoost`) *before* the per-core
+`threadState := .Restart` and recomputes the GLOBAL `pipBoost`) *before* the per-core
 enqueue — so a remote resume never pokes a core to dispatch a run-queue entry whose
 TCB is still `.Inactive`.  This makes the state effect identical to the validated
 complete resume `resumeThreadOnCore` (this pure form simply omits the `.Inactive`
@@ -555,7 +544,7 @@ performs the full Inactive→Ready transition:
 2. **H3a** — clear IPC transients (`restoreToReady`).
 3. **H3b** — re-derive `pipBoost` from the GLOBAL post-restore blocking graph
    (`computeMaxWaiterPriority`; the per-core slice would under-boost).
-4. **H3c** — set `threadState := .Ready` *and* the recomputed `pipBoost` (the
+4. **H3c** — set `threadState := .Restart` *and* the recomputed `pipBoost` (the
    step `restoreToReadyOnCore` deliberately omits, completing the resume) — both via
    the `resumeReadyMidState` helper.
 5. **H3d** (WS-ZA ZA6.33) — seL4-MCS's `refill_unblock_check` and
@@ -595,7 +584,7 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
     else
       -- home core of the resumed thread (where it re-enters the run queue)
       let target := determineTargetCore st tid
-      -- H3a/H3b/H3c: IPC clear + threadState := .Ready + GLOBAL pipBoost recompute.
+      -- H3a/H3b/H3c: IPC clear + threadState := .Restart + GLOBAL pipBoost recompute.
       -- The recompute is a key write, so it ends in the key hook (KSC-1): a core
       -- still holding `tid` queued or current is flagged when its key moved.  An
       -- `.Inactive` thread sits on no core, so under the kernel invariants this
@@ -973,10 +962,10 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.ipcState with
   | .ready => st
   | .blockedOnSend ep | .blockedOnReceive ep | .blockedOnCall ep =>
-    -- WS-RR RR7.14: `restoreToReadyCancelled`, not the plain restore — the
-    -- unblocked thread is owed the `.ipcCancelled` frame, see there.  The
-    -- `.ready` arm above stages nothing: it is the no-op for a thread that was
-    -- not blocked, and it commits no write at all.
+    -- WS-SX SX4: `restoreToReadyCancelled`, not the plain restore — the
+    -- unblocked thread restarts its system call, see there.  The `.ready` arm
+    -- above writes nothing: it is the no-op for a thread that was not blocked,
+    -- and it commits no write at all.
     --
     -- WS-ZA ZA6.33: the dequeue is seL4's `tcbEPDequeue` on the one endpoint
     -- the thread state names (`removeFromBlockingEndpoint`), not a sweep of
@@ -2600,7 +2589,7 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 -- ============================================================================
 
 /-- H3a–H3c of the single-core `resumeThread`, given the target's record `tcb`:
-the IPC transients cleared, the boost re-derived, and the record set `.Ready`;
+the IPC transients cleared, the boost re-derived, and the record set `.Restart`;
 the record written and the state it is written in. -/
 def resumeThreadReady (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     TCB × SystemState :=
@@ -2623,7 +2612,7 @@ def resumeThreadReady (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
   -- before the thread re-enters the run queue.
   let newPipBoost : Option SeLe4n.Priority :=
     PriorityInheritance.computeMaxWaiterPriority st tid
-  -- H3c: Set threadState := .Ready and refresh pipBoost on the
+  -- H3c: Set threadState := .Restart and refresh pipBoost on the
   -- (now IPC-cleared) TCB.  Read through the typed `getTcb?` helper
   -- so the post-`restoreToReady` TCB is observed via the
   -- variant-aware lookup that already returns `none` on
@@ -2635,11 +2624,11 @@ def resumeThreadReady (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
   -- (`withObjectStored`).
   match st.getTcbWitnessed? tid with
   | some ⟨t, h⟩ =>
-      let t' : TCB := { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
+      let t' : TCB := { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
       (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
   | none =>
       let t' : TCB :=
-        (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
+        (TCB.setIpcState { tcb with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
       (t', st.withObjectStored tid.toObjId (.tcb t'))
 
 /-- D1-H: Resume a suspended thread — transition from Inactive to Ready.

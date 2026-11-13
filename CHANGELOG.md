@@ -1,3 +1,55 @@
+## v0.37.25 — a cancelled IPC restarts its system call
+
+WS-SX SX4 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A thread taken out of a
+blocking IPC by a cancel now restarts its system call, as seL4 sets it
+`ThreadState_Restart` (`cancelAllIPC`, `cancelAllSignals`,
+`restart_thread_if_no_fault`, `restart`), instead of resuming with an
+`ipcCancelled` error seL4 never returns.
+
+- **`ThreadState.Restart`.** A new state. `TCB.restartPc` is seL4's
+  `getRestartPC`: the `SVC` itself (`pc - 4`, as `lel_syscall` stores
+  `FaultIP = ELR - 4`) for a thread blocked in a system call, the recorded
+  `faultIp` for one blocked on its fault handler. `TCB.restoredToRestart` is
+  the cancel's field clear with the saved PC moved to the restart PC and the
+  state `Restart`.
+- **The restart PC is written when the thread leaves its blocked state.** The
+  model has one program counter (seL4's `NextIP`). Rewinding at activation, as
+  seL4's `activateThread` does, would also rewind a resumed thread that was not
+  in a system call, where seL4's `FaultIP` equals `NextIP`. So the cancel
+  writes it, the thread resumes at its `SVC` with its own arguments, and its
+  user-visible PC is seL4's `FaultIP` throughout. The plan row's "activation
+  rewinds" is corrected to say so.
+- **Every cancel restarts.** `cancelIpcBlocking`'s endpoint, notification and
+  reply-blocked arms (`restoreToReadyCancelled`, now `restoreToReadyStaging`
+  with `restart : Bool`) and `cancelAllIPC`'s waiters
+  (`cancelledEndpointWaiterTcb`).
+- **Suspend and Resume (SX4.2).** A suspended blocked thread is `Inactive`
+  with its PC at its restart PC; Resume sets `Restart` (`resumeReadyMidState`,
+  `resumeThreadReady`), so it re-issues the call it was suspended in.
+- **Retired:** `KernelError.ipcCancelled` (discriminant 57 reserved:
+  `retiredDiscriminants = [35, 37, 57]`, `ofDiscriminant?_retired_ipcCancelled`;
+  Rust `KernelError::IpcCancelled` and `RETIRED`), `cancelledIpcFrame`,
+  `stageCancelledIpcFrame` and their theorems, `unblockFrames_ne_success`,
+  `unblockFrames_decode`, `timeout_and_cancelled_frames_differ`,
+  `restoreToReadyCancelled_readReturnFrame`,
+  `restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame`. The timeout
+  frame keeps its own `timeoutFrame_ne_success` and `timeoutFrame_decode`.
+- **Proofs:** `restoreToReadyCancelled_restarts`,
+  `restoreToReadyCancelled_then_switch_resumes_at_restartPc`; `restoredTcb_eq`
+  names the restart's two fields; the cancellation-shape, placement,
+  run-queue, reply-view, refill-view and projection families restated over
+  `restart : Bool`.
+- **QEMU:** `cancelled-send-restarts` (an endpoint carved under a blocked
+  sender and deleted; the sender, switched in, resumes at its `SVC` with its
+  own arguments and its re-issued send faults on the emptied slot) and
+  `suspend-resume-restarts` (a blocked sender suspended and resumed; it
+  resumes at its `SVC` and its re-issued send reaches the waiting receiver).
+- **Left open in the SX4.1 row:** a receive whose reply object is not free
+  still refuses `replyCapInvalid`; seL4-MCS cancels the IPC of the thread the
+  reply names (`cancelIPC(replyTCB)`). That cancel writes another thread from
+  inside the receive, so it needs that thread's objects in the receive's lock
+  set and a flow from the receiver to it.
+
 ## v0.37.24 — receive-side refusals are capability faults
 
 WS-SX SX3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A receive's refusals now

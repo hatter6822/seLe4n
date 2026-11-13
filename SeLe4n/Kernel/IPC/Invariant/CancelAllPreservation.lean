@@ -20,7 +20,7 @@ and so the whole finalisation, keeps the IPC bundle (`ipcInvariantFull`).
 
 * **An endpoint waiter's cancel** is the pop of its queue's head
   (`endpointQueuePopHead`, which `storePopHead` is under the walk's guard), the
-  receive-completing store with no message, the cancellation frame staged, and
+  receive-completing store with no message, the thread set to restart, and
   the wake of the now-`.ready` thread.  The pop leaves the bundle relaxed at the
   popped thread (`endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership`),
   the store closes it (`storeTcbReceiveComplete_closes_exceptMembership`), the
@@ -150,7 +150,7 @@ no timeout budget and is blocked on no reply, made a cancelled waiter
 (`cancelledEndpointWaiterTcb`), takes the bundle with membership relaxed at `t`
 to the bundle.  Read as two stores — the receive completion with no message,
 which closes the bundle (`storeTcbReceiveComplete_closes_exceptMembership`),
-then the cancellation frame staged, which moves only saved registers
+then the restart, which moves only the saved PC and the thread state
 (`writeReturnFrameToTcb_preserves_ipcInvariantFull`) — that agree key by key
 with the one store the cancel commits. -/
 theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) (x : TCB)
@@ -171,7 +171,7 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
     intro tcbX hX e r
     rw [hT1] at hX; cases hX
     exact hNotReply e r
-  -- The two-store reading: the receive completion, then the frame staged.
+  -- The two-store reading: the receive completion, then the restart.
   let rc : TCB := TCB.setIpcState
     { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
   obtain ⟨sRc, hStoreRc⟩ : ∃ s, storeObject t.toObjId (.tcb rc) s1 = .ok ((), s) := ⟨_, rfl⟩
@@ -188,43 +188,30 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
     storeObject_preserves_objects_invExt s1 sRc t.toObjId _ hI1 hStoreRc
   have hRcAt : sRc.objects[t.toObjId]? = some (.tcb rc) :=
     storeObject_objects_eq s1 sRc t.toObjId _ hI1 hStoreRc
-  have hFullStage := writeReturnFrameToTcb_preserves_ipcInvariantFull sRc t
-    Architecture.cancelledIpcFrame hIRc hFullRc
   have hRcG : sRc.getTcb? t = some rc := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hRcAt
-  -- WS-ZA ZA6.22: and the fault record retired, a third store of fields no
-  -- conjunct reads.
-  let sSt := Architecture.writeReturnFrameToTcb sRc t Architecture.cancelledIpcFrame
-  have hISt : sSt.objects.invExt :=
-    writeReturnFrameToTcb_preserves_objects_invExt sRc t _ hIRc
-  have hStG : sSt.getTcb? t = some (rc.withReturnFrame Architecture.cancelledIpcFrame) := by
-    show (Architecture.writeReturnFrameToTcb sRc t _).getTcb? t = _
-    unfold Architecture.writeReturnFrameToTcb
-    rw [SystemState.updateTcb_getTcb?_self _ _ _ hIRc, hRcG]; rfl
-  have hFullClr : ipcInvariantFull (sSt.updateTcb t fun y =>
-      (y.setPendingFault none)) := by
-    rw [SystemState.updateTcb_eq_of_some hStG]
-    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sSt t _ _ hISt hFullStage
-      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hStG) rfl rfl rfl rfl rfl rfl rfl rfl rfl
-  have hAgree : objectStoreAgrees (sSt.updateTcb t fun y =>
-      (y.setPendingFault none))
+  -- WS-SX SX4: the restart, a second store of fields no conjunct reads — the
+  -- saved PC moved back to the restart PC, `.Restart`, and (WS-ZA ZA6.22) the
+  -- fault record retired.
+  have hFullClr : ipcInvariantFull (sRc.updateTcb t fun _ => cancelledEndpointWaiterTcb x) := by
+    rw [SystemState.updateTcb_eq_of_some hRcG]
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sRc t rc _ hIRc hFullRc
+      hRcAt rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  have hAgree : objectStoreAgrees (sRc.updateTcb t fun _ => cancelledEndpointWaiterTcb x)
       (s1.updateTcb t cancelledEndpointWaiterTcb) := by
     intro k
-    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hStG]
-    show (s1.objects.insert t.toObjId _)[k]? = (sSt.objects.insert t.toObjId _)[k]?
+    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hRcG]
+    show (s1.objects.insert t.toObjId _)[k]? = (sRc.objects.insert t.toObjId _)[k]?
     by_cases hk : k = t.toObjId
     · subst hk
       rw [RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?,
         RobinHood.RHTable.getElem?_insert_self _ _ _ hI1,
-        RobinHood.RHTable.getElem?_insert_self _ _ _ hISt]
-      rfl
+        RobinHood.RHTable.getElem?_insert_self _ _ _ hIRc]
     · have hne : (t.toObjId == k) = false := by simp [Ne.symm hk]
       rw [RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?,
         RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hI1,
-        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hISt,
+        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hIRc,
         ← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
-      show s1.objects[k]? = (Architecture.writeReturnFrameToTcb sRc t _).objects[k]?
-      rw [Architecture.writeReturnFrameToTcb_objects_ne sRc t _ k hk hIRc,
-        storeObject_objects_ne s1 sRc t.toObjId k _ hk hI1 hStoreRc]
+      exact (storeObject_objects_ne s1 sRc t.toObjId k _ hk hI1 hStoreRc).symm
   exact ipcInvariantFull_of_storeAgrees hAgree hFullClr
 
 /-- **An endpoint waiter's cancel keeps the bundle.**  The pop relaxes it at the
@@ -233,8 +220,8 @@ leaves the waiter out of every queue (`endpointQueuePopHead_popped_not_head`,
 `_not_tail`, `_no_incoming`); the receive-completing store with no message closes
 it (`storeTcbReceiveComplete_closes_exceptMembership`) — the waiter, a queue's
 head, is blocked on a send, a call or a receive, so not on a reply, and the walk
-admitted it with no timeout budget; the cancellation frame moves only its saved
-registers (`writeReturnFrameToTcb_preserves_ipcInvariantFull`), and the one store
+admitted it with no timeout budget; the restart moves only its saved PC, its
+`threadState` and its fault record (WS-SX SX4), and the one store
 the cancel commits agrees with that two-store reading key by key; the wake is of
 a `.ready` thread (`enqueueRunnableOnCore_preserves_ipcInvariantFull`). -/
 theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull

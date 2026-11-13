@@ -697,7 +697,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
       restoredAndConsumed
         (cutThreadReplyFrameOut
           (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb)
-        victim tcb (some Architecture.cancelledIpcFrame) :=
+        victim tcb true :=
   cancelIpcBlocking_reply_arm_eq st victim tcb ep rt hBlocked
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
@@ -1818,20 +1818,18 @@ private def runDiffSeamEdfChecks : IO Unit := do
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- Scenario R: WS-RR RR7.14 — the return frame a forcibly unblocked thread reads
+-- Scenario R: WS-SX SX4 — a cancelled IPC restarts its system call
 -- ----------------------------------------------------------------------------
 --
--- A thread whose blocking IPC is destroyed under it has no value to receive.
--- Until RR7.14 the teardown staged nothing, so the SM10.1 context restore would
--- have delivered whatever the argument spill left in `x0`-`x5` — the thread's
--- own request registers, decoded as a return value.  The checks below are
--- written so they cannot pass vacuously: the victim carries a **recognisable**
--- pre-state register file (`x0 = 0xBAD0`, `x1 = 0xBAD1`, ...), so "the frame is
--- `.ipcCancelled`" and "the frame is not what was there before" are two
--- different assertions and both are made.
+-- A thread whose blocking IPC is destroyed under it restarts the system call it
+-- was blocked in, as seL4's does (`ThreadState_Restart`): its saved program
+-- counter moves back to the `SVC` (its restart PC, `TCB.restartPc`) and its
+-- request registers are left as they were, so the re-issued call carries the
+-- same arguments.  The checks below are written so they cannot pass vacuously:
+-- the victim carries a **recognisable** pre-state register file
+-- (`x0 = 0xBAD0`, `x1 = 0xBAD1`, ..., `pc = 0x4000`), so "the window survives"
+-- and "the PC moved to the `SVC`" are both checked against known words.
 
-/-- A register file whose `x0`-`x5` are all recognisable non-frame values —
-what a blocked caller's argument spill leaves behind. -/
 private def staleRequestRegs : SeLe4n.RegisterFile :=
   SeLe4n.RegisterFile.withGprs 0x4000 0x9000 (fun r => 0xBAD0 + r.toUInt64)
 
@@ -1877,71 +1875,64 @@ private def resumedAfterSwitch (st : SystemState) (c : CoreId) (tid : SeLe4n.Thr
       | _, _ => none
   | .error _ => none
 
-/-- §3.19b (WS-BP BP7.5 — the cancellation frame, delivered): the staging
-(§3.19) is half an answer; the other half is that the victim *reads* it.  The
-CONTROL switches to the victim before the cancellation: the same switch, with
-nothing staged, resumes it with its own request registers, so the assertions
-are about the staging and not about the switch. -/
+/-- The stale window's first six registers, as a frame. -/
+private def staleFrame : Architecture.SyscallReturnFrame :=
+  { x0 := 0xBAD0, x1 := 0xBAD1, x2 := 0xBAD2, x3 := 0xBAD3, x4 := 0xBAD4, x5 := 0xBAD5 }
+
+/-- §3.19b (WS-SX SX4 — the restart, delivered): the victim, once switched to,
+resumes at the `SVC` it was blocked in with its own request registers, so it
+re-issues the system call.  The CONTROL switches to the victim before the
+cancellation: the same switch, with nothing cancelled, resumes it past the
+`SVC`, so the assertions are about the cancellation and not about the switch. -/
 private def runUnblockFrameDeliveryChecks : IO Unit := do
-  IO.println "--- §3.19b WS-BP BP7.5 the cancellation frame is what the victim resumes with ---"
+  IO.println "--- §3.19b WS-SX SX4 a cancelled victim resumes at its SVC with its arguments ---"
   match stCallBlockedStale?, stNtfnBlockedStale? with
   | some stE, some stN =>
       let (stE', _) := cancelIpcBlockingOnCore victimTid (victimTcb stE) bootCoreId stE
       let (stN', _) := cancelIpcBlockingOnCore victimTid (victimTcb stN) bootCoreId stN
-      assertBool "an endpoint-blocked victim, once switched to, resumes reading .ipcCancelled at its own pc"
+      assertBool "an endpoint-blocked victim, once switched to, resumes at its SVC with its own arguments"
         (match resumedAfterSwitch stE' core1 victimTid with
-         | some (f, pc) => decide (f = Architecture.cancelledIpcFrame) && decide (pc = staleRequestRegs.pc)
+         | some (f, pc) => decide (f = staleFrame) && decide (pc = staleRequestRegs.pc - 4)
          | none => false)
-      assertBool "a notification-blocked victim resumes reading .ipcCancelled, never a stale badge"
+      assertBool "a notification-blocked victim resumes at its SVC, never reading a stale badge"
         (match resumedAfterSwitch stN' core1 victimTid with
-         | some (f, _) => decide (f = Architecture.cancelledIpcFrame)
+         | some (f, pc) => decide (f = staleFrame) && decide (pc = staleRequestRegs.pc - 4)
          | none => false)
-      assertBool "CONTROL: switched to before the cancellation, the victim resumes with its arguments"
+      assertBool "CONTROL: switched to before the cancellation, the victim resumes past its SVC"
         (match resumedAfterSwitch stE core1 victimTid with
-         | some (f, _) => decide (f.x0 = 0xBAD0) && decide (f ≠ Architecture.cancelledIpcFrame)
+         | some (f, pc) => decide (f = staleFrame) && decide (pc = staleRequestRegs.pc)
          | none => false)
   | _, _ => assertBool "setup: both blocked stale-register fixtures build" false
 
 private def runUnblockFrameStagingChecks : IO Unit := do
-  IO.println "--- §3.19 WS-RR RR7.14 the cancellation return frame ---"
-  -- The two frames are distinguishable, and neither is the success frame.
-  assertBool "the timeout and cancellation frames differ"
-    (decide (Architecture.timeoutFrame ≠ Architecture.cancelledIpcFrame))
-  assertBool "neither unblock frame is the success frame (x1 = 0)"
-    (decide (Architecture.timeoutFrame.x1 ≠ 0 ∧ Architecture.cancelledIpcFrame.x1 ≠ 0))
-  assertBool "each unblock frame's label decodes back to its own error"
-    (decide (Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcTimeout)
-               = some KernelError.ipcTimeout
-             ∧ Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcCancelled)
-               = some KernelError.ipcCancelled))
-  assertBool "the cancellation error is its own discriminant, not folded into the timeout"
-    (decide (KernelError.toDiscriminant .ipcCancelled = 57
-             ∧ KernelError.toDiscriminant .ipcTimeout = 42
-             ∧ KernelError.ofDiscriminant? 57 = some KernelError.ipcCancelled))
+  IO.println "--- §3.19 WS-SX SX4 the cancelled IPC restarts ---"
+  -- The retired discriminant names no error.
+  assertBool "the former ipcCancelled discriminant 57 is retired and decodes to no error"
+    (decide (KernelError.ofDiscriminant? 57 = none
+             ∧ KernelError.retiredDiscriminants.contains 57 = true
+             ∧ KernelError.toDiscriminant .ipcTimeout = 42))
   -- The endpoint-blocked victim.
   match stCallBlockedStale? with
   | some st =>
       let tcb := victimTcb st
       assertBool "setup: the blocked victim still holds its stale request window"
-        (decide (Architecture.readReturnFrame st victimTid
-                   ≠ Architecture.cancelledIpcFrame)
-         && decide ((Architecture.readReturnFrame st victimTid).x0 = 0xBAD0))
+        (decide ((Architecture.readReturnFrame st victimTid).x0 = 0xBAD0))
       let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
-      assertBool "an endpoint-blocked victim reads back .ipcCancelled after cancellation"
-        (decide (Architecture.readReturnFrame st' victimTid
-                   = Architecture.cancelledIpcFrame))
-      assertBool "…and the stale window is GONE (x0 no longer the spilled argument)"
-        (decide ((Architecture.readReturnFrame st' victimTid).x0 ≠ 0xBAD0))
-      assertBool "…while x7 and pc/sp are untouched (staging writes x0-x5 only)"
+      assertBool "an endpoint-blocked victim's request window survives the cancellation"
+        (decide (Architecture.readReturnFrame st' victimTid = staleFrame))
+      assertBool "…its saved PC is its restart PC, the SVC four bytes back, and it is set to restart"
         (match st'.getTcb? victimTid with
-         | some t => decide (t.registerContext.gpr ⟨7⟩ = staleRequestRegs.gpr ⟨7⟩
-                             ∧ t.registerContext.pc = staleRequestRegs.pc
+         | some t => decide (t.registerContext.pc = staleRequestRegs.pc - 4
+                             ∧ t.registerContext.pc = tcb.restartPc
+                             ∧ t.threadState = .Restart
+                             ∧ t.registerContext.gpr ⟨7⟩ = staleRequestRegs.gpr ⟨7⟩
                              ∧ t.registerContext.sp = staleRequestRegs.sp)
          | none => false)
-      -- The bystander is untouched: staging is confined to the victim.
-      assertBool "the bystander's register context is untouched by the victim's staging"
-        (decide (Architecture.readReturnFrame st' bystanderTid
-                   = Architecture.readReturnFrame st bystanderTid))
+      -- The bystander is untouched: the restart is confined to the victim.
+      assertBool "the bystander's register context is untouched by the victim's restart"
+        (match st'.getTcb? bystanderTid, st.getTcb? bystanderTid with
+         | some a, some b => decide (a.registerContext = b.registerContext)
+         | _, _ => false)
   | none => assertBool "setup: endpointCallOnCore block path succeeded (stale-reg fixture)" false
   -- The notification-blocked victim: the fourth arm, and the one whose return
   -- would otherwise have been a badge.
@@ -1949,13 +1940,15 @@ private def runUnblockFrameStagingChecks : IO Unit := do
   | some st =>
       let tcb := victimTcb st
       let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
-      assertBool "a notification-blocked victim reads back .ipcCancelled (never a stale badge)"
-        (decide (Architecture.readReturnFrame st' victimTid
-                   = Architecture.cancelledIpcFrame))
+      assertBool "a notification-blocked victim restarts at its SVC (never a stale badge)"
+        (match st'.getTcb? victimTid with
+         | some t => decide (t.registerContext.pc = staleRequestRegs.pc - 4
+                             ∧ t.threadState = .Restart)
+         | none => false)
   | none => assertBool "setup: notificationWaitOnCore block path succeeded (stale-reg fixture)" false
-  -- NEGATIVE: the `.ready` arm is a no-op and stages NOTHING.  A thread that
-  -- was not blocked has a live register window of its own; overwriting it would
-  -- destroy a return value the kernel had already staged.
+  -- NEGATIVE: the `.ready` arm is a no-op and moves NOTHING.  A thread that
+  -- was not blocked is not in a system call; rewinding it would re-run the
+  -- instruction before the one it resumes at.
   let stReady : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
@@ -1964,24 +1957,25 @@ private def runUnblockFrameStagingChecks : IO Unit := do
   let readyTcb := victimTcb stReady
   assertBool "setup: the .ready victim is not blocked"
     (decide (readyTcb.ipcState = ThreadIpcState.ready))
-  assertBool "NEGATIVE: cancelling a .ready thread stages no frame — its window survives"
-    (decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb) victimTid
-               = Architecture.readReturnFrame stReady victimTid)
-     && decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb)
-                  victimTid ≠ Architecture.cancelledIpcFrame))
-  -- NEGATIVE: `restoreToReady` (the RESUME spelling) stages nothing either — a
-  -- resumed thread restarts where it was, so its window must survive.
-  assertBool "NEGATIVE: restoreToReady (the resume spelling) stages no frame"
-    (decide (Architecture.readReturnFrame (restoreToReady stReady victimTid) victimTid
-               = Architecture.readReturnFrame stReady victimTid))
-  assertBool "…and it is the SAME field clear as the cancellation spelling, frame aside"
+  assertBool "NEGATIVE: cancelling a .ready thread moves no register — its PC and window survive"
+    (match (cancelIpcBlocking stReady victimTid readyTcb).getTcb? victimTid with
+     | some t => decide (t.registerContext = staleRequestRegs)
+     | none => false)
+  -- NEGATIVE: `restoreToReady` (the RESUME spelling) moves nothing either — a
+  -- resumed thread runs at the PC its saved context holds.
+  assertBool "NEGATIVE: restoreToReady (the resume spelling) moves no register"
+    (match (restoreToReady stReady victimTid).getTcb? victimTid with
+     | some t => decide (t.registerContext = staleRequestRegs)
+     | none => false)
+  assertBool "…and it is the SAME field clear as the cancellation spelling, the restart aside"
     (match (restoreToReady stReady victimTid).getTcb? victimTid,
            (restoreToReadyCancelled stReady victimTid).getTcb? victimTid with
      | some a, some b =>
          decide (a.ipcState = b.ipcState ∧ a.queuePrev = b.queuePrev
                  ∧ a.queueNext = b.queueNext ∧ a.queuePPrev = b.queuePPrev
                  ∧ a.pendingReceiveReply = b.pendingReceiveReply
-                 ∧ b.registerContext.gpr ⟨1⟩ ≠ a.registerContext.gpr ⟨1⟩)
+                 ∧ b.registerContext.pc ≠ a.registerContext.pc
+                 ∧ b.threadState = .Restart)
      | _, _ => false)
 
 /-- **WS-OD OD5.3 / OD6.3**: the suspend pipeline pops TWICE at call depth >= 2,

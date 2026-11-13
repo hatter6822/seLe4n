@@ -86,7 +86,7 @@ theorem storeEndpointWaiterCancelled (st : SystemState) (e : SeLe4n.ObjId) (q : 
   | none => rw [hT] at hx; cases hx
   | some y =>
     rw [hT] at hx; cases hx
-    exact (TCB.withReturnFrame_ipcState _ _).trans (TCB.ipcState_setIpcState _ .ready)
+    simp [cancelledEndpointWaiterTcb]
 
 end RecordsStep
 

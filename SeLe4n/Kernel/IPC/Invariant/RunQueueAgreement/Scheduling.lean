@@ -856,7 +856,7 @@ theorem resumeReadyMidState_runQueueFrameStage (st : SystemState) (tid : SeLe4n.
     exact (hS1.toFrame _).trans
       ((SystemState.RunQueueFrameStage.updateTcb_heldBy _ tid
         (f := fun t => { t with
-          threadState := .Ready
+          threadState := .Restart
           pipBoostCode := SeLe4n.Priority.optCode
             (PriorityInheritance.computeMaxWaiterPriority (restoreToReady st tid) tid) })
         (fun _ _ => rfl)).mono
@@ -1033,7 +1033,7 @@ theorem resumeThreadOnCore_runQueueEntryStage {st st' : SystemState}
           rw [hT] at hx; cases hx
           exact ha hIn'
         · obtain ⟨tm, htm, hr⟩ :=
-            PriorityInheritance.resumeReadyMidState_getTcb?_ready st _ tcb hT hInv
+            PriorityInheritance.resumeReadyMidState_getTcb?_restart st _ tcb hT hInv
           refine ⟨tm, ?_, by unfold TCB.Active; rw [hr]; decide⟩
           rw [hBT]; exact htm
       split at h

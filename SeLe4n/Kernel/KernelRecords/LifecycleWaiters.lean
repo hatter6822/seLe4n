@@ -110,7 +110,7 @@ clears the thread's server, which names none. -/
 theorem restoreToReady_waitersStage (st : SystemState) (t : SeLe4n.ThreadId)
     (hR : ∀ x, st.getTcb? t = some x → x.ipcState = .ready) :
     WaitersStage st (Lifecycle.Suspend.restoreToReady st t) := fun hI hC =>
-  ⟨(RecordsStep.restoreToReadyStaging st t none hI).invExt,
+  ⟨(RecordsStep.restoreToReadyStaging st t false hI).invExt,
     hC.of_views (by
       rw [restoreToReady_replyViews st t hI]
       exact ReplyViews.setServer_of_server fun v hv => by

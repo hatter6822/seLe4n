@@ -311,7 +311,7 @@ theorem storePopHead_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (st : Sy
     SystemState.updateTcb_preserves_objects_invExt _ _ _ k2.2⟩
 
 /-- **An endpoint waiter's cancel writes the waiter alone**: the pop writes queue
-links, the waiter's rewrite stages the cancellation frame, and the wake writes
+links, the waiter's rewrite sets it to restart, and the wake writes
 none. -/
 theorem storeEndpointWaiterCancelled_savedRegsKeptExcept (st : SystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (t : SeLe4n.ThreadId)
@@ -395,7 +395,7 @@ theorem storeQueueRemove_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (st 
       exact hFin _ k2 i2
 
 /-- **A blocked thread's endpoint cancel writes the thread alone**: the removal
-writes queue links, and the thread's rewrite stages the cancellation frame. -/
+writes queue links, and the thread's rewrite sets it to restart. -/
 theorem storeEndpointBlockedCancelled_savedRegsKeptExcept (st : SystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint)
     (tcb : TCB) (hInv : st.objects.invExt) :
@@ -538,8 +538,8 @@ theorem of_consumeReplyLink (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TC
 
 /-- The restore writes the restored thread alone. -/
 theorem of_restoreToReadyStaging_written (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) (hW : W tid) :
-    savedRegsKeptExcept W st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+    (restart : Bool) (hInv : st.objects.invExt) (hW : W tid) :
+    savedRegsKeptExcept W st (Lifecycle.Suspend.restoreToReadyStaging st tid restart) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact updateTcb_written st tid _ hInv hW
 
@@ -566,15 +566,15 @@ end savedRegsKeptExcept
 
 /-- **A cancellation writes the cancelled thread alone**: every arm removes it
 from its queue, returns its loan, cuts its reply frame and consumes its
-reply link — none a saved register — and restores it, which stages the
-cancellation frame in its own context. -/
+reply link — none a saved register — and restores it, which moves its
+saved PC to its restart PC in its own context. -/
 theorem cancelIpcBlocking_savedRegsKeptExcept (st : SystemState) (v : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) :
     savedRegsKeptExcept (· = v) st (Lifecycle.Suspend.cancelIpcBlocking st v tcb) := by
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   have hQ := fun (s : SystemState) (hs : s.objects.invExt) =>
     savedRegsKeptExcept.of_restoreToReadyStaging_written (W := (· = v)) s v
-      (some Architecture.cancelledIpcFrame) hs rfl
+      true hs rfl
   cases tcb.ipcState with
   | ready => exact .refl _
   | blockedOnSend e =>
@@ -592,7 +592,7 @@ theorem cancelIpcBlocking_savedRegsKeptExcept (st : SystemState) (v : SeLe4n.Thr
   | blockedOnReply _ _ =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcb hInv
     have hS := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hR
-    have hT := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v (some Architecture.cancelledIpcFrame) hS
+    have hT := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v true hS
     exact ((((savedRegsKeptExcept.of_returnDonationToCancelledCaller st v tcb hInv).trans
       (savedRegsKeptExcept.of_cutThreadReplyFrameOut _ tcb hR)).trans (hQ _ hS)).trans
       (savedRegsKeptExcept.of_consumeReplyLink _ v tcb hT)).trans

@@ -862,20 +862,13 @@ platform rather than with the lock.
 > cross-check: both sides render the same `id → shape` table against one
 > fixture, so two total functions cannot disagree silently.
 
-> **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`).
-> A thread taken out of a blocking IPC has no value to receive, and until this
-> cut both unblocking paths staged nothing — so the SM10.1 context restore
-> would have delivered the thread's own argument spill back as a return value.
-> `timeoutThread` now stages `Architecture.timeoutFrame` (`.ipcTimeout`) and
-> `cancelIpcBlocking`'s four blocked arms stage
-> `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
-> discriminant 57): a caller may reissue a timed-out request, but a cancelled
-> one may name an endpoint that is gone, so conflating them would make a
-> correct userspace retry impossible. Two paths stage nothing on purpose and
-> are pinned as negatives — the `.ready` arm, and `restoreToReady`, the
-> *resume* spelling of the same field clear, since `.tcbResume` restarts a
-> thread where it was. **Delivery is still owed to WS-BP BP7**: a staged frame
-> reaches no hardware register while `contextRestoreSeamLive` is `false`.
+> **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`;
+> WS-SX SX4, `v0.37.25`).  `timeoutThread` stages `Architecture.timeoutFrame`
+> (`.ipcTimeout`).  A cancelled IPC restarts, as seL4's does: the thread is set
+> `ThreadState.Restart` and its saved PC moved back to its `SVC`
+> (`TCB.restartPc`), so it re-issues the call.  The former `.ipcCancelled` is
+> retired (discriminant 57 reserved).  The specification is
+> [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md).
 
 > **The frozen execute phase reads the same priority, and the same field
 > clear** (`v0.35.134`). PR #897's review reported the frozen waiter fold as

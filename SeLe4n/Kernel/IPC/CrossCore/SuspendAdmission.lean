@@ -58,8 +58,8 @@ def suspendCancelRevert (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 
 /-- **The IPC teardown of an admitted suspend, as its writes** (seL4's
 `cancelIPC`): a thread blocked on a notification the store holds leaves that
-notification's queue wherever it waits there and is restored `.ready` with the
-cancellation frame (`storeNotificationBlockedCancelled`, which the
+notification's queue wherever it waits there and is restored `.ready` and set to
+restart (`storeNotificationBlockedCancelled`, which the
 specification's `cancelIpcBlocking` notification arm is,
 `cancelIpcBlocking_notification_inPlace`), the notification read once and the
 waiter's head question asked of its code; every other thread is torn down by the

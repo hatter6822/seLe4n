@@ -825,9 +825,9 @@ run_check "INVARIANT" rg -n '^theorem sweptAndRestored_preserves_ipcInvariantFul
 # **hypothesis**, exactly as the dual-queue result takes its boundary clause.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCoh : sweptThreadQueueCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # ...and it must state the whole bundle on the composite, not a weaker relaxation.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(sweptAndRestored st v restart\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # The live arm is reached by an equation the compiler checks, not by a restatement.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq[^\n]*(\n([ \t][^\n]*)?)*sweptAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq[^\n]*(\n([ \t][^\n]*)?)*sweptAndRestored st tid true := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # NEGATIVE: the swept thread's non-reply state is *derived* where the bundle is
 # available, never taken as a further hypothesis of the live arm.
@@ -841,8 +841,8 @@ run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFu
 # Relation, not presence: the keystone takes the coherence fact as a hypothesis
 # and states the whole bundle on the composite.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hOff : sweptThreadOffQueueChains st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(purgedAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq[^\n]*(\n([ \t][^\n]*)?)*purgedAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(purgedAndRestored st v restart\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq[^\n]*(\n([ \t][^\n]*)?)*purgedAndRestored st tid true := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # NEGATIVE: the two derivable facts stay derived — the notification arm takes
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
@@ -866,7 +866,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_replyArm_pre
 # The live arm is reached by an equation the compiler checks -- all four steps, in
 # order.  A step inserted, dropped or reordered fails this and then fails to
 # elaborate; the keystone alone would not notice.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq[^\n]*(\n([ \t][^\n]*)?)*restoredAndConsumed[^\n]*(\n([ \t][^\n]*)?)*cutThreadReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV\) tcbV\)[^\n]*(\n([ \t][^\n]*)?)*v tcbV \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq[^\n]*(\n([ \t][^\n]*)?)*restoredAndConsumed[^\n]*(\n([ \t][^\n]*)?)*cutThreadReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV\) tcbV\)[^\n]*(\n([ \t][^\n]*)?)*v tcbV true := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
 # WS-OD OD3.12 / OD3.13: and the two receive-side arms, through the same
 # resolver -- `.replyRecv`'s receive leg *is* `.receive`'s transition.  This is
 # the arm the ceiling moved for: it was at 13 of 13, so declaring the object its
@@ -5703,11 +5703,11 @@ run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller re
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.ResumeDelivery$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^def RestoreTarget\.deliveredFrame\? : RestoreTarget → Option SyscallReturnFrame$' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_delivers_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
-run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_then_switch_resumes_at_restartPc($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
 run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
 run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
 run_check "INVARIANT" rg -n 'a timed-out waiter, once switched to, resumes reading .ipcTimeout' tests/SmpTimerSuite.lean
-run_check "INVARIANT" rg -n 'an endpoint-blocked victim, once switched to, resumes reading .ipcCancelled at its own pc' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'an endpoint-blocked victim, once switched to, resumes at its SVC with its own arguments' tests/SmpCancellationSuite.lean
 run_negative_check "INVARIANT" rg -n 'def frameOfContext' tests/SmpCancellationSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
@@ -11100,32 +11100,29 @@ run_check "INVARIANT" rg -n 'a stale registry entry was accepted' SeLe4n/Testing
 # is which constants a body reaches, and eleven review rounds against
 # `check_kernel_entry_exports.py` are the evidence that a scanner gets it wrong.
 run_negative_check "INVARIANT" rg -n 'IO.FS.readFile|System.FilePath' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
-# WS-RR RR7.14: the frame a forcibly unblocked thread is owed.  Both unblocking
-# paths staged NOTHING, so a thread taken out of a blocking IPC resumed at the
-# SM10.1 context restore reading its own argument spill back as a return value.
-# The two paths stage DIFFERENT errors because they are different facts, and the
-# anchors pin the relation, not the presence of a token: a check that only asked
-# "does `errorFrame` appear in Timeout.lean" would pass with both paths staging
-# the same code, which is the defect this row exists to avoid.
+# WS-RR RR7.14: the frame a timed-out thread is owed.  The timeout path stages
+# `.ipcTimeout`, folded into the TCB record it was already writing.
 run_check "INVARIANT" rg -n '^def timeoutFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def cancelledIpcFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem timeout_and_cancelled_frames_differ($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem unblockFrames_ne_success($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem unblockFrames_decode($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-# `.ipcCancelled` is a discriminant of its own, not a reuse of `.ipcTimeout`:
-# a userspace library retrying on timeout would also retry a cancellation,
-# against an endpoint that may no longer exist.
-run_check "INVARIANT" rg -n '\| ipcCancelled' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n 'IpcCancelled = 57' rust/sele4n-types/src/error.rs
-# The TIMEOUT path stages the timeout frame, folded into the TCB record it was
-# already writing (one object write, not two).
+run_check "INVARIANT" rg -n '^theorem timeoutFrame_ne_success($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem timeoutFrame_decode($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'Architecture.timeoutFrame' SeLe4n/Kernel/IPC/Operations/Timeout.lean
-# The CANCELLATION path stages the cancellation frame on all four blocked arms,
-# through one spelling of the field clear.
+# WS-SX SX4: a CANCELLED IPC answers with no frame at all, as seL4's does: the
+# thread is set to restart (`ThreadState.Restart`), its saved PC moved back to
+# its restart PC (the SVC, seL4's FaultIP), so it re-issues the system call.
+# The former `.ipcCancelled` error and its frame are retired (discriminant 57).
+run_check "INVARIANT" rg -n '^  \| Restart$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def TCB.restartPc($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'if t.faultWords.isFault then t.faultIp else t.registerContext.pc - 4' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def TCB.restoredToRestart($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_negative_check "INVARIANT" rg -n '\| ipcCancelled' SeLe4n/Model/KernelError.lean
+run_negative_check "INVARIANT" rg -n 'IpcCancelled' rust/sele4n-types/src/error.rs
+run_negative_check "INVARIANT" rg -n 'cancelledIpcFrame' SeLe4n
+# The cancellation path restarts the thread on all four blocked arms, through
+# one spelling of the field clear.
 run_check "INVARIANT" rg -n '^def restoreToReadyCancelled($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n 'Architecture.cancelledIpcFrame' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-# ...and it is the SAME field clear as the resume spelling, frame aside, so a
+run_check "INVARIANT" rg -n 'restoreToReadyStaging st tid true$' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_restarts($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# ...and it is the SAME field clear as the resume spelling, restart aside, so a
 # field added to one and not the other fails to elaborate.
 run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
@@ -11134,7 +11131,7 @@ run_check "INVARIANT" rg -n '^def restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Ke
 # same posture), so overwriting `x0`-`x5` there would destroy the very window
 # the restart is supposed to preserve.  `restoreToReady` is defined as the
 # `none`-staging instance and nothing else.
-run_check "INVARIANT" rg -n 'restoreToReadyStaging st tid none' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n 'restoreToReadyStaging st tid false' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # The invariant premise the staging needed: `contextMatchesCurrentOnCore` reads
 # only the CURRENT thread's saved context, so a write that moves
 # `registerContext` at a thread nobody is running is safe.  Stating the premise
@@ -11185,9 +11182,11 @@ run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_sur
 run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Model/KernelErrorWords.lean
-# Discriminants 35 (the former invalidCapPtr) and 37 (the former
-# allocationMisaligned) are retired and decode to none.
-run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37\]$' SeLe4n/Model/KernelErrorWords.lean
+# Discriminants 35 (the former invalidCapPtr), 37 (the former
+# allocationMisaligned) and 57 (the former ipcCancelled) are retired and decode
+# to none.
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37, 57\]$' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_ipcCancelled : ofDiscriminant\? 57 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Model/KernelErrorWords.lean
 run_negative_check "INVARIANT" rg -n '\binvalidCapPtr\b' SeLe4n/Model/KernelError.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Kernel/Architecture/RegisterDecode.lean
@@ -17288,7 +17287,7 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @propagatePipChainCrossCoreState_singleCore_eq_propagate
 #check @pipBoostOrdering_synchronizesWith
 #check @pipBoostOrdering_happensBefore
-#check @resumeReadyMidState_getTcb?_ready
+#check @resumeReadyMidState_getTcb?_restart
 #check @resumeReadyMidState_objects_invExt
 #check @resumeReadyMidState_scheduler_eq
 #check @SeLe4n.Kernel.preemptCurrentOnCore_getTcb?_ne_current

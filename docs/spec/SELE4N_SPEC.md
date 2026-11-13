@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.24` (`lakefile.toml`) |
+| **Package version** | `0.37.25` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 630,721 across 625 Lean files |
 | **Test LoC** | 89,711 across 70 Lean test suites |
@@ -3220,25 +3220,31 @@ the walk stops (`resolveAddressBitsWalk`) and answers that one level with the
 caller's continuations (`resolveAddressBitsLevel`), so a refused lookup of an
 invoked or an argument capability builds no result on the heap.
 
-**WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
-A thread taken out of a blocking IPC has no value to receive, and both
-unblocking paths staged nothing at all, so the SM10.1 context restore would
-have delivered its own argument spill back as a return value.  Both now stage,
-and they stage **different** errors because they are different facts:
-`timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` — a
-SchedContext budget expiring under a well-formed operation the caller may
-reissue) and `cancelIpcBlocking`'s four blocked arms stage
-`Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
-discriminant **57** — the operation was destroyed, so reissuing may be
-meaningless and a userspace library cannot write a correct retry against a
-conflated code).  seL4 answers this by setting the thread `Restart`; this
-kernel has no restart state, so the crossing has to end in a distinguishable
-error.  Two paths deliberately stage nothing: the `.ready` arm (the thread was
-not blocked) and `restoreToReady` itself, the *resume* spelling of the same
-field clear, because `.tcbResume` restarts a thread where it was and
-overwriting `x0`-`x5` would destroy the window the restart preserves.  The
-`KernelError` range is therefore `0..57` in Lean and in the three Rust crates
-that mirror it.
+**WS-RR RR7.14 (v0.34.67), restated by WS-SX SX4 (v0.37.25) — what a forcibly
+unblocked thread resumes with.**  A thread taken out of a blocking IPC has no
+value to receive.  A timed-out thread (`timeoutThread`) is staged
+`Architecture.timeoutFrame` (`.ipcTimeout`).  A cancelled one is set to restart,
+as seL4 sets it `ThreadState_Restart`: `cancelIpcBlocking`'s four blocked arms
+(`restoreToReadyCancelled`, `TCB.restoredToRestart`) and `cancelAllIPC`'s
+waiters (`cancelledEndpointWaiterTcb`) write `ThreadState.Restart` and move the
+thread's saved program counter to its restart PC (`TCB.restartPc`, seL4's
+`getRestartPC`): the `SVC` itself, four bytes before the PC its context resumes
+at, as `lel_syscall` stores `FaultIP = ELR - 4`, or for a thread blocked on its
+fault handler the fault's recorded `faultIp`.  The thread resumes at the `SVC`
+with its own arguments and re-issues the system call.  The model has one
+program counter, so the rewind is written when the thread leaves its blocked
+state rather than at activation (`activateThread`'s `setNextPC(getRestartPC)`):
+a rewind at activation would also rewind a Resume of a thread that was not in a
+system call, where seL4's `FaultIP` equals its `NextIP`.  Its user-visible PC is
+therefore seL4's `FaultIP` throughout.  The former `.ipcCancelled` error (and
+`cancelledIpcFrame`) is retired; its discriminant 57 is reserved
+(`KernelError.retiredDiscriminants = [35, 37, 57]`) and decodes to no error in
+Lean and in the three Rust crates.  Two paths move nothing: the `.ready` arm
+(the thread was not blocked) and `restoreToReady`, the resume spelling of the
+same field clear.  Resume sets `Restart` (seL4's `restart`), so a thread a
+suspend took out of a system call re-issues it once resumed.  A thread already
+`Inactive` stays so under the restart (`TCB.restoredToRestart`); no cancel
+reaches one.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*
@@ -5318,11 +5324,10 @@ thread, is blocked on that notification and is linked into no endpoint queue
 (`notificationWaiterCancellable`).  A refused step ends the walk, and the
 object, then not quiescent, is kept by the retire; the walk's fuel is the
 object table's size.  A cancelled waiter becomes `.ready` with no pending
-message or stashed reply and the `.ipcCancelled` frame staged
-(`Architecture.cancelledIpcFrame`), and is woken on its own core
-(`determineTargetCore`, `enqueueRunnableOnCore`).  seL4 sets the thread
-`Restart`, so it reissues its system call; this model's answer to a cancelled
-IPC is the `.ipcCancelled` frame, the one `cancelIpcBlocking` already gives.
+message or stashed reply, set to restart (`ThreadState.Restart`, its saved PC
+moved to its restart PC, `TCB.restartPc`), and is woken on its own core
+(`determineTargetCore`, `enqueueRunnableOnCore`), so it reissues its system
+call, as seL4's `cancelAllIPC` restarts it (`restart_thread_if_no_fault`).
 
 The finalisation keeps the IPC bundle, given that a lent context heads its
 lender's reply stack (`finaliseFinalObject_preserves_ipcInvariantFull`,
@@ -7685,9 +7690,10 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   resumes the incoming thread with the frame its TCB holds
   (`switchToThreadOnCore_delivers_readReturnFrame`, over the one reading
   `Architecture.RestoreTarget.deliveredFrame?`), since the switch's only object
-  write is the outgoing thread's context save; composed with RR7.14's staging, a
-  cancelled thread resumes reading `.ipcCancelled` and a timed-out one
-  `.ipcTimeout` (`restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame`,
+  write is the outgoing thread's context save; composed with the restart (WS-SX
+  SX4), a cancelled thread resumes at its `SVC` with its own arguments, and a
+  timed-out one reads `.ipcTimeout`
+  (`restoreToReadyCancelled_then_switch_resumes_at_restartPc`,
   `abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame`).  Witnesses:
   `tests/SmpCancellationSuite.lean` §3.19b and `tests/SmpTimerSuite.lean` §3.15b,
   each with a switch-before-unblock control.

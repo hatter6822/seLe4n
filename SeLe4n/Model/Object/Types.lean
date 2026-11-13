@@ -1361,7 +1361,7 @@ Previously, thread state was inferred from queue membership and `ThreadIpcState`
 This enum makes the state machine explicit, improving debuggability and
 enabling the `threadState_consistent` invariant predicate.
 
-The 8 states correspond to the seL4 thread model:
+The 9 states correspond to the seL4 thread model:
 - `Running`: Currently dispatched (is `scheduler.current`)
 - `Ready`: In the run queue, eligible for scheduling
 - `BlockedSend`: Blocked on endpoint send queue
@@ -1369,7 +1369,13 @@ The 8 states correspond to the seL4 thread model:
 - `BlockedCall`: Blocked on endpoint call (send then wait for reply)
 - `BlockedReply`: Blocked waiting for a reply after ReplyRecv (server-side)
 - `BlockedNotif`: Blocked waiting for notification
-- `Inactive`: Freshly created or cleaned up, not yet scheduled -/
+- `Inactive`: Freshly created or cleaned up, not yet scheduled
+- `Restart`: runnable, and re-running the system call it was blocked in — seL4's
+  `ThreadState_Restart` (WS-SX SX4).  A cancelled IPC (`cancelAllIPC`,
+  `cancelAllSignals`) and a resume (seL4's `restart`) set it; the thread's saved
+  program counter is its restart PC (`TCB.restartPc`), so the activation that
+  makes it run (`activateThread`'s `Restart` arm, `setNextPC(getRestartPC)`)
+  resumes it at the `SVC` it was blocked in. -/
 inductive ThreadState where
   | Running
   | Ready
@@ -1379,6 +1385,7 @@ inductive ThreadState where
   | BlockedReply
   | BlockedNotif
   | Inactive
+  | Restart
   deriving Repr, DecidableEq, Inhabited
 
 /-- Thread Control Block.
@@ -3219,6 +3226,51 @@ that, so single-sourcing the clear costs no existing proof. -/
               queueNextCode := 0
               queuePPrevCode := 0
               pendingReceiveReplyCode := 0 } none) .ready := rfl
+
+/-- WS-SX SX4: **the restart PC of a thread blocked in the kernel** — seL4's
+`getRestartPC`, the `FaultIP` register.  seL4's `lel_syscall` stores `ELR - 4`
+there on every `SVC`, so a thread blocked in a system call restarts at the `SVC`
+itself, four bytes before the program counter its saved context resumes at; a
+thread blocked on its fault handler restarts at the fault's own restart PC, the
+`FaultIP` the fault delivery recorded (`faultIp`). -/
+@[inline] def TCB.restartPc (t : TCB) : UInt64 :=
+  if t.faultWords.isFault then t.faultIp else t.registerContext.pc - 4
+
+/-- WS-SX SX4: **the state a cancel leaves a thread in** — `.Restart`, unless the
+thread is already `.Inactive`, which it stays (seL4 queues no `Inactive` thread,
+so no cancel reaches one; the guard keeps every cancel a write that wakes no
+suspended thread). -/
+@[inline] def TCB.restartState (t : TCB) : ThreadState :=
+  if t.threadState = .Inactive then .Inactive else .Restart
+
+/-- A cancel leaves a thread suspended exactly when it was. -/
+theorem TCB.restartState_ne_inactive_iff (t : TCB) :
+    t.restartState ≠ .Inactive ↔ t.threadState ≠ .Inactive := by
+  unfold TCB.restartState; split <;> simp_all
+
+/-- WS-SX SX4: **a thread whose blocked IPC was cancelled, set to restart** —
+seL4's `cancelIPC` / `cancelAllIPC` then `setThreadState(Restart)`: the IPC
+fields cleared as `restoredToReady` clears them (the fault record among them,
+as seL4-MCS's `cancelIPC` resets `tcbFault`), its saved program counter moved to
+its restart PC (`restartPc`, read before the clear), and its state `.Restart`.
+seL4's `activateThread` later sets the next PC to the restart PC; the model has
+one program counter and writes it here, so the thread resumes at the `SVC` and
+re-issues the system call, and its user-visible PC is seL4's `FaultIP` the
+whole time.
+
+A thread already `.Inactive` keeps that state: seL4 queues no `Inactive` thread
+on an endpoint or notification, so no cancel reaches one, and the restore stays a
+write that wakes no suspended thread (`RefillViewsKept.updateTcb`). -/
+@[inline] def TCB.restoredToRestart (t : TCB) : TCB :=
+  let p := t.restartPc
+  let c := t.restoredToReady
+  { c with registerContext := { c.registerContext with pc := p },
+           threadState := t.restartState }
+
+/-- A restarted thread is `.ready` in IPC, as a restored one is. -/
+@[simp] theorem TCB.restoredToRestart_ipcState (t : TCB) :
+    t.restoredToRestart.ipcState = .ready := by
+  simp [TCB.restoredToRestart]
 
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 

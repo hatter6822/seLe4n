@@ -507,7 +507,7 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
 theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReady st tid).objects.invExt :=
-  Lifecycle.Suspend.restoreToReadyStaging_invExt st tid none hInv
+  Lifecycle.Suspend.restoreToReadyStaging_invExt st tid false hInv
 
 /-- **WS-RR RR7.14**: the cancellation spelling. -/
 theorem restoreToReadyCancelled_preserves_objects_invExt (st : SystemState)
@@ -518,18 +518,17 @@ theorem restoreToReadyCancelled_preserves_objects_invExt (st : SystemState)
 /-- WS-RR RR2.18: `restoreToReady` at a high thread is invisible.
 
 **WS-RR RR7.14 (load-bearing)**: stated over `restoreToReadyStaging`, so the
-staged return frame is covered by the same argument — it is written *into the
-victim's own TCB*, the one object the premise already has as high, so an
-observer that cannot see the thread cannot see the frame it was handed either.
-Had the staging gone anywhere else (the machine register banks, say) this
-would not hold, and that is precisely why `writeReturnFrameToTcb` does not
-touch `machine`. -/
+restart (WS-SX SX4) is covered by the same argument — its program counter and
+state are written *into the victim's own TCB*, the one object the premise
+already has as high, so an observer that cannot see the thread cannot see its
+restart either.  Had the write gone anywhere else (the machine register banks,
+say) this would not hold. -/
 theorem restoreToReadyStaging_preserves_projection_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (tid : SeLe4n.ThreadId) (restart : Bool)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Lifecycle.Suspend.restoreToReadyStaging st tid frame)
+    projectState ctx observer (Lifecycle.Suspend.restoreToReadyStaging st tid restart)
       = projectState ctx observer st := by
   unfold Lifecycle.Suspend.restoreToReadyStaging SystemState.updateTcb
   split
@@ -544,10 +543,10 @@ theorem restoreToReady_preserves_projection_high
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Lifecycle.Suspend.restoreToReady st tid)
       = projectState ctx observer st :=
-  restoreToReadyStaging_preserves_projection_high ctx observer st tid none
+  restoreToReadyStaging_preserves_projection_high ctx observer st tid false
     hTidObjHigh hObjInv
 
-/-- **WS-RR RR7.14**: the cancellation spelling — the `.ipcCancelled` frame is
+/-- **WS-RR RR7.14**: the cancellation spelling — the restart (WS-SX SX4) is
 invisible to an observer who cannot see the cancelled thread. -/
 theorem restoreToReadyCancelled_preserves_projection_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)

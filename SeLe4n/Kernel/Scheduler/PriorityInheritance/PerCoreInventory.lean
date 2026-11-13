@@ -249,8 +249,8 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       restoreToReadyWithWake_sgi_is_reschedule .resume,
     ppit! "restoreToReadyWithWake_preserves_objects_invExt: cross-core resume preserves invExt"
       restoreToReadyWithWake_preserves_objects_invExt .resume,
-    ppit! "resumeReadyMidState_getTcb?_ready: the resume mid-state's TCB is .Ready (SM5.F.6)"
-      resumeReadyMidState_getTcb?_ready .resume,
+    ppit! "resumeReadyMidState_getTcb?_restart: the resume mid-state's TCB is .Restart (SM5.F.6, SX4)"
+      resumeReadyMidState_getTcb?_restart .resume,
     ppit! "resumeReadyMidState_objects_invExt: the resume mid-state preserves the object-store invariant"
       resumeReadyMidState_objects_invExt .resume,
     ppit! "resumeReadyMidState_scheduler_eq: the resume mid-state leaves the scheduler untouched (P2-5)"
@@ -261,7 +261,7 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       switchToThreadOnCore_getTcb?_ne_current .resume,
     ppit! "handleRescheduleSgiOnCore_getTcb?_ne_current: the SGI handler frames out any non-current thread (P2-5)"
       handleRescheduleSgiOnCore_getTcb?_ne_current .resume,
-    ppit! "resumeThreadOnCore_sets_threadState: every successful per-core resume leaves the thread .Ready (SM5.F.6)"
+    ppit! "resumeThreadOnCore_sets_threadState: every successful per-core resume leaves the thread .Restart (SM5.F.6, SX4)"
       resumeThreadOnCore_sets_threadState .resume,
     ppit! "resumeThreadOnCore_preserves_objects_invExt: the complete resume preserves the object-store invariant"
       resumeThreadOnCore_preserves_objects_invExt .resume,

@@ -149,7 +149,7 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restor
 #check @pipBoostOrdering_synchronizesWith
 #check @pipBoostOrdering_happensBefore
 -- SM5.F.6 complete per-core resume:
-#check @resumeReadyMidState_getTcb?_ready
+#check @resumeReadyMidState_getTcb?_restart
 #check @resumeReadyMidState_objects_invExt
 #check @resumeThreadOnCore_sets_threadState
 #check @resumeThreadOnCore_preserves_objects_invExt

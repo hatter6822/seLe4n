@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.25, its reply-not-free cancel open)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -180,7 +180,17 @@ fault in the receive phase. **Standing constraints for new code:** a receive
 arm's reply capability is resolved only through `lookupReplyCap` (its K form
 `lookupReplyCapK`); whether a refusal is the reply capability's fault is decided
 by re-running that lookup (`receiveReplyFaults`, `replyLookupRefusal`), never by
-the refusal's form alone. SX4 is the next cut.
+the refusal's form alone.
+SX4 (`v0.37.25`) made a cancelled IPC restart its system call: the cancelled
+thread is `ThreadState.Restart` with its saved PC at its restart PC
+(`TCB.restartPc`, seL4's `getRestartPC`), and Resume sets `Restart`;
+`ipcCancelled` is retired (57 reserved). The receive whose reply object is not
+free still refuses; its `cancelIPC(replyTCB)` stays open in the SX4.1 row.
+**Standing constraints for new code:** a path that takes a thread out of a
+blocked system call and means it to re-issue the call writes it through
+`TCB.restoredToRestart` (the restart PC is written when the thread leaves its
+blocked state, never at activation); no new code returns an error to a
+cancelled thread.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

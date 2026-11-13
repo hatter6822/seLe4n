@@ -160,7 +160,7 @@ theorem resumeReadyMidState_readyNoFault (st : SystemState) (t : SeLe4n.ThreadId
       x.ipcState = .ready ∧ x.pendingFault = none := by
   intro x hx
   have hI1 : (Lifecycle.Suspend.restoreToReady st t).objects.invExt :=
-    (RecordsStep.restoreToReadyStaging st t none hInv).invExt
+    (RecordsStep.restoreToReadyStaging st t false hInv).invExt
   unfold Lifecycle.Suspend.resumeReadyMidState at hx
   dsimp only at hx
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1] at hx
@@ -179,12 +179,12 @@ namespace RecordsStep
 /-- The resume's ready mark: the restore, then the thread state and boost. -/
 theorem resumeReadyMidState (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     RecordsStep st (Lifecycle.Suspend.resumeReadyMidState st t) := by
-  have S := restoreToReadyStaging st t none hInv
+  have S := restoreToReadyStaging st t false hInv
   unfold Lifecycle.Suspend.resumeReadyMidState
   dsimp only
   refine S.trans (updateTcb _ t S.invExt fun x hx => TcbStaysParked.of_noFault ?_)
   have := (threadHasPendingFault_eq_false_iff _ _).mp
-    (threadHasPendingFault_restoreToReadyStaging st t none hInv) x hx
+    (threadHasPendingFault_restoreToReadyStaging st t false hInv) x hx
   exact this
 
 /-- **The thread resume keeps the records**: the ready mark retires the fault

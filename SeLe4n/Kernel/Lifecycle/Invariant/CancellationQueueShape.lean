@@ -302,21 +302,18 @@ theorem sweptQueue_wellFormed
 
 /-- **WS-RR RR7.22 (residual)**: the TCB `restoreToReadyStaging` installs, named
 so proofs can quantify over it. -/
-def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : TCB :=
-  let cleared : TCB := tcb.restoredToReady
-  match frame with
-  | some f => cleared.withReturnFrame f
-  | none => cleared
+def restoredTcb (tcb : TCB) (restart : Bool) : TCB :=
+  if restart then tcb.restoredToRestart else tcb.restoredToReady
 
 /-- The restore *is* that store — the lookup-then-write reading of the in-place
 rewrite `SystemState.updateTcb` the restore is spelled with (the rewrite's
 proof argument is what the raw spelling lacks, and it is erased here). -/
 theorem restoreToReadyStaging_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    Lifecycle.Suspend.restoreToReadyStaging st tid frame =
+    (restart : Bool) :
+    Lifecycle.Suspend.restoreToReadyStaging st tid restart =
       (match st.getTcb? tid with
        | some tcb =>
-         { st with objects := st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) }
+         { st with objects := st.objects.insert tid.toObjId (.tcb (restoredTcb tcb restart)) }
        | none => st) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   cases hT : st.getTcb? tid with
@@ -324,72 +321,74 @@ theorem restoreToReadyStaging_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]
 
 /-- **The complete description**: the restored TCB is the original with exactly
-seven fields rewritten — the six the clear names (WS-ZA ZA6.22 added the fault
-record), and `registerContext`, which the staged frame owns and which no
-invariant conjunct reads.  Stated as one record
+eight fields rewritten — the six the clear names (WS-ZA ZA6.22 added the fault
+record), and the two a restart writes (WS-SX SX4): `registerContext`, whose PC
+moves back to the restart PC, and `threadState`, set to `.Restart`.  No
+invariant conjunct reads either.  Stated as one record
 update rather than as a list of fields that agree, so a field added to `TCB` is
 covered by construction. -/
-theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) :
-    restoredTcb tcb frame =
+theorem restoredTcb_eq (tcb : TCB) (restart : Bool) :
+    restoredTcb tcb restart =
       (TCB.setIpcState
         { TCB.setPendingFault { tcb with
             queuePrevCode := 0
             queueNextCode := 0
             queuePPrevCode := 0
             pendingReceiveReplyCode := 0 } none with
-          registerContext := (restoredTcb tcb frame).registerContext } .ready) := by
-  unfold restoredTcb; cases frame <;> rfl
+          registerContext := (restoredTcb tcb restart).registerContext
+          threadState := (restoredTcb tcb restart).threadState } .ready) := by
+  unfold restoredTcb; cases restart <;> rfl
 
 @[simp] theorem restoredTcb_ipcState (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).ipcState = .ready := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).ipcState = .ready := by
+  unfold restoredTcb; cases restart <;> rfl
 
 @[simp] theorem restoredTcb_queuePrev (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).queuePrev = none := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).queuePrev = none := by
+  unfold restoredTcb; cases restart <;> rfl
 
 @[simp] theorem restoredTcb_queueNext (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).queueNext = none := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).queueNext = none := by
+  unfold restoredTcb; cases restart <;> rfl
 
 @[simp] theorem restoredTcb_queuePPrev (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).queuePPrev = none := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).queuePPrev = none := by
+  unfold restoredTcb; cases restart <;> rfl
 
 @[simp] theorem restoredTcb_pendingReceiveReply (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).pendingReceiveReply = none := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).pendingReceiveReply = none := by
+  unfold restoredTcb; cases restart <;> rfl
 
 /-- **WS-RR RR8.7**: the restore leaves the reply link alone.  The sibling of the
 five clears above, for the one field of the six the restore does *not* write and
 that the reply-linkage conjunct reads. -/
 @[simp] theorem restoredTcb_replyObject (tcb : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoredTcb tcb frame).replyObject = tcb.replyObject := by
-  unfold restoredTcb; cases frame <;> rfl
+    (restart : Bool) :
+    (restoredTcb tcb restart).replyObject = tcb.replyObject := by
+  unfold restoredTcb; cases restart <;> rfl
 
 theorem restoreToReadyStaging_objects_self (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcb : TCB)
+    (restart : Bool) (tcb : TCB)
     (hInv : st.objects.invExt) (hTcb : st.getTcb? tid = some tcb) :
-    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).objects[tid.toObjId]?
-      = some (.tcb (restoredTcb tcb frame)) := by
+    (Lifecycle.Suspend.restoreToReadyStaging st tid restart).objects[tid.toObjId]?
+      = some (.tcb (restoredTcb tcb restart)) := by
   rw [restoreToReadyStaging_eq, hTcb]
   exact RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv
 
 theorem restoreToReadyStaging_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (k : SeLe4n.ObjId)
+    (restart : Bool) (k : SeLe4n.ObjId)
     (hInv : st.objects.invExt) (hNe : k ≠ tid.toObjId) :
-    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).objects[k]? = st.objects[k]? := by
+    (Lifecycle.Suspend.restoreToReadyStaging st tid restart).objects[k]? = st.objects[k]? := by
   rw [restoreToReadyStaging_eq]
   cases hTcb : st.getTcb? tid with
   | none => rfl
   | some tcb =>
-    show (st.objects.insert tid.toObjId (KernelObject.tcb (restoredTcb tcb frame))).get? k
+    show (st.objects.insert tid.toObjId (KernelObject.tcb (restoredTcb tcb restart))).get? k
         = st.objects[k]?
     exact RHTable.getElem?_insert_ne st.objects tid.toObjId k _
       (by simpa using fun h => hNe h.symm) hInv
@@ -438,36 +437,36 @@ theorem notQueueBlocked_bounds_no_endpoint_queue
 produces before the deschedule — sweep, then restore.
 
 Parameterised by the staged frame so the plain restore (`resumeThread`'s
-spelling) and the cancellation restore (`.ipcCancelled`) are one subject; the
+spelling) and the cancellation restore (set to restart) are one subject; the
 queue shape does not depend on which frame is staged, and saying so once is what
 keeps the two spellings from acquiring two answers. -/
 def sweptAndRestored (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
-  Lifecycle.Suspend.restoreToReadyStaging (removeFromAllEndpointQueues st v) v frame
+    (restart : Bool) : SystemState :=
+  Lifecycle.Suspend.restoreToReadyStaging (removeFromAllEndpointQueues st v) v restart
 
 /-- Away from the swept thread, the composite's TCB readings are the splice's —
 the sweep writes only endpoints and the restore writes only the swept thread. -/
 theorem sweptAndRestored_tcb_iff (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t : TCB) (hNe : k ≠ v.toObjId) :
-    ((sweptAndRestored st v frame).objects[k]? = some (.tcb t)) ↔
+    ((sweptAndRestored st v restart).objects[k]? = some (.tcb t)) ↔
       ((spliceOutMidQueueNode st v).objects[k]? = some (.tcb t)) := by
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
     spliceOutMidQueueNode_preserves_objects_invExt st v hInv
   have hExt2 : (removeFromAllEndpointQueues st v).objects.invExt :=
     removeFromAllEndpointQueues_preserves_objects_invExt st v hInv
   unfold sweptAndRestored
-  rw [restoreToReadyStaging_objects_ne _ v frame k hExt2 hNe]
+  rw [restoreToReadyStaging_objects_ne _ v restart k hExt2 hNe]
   exact ⟨fun h => removeFromAllEndpointQueues_tcb_source st v hExt1 k t h,
     fun h => removeFromAllEndpointQueues_tcb_frame st v hExt1 k t h⟩
 
 /-- At the swept thread, the composite holds the restored TCB — every link
 `none`, `ipcState` `.ready`. -/
 theorem sweptAndRestored_victim_tcb (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    (sweptAndRestored st v frame).objects[v.toObjId]? = some (.tcb (restoredTcb tcbV frame)) := by
+    (sweptAndRestored st v restart).objects[v.toObjId]? = some (.tcb (restoredTcb tcbV restart)) := by
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
     spliceOutMidQueueNode_preserves_objects_invExt st v hInv
   have hExt2 : (removeFromAllEndpointQueues st v).objects.invExt :=
@@ -476,7 +475,7 @@ theorem sweptAndRestored_victim_tcb (st : SystemState) (v : SeLe4n.ThreadId)
     spliceOutMidQueueNode_victim_tcb st v tcbV hInv hLink hAcyc hLookup
   have h2 : (removeFromAllEndpointQueues st v).objects[v.toObjId]? = some (.tcb tcbV) :=
     removeFromAllEndpointQueues_tcb_frame st v hExt1 v.toObjId tcbV h1
-  exact restoreToReadyStaging_objects_self _ v frame tcbV hExt2
+  exact restoreToReadyStaging_objects_self _ v restart tcbV hExt2
     ((SystemState.getTcb?_eq_some_iff _ v tcbV).mpr h2)
 
 -- ============================================================================
@@ -498,16 +497,16 @@ uniqueness forward integrity forces (a target has exactly one source), or the
 case hypothesis itself. -/
 theorem sweptAndRestored_tcbQueueLinkIntegrity
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    tcbQueueLinkIntegrity (sweptAndRestored st v frame) := by
+    tcbQueueLinkIntegrity (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hIff : ∀ (a : SeLe4n.ThreadId) (t : TCB), a ≠ v →
-      (((sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb t)) ↔
+      (((sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb t)) ↔
         ((spliceOutMidQueueNode st v).objects[a.toObjId]? = some (.tcb t))) := by
     intro a t hav
-    exact sweptAndRestored_tcb_iff st v frame hInv a.toObjId t
+    exact sweptAndRestored_tcb_iff st v restart hInv a.toObjId t
       (fun h => hav (SeLe4n.ThreadId.toObjId_injective _ _ h))
   -- The swept thread is not its own neighbour.
   have hNextNeV : ∀ n, tcbV.queueNext = some n → n ≠ v := by
@@ -525,7 +524,7 @@ theorem sweptAndRestored_tcbQueueLinkIntegrity
   -- Pull a non-swept TCB back to the pre-state, keeping one link field.
   have nextOf : ∀ (a : SeLe4n.ThreadId) (tA : TCB), a ≠ v →
       (∀ p, tcbV.queuePrev = some p → p.toObjId ≠ a.toObjId) →
-      (sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb tA) →
+      (sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb tA) →
       ∃ t0, st.objects[a.toObjId]? = some (.tcb t0) ∧ tA.queueNext = t0.queueNext := by
     intro a tA hav hNe hA
     obtain ⟨t0, h0, _⟩ := spliceOutMidQueueNode_tcb_backward st v a.toObjId tA hInv
@@ -537,7 +536,7 @@ theorem sweptAndRestored_tcbQueueLinkIntegrity
     exact ⟨t0, h0, by rw [← this]; exact hf⟩
   have prevOf : ∀ (a : SeLe4n.ThreadId) (tA : TCB), a ≠ v →
       (∀ n, tcbV.queueNext = some n → n.toObjId ≠ a.toObjId) →
-      (sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb tA) →
+      (sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb tA) →
       ∃ t0, st.objects[a.toObjId]? = some (.tcb t0) ∧ tA.queuePrev = t0.queuePrev := by
     intro a tA hav hNe hA
     obtain ⟨t0, h0, _⟩ := spliceOutMidQueueNode_tcb_backward st v a.toObjId tA hInv
@@ -551,8 +550,8 @@ theorem sweptAndRestored_tcbQueueLinkIntegrity
   · -- forward: a live `queueNext` has a reciprocal `queuePrev`
     intro a tA hA b hAB
     by_cases hav : a = v
-    · rw [hav, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hA
-      have hEqT : restoredTcb tcbV frame = tA := KernelObject.tcb.inj (Option.some.inj hA)
+    · rw [hav, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hA
+      have hEqT : restoredTcb tcbV restart = tA := KernelObject.tcb.inj (Option.some.inj hA)
       rw [← hEqT, restoredTcb_queueNext] at hAB
       cases hAB
     · by_cases hprev : tcbV.queuePrev = some a
@@ -591,8 +590,8 @@ theorem sweptAndRestored_tcbQueueLinkIntegrity
   · -- reverse: a live `queuePrev` has a reciprocal `queueNext`
     intro b tB hB a hBA
     by_cases hbv : b = v
-    · rw [hbv, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hB
-      have hEqT : restoredTcb tcbV frame = tB := KernelObject.tcb.inj (Option.some.inj hB)
+    · rw [hbv, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hB
+      have hEqT : restoredTcb tcbV restart = tB := KernelObject.tcb.inj (Option.some.inj hB)
       rw [← hEqT, restoredTcb_queuePrev] at hBA
       cases hBA
     · by_cases hnext : tcbV.queueNext = some b
@@ -641,26 +640,26 @@ This is the whole content of acyclicity preservation: the composite adds no
 reachability the pre-state did not already have. -/
 theorem sweptAndRestored_edge_source
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (x y : SeLe4n.ThreadId) (tX : TCB)
-    (hX : (sweptAndRestored st v frame).objects[x.toObjId]? = some (.tcb tX))
+    (hX : (sweptAndRestored st v restart).objects[x.toObjId]? = some (.tcb tX))
     (hXY : tX.queueNext = some y) :
     (∃ t0, st.objects[x.toObjId]? = some (.tcb t0) ∧ t0.queueNext = some y) ∨
       (∃ t0, st.objects[x.toObjId]? = some (.tcb t0) ∧ t0.queueNext = some v ∧
         tcbV.queueNext = some y) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hIff : ∀ (a : SeLe4n.ThreadId) (t : TCB), a ≠ v →
-      (((sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb t)) ↔
+      (((sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb t)) ↔
         ((spliceOutMidQueueNode st v).objects[a.toObjId]? = some (.tcb t))) := by
     intro a t hav
-    exact sweptAndRestored_tcb_iff st v frame hInv a.toObjId t
+    exact sweptAndRestored_tcb_iff st v restart hInv a.toObjId t
       (fun h => hav (SeLe4n.ThreadId.toObjId_injective _ _ h))
   by_cases hxv : x = v
   · exfalso
-    rw [hxv, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hX
-    have hEqT : restoredTcb tcbV frame = tX := KernelObject.tcb.inj (Option.some.inj hX)
+    rw [hxv, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hX
+    have hEqT : restoredTcb tcbV restart = tX := KernelObject.tcb.inj (Option.some.inj hX)
     rw [← hEqT, restoredTcb_queueNext] at hXY
     cases hXY
   · by_cases hprev : tcbV.queuePrev = some x
@@ -686,20 +685,20 @@ theorem sweptAndRestored_edge_source
 the pre-state. -/
 theorem sweptAndRestored_path_transport
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
-    {x y : SeLe4n.ThreadId} (h : QueueNextPath (sweptAndRestored st v frame) x y) :
+    {x y : SeLe4n.ThreadId} (h : QueueNextPath (sweptAndRestored st v restart) x y) :
     QueueNextPath st x y := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   induction h with
   | single a b tA hA hAB =>
-    rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup a b tA hA hAB with
+    rcases sweptAndRestored_edge_source st v restart tcbV hInv hLink hAcyc hLookup a b tA hA hAB with
       ⟨t0, h0, hn⟩ | ⟨t0, h0, hn, hv⟩
     · exact .single a b t0 h0 hn
     · exact .cons a v b t0 h0 hn (.single v b tcbV hVObj hv)
   | cons a b c tA hA hAB _ ih =>
-    rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup a b tA hA hAB with
+    rcases sweptAndRestored_edge_source st v restart tcbV hInv hLink hAcyc hLookup a b tA hA hAB with
       ⟨t0, h0, hn⟩ | ⟨t0, h0, hn, hv⟩
     · exact .cons a b c t0 h0 hn ih
     · exact .cons a v c t0 h0 hn (.cons v b c tcbV hVObj hv ih)
@@ -707,11 +706,11 @@ theorem sweptAndRestored_path_transport
 /-- **WS-RR RR7.22 (residual)**: the composite preserves `tcbQueueChainAcyclic`. -/
 theorem sweptAndRestored_tcbQueueChainAcyclic
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    tcbQueueChainAcyclic (sweptAndRestored st v frame) := fun a hPath =>
-  hAcyc a (sweptAndRestored_path_transport st v frame tcbV hInv hLink hAcyc hLookup hPath)
+    tcbQueueChainAcyclic (sweptAndRestored st v restart) := fun a hPath =>
+  hAcyc a (sweptAndRestored_path_transport st v restart tcbV hInv hLink hAcyc hLookup hPath)
 
 -- ============================================================================
 -- §7  The dual-queue invariant, assembled
@@ -749,28 +748,28 @@ carries it — which is where the two link fields are shown to travel together, 
 three link fields, and a `queuePPrev` of `none` constrains nothing. -/
 theorem sweptAndRestored_queuePPrevAgreesWithPrev
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hPP : queuePPrevAgreesWithPrev st) :
-    queuePPrevAgreesWithPrev (sweptAndRestored st v frame) := by
+    queuePPrevAgreesWithPrev (sweptAndRestored st v restart) := by
   intro a t hT
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
     lookupTcb_some_objects st v tcbV hLookup
   by_cases hav : a = v
-  · rw [hav, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hT
-    have hEq : restoredTcb tcbV frame = t := by injection hT with hObj; injection hObj
+  · rw [hav, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hT
+    have hEq : restoredTcb tcbV restart = t := by injection hT with hObj; injection hObj
     subst hEq
     -- `v0.35.99`: the restored victim claims BOTH back-pointers cleared — with
     -- the pairing's `none` arm strengthened, carrying no `queuePPrev` is the
     -- claim that the thread is on no queue, so `queuePrev` must be gone too.
-    exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
-      (restoredTcb_queuePrev tcbV frame)
+    exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV restart)
+      (restoredTcb_queuePrev tcbV restart)
   · -- Away from the swept thread the composite's TCB view is the splice's.
     have hNeObj : a.toObjId ≠ v.toObjId :=
       fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq)
     exact spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev st v hInv hPP a t
-      ((sweptAndRestored_tcb_iff st v frame hInv a.toObjId t hNeObj).mp hT)
+      ((sweptAndRestored_tcb_iff st v restart hInv a.toObjId t hNeObj).mp hT)
 
 /-- **WS-RR RR7.22 (residual)**: the composite preserves the whole dual-queue
 system invariant.
@@ -784,11 +783,11 @@ from §5, and acyclicity from §6.
 `hCoh` is the fact the bundle does not entail; see the module header. -/
 theorem sweptAndRestored_dualQueueSystemInvariant
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hDual : dualQueueSystemInvariant st)
     (hLookup : lookupTcb st v = some tcbV)
     (hCoh : sweptThreadBoundaryCoherent st v) :
-    dualQueueSystemInvariant (sweptAndRestored st v frame) := by
+    dualQueueSystemInvariant (sweptAndRestored st v restart) := by
   obtain ⟨hEps, hLink, hAcyc, hPPair, hHD⟩ := hDual
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
@@ -820,13 +819,13 @@ theorem sweptAndRestored_dualQueueSystemInvariant
     exact hAcyc v (.single v v tcbV hVObj hAN)
   -- Away from the swept thread the restore changes nothing.
   have hAgree : ∀ k : SeLe4n.ObjId, k ≠ v.toObjId →
-      (sweptAndRestored st v frame).objects[k]? = (removeFromAllEndpointQueues st v).objects[k]? :=
-    fun k hk => restoreToReadyStaging_objects_ne _ v frame k hExt2 hk
+      (sweptAndRestored st v restart).objects[k]? = (removeFromAllEndpointQueues st v).objects[k]? :=
+    fun k hk => restoreToReadyStaging_objects_ne _ v restart k hExt2 hk
   -- **PR #897 review (`v0.35.106`)**: the fifth conjunct.  The sweep may rewrite
   -- *every* endpoint, so this is the general shape: each post-state head is either
   -- the head that queue already had, or the swept thread's successor — and the
   -- successor has a predecessor in the pre-state, so it headed nothing there.
-  have hHDPost : endpointQueueHeadDisjoint (sweptAndRestored st v frame) := by
+  have hHDPost : endpointQueueHeadDisjoint (sweptAndRestored st v restart) := by
     refine endpointQueueHeadDisjoint_of_freshHeads
       (freshAt := fun k r hd => (∃ e, st.objects[k]? = some (.endpoint e) ∧
         (if r then e.receiveQ else e.sendQ).head = some v) ∧ tcbV.queueNext = some hd)
@@ -839,7 +838,7 @@ theorem sweptAndRestored_dualQueueSystemInvariant
     · intro k ep r hd hEp hHead
       have hEpNe : k ≠ v.toObjId := by
         intro hEq
-        rw [hEq, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hEp
+        rw [hEq, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hEp
         cases hEp
       have hEp2 : (removeFromAllEndpointQueues st v).objects[k]? = some (.endpoint ep) := by
         rw [← hAgree k hEpNe]; exact hEp
@@ -873,15 +872,15 @@ theorem sweptAndRestored_dualQueueSystemInvariant
           exact Or.inr ⟨⟨ep0, hEp0St, by simpa using hv⟩, hHead⟩
         · rw [if_neg hv] at hHead
           exact Or.inl ⟨ep0, hEp0St, by simpa using hHead⟩
-  refine ⟨?_, sweptAndRestored_tcbQueueLinkIntegrity st v frame tcbV hInv hLink hAcyc hLookup,
-    sweptAndRestored_tcbQueueChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup,
-    sweptAndRestored_queuePPrevAgreesWithPrev st v frame tcbV hInv hLink hAcyc hLookup hPPair,
+  refine ⟨?_, sweptAndRestored_tcbQueueLinkIntegrity st v restart tcbV hInv hLink hAcyc hLookup,
+    sweptAndRestored_tcbQueueChainAcyclic st v restart tcbV hInv hLink hAcyc hLookup,
+    sweptAndRestored_queuePPrevAgreesWithPrev st v restart tcbV hInv hLink hAcyc hLookup hPPair,
     hHDPost⟩
   intro epId ep hEp
   -- The endpoint key is not the swept thread's.
   have hEpNe : epId ≠ v.toObjId := by
     intro hEq
-    rw [hEq, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hEp
+    rw [hEq, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hEp
     cases hEp
   have hEp2 : (removeFromAllEndpointQueues st v).objects[epId]? = some (.endpoint ep) := by
     rw [← hAgree epId hEpNe]; exact hEp
@@ -925,22 +924,22 @@ not touch discharges by `rfl` and a field added to `TCB` is covered by
 construction. -/
 theorem sweptAndRestored_tcb_pullback
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (k : SeLe4n.ObjId) (tA : TCB)
-    (h : (sweptAndRestored st v frame).objects[k]? = some (.tcb tA)) :
+    (h : (sweptAndRestored st v restart).objects[k]? = some (.tcb tA)) :
     ∃ t0, st.objects[k]? = some (.tcb t0) ∧
       ((k ≠ v.toObjId ∧ tcbQueueLinkRewrite tA t0) ∨
-        (k = v.toObjId ∧ tA = restoredTcb t0 frame)) := by
+        (k = v.toObjId ∧ tA = restoredTcb t0 restart)) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   by_cases hk : k = v.toObjId
   · subst hk
-    rw [sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at h
-    have hEqT : restoredTcb tcbV frame = tA := KernelObject.tcb.inj (Option.some.inj h)
+    rw [sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at h
+    have hEqT : restoredTcb tcbV restart = tA := KernelObject.tcb.inj (Option.some.inj h)
     exact ⟨tcbV, hVObj, Or.inr ⟨rfl, hEqT.symm⟩⟩
   · obtain ⟨t0, h0, hr⟩ := spliceOutMidQueueNode_tcb_backward st v k tA hInv
-      ((sweptAndRestored_tcb_iff st v frame hInv k tA hk).mp h)
+      ((sweptAndRestored_tcb_iff st v restart hInv k tA hk).mp h)
     exact ⟨t0, h0, Or.inl ⟨hk, hr⟩⟩
 
 /-- The endpoint sweep writes only endpoints, so a non-endpoint reading is the
@@ -1138,12 +1137,12 @@ exactly as it found it — which is what carries the notification, CNode, Reply 
 SchedContext conjuncts across without an argument of their own. -/
 theorem sweptAndRestored_nonTcbNonEndpoint
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (k : SeLe4n.ObjId) (o : KernelObject)
     (hNotTcb : ∀ t, o ≠ .tcb t) (hNotEp : ∀ e, o ≠ .endpoint e) :
-    ((sweptAndRestored st v frame).objects[k]? = some o) ↔ (st.objects[k]? = some o) := by
+    ((sweptAndRestored st v restart).objects[k]? = some o) ↔ (st.objects[k]? = some o) := by
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
     spliceOutMidQueueNode_preserves_objects_invExt st v hInv
   have hExt2 : (removeFromAllEndpointQueues st v).objects.invExt :=
@@ -1152,20 +1151,20 @@ theorem sweptAndRestored_nonTcbNonEndpoint
   · subst hkv
     constructor
     · intro hx
-      rw [sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hx
+      rw [sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hx
       exact absurd (Option.some.inj hx).symm (hNotTcb _)
     · intro hx
       rw [lookupTcb_some_objects st v tcbV hLookup] at hx
       exact absurd (Option.some.inj hx).symm (hNotTcb tcbV)
   · unfold sweptAndRestored
-    rw [restoreToReadyStaging_objects_ne _ v frame k hExt2 hkv]
+    rw [restoreToReadyStaging_objects_ne _ v restart k hExt2 hkv]
     exact (removeFromAllEndpointQueues_nonEndpoint st v hExt1 k o hNotEp).trans
       (spliceOutMidQueueNode_nonTcb st v hInv k o hNotTcb)
 
 /-- The composite touches no scheduler state. -/
 theorem sweptAndRestored_scheduler_eq (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (sweptAndRestored st v frame).scheduler = st.scheduler := by
+    (restart : Bool) :
+    (sweptAndRestored st v restart).scheduler = st.scheduler := by
   unfold sweptAndRestored
   rw [Lifecycle.Suspend.restoreToReadyStaging_scheduler_eq,
     removeFromAllEndpointQueues_scheduler_eq]
@@ -1198,25 +1197,25 @@ theorem spliceOutMidQueueNode_tcb_forward (st : SystemState) (tid : SeLe4n.Threa
 
 /-- The composite, read forwards away from the swept thread. -/
 theorem sweptAndRestored_tcb_forward (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame)
+    (restart : Bool)
     (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (t0 : TCB) (hkv : k ≠ v.toObjId)
     (h : st.objects[k]? = some (.tcb t0)) :
-    ∃ t', (sweptAndRestored st v frame).objects[k]? = some (.tcb t') ∧
+    ∃ t', (sweptAndRestored st v restart).objects[k]? = some (.tcb t') ∧
       tcbQueueLinkRewrite t' t0 := by
   obtain ⟨t1, h1, hr⟩ := spliceOutMidQueueNode_tcb_forward st v hInv k t0 h
-  exact ⟨t1, (sweptAndRestored_tcb_iff st v frame hInv k t1 hkv).mpr h1, hr⟩
+  exact ⟨t1, (sweptAndRestored_tcb_iff st v restart hInv k t1 hkv).mpr h1, hr⟩
 
 /-- The composite rebinds no SchedContext. -/
 theorem sweptAndRestored_sameSchedContextBindings
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    sameSchedContextBindings st (sweptAndRestored st v frame) := by
+    sameSchedContextBindings st (sweptAndRestored st v restart) := by
   intro tid tcb' hTcb'
   obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+    sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   refine ⟨t0, h0, ?_⟩
   rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · rfl
@@ -1225,13 +1224,13 @@ theorem sweptAndRestored_sameSchedContextBindings
 /-- The composite frames every thread's timeout budget. -/
 theorem sweptAndRestored_timeoutBudgetFrame
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    timeoutBudgetFrame st (sweptAndRestored st v frame) := by
+    timeoutBudgetFrame st (sweptAndRestored st v restart) := by
   intro tid tcb' hTcb'
   obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+    sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   refine ⟨t0, h0, ?_⟩
   rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · rfl
@@ -1242,15 +1241,15 @@ is not itself a donation owner — which the blocked-on-endpoint arm supplies,
 since an owner is `.blockedOnReply`. -/
 theorem sweptAndRestored_donationOwnerFrame
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt) :
-    donationOwnerFrame st (sweptAndRestored st v frame) := by
+    donationOwnerFrame st (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   refine ⟨?_, ?_⟩
   · intro scId sc hsc
-    exact ⟨sc, (sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+    exact ⟨sc, (sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
       scId.toObjId (.schedContext sc) (by simp) (by simp)).mpr hsc, rfl⟩
   · intro owner ownerTcb hOwner hUnbound hBlocked
     have hne : owner.toObjId ≠ v.toObjId := by
@@ -1260,7 +1259,7 @@ theorem sweptAndRestored_donationOwnerFrame
       obtain ⟨ep, rt, hb⟩ := hBlocked
       rw [hx] at hb
       exact hNotReply ep rt hb
-    obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v frame hInv
+    obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v restart hInv
       owner.toObjId ownerTcb hne hOwner
     obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hr
     exact ⟨_, h1, hUnbound, hBlocked⟩
@@ -1270,18 +1269,18 @@ reply object — which the blocked-on-endpoint arm supplies, since a linked thre
 is `.blockedOnReply` by reciprocity. -/
 theorem sweptAndRestored_replyLinkageFrame
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hUnlinked : tcbV.replyObject = none) :
-    replyLinkageFrame st (sweptAndRestored st v frame) := by
+    replyLinkageFrame st (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   refine ⟨replyLinkageFrame.callerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
-  · exact sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+  · exact sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
       rid.toObjId (.reply r) (by simp) (by simp)
   · intro tid tcb' hTcb'
     obtain ⟨t0, h0, hcase⟩ :=
-      sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+      sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
     refine ⟨t0, h0, ?_⟩
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
     · rfl
@@ -1293,7 +1292,7 @@ theorem sweptAndRestored_replyLinkageFrame
       have hx : tcb = tcbV := (KernelObject.tcb.inj (Option.some.inj hTcb)).symm
       rw [hx, hUnlinked] at hRO
       cases hRO
-    obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v frame hInv
+    obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v restart hInv
       tid.toObjId tcb hne hTcb
     obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hr
     exact ⟨_, h1, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
@@ -1307,11 +1306,11 @@ consumes: each queue is the pre-state's with the swept thread's boundary
 occurrences advanced past it, and nothing else moved. -/
 theorem sweptAndRestored_endpoint_queues
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (epId : SeLe4n.ObjId) (ep : Endpoint)
-    (h : (sweptAndRestored st v frame).objects[epId]? = some (.endpoint ep)) :
+    (h : (sweptAndRestored st v restart).objects[epId]? = some (.endpoint ep)) :
     ∃ ep0, st.objects[epId]? = some (.endpoint ep0) ∧
       ep.sendQ =
         { head := if ep0.sendQ.head = some v then tcbV.queueNext else ep0.sendQ.head,
@@ -1329,11 +1328,11 @@ theorem sweptAndRestored_endpoint_queues
       (lookupTcb_some_not_reserved st v tcbV hLookup)
   have hEpNe : epId ≠ v.toObjId := by
     intro hEq
-    rw [hEq, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at h
+    rw [hEq, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at h
     cases h
   have h2 : (removeFromAllEndpointQueues st v).objects[epId]? = some (.endpoint ep) := by
     unfold sweptAndRestored at h
-    rwa [restoreToReadyStaging_objects_ne _ v frame epId hExt2 hEpNe] at h
+    rwa [restoreToReadyStaging_objects_ne _ v restart epId hExt2 hEpNe] at h
   obtain ⟨ep0, hEp0⟩ := removeFromAllEndpointQueues_endpoint_source st v hExt1 epId ep h2
   obtain ⟨_, hVal⟩ := removeFromAllEndpointQueues_endpoint_value st v hExt1 epId ep0 hEp0
   obtain ⟨hS, hR⟩ := hVal ep h2
@@ -1404,16 +1403,16 @@ theorem spliceOutMidQueueNode_tcb_value (st : SystemState) (tid : SeLe4n.ThreadI
 sweep writes only endpoints and the restore only the swept thread, so the splice's
 reading survives both. -/
 theorem sweptAndRestored_tcb_value (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (a : SeLe4n.ThreadId) (t0 : TCB) (hav : a ≠ v)
     (hPre : st.objects[a.toObjId]? = some (.tcb t0)) :
-    (sweptAndRestored st v frame).objects[a.toObjId]? =
+    (sweptAndRestored st v restart).objects[a.toObjId]? =
       some (.tcb { t0 with
         queueNextCode := if tcbV.queuePrev = some a then tcbV.queueNextCode else t0.queueNextCode,
         queuePrevCode := if tcbV.queueNext = some a then tcbV.queuePrevCode else t0.queuePrevCode,
         queuePPrevCode := if tcbV.queueNext = some a then tcbV.queuePPrevCode else t0.queuePPrevCode }) :=
-  (sweptAndRestored_tcb_iff st v frame hInv a.toObjId _
+  (sweptAndRestored_tcb_iff st v restart hInv a.toObjId _
     (fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq))).mpr
     (spliceOutMidQueueNode_tcb_value st v tcbV hInv hLookup a t0 hPre)
 
@@ -1421,16 +1420,16 @@ theorem sweptAndRestored_tcb_value (st : SystemState) (v : SeLe4n.ThreadId)
 links. -/
 theorem sweptAndRestored_not_victim_of_next
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (a b : SeLe4n.ThreadId) (tcbA : TCB)
-    (hA : (sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb tcbA))
+    (hA : (sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb tcbA))
     (hNext : tcbA.queueNext = some b) : a ≠ v := by
   intro hav
   subst hav
-  rw [sweptAndRestored_victim_tcb st a frame tcbV hInv hLink hAcyc hLookup] at hA
-  have hx : tcbA = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hA)).symm
+  rw [sweptAndRestored_victim_tcb st a restart tcbV hInv hLink hAcyc hLookup] at hA
+  have hx : tcbA = restoredTcb tcbV restart := (KernelObject.tcb.inj (Option.some.inj hA)).symm
   rw [hx, restoredTcb_queueNext] at hNext
   cases hNext
 
@@ -1440,24 +1439,24 @@ successor — or it is a pre-state edge, whose source link integrity identifies 
 the swept thread's predecessor, and that source was patched. -/
 theorem sweptAndRestored_no_next_to_victim
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (a b : SeLe4n.ThreadId) (tcbA : TCB)
-    (hA : (sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb tcbA))
+    (hA : (sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb tcbA))
     (hNext : tcbA.queueNext = some b) : b ≠ v := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   intro hbv
   subst hbv
   by_cases hav : a = b
   · subst hav
-    rw [sweptAndRestored_victim_tcb st a frame tcbV hInv hLink hAcyc hLookup] at hA
-    have hx : tcbA = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hA)).symm
+    rw [sweptAndRestored_victim_tcb st a restart tcbV hInv hLink hAcyc hLookup] at hA
+    have hx : tcbA = restoredTcb tcbV restart := (KernelObject.tcb.inj (Option.some.inj hA)).symm
     rw [hx, restoredTcb_queueNext] at hNext
     cases hNext
   · obtain ⟨t0, h0, _⟩ :=
-      sweptAndRestored_tcb_pullback st b frame tcbV hInv hLink hAcyc hLookup a.toObjId tcbA hA
-    rw [sweptAndRestored_tcb_value st b frame tcbV hInv hLookup a t0 hav h0] at hA
+      sweptAndRestored_tcb_pullback st b restart tcbV hInv hLink hAcyc hLookup a.toObjId tcbA hA
+    rw [sweptAndRestored_tcb_value st b restart tcbV hInv hLookup a t0 hav h0] at hA
     have hx : tcbA = _ := (KernelObject.tcb.inj (Option.some.inj hA)).symm
     rw [hx] at hNext
     simp only [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode] at hNext
@@ -1475,13 +1474,13 @@ theorem sweptAndRestored_no_next_to_victim
 state — it only relinks. -/
 theorem sweptAndRestored_tcb_ipcState
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (a : SeLe4n.ThreadId) (tA t0 : TCB) (hav : a ≠ v)
-    (hA : (sweptAndRestored st v frame).objects[a.toObjId]? = some (.tcb tA))
+    (hA : (sweptAndRestored st v restart).objects[a.toObjId]? = some (.tcb tA))
     (h0 : st.objects[a.toObjId]? = some (.tcb t0)) :
     tA.ipcState = t0.ipcState := by
-  rw [sweptAndRestored_tcb_value st v frame tcbV hInv hLookup a t0 hav h0] at hA
+  rw [sweptAndRestored_tcb_value st v restart tcbV hInv hLookup a t0 hav h0] at hA
   have hx : tA = _ := (KernelObject.tcb.inj (Option.some.inj hA)).symm
   rw [hx]
 
@@ -1523,12 +1522,12 @@ conjunct that starts from a *pre-state* endpoint needs.  The queue shapes are
 the two endpoints at the same key. -/
 theorem sweptAndRestored_endpoint_forward
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (epId : SeLe4n.ObjId) (ep0 : Endpoint)
     (h : st.objects[epId]? = some (.endpoint ep0)) :
-    ∃ ep, (sweptAndRestored st v frame).objects[epId]? = some (.endpoint ep) ∧
+    ∃ ep, (sweptAndRestored st v restart).objects[epId]? = some (.endpoint ep) ∧
       ep.sendQ =
         { head := if ep0.sendQ.head = some v then tcbV.queueNext else ep0.sendQ.head,
           tail := if ep0.sendQ.tail = some v then tcbV.queuePrev else ep0.sendQ.tail } ∧
@@ -1547,12 +1546,12 @@ theorem sweptAndRestored_endpoint_forward
   have hSp : (spliceOutMidQueueNode st v).objects[epId]? = some (.endpoint ep0) :=
     (spliceOutMidQueueNode_nonTcb st v hInv epId (.endpoint ep0) (by simp)).mpr h
   obtain ⟨ep, hEp⟩ := removeFromAllEndpointQueues_endpoint_forward st v hExt1 epId ep0 hSp
-  have hPost : (sweptAndRestored st v frame).objects[epId]? = some (.endpoint ep) := by
+  have hPost : (sweptAndRestored st v restart).objects[epId]? = some (.endpoint ep) := by
     unfold sweptAndRestored
-    rw [restoreToReadyStaging_objects_ne _ v frame epId hExt2 hEpNe]
+    rw [restoreToReadyStaging_objects_ne _ v restart epId hExt2 hEpNe]
     exact hEp
   obtain ⟨ep0', hEp0', hS, hR⟩ :=
-    sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup epId ep hPost
+    sweptAndRestored_endpoint_queues st v restart tcbV hInv hLink hAcyc hLookup epId ep hPost
   rw [h] at hEp0'
   have hx : ep0' = ep0 := (KernelObject.endpoint.inj (Option.some.inj hEp0')).symm
   rw [hx] at hS hR
@@ -1562,27 +1561,27 @@ theorem sweptAndRestored_endpoint_forward
 endpoint heads and tails, and the victim's IPC state and frame. -/
 theorem sweptAndRestored_sameNotificationBindings
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    sameNotificationBindings st (sweptAndRestored st v frame) := by
+    sameNotificationBindings st (sweptAndRestored st v restart) := by
   intro k
-  cases hPost : (sweptAndRestored st v frame).objects[k]? with
+  cases hPost : (sweptAndRestored st v restart).objects[k]? with
   | some o =>
     cases o with
     | tcb tA =>
       obtain ⟨t0, h0, hc⟩ :=
-        sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup k tA hPost
+        sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup k tA hPost
       rw [h0]
       rcases hc with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
       · rfl
-      · cases frame <;> rfl
+      · cases restart <;> rfl
     | endpoint e =>
       obtain ⟨ep0, h0, -⟩ :=
-        sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup k e hPost
+        sweptAndRestored_endpoint_queues st v restart tcbV hInv hLink hAcyc hLookup k e hPost
       rw [h0]; rfl
     | _ =>
-      rw [(sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup k _
+      rw [(sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup k _
         (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).mp hPost]
   | none =>
     cases hPre : st.objects[k]? with
@@ -1593,16 +1592,16 @@ theorem sweptAndRestored_sameNotificationBindings
       | tcb t0 =>
         by_cases hkv : k = v.toObjId
         · subst hkv
-          rw [sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hPost
+          rw [sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hPost
           cases hPost
-        · obtain ⟨t', h', -⟩ := sweptAndRestored_tcb_forward st v frame hInv k t0 hkv hPre
+        · obtain ⟨t', h', -⟩ := sweptAndRestored_tcb_forward st v restart hInv k t0 hkv hPre
           rw [hPost] at h'; cases h'
       | endpoint e =>
         obtain ⟨ep, h', -⟩ :=
-          sweptAndRestored_endpoint_forward st v frame tcbV hInv hLink hAcyc hLookup k e hPre
+          sweptAndRestored_endpoint_forward st v restart tcbV hInv hLink hAcyc hLookup k e hPre
         rw [hPost] at h'; cases h'
       | _ =>
-        have h' := (sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup k
+        have h' := (sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup k
           _ (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).mpr hPre
         rw [hPost] at h'; cases h'
 
@@ -1619,7 +1618,7 @@ none, `sweptSuccessorAnchored` is what says the queue was headed there, so the
 promotion re-heads it at this thread. -/
 theorem sweptAndRestored_membership_witness
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (tid : SeLe4n.ThreadId) (hidv : tid ≠ v) (q0 : IntrusiveQueue)
@@ -1629,7 +1628,7 @@ theorem sweptAndRestored_membership_witness
         st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ TCB.queueNext prevTcb = some tid) :
     (if q0.head = some v then tcbV.queueNext else q0.head) = some tid ∨
       ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
-        (sweptAndRestored st v frame).objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+        (sweptAndRestored st v restart).objects[prev.toObjId]? = some (.tcb prevTcb) ∧
         TCB.queueNext prevTcb = some tid := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   rcases hPre with hHd | ⟨prev, prevTcb, hPrev, hPN⟩
@@ -1656,7 +1655,7 @@ theorem sweptAndRestored_membership_witness
           rw [hy] at hPNext
           exact hAcyc v (.single v v tcbV hVObj hPNext)
         refine ⟨p, _,
-          sweptAndRestored_tcb_value st v frame tcbV hInv hLookup p pTcb hpv2 hP, ?_⟩
+          sweptAndRestored_tcb_value st v restart tcbV hInv hLookup p pTcb hpv2 hP, ?_⟩
         rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_pos hq]
         exact hPN
@@ -1669,7 +1668,7 @@ theorem sweptAndRestored_membership_witness
         rw [hx, hPN] at hAN
         exact hidv (Option.some.inj hAN)
       · refine ⟨prev, _,
-          sweptAndRestored_tcb_value st v frame tcbV hInv hLookup prev prevTcb hpv hPrev, ?_⟩
+          sweptAndRestored_tcb_value st v restart tcbV hInv hLookup prev prevTcb hpv hPrev, ?_⟩
         rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_neg hpp]
         exact hPN
@@ -1681,56 +1680,56 @@ theorem sweptAndRestored_membership_witness
 /-- **WS-RR RR7.22 (residual)**: notifications are untouched. -/
 theorem sweptAndRestored_ipcInvariant
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
-    (h : ipcInvariant st) : ipcInvariant (sweptAndRestored st v frame) := by
+    (h : ipcInvariant st) : ipcInvariant (sweptAndRestored st v restart) := by
   intro oid ntfn hN
-  exact h oid ntfn ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+  exact h oid ntfn ((sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
     oid (.notification ntfn) (by simp) (by simp)).mp hN)
 
 /-- **WS-RR RR7.22 (residual)**: badges at rest live in notifications and CNodes,
 neither of which the composite writes. -/
 theorem sweptAndRestored_badgeWellFormed
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
-    (h : badgeWellFormed st) : badgeWellFormed (sweptAndRestored st v frame) := by
+    (h : badgeWellFormed st) : badgeWellFormed (sweptAndRestored st v restart) := by
   refine ⟨?_, ?_⟩
   · intro oid ntfn badge hN hB
     exact h.1 oid ntfn badge
-      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+      ((sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
         oid (.notification ntfn) (by simp) (by simp)).mp hN) hB
   · intro oid o slot cap badge hC hL hB
     cases o with
     | tcb tA =>
       obtain ⟨t0, h0, hcase⟩ :=
-        sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup oid tA hC
+        sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup oid tA hC
       have hCells : tA.spaceCells = t0.spaceCells := by
         rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
         · rfl
-        · unfold restoredTcb; cases frame <;> rfl
+        · unfold restoredTcb; cases restart <;> rfl
       refine h.2 oid (.tcb t0) slot cap badge h0 ?_ hB
       simpa [KernelObject.slotCap, TCB.spaceSlotCap, hCells] using hL
     | endpoint _ => simp [KernelObject.slotCap] at hL
     | _ =>
       exact h.2 oid _ slot cap badge
-        ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+        ((sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
           oid _ (by simp) (by simp)).mp hC) hL hB
 
 /-- **WS-RR RR7.22 (residual)**: no message is written, so every bound carries
 back to the thread the pullback names. -/
 theorem sweptAndRestored_allPendingMessagesBounded
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (h : allPendingMessagesBounded st) :
-    allPendingMessagesBounded (sweptAndRestored st v frame) := by
+    allPendingMessagesBounded (sweptAndRestored st v restart) := by
   intro tid tcb' msg hTcb' hMsg
   obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+    sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 msg h0 hMsg
   · exact h tid t0 msg h0 (by rw [restoredTcb_eq] at hMsg; exact hMsg)
@@ -1739,14 +1738,14 @@ theorem sweptAndRestored_allPendingMessagesBounded
 `True`; every other thread keeps both its blocking state and its message. -/
 theorem sweptAndRestored_blockedThreadsPendingMessageConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (h : blockedThreadsPendingMessageConsistent st) :
-    blockedThreadsPendingMessageConsistent (sweptAndRestored st v frame) := by
+    blockedThreadsPendingMessageConsistent (sweptAndRestored st v restart) := by
   intro tid tcb' hTcb'
   obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+    sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 h0
   · rw [restoredTcb_eq]
@@ -1756,12 +1755,12 @@ theorem sweptAndRestored_blockedThreadsPendingMessageConsistent
 donation cycle is a pre-state one. -/
 theorem sweptAndRestored_donationChainAcyclic
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (h : donationChainAcyclic st) :
-    donationChainAcyclic (sweptAndRestored st v frame) := by
-  have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
+    donationChainAcyclic (sweptAndRestored st v restart) := by
+  have hBind := sweptAndRestored_sameSchedContextBindings st v restart tcbV hInv hLink hAcyc hLookup
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
   obtain ⟨tc1, hP1, hEq1⟩ := hBind tid1 tcb1 h1
   obtain ⟨tc2, hP2, hEq2⟩ := hBind tid2 tcb2 h2
@@ -1779,29 +1778,29 @@ one the argument is stated on: `queueNextBlockingMatch`'s catch-all makes it
 non-transitive through a swept thread in a non-blocking state. -/
 theorem sweptAndRestored_queueNextTargetBlocked
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hTgt : queueNextTargetBlocked st) :
-    queueNextTargetBlocked (sweptAndRestored st v frame) := by
+    queueNextTargetBlocked (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   intro a b tcbA tcbB hA hB hNext
   have hav : a ≠ v :=
-    sweptAndRestored_not_victim_of_next st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
+    sweptAndRestored_not_victim_of_next st v restart tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
   have hbv : b ≠ v :=
-    sweptAndRestored_no_next_to_victim st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
+    sweptAndRestored_no_next_to_victim st v restart tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
   obtain ⟨t0b, h0b, _⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup b.toObjId tcbB hB
+    sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup b.toObjId tcbB hB
   have hbIp : tcbB.ipcState = t0b.ipcState :=
-    sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup b tcbB t0b hbv hB h0b
-  rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
+    sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup b tcbB t0b hbv hB h0b
+  rcases sweptAndRestored_edge_source st v restart tcbV hInv hLink hAcyc hLookup a b tcbA hA hNext
     with ⟨t0a, h0a, hE⟩ | ⟨t0a, h0a, hEv, hVb⟩
   · have haIp : tcbA.ipcState = t0a.ipcState :=
-      sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a
+      sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup a tcbA t0a hav hA h0a
     rw [haIp, hbIp]
     exact hTgt a b t0a t0b h0a h0b hE
   · have haIp : tcbA.ipcState = t0a.ipcState :=
-      sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a
+      sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup a tcbA t0a hav hA h0a
     have h1 := hTgt a v t0a tcbV h0a hVObj hEv
     have h2 := hTgt v b tcbV t0b hVObj h0b hVb
     rw [haIp, hbIp]
@@ -1813,36 +1812,36 @@ skip the splice installed, whose source already had the swept thread as its
 successor; either way the source's IPC state is the pre-state's. -/
 theorem sweptAndRestored_endpointQueueLinksOnlyBlocked
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hTgt : endpointQueueLinksOnlyBlocked st) :
-    endpointQueueLinksOnlyBlocked (sweptAndRestored st v frame) := by
+    endpointQueueLinksOnlyBlocked (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   intro a tcbA hA hNext
   cases hNb : tcbA.queueNext with
   | none => exact absurd hNb hNext
   | some b =>
   have hav : a ≠ v :=
-    sweptAndRestored_not_victim_of_next st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
-  rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
+    sweptAndRestored_not_victim_of_next st v restart tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
+  rcases sweptAndRestored_edge_source st v restart tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
     with ⟨t0a, h0a, hE⟩ | ⟨t0a, h0a, hEv, _⟩
-  · rw [sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a]
+  · rw [sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup a tcbA t0a hav hA h0a]
     exact hTgt a t0a h0a (by rw [hE]; simp)
-  · rw [sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a]
+  · rw [sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup a tcbA t0a hav hA h0a]
     exact hTgt a t0a h0a (by rw [hEv]; simp)
 
 /-- **WS-RR RR7.22 (residual)**: cross-queue links stay excluded.  Read off the
 forward propagation above, one blocking state at a time. -/
 theorem sweptAndRestored_queueNextBlockingConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hTgt : queueNextTargetBlocked st) :
-    queueNextBlockingConsistent (sweptAndRestored st v frame) := by
+    queueNextBlockingConsistent (sweptAndRestored st v restart) := by
   intro a b tcbA tcbB hA hB hNext
-  have hT := sweptAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLink hAcyc hLookup hTgt
+  have hT := sweptAndRestored_queueNextTargetBlocked st v restart tcbV hInv hLink hAcyc hLookup hTgt
     a b tcbA tcbB hA hB hNext
   unfold queueNextBlockingMatch
   cases hIA : tcbA.ipcState with
@@ -1865,19 +1864,19 @@ refuse it: the promoted thread would have to be blocked on both sides of the sam
 endpoint at once. -/
 theorem sweptAndRestored_endpointQueueNoDup
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hNoDup : endpointQueueNoDup st) (hHead : queueHeadBlockedConsistent st)
     (hTgt : queueNextTargetBlocked st) :
-    endpointQueueNoDup (sweptAndRestored st v frame) := by
+    endpointQueueNoDup (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   intro oid ep hEp
   obtain ⟨ep0, hEp0, hS, hR⟩ :=
-    sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup oid ep hEp
+    sweptAndRestored_endpoint_queues st v restart tcbV hInv hLink hAcyc hLookup oid ep hEp
   refine ⟨?_, ?_⟩
   · intro tid tcb hTcb hSelf
-    rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup
+    rcases sweptAndRestored_edge_source st v restart tcbV hInv hLink hAcyc hLookup
       tid tid tcb hTcb hSelf with ⟨t0, h0, hE⟩ | ⟨t0, h0, hEv, hVb⟩
     · exact (hNoDup oid ep0 hEp0).1 tid t0 h0 hE
     · exact hAcyc tid (.cons tid v tid t0 h0 hEv (.single v tid tcbV hVObj hVb))
@@ -1923,22 +1922,22 @@ the queue each one names; the swept thread itself lands in `.ready`, whose arm i
 `True`. -/
 theorem sweptAndRestored_ipcStateQueueMembershipConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hMem : ipcStateQueueMembershipConsistent st)
     (hAnchor : sweptSuccessorAnchored st v) :
-    ipcStateQueueMembershipConsistent (sweptAndRestored st v frame) := by
+    ipcStateQueueMembershipConsistent (sweptAndRestored st v restart) := by
   intro tid tcb' hTcb'
   by_cases hidv : tid = v
-  · rw [hidv, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hTcb'
-    have hx : tcb' = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
+  · rw [hidv, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hTcb'
+    have hx : tcb' = restoredTcb tcbV restart := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
     rw [hx, restoredTcb_ipcState]
     trivial
   · obtain ⟨t0, h0, _⟩ :=
-      sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+      sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
     have hIp : tcb'.ipcState = t0.ipcState :=
-      sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup tid tcb' t0 hidv hTcb' h0
+      sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup tid tcb' t0 hidv hTcb' h0
     have hPre := hMem tid t0 h0
     rw [hIp]
     cases hI : t0.ipcState with
@@ -1946,36 +1945,36 @@ theorem sweptAndRestored_ipcStateQueueMembershipConsistent
       rw [hI] at hPre
       obtain ⟨ep0, hEp0, hW⟩ := hPre
       obtain ⟨ep, hEp, hS, _⟩ :=
-        sweptAndRestored_endpoint_forward st v frame tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
+        sweptAndRestored_endpoint_forward st v restart tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
       refine ⟨ep, hEp, ?_⟩
       have hSH : ep.sendQ.head =
           (if ep0.sendQ.head = some v then tcbV.queueNext else ep0.sendQ.head) := by rw [hS]
       rw [hSH]
-      exact sweptAndRestored_membership_witness st v frame tcbV hInv hLink hAcyc hLookup
+      exact sweptAndRestored_membership_witness st v restart tcbV hInv hLink hAcyc hLookup
         tid hidv ep0.sendQ
         (fun hq hn => (hAnchor tcbV hLookup hq tid hn t0 h0 epId ep0 hEp0).1 (Or.inl hI)) hW
     | blockedOnCall epId =>
       rw [hI] at hPre
       obtain ⟨ep0, hEp0, hW⟩ := hPre
       obtain ⟨ep, hEp, hS, _⟩ :=
-        sweptAndRestored_endpoint_forward st v frame tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
+        sweptAndRestored_endpoint_forward st v restart tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
       refine ⟨ep, hEp, ?_⟩
       have hSH : ep.sendQ.head =
           (if ep0.sendQ.head = some v then tcbV.queueNext else ep0.sendQ.head) := by rw [hS]
       rw [hSH]
-      exact sweptAndRestored_membership_witness st v frame tcbV hInv hLink hAcyc hLookup
+      exact sweptAndRestored_membership_witness st v restart tcbV hInv hLink hAcyc hLookup
         tid hidv ep0.sendQ
         (fun hq hn => (hAnchor tcbV hLookup hq tid hn t0 h0 epId ep0 hEp0).1 (Or.inr hI)) hW
     | blockedOnReceive epId =>
       rw [hI] at hPre
       obtain ⟨ep0, hEp0, hW⟩ := hPre
       obtain ⟨ep, hEp, _, hR⟩ :=
-        sweptAndRestored_endpoint_forward st v frame tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
+        sweptAndRestored_endpoint_forward st v restart tcbV hInv hLink hAcyc hLookup epId ep0 hEp0
       refine ⟨ep, hEp, ?_⟩
       have hRH : ep.receiveQ.head =
           (if ep0.receiveQ.head = some v then tcbV.queueNext else ep0.receiveQ.head) := by rw [hR]
       rw [hRH]
-      exact sweptAndRestored_membership_witness st v frame tcbV hInv hLink hAcyc hLookup
+      exact sweptAndRestored_membership_witness st v restart tcbV hInv hLink hAcyc hLookup
         tid hidv ep0.receiveQ
         (fun hq hn => (hAnchor tcbV hLookup hq tid hn t0 h0 epId ep0 hEp0).2 hI) hW
     | _ => trivial
@@ -1989,24 +1988,24 @@ clause the restore could break (a named caller must be `.blockedOnReply`, and th
 swept thread becomes `.ready`) has no instance. -/
 theorem sweptAndRestored_replyCallerLinkage
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt)
     (h : replyCallerLinkage st) :
-    replyCallerLinkage (sweptAndRestored st v frame) := by
+    replyCallerLinkage (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hUnlinked : tcbV.replyObject = none :=
     replyObject_none_of_not_blockedOnReply st h v tcbV hVObj hNotReply
   have hRep : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
-      (sweptAndRestored st v frame).objects[rid.toObjId]? = some (.reply r) ↔
+      (sweptAndRestored st v restart).objects[rid.toObjId]? = some (.reply r) ↔
         st.objects[rid.toObjId]? = some (.reply r) :=
-    fun rid r => sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+    fun rid r => sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
       rid.toObjId (.reply r) (by simp) (by simp)
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro tid tcb' rid hTcb' hRO
     obtain ⟨t0, h0, hcase⟩ :=
-      sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
+      sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
     have hROpre : t0.replyObject = some rid := by
       rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
       · exact hRO
@@ -2022,22 +2021,22 @@ theorem sweptAndRestored_replyCallerLinkage
       rw [hx, hUnlinked] at hRO
       cases hRO
     obtain ⟨t1, h1, hrw⟩ :=
-      sweptAndRestored_tcb_forward st v frame hInv tid.toObjId t0
+      sweptAndRestored_tcb_forward st v restart hInv tid.toObjId t0
         (fun hEq => hidv (SeLe4n.ThreadId.toObjId_injective _ _ hEq)) h0
     obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hrw
     exact ⟨_, h1, hRO, ep, rt, hBlk⟩
   · intro tid tcb' ep rt hTcb' hBlk
     by_cases hidv : tid = v
     · exfalso
-      rw [hidv, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hTcb'
-      have hx : tcb' = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
+      rw [hidv, sweptAndRestored_victim_tcb st v restart tcbV hInv hLink hAcyc hLookup] at hTcb'
+      have hx : tcb' = restoredTcb tcbV restart := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
       rw [hx, restoredTcb_ipcState] at hBlk
       cases hBlk
     · obtain ⟨t0, h0, hcase⟩ :=
-        sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup
+        sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup
           tid.toObjId tcb' hTcb'
       have hIp : tcb'.ipcState = t0.ipcState :=
-        sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup tid tcb' t0 hidv hTcb' h0
+        sweptAndRestored_tcb_ipcState st v restart tcbV hInv hLookup tid tcb' t0 hidv hTcb' h0
       obtain ⟨rid, hrid⟩ := h.2 tid t0 ep rt h0 (by rw [← hIp]; exact hBlk)
       refine ⟨rid, ?_⟩
       rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
@@ -2051,23 +2050,23 @@ rather than gaining one: the well-formedness clause is vacuous there, and the
 injectivity clause can no longer be witnessed by it. -/
 theorem sweptAndRestored_pendingReceiveReplyWellFormed
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (h : pendingReceiveReplyWellFormed st) :
-    pendingReceiveReplyWellFormed (sweptAndRestored st v frame) := by
+    pendingReceiveReplyWellFormed (sweptAndRestored st v restart) := by
   -- Away from the swept thread the stash and the blocking state both survive; at the
   -- swept thread the restore clears the stash, so both clauses are vacuous there.
   have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB) (rid : SeLe4n.ReplyId),
-      (sweptAndRestored st v frame).getTcb? tid = some tcb' →
+      (sweptAndRestored st v restart).getTcb? tid = some tcb' →
       tcb'.pendingReceiveReply = some rid →
       ∃ t0, st.getTcb? tid = some t0 ∧ t0.pendingReceiveReply = some rid ∧
         tcb'.ipcState = t0.ipcState := by
     intro tid tcb' rid hTcb' hStash
-    have hObj : (sweptAndRestored st v frame).objects[tid.toObjId]? = some (.tcb tcb') :=
+    have hObj : (sweptAndRestored st v restart).objects[tid.toObjId]? = some (.tcb tcb') :=
       (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
     obtain ⟨t0, h0, hcase⟩ :=
-      sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hObj
+      sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hObj
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hStash, rfl⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
@@ -2077,8 +2076,8 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
     obtain ⟨t0, h0, hStash0, hIp⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨⟨ep, hEp⟩, r, hr, hrc⟩ := h.1 tid t0 rid h0 hStash0
     refine ⟨⟨ep, by rw [hIp]; exact hEp⟩, r, ?_, hrc⟩
-    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v frame) rid r).mpr
-      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v restart) rid r).mpr
+      ((sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
         rid.toObjId (.reply r) (by simp) (by simp)).mpr
         ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
@@ -2089,8 +2088,8 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
     obtain ⟨t0, h0, hStash0, _⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨r, hr, hrs⟩ := h.2.2 tid t0 rid h0 hStash0
     refine ⟨r, ?_, hrs⟩
-    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v frame) rid r).mpr
-      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v restart) rid r).mpr
+      ((sweptAndRestored_nonTcbNonEndpoint st v restart tcbV hInv hLink hAcyc hLookup
         rid.toObjId (.reply r) (by simp) (by simp)).mpr
         ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
@@ -2103,11 +2102,11 @@ kept its state and its position.  Neither case can be the swept thread itself,
 because nothing in the post-state points at it. -/
 theorem sweptAndRestored_queueHeadBlockedConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hHead : queueHeadBlockedConsistent st) (hTgt : queueNextTargetBlocked st) :
-    queueHeadBlockedConsistent (sweptAndRestored st v frame) := by
+    queueHeadBlockedConsistent (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hPromNeV : ∀ (q : IntrusiveQueue) (x : SeLe4n.ThreadId),
       (if q.head = some v then tcbV.queueNext else q.head) = some x → x ≠ v := by
@@ -2119,12 +2118,12 @@ theorem sweptAndRestored_queueHeadBlockedConsistent
       exact hc hx
   intro epId ep hd tcbHd hEp hHd
   obtain ⟨ep0, hEp0, hS, hR⟩ :=
-    sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup epId ep hEp
+    sweptAndRestored_endpoint_queues st v restart tcbV hInv hLink hAcyc hLookup epId ep hEp
   constructor
   · intro hRHead
     rw [hR] at hRHead
     have hdv : hd ≠ v := hPromNeV ep0.receiveQ hd hRHead
-    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
+    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc
       hLookup hd.toObjId tcbHd hHd
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.receiveQ.head = some v
@@ -2137,7 +2136,7 @@ theorem sweptAndRestored_queueHeadBlockedConsistent
   · intro hSHead
     rw [hS] at hSHead
     have hdv : hd ≠ v := hPromNeV ep0.sendQ hd hSHead
-    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
+    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc
       hLookup hd.toObjId tcbHd hHd
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.sendQ.head = some v
@@ -2156,12 +2155,12 @@ promoted tail is the swept thread's *predecessor*, and no conjunct propagates
 blockedness backwards along `queueNext`. -/
 theorem sweptAndRestored_endpointQueueTailBlockedConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
     (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
     (hTail : endpointQueueTailBlockedConsistent st)
     (hPred : sweptPredecessorBlocked st v) :
-    endpointQueueTailBlockedConsistent (sweptAndRestored st v frame) := by
+    endpointQueueTailBlockedConsistent (sweptAndRestored st v restart) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hPromNeV : ∀ (q : IntrusiveQueue) (x : SeLe4n.ThreadId),
       (if q.tail = some v then tcbV.queuePrev else q.tail) = some x → x ≠ v := by
@@ -2177,12 +2176,12 @@ theorem sweptAndRestored_endpointQueueTailBlockedConsistent
       exact hc hx
   intro epId ep tl tcbTl hEp hTl
   obtain ⟨ep0, hEp0, hS, hR⟩ :=
-    sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup epId ep hEp
+    sweptAndRestored_endpoint_queues st v restart tcbV hInv hLink hAcyc hLookup epId ep hEp
   constructor
   · intro hRTail
     rw [hR] at hRTail
     have htv : tl ≠ v := hPromNeV ep0.receiveQ tl hRTail
-    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
+    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc
       hLookup tl.toObjId tcbTl hTl
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.receiveQ.tail = some v
@@ -2194,7 +2193,7 @@ theorem sweptAndRestored_endpointQueueTailBlockedConsistent
   · intro hSTail
     rw [hS] at hSTail
     have htv : tl ≠ v := hPromNeV ep0.sendQ tl hSTail
-    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
+    obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v restart tcbV hInv hLink hAcyc
       hLookup tl.toObjId tcbTl hTl
     rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.sendQ.tail = some v
@@ -2238,48 +2237,48 @@ holds every such statement de-threaded.  The per-conjunct results above are name
 for the conjunct they establish, because they are not members of that family. -/
 theorem sweptAndRestored_preserves_ipcInvariantFull
     (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBundle : ipcInvariantFull st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt)
     (hCoh : sweptThreadQueueCoherent st v) :
-    ipcInvariantFull (sweptAndRestored st v frame) := by
+    ipcInvariantFull (sweptAndRestored st v restart) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
-  have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
-  refine ⟨sweptAndRestored_ipcInvariant st v frame tcbV hInv hLink hAcyc hLookup hIpc,
-    sweptAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hDual hLookup hCoh.boundary,
-    sweptAndRestored_allPendingMessagesBounded st v frame tcbV hInv hLink hAcyc hLookup hBnd,
-    sweptAndRestored_badgeWellFormed st v frame tcbV hInv hLink hAcyc hLookup hBadge,
-    sweptAndRestored_blockedThreadsPendingMessageConsistent st v frame tcbV hInv hLink hAcyc
+  have hBind := sweptAndRestored_sameSchedContextBindings st v restart tcbV hInv hLink hAcyc hLookup
+  refine ⟨sweptAndRestored_ipcInvariant st v restart tcbV hInv hLink hAcyc hLookup hIpc,
+    sweptAndRestored_dualQueueSystemInvariant st v restart tcbV hInv hDual hLookup hCoh.boundary,
+    sweptAndRestored_allPendingMessagesBounded st v restart tcbV hInv hLink hAcyc hLookup hBnd,
+    sweptAndRestored_badgeWellFormed st v restart tcbV hInv hLink hAcyc hLookup hBadge,
+    sweptAndRestored_blockedThreadsPendingMessageConsistent st v restart tcbV hInv hLink hAcyc
       hLookup hBlkMsg,
-    sweptAndRestored_endpointQueueNoDup st v frame tcbV hInv hLink hAcyc hLookup hNoDup hQHB hTgt,
-    sweptAndRestored_ipcStateQueueMembershipConsistent st v frame tcbV hInv hLink hAcyc hLookup
+    sweptAndRestored_endpointQueueNoDup st v restart tcbV hInv hLink hAcyc hLookup hNoDup hQHB hTgt,
+    sweptAndRestored_ipcStateQueueMembershipConsistent st v restart tcbV hInv hLink hAcyc hLookup
       hMem hCoh.successorAnchored,
-    sweptAndRestored_queueNextBlockingConsistent st v frame tcbV hInv hLink hAcyc hLookup hTgt,
-    sweptAndRestored_queueHeadBlockedConsistent st v frame tcbV hInv hLink hAcyc hLookup hQHB hTgt,
+    sweptAndRestored_queueNextBlockingConsistent st v restart tcbV hInv hLink hAcyc hLookup hTgt,
+    sweptAndRestored_queueHeadBlockedConsistent st v restart tcbV hInv hLink hAcyc hLookup hQHB hTgt,
     blockedThreadTimeoutConsistent_of_frame
-      (sweptAndRestored_timeoutBudgetFrame st v frame tcbV hInv hLink hAcyc hLookup)
+      (sweptAndRestored_timeoutBudgetFrame st v restart tcbV hInv hLink hAcyc hLookup)
       hAllBudgetsNone,
-    sweptAndRestored_donationChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup hDonAcyc,
+    sweptAndRestored_donationChainAcyclic st v restart tcbV hInv hLink hAcyc hLookup hDonAcyc,
     donationOwnerValid_of_frames hBind
-      (sweptAndRestored_donationOwnerFrame st v frame tcbV hInv hLink hAcyc hLookup hNotReply)
+      (sweptAndRestored_donationOwnerFrame st v restart tcbV hInv hLink hAcyc hLookup hNotReply)
       hDonOwner,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
-    sweptAndRestored_replyCallerLinkage st v frame tcbV hInv hLink hAcyc hLookup hNotReply
+    sweptAndRestored_replyCallerLinkage st v restart tcbV hInv hLink hAcyc hLookup hNotReply
       hReplyLink,
-    sweptAndRestored_pendingReceiveReplyWellFormed st v frame tcbV hInv hLink hAcyc hLookup hStash,
+    sweptAndRestored_pendingReceiveReplyWellFormed st v restart tcbV hInv hLink hAcyc hLookup hStash,
     donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,
-    sweptAndRestored_endpointQueueTailBlockedConsistent st v frame tcbV hInv hLink hAcyc hLookup
+    sweptAndRestored_endpointQueueTailBlockedConsistent st v restart tcbV hInv hLink hAcyc hLookup
       hTailBlk hCoh.predecessorBlocked,
-    sweptAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLink hAcyc hLookup hTgt,
+    sweptAndRestored_queueNextTargetBlocked st v restart tcbV hInv hLink hAcyc hLookup hTgt,
     notificationBindingReciprocal.of_codes
-      (sweptAndRestored_sameNotificationBindings st v frame tcbV hInv hLink hAcyc hLookup) hNBR,
-    sweptAndRestored_endpointQueueLinksOnlyBlocked st v frame tcbV hInv hLink hAcyc hLookup
+      (sweptAndRestored_sameNotificationBindings st v restart tcbV hInv hLink hAcyc hLookup) hNBR,
+    sweptAndRestored_endpointQueueLinksOnlyBlocked st v restart tcbV hInv hLink hAcyc hLookup
       hLinks⟩
 
 -- ============================================================================
@@ -2313,15 +2312,15 @@ theorem endpointBoundariesOnly_of_blocked (st : SystemState) (tid : SeLe4n.Threa
 no other endpoint names the thread at a boundary (`endpointBoundariesOnly`, which
 the queue invariants give, `endpointBoundariesOnly_of_blocked`): the arm runs
 seL4's targeted dequeue, and the sweep agrees with it there
-(`removeFromAllEndpointQueues_eq_blocking`).  `sweptAndRestored`'s `frame`
-argument is the `.ipcCancelled` frame WS-RR RR7.14 stages there. -/
+(`removeFromAllEndpointQueues_eq_blocking`).  `sweptAndRestored`'s `restart`
+argument is `true`, the restart WS-SX SX4 sets there. -/
 theorem cancelIpcBlocking_endpoint_arm_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (epId : SeLe4n.ObjId)
     (hBlocked : tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnReceive epId ∨
       tcb.ipcState = .blockedOnCall epId)
     (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid epId) :
     Lifecycle.Suspend.cancelIpcBlocking st tid tcb =
-      sweptAndRestored st tid (some Architecture.cancelledIpcFrame) := by
+      sweptAndRestored st tid true := by
   unfold Lifecycle.Suspend.cancelIpcBlocking sweptAndRestored
   rw [removeFromAllEndpointQueues_eq_blocking st tid epId hInv hOnly]
   rcases hBlocked with h | h | h <;> rw [h] <;> rfl

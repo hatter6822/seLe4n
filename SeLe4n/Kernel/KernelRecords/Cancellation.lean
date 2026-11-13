@@ -86,13 +86,13 @@ theorem of_finaliseKept {st st' : SystemState} (F : FinaliseFrameAny st st')
 
 /-- **The restore** retires the restored thread's fault record. -/
 theorem restoreToReadyStaging (st : SystemState) (t : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    RecordsStep st (Lifecycle.Suspend.restoreToReadyStaging st t frame) := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    RecordsStep st (Lifecycle.Suspend.restoreToReadyStaging st t restart) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact updateTcb st t hInv fun x _ => TcbStaysParked.of_noFault (by
-    cases frame with
-    | none => exact TCB.restoredToReady_pendingFault x
-    | some f => exact TCB.restoredToReady_pendingFault x)
+    cases restart with
+    | false => exact TCB.restoredToReady_pendingFault x
+    | true => exact TCB.restoredToReady_pendingFault x)
 
 theorem restoreToReadyCancelled (st : SystemState) (t : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :

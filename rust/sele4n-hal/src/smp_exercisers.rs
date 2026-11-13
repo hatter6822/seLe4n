@@ -12998,6 +12998,179 @@ fn receive_side_faults(
     true
 }
 
+/// The partner's send through `cptr` with one word, trapped at
+/// `FAULT_PC + 4`: its restart PC, seL4's `FaultIP`, is `FAULT_PC`, the `SVC`.
+#[cfg(feature = "hw_target")]
+const fn partner_send_trap(name: &'static str, cptr: u64) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: ROUND_TRIP_ESR,
+        far: 0,
+        elr: FAULT_PC + 4,
+        x0: cptr,
+        x1: 1,
+        x2: 0x88,
+        x7: SEND,
+    }
+}
+
+/// The partner blocked in a send through `cptr`, issued from `FAULT_PC + 4`,
+/// unmeasured: resumed, the root task's receive blocks so the partner runs,
+/// the partner wakes it, and the partner's send blocks, which leaves the root
+/// task current.
+#[cfg(feature = "hw_target")]
+fn partner_blocked_in_send(
+    name: &'static str,
+    cptr: u64,
+    handler_waits: &RoundTrip,
+    wake_handler: &RoundTrip,
+) -> bool {
+    if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+        || !unmeasured(handler_waits, "the root task did not wait on the endpoint")
+        || !unmeasured(wake_handler, "the waiting root task was not woken")
+    {
+        return false;
+    }
+    let send = partner_step(name, SEND, cptr, 1, [0x88, 0], true);
+    if !matches!(
+        dispatch_round_trip_at(&send, FAULT_PC + 4).0,
+        Dispatched::Blocked
+    ) {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the partner's send did not block"
+        );
+        return false;
+    }
+    true
+}
+
+/// The root task's receive blocks it and switches the partner in: the
+/// partner resumes at the `SVC` of the send it was blocked in, `FAULT_PC`,
+/// with that send's own arguments, so it re-issues the send (seL4's
+/// `ThreadState_Restart`).
+#[cfg(feature = "hw_target")]
+fn partner_restarts_send(name: &str, cptr: u64, handler_waits_again: &RoundTrip) -> bool {
+    let (waited, _, _, resumed) = dispatch_round_trip(handler_waits_again);
+    if !matches!(waited, Dispatched::Blocked) {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the root task did not wait"
+        );
+        return false;
+    }
+    restarted_as(
+        name,
+        &resumed,
+        FaultRestart {
+            pc: FAULT_PC,
+            x0: cptr,
+            x1: 1,
+        },
+    )
+}
+
+/// **A cancelled IPC restarts its system call** (seL4's `cancelAllIPC`,
+/// `restart_thread_if_no_fault`, and `restart`'s `ThreadState_Restart`):
+/// - `cancelled-send-restarts`: the partner blocked sending on an endpoint
+///   carved into an empty slot; the endpoint's only capability deleted, which
+///   cancels the send and sets the partner to restart; the partner, switched
+///   in, resumes at its `SVC` with its own arguments and re-issues the send,
+///   which faults on the now-empty slot (measured), delivered to the root
+///   task waiting as its handler;
+/// - `suspend-resume-restarts`: the partner blocked sending on the exerciser
+///   endpoint; suspended, which leaves it `Inactive`, then resumed (measured),
+///   which sets it to restart; switched in, it resumes at its `SVC` with its
+///   own arguments and re-issues the send, which the waiting root task
+///   receives.
+#[cfg(feature = "hw_target")]
+fn cancelled_ipc_restarts(
+    handler_waits: &RoundTrip,
+    handler_waits_again: &RoundTrip,
+    wake_handler: &RoundTrip,
+) -> bool {
+    let carved = cap_address(EMPTY_DEST_SLOT);
+    let carve = invocation(
+        "restart-endpoint-carve",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            FINALISED_CHILD_IDS[0],
+            CNODE_CAP,
+            EMPTY_DEST_SLOT,
+        ],
+    );
+    let delete = invocation(
+        "restart-endpoint-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [EMPTY_DEST_SLOT, 0, 0, 0],
+    );
+    let reply = partner_step(
+        "restart-fault-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    let suspend = invocation("restart-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
+    let resume = invocation(
+        "suspend-resume-restarts",
+        TCB_RESUME,
+        PARTNER_TCB_CAP,
+        [0; 4],
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        let name = "cancelled-send-restarts";
+        if !unmeasured(&carve, "the endpoint was not carved")
+            || !partner_blocked_in_send(name, carved, handler_waits, wake_handler)
+            || !unmeasured(&delete, "the blocked-on endpoint was not deleted")
+            || !partner_restarts_send(name, carved, handler_waits_again)
+            || heap_allocations_trap(&partner_send_trap(name, carved), which) != Some(true)
+            || !fault_delivered(name)
+        {
+            return false;
+        }
+        let addr = TRAP_RESTORED_X3.load(Ordering::SeqCst);
+        if addr != carved {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the fault names {addr:#x}, the send's address is {carved:#x}"
+            );
+            return false;
+        }
+        if !unmeasured(&reply, "the handler's reply did not return")
+            || !partner_restarts_send(name, carved, handler_waits_again)
+            || !unmeasured(wake_handler, "the waiting handler was not woken")
+            || !suspend_partner()
+        {
+            return false;
+        }
+        let name = "suspend-resume-restarts";
+        if !partner_blocked_in_send(name, ENDPOINT_CAP, handler_waits, wake_handler)
+            || !unmeasured(&suspend, "the blocked partner was not suspended")
+            || heap_allocations_round_trip(&resume, which) != Some(true)
+            || !partner_restarts_send(name, ENDPOINT_CAP, handler_waits_again)
+        {
+            return false;
+        }
+        let resend = partner_step(name, SEND, ENDPOINT_CAP, 1, [0x88, 0], false);
+        if !matches!(
+            dispatch_round_trip_at(&resend, FAULT_PC + 4).0,
+            Dispatched::Returned(_)
+        ) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the re-issued send did not reach the waiting root task"
+            );
+            return false;
+        }
+        if !suspend_partner() {
+            return false;
+        }
+    }
+    true
+}
+
 /// **The fault entries** (seL4's `handleFault` from each of its producers:
 /// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
 /// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
@@ -13423,6 +13596,9 @@ fn fault_entries() -> Option<bool> {
         }
     }
     if !receive_side_faults(&handler_waits, &handler_waits_again, &wake_handler) {
+        return Some(false);
+    }
+    if !cancelled_ipc_restarts(&handler_waits, &handler_waits_again, &wake_handler) {
         return Some(false);
     }
     let root_buffer_back = invocation(

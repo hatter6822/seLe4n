@@ -1019,7 +1019,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.shootdownCatchUpPerCore
   , `SeLe4n.Kernel.Architecture.shootdownRound
   , `SeLe4n.Kernel.Architecture.shootdownRoundPerCore
-  , `SeLe4n.Kernel.Architecture.stageCancelledIpcFrame
   -- WS-LS LS2.4: the two-state return-frame staging, kept as the statement
   -- `syscallDispatchCrossCoreStep_drains_physicalWrites` is written against;
   -- the seam runs `stageCallerReturnFor` over the caller it captured.  Its

@@ -1919,7 +1919,7 @@ theorem storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.Ob
   exact h1.trans (updateTcb _ tid cancelledEndpointWaiterTcb h1.invExt)
 
 /-- A notification waiter's cancel: it leaves the notification's queue and is
-restored, staged with the cancellation frame. -/
+restored, set to restart. -/
 theorem notificationCancel (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
     (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
     (hB : tcb.ipcState = .blockedOnNotification n) :

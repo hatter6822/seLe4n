@@ -43,15 +43,15 @@ and the caller made inactive (`finaliseReply`, §4).
   notification's head leaves its queue as a cancelled thread leaves it
   (`Lifecycle.Suspend.cancelIpcBlocking`'s notification arm).  The walk follows
   the links held in the threads themselves and builds nothing.
-* **What a cancelled waiter becomes.**  `.ready`, with no pending message, no
-  stashed reply, and the `.ipcCancelled` frame staged in its registers
-  (`Architecture.cancelledIpcFrame`), then woken on its own core
-  (`determineTargetCore`, the core `wakeThread` picks).  seL4 sets the thread
-  `Restart`, so it reissues the system call it was blocked in; this model's
-  answer to a cancelled IPC is the `.ipcCancelled` frame, the one
-  `cancelIpcBlocking` already hands a suspended thread's IPC.  The wake marks
-  the core's reschedule flag (`enqueueRunnableOnCore`), and a remote core takes
-  its interrupt from that flag.
+* **What a cancelled waiter becomes.**  `.ready`, with no pending message and
+  no stashed reply, set to restart (WS-SX SX4): seL4 sets the thread
+  `ThreadState_Restart`, so it reissues the system call it was blocked in, and
+  here its saved program counter is moved back to that `SVC` (`TCB.restartPc`)
+  and its state set `.Restart` (`TCB.restoredToRestart`, the restore
+  `cancelIpcBlocking` makes).  It is then woken on its own core
+  (`determineTargetCore`, the core `wakeThread` picks).  The wake marks the
+  core's reschedule flag (`enqueueRunnableOnCore`), and a remote core takes its
+  interrupt from that flag.
 * **Checks before writes.**  A step runs only when its waiter is active, runs
   on no core (`cancelledWaiterWakeable`), and, at an endpoint, waits with no
   timeout budget and every write of the pop stays in its slot
@@ -95,14 +95,17 @@ anyway, before it writes. -/
 /-- **What a cancelled endpoint waiter becomes**: `.ready`, holding no message,
 no stashed reply (the receive completion `storeTcbReceiveComplete` writes, with
 no message) and no fault record (WS-ZA ZA6.22: seL4's `cancelIPC` resets
-`tcbFault`, as `TCB.restoredToReady` does), with the cancellation frame staged
-in its registers. -/
+`tcbFault`, as `TCB.restoredToReady` does), set to restart (WS-SX SX4: seL4's
+`cancelAllIPC` sets each waiter `ThreadState_Restart`): its saved program
+counter moved to its restart PC (`TCB.restartPc`, read before the fault record
+is cleared), so it re-issues the system call it was blocked in. -/
 @[inline] def cancelledEndpointWaiterTcb (t : TCB) : TCB :=
-  (TCB.setIpcState
+  let p := t.restartPc
+  let c := TCB.setIpcState
       (TCB.setPendingFault { t with
           pendingMessage := none
           pendingReceiveReplyCode := 0 } none) .ready
-    ).withReturnFrame Architecture.cancelledIpcFrame
+  { c with registerContext := { c.registerContext with pc := p }, threadState := t.restartState }
 
 /-- **Whether the head `t` of an endpoint's queue may be cancelled**: a cancel
 may wake it, it waits with no timeout budget (a `.ready` thread holding one would
@@ -250,7 +253,7 @@ link), and a cancel may wake it. -/
     tcb.queuePrevCode == 0 && tcb.queueNextCode == 0 && cancelledWaiterWakeable st t tcb
 
 /-- **Cancel the waiters of a notification**, head first, at most `fuel` of
-them: each leaves the queue and is made `.ready` with the cancellation frame, as
+them: each leaves the queue and is made `.ready` and set to restart, as
 a cancelled thread is (`Lifecycle.Suspend.cancelIpcBlocking`'s notification
 arm), then woken.  A waiter `notificationWaiterCancellable` refuses ends the
 walk. -/
@@ -296,7 +299,7 @@ waits in the queue (`isHead`, `prev` and `next` as `cancelledNotificationObject`
 takes them), each write in its slot: the notification's cell rewritten, the
 waiter's links cleared and its neighbours linked to each other
 (`clearNtfnLinks`, `unlinkNtfnNeighbours`), and the waiter restored `.ready`
-with the cancellation frame (`Lifecycle.Suspend.restoreToReadyCancelled`).  Out
+and set to restart (`Lifecycle.Suspend.restoreToReadyCancelled`).  Out
 of line, so each update is specialised in.  It wakes nothing: a walk wakes the
 waiter after it, a thread's finalisation does not. -/
 @[noinline] def storeNotificationBlockedCancelled (st : SystemState)
@@ -431,7 +434,7 @@ makes the queue's tail is blocked on the same side (the splice's
 (`storeQueueRemove`, the specification's `endpointQueueRemoveDual` by
 `queueRemove_inPlace`), its IPC ended as a cancelled waiter's is
 (`cancelledEndpointWaiterTcb`: `.ready`, no message, no stashed reply, the
-cancellation frame staged), each write in its slot.  It wakes nothing: the
+thread set to restart), each write in its slot.  It wakes nothing: the
 thread is being finalised, and the suspend after it takes it off the scheduler.
 Out of line, so each update is specialised in. -/
 @[noinline] def storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -597,7 +600,7 @@ stack is cut off it, and the context **stays with the thread it is bound to**
 `sc->scReply = NULL`; a holder
 holding it on loan from `c` keeps it as its own); then the reply, heading
 nothing, is removed (`finaliseCutReplyCaller`: spliced out of its stack, `c`
-restored with the cancellation frame, the reply's caller link and `c`'s reply link
+restored and set to restart, the reply's caller link and `c`'s reply link
 cleared, `c` off its server's reply-waiter queue), and the boost `c` lent its
 server reverted, when `replyCallerCancelAdmitted` admits it; otherwise nothing
 is written.  It runs on a thread whose own final delete finalises it
@@ -770,10 +773,10 @@ consistency names it a waiter of the thread (`replyWaitersConsistent`). -/
 
 /-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →
 `cancelIPC`): a thread blocked on a notification leaves its queue, wherever it
-waits there, and is made `.ready` with the cancellation frame, as
+waits there, and is made `.ready` and set to restart, as
 `cancelIpcBlocking`'s notification arm makes it (`cancelSignal`); a thread
 blocked receiving, sending or calling on an endpoint leaves that endpoint's
-queue, wherever it waits there, and is made `.ready` with the cancellation frame
+queue, wherever it waits there, and is made `.ready` and set to restart
 (`cancelEndpointBlocked`: `blockedCancelIPC`).  Neither is woken — the thread is
 being destroyed.  A thread blocked on a reply has the reply removed and its
 boost reverted (`finaliseReplyCallerCancel`, the reply finalisation's cancel).
@@ -1544,7 +1547,7 @@ def finaliseReplyUnheld (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : S
 still waits on it** (`reply_remove`, then `reply_unlink`): the caller's blocked
 call is cancelled (`finaliseReplyCancel`: a head reply popped, its context
 handed back to the caller; any other reply spliced out of its stack; then the
-caller restored with the cancellation frame, the reply's caller link and the
+caller restored and set to restart, the reply's caller link and the
 caller's reply link cleared, the caller off its server's reply-waiter queue), the boost it lent its server reverted
 (`finaliseReplyRevert`), and the caller made `.Inactive`
 (`finaliseThreadSuspend`, seL4's `setThreadState Inactive`).  Only when the

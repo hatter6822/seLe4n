@@ -573,7 +573,7 @@ theorem cancelIpcBlocking_notificationHead_eq {st : SystemState} {n : SeLe4n.Obj
       n'.waitTail = (if tcb.ntfnNext.isSome then ntfn.waitTail else none) ∧
       Lifecycle.Suspend.cancelIpcBlocking st t tcb =
         (detachNtfnHead st1 t tcb.ntfnNext).updateTcb t
-          (fun x => x.restoredToReady.withReturnFrame Architecture.cancelledIpcFrame) := by
+          (fun x => x.restoredToRestart) := by
   unfold Lifecycle.Suspend.cancelIpcBlocking
   rw [hB]
   unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
@@ -662,16 +662,14 @@ theorem storeNotificationBlockedCancelled_unlinked {st : SystemState} {n : SeLe4
   have hFin : ∀ (s4 : SystemState), s4.objects.invExt →
       s4.objects[t.toObjId]? = some (.tcb { tcb with ntfnPrevCode := 0, ntfnNextCode := 0 }) →
       (∀ x, t.toObjId ≠ x →
-        (s4.updateTcb t (fun x => x.restoredToReady.withReturnFrame Architecture.cancelledIpcFrame)
+        (s4.updateTcb t (fun x => x.restoredToRestart)
           ).objects[x]? = s4.objects[x]?) ∧
-      (∃ x, (s4.updateTcb t (fun x => x.restoredToReady.withReturnFrame
-          Architecture.cancelledIpcFrame)).objects[t.toObjId]? = some (.tcb x) ∧
+      (∃ x, (s4.updateTcb t (fun x => x.restoredToRestart)).objects[t.toObjId]? = some (.tcb x) ∧
         x.ipcState = .ready ∧ x.ntfnPrev = none ∧ x.ntfnNext = none) ∧
-      (s4.updateTcb t (fun x => x.restoredToReady.withReturnFrame
-          Architecture.cancelledIpcFrame)).objects.invExt := by
+      (s4.updateTcb t (fun x => x.restoredToRestart)).objects.invExt := by
     intro s4 hI4 h4T
     refine ⟨fun x hx => SystemState.updateTcb_objects_ne _ _ _ x hx hI4,
-      ⟨_, updateTcb_objects_self_of_tcb _ hI4 h4T, by simp, rfl, rfl⟩,
+      ⟨_, updateTcb_objects_self_of_tcb _ hI4 h4T, by simp [TCB.restoredToRestart], rfl, rfl⟩,
       SystemState.updateTcb_preserves_objects_invExt _ _ _ hI4⟩
   have hTp3 : s3.objects[t.toObjId]? = some (.tcb { tcb with ntfnPrevCode := 0, ntfnNextCode := 0 }) :=
     (h3O _ (hInj p t hpt)).trans h2T
@@ -749,7 +747,7 @@ theorem notificationCancel_preserves_reachableParts (st : SystemState)
         cancelIpcBlocking_notificationHead_eq hN hH hT hB hInv
       rw [hEq]
       exact notificationWaiterConsistent_headDetached hNC hNo hH hTo hI1 hN1 hO1 hHd hTl _
-        (fun x => ⟨by simp, rfl, rfl⟩)
+        (fun x => ⟨by simp [TCB.restoredToRestart], rfl, rfl⟩)
     · -- Not the head: the waiter has a predecessor, which links to it.
       obtain ⟨n0, hN0, hPrevT, -, -⟩ := hNC.2.1 t tcb notificationId hTo hB
       rw [hNo] at hN0; cases hN0
@@ -1297,23 +1295,23 @@ theorem cutThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.i
 /-- The restore of a thread blocked on no notification: its own TCB rewritten,
 made `.ready`, its notification links and budget kept. -/
 theorem restoreToReadyStaging (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (restart : Bool) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hNotN : ∀ o, tcbV.ipcState ≠ .blockedOnNotification o) :
-    NtfnFrame st (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+    NtfnFrame st (Lifecycle.Suspend.restoreToReadyStaging st v restart) := by
   have hV := lookupTcb_some_objects st v tcbV hLookup
   have hGet : st.getTcb? v = some tcbV := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hV
-  have hK : tcbNtfnFieldsKept (restoredTcb tcbV frame) tcbV := by
+  have hK : tcbNtfnFieldsKept (restoredTcb tcbV restart) tcbV := by
     refine ⟨fun o => ⟨fun e => (by rw [restoredTcb_ipcState] at e; cases e),
       fun e => absurd e (hNotN o)⟩, ?_, ?_, ?_⟩ <;>
-      (unfold restoredTcb; cases frame <;> rfl)
-  refine ⟨fun k n => restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup k _
+      (unfold restoredTcb; cases restart <;> rfl)
+  refine ⟨fun k n => restoreToReadyStaging_nonTcb st v restart tcbV hInv hLookup k _
     (fun _ h => by cases h), fun k ty hy => ?_, fun k tx hx => ?_⟩
   · by_cases hk : k = v.toObjId
     · subst hk; rw [hV] at hy; cases hy
-      exact ⟨_, restoreToReadyStaging_objects_self st v frame _ hInv hGet, hK⟩
-    · exact ⟨ty, restoreToReadyStaging_tcb_forward st v frame hInv k ty hk hy, .refl ty⟩
-  · rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup k tx hx with
+      exact ⟨_, restoreToReadyStaging_objects_self st v restart _ hInv hGet, hK⟩
+    · exact ⟨ty, restoreToReadyStaging_tcb_forward st v restart hInv k ty hk hy, .refl ty⟩
+  · rcases restoreToReadyStaging_tcb_pullback st v restart tcbV hInv hLookup k tx hx with
       ⟨_, h0⟩ | ⟨hk, rfl⟩
     · exact ⟨tx, h0, .refl tx⟩
     · exact ⟨tcbV, by rw [hk]; exact hV, hK⟩

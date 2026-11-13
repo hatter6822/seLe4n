@@ -19,8 +19,8 @@ entry's start), so the census follows from the step's own cross-core frames:
   arm makes a thread current on the executing core (each prior step keeps or
   clears that core's slot), so the outgoing thread is the caller, which no
   other core holds (`offCoreFree_of_current`).
-* **The suspend's restore.**  The suspend's teardown restores its victim with
-  the cancellation frame only when the victim was blocked in IPC at the entry's
+* **The suspend's restore.**  The suspend's teardown moves its victim's saved
+  PC to its restart PC only when the victim was blocked in IPC at the entry's
   start, so current nowhere and resident nowhere (`offCoreFree_of_blocked`).
 * **The resume.**  Its fault retire writes the restart frame only into a thread
   no core holds (`retirePendingFaultForResume_savedRegsKeptOffCore`); the rest

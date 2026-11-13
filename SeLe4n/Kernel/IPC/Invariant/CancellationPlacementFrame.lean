@@ -62,30 +62,30 @@ theorem _root_.SeLe4n.Model.SystemState.replyNeighbourCodes_of_linkFrame
 /-- WS-RR RR8.11: the restore rewrites the victim's own TCB and writes nothing
 where no TCB was. -/
 private theorem restoreToReadyStaging_linkFrame_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (tid : SeLe4n.ThreadId) (restart : Bool)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x).map TCB.linkFrame
+    ((Lifecycle.Suspend.restoreToReadyStaging st tid restart).getTcb? x).map TCB.linkFrame
       = (st.getTcb? x).map TCB.linkFrame := by
   cases hT : st.getTcb? tid with
   | none =>
-    rw [Lifecycle.Suspend.restoreToReadyStaging_eq_self_of_getTcb?_none st tid frame hT]
+    rw [Lifecycle.Suspend.restoreToReadyStaging_eq_self_of_getTcb?_none st tid restart hT]
   | some tcb =>
     by_cases hk : x = tid
     · subst hk
-      have hPost : (Lifecycle.Suspend.restoreToReadyStaging st x frame).getTcb? x
-          = some (restoredTcb tcb frame) := by
+      have hPost : (Lifecycle.Suspend.restoreToReadyStaging st x restart).getTcb? x
+          = some (restoredTcb tcb restart) := by
         rw [restoreToReadyStaging_eq]
         simp only [hT]
         exact (SystemState.getTcb?_eq_some_iff _ x _).mpr
           (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv)
       rw [hPost, hT]
-      cases frame with
-      | none => simp [restoredTcb, TCB.placement, TCB.linkFrame]
-      | some f => simp [restoredTcb, TCB.withReturnFrame, TCB.placement, TCB.linkFrame]
-    · have hPost : (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x
+      cases restart with
+      | false => simp [restoredTcb, TCB.placement, TCB.linkFrame]
+      | true => simp [restoredTcb, TCB.restoredToRestart, TCB.placement, TCB.linkFrame]
+    · have hPost : (Lifecycle.Suspend.restoreToReadyStaging st tid restart).getTcb? x
           = st.getTcb? x := by
         unfold SystemState.getTcb?
-        rw [restoreToReadyStaging_objects_ne st tid frame x.toObjId hInv
+        rw [restoreToReadyStaging_objects_ne st tid restart x.toObjId hInv
           (fun hc => hk (SeLe4n.ThreadId.toObjId_injective x tid hc))]
       rw [hPost]
 
@@ -361,12 +361,12 @@ theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
 reply-link teardown — leaves every thread's placement and reply-waiter links
 alone; only the final unlink writes reply-waiter links. -/
 theorem cancelReplyPrefix_linkFrame (st : SystemState) (v : SeLe4n.ThreadId)
-    (tcbV : TCB) (frame : Option Architecture.SyscallReturnFrame)
+    (tcbV : TCB) (restart : Bool)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyStaging
           (cutThreadReplyFrameOut
-            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v frame)
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v restart)
         v tcbV).getTcb? x).map TCB.linkFrame
       = (st.getTcb? x).map TCB.linkFrame := by
   have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
@@ -421,14 +421,22 @@ theorem cancelIpcBlocking_runCoresAgree (st : SystemState) (v : SeLe4n.ThreadId)
   cases (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).getTcb? y <;>
     cases st.getTcb? y <;> simp_all [TCB.placement]
 
-/-- The restore makes its thread ready and leaves it active. -/
+/-- The restore makes its thread ready and leaves it active (a restarted thread
+is `.Restart`, not `.Inactive`). -/
 theorem restoreToReadyStaging_stateMono (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    SystemState.StateMono st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    SystemState.StateMono st (Lifecycle.Suspend.restoreToReadyStaging st tid restart) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact SystemState.StateMono.updateTcb hInv tid fun x =>
-    ⟨fun _ => by cases frame <;> rfl, fun h => by cases frame <;> exact h,
-      by cases frame <;> rfl⟩
+    ⟨fun _ => by cases restart <;> rfl,
+      fun h => by
+        cases restart with
+        | false => exact h
+        | true =>
+          show TCB.Active x.restoredToRestart
+          unfold TCB.Active at h ⊢
+          simp [TCB.restoredToRestart, TCB.restartState, h],
+      by cases restart <;> rfl⟩
 
 /-- The reclaim's pop rebinds scheduling contexts and blocks no thread. -/
 private theorem returnDonationToCancelledCaller_stateMono (st : SystemState)

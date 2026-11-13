@@ -1210,7 +1210,7 @@ fn identifier_validation() {
 fn kernel_error_variant_count() {
     // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
     const KERNEL_ERROR_COUNT: u32 = 61;
-    // All expected variants exist, and the retired discriminants (35, 37) have none
+    // All expected variants exist, and the retired discriminants (35, 37, 57) have none
     for i in 0..KERNEL_ERROR_COUNT {
         assert_eq!(
             KernelError::from_u32(i).is_some(),
@@ -1656,7 +1656,7 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
-    assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
+    assert!(KernelError::from_u32(57).is_none()); // retired (WS-SX SX4, IpcCancelled)
     assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
     assert!(KernelError::from_u32(59).is_some()); // RangeError
     assert!(KernelError::from_u32(60).is_some()); // FailedLookup

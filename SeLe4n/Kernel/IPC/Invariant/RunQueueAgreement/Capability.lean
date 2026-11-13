@@ -625,16 +625,19 @@ theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hS1 hI1 ⊢
   have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
     ⟨fun _ => TCB.ipcState_setIpcState
-      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id, rfl⟩
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready,
+      fun h => (TCB.restartState_ne_inactive_iff x).2 h, rfl⟩
   refine ((endpointQueuePopHead_runQueueStage hPop).trans
-    (RunQueueStage.updateTcb s1 t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)).trans
+    (RunQueueStage.updateTcb s1 t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM
+      (hA := fun x h => (TCB.restartState_ne_inactive_iff x).1 h))).trans
     (enqueueRunnableOnCore_runQueueStage _ _ t (fun c => ?_) ?_ (homedOn_determineTargetCore _ _))
   · have hR : runningOnSomeCore (s1.updateTcb t cancelledEndpointWaiterTcb) t =
         runningOnSomeCore st t := by
       unfold runningOnSomeCore; rw [SystemState.updateTcb_scheduler, hS1]
     exact currentNowhere_of_runningOnSomeCore_false (hR.trans hW.2) c
   · exact ⟨cancelledEndpointWaiterTcb (tcbOffQueue tcb),
-      by rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb]; rfl, hW.1⟩
+      by rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb]; rfl,
+      (TCB.restartState_ne_inactive_iff _).2 hW.1⟩
 
 /-- The guarded removal of a thread from an endpoint queue: endpoint stores and
 queue-link writes. -/
@@ -687,10 +690,12 @@ theorem storeEndpointBlockedCancelled_runQueueStage (st : SystemState) (e : SeLe
     ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG
   have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
     ⟨fun _ => TCB.ipcState_setIpcState
-      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id, rfl⟩
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready,
+      fun h => (TCB.restartState_ne_inactive_iff x).2 h, rfl⟩
   unfold storeEndpointBlockedCancelled
   exact (endpointQueueRemoveDual_runQueueStage hRem).trans
-    (RunQueueStage.updateTcb _ t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)
+    (RunQueueStage.updateTcb _ t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM
+      (hA := fun x h => (TCB.restartState_ne_inactive_iff x).1 h))
 
 /-- **A notification waiter's cancel is a stage**: the cancellation
 (`cancelIpcBlocking_runQueueStage`) keeps the thread active
