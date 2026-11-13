@@ -248,10 +248,13 @@ the waiter path is the specification's. -/
             (storeSignalPending st notificationId badge,
              .ok none)
           else
+          -- The badge itself, the word `ofNatMasked badge.toNat` is
+          -- (`Badge.ofNatMasked_toNat`): no round trip through a `Nat`, which
+          -- a badge at or above `2^63` would make a heap number.
           let mergedBadge : SeLe4n.Badge :=
             match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
-            | none => SeLe4n.Badge.ofNatMasked badge.toNat
+            | none => badge
           (st.withObjectStored notificationId (.notification {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
@@ -292,7 +295,8 @@ the waiter path is the specification's. -/
           simp only [signalPendingObject, Notification.pendingBadge, hp, ↓reduceIte,
             Bool.false_eq_true, SeLe4n.Badge.ofNatMasked_toNat badge (SeLe4n.Badge.valid_of_word badge)]
       · rw [if_neg hL]
-        simp only [SystemState.storeObject_eq_withObjectStored]
+        simp only [SystemState.storeObject_eq_withObjectStored,
+          SeLe4n.Badge.ofNatMasked_toNat badge (SeLe4n.Badge.valid_of_word badge)]
   · rfl
 
 /-- WS-SM SM6.B.1 (plan §3.1): notification wait across cores.

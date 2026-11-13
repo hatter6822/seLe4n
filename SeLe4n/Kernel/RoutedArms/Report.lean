@@ -23,15 +23,19 @@ the state's report word (`MachineState.entryReport`) and the entry pops.  A
 refusal's payload rides beside the code as its five payload words, one stack
 per word (`MachineState.entryReportWord0`–`4`), so the entry hands a refusal
 on as its discriminant and words (`entryReportOutcomeW`) and builds no error
-(D2b).
+(D2b).  A stack is its top word, an unboxed `UInt64` field, and the words
+beneath it (`MachineState.entryReportBelow0`–`4`, radix `2^64`): a payload
+word is a full machine word, and a `Nat` at or above `2^63` is a heap cell, so
+no payload word on the refusal path is ever a `Nat`.
 
 The push is a multiplication and an addition, the pop a division, so a push
 followed by its pop is the identity on every state, whatever the word held
 before (`popEntryReport_pushEntryReport`): the state the entry continues with
 is the arm's own, and no frame property of any arm is needed for it.  Every
 committed state holds what its entry was handed (`0` from boot), so the word
-stays a small number and its arithmetic boxes nothing; a payload stack pushed
-from empty holds the word itself (`reportStackPushFast`).
+stays a small number and its arithmetic boxes nothing; the words beneath each
+payload top stay `0`, which the push and the pop keep with no conversion
+(`reportBelowPushFast`, `reportStackPopFast`).
 -/
 
 namespace SeLe4n.Kernel
@@ -48,20 +52,44 @@ def entryReportBase : Nat := 256
 /-- The payload stacks' radix: one machine word per push. -/
 def entryReportWordBase : Nat := 2 ^ 64
 
-/-- Push the word `w` onto the payload stack `a`. -/
-def reportStackPush (a : Nat) (w : UInt64) : Nat := a * entryReportWordBase + w.toNat
+/-- The words beneath a payload stack's top once `top` is pushed under a new
+word: `top` joins the words `below` it, radix `2^64`.  The top itself stays a
+`UInt64` field (`MachineState.entryReportWord0`), so a push never makes a
+payload word a `Nat`; only a second report pushed over a first moves the first
+one's word here. -/
+def reportBelowPush (below : Nat) (top : UInt64) : Nat :=
+  below * entryReportWordBase + top.toNat
 
-/-- `reportStackPush` as it runs: onto an empty stack, the word itself, with no
-multiplication by the radix (a number past a machine word). -/
-def reportStackPushFast (a : Nat) (w : UInt64) : Nat :=
-  if a = 0 then w.toNat else a * entryReportWordBase + w.toNat
+/-- `reportBelowPush` as it runs.  Over an empty stack (`below = 0`, `top =
+0`, every state the entry holds) it is `0` with no conversion at all; over a
+pending report it takes `top` in its two 32-bit halves, each a scalar `Nat`,
+so not even this path turns a full-width word into a `Nat` cell. -/
+def reportBelowPushFast (below : Nat) (top : UInt64) : Nat :=
+  if top = 0 ∧ below = 0 then 0
+  else below * entryReportWordBase +
+    ((top >>> 32).toNat * 2 ^ 32 + (top &&& 0xFFFFFFFF).toNat)
 
-@[csimp] theorem reportStackPush_eq_fast : @reportStackPush = @reportStackPushFast := by
-  funext a w
-  unfold reportStackPush reportStackPushFast
-  split <;> simp_all
+theorem uint64_toNat_halves (w : UInt64) :
+    (w >>> 32).toNat * 2 ^ 32 + (w &&& 0xFFFFFFFF).toNat = w.toNat := by
+  have h1 : (w >>> 32).toNat = w.toNat / 2 ^ 32 := by
+    rw [UInt64.toNat_shiftRight]
+    simp [Nat.shiftRight_eq_div_pow]
+  have h2 : (w &&& 0xFFFFFFFF).toNat = w.toNat % 2 ^ 32 := by
+    rw [UInt64.toNat_and]
+    have : (0xFFFFFFFF : UInt64).toNat = 2 ^ 32 - 1 := by decide
+    rw [this, Nat.and_two_pow_sub_one_eq_mod]
+  rw [h1, h2, Nat.mul_comm]
+  exact Nat.div_add_mod _ _
 
-/-- Pop the payload stack `a`. -/
+@[csimp] theorem reportBelowPush_eq_fast : @reportBelowPush = @reportBelowPushFast := by
+  funext below top
+  unfold reportBelowPush reportBelowPushFast
+  rw [uint64_toNat_halves]
+  split
+  · next h => obtain ⟨h1, h2⟩ := h; subst h1; subst h2; rfl
+  · rfl
+
+/-- Pop the words beneath a payload stack's top. -/
 def reportStackPop (a : Nat) : Nat := a / entryReportWordBase
 
 /-- `reportStackPop` as it runs: a stack holding one word pops to empty with no
@@ -76,14 +104,18 @@ def reportStackPopFast (a : Nat) : Nat :=
   · next h => exact Nat.div_eq_of_lt h
   · rfl
 
-theorem reportStackPop_push (a : Nat) (w : UInt64) : reportStackPop (reportStackPush a w) = a := by
+/-- The top word a pop restores from the words beneath it. -/
+@[inline] def reportBelowTop (below : Nat) : UInt64 := UInt64.ofNat below
+
+theorem reportStackPop_push (a : Nat) (w : UInt64) :
+    reportStackPop (reportBelowPush a w) = a := by
   have hw : w.toNat < entryReportWordBase := w.toNat_lt
   have hb : 0 < entryReportWordBase := by decide
-  unfold reportStackPop reportStackPush
+  unfold reportStackPop reportBelowPush
   rw [Nat.add_comm, Nat.add_mul_div_right _ _ hb, Nat.div_eq_of_lt hw, Nat.zero_add]
 
-theorem reportStackPush_top (a : Nat) (w : UInt64) : UInt64.ofNat (reportStackPush a w) = w := by
-  unfold reportStackPush entryReportWordBase
+theorem reportBelowTop_push (a : Nat) (w : UInt64) : reportBelowTop (reportBelowPush a w) = w := by
+  unfold reportBelowTop reportBelowPush entryReportWordBase
   apply UInt64.toNat_inj.mp
   rw [UInt64.toNat_ofNat', Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt w.toNat_lt]
 
@@ -94,11 +126,16 @@ which it updates in place. -/
     (w0 w1 w2 w3 w4 : UInt64) (st : SystemState) : SystemState :=
   { st with machine := { st.machine with
       entryReport := st.machine.entryReport * entryReportBase + code
-      entryReportWord0 := reportStackPush st.machine.entryReportWord0 w0
-      entryReportWord1 := reportStackPush st.machine.entryReportWord1 w1
-      entryReportWord2 := reportStackPush st.machine.entryReportWord2 w2
-      entryReportWord3 := reportStackPush st.machine.entryReportWord3 w3
-      entryReportWord4 := reportStackPush st.machine.entryReportWord4 w4 } }
+      entryReportWord0 := w0
+      entryReportBelow0 := reportBelowPush st.machine.entryReportBelow0 st.machine.entryReportWord0
+      entryReportWord1 := w1
+      entryReportBelow1 := reportBelowPush st.machine.entryReportBelow1 st.machine.entryReportWord1
+      entryReportWord2 := w2
+      entryReportBelow2 := reportBelowPush st.machine.entryReportBelow2 st.machine.entryReportWord2
+      entryReportWord3 := w3
+      entryReportBelow3 := reportBelowPush st.machine.entryReportBelow3 st.machine.entryReportWord3
+      entryReportWord4 := w4
+      entryReportBelow4 := reportBelowPush st.machine.entryReportBelow4 st.machine.entryReportWord4 } }
 
 /-- The code on top of the state's report word. -/
 @[inline] def _root_.SeLe4n.Model.SystemState.entryReportCode (st : SystemState) : Nat :=
@@ -108,11 +145,16 @@ which it updates in place. -/
 @[noinline] def _root_.SeLe4n.Model.SystemState.popEntryReport (st : SystemState) : SystemState :=
   { st with machine := { st.machine with
       entryReport := st.machine.entryReport / entryReportBase
-      entryReportWord0 := reportStackPop st.machine.entryReportWord0
-      entryReportWord1 := reportStackPop st.machine.entryReportWord1
-      entryReportWord2 := reportStackPop st.machine.entryReportWord2
-      entryReportWord3 := reportStackPop st.machine.entryReportWord3
-      entryReportWord4 := reportStackPop st.machine.entryReportWord4 } }
+      entryReportWord0 := reportBelowTop st.machine.entryReportBelow0
+      entryReportBelow0 := reportStackPop st.machine.entryReportBelow0
+      entryReportWord1 := reportBelowTop st.machine.entryReportBelow1
+      entryReportBelow1 := reportStackPop st.machine.entryReportBelow1
+      entryReportWord2 := reportBelowTop st.machine.entryReportBelow2
+      entryReportBelow2 := reportStackPop st.machine.entryReportBelow2
+      entryReportWord3 := reportBelowTop st.machine.entryReportBelow3
+      entryReportBelow3 := reportStackPop st.machine.entryReportBelow3
+      entryReportWord4 := reportBelowTop st.machine.entryReportBelow4
+      entryReportBelow4 := reportStackPop st.machine.entryReportBelow4 } }
 
 theorem _root_.SeLe4n.Model.SystemState.entryReportCode_pushEntryReport {code : Nat}
     {w0 w1 w2 w3 w4 : UInt64} (st : SystemState) (h : code < entryReportBase) :
@@ -125,11 +167,10 @@ theorem _root_.SeLe4n.Model.SystemState.entryReportCode_pushEntryReport {code : 
 theorem _root_.SeLe4n.Model.SystemState.entryReportWords_pushEntryReport {code : Nat}
     {w0 w1 w2 w3 w4 : UInt64} (st : SystemState) :
     let s := st.pushEntryReport code w0 w1 w2 w3 w4
-    UInt64.ofNat s.machine.entryReportWord0 = w0 ∧ UInt64.ofNat s.machine.entryReportWord1 = w1 ∧
-      UInt64.ofNat s.machine.entryReportWord2 = w2 ∧
-      UInt64.ofNat s.machine.entryReportWord3 = w3 ∧
-      UInt64.ofNat s.machine.entryReportWord4 = w4 := by
-  simp only [SystemState.pushEntryReport, reportStackPush_top, and_self]
+    s.machine.entryReportWord0 = w0 ∧ s.machine.entryReportWord1 = w1 ∧
+      s.machine.entryReportWord2 = w2 ∧ s.machine.entryReportWord3 = w3 ∧
+      s.machine.entryReportWord4 = w4 :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **A push followed by its pop is the identity**, on every state. -/
 theorem _root_.SeLe4n.Model.SystemState.popEntryReport_pushEntryReport {code : Nat}
@@ -139,7 +180,8 @@ theorem _root_.SeLe4n.Model.SystemState.popEntryReport_pushEntryReport {code : N
   have hq : (st.machine.entryReport * entryReportBase + code) / entryReportBase =
       st.machine.entryReport := by
     rw [Nat.add_comm, Nat.add_mul_div_right _ _ hb, Nat.div_eq_of_lt h, Nat.zero_add]
-  simp only [SystemState.popEntryReport, SystemState.pushEntryReport, hq, reportStackPop_push]
+  simp only [SystemState.popEntryReport, SystemState.pushEntryReport, hq, reportStackPop_push,
+    reportBelowTop_push]
 
 /-- The code of a committed result for continuation `kind`. -/
 @[inline] def entryReportOk (kind : Nat) : Nat := kind
@@ -206,11 +248,11 @@ failed resolution as the error itself. -/
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (kLook : KernelError → SystemState → β) (s : SystemState) : β :=
   let c := s.entryReportCode
-  let w0 := UInt64.ofNat s.machine.entryReportWord0
-  let w1 := UInt64.ofNat s.machine.entryReportWord1
-  let w2 := UInt64.ofNat s.machine.entryReportWord2
-  let w3 := UInt64.ofNat s.machine.entryReportWord3
-  let w4 := UInt64.ofNat s.machine.entryReportWord4
+  let w0 := s.machine.entryReportWord0
+  let w1 := s.machine.entryReportWord1
+  let w2 := s.machine.entryReportWord2
+  let w3 := s.machine.entryReportWord3
+  let w4 := s.machine.entryReportWord4
   let s' := s.popEntryReport
   if c < 4 then
     if c = 1 then kResOk s' else kGenOk s'
