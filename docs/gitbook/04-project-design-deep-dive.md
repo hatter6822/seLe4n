@@ -295,7 +295,7 @@ User space → hardware trap → RegisterDecode.decodeSyscallArgsFromState → s
 
 (The `api*` wrapper layer this section originally described was removed in
 S5-A, and the unchecked `syscallEntry` → `dispatchSyscall` route WS-J1-C
-introduced was retired at `v0.37.23`; the capability-gated, flow-checked
+introduced was retired at `v0.37.22`; the capability-gated, flow-checked
 dispatch pipeline above is the single surface.) `syscallEntryChecked`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.

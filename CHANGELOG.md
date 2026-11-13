@@ -1,4 +1,4 @@
-## v0.37.23 — the unchecked syscall entry and dispatchers are retired
+## v0.37.22 — the unchecked syscall entry and dispatchers are retired
 
 Cleanup beside WS-SX (owner decision 2026-11-13). `syscallEntry`,
 `dispatchSyscall` and `dispatchWithCap` were the boot-pinned register-sourced

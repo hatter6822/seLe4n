@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.23)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -163,7 +163,7 @@ specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
 raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
 still convert, under the narrowed `docs/REGISTERED_DEBT.md` row. SX2 is the next cut.
 
-Beside WS-SX, `v0.37.23` retired the unchecked register-sourced entry (owner
+Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked
 capability tier `dispatchWithCap` are deleted, the
 trace harness, the suites and the exception model run `syscallEntryChecked`

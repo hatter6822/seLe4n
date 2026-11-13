@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.23` (`lakefile.toml`) |
+| **Package version** | `0.37.22` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 627,799 across 625 Lean files |
 | **Test LoC** | 89,698 across 70 Lean test suites |
@@ -3049,7 +3049,7 @@ AG3-C) defines the hardware exception dispatch path:
   executing core, under the labeling context the caller passes (the one the
   live seams read from `Platform.FFI.getKernelLabelingContext`); since WS-RR
   RR4 (v0.34.44) every *other* lower-EL synchronous class routes to fault
-  delivery instead of returning a `KernelError` — since `v0.37.23` the
+  delivery instead of returning a `KernelError` — since `v0.37.22` the
   flow-checked `faultDeliverOnCoreChecked`, the arm the live fault entry runs —
   see the RR4 note below.  A current-EL abort (EC `0x25`/`0x21`, `.kernelAbort`, PR #887
   review round) is the kernel's own and is never delivered: the model answers
@@ -5823,7 +5823,7 @@ Every kernel object has a decidable well-formedness predicate:
   `syscallEntryChecked` receives the core the syscall trapped on and threads it
   through `dispatchSyscallChecked` → `dispatchWithCapChecked` /
   `dispatchCapabilityOnly` to every arm as `executingCore`.  (The unchecked,
-  boot-pinned pre-SMP entry that passed `bootCoreId` was retired at `v0.37.23`,
+  boot-pinned pre-SMP entry that passed `bootCoreId` was retired at `v0.37.22`,
   owner decision 2026-11-13; the trace harness, the suites and the exception
   model run `syscallEntryChecked`.)  No arm re-derives the core by scanning
   `currentOnCore`, and there is no boot-core fallback: the state-scanning
@@ -11491,7 +11491,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
-9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntryChecked` -> `dispatchSyscallChecked` -> `syscallInvokeTyped` -> `dispatchWithCapChecked` (S5-A: deprecated `api*` wrappers removed; the unchecked `syscallEntry` -> `dispatchSyscall` route retired at `v0.37.23`); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label is seL4's 52-bit field (bits 12-63).
+9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntryChecked` -> `dispatchSyscallChecked` -> `syscallInvokeTyped` -> `dispatchWithCapChecked` (S5-A: deprecated `api*` wrappers removed; the unchecked `syscallEntry` -> `dispatchSyscall` route retired at `v0.37.22`); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label is seL4's 52-bit field (bits 12-63).
 10. Hash-store equality for `VSpaceRoot` is order-independent (size + fold containment), `CNode` equality compares geometry and slot arrays (since `v0.36.102`), and the migrated state stores (`services`, `irqHandlers`, the derivation tree's child and parent maps until the slot links replaced them at `v0.36.106`; `cdtSlotNode` and `cdtNodeSlot` until the slot became the node at `v0.36.103`, `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
 
 ---

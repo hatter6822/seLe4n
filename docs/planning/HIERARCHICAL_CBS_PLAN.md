@@ -1532,7 +1532,7 @@ unreachable.  So: `.schedContextConfigureServer` and
 `dispatchCapabilityOnly`; `.schedContextBindServer` is policy-gated (D8) and
 goes into the dispatcher's **fall-through** arms —
 `schedContextBindServerChecked` in `dispatchWithCapChecked` (the unchecked
-dispatcher was retired at `v0.37.23`) — exactly as `.cspaceMint` /
+dispatcher was retired at `v0.37.22`) — exactly as `.cspaceMint` /
 `cspaceMintChecked` do today.  The arm bodies and every
 theorem about them land inert (CB6.3, CB6.4); the wiring is one activation
 cut (CB6.6).  The bind arms' dispatch payoff lives with the staged

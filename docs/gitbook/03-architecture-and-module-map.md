@@ -191,7 +191,7 @@ inventory was written:
   - Re-export hubs: `SeLe4n/Kernel/SchedContext/Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntryChecked` — top-level register-sourced, flow-checked user-space entry point
-    (the unchecked, boot-pinned `syscallEntry` retired at `v0.37.23`),
+    (the unchecked, boot-pinned `syscallEntry` retired at `v0.37.22`),
   - `lookupThreadRegisterContext` — TCB register context extraction,
   - `dispatchSyscallChecked` — routes decoded arguments through `SyscallGate`/`syscallInvokeTyped`,
   - `dispatchWithCapChecked` — per-syscall routing, flow-checked; `dispatchWithCap` is
