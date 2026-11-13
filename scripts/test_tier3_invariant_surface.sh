@@ -6420,6 +6420,23 @@ run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated($|[ ({:\
 run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# The routed arm runs the set in place: the handler's lookup refuses through
+# the lookup's failure words (no heap fault record), proven equal to the
+# specification, and no admitted-check wrapper survives beside it.
+run_check "INVARIANT" rg -n '^@\[inline\] def setThreadFaultHandlerOpK($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def setThreadFaultHandlerOpK[^\n]*(\n([ \t][^\n]*)?)*lookupSlotK tcb cptr st\n\s*\(fun t a b c => onErr \(\.failedLookup false \(LookupFault\.ofWords t a b c\)\)\)' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOpK_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'setThreadFaultHandlerOpK st vtid args\.handlerCPtr \(fun e => \.error \(e, st\)\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerAdmitted|faultHandlerResolves' SeLe4n
+# A refused audit read answers from the read's own code in place
+# (`auditReadFastRefusal`, proven the specification's refusal), not through
+# the specification's payload fallback.
+run_check "INVARIANT" rg -n '^@\[inline\] def auditReadTrailR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'if code = 0 then\n\s*\.error \(auditReadFastRefusal ctx' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadTrailR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFastRefusal_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '\| \.auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditReadAdmitted' SeLe4n
 run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the

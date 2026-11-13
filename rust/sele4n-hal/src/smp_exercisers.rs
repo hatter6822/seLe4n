@@ -3685,6 +3685,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [NOTIFICATION_SLOT, 0, 0, 0],
         )),
+        // The fault handler a fault-handler set names
+        // (`setThreadFaultHandlerOpK`): resolved, like the bound
+        // notification, as an argument capability, and refused in place.
+        guard_mismatch_refusal(invocation(
+            "set-fault-handler-guard-mismatch",
+            TCB_SET_FAULT_HANDLER,
+            PARTNER_TCB_CAP,
+            [ENDPOINT_SLOT, 0, 0, 0],
+        )),
         // Argument words at or above `2^63`, each refused on the word before
         // it is made a number: an ASID past the configured bound
         // (`AsidNotBound`), an address past the canonical bound
@@ -10096,6 +10105,60 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         caps_or_badges: None,
         overflow: None,
         returns: None,
+    },
+    // Refused reads, each answered in place from the read's own code
+    // (`auditReadFastRefusal`): a chunk past the first visible entry's
+    // target object (`InvalidArgument` of the chunk word),
+    RoundTrip {
+        name: "audit-read-entry-chunk-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, 99, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // an entry past the visible ones (`InvalidArgument` of the index word),
+    RoundTrip {
+        name: "audit-read-entry-index-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [9, 1000, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a refusal-ledger slot past the ring (the index word again),
+    RoundTrip {
+        name: "audit-read-refusal-slot-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, 1000, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // and an opcode past the last (`InvalidSyscallArgument`).
+    RoundTrip {
+        name: "audit-read-unknown-op",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [30, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(INVALID_SYSCALL_ARGUMENT),
     },
     RoundTrip {
         name: "audit-drain",
