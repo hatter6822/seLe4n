@@ -2557,7 +2557,10 @@ def maxObjects : Nat := 65536
     `storeObject` is the only path that adds an object).  WS-UC UC2: stated
     over the object table, the count the capacity check reads; the ghost index
     has the same length on every reachable state
-    (`SystemState.bookkeepingAgrees.objectIndex_length`). -/
+    (`SystemState.bookkeepingAgreesUnbounded.objectIndex_length`), and the
+    invariant bundle bounds that length (`SystemState.bookkeepingAgrees`'s
+    `countBounded`), so every live state is bounded
+    (`proofLayerInvariantBundle.objectCountBounded`). -/
 def objectCountBounded (st : SystemState) : Prop :=
   st.objects.size ≤ maxObjects
 
@@ -2570,7 +2573,7 @@ abbrev objectCount_le_maxObjects := objectCountBounded
 /-- WS-UC UC3: **the object and ASID tables are at least boot-sized.**  The boot
 builds both at `bootTableCapacity` (its empty state, `SystemState.bootEmpty_tablesPresized`), and no write
 shrinks a table, so it holds on every reachable state: `bookkeepingAgrees`
-carries it (`SystemState.bookkeepingAgrees.presized`), so the boot's
+carries it (`SystemState.bookkeepingAgreesUnbounded.presized`), so the boot's
 `IntermediateState` and the 22nd conjunct of `proofLayerInvariantBundle` do, and
 every kernel entry keeps it with the agreement. -/
 structure SystemState.tablesPresized (st : SystemState) : Prop where
@@ -2893,6 +2896,28 @@ theorem storeObject_objectIndex {st st' : SystemState} {id : SeLe4n.ObjId} {obj 
     st'.objectIndex = if (st.objects[id]?).isSome then st.objectIndex else id :: st.objectIndex := by
   unfold storeObject at hStore; cases hStore
   cases (st.objects[id]?).isSome <;> simp
+
+/-- A store keeps every stored key stored. -/
+theorem storeObject_objects_isSome_of_isSome {st st' : SystemState} {id k : SeLe4n.ObjId}
+    {obj : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hInv : st.objects.invExt) (hk : (st.objects[k]?).isSome) : (st'.objects[k]?).isSome := by
+  unfold storeObject at hStore; cases hStore
+  show ((st.objects.insert id obj)[k]?).isSome
+  simp only [RHTable_getElem?_eq_get?] at hk ⊢
+  by_cases h : (id == k) = true
+  · have := eq_of_beq h; subst this
+    rw [RHTable.getElem?_insert_self _ _ _ hInv]; rfl
+  · rw [RHTable.getElem?_insert_ne _ _ _ _ h hInv]; exact hk
+
+/-- A store over a stored key does not grow the object table. -/
+theorem storeObject_size_le_of_some {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hInv : st.objects.invExt) (hOld : st.objects[id]? = some old) :
+    st'.objects.size ≤ st.objects.size := by
+  unfold storeObject at hStore; cases hStore
+  show (st.objects.insert id obj).size ≤ _
+  exact RHTable.size_insert_le_of_get? st.objects id obj old hInv
+    (by rw [← RHTable_getElem?_eq_get?]; exact hOld)
 
 /-- WS-UC UC2: **the index-set ghost after a store**: a stored ID leaves it, a
 new ID is inserted. -/
@@ -6769,8 +6794,13 @@ tables are at least boot-sized (`SystemState.tablesPresized`).  Every step that
 keeps the agreement writes those tables with inserts, erases and in-place
 updates, none of which shrinks a table, so the sizing rides on the same proofs,
 and a reachable state's inserts never resize
-(`SystemState.bookkeepingAgrees.objects_insert_eq_insertNoResize`). -/
-structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
+(`SystemState.bookkeepingAgrees.objects_insert_eq_insertNoResize`).
+
+This is the agreement without the object count bound: what the boot's builder
+carries (`IntermediateState.hLifecycleConsistent`), whose inserts no capacity
+check bounds.  A kernel state carries the bound too
+(`SystemState.bookkeepingAgrees`). -/
+structure SystemState.bookkeepingAgreesUnbounded (st : SystemState) : Prop where
   index : ∀ id, id ∈ st.objectIndex ↔ st.objects[id]? ≠ none
   nodup : st.objectIndex.Nodup
   indexSet : ∀ id, st.objectIndexSet.contains id = true ↔ st.objects[id]? ≠ none
@@ -6778,6 +6808,19 @@ structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
   indexSetInv : st.objectIndexSet.table.invExtK
   typesInv : st.lifecycle.objectTypes.invExtK
   presized : st.tablesPresized
+
+/-- **The bookkeeping agrees with the object table, and the table holds at most
+`maxObjects` objects** — the 22nd conjunct of `proofLayerInvariantBundle`.  The
+bound is read off the ghost index, which every step that adds no object keeps,
+so it rides on the agreement's own proofs: a store over a stored key keeps the
+index, a carve stores past the capacity check (`retypeFromUntyped`'s
+`objectStoreCapacityExceeded`), and a retire shortens it.  It is the object
+count the table holds (`SystemState.bookkeepingAgrees.objects_size_le`), so
+with the boot sizing no insert into the object table is ever due a resize
+(`proofLayerInvariantBundle.objects_noResizeDue`). -/
+structure SystemState.bookkeepingAgrees (st : SystemState) : Prop
+    extends toUnbounded : SystemState.bookkeepingAgreesUnbounded st where
+  countBounded : st.objectIndex.length ≤ maxObjects
 
 /-- WS-UC UC2: the boot's empty state's bookkeeping agrees: every table is empty
 (WS-UC UC3: and the object and ASID tables are boot-sized). -/
@@ -6808,11 +6851,21 @@ theorem SystemState.bootEmpty_bookkeepingAgrees :
   indexSetInv := default_allTablesInvExtK.2.2.2.2
   typesInv := default_allTablesInvExtK.2.2.1
   presized := SystemState.bootEmpty_tablesPresized
+  countBounded := by
+    have hI : (SystemState.bootEmpty ()).objectIndex = [] := default_objectIndex
+    rw [hI]; exact Nat.zero_le _
+
+/-- The boot's empty state's agreement, without the count bound: where the
+builder starts. -/
+theorem SystemState.bootEmpty_bookkeepingAgreesUnbounded :
+    SystemState.bookkeepingAgreesUnbounded (SystemState.bootEmpty ()) :=
+  SystemState.bootEmpty_bookkeepingAgrees.toUnbounded
 
 /-- WS-UC UC2: **the index is as long as the object table is large** on a state
 whose bookkeeping agrees: what lets the capacity check and every fuel the
 specification took from the index's length read `objects.size`. -/
-theorem SystemState.bookkeepingAgrees.objectIndex_length {st : SystemState} (h : SystemState.bookkeepingAgrees st)
+theorem SystemState.bookkeepingAgreesUnbounded.objectIndex_length {st : SystemState}
+    (h : SystemState.bookkeepingAgreesUnbounded st)
     (hK : st.objects.invExtK) : st.objectIndex.length = st.objects.size := by
   apply Nat.le_antisymm
   · exact RHTable.length_le_size_of_nodup_present st.objects hK.1 _ h.nodup
@@ -6827,15 +6880,15 @@ theorem SystemState.bookkeepingAgrees.objectIndex_length {st : SystemState} (h :
 /-- WS-UC UC2: **the bookkeeping still agrees after a step that keeps the ghosts
 and the stored IDs**, given the type table still agrees: what every in-place
 step (a thread write, a run-queue link, a taint word) discharges. -/
-theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
-    (h : SystemState.bookkeepingAgrees st)
+theorem SystemState.bookkeepingAgreesUnbounded.of_frame {st st' : SystemState}
+    (h : SystemState.bookkeepingAgreesUnbounded st)
     (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
     (hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome)
     (hT : SystemState.objectTypeMetadataConsistent st')
     (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption)
     (hOC : st.objects.capacity ≤ st'.objects.capacity := by capacity_kept)
     (hAC : st.asidTable.capacity ≤ st'.asidTable.capacity := by capacity_kept) :
-    SystemState.bookkeepingAgrees st' where
+    SystemState.bookkeepingAgreesUnbounded st' where
   index id := by
     rw [hI, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
   nodup := hI ▸ h.nodup
@@ -6846,6 +6899,21 @@ theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
   typesInv := hTI ▸ h.typesInv
   presized := ⟨Nat.le_trans h.presized.objectsBootSized hOC, Nat.le_trans h.presized.asidBootSized hAC⟩
 
+/-- The agreement and its count bound after a step that keeps the ghosts and
+the stored IDs: the index is the pre-state's, so the bound is too. -/
+theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st)
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome)
+    (hT : SystemState.objectTypeMetadataConsistent st')
+    (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption)
+    (hOC : st.objects.capacity ≤ st'.objects.capacity := by capacity_kept)
+    (hAC : st.asidTable.capacity ≤ st'.asidTable.capacity := by capacity_kept) :
+    SystemState.bookkeepingAgrees st' :=
+  { toUnbounded :=
+      h.toUnbounded.of_frame hI hS hP hT hTI hOC hAC
+    countBounded := hI ▸ h.countBounded }
+
 /-- WS-UC UC2: **the stored object IDs, read from the object table** — the
 executable reading of the ghost index, in the table's slot order.  On a state
 whose bookkeeping agrees it is a permutation of the index
@@ -6854,8 +6922,8 @@ not depend on order may read either. -/
 def SystemState.objectIds (st : SystemState) : List SeLe4n.ObjId :=
   st.objects.toList.map Prod.fst
 
-theorem SystemState.bookkeepingAgrees.objectIds_perm {st : SystemState}
-    (h : SystemState.bookkeepingAgrees st) (hInv : st.objects.invExt) :
+theorem SystemState.bookkeepingAgreesUnbounded.objectIds_perm {st : SystemState}
+    (h : SystemState.bookkeepingAgreesUnbounded st) (hInv : st.objects.invExt) :
     st.objectIds.Perm st.objectIndex :=
   SeLe4n.Model.perm_of_nodup_of_mem_iff (SeLe4n.Model.toList_keys_nodup _ hInv) h.nodup
     fun a => by
@@ -6864,11 +6932,28 @@ theorem SystemState.bookkeepingAgrees.objectIds_perm {st : SystemState}
 
 /-- WS-UC UC2: a stored ID is in the index set on a state whose bookkeeping
 agrees, and an ID the object table does not hold is not. -/
-theorem SystemState.bookkeepingAgrees.contains_iff {st : SystemState} (h : SystemState.bookkeepingAgrees st)
+theorem SystemState.bookkeepingAgreesUnbounded.contains_iff {st : SystemState}
+    (h : SystemState.bookkeepingAgreesUnbounded st)
     (id : SeLe4n.ObjId) :
     st.objectIndexSet.contains id = (st.objects[id]?).isSome := by
   have := h.indexSet id
   cases hc : st.objectIndexSet.contains id <;> cases ho : st.objects[id]? <;> simp_all
+
+/-- **The object table holds as many objects as the index lists**, on a state
+whose bookkeeping agrees: its entries are a permutation of the index
+(`objectIds_perm`). -/
+theorem SystemState.bookkeepingAgreesUnbounded.objects_size_eq {st : SystemState}
+    (h : SystemState.bookkeepingAgreesUnbounded st) (hInv : st.objects.invExt) :
+    st.objects.size = st.objectIndex.length := by
+  rw [← SeLe4n.Model.toList_length st.objects hInv, ← (h.objectIds_perm hInv).length_eq,
+    SystemState.objectIds, List.length_map]
+
+/-- **The object table holds at most `maxObjects` objects** on a state whose
+bookkeeping agrees and is bounded (`objectCountBounded`). -/
+theorem SystemState.bookkeepingAgrees.objects_size_le {st : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (hInv : st.objects.invExt) :
+    st.objects.size ≤ maxObjects :=
+  h.objects_size_eq hInv ▸ h.countBounded
 
 /-- WS-UC UC2: **a step that moves no bookkeeping** — it writes none of the
 three ghosts and keeps every slot's kind: an empty slot stays empty and a stored
@@ -6943,7 +7028,8 @@ theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
     indexSetInv := k.indexSet ▸ h.indexSetInv
     typesInv := k.types ▸ h.typesInv
     presized := ⟨Nat.le_trans h.presized.objectsBootSized k.objectsCapacity,
-      Nat.le_trans h.presized.asidBootSized k.asidCapacity⟩ }
+      Nat.le_trans h.presized.asidBootSized k.asidCapacity⟩
+    countBounded := k.index ▸ h.countBounded }
 
 /-- A step that writes no object and none of the ghosts keeps the agreement. -/
 theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
@@ -6952,12 +7038,12 @@ theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
   h.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types hG.asidCapacity)
 
 /-- WS-UC UC2: `storeObject` keeps the bookkeeping in agreement. -/
-theorem storeObject_preserves_bookkeepingAgrees
+theorem storeObject_preserves_bookkeepingAgreesUnbounded
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (h : SystemState.bookkeepingAgrees st)
+    (h : SystemState.bookkeepingAgreesUnbounded st)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    SystemState.bookkeepingAgrees st' := by
+    SystemState.bookkeepingAgreesUnbounded st' := by
   have hSetInv := h.indexSetInv.1
   have hIdx := storeObject_objectIndex hStore
   have hSet := storeObject_objectIndexSet hStore
@@ -7017,6 +7103,36 @@ theorem storeObject_preserves_bookkeepingAgrees
   · rw [storeObject_objectTypes hStore]; split
     · exact h.typesInv
     · exact RHTable_insert_preserves_invExtK _ _ _ h.typesInv
+
+/-- `storeObject` keeps the bookkeeping in agreement and within its bound, for a
+store over a stored key or one with room left: a store over a stored key keeps
+the index, and a new key is one more entry. -/
+theorem storeObject_preserves_bookkeepingAgrees
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (h : SystemState.bookkeepingAgrees st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hFit : (st.objects[id]?).isSome ∨ st.objectIndex.length < maxObjects) :
+    SystemState.bookkeepingAgrees st' :=
+  { toUnbounded := storeObject_preserves_bookkeepingAgreesUnbounded st st' id obj
+      h.toUnbounded hObjInv hStore
+    countBounded := by
+      rw [storeObject_objectIndex hStore]
+      split
+      · exact h.countBounded
+      · next hS =>
+        rcases hFit with hP | hL
+        · exact absurd hP hS
+        · rw [List.length_cons]; exact hL }
+
+/-- A store over a stored key keeps the bookkeeping in agreement and bounded. -/
+theorem storeObject_preserves_bookkeepingAgrees_of_some
+    {st st' : SystemState} {id : SeLe4n.ObjId} {obj old : KernelObject}
+    (h : SystemState.bookkeepingAgrees st) (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) (hOld : st.objects[id]? = some old) :
+    SystemState.bookkeepingAgrees st' :=
+  storeObject_preserves_bookkeepingAgrees st st' id obj h hObjInv hStore
+    (.inl (by rw [hOld]; rfl))
 
 /-- WS-UC UC2: **a store over an object of the same kind moves no
 bookkeeping**: the key is already indexed, and its type does not change. -/
@@ -8595,10 +8711,11 @@ theorem withObjectStored_preserves_objectTypeMetadataConsistent (st : SystemStat
     (storeObject_eq_withObjectStored st id obj)
 
 /-- WS-UC UC2: the pure store keeps the bookkeeping in agreement. -/
-theorem withObjectStored_preserves_bookkeepingAgrees (st : SystemState)
+theorem withObjectStored_preserves_bookkeepingAgreesUnbounded (st : SystemState)
     (id : SeLe4n.ObjId) (obj : KernelObject) (hAll : st.allTablesInvExtK)
-    (h : bookkeepingAgrees st) : bookkeepingAgrees (st.withObjectStored id obj) :=
-  storeObject_preserves_bookkeepingAgrees st _ id obj h hAll.objects.1
+    (h : bookkeepingAgreesUnbounded st) :
+    bookkeepingAgreesUnbounded (st.withObjectStored id obj) :=
+  storeObject_preserves_bookkeepingAgreesUnbounded st _ id obj h hAll.objects.1
     (storeObject_eq_withObjectStored st id obj)
 
 theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)

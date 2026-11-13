@@ -4732,7 +4732,16 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
 - **Bound predicate**: `objectCountBounded st` asserts
   `st.objects.size ≤ maxObjects` (defined in `Model/State.lean`); the ghost
   index has the same length wherever the bookkeeping agrees
-  (`SystemState.bookkeepingAgrees.objectIndex_length`).
+  (`SystemState.bookkeepingAgreesUnbounded.objectIndex_length`,
+  `.objects_size_eq`).  Since `v0.37.23` the bundle carries it:
+  `bookkeepingAgrees` bounds the ghost index by `maxObjects`
+  (`countBounded`), a store over a stored key keeps the index, the carve
+  stores past its capacity check (`retypeFromUntyped_ok_size_lt`), a retire
+  shortens the index, and the started boot leaves room for its interrupt
+  nodes (`bootFromPlatformCheckedStartedFor_objectIndex_length_le`), so
+  `proofLayerInvariantBundle.objectCountBounded` holds of every live state.
+  The boot's builder carries the agreement without the bound
+  (`bookkeepingAgreesUnbounded`), since its inserts pass no capacity check.
 - **Capacity enforcement**: the carve (`retypeFromUntyped`) and
   `storeObjectChecked` (AC3-E) return `objectStoreCapacityExceeded` when a new
   object would be inserted with `objects.size ≥ maxObjects`, before any write;
@@ -4759,7 +4768,11 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   `proofLayerInvariantBundle.objects_insert_eq_insertNoResize`,
   `.asidTable_insert_eq_insertNoResize`,
   `retypeFromUntyped_insert_eq_insertNoResize`; the carve's heap model reads no
-  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).  Only the boot's
+  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).  With the bundle's
+  count bound no object-table resize is due on a live state
+  (`proofLayerInvariantBundle.objects_noResizeDue`), so the in-place store
+  predicate asks only whether the probe finds the key
+  (`proofLayerInvariantBundle.objects_findsInPlace_iff`).  Only the boot's
   own state holds boot-sized tables: the boot starts from
   `SystemState.bootEmpty ()` (through `mkEmptyIntermediateState ()`), which
   builds both tables where the boot calls it (`RHTable.emptyFresh`,
@@ -6179,7 +6192,10 @@ Every kernel object has a decidable well-formedness predicate:
   payload words.  A drain that is not admitted refuses `illegalAuthority` in
   place (`auditedArmSpec_auditDrain_refused`), and an admitted drain compares
   its count word to the trail's length on the word (`auditDrainCountW`,
-  proven by `auditDrainPerform_countW`).  A refused declassification
+  proven by `auditDrainPerform_countW`).  A read's index and chunk words are
+  read as words (`auditReadFastCodeW`, `auditReadFastRefusalW`, proven equal
+  to the code and refusal of their numbers), so no word at or above `2^63` is
+  made a number.  A refused declassification
   read 19 to 25 heap cells before; it reads 0.
 - **The timer tick, the reschedule SGI and each core's first entry allocate
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore

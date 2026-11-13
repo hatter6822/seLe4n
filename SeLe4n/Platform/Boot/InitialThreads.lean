@@ -70,7 +70,7 @@ def startInitialThread (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := startInitialThreadOnCore_preserves_perObjectMappingsInvariant ist.state tid
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := startInitialThreadOnCore_preserves_bookkeepingAgrees
+  hLifecycleConsistent := startInitialThreadOnCore_preserves_bookkeepingAgreesUnbounded
     ist.state tid ist.hAllTables.objects.1 ist.hLifecycleConsistent
 
 /-- **WS-BP BP7.11** (the derivation, pinned): the boot's start *is* the kernel
@@ -674,6 +674,43 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
       (startInitialThreads_cnodeCapGeometry _ _ _ hStart
         (bootFromPlatformCheckedWithIdleThreadsFor_ok_cnodeCapGeometry cores config base hBase)))
 
+/-- **The started boot keeps the object index within `maxObjects`**: the starts
+and the linking keep the index, and the node install adds one entry per line,
+at most `InterruptLineSet.capacity`, which the idle boot left room for
+(`bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room`). -/
+theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    ist.state.objectIndex.length ≤ maxObjects := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  have hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores := by
+    have := SeLe4n.Kernel.RobinHood.List.length_le_of_nodup_subset hNodup
+      (m := SeLe4n.Kernel.Concurrency.allCores)
+      (fun a _ => SeLe4n.Kernel.Concurrency.mem_allCores a)
+    rwa [SeLe4n.Kernel.Concurrency.allCores_length] at this
+  have hRoom := bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room cores config base
+    hCores hBase
+  have hS : started.state.objectIndex = base.state.objectIndex :=
+    startInitialThreads_induct (fun i => i.state.objectIndex = base.state.objectIndex)
+      (fun i tid _ hP => by
+        show (startInitialThreadOnCore i.state tid).objectIndex = _
+        rw [startInitialThreadOnCore_frame i.state tid]
+        exact hP)
+      _ _ _ hStart rfl
+  have hI := foldObjects_objectIndex_length_le (irqNodeEntries (irqNodeLineCount config)) started
+  have hN : (irqNodeEntries (irqNodeLineCount config)).length ≤ InterruptLineSet.capacity := by
+    simp only [irqNodeEntries, List.length_map, List.length_range, irqNodeLineCount]
+    exact Nat.min_le_right _ _
+  have hL : (linkBootCapabilities config
+      (installIrqNodes (irqNodeLineCount config) started)).state.objectIndex =
+      (installIrqNodes (irqNodeLineCount config) started).state.objectIndex := by
+    rw [linkBootCapabilities_state, (linkBootSlots_reach _ _).fields]
+  rw [hL]
+  unfold installIrqNodes
+  rw [hS] at hI
+  omega
+
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state
 after the starts and the linking, because the starts keep what it reads and the
@@ -685,6 +722,7 @@ theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
     Architecture.proofLayerInvariantBundle ist.state :=
   proofLayerInvariantBundle_of_bootLinkedShape ist
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
+    (bootFromPlatformCheckedStartedFor_objectIndex_length_le cores hNodup config ist h)
 
 /-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
 current or resident** — the first entry's precondition for

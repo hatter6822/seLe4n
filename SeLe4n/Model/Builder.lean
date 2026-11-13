@@ -123,7 +123,7 @@ def createObject (ist : IntermediateState)
       exact ist.hPerObjectMappings oid vs (by simp only [RHTable_getElem?_eq_get?]; exact hObj)
   hLifecycleConsistent := by
     obtain ⟨st', hS⟩ := storeObject_isOk ist.state id obj
-    have h := storeObject_preserves_bookkeepingAgrees _ _ _ _ ist.hLifecycleConsistent
+    have h := storeObject_preserves_bookkeepingAgreesUnbounded _ _ _ _ ist.hLifecycleConsistent
       ist.hAllTables.objects.1 hS
     unfold storeObject at hS; cases hS
     exact ⟨h.index, h.nodup, h.indexSet, h.types, h.indexSetInv, h.typesInv,

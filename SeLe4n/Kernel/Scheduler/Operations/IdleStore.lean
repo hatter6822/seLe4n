@@ -199,9 +199,9 @@ theorem storeIdleThreadOnCore_preserves_objectTypeMetadataConsistent (st : Syste
     hAll.objects.1 hAll.objectTypes.1 hC
 
 /-- WS-UC UC2: the store keeps the bookkeeping in agreement. -/
-theorem storeIdleThreadOnCore_preserves_bookkeepingAgrees (st : SystemState) (c : CoreId)
-    (hAll : st.allTablesInvExtK) (h : st.bookkeepingAgrees) :
-    (storeIdleThreadOnCore st c).bookkeepingAgrees :=
-  SystemState.withObjectStored_preserves_bookkeepingAgrees _ _ _ hAll h
+theorem storeIdleThreadOnCore_preserves_bookkeepingAgreesUnbounded (st : SystemState) (c : CoreId)
+    (hAll : st.allTablesInvExtK) (h : st.bookkeepingAgreesUnbounded) :
+    (storeIdleThreadOnCore st c).bookkeepingAgreesUnbounded :=
+  SystemState.withObjectStored_preserves_bookkeepingAgreesUnbounded _ _ _ hAll h
 
 end SeLe4n.Kernel

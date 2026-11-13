@@ -3637,7 +3637,7 @@ run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectTypeMetadataCo
 run_check "INVARIANT" rg -n '^theorem withObjectStored_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem default_systemState_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_objectTypeMetadataConsistent\b' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  hLifecycleConsistent : state\.bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent : state\.bookkeepingAgreesUnbounded$' SeLe4n/Model/IntermediateState.lean
 run_negative_check "INVARIANT" rg -n 'lifecycleInvariantBundle_of_metadata_consistent|lifecycleMetadataConsistent_of_lifecycleInvariantBundle|default_systemState_lifecycleConsistent' SeLe4n tests
 
 # ============================================================================
@@ -9822,7 +9822,17 @@ run_negative_check "INVARIANT" rg -n 'st\.bookkeepingAgrees ∧' SeLe4n/Kernel/A
 # table, established by the boot's empty state, carried by every kernel entry through
 # its mapping-record stages, and transported by the taint-word frame.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^  hLifecycleConsistent := SystemState\.bootEmpty_bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent := SystemState\.bootEmpty_bookkeepingAgreesUnbounded$' SeLe4n/Model/IntermediateState.lean
+# The 22nd conjunct bounds the object count: the agreement extends the builder's
+# unbounded one with the index bound, a store of a new key needs room, the carve
+# passed its capacity check, and the boot bundle takes the started boot's bound.
+run_check "INVARIANT" rg -n -U '^structure SystemState\.bookkeepingAgrees \(st : SystemState\) : Prop\n    extends toUnbounded : SystemState\.bookkeepingAgreesUnbounded st where\n  countBounded : st\.objectIndex\.length ≤ maxObjects$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n -U '^theorem storeObject_preserves_bookkeepingAgrees\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hFit : \(st\.objects\[id\]\?\)\.isSome ∨ st\.objectIndex\.length < maxObjects\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_size_lt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩⟩' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objectCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n -U 'theorem proofLayerInvariantBundle\.objects_noResizeDue[^\n]*\n[^\n]*hS' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-UC UC3: the boot's object and ASID tables are boot-sized, built where the
 # boot calls for them and never as a module constant: the boot builder's empty
 # state and the tables it holds are `never_extract` calls.
