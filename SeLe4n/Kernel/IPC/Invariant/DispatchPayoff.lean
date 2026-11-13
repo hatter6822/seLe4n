@@ -1097,44 +1097,48 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     ctx notifId tid executingCore st hFlow] at hStep
               simp only [] at hStep; cases hStep
           | true =>
-              rw [notificationWaitCrossCoreDispatchChecked_flow_allowed
-                    ctx notifId tid executingCore st hFlow] at hStep
-              obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-              have hWaitInv := notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
-                notifId tid executingCore st hInv hObjInv
-                (fun tcb hTcb => by
-                  rw [hTC] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReceive tcbC hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTC] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReply tcbC hReadyC)
-                hBudgets
-                (fun tcb hTcb => by
-                  rw [hTC] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact hReadyC)
-              cases hWait : notificationWaitCrossCoreDispatch notifId tid executingCore st with
-              | mk st1 res1 =>
-                  rw [hWait] at hStep hWaitInv
-                  cases res1 with
-                  | error e => simp only [] at hStep; cases hStep
-                  | ok badge? =>
-                      cases badge? with
-                      | none =>
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          rw [← hStep]
-                          exact hWaitInv
-                      | some badge =>
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          have hObjInv1 : st1.objects.invExt := by
-                            have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
-                              notifId tid executingCore st hObjInv
-                            rw [hWait] at h; exact h
-                          rw [← hStep]
-                          exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
-                            hObjInv1 hWaitInv
+              cases hBound : notificationBoundElsewhere st notifId tid
+              · rw [notificationWaitCrossCoreDispatchChecked_flow_allowed
+                    ctx notifId tid executingCore st hFlow hBound] at hStep
+                obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
+                have hWaitInv := notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
+                  notifId tid executingCore st hInv hObjInv
+                  (fun tcb hTcb => by
+                    rw [hTC] at hTcb
+                    obtain rfl := Option.some.inj hTcb
+                    exact readyThread_notBlockedOnReceive tcbC hReadyC)
+                  (fun tcb hTcb => by
+                    rw [hTC] at hTcb
+                    obtain rfl := Option.some.inj hTcb
+                    exact readyThread_notBlockedOnReply tcbC hReadyC)
+                  hBudgets
+                  (fun tcb hTcb => by
+                    rw [hTC] at hTcb
+                    obtain rfl := Option.some.inj hTcb
+                    exact hReadyC)
+                cases hWait : notificationWaitCrossCoreDispatch notifId tid executingCore st with
+                | mk st1 res1 =>
+                    rw [hWait] at hStep hWaitInv
+                    cases res1 with
+                    | error e => simp only [] at hStep; cases hStep
+                    | ok badge? =>
+                        cases badge? with
+                        | none =>
+                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            rw [← hStep]
+                            exact hWaitInv
+                        | some badge =>
+                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            have hObjInv1 : st1.objects.invExt := by
+                              have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
+                                notifId tid executingCore st hObjInv
+                              rw [hWait] at h; exact h
+                            rw [← hStep]
+                            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
+                              hObjInv1 hWaitInv
+              · simp only [notificationWaitCrossCoreDispatchChecked, hFlow, hBound,
+                  ↓reduceIte] at hStep
+                cases hStep
         all_goals cases hStep
       case replyRecv =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep

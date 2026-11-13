@@ -24,14 +24,16 @@ open SeLe4n.Model
 
 /-- **The receive arm**: `dispatchOperandCheckedK` on the operand and the
 receive's arm and taint step (`receiveOperandArmThenTaintR`), its results
-reported. -/
+reported; its reply capability's failed lookup is reported with the reply
+capability's address (`replyLookupRefusalW`), the receive's capability fault. -/
 @[noinline] def receiveRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (length : Nat) (replyWord : UInt64)
     (st : SystemState) : SystemState :=
   dispatchOperandCheckedKW .receive (SeLe4n.CPtr.ofWord capWord) tid executingCore
     (receiveOperandArmThenTaintR ctx tid length (SeLe4n.CPtr.ofWord replyWord) executingCore
       (syscallRequiredRight .receive))
-    st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+    st entryReportGeneral (entryReportPushOk 1)
+    (replyLookupRefusalW (length != 0) tid (SeLe4n.CPtr.ofWord replyWord) (entryReportPushErrorW 1) (entryReportPushReplyW replyWord))
     entryReportLookup entryReportLookupW
 
 end SeLe4n.Kernel

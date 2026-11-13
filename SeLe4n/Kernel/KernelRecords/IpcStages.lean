@@ -211,8 +211,10 @@ theorem notificationWaitCrossCoreDispatchChecked {ctx : LabelingContext} {nid : 
     hC.notParked) fun _ => by
     unfold _root_.SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked
     split
-    · exact notificationWaitOnCore_preserves_replyWaitersConsistent nid waiter c st
-        hR.objects_invExt hR.replyWaitersConsistent hC.serverFree
+    · split
+      · exact hR.replyWaitersConsistent
+      · exact notificationWaitOnCore_preserves_replyWaitersConsistent nid waiter c st
+          hR.objects_invExt hR.replyWaitersConsistent hC.serverFree
     · exact hR.replyWaitersConsistent
 
 /-- **The declassified signal keeps the records**: the bound signal, then the

@@ -1585,7 +1585,9 @@ theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : 
       executingCore st).1.objects.invExt := by
   unfold notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore_stepCovers e hInv
+  · split
+    · exact ⟨stepCovers_refl e st, hInv⟩
+    · exact notificationWaitOnCore_stepCovers e hInv
   · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-! ### ReplyRecv -/

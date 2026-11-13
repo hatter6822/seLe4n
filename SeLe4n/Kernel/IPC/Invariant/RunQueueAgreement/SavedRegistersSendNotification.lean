@@ -656,7 +656,9 @@ theorem notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten (ctx : Label
       (notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st).1 := by
   unfold notificationWaitCrossCoreDispatchChecked
   split
-  · exact notificationWaitOnCore_savedRegsUnwritten _ _ _ hInv
+  · split
+    · exact .refl hInv
+    · exact notificationWaitOnCore_savedRegsUnwritten _ _ _ hInv
   · exact .refl hInv
 
 /-- The woken receiver's stash clear rewrites one field of a thread. -/

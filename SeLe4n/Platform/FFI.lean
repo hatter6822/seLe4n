@@ -3131,10 +3131,13 @@ delivery with the address and error its own lookup produced
 gives on the dispatcher's refusal.  The prologue re-run here reads the
 argument-spilled state the dispatcher decoded from, and the per-core TLB fill
 between the two touches no object (`tlbFillIpcBufferOnCore_frame`), so the
-two resolutions agree.  What neither re-runs is a second lookup an arm performs after the first
-succeeded — `.replyRecv`'s reply capability — so that failure returns the
-error rather than faulting (seL4-MCS's `lookupReply` faults there);
-registered debt, not a silent divergence. -/
+two resolutions agree.  A receive's second lookup, its reply capability's
+(seL4-MCS's `lookupReply`), is re-run the same way: on a receive that names a
+reply capability (`receiveReplyAddr?`), a refusal that is that lookup's own
+failure (`receiveReplyFaults`) is raised as the capability fault at the reply
+capability's address, in the receive phase, with its lookup fault, as
+`lookupReply` raises it (`resolveRecvReplyId_failedLookup`,
+`resolveReplyRecvReply_failedLookup`). -/
 def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
     (tid : SeLe4n.ThreadId) (ke : KernelError) : Option Fault :=
   match st.getObject? tid.toObjId with
@@ -3148,11 +3151,15 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
       | some inRecv =>
         let gate : SyscallGate :=
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        let replyFault : Option Fault :=
+          match receiveReplyFaults gate decoded st ke with
+          | some (replyAddr, lf) => some (.capFault replyAddr.word true lf)
+          | none => none
         match syscallOperandLookup decoded.syscallId gate st with
         | .error e =>
             if e = ke then some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
-            else none
-        | .ok _ => none
+            else replyFault
+        | .ok _ => replyFault
   | _ => none
 
 /-- `syscallCapFaultOf` for a refusal handed on as its discriminant and payload
@@ -3170,12 +3177,16 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
       | some inRecv =>
         let gate : SyscallGate :=
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        let replyFault : Option Fault :=
+          match receiveReplyFaults gate decoded st (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) with
+          | some (replyAddr, lf) => some (.capFault replyAddr.word true lf)
+          | none => none
         match syscallOperandLookup decoded.syscallId gate st with
         | .error e =>
             if e.matchesWords d w0 w1 w2 w3 w4 then
               some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
-            else none
-        | .ok _ => none
+            else replyFault
+        | .ok _ => replyFault
   | _ => none
 
 theorem syscallCapFaultOfW_eq (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
@@ -3184,7 +3195,7 @@ theorem syscallCapFaultOfW_eq (layout : SeLe4n.SyscallRegisterLayout) (st : Syst
         (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) =
       syscallCapFaultOf layout st tid ke := by
   unfold syscallCapFaultOfW syscallCapFaultOf
-  simp only [KernelError.matchesWords_iff]
+  simp only [KernelError.matchesWords_iff, KernelError.ofPayloadWords_payloadWord]
 
 /-- PR #887 review round 3: deliver a syscall-raised capability fault — the
 abort entry's delivery, at the SVC seam: spill the trap frame's window, build
@@ -3236,8 +3247,8 @@ theorem syscallCapFaultOf_none_of_no_fault_phase (layout : SeLe4n.SyscallRegiste
   simp [syscallCapFaultOf, hTcb, hDec, hNot]
 
 /-- …and neither does a refusal whose capability **passed the lookup a fault
-reads**: the fault is the lookup's, never the invocation's — a capability
-refused by its arm returns the error. -/
+reads** and that names no reply capability's fault: the fault is a lookup's,
+never the invocation's — a capability refused by its arm returns the error. -/
 theorem syscallCapFaultOf_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayout)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (tcb : TCB)
     (decoded : SeLe4n.Model.SyscallDecodeResult) (inRecv : Bool)
@@ -3247,9 +3258,12 @@ theorem syscallCapFaultOf_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayo
     (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
     (hLookup : syscallOperandLookup decoded.syscallId
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
-        st = .ok ()) :
+        st = .ok ())
+    (hReply : receiveReplyFault?
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        decoded st = none) :
     syscallCapFaultOf layout st tid ke = none := by
-  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hLookup]
+  simp [syscallCapFaultOf, receiveReplyFaults, hTcb, hDec, hIpc, hLookup, hReply]
 
 /-- The syscalls whose type and right the fault's lookup checks are the ones
 that fault in the receive phase: `syscallReceivesOnCap` and
@@ -3411,6 +3425,21 @@ word, the syscall's phase and the resolution's error, handed to
   | some inRecv => onLookupFault s capAddr.word inRecv e
   | none => onRefuse e s
 
+/-- A refusal that names a reply capability's fault is a receive's, which
+faults in the receive phase. -/
+theorem capFaultReceivePhase?_of_receiveReplyFaults (gate : SyscallGate)
+    (decoded : SeLe4n.Model.SyscallDecodeResult) (st : SystemState)
+    (ke : KernelError) (replyAddr : SeLe4n.CPtr) (lf : LookupFault)
+    (h : receiveReplyFaults gate decoded st ke = some (replyAddr, lf)) :
+    capFaultReceivePhase? decoded.syscallId = some true := by
+  have hN : syscallNamesReply decoded.syscallId = true := by
+    cases hX : syscallNamesReply decoded.syscallId
+    · rw [receiveReplyFaults_none_of_namesReply gate decoded st ke hX] at h
+      cases h
+    · rfl
+  revert hN
+  cases decoded.syscallId <;> simp [syscallNamesReply, capFaultReceivePhase?]
+
 /-- WS-ZA ZA6.31: **the entry's lookup reused.**  Running the entry as
 `syscallEntryCheckedK`, with a failed operand resolution delivered from the
 words the entry already holds, is the specification's handling of
@@ -3439,7 +3468,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
   · exact h
   rw [hCur] at hCur'
   cases hCur'
-  rcases h with ⟨hK, hNe⟩ | ⟨e, s, hK, hE, hRes⟩
+  rcases h with ⟨hK, hNe⟩ | ⟨e, s, hK, hE, hRes⟩ | ⟨ke, s, replyAddr, lf, hK, hE, hNe, hRF⟩
   · rw [hK]
     cases hR : syscallEntryCheckedR ctx executingCore st with
     | ok v => obtain ⟨⟨⟩, st'⟩ := v; rfl
@@ -3447,7 +3476,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
       obtain ⟨ke, s⟩ := p
       have hs := hState ke s hR
       subst hs
-      have hNe' := hNe ke s hR
+      obtain ⟨hNe', hRF⟩ := hNe ke s hR
       have hNone : syscallCapFaultOf SeLe4n.arm64DefaultLayout s tid ke = none := by
         unfold syscallCapFaultOf
         simp only [hObj, hDec]
@@ -3457,8 +3486,8 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
           simp only []
           cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0],
               decoded.capAddr, syscallRequiredRight decoded.syscallId⟩ s with
-          | ok _ => rfl
-          | error e => simp only [hNe' e hG, ↓reduceIte]
+          | ok _ => simp only [hRF]
+          | error e => simp only [hNe' e hG, ↓reduceIte, hRF]
       simp only [syscallArmOutcome, syscallRefusalOutcome, hNone]
   · rw [hK, hE]
     have hs := hState e s hE
@@ -3469,6 +3498,17 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
     cases capFaultReceivePhase? decoded.syscallId with
     | none => rfl
     | some inRecv => simp only [hRes, ↓reduceIte, hF]
+  · rw [hK, hE]
+    have hs := hState ke s hE
+    subst hs
+    have hPhase := capFaultReceivePhase?_of_receiveReplyFaults _ decoded s ke replyAddr lf hRF
+    simp only [syscallLookupOutcome, syscallRefusalOutcome, hPhase]
+    unfold syscallCapFaultOf
+    simp only [hObj, hDec, hPhase]
+    cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0],
+        decoded.capAddr, syscallRequiredRight decoded.syscallId⟩ s with
+    | ok _ => simp only [hRF, hF]; rfl
+    | error e => simp only [hNe e hG, ↓reduceIte, hRF, hF]; rfl
 
 /-- WS-ZA ZA6.31: a capability fault the entry's own resolution raised,
 delivered from its words: the operand's address word, the syscall's phase and
@@ -3655,6 +3695,16 @@ them (`abiEntryRoutedWith_eq`). -/
           deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4
             syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
       | none => errorRefusalWordsW ctx executingCore syscallId tid x0 d w0 w1 w2 w3 w4 s)
+    -- a receive's reply capability's failed lookup (seL4-MCS `lookupReply`):
+    -- the fault raised at the reply capability's address, from its words
+    (fun replyWord w1 w2 w3 w4 s =>
+      match capFaultReceivePhase? sid with
+      | some inRecv => (Architecture.SyscallOutcome.faulted.words,
+          deliverSyscallLookupFault ctx executingCore s tid replyWord inRecv
+            (KernelError.failedLookup false .invalidRoot).toDiscriminant w1 w2 w3 w4
+            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+      | none => errorRefusalWordsW ctx executingCore syscallId tid x0
+          (KernelError.failedLookup false .invalidRoot).toDiscriminant 0 w1 w2 w3 w4 s)
     s
 
 /-- The routed entry joined at `abiEntryFinishW` is the continued entry into the
@@ -3702,6 +3752,16 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
     cases capFaultReceivePhase? sid with
     | some inRecv => simp only [deliverSyscallLookupFault_eq]; rfl
     | none => simp only [errorRefusalWordsW_eq]
+  · intro sid w rw lf s
+    unfold abiEntryFinishW
+    rw [SeLe4n.Kernel.entryReportReplyLookup, SeLe4n.Kernel.entryReportOutcomeW_reply]
+    unfold syscallLookupOutcome
+    cases capFaultReceivePhase? sid with
+    | some inRecv =>
+      exact congrArg (Prod.mk _) (deliverSyscallLookupFault_eq ctx executingCore s tid rw inRecv
+        (.failedLookup false lf) syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+    | none =>
+      exact errorRefusalWordsW_eq ctx executingCore syscallId tid x0 (.failedLookup false lf) s
 
 /-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
 (`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands

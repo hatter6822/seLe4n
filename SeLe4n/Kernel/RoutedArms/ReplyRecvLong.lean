@@ -49,7 +49,10 @@ apart, a result under the first. -/
             (fun _ => longOperandKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))
-                  (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+                  (length - 4) st entryReportGeneral (entryReportPushOk 1)
+                  (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
+                    (entryReportPushErrorW 1)
+                    (entryReportPushReplyW (replyRecvReplyAddr tcb.registerContext).word))
                   entryReportLookup entryReportLookupW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 

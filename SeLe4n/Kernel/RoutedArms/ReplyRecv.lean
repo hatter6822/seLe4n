@@ -40,7 +40,10 @@ the default heartbeats. -/
     dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
         extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
-      st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+      st entryReportGeneral (entryReportPushOk 1)
+      (replyLookupRefusalW (length != 0) tid (replyRecvReplyAddr tcb.registerContext)
+        (entryReportPushErrorW 1)
+        (entryReportPushReplyW (replyRecvReplyAddr tcb.registerContext).word))
       entryReportLookup entryReportLookupW
   | _ => entryReportGeneral (.error (.illegalState, st))
 

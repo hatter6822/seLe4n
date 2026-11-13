@@ -2403,26 +2403,38 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     | some (.invalidCapability n) => some n
     | _ => none
   let cptr (w : Nat) := SeLe4n.CPtr.ofNat w
+  -- seL4-MCS `lookupReply`: a receive's reply capability that is not one is
+  -- the receive's capability fault, `MissingCapability`, never an argument
+  -- error; the refusal the entry raises it from is `failedLookup`.
+  let missing : KernelError := .failedLookup false (.missingCapability 0)
+  let isMissing {α : Type} (r : Except KernelError α) : Bool :=
+    match r with
+    | .error e => e == missing
+    | _ => false
+  let kMissing (r : Option KernelError) : Bool :=
+    match r with
+    | some e => e == missing
+    | none => false
   -- A non-reply capability (the CNode's, slot 3) and an empty slot (9).
   for (w, what) in [(3, "wrong_kind"), (9, "empty")] do
-    -- `.receive`'s reply capability (MR0): argument capability 0.
-    expect s!"argcap_receive_reply_{what}"
-      (capNum (resolveRecvReplyId gate (decoded .receive [w]) st) == some 1 &&
-       capNum (resolveRecvReplyIdR st caller 1 (cptr w)) == some 1 &&
-       kNum (resolveRecvReplyK st caller 1 (cptr w) some (fun _ => none)) == some 1)
-      "a receive's reply argument is refused invalidCapability 1 on the spec, R and K forms"
-    expect s!"argcap_receive_reply_{what}_dispatch"
-      (capNum (dispatchSyscallAsCurrent (decoded .receive [w]) caller bootCoreId st) == some 1)
-      "a receive through the dispatcher answers its reply argument's number"
-    -- `.replyRecv`'s reply capability (MR0): argument capability 0.
-    expect s!"argcap_replyRecv_reply_{what}"
-      (capNum (resolveReplyRecvReply gate (decoded .replyRecv [w]) st) == some 1 &&
-       capNum (resolveReplyRecvReplyR st caller 1 #[SeLe4n.RegValue.ofNat w]) == some 1 &&
-       kNum (resolveReplyRecvK st caller 1 (cptr w) some (fun _ _ _ _ => none)) == some 1)
-      "a reply-receive's reply argument is refused invalidCapability 1 on the spec, R and K forms"
-    expect s!"argcap_replyRecv_reply_{what}_dispatch"
-      (capNum (dispatchSyscallAsCurrent (decoded .replyRecv [w]) caller bootCoreId st) == some 1)
-      "a reply-receive through the dispatcher answers its reply argument's number"
+    -- `.receive`'s reply capability (MR0).
+    expect s!"receive_reply_{what}_missing"
+      (isMissing (resolveRecvReplyId gate (decoded .receive [w]) st) &&
+       isMissing (resolveRecvReplyIdR st caller 1 (cptr w)) &&
+       kMissing (resolveRecvReplyK st caller 1 (cptr w) some (fun _ => none)))
+      "a receive's reply capability is refused MissingCapability on the spec, R and K forms"
+    expect s!"receive_reply_{what}_dispatch_missing"
+      (isMissing (dispatchSyscallAsCurrent (decoded .receive [w]) caller bootCoreId st))
+      "a receive through the dispatcher refuses its reply capability MissingCapability"
+    -- `.replyRecv`'s reply capability (MR0).
+    expect s!"replyRecv_reply_{what}_missing"
+      (isMissing (resolveReplyRecvReply gate (decoded .replyRecv [w]) st) &&
+       isMissing (resolveReplyRecvReplyR st caller 1 #[SeLe4n.RegValue.ofNat w]) &&
+       kMissing (resolveReplyRecvK st caller 1 (cptr w) some (fun _ _ _ _ => none)))
+      "a reply-receive's reply capability is refused MissingCapability on the spec, R and K forms"
+    expect s!"replyRecv_reply_{what}_dispatch_missing"
+      (isMissing (dispatchSyscallAsCurrent (decoded .replyRecv [w]) caller bootCoreId st))
+      "a reply-receive through the dispatcher refuses its reply capability MissingCapability"
     -- `.schedContextBind`'s thread (MR0).
     expect s!"argcap_schedContextBind_thread_{what}"
       (capNum (resolveSchedContextBindThread caller
