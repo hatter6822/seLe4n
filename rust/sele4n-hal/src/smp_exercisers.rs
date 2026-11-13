@@ -12956,12 +12956,7 @@ fn fault_entries() -> Option<bool> {
             [0; 4],
         ),
     ];
-    if !unmeasured(
-        &kernel_step("fault-donating-mask-ticks", MASK_TICKS_STEP),
-        "the timer was not masked",
-    ) {
-        return Some(false);
-    }
+    let ticks = crate::interrupts::disable_interrupts();
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         if !unmeasured_all(&donating_setup, "the donating fault's setup failed")
@@ -12973,12 +12968,7 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
     }
-    if !unmeasured(
-        &kernel_step("fault-donating-unmask-ticks", UNMASK_TICKS_STEP),
-        "the timer was not unmasked",
-    ) {
-        return Some(false);
-    }
+    crate::interrupts::restore_interrupts(ticks);
     // A capability fault answered by a reply at the longest message, 120
     // words, and then by a reply-receive at that length: the reply's words
     // past the fourth are read from the handler's IPC buffer, so a page is
