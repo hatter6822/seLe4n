@@ -7,7 +7,7 @@
 //! - **15 newtype identifiers**: `ObjId`, `ThreadId`, `CPtr`, `Slot`,
 //!   `SchedContextId`, etc. (AK4-C / R-ABI-L2 — `SchedContextId` added in v0.29.8;
 //!   `RegValue` is a register-value wrapper counted separately).
-//! - **`KernelError`**: 57-variant error enum (discriminants 0–57, 37 retired) matching `SeLe4n.Model.KernelError`
+//! - **`KernelError`**: 59-variant error enum (discriminants 0–60, 35 and 37 retired) matching `SeLe4n.Model.KernelError`
 //!   (plus the `UnknownKernelError` sentinel at 255)
 //! - **`AccessRight` / `AccessRights`**: Capability rights with bitmask operations
 //! - **`SyscallId`**: 34-variant syscall identifier enum

@@ -190,6 +190,10 @@ width: the encoder the round trips read back. -/
 @[inline] def pack (destDepth srcDepth rights : Nat) : Nat :=
   destDepth % 256 + srcDepth % 256 * 256 + rights % 32 * 65536
 
+/-- A packed word is one register word (WS-SX SX1.3): below `2 ^ 21`. -/
+theorem pack_lt (d s r : Nat) : pack d s r < 2 ^ 64 := by
+  unfold pack; omega
+
 theorem destDepth_pack (d s r : Nat) : CNodeOpWord.destDepth (pack d s r) = d % 256 := by
   unfold CNodeOpWord.destDepth pack; omega
 
@@ -647,46 +651,46 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
 /-- Encode CSpace mint arguments into message registers.
     Inverse of `decodeCSpaceMintArgs`. -/
 @[inline] def encodeCSpaceMintArgs (args : CSpaceMintArgs) : Array RegValue :=
-  #[⟨args.destIndex.toNat⟩, ⟨args.srcRoot.toNat⟩, ⟨args.srcIndex.toNat⟩,
-    ⟨CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits⟩, ⟨args.badge.toNat⟩]
+  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits), ⟨args.badge.word⟩]
 
 /-- Encode CSpace copy arguments into message registers.
     Inverse of `decodeCSpaceCopyArgs` for depths below 256 and a valid mask. -/
 @[inline] def encodeCSpaceCopyArgs (args : CSpaceCopyArgs) : Array RegValue :=
-  #[⟨args.destIndex.toNat⟩, ⟨args.srcRoot.toNat⟩, ⟨args.srcIndex.toNat⟩,
-    ⟨CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits⟩]
+  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits)]
 
 /-- Encode CSpace move arguments into message registers.
     Inverse of `decodeCSpaceMoveArgs` for depths below 256. -/
 @[inline] def encodeCSpaceMoveArgs (args : CSpaceMoveArgs) : Array RegValue :=
-  #[⟨args.destIndex.toNat⟩, ⟨args.srcRoot.toNat⟩, ⟨args.srcIndex.toNat⟩,
-    ⟨CNodeOpWord.pack args.destDepth args.srcDepth 0⟩]
+  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth 0)]
 
 /-- Encode reply-capability mint arguments into message registers.
     Inverse of `decodeMintReplyCapArgs`. -/
 @[inline] def encodeMintReplyCapArgs (args : MintReplyCapArgs) : Array RegValue :=
-  #[⟨args.srcSlot.toNat⟩, ⟨args.dstSlot.toNat⟩]
+  #[RegValue.ofNat (args.srcSlot.toNat), RegValue.ofNat (args.dstSlot.toNat)]
 
 /-- Encode CSpace delete arguments into message registers.
     Inverse of `decodeCSpaceDeleteArgs`. -/
 @[inline] def encodeCSpaceDeleteArgs (args : CSpaceDeleteArgs) : Array RegValue :=
-  #[⟨args.targetSlot.toNat⟩]
+  #[RegValue.ofNat (args.targetSlot.toNat)]
 
 /-- **WS-BP BP7.1**: encode untyped-retype arguments into message registers.
     Inverse of `decodeUntypedRetypeArgs`. -/
 @[inline] def encodeUntypedRetypeArgs (args : UntypedRetypeArgs) : Array RegValue :=
-  #[⟨args.newType.toNat + args.sizeBits * 256⟩, ⟨args.childId.toNat⟩,
-    ⟨args.dstCNode.toNat⟩, ⟨args.dstSlot.toNat⟩]
+  #[RegValue.ofNat (args.newType.toNat + args.sizeBits * 256), RegValue.ofNat (args.childId.toNat),
+    ⟨args.dstCNode.word⟩, RegValue.ofNat (args.dstSlot.toNat)]
 
 /-- Encode VSpace map arguments into message registers.
     Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
 @[inline] def encodeVSpaceMapArgs (args : VSpaceMapArgs) : Array RegValue :=
-  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.frame.toNat⟩, ⟨args.perms.toNat⟩]
+  #[RegValue.ofNat (args.asid.toNat), RegValue.ofNat (args.vaddr.toNat), RegValue.ofNat (args.frame.toNat), RegValue.ofNat (args.perms.toNat)]
 
 /-- Encode VSpace unmap arguments into message registers.
     Inverse of `decodeVSpaceUnmapArgs`. -/
 @[inline] def encodeVSpaceUnmapArgs (args : VSpaceUnmapArgs) : Array RegValue :=
-  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩]
+  #[RegValue.ofNat (args.asid.toNat), RegValue.ofNat (args.vaddr.toNat)]
 
 -- ============================================================================
 -- Error-exclusivity theorems
@@ -1070,11 +1074,14 @@ theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs)
   have hFits := CNodeOpWord.rightsFits_pack dd sd r.bits
   have hLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r hRights
   -- The word is generalised so the kernel never evaluates the fit check.
-  have hStep : ∀ w, decodeCSpaceCopyArgs (stubDecoded #[⟨di.toNat⟩, ⟨sr.toNat⟩, ⟨si.toNat⟩, ⟨w⟩]) =
-      cnodeCopyArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat) w :=
+  have hStep : ∀ w, decodeCSpaceCopyArgs
+      (stubDecoded #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat w]) =
+      cnodeCopyArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
+        (RegValue.ofNat w).val :=
     fun _ => rfl
   rw [show encodeCSpaceCopyArgs ⟨⟨di, sr, si, dd, sd⟩, r⟩ =
-      #[⟨di.toNat⟩, ⟨sr.toNat⟩, ⟨si.toNat⟩, ⟨CNodeOpWord.pack dd sd r.bits⟩] from rfl, hStep]
+      #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat (CNodeOpWord.pack dd sd r.bits)] from rfl,
+    hStep, RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _)]
   simp only [cnodeCopyArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
     CNodeOpWord.srcDepth_pack, CNodeOpWord.rights_pack, Nat.mod_eq_of_lt hDest,
     Nat.mod_eq_of_lt hSrc, Nat.mod_eq_of_lt hLt, CPtr.ofNat_toNat,
@@ -1097,12 +1104,12 @@ theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
   have hBadgeId : Badge.ofNatMasked b.toNat = b := Badge.ofNatMasked_toNat b hBadge
   -- The word is generalised so the kernel never evaluates the fit check.
   have hStep : ∀ w, decodeCSpaceMintArgs
-      (stubDecoded #[⟨di.toNat⟩, ⟨sr.toNat⟩, ⟨si.toNat⟩, ⟨w⟩, ⟨b.toNat⟩]) =
+      (stubDecoded #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat w, ⟨b.word⟩]) =
       cnodeMintArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-        w b.toNat :=
+        (RegValue.ofNat w).val b.toNat :=
     fun _ => rfl
   simp only [encodeCSpaceMintArgs]
-  rw [hStep, cnodeMintArgsOfWords_of_copy
+  rw [hStep, RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _), cnodeMintArgsOfWords_of_copy
     (cnodeCopyArgsOfWords_pack di sr si dd sd r hDest hSrc hRights), hBadgeId]
 
 /-- Round-trip: encoding then decoding CSpaceMoveArgs recovers the original
@@ -1114,35 +1121,53 @@ theorem decodeCSpaceMoveArgs_roundtrip (args : CSpaceMoveArgs)
   simp only at hDest hSrc
   have hFits := CNodeOpWord.addressingFits_pack dd sd
   show cnodeOpArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-    (CNodeOpWord.pack dd sd 0) = _
-  simp only [cnodeOpArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
+    (RegValue.ofNat (CNodeOpWord.pack dd sd 0)).val = _
+  simp only [RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _), cnodeOpArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
     CNodeOpWord.srcDepth_pack, Nat.mod_eq_of_lt hDest, Nat.mod_eq_of_lt hSrc,
     CPtr.ofNat_toNat]
 
-/-- Round-trip: encoding then decoding MintReplyCapArgs recovers the original. -/
-theorem decodeMintReplyCapArgs_roundtrip (args : MintReplyCapArgs) :
+/-- Round-trip: encoding then decoding MintReplyCapArgs recovers the original,
+for slots a register word holds (WS-SX SX1.3: a register is a word). -/
+theorem decodeMintReplyCapArgs_roundtrip (args : MintReplyCapArgs)
+    (hSrc : args.srcSlot.toNat < 2 ^ 64) (hDst : args.dstSlot.toNat < 2 ^ 64) :
     decodeMintReplyCapArgs (stubDecoded (encodeMintReplyCapArgs args)) = .ok args := by
-  rcases args with ⟨s, d⟩; rfl
+  rcases args with ⟨s, d⟩
+  simp only at hSrc hDst
+  simp [decodeMintReplyCapArgs, encodeMintReplyCapArgs, requireMessageLength,
+    truncationMinimum, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
+    RegValue.val_ofNat_of_lt hSrc, RegValue.val_ofNat_of_lt hDst, Slot.ofNat_toNat]
 
-/-- Round-trip: encoding then decoding CSpaceDeleteArgs recovers the original. -/
-theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs) :
+/-- Round-trip: encoding then decoding CSpaceDeleteArgs recovers the original,
+for a slot a register word holds. -/
+theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs)
+    (hSlot : args.targetSlot.toNat < 2 ^ 64) :
     decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args := by
-  rcases args with ⟨t⟩; rfl
+  rcases args with ⟨t⟩
+  simp only at hSlot
+  simp [decodeCSpaceDeleteArgs, encodeCSpaceDeleteArgs, requireMessageLength,
+    truncationMinimum, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
+    RegValue.val_ofNat_of_lt hSlot, Slot.ofNat_toNat]
 
 /-- **WS-BP BP7.1**: round-trip for UntypedRetypeArgs — the type tag's `ofNat?`
 and `toNat` are inverses per variant, every tag is below `256` so the size in
 the word's upper bits reads back whole, and the three identifier registers carry
-their values verbatim. -/
-theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
+their values verbatim, each a register word (WS-SX SX1.3: the size below
+`2 ^ 56`, so the tag word is one word, and the child and slot below `2 ^ 64`). -/
+theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
+    (hSize : args.sizeBits < 2 ^ 56) (hChild : args.childId.toNat < 2 ^ 64)
+    (hSlot : args.dstSlot.toNat < 2 ^ 64) :
     decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args := by
   rcases args with ⟨t, b, c, d, sl⟩
+  simp only at hSize hChild hSlot
   have hLt : t.toNat < 256 := by cases t <;> decide
   have hDiv : (t.toNat + b * 256) / 256 = b := by omega
   have hTag' : KernelObjectType.ofNat? (t.toNat % 256) = some t := by
     rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
-  simp [requireMessageLength, truncationMinimum, hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
-    requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
-  exact ⟨rfl, rfl⟩
+  have hWord : t.toNat + b * 256 < 2 ^ 64 := by omega
+  simp [requireMessageLength, truncationMinimum, decodeUntypedRetypeArgs,
+    encodeUntypedRetypeArgs, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
+    RegValue.val_ofNat_of_lt hWord, RegValue.val_ofNat_of_lt hChild,
+    RegValue.val_ofNat_of_lt hSlot, hTag', hDiv, ObjId.ofNat_toNat, Slot.ofNat_toNat]
 
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
@@ -1165,9 +1190,14 @@ private theorem pagePermissions_ofNat?_toNat (p : PagePermissions)
 theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
     (hAsid : args.asid.isValidForConfig maxASID = true)
     (hVAddr : args.vaddr.isCanonical = true)
-    (hWx : args.perms.wxCompliant = true) :
+    (hWx : args.perms.wxCompliant = true) (hAsidWord : args.asid.toNat < 2 ^ 64) :
     decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v, p, perms⟩
+  have hVW : v.toNat < 2 ^ 64 :=
+    Nat.lt_trans (show v.toNat < VAddr.canonicalBound from of_decide_eq_true hVAddr) (by decide)
+  simp only at hAsidWord
+  have hPW : p.toNat < 2 ^ 64 := CPtr.toNat_lt p
+  have hPermsW : perms.toNat < 2 ^ 64 := Nat.lt_trans (pagePermissions_toNat_lt_32 perms) (by decide)
   show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) maxASID = .ok ⟨a, v, p, perms⟩
   -- U2-G: The ASID validity check needs to pass; derive that from hAsid
   have hAsidValid : (ASID.ofNat a.toNat).isValidForConfig maxASID = true := by
@@ -1187,17 +1217,22 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
     simp_all [requireMessageLength, truncationMinimum, decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
       bind, Except.bind, requireMsgReg, PagePermissions.wxCompliant,
       PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
-      ASID.ofNat_toNat, VAddr.ofNat_toNat, CPtr.ofNat_toNat, pure, Except.pure]
+      ASID.ofNat_toNat, VAddr.ofNat_toNat, CPtr.ofNat_toNat, pure, Except.pure,
+      RegValue.val_ofNat_of_lt hAsidWord, RegValue.val_ofNat_of_lt hVW,
+      RegValue.val_ofNat_of_lt hPW, RegValue.val_ofNat]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
     U2-G: Requires ASID is valid for the platform-configured maxASID.
     AE4-B: Requires VAddr is canonical. -/
 theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) (maxASID : Nat)
     (hAsid : args.asid.isValidForConfig maxASID = true)
-    (hVAddr : args.vaddr.isCanonical = true) :
+    (hVAddr : args.vaddr.isCanonical = true) (hAsidWord : args.asid.toNat < 2 ^ 64) :
     decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v⟩
-  simp [requireMessageLength, truncationMinimum, decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
+  have hVW : v.toNat < 2 ^ 64 :=
+    Nat.lt_trans (show v.toNat < VAddr.canonicalBound from of_decide_eq_true hVAddr) (by decide)
+  simp only at hAsidWord
+  simp [RegValue.val_ofNat_of_lt hAsidWord, RegValue.val_ofNat_of_lt hVW, requireMessageLength, truncationMinimum, decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
     bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
     pure, Except.pure, hAsid, hVAddr]
 
@@ -1281,8 +1316,8 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
 /-- Encode service register arguments into message registers.
     Inverse of `decodeServiceRegisterArgs`. -/
 @[inline] def encodeServiceRegisterArgs (args : ServiceRegisterArgs) : Array RegValue :=
-  #[⟨args.interfaceId.toNat⟩, ⟨args.methodCount⟩, ⟨args.maxMessageSize⟩,
-    ⟨args.maxResponseSize⟩, ⟨if args.requiresGrant then 1 else 0⟩]
+  #[RegValue.ofNat (args.interfaceId.toNat), RegValue.ofNat (args.methodCount), RegValue.ofNat (args.maxMessageSize),
+    RegValue.ofNat (args.maxResponseSize), RegValue.ofNat (if args.requiresGrant then 1 else 0)]
 
 -- ============================================================================
 -- WS-Q1-D: Service error-exclusivity theorems
@@ -1355,9 +1390,17 @@ theorem decodeServiceRegisterArgs_error_of_invalid_grant
 theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
     (hMc : args.methodCount ≤ serviceMaxMethodCount)
     (hMms : args.maxMessageSize ≤ serviceMaxMessageSize)
-    (hMrs : args.maxResponseSize ≤ serviceMaxMessageSize) :
+    (hMrs : args.maxResponseSize ≤ serviceMaxMessageSize)
+    (hIid : args.interfaceId.toNat < 2 ^ 64) :
     decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args := by
   rcases args with ⟨iid, mc, mms, mrs, rg⟩
+  simp only at hMc hMms hMrs hIid
+  have hIid' : iid.val < 2 ^ 64 := hIid
+  have hMcW : mc < 2 ^ 64 := Nat.lt_of_le_of_lt hMc (by decide)
+  have hMmsW : mms < 2 ^ 64 := Nat.lt_of_le_of_lt hMms (by decide)
+  have hMrsW : mrs < 2 ^ 64 := Nat.lt_of_le_of_lt hMrs (by decide)
+  simp only [encodeServiceRegisterArgs, RegValue.val_ofNat_of_lt hIid, RegValue.val_ofNat_of_lt hMcW,
+    RegValue.val_ofNat_of_lt hMmsW, RegValue.val_ofNat_of_lt hMrsW]
   have hMcFalse : ¬ serviceMaxMethodCount < mc := Nat.not_lt.mpr hMc
   have hMmsFalse : ¬ serviceMaxMessageSize < mms := Nat.not_lt.mpr hMms
   have hMrsFalse : ¬ serviceMaxMessageSize < mrs := Nat.not_lt.mpr hMrs
@@ -1365,7 +1408,8 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
         requireMsgReg, bind, Except.bind, pure, Except.pure,
         InterfaceId.ofNat, InterfaceId.toNat]
   cases rg <;>
-    simp [hMcFalse, hMmsFalse, hMrsFalse]
+    simp [hMcFalse, hMmsFalse, hMrsFalse, RegValue.val_ofNat, Nat.mod_eq_of_lt hMcW,
+      Nat.mod_eq_of_lt hMmsW, Nat.mod_eq_of_lt hMrsW, Nat.mod_eq_of_lt hIid']
 
 -- ============================================================================
 -- V2-I: Notification and ReplyRecv argument structures
@@ -1423,7 +1467,7 @@ def decodeRecvArgs (decoded : SyscallDecodeResult) : Except KernelError RecvArgs
 /-- WS-SM SM6.D: encode MCS `Recv` arguments into message registers.  Inverse of
     `decodeRecvArgs`. -/
 @[inline] def encodeRecvArgs (args : RecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr.toNat⟩]
+  #[⟨args.replyCPtr.word⟩]
 
 /-- WS-SM SM6.D: `Recv` decode fails iff fewer than 1 message register. -/
 theorem decodeRecvArgs_error_iff (d : SyscallDecodeResult) :
@@ -1530,27 +1574,37 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
                         `Priority`, and no stray bit is silently dropped)
     - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
     - period > 0       (CBS replenishment math requires positive period)
+    - budget, period ≤ MAX_PERIOD (WS-SX SX1.3: seL4-MCS's bound,
+                        `configureMaxPeriod`, so a stored time is below `2^61`)
+    - deadline ≤ MAX_PERIOD (WS-SX SX1.3: the deadline word, which seL4-MCS's
+                        configure does not carry, held to the same bound,
+                        `configureDeadlineWord`)
 
     - budget ≤ period  (a server cannot hold more than its period)
 
     Each refusal is seL4-MCS's, in its order
     (`decodeSchedControl_ConfigureFlags`): the budget and the period first, each
-    below the least refused `seL4_RangeError` with `MIN_BUDGET` and
-    `MAX_PERIOD` (`configureMinBudget`, `configureMaxPeriod`), then a budget
+    below the least or above the greatest refused `seL4_RangeError` with
+    `MIN_BUDGET` and `MAX_PERIOD` (`configureMinBudget`, `configureMaxPeriod`), then a budget
     above its period `seL4_RangeError` with `MIN_BUDGET` and the period, all
     before the context's capability is looked at; the parameter word, which
-    seL4's configure does not carry, last (`invalidArgument`, naming the word,
-    `configureSchedParamsWord`).  The underlying
+    seL4's configure does not carry, after them (`invalidArgument`, naming the
+    word, `configureSchedParamsWord`), and the deadline word last
+    (`configureDeadlineWord`).  The underlying
     `decodeSchedContextConfigureArgs` remains unchanged so existing error
     theorems and round-trip proofs are preserved. -/
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.budget = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
-  else if args.period = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  if args.budget = 0 ∨ configureMaxPeriod.toNat < args.budget then
+    .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if args.period = 0 ∨ configureMaxPeriod.toNat < args.period then
+    .error (.rangeError configureMinBudget configureMaxPeriod)
   else if args.budget > args.period then
     .error (.rangeError configureMinBudget (UInt64.ofNat args.period))
   else if args.schedParams ≥ 4096 then .error (.invalidArgument configureSchedParamsWord)
+  else if configureMaxPeriod.toNat < args.deadline then
+    .error (.invalidArgument configureDeadlineWord)
   else pure args
 
 /-- AK3-J: A successful checked configure decode satisfies all CBS invariants. -/
@@ -1573,15 +1627,17 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
         · simp at hOk
         · split at hOk
           · simp at hOk
-          · rename_i hB hPer _ hD
-            simp only [pure, Except.pure, Except.ok.injEq] at hOk
-            subst hOk
-            have hW := Nat.not_le.mp hD
-            refine ⟨hW, ?_, ?_, ?_, ?_⟩
-            · unfold SchedContextConfigureArgs.priority; omega
-            · unfold SchedContextConfigureArgs.domain; omega
-            · omega
-            · omega
+          · split at hOk
+            · simp at hOk
+            · rename_i hB hPer _ hD _
+              simp only [pure, Except.pure, Except.ok.injEq] at hOk
+              subst hOk
+              have hW := Nat.not_le.mp hD
+              refine ⟨hW, ?_, ?_, ?_, ?_⟩
+              · unfold SchedContextConfigureArgs.priority; omega
+              · unfold SchedContextConfigureArgs.domain; omega
+              · omega
+              · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
     Requires 1 message register (`tcbCPtr`, the TCB capability's address in
@@ -1658,11 +1714,11 @@ def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
 
 /-- Z5-A: Encode schedContextConfigure arguments into message registers. -/
 @[inline] def encodeSchedContextConfigureArgs (args : SchedContextConfigureArgs) : Array RegValue :=
-  #[⟨args.scCPtr.toNat⟩, ⟨args.budget⟩, ⟨args.period⟩, ⟨args.schedParams⟩, ⟨args.deadline⟩]
+  #[⟨args.scCPtr.word⟩, RegValue.ofNat (args.budget), RegValue.ofNat (args.period), RegValue.ofNat (args.schedParams), RegValue.ofNat (args.deadline)]
 
 /-- Z5-B: Encode schedContextBind arguments into message registers. -/
 @[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
-  #[⟨args.tcbCPtr.toNat⟩]
+  #[⟨args.tcbCPtr.word⟩]
 
 /-- Z5-C: Encode schedContextUnbind arguments (empty — no message registers). -/
 @[inline] def encodeSchedContextUnbindArgs (_args : SchedContextUnbindArgs) : Array RegValue :=
@@ -1673,9 +1729,12 @@ def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
 -- ============================================================================
 
 /-- Z5-A: SchedContextConfigureArgs decode round-trip. -/
-theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureArgs) :
+theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureArgs)
+    (hBudget : args.budget < 2 ^ 64) (hPeriod : args.period < 2 ^ 64)
+    (hParams : args.schedParams < 2 ^ 64) (hDeadline : args.deadline < 2 ^ 64) :
     decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
+  simp [RegValue.val_ofNat_of_lt hBudget, RegValue.val_ofNat_of_lt hPeriod,
+        RegValue.val_ofNat_of_lt hParams, RegValue.val_ofNat_of_lt hDeadline, requireMessageLength, truncationMinimum, decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-B: SchedContextBindArgs decode round-trip. -/
@@ -1695,7 +1754,7 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 
 /-- V2-I: Encode replyRecv arguments into message registers. -/
 @[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr.toNat⟩]
+  #[⟨args.replyCPtr.word⟩]
 
 /-- V2-I: NotificationWaitArgs decode round-trip (trivial — no MR decode). -/
 theorem decodeNotificationWaitArgs_roundtrip (args : NotificationWaitArgs) :
@@ -1725,22 +1784,29 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
     (∀ args : CSpaceMoveArgs, args.destDepth < 256 → args.srcDepth < 256 →
       decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
-    (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
-    (∀ args, decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
+    (∀ args : CSpaceDeleteArgs, args.targetSlot.toNat < 2 ^ 64 →
+      decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
+    (∀ args : UntypedRetypeArgs, args.sizeBits < 2 ^ 56 → args.childId.toNat < 2 ^ 64 →
+      args.dstSlot.toNat < 2 ^ 64 →
+      decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
-      args.perms.wxCompliant = true →
+      args.perms.wxCompliant = true → args.asid.toNat < 2 ^ 64 →
       decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
+      args.asid.toNat < 2 ^ 64 →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args) ∧
     (∀ args,
       args.methodCount ≤ serviceMaxMethodCount →
       args.maxMessageSize ≤ serviceMaxMessageSize →
       args.maxResponseSize ≤ serviceMaxMessageSize →
+      args.interfaceId.toNat < 2 ^ 64 →
       decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
     (∀ args, decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args) ∧
-    (∀ args, decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
+    (∀ args : SchedContextConfigureArgs, args.budget < 2 ^ 64 → args.period < 2 ^ 64 →
+      args.schedParams < 2 ^ 64 → args.deadline < 2 ^ 64 →
+      decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
   ⟨decodeCSpaceMintArgs_roundtrip,
@@ -1748,9 +1814,9 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeUntypedRetypeArgs_roundtrip,
-   fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
-   fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
-   fun args hMc hMms hMrs => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs,
+   fun args hA hV hWx hW => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx hW,
+   fun args hA hV hW => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV hW,
+   fun args hMc hMms hMrs hI => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs hI,
    decodeNotificationWaitArgs_roundtrip,
    decodeReplyRecvArgs_roundtrip,
    decodeRecvArgs_roundtrip,
@@ -1955,11 +2021,11 @@ def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
 
 /-- D2-C: Encode setPriority arguments into message registers. -/
 @[inline] def encodeSetPriorityArgs (args : SetPriorityArgs) : Array RegValue :=
-  #[⟨args.newPriority⟩]
+  #[RegValue.ofNat (args.newPriority)]
 
 /-- D2-C: Encode setMCPriority arguments into message registers. -/
 @[inline] def encodeSetMCPriorityArgs (args : SetMCPriorityArgs) : Array RegValue :=
-  #[⟨args.newMCP⟩]
+  #[RegValue.ofNat (args.newMCP)]
 
 -- ============================================================================
 -- D2-C: Priority management round-trip theorems
@@ -1968,13 +2034,15 @@ def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
 /-- D2-C: SetPriorityArgs decode round-trip for in-range values. -/
 theorem decodeSetPriorityArgs_roundtrip (args : SetPriorityArgs) (h : args.newPriority ≤ 0xFF) :
     decodeSetPriorityArgs (stubDecoded (encodeSetPriorityArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodeSetPriorityArgs, encodeSetPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+  have hW : args.newPriority < 2 ^ 64 := by omega
+  simp [RegValue.val_ofNat_of_lt hW, requireMessageLength, truncationMinimum, decodeSetPriorityArgs, encodeSetPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, show ¬(args.newPriority > 0xFF) from Nat.not_lt.mpr h]
 
 /-- D2-C: SetMCPriorityArgs decode round-trip for in-range values. -/
 theorem decodeSetMCPriorityArgs_roundtrip (args : SetMCPriorityArgs) (h : args.newMCP ≤ 0xFF) :
     decodeSetMCPriorityArgs (stubDecoded (encodeSetMCPriorityArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+  have hW : args.newMCP < 2 ^ 64 := by omega
+  simp [RegValue.val_ofNat_of_lt hW, requireMessageLength, truncationMinimum, decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, show ¬(args.newMCP > 0xFF) from Nat.not_lt.mpr h]
 
 -- ============================================================================
@@ -2002,7 +2070,7 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
 
 /-- D3-B: Encode setIPCBuffer arguments into message registers. -/
 @[inline] def encodeSetIPCBufferArgs (args : SetIPCBufferArgs) : Array RegValue :=
-  #[⟨args.bufferAddr.toNat⟩]
+  #[RegValue.ofNat (args.bufferAddr.toNat)]
 
 -- ============================================================================
 -- D3-B: IPC buffer configuration round-trip theorem
@@ -2010,12 +2078,13 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
 
 /-- D3-B: SetIPCBufferArgs decode round-trip for aligned addresses. -/
 theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
-    (hAligned : args.bufferAddr.toNat % SeLe4n.ipcBufferAlignment = 0) :
+    (hAligned : args.bufferAddr.toNat % SeLe4n.ipcBufferAlignment = 0)
+    (hWord : args.bufferAddr.toNat < 2 ^ 64) :
     decodeSetIPCBufferArgs (stubDecoded (encodeSetIPCBufferArgs args)) = .ok args := by
   simp only [requireMessageLength, truncationMinimum, decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
-  simp [hAligned]
+  simp [hAligned, RegValue.val_ofNat, Nat.mod_eq_of_lt hWord]
 
 -- ============================================================================
 -- WS-SM SM5.H.4: CPU-affinity configuration decode (`tcbSetAffinity`)
@@ -2027,7 +2096,7 @@ theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
     The target thread comes from the capability target.  The raw value is range-validated
     downstream by `decodeAffinity` (which produces the typed `Option CoreId`). -/
 structure SetAffinityArgs where
-  affinityRaw : Nat
+  affinityRaw : UInt64
   deriving Repr, DecidableEq
 
 /-- WS-SM SM5.H.4: decode `tcbSetAffinity` arguments from message registers.
@@ -2038,7 +2107,7 @@ def decodeSetAffinityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetAffinityArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetAffinity)
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { affinityRaw := r0.val }
+  pure { affinityRaw := r0.word }
 
 /-- WS-SM SM5.H.4: encode `tcbSetAffinity` arguments into message registers. -/
 @[inline] def encodeSetAffinityArgs (args : SetAffinityArgs) : Array RegValue :=
@@ -2074,7 +2143,7 @@ def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
 
 /-- Encode `tcbSetFaultHandler` arguments into message registers. -/
 @[inline] def encodeSetFaultHandlerArgs (args : SetFaultHandlerArgs) : Array RegValue :=
-  #[⟨args.handlerCPtr.toNat⟩]
+  #[⟨args.handlerCPtr.word⟩]
 
 /-- SetFaultHandlerArgs decode round-trip. -/
 theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
@@ -2113,12 +2182,14 @@ def decodeAuditReadArgs (decoded : SyscallDecodeResult)
 
 /-- WS-SM SM9.A.10: encode `auditRead` arguments into message registers. -/
 @[inline] def encodeAuditReadArgs (args : AuditReadArgs) : Array RegValue :=
-  #[⟨args.opcode⟩, ⟨args.index⟩, ⟨args.chunk⟩]
+  #[RegValue.ofNat (args.opcode), RegValue.ofNat (args.index), RegValue.ofNat (args.chunk)]
 
 /-- WS-SM SM9.A.10: AuditReadArgs decode round-trip. -/
-theorem decodeAuditReadArgs_roundtrip (args : AuditReadArgs) :
+theorem decodeAuditReadArgs_roundtrip (args : AuditReadArgs)
+    (hOp : args.opcode < 2 ^ 64) (hIdx : args.index < 2 ^ 64) (hChunk : args.chunk < 2 ^ 64) :
     decodeAuditReadArgs (stubDecoded (encodeAuditReadArgs args)) = .ok args := by
-  simp [decodeAuditReadArgs, encodeAuditReadArgs, stubDecoded, requireMsgReg, requireMessageLength,
+  simp [RegValue.val_ofNat_of_lt hOp, RegValue.val_ofNat_of_lt hIdx,
+        RegValue.val_ofNat_of_lt hChunk, decodeAuditReadArgs, encodeAuditReadArgs, stubDecoded, requireMsgReg, requireMessageLength,
         truncationMinimum, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- WS-SM SM9.A.10: `auditDrain` arguments.
@@ -2140,12 +2211,13 @@ def decodeAuditDrainArgs (decoded : SyscallDecodeResult)
 
 /-- WS-SM SM9.A.10: encode `auditDrain` arguments into message registers. -/
 @[inline] def encodeAuditDrainArgs (args : AuditDrainArgs) : Array RegValue :=
-  #[⟨args.count⟩]
+  #[RegValue.ofNat (args.count)]
 
 /-- WS-SM SM9.A.10: AuditDrainArgs decode round-trip. -/
-theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs) :
+theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs)
+    (hCount : args.count < 2 ^ 64) :
     decodeAuditDrainArgs (stubDecoded (encodeAuditDrainArgs args)) = .ok args := by
-  simp [decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, requireMessageLength,
+  simp [RegValue.val_ofNat_of_lt hCount, decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, requireMessageLength,
         truncationMinimum, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 
@@ -2173,7 +2245,7 @@ def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
 
 /-- WS-BP BP7.1: encode `tcbSetSpace` arguments into message registers. -/
 @[inline] def encodeSetSpaceArgs (args : SetSpaceArgs) : Array RegValue :=
-  #[⟨args.cspaceRoot.toNat⟩, ⟨args.vspaceRoot.toNat⟩]
+  #[⟨args.cspaceRoot.word⟩, ⟨args.vspaceRoot.word⟩]
 
 /-- WS-BP BP7.1: SetSpaceArgs decode round-trip. -/
 theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
@@ -2205,12 +2277,14 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
 
 /-- WS-BP BP7.1: encode `pageTableMap` arguments into message registers. -/
 @[inline] def encodePageTableMapArgs (args : PageTableMapArgs) : Array RegValue :=
-  #[⟨args.vspaceRoot.toNat⟩, ⟨args.vaddr.toNat⟩]
+  #[⟨args.vspaceRoot.word⟩, RegValue.ofNat (args.vaddr.toNat)]
 
 /-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
-theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
+theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs)
+    (hWord : args.vaddr.toNat < 2 ^ 64) :
     decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
+  have hWord' : args.vaddr.val < 2 ^ 64 := hWord
+  simp [RegValue.val_ofNat, Nat.mod_eq_of_lt hWord', requireMessageLength, truncationMinimum, decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
@@ -2235,7 +2309,7 @@ each as the number of the file's word. -/
 theorem requireMsgReg_map_readReg (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (i : Nat) :
     requireMsgReg (layout.msgRegs.map (readReg regs)) i =
-      (msgRegOfFile layout regs i).map (fun w => (⟨w.toNat⟩ : RegValue)) := by
+      (msgRegOfFile layout regs i).map (fun w => (⟨w⟩ : RegValue)) := by
   unfold requireMsgReg msgRegOfFile
   by_cases hi : i < layout.msgRegs.size
   · simp only [Array.size_map, hi, ↓reduceDIte, Array.getElem_map, readReg_eq_word,
@@ -2399,25 +2473,48 @@ theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
       UInt64.toNat_mod, UInt64.toNat_div]
 
+/-- `PagePermissions.ofNat?` of a word, its range tested on the word first, so a
+full-width word is refused without being made a `Nat` (WS-SX SX1.3). -/
+@[inline] def pagePermissionsOfWord? (w : UInt64) : Option PagePermissions :=
+  if w < 32 then PagePermissions.ofNat? w.toNat else none
+
+theorem pagePermissionsOfWord?_eq (w : UInt64) :
+    pagePermissionsOfWord? w = PagePermissions.ofNat? w.toNat := by
+  unfold pagePermissionsOfWord?
+  split
+  · rfl
+  · rename_i h
+    exact (PagePermissions.ofNat?_invalid _ (fun h' => h (UInt64.lt_iff_toNat_lt.mpr h'))).symm
+
+/-- The VSpace decodes' range tests, read on the word (`wordLtNat`): an ASID
+below the configured bound, an address below the canonical bound. -/
+theorem asid_isValidForConfig_ofWord (w : UInt64) (maxASID : Nat) :
+    (ASID.ofNat w.toNat).isValidForConfig maxASID = wordLtNat w maxASID := by
+  rw [wordLtNat_eq_decide]; rfl
+
+theorem vaddr_isCanonical_ofWord (w : UInt64) :
+    (VAddr.ofNat w.toNat).isCanonical = wordLtNat w VAddr.canonicalBound := by
+  rw [wordLtNat_eq_decide]; rfl
+
 @[inline] def decodeVSpaceMapArgsBy (get : MsgRegReader) (maxASID : Nat)
     : Except KernelError VSpaceMapArgs := do
   let r0 ← get 0
   let r1 ← get 1
   let r2 ← get 2
   let r3 ← get 3
+  if !wordLtNat r0 maxASID then .error .asidNotBound
+  else
   let asid := ASID.ofNat r0.toNat
-  if !asid.isValidForConfig maxASID then .error .asidNotBound
+  if !wordLtNat r1 VAddr.canonicalBound then .error .addressOutOfBounds
   else
   let vaddr := VAddr.ofNat r1.toNat
-  if !vaddr.isCanonical then .error .addressOutOfBounds
-  else
-    match PagePermissions.ofNat? r3.toNat with
-    | some perms =>
-      pure { asid  := asid
-             vaddr := vaddr
-             frame := CPtr.ofWord r2
-             perms := perms }
-    | none => .error .invalidSyscallArgument
+  match pagePermissionsOfWord? r3 with
+  | some perms =>
+    pure { asid  := asid
+           vaddr := vaddr
+           frame := CPtr.ofWord r2
+           perms := perms }
+  | none => .error .invalidSyscallArgument
 
 theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
@@ -2432,18 +2529,19 @@ theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regis
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
+      pagePermissionsOfWord?_eq, asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
 
 @[inline] def decodeVSpaceUnmapArgsBy (get : MsgRegReader) (maxASID : Nat)
     : Except KernelError VSpaceUnmapArgs := do
   let r0 ← get 0
   let r1 ← get 1
+  if !wordLtNat r0 maxASID then .error .asidNotBound
+  else
   let asid := ASID.ofNat r0.toNat
-  if !asid.isValidForConfig maxASID then .error .asidNotBound
+  if !wordLtNat r1 VAddr.canonicalBound then .error .addressOutOfBounds
   else
   let vaddr := VAddr.ofNat r1.toNat
-  if !vaddr.isCanonical then .error .addressOutOfBounds
-  else
   pure { asid  := asid
          vaddr := vaddr }
 
@@ -2460,7 +2558,8 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
+      pagePermissionsOfWord?_eq, asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
 
 @[inline] def decodeSchedContextBindArgsBy (get : MsgRegReader)
     : Except KernelError SchedContextBindArgs := do
@@ -2495,11 +2594,11 @@ later index as `requireMsgReg` does past a decode's registers. -/
 one overflow word, reads each as the number of its word. -/
 theorem requireMsgReg_map_readReg_push (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (w : UInt64) (i : Nat) :
-    requireMsgReg (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) i =
-      (msgRegOfFileThen layout regs w i).map (fun w => (⟨w.toNat⟩ : RegValue)) := by
+    requireMsgReg (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) i =
+      (msgRegOfFileThen layout regs w i).map (fun w => (⟨w⟩ : RegValue)) := by
   unfold requireMsgReg msgRegOfFileThen
   by_cases hi : i < layout.msgRegs.size
-  · have hi' : i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]).size := by
+  · have hi' : i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]).size := by
       simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_singleton]
       omega
     simp only [hi, hi', ↓reduceDIte, Except.map]
@@ -2508,7 +2607,7 @@ theorem requireMsgReg_map_readReg_push (layout : SyscallRegisterLayout) (regs : 
   · by_cases hEq : i = layout.msgRegs.size
     · subst hEq
       simp [Except.map, Array.getElem_push]
-    · have hi' : ¬ i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]).size := by
+    · have hi' : ¬ i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]).size := by
         simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_singleton]
         omega
       simp only [hi, hi', hEq, ↓reduceDIte, ↓reduceIte, Except.map]
@@ -2532,7 +2631,8 @@ theorem word_toNat_eq_zero_iff (w : UInt64) : w.toNat = 0 ↔ w = 0 := by
 check in the decode's order.  WS-ZA ZA6.4: the context capability's address is
 read as its word (`CPtr.ofWord`), as the bind reads its thread's.  The budget
 and the period are tested on their words (`word_toNat_eq_zero_iff`): a refusal
-of a full-width word converts nothing. -/
+of a full-width word converts nothing, and every word converted is held below
+`2 ^ 61` by a test before it (WS-SX SX1.3). -/
 @[inline] def decodeSchedContextConfigureArgsCheckedBy (get : MsgRegReader)
     : Except KernelError SchedContextConfigureArgs := do
   let r0 ← get 0
@@ -2540,17 +2640,19 @@ of a full-width word converts nothing. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if r1 = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
-  else if r2 = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  if r1 = 0 ∨ configureMaxPeriod < r1 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if r2 = 0 ∨ configureMaxPeriod < r2 then
+    .error (.rangeError configureMinBudget configureMaxPeriod)
   else if r2 < r1 then .error (.rangeError configureMinBudget r2)
   else if 4096 ≤ r3 then .error (.invalidArgument configureSchedParamsWord)
+  else if configureMaxPeriod < r4 then .error (.invalidArgument configureDeadlineWord)
   else pure { scCPtr := SeLe4n.CPtr.ofWord r0, budget := r1.toNat, period := r2.toNat,
               schedParams := r3.toNat, deadline := r4.toNat }
 
 theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : truncationMinimum .schedContextConfigure ≤ decoded.msgInfo.length) :
     decodeSchedContextConfigureArgsChecked decoded =
       decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) := by
@@ -2582,7 +2684,7 @@ the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/
 theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : truncationMinimum .cspaceMint ≤ decoded.msgInfo.length) :
     decodeCSpaceMintArgs decoded =
       decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) := by
@@ -2619,7 +2721,7 @@ decode's order. -/
 theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : truncationMinimum .serviceRegister ≤ decoded.msgInfo.length) :
     decodeServiceRegisterArgs decoded =
       decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) := by
@@ -2766,7 +2868,7 @@ theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
 @[inline] def decodeSetAffinityArgsBy (get : MsgRegReader)
     : Except KernelError SetAffinityArgs := do
   let r0 ← get 0
-  pure { affinityRaw := r0.toNat }
+  pure { affinityRaw := r0 }
 
 theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

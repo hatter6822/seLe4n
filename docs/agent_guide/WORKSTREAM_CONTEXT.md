@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -149,7 +149,19 @@ new refusal sets seL4's payload (the argument's word index for
 refusal hands its payload on as words (`entryReportOutcomeW`,
 `abiEntryFinishW`), never as a boxed `KernelError` built on the entry path;
 a new `KernelError` constructor's payload words are closed constants or
-`UInt64` fields. SX2 is the next cut.
+`UInt64` fields.
+
+SX1.3 (`v0.37.21`) keeps a user word at or above `2^63` a word on the entry
+path: `RegValue` is a `UInt64` (`RegValue.word`), the syscall number, message
+info and capability address decode from the word (`@[csimp]`), and the VSpace,
+affinity, mint-badge, fault, overflow and configure arguments are tested on the
+word. **Standing constraints for new code:** a decode reads a register as its
+word (`RegValue.word`, `readRegWord`) and tests a bound on the word
+(`wordLtNat`, a `UInt64` comparison) before any `.toNat`; a typed identifier
+that keeps a `Nat` is built only after that test; `.val` on a register is for
+specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
+raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
+still convert, under the narrowed `docs/REGISTERED_DEBT.md` row. SX2 is the next cut.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 

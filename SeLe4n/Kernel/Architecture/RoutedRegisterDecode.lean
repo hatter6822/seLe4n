@@ -330,7 +330,7 @@ theorem decodeSyscallArgsFromState_of_routedReceive
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .receive ∧ decoded.capAddr = capAddr ∧
       decoded.overflowCount = 0 ∧ decoded.msgInfo.length = len ∧
-      (len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.toNat⟩) := by
+      (len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.word⟩) := by
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
@@ -350,7 +350,8 @@ theorem decodeSyscallArgsFromState_of_routedReceive
       cases h
       refine ⟨_, hD .receive ‹_›, rfl, rfl, rfl, rfl, fun _ => ?_⟩
       simp only [Array.getElem?_map, Array.getElem?_eq_getElem ‹0 < layout.msgRegs.size›,
-        Option.map_some, CPtr.ofWord_toNat, ← readReg_val_eq_word]
+        Option.map_some, readReg_eq_word]
+      rfl
     · rw [if_neg hLen] at h
       replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
@@ -490,7 +491,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
             msgRegs := layout.msgRegs.map (readReg regs),
             inlineCount := layout.msgRegs.size, overflowCount := 0 })
       | .ok w => .ok { capAddr, msgInfo, syscallId := sid,
-                       msgRegs := layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)],
+                       msgRegs := layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)],
                        inlineCount := layout.msgRegs.size, overflowCount := 1 } := by
   unfold registerRoutedSyscall at h
   split at h

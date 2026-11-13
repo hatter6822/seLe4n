@@ -61,40 +61,73 @@ theorem ext {a b : RegName} (h : a.val = b.val) : a = b := by
 
 end RegName
 
-/-- Register-width machine word. Carries the raw numeric value from which
-    typed kernel references are decoded at syscall boundaries.
+/-- Register-width machine word. Carries the raw word from which typed kernel
+    references are decoded at syscall boundaries.
     Replaces the former `abbrev RegValue := Nat` to prevent namespace confusion
-    between register values and other Nat-typed fields. -/
+    between register values and other Nat-typed fields.
+
+    WS-SX SX1.3: the word is a `UInt64`, as the register holds it.  A `Nat`
+    field made every word `≥ 2^63` a heap number, so reading such a register
+    allocated; a `UInt64` is a scalar of every value. -/
 structure RegValue where
-  val : Nat
+  /-- The register's machine word. -/
+  word : UInt64
   deriving DecidableEq, Repr, Hashable, Inhabited
 
 namespace RegValue
 
-/-- Constructor helper for migration ergonomics. -/
-@[inline] def ofNat (n : Nat) : RegValue := ⟨n⟩
+/-- The word's value as a number (`< 2^64`, `val_lt`). -/
+@[inline] def val (r : RegValue) : Nat := r.word.toNat
+
+/-- The register value of a machine word. -/
+@[inline] def ofWord (w : UInt64) : RegValue := ⟨w⟩
+
+/-- Constructor helper: the number reduced to a word, as a 64-bit register
+    holds it (`toNat_ofNat`: exact below `2^64`). -/
+@[inline] def ofNat (n : Nat) : RegValue := ⟨UInt64.ofNat n⟩
 
 /-- Projection helper for migration ergonomics. -/
 @[inline] def toNat (r : RegValue) : Nat := r.val
 
+@[simp] theorem val_mk (w : UInt64) : (RegValue.mk w).val = w.toNat := rfl
+
+@[simp] theorem val_ofWord (w : UInt64) : (RegValue.ofWord w).val = w.toNat := rfl
+
+/-- A number's register value is the number modulo `2 ^ 64`. -/
+theorem val_ofNat (n : Nat) : (RegValue.ofNat n).val = n % 2 ^ 64 := by
+  simp only [RegValue.ofNat, val, UInt64.toNat_ofNat']
+
+/-- A number below `2 ^ 64` is its register value's. -/
+theorem val_ofNat_of_lt {n : Nat} (h : n < 2 ^ 64) : (RegValue.ofNat n).val = n := by
+  rw [val_ofNat, Nat.mod_eq_of_lt h]
+
+/-- Every register value is below `2^64`. -/
+theorem val_lt (r : RegValue) : r.val < 2 ^ 64 := UInt64.toNat_lt_size r.word
+
 /-- R7-C/L-03: A register value is valid if it fits in one machine word. -/
 @[inline] def valid (r : RegValue) : Prop := isWord64 r.val
 
-/-- A register value read from a 64-bit word is valid: `UInt64.toNat` is below
-`2^64`. -/
-theorem valid_of_uint64 (x : UInt64) : RegValue.valid ⟨x.toNat⟩ :=
+/-- Every register value is valid: its word is below `2^64`. -/
+theorem valid_word (r : RegValue) : r.valid := r.val_lt
+
+/-- A register value read from a 64-bit word is valid. -/
+theorem valid_of_uint64 (x : UInt64) : RegValue.valid ⟨x⟩ :=
   UInt64.toNat_lt_size x
 
 /-- A register value read from a 32-bit word is valid. -/
-theorem valid_of_uint32 (x : UInt32) : RegValue.valid ⟨x.toNat⟩ :=
-  Nat.lt_trans (UInt32.toNat_lt_size x) (by decide)
+theorem valid_of_uint32 (x : UInt32) : RegValue.valid ⟨x.toUInt64⟩ :=
+  UInt64.toNat_lt_size _
 
 instance : ToString RegValue where
   toString r := toString r.toNat
 
-/-- Extensionality theorem for RegValue. -/
+/-- Extensionality theorem for RegValue: a word is determined by its value. -/
 theorem ext {a b : RegValue} (h : a.val = b.val) : a = b := by
-  cases a; cases b; simp_all
+  cases a; cases b; simp only [val_mk] at h; rw [UInt64.toNat_inj.mp h]
+
+/-- Two register values are equal exactly when their values are. -/
+theorem eq_iff_val {a b : RegValue} : a = b ↔ a.val = b.val :=
+  ⟨fun h => h ▸ rfl, ext⟩
 
 end RegValue
 
@@ -130,13 +163,16 @@ theorem RegName.ofNat_toNat (r : RegName) : RegName.ofNat r.toNat = r := rfl
 theorem RegName.ofNat_injective {n₁ n₂ : Nat} (h : RegName.ofNat n₁ = RegName.ofNat n₂) : n₁ = n₂ := by
   cases h; rfl
 
-/-- RegValue roundtrip — construct then project. -/
-theorem RegValue.toNat_ofNat (n : Nat) : (RegValue.ofNat n).toNat = n := rfl
+/-- RegValue roundtrip — construct then project, for a number below `2^64`. -/
+theorem RegValue.toNat_ofNat {n : Nat} (h : n < 2 ^ 64) : (RegValue.ofNat n).toNat = n := by
+  exact RegValue.val_ofNat_of_lt h
 /-- RegValue roundtrip — project then reconstruct. -/
-theorem RegValue.ofNat_toNat (r : RegValue) : RegValue.ofNat r.toNat = r := rfl
-/-- RegValue injectivity. -/
-theorem RegValue.ofNat_injective {n₁ n₂ : Nat} (h : RegValue.ofNat n₁ = RegValue.ofNat n₂) : n₁ = n₂ := by
-  cases h; rfl
+theorem RegValue.ofNat_toNat (r : RegValue) : RegValue.ofNat r.toNat = r := by
+  cases r; simp only [RegValue.ofNat, RegValue.toNat, RegValue.val, UInt64.ofNat_toNat]
+/-- RegValue injectivity, below `2^64`. -/
+theorem RegValue.ofNat_injective {n₁ n₂ : Nat} (h₁ : n₁ < 2 ^ 64) (h₂ : n₂ < 2 ^ 64)
+    (h : RegValue.ofNat n₁ = RegValue.ofNat n₂) : n₁ = n₂ := by
+  rw [← RegValue.toNat_ofNat h₁, ← RegValue.toNat_ofNat h₂, h]
 
 /-- L-02/WS-E6: Byte-addressed memory store used by the abstract machine model.
 
@@ -459,7 +495,7 @@ theorem ext_word {a b : RegisterFile} (h : ∀ i, i < trapFrameWordCount → a.w
 /-- **General-purpose register `r`** as a `RegValue`: `x0`–`x30` for `r.val < 31`;
 `x31` — the zero register — and every index past it read as `0`. -/
 def gpr (rf : RegisterFile) (r : RegName) : RegValue :=
-  if r.val < 31 then ⟨(rf.word r.val).toNat⟩ else ⟨0⟩
+  if r.val < 31 then ⟨rf.word r.val⟩ else ⟨0⟩
 
 /-- A register file from its `pc`, `sp` and a function giving each of the
 thirty-one general-purpose registers by index; `pstate` and `tpidr` are `0`. -/
@@ -478,7 +514,7 @@ theorem ext {a b : RegisterFile}
   by_cases hg : i < 31
   · have h := hgpr ⟨i⟩
     simp only [gpr, hg, if_true, RegValue.mk.injEq] at h
-    exact UInt64.toNat_inj.mp h
+    exact h
   · have : i = 31 ∨ i = 32 ∨ i = 33 ∨ i = 34 := by
       unfold trapFrameWordCount at hi; omega
     rcases this with rfl | rfl | rfl | rfl
@@ -1873,8 +1909,9 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
   split <;> rfl
 
 theorem readReg_eq_word (rf : RegisterFile) (r : RegName) :
-    readReg rf r = ⟨(readRegWord rf r).toNat⟩ := by
-  rw [← readReg_val_eq_word]
+    readReg rf r = ⟨readRegWord rf r⟩ := by
+  unfold readReg readRegWord RegisterFile.gpr
+  split <;> rfl
 
 /-- `x`n` := v` for `n < 31`, indexed by a byte: a jump to one field update
 (in place when the file is unshared).  The identity past `x30`. -/
@@ -2176,7 +2213,7 @@ theorem tick_preserves_interruptsEnabled (ms : MachineState) :
 -- ============================================================================
 
 theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : UInt64) (h : r.val < 31) :
-    readReg (writeReg rf r v) r = ⟨v.toNat⟩ := by
+    readReg (writeReg rf r v) r = ⟨v⟩ := by
   simp [readReg, RegisterFile.gpr, h, word_writeReg]
 
 theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : UInt64)

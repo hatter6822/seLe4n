@@ -11120,9 +11120,12 @@ run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_sur
 run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-# Discriminant 37 (the former allocationMisaligned) is retired and decodes to none.
-run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[37\]$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# Discriminants 35 (the former invalidCapPtr) and 37 (the former
+# allocationMisaligned) are retired and decode to none.
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37\]$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_negative_check "INVARIANT" rg -n '\binvalidCapPtr\b' SeLe4n/Model/KernelError.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # (b2) …and the mechanism that makes the negative above mean anything.  The
 # overlay linked `.rs` files whole while `test_lib.sh`'s classifier routed
@@ -11481,7 +11484,7 @@ run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureResumesBound$' 
 run_check "INVARIANT" bash -lc 'rg -U -n "pub const fn encode\(&self\) -> KernelResult<\[u64; 5\]> \{\n        if self\.priority > MAX_PRIORITY \|\| self\.domain > MAX_DOMAIN \{\n            return Err\(KernelError::InvalidSyscallArgument\);" rust/sele4n-abi/src/args/sched_context.rs'
 run_negative_check "INVARIANT" rg -n '\(self\.(priority|domain) & MAX_(PRIORITY|DOMAIN)\)' rust/sele4n-abi/src/args/sched_context.rs
 run_check "INVARIANT" bash -lc 'rg -U -n "^    let encoded = args\.encode\(\)\?;$" rust/sele4n-sys/src/sched_context.rs'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.budget = 0 then \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.period = 0 then \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.budget > args\.period then\n    \.error \(\.rangeError configureMinBudget \(UInt64\.ofNat args\.period\)\)\n  else if args\.schedParams ≥ 4096 then \.error \(\.invalidArgument configureSchedParamsWord\)$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.budget = 0 ∨ configureMaxPeriod\.toNat < args\.budget then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.period = 0 ∨ configureMaxPeriod\.toNat < args\.period then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.budget > args\.period then\n    \.error \(\.rangeError configureMinBudget \(UInt64\.ofNat args\.period\)\)\n  else if args\.schedParams ≥ 4096 then \.error \(\.invalidArgument configureSchedParamsWord\)\n  else if configureMaxPeriod\.toNat < args\.deadline then\n    \.error \(\.invalidArgument configureDeadlineWord\)$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
 run_check "INVARIANT" rg -n '^  test_t10_sc_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
 run_check "INVARIANT" rg -n '^  test_t11_sc_word_reader_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
@@ -12103,7 +12106,7 @@ run_check "INVARIANT" rg -n '^theorem decodeCapPtr_roundtrip($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n '^theorem decodeSyscallId_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallId_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeCapPtr_ok_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCapPtr_readReg($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem validateRegBound_ok_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem validateRegBound_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 # Audit optimization: new round-trip and composition theorems.

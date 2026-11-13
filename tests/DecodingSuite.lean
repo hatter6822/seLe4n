@@ -175,11 +175,14 @@ private def rd006_decodeCapPtrValid : IO Unit := do
   let r0 := decodeCapPtr ⟨0⟩
   expect "zero" (isOkEq r0 (CPtr.ofNat 0))
 
-/-- RD-007: decodeCapPtr — out-of-range (> 2^64). -/
+/-- RD-007: decodeCapPtr — a register holds a 64-bit word (`RegValue.word`,
+WS-SX SX1.3), so a number past `2^64` reduces as the hardware register would
+and the decode reads the reduced word; the top word decodes as itself. -/
 private def rd007_decodeCapPtrOutOfRange : IO Unit := do
-  -- Value exceeding 64-bit word
-  let rHuge := decodeCapPtr ⟨2^64⟩
-  expect "exceeds word64" (isErrEq rHuge .invalidCapPtr)
+  let rHuge := decodeCapPtr (SeLe4n.RegValue.ofNat (2^64))
+  expect "word64 wraps" (isOkEq rHuge (CPtr.ofNat 0))
+  let rTop := decodeCapPtr ⟨0xFFFFFFFFFFFFFFFF⟩
+  expect "top word" (isOkEq rTop (CPtr.ofNat (2^64 - 1)))
 
 /-- RD-008: validateRegBound — valid and boundary values. -/
 private def rd008_validateRegBound : IO Unit := do
@@ -278,7 +281,7 @@ private def mkStub (regs : Array RegValue) : SyscallDecodeResult :=
 /-- SAD-001: decodeCSpaceMintArgs — valid decode with 5 registers: a copy's
 four and the badge. -/
 private def sad001_cspaceMint : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, ⟨CNodeOpWord.pack 64 64 7⟩, ⟨42⟩]
+  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7), ⟨42⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-001a mint ok" result.isOk
   match result with
@@ -291,7 +294,7 @@ private def sad001_cspaceMint : IO Unit := do
 
 /-- SAD-002: decodeCSpaceMintArgs — insufficient registers (4). -/
 private def sad002_cspaceMintInsufficient : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, ⟨CNodeOpWord.pack 64 64 7⟩]
+  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7)]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-002a mint insufficient" (!result.isOk)
 
@@ -299,7 +302,7 @@ private def sad002_cspaceMintInsufficient : IO Unit := do
 and the rights mask packed in the fourth (`CNodeOpWord`); a short message and
 a word with a bit past the mask are refused. -/
 private def sad003_cspaceCopy : IO Unit := do
-  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨CNodeOpWord.pack 64 3 5⟩]
+  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 3 5)]
   let result := decodeCSpaceCopyArgs stub
   expect "SAD-003a copy ok" result.isOk
   match result with
@@ -319,11 +322,11 @@ private def sad003_cspaceCopy : IO Unit := do
 
 /-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
 private def sad004_cspaceMove : IO Unit := do
-  let stub := mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, ⟨CNodeOpWord.pack 2 2 0⟩]
+  let stub := mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 0)]
   let result := decodeCSpaceMoveArgs stub
   expect "SAD-004a move ok" result.isOk
   expect "SAD-004b move stray rights bit"
-    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, ⟨CNodeOpWord.pack 2 2 1⟩]) with
+    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 1)]) with
       | .error (.invalidArgument _) => true | _ => false)
 
 /-- SAD-005: decodeCSpaceDeleteArgs — valid and insufficient. -/
@@ -345,7 +348,7 @@ private def sad006_untypedRetype : IO Unit := do
     match decodeUntypedRetypeArgs stub with
     | .ok args =>
         expect s!"SAD-006a carve decode tag {tag}"
-          (args.newType.toNat == tag && args.sizeBits == 1 && args.childId == ⟨100⟩)
+          (args.newType.toNat == tag.toNat && args.sizeBits == 1 && args.childId == ⟨100⟩)
     | .error _ => expect s!"SAD-006a carve decode tag {tag}" false
   expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨100⟩, ⟨1⟩])).isOk)
 
@@ -607,8 +610,8 @@ private def buildIpcDecodeState
   let msgInfoRaw := msgLen
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 0 then ⟨0⟩                -- capPtr
-    else if r.val == 1 then ⟨msgInfoRaw⟩  -- msgInfo
-    else if r.val == 7 then ⟨syscallNum⟩  -- syscallId
+    else if r.val == 1 then SeLe4n.RegValue.ofNat msgInfoRaw  -- msgInfo
+    else if r.val == 7 then SeLe4n.RegValue.ofNat syscallNum  -- syscallId
     else if r.val == 2 then msgRegs[0]? |>.getD ⟨0⟩
     else if r.val == 3 then msgRegs[1]? |>.getD ⟨0⟩
     else if r.val == 4 then msgRegs[2]? |>.getD ⟨0⟩

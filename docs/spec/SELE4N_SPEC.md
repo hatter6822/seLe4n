@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.20` (`lakefile.toml`) |
+| **Package version** | `0.37.21` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 629,256 across 625 Lean files |
-| **Test LoC** | 89,688 across 70 Lean test suites |
-| **Proved declarations** | 24,093 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 629,612 across 625 Lean files |
+| **Test LoC** | 89,700 across 70 Lean test suites |
+| **Proved declarations** | 24,115 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3158,8 +3158,10 @@ capability is resolved through one boundary that applies it
 (`syscallLookupArgumentCap` in the specification,
 `KernelError.argumentCapRefusal` as the compiled forms' refusal continuation),
 so only the invoked capability answers `0`.  A
-configure's budget or period below the least is `rangeError` with
-`configureMinBudget` and `configureMaxPeriod`, and a budget above its period
+configure's budget or period below the least or above `MAX_PERIOD` (`UINT64_MAX / 8`
+ticks, since v0.37.21) is `rangeError` with
+`configureMinBudget` and `configureMaxPeriod`, a deadline word above `MAX_PERIOD`
+is `invalidArgument 4`, and a budget above its period
 `rangeError` with the least budget and the period, all answered in the decode
 before the context is looked up, as seL4-MCS's
 `decodeSchedControl_ConfigureFlags` answers them.  The discriminant round trip is over codes, the
@@ -4813,7 +4815,14 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
 
 The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
 
-- **Register values**: `RegValue` wraps `Nat` with `isWord64` validity predicate.
+- **Register values**: `RegValue` holds a `UInt64` word (`RegValue.word`, since
+  v0.37.21), so every register value is valid by its type; `RegValue.val` reads
+  the word back as a `Nat` for the specifications.  A decode tests a bound on
+  the word (`wordLtNat`) before it makes a `Nat`, and the syscall number, message
+  info and capability address are decoded from the word (`@[csimp]`
+  `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word`; `decodeCapPtr` reads the
+  word as the address, `decodeCapPtr_readReg`), so
+  a register word `≥ 2^63` costs no heap number on those paths.
 - **Badges**: `Badge` holds a `UInt64` word (since v0.36.77), so every badge is
   valid by its type (`Badge.valid_of_word`) and a badge `≥ 2^63` costs no heap
   number; `Badge.ofNatMasked` reduces a `Nat` modulo `2^64`, and `Badge.val`
@@ -4876,6 +4885,10 @@ refused (`v0.36.125`).
 - **Error code 37 is retired**: the `allocationMisaligned` variant the carve
   returned before is deleted, and its discriminant is reserved
   (`retiredDiscriminants`, §6.5.1).
+- **Error code 35 is retired** (v0.37.21): `invalidCapPtr` refused a
+  capability-pointer register past `2^64`; a register is a 64-bit word, so
+  `decodeCapPtr` reads the word as the address and refuses nothing. The variant
+  is deleted and its discriminant reserved beside 37.
 
 Witnesses: `tests/NegativeStateSuite.lean` S5-G (a misaligned VSpace-root base
 is rounded to the next page) and H16-NEG-06 (a TCB, an endpoint, a frame and a

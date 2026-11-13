@@ -2954,7 +2954,7 @@ def cspaceMintAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : Bool :=
   cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights
-    (if badge.val = 0 then none else some badge) st
+    (if badge.word = 0 then none else some badge) st
 
 /-- `cspaceMintAdmittedAt` as compiled: the checks read no badge (whether the
 minted capability is null is a question of its target and rights), so none is
@@ -2974,7 +2974,7 @@ def cspaceMintPerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : SystemState :=
   cspaceMintPerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights
-    (if badge.val = 0 then none else some badge) st
+    (if badge.word = 0 then none else some badge) st
 
 /-- `cspaceMintPerformAt` as compiled: the register's badge word is the minted
 capability's word, its flag whether the word is nonzero, so no `Option` is built
@@ -2989,11 +2989,12 @@ def cspaceMintPerformAtImpl (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
   unfold cspaceMintPerformAt cspaceMintPerformAtImpl
   rw [cspaceMintPerform_eq_impl]
   unfold cspaceMintPerformImpl
-  by_cases h : badge.val = 0
-  · rw [SeLe4n.Badge.eq_zero_of_val_eq_zero h]
+  by_cases h : badge.word = 0
+  · have hz : badge = SeLe4n.Badge.zero :=
+      SeLe4n.Badge.val_injective (by unfold SeLe4n.Badge.val; rw [h]; rfl)
+    subst hz
     rfl
-  · have hw : (badge.word != 0) = true :=
-      bne_iff_ne.mpr fun hw => h (by unfold SeLe4n.Badge.val; simp [hw])
+  · have hw : (badge.word != 0) = true := bne_iff_ne.mpr h
     simp [h, hw, SeLe4n.Badge.ofOption]
 
 /-- `mintReplyCapAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/

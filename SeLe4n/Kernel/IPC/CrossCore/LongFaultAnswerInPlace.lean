@@ -130,7 +130,7 @@ theorem faultReplyApplyOnCore_decode_eq_performFaultAnswerLong (X : SystemState)
 
 theorem overflowRegsFrom_getElem? (S : SystemState) (s : SeLe4n.ThreadId) (i n j : Nat) :
     (overflowRegsFrom S s i n)[j]? =
-      if j < n then some (⟨(overflowWordAt S s (i + j)).toNat⟩ : SeLe4n.RegValue) else none := by
+      if j < n then some (⟨overflowWordAt S s (i + j)⟩ : SeLe4n.RegValue) else none := by
   rw [overflowRegsFrom_eq_map, List.getElem?_map]
   by_cases h : j < n
   · rw [if_pos h]
@@ -158,7 +158,6 @@ theorem wordAt_longSendRegs (S : SystemState) (s : SeLe4n.ThreadId) (rf : SeLe4n
     rw [Array.getElem?_append_right (by omega), hSz, List.getElem?_toArray,
       overflowRegsFrom_getElem?, if_pos (by omega)]
     simp only [Option.map_some, Option.getD_some, Architecture.wordOf, Nat.zero_add]
-    exact UInt64.ofNat_toNat
 
 /-- Word `i` of a long reply-receive's words (`longReplyRecvRegs`) is word
 `i + 1` of the long reply's. -/

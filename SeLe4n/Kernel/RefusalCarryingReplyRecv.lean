@@ -50,7 +50,7 @@ def resolveReplyRecvReplyR (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat
       let gate : SyscallGate :=
         { callerId := tid
           cspaceRoot := callerCspaceRoot st tid
-          capAddr := SeLe4n.CPtr.ofNat r0.val
+          capAddr := SeLe4n.CPtr.ofWord r0.word
           capDepth := callerCspaceDepth st tid
           requiredRight := .write }
       match syscallLookupArgumentCap replyRecvReplyCapNumber gate st with
@@ -81,7 +81,7 @@ theorem resolveReplyRecvReplyR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       rcases gate with ⟨c, r, a, d, rr⟩
       simp only at hCaller hRoot hDepth
       subst hCaller hRoot hDepth
-      rfl
+      simp only [SeLe4n.RegValue.val, SeLe4n.CPtr.ofWord_eq_ofNat] <;> rfl
 
 /-- The checked reply-receive arm (`dispatchWithCapChecked`'s `.replyRecv`
 case) through the specification's path, refusing in the state it was handed
@@ -179,7 +179,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
     (len : Nat) (replyAddr : SeLe4n.CPtr) (regs : Array SeLe4n.RegValue)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α)
-    (hReplyAddr : len ≠ 0 → regs[0]? = some ⟨replyAddr.toNat⟩) :
+    (hReplyAddr : len ≠ 0 → regs[0]? = some ⟨replyAddr.word⟩) :
     resolveReplyRecvK st tid len replyAddr onErr onOk =
       match resolveReplyRecvReplyR st tid len regs with
       | .error e => onErr e
@@ -187,14 +187,15 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
   unfold resolveReplyRecvK resolveReplyRecvReplyR
   by_cases h0 : len = 0
   · simp [h0]
-  · have hR : requireMsgReg regs 0 = .ok ⟨replyAddr.toNat⟩ := by
+  · have hR : requireMsgReg regs 0 = .ok ⟨replyAddr.word⟩ := by
       have h := hReplyAddr h0
       rw [Array.getElem?_eq_some_iff] at h
       obtain ⟨hs, hv⟩ := h
       simp only [requireMsgReg, hs, ↓reduceDIte, hv]
     have hL : (len == 0) = false := by simp [h0]
     simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupArgumentCap, syscallLookupCap,
-      syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.CPtr.ofNat_toNat]
+      syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.RegValue.val_mk,
+      SeLe4n.CPtr.ofNat_word_toNat, SeLe4n.CPtr.ofWord]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) replyAddr
         (callerCspaceDepth st tid) st with
@@ -1330,8 +1331,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
       · next h0 =>
         rw [resolveReplyRecvK_eq st tid len _ (Architecture.regMessageRegs layout rf) _ _
           (fun _ => by
-            simp [Architecture.regMessageRegs, h0, SeLe4n.CPtr.ofWord_toNat,
-              ← SeLe4n.readReg_val_eq_word])]
+            simp [Architecture.regMessageRegs, h0, SeLe4n.readReg_eq_word, SeLe4n.CPtr.ofWord])]
         cases resolveReplyRecvReplyR st tid len (Architecture.regMessageRegs layout rf) with
         | error e => rfl
         | ok r =>
@@ -2212,8 +2212,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
         (fun _ => by
           simp only [longReplyRegs]
           rw [Array.getElem?_append_left (by simp [Architecture.regMessageRegs, hSz4])]
-          simp [Architecture.regMessageRegs, hSz4, SeLe4n.CPtr.ofWord_toNat,
-            ← SeLe4n.readReg_val_eq_word])]
+          simp [Architecture.regMessageRegs, hSz4, SeLe4n.readReg_eq_word, SeLe4n.CPtr.ofWord])]
       cases resolveReplyRecvReplyR st tid mi.length (longReplyRegs st tid rf mi.length) with
       | error e => rfl
       | ok r =>

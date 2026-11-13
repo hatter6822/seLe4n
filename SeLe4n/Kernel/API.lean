@@ -4663,7 +4663,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             | .error e => .error e
             | .ok (src, dst) =>
                 let badge : Option SeLe4n.Badge :=
-                  if args.badge.val = 0 then none else some args.badge
+                  if args.badge.word = 0 then none else some args.badge
                 cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st
     | _ => fun _ => .error (.invalidCapability 0)
   | .cspaceCopy =>
@@ -5186,7 +5186,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             | .error e => .error e
             | .ok (src, dst) =>
                 let badge : Option SeLe4n.Badge :=
-                  if args.badge.val = 0 then none else some args.badge
+                  if args.badge.word = 0 then none else some args.badge
                 cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
     | _ => fun _ => .error (.invalidCapability 0)
   -- T6-I: CSpace copy — checked for source→destination CNode flow
@@ -6606,7 +6606,7 @@ theorem dispatchWithCap_cspaceMint_delegates
         | .error e => .error e
         | .ok (src, dst) =>
             let badge : Option SeLe4n.Badge :=
-              if args.badge.val = 0 then none else some args.badge
+              if args.badge.word = 0 then none else some args.badge
             cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 

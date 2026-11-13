@@ -156,13 +156,13 @@ theorem overflowedDecode_agree (S : SystemState) (tid : SeLe4n.ThreadId)
     (hLen : 4 < mi.length) :
     MsgRegsAgreeBelow (overflowedDecode S tid rf sid capAddr mi).msgRegs
         (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf) ++
-          #[(⟨(overflowWordAt S tid 0).toNat⟩ : RegValue)]) 5 := by
+          #[(⟨overflowWordAt S tid 0⟩ : RegValue)]) 5 := by
   have hSz : (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf).size = 4 := by
     simp [Architecture.regMessageRegs, SeLe4n.arm64DefaultLayout]
   obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 1 := ⟨mi.length - 5, by omega⟩
   have h := MsgRegsAgreeBelow.append_cons
     (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf)
-    ⟨(overflowWordAt S tid 0).toNat⟩ (overflowRegsFrom S tid 1 m)
+    ⟨overflowWordAt S tid 0⟩ (overflowRegsFrom S tid 1 m)
   rw [hSz] at h
   simp only [overflowedDecode, hm]
   exact h

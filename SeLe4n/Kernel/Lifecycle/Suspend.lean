@@ -160,8 +160,6 @@ theorem restoreToReadyCancelled_readReturnFrame (st : SystemState)
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ :=
     (tcb.restoredToReady.registerContext).stageReturnFrame_reads_back frame
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
-  cases frame
-  simp [UInt64.ofNat_toNat]
 
 /-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
 on `restoreToReadyStaging` so the plain and cancellation spellings cannot

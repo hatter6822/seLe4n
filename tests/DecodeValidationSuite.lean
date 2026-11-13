@@ -40,7 +40,7 @@ def stubOf (vals : Array Nat) : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := vals.size, extraCaps := 0, label := 0 }
     syscallId := .send
-    msgRegs := vals.map (fun v => ⟨v⟩) }
+    msgRegs := vals.map (fun v => SeLe4n.RegValue.ofNat v) }
 
 /-- T01: WS-BP BP7.1 — a value in MR2 above the physical-address window is a
     frame **capability address**, so the decode carries it rather than refusing

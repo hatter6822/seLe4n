@@ -746,6 +746,44 @@ def machineWordMax : Nat := 2 ^ machineWordBits
 theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
   simp [isWord64Dec, isWord64]
 
+/-! ### A machine word against a number (WS-SX SX1.3)
+
+A register word compared with a `Nat` bound, decided on the word: the bound is
+reduced to a word only when it is below `2 ^ 64`, so no `Nat` of the word is
+built.  A word `≥ 2 ^ 63` as a `Nat` is a heap number, so a check of a full-width
+user word that converted it first allocated. -/
+
+/-- `w.toNat < n`, decided on the word (`wordLtNat_iff`). -/
+@[inline] def wordLtNat (w : UInt64) (n : Nat) : Bool :=
+  if n < UInt64.size then decide (w < UInt64.ofNat n) else true
+
+theorem wordLtNat_iff (w : UInt64) (n : Nat) : wordLtNat w n = true ↔ w.toNat < n := by
+  unfold wordLtNat
+  by_cases h : n < UInt64.size
+  · have hn : (UInt64.ofNat n).toNat = n := by
+      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt h
+    simp only [h, ↓reduceIte, decide_eq_true_eq, UInt64.lt_iff_toNat_lt, hn]
+  · simp only [h, ↓reduceIte, true_iff]
+    exact Nat.lt_of_lt_of_le (UInt64.toNat_lt_size w) (Nat.le_of_not_lt h)
+
+theorem wordLtNat_eq_decide (w : UInt64) (n : Nat) : wordLtNat w n = decide (w.toNat < n) := by
+  by_cases h : w.toNat < n
+  · rw [(wordLtNat_iff w n).mpr h, decide_eq_true h]
+  · rw [decide_eq_false h]
+    cases hw : wordLtNat w n
+    · rfl
+    · exact absurd ((wordLtNat_iff w n).mp hw) h
+
+/-- `n ≤ w.toNat`, decided on the word. -/
+@[inline] def natLeWord (n : Nat) (w : UInt64) : Bool := !wordLtNat w n
+
+theorem natLeWord_eq_decide (n : Nat) (w : UInt64) : natLeWord n w = decide (n ≤ w.toNat) := by
+  unfold natLeWord
+  rw [wordLtNat_eq_decide]
+  by_cases h : w.toNat < n
+  · rw [decide_eq_true h, decide_eq_false (Nat.not_le.mpr h)]; rfl
+  · rw [decide_eq_false h, decide_eq_true (Nat.le_of_not_lt h)]; rfl
+
 /-- Capability-space pointer value.
 
     AN2-B.1 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
@@ -1927,6 +1965,9 @@ theorem CPtr.toNat_ofNat_mod (n : Nat) : (CPtr.ofNat n).toNat = n % machineWordM
 @[simp] theorem CPtr.ofNat_toNat (ptr : CPtr) : CPtr.ofNat ptr.toNat = ptr := by
   unfold CPtr.ofNat CPtr.toNat CPtr.val
   rw [UInt64.ofNat_toNat]
+/-- WS-SX SX1.3: a capability address is the address of its word's value. -/
+@[simp] theorem CPtr.ofNat_word_toNat (ptr : CPtr) : CPtr.ofNat ptr.word.toNat = ptr :=
+  CPtr.ofNat_toNat ptr
 /-- WS-ZA ZA4.8: `ofWord` is `ofNat` of the word's value. -/
 theorem CPtr.ofWord_eq_ofNat (w : UInt64) : CPtr.ofWord w = CPtr.ofNat w.toNat := by
   unfold CPtr.ofWord CPtr.ofNat

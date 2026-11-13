@@ -2103,12 +2103,9 @@ a behavioural shortcut. -/
 def readReturnValue (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
   match st.getTcb? tid with
   | some tcb =>
-      let v := tcb.registerContext.gpr ⟨0⟩
-      -- Take low 64 bits explicitly; the model uses `Nat` but the FFI
-      -- contract is 64-bit.  Values ≥ 2^64 cannot be produced by
-      -- well-typed verified handlers because `RegValue` is constructed
-      -- from `UInt64.toNat` everywhere it's written.
-      v.toNat.toUInt64
+      -- The register's machine word (WS-SX SX1.3: a `RegValue` is a
+      -- `UInt64`, the FFI contract's width).
+      (tcb.registerContext.gpr ⟨0⟩).word
   | none => 0
 
 -- ============================================================================

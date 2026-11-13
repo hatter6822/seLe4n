@@ -1,3 +1,81 @@
+## v0.37.21 — a user word at or above 2^63 stays a word on the entry path
+
+WS-SX SX1.3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A Lean `Nat` at or
+above `2^63` is a heap cell, so a hostile register word made a `Nat` on the
+entry path allocated. This cut closes the families the
+`docs/REGISTERED_DEBT.md` row of `v0.37.20` named, except the raw-slot
+decodes later SX phases re-decode, which keep a narrowed row.
+
+- **`RegValue` is a machine word** (`RegValue.word : UInt64`; `.val` is its
+  `toNat`, kept for the specifications). The syscall number, the message info
+  and the capability address are decoded from the word: `@[csimp]`
+  `decodeSyscallId_eq_word` and `decodeMsgInfo_eq_word` join the
+  specification decoders to word forms, beside the router's
+  `registerRoutedSyscallOf_eq_word`, and `decodeCapPtr` reads the word as the
+  address.
+- **Error code 35 is retired.** `invalidCapPtr` refused a capability-pointer
+  register past `2^64`, which no register can hold once it is a 64-bit word.
+  The refusal, the variant, `decodeCapPtr_ok_iff` and
+  `decodeCapPtr_ok_of_word64` are deleted, `decodeCapPtr_roundtrip` and
+  `decode_components_roundtrip` lose their word-bound hypothesis, and 35 joins
+  37 in `retiredDiscriminants` (Lean) and `KernelError::RETIRED` (Rust).
+  Discriminants are explicit, so no other code is renumbered and SX10 needs
+  no change for it.
+- **Range tests on the word.** The VSpace map and unmap decodes test the ASID
+  against the configured bound and the address against the canonical bound
+  on the word (`wordLtNat`) before making a `Nat`, and a map's permissions
+  through `pagePermissionsOfWord?`. An affinity is a word
+  (`SetAffinityArgs.affinityRaw : UInt64`), and `decodeAffinity` tests it
+  against the core count on the word.
+- **A mint's badge is tested on its word** (`badge.word = 0`) in the routed
+  arm, the API arms and the declassification ledger.
+- **Fault and overflow words.** The overflow-word reads compare words
+  (`pairAddrIs`, `syncedWordFromW` under `@[csimp] syncedWordFrom_eq_w`), and
+  the delivered frames read registers as words.
+- **A configure refuses what seL4-MCS refuses.** A budget or period above
+  `MAX_PERIOD` (`UINT64_MAX / 8` ticks, `configureMaxPeriod`) is
+  `rangeError MIN_BUDGET MAX_PERIOD`, and a deadline word above it is
+  `invalidArgument 4`, so no stored time reaches `2^63`. Every value seL4
+  accepts is still accepted.
+- **Proofs restated.** The register round trips on the word
+  (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`);
+  the affinity round trip without its word hypothesis;
+  `decodeSchedContextConfigureArgsChecked_invariants` and
+  `validateSchedContextParams_implies_wellFormed` with the new bound;
+  `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and
+  reply-receive decode theorems on `replyAddr.word`. No `sorry`, no `axiom`.
+- **QEMU.** New heap-gate scenarios, each with a word `≥ 2^63` and each
+  reading 0: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`,
+  `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`,
+  `configure-wide-budget-and-period`, `configure-wide-deadline`, and
+  `mint-wide-badged-notification`, now measured. `configure-zero-budget-max-period` and
+  `configure-budget-over-wide-period` expect the `MAX_PERIOD` refusal.
+- **Tests and the trace fixture.** The suites build registers through
+  `RegValue.ofNat` or the word. A register can no longer hold a number past
+  `2^64`: the decoding suite checks that such a number wraps as the hardware
+  register would, the error matrix replaces its `invalidCapPtr` row with a
+  configure over `MAX_PERIOD`, the dispatch suite pins 35 as retired, and
+  `syscall_return_abi.expected`'s error-label line lists `retired [35, 37]`. `main_trace_smoke.expected` is
+  regenerated for two reasons: the configure refusals' `MAX_PERIOD` is now
+  `2305843009213693951`, and a register prints as `{ word := n }`.
+- **The reply-receive's reply address** is read as a word
+  (`resolveReplyRecvReplyR`, `CPtr.ofWord r0.word`).
+- **The C sweep, redone.** Of the conversions the generated C reachable from
+  every `@[export]` entry makes, the specification decoders are reached only
+  through the decoded arm, which the router never takes on the ABI layout
+  (`registerRoutedSyscall_viaDecode`), and through the general
+  `dispatchWithCapChecked` that `auditedArmSpec` calls with `.declassify`,
+  whose arm decodes no argument. Every other conversion is bounded (a HAL
+  kind code or core id, a word already range-tested, a retype's size bits, a
+  hash index, a CPtr's guard and slot bits, the round generation, per-core
+  statistics) except the decodes the debt row below names.
+- **Debt.** The `v0.37.20` row is deleted and replaced by a narrowed one: the
+  raw-slot and model-only decodes (CNode delete and revoke, the reply-cap
+  mint, retype's child and slot, the interrupt-control slot, the page-table
+  map's address, the IPC-buffer address, the service interface id and the
+  audit index and chunk) still make a `Nat` of a word; SX9.1, SX7.2, SX7.5
+  and SX6.1 re-decode them.
+
 ## v0.37.20 — error payloads and the `LookupFault` type
 
 WS-SX SX1 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D2, D2b, D3). A refusal

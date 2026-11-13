@@ -78,7 +78,7 @@ theorem regMessageWord_eq_regLayoutWord (layout : SeLe4n.SyscallRegisterLayout)
 /-- The layout's message registers, read, hold its words. -/
 theorem regMessageRegs_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (j : Nat) :
-    ((((regMessageRegs layout rf)[j]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+    (((regMessageRegs layout rf)[j]?).map SeLe4n.RegValue.word).getD 0 =
       regLayoutWord layout rf j := by
   unfold regLayoutWord
   split
@@ -103,7 +103,7 @@ theorem regMessageBody_size (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n
 
 theorem regMessageBody_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (i : Nat) :
-    ((((regMessageBody layout rf len)[i]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+    (((regMessageBody layout rf len)[i]?).map SeLe4n.RegValue.word).getD 0 =
       regMessageWord layout rf len i := by
   unfold regMessageWord
   split
@@ -195,7 +195,7 @@ theorem regReplyRecvBody_size (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe
 
 theorem regReplyRecvBody_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (i : Nat) :
-    ((((regReplyRecvBody layout rf len)[i]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+    (((regReplyRecvBody layout rf len)[i]?).map SeLe4n.RegValue.word).getD 0 =
       regMessageWord layout rf len (i + 1) := by
   rw [← regMessageBody_word]
   unfold regReplyRecvBody

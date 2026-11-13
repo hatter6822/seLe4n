@@ -247,7 +247,7 @@ def qemuVirtExerciserRootInvocation (syscallId : SyscallId) (slot : Nat)
   { capAddr := qemuVirtExerciserRootCapAddress slot
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := syscallId
-    msgRegs := (words.map fun w => ⟨w⟩).toArray
+    msgRegs := (words.map SeLe4n.RegValue.ofNat).toArray
     inlineCount := 4 }
 
 /-- **The invocations that give the root task its IPC buffer**, as seL4's boot
