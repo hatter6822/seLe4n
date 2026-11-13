@@ -39,8 +39,19 @@ decodes later SX phases re-decode, which keep a narrowed row.
   reading 0: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`,
   `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`,
   `configure-wide-budget-and-period`, `configure-wide-deadline`, and
-  `mint-wide-badged-notification`, now measured. `configure-zero-budget` and
+  `mint-wide-badged-notification`, now measured. `configure-zero-budget-max-period` and
   `configure-budget-over-wide-period` expect the `MAX_PERIOD` refusal.
+- **The reply-receive's reply address** is read as a word
+  (`resolveReplyRecvReplyR`, `CPtr.ofWord r0.word`).
+- **The C sweep, redone.** Of the conversions the generated C reachable from
+  every `@[export]` entry makes, the specification decoders are reached only
+  through the decoded arm, which the router never takes on the ABI layout
+  (`registerRoutedSyscall_viaDecode`), and through the general
+  `dispatchWithCapChecked` that `auditedArmSpec` calls with `.declassify`,
+  whose arm decodes no argument. Every other conversion is bounded (a HAL
+  kind code or core id, a word already range-tested, a retype's size bits, a
+  hash index, a CPtr's guard and slot bits, the round generation, per-core
+  statistics) except the decodes the debt row below names.
 - **Debt.** The `v0.37.20` row is deleted and replaced by a narrowed one: the
   raw-slot and model-only decodes (CNode delete and revoke, the reply-cap
   mint, retype's child and slot, the interrupt-control slot, the page-table

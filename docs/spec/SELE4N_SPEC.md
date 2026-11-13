@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.20` (`lakefile.toml`) |
+| **Package version** | `0.37.21` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 629,256 across 625 Lean files |
 | **Test LoC** | 89,688 across 70 Lean test suites |
@@ -3158,8 +3158,10 @@ capability is resolved through one boundary that applies it
 (`syscallLookupArgumentCap` in the specification,
 `KernelError.argumentCapRefusal` as the compiled forms' refusal continuation),
 so only the invoked capability answers `0`.  A
-configure's budget or period below the least is `rangeError` with
-`configureMinBudget` and `configureMaxPeriod`, and a budget above its period
+configure's budget or period below the least or above `MAX_PERIOD` (`UINT64_MAX / 8`
+ticks, since v0.37.21) is `rangeError` with
+`configureMinBudget` and `configureMaxPeriod`, a deadline word above `MAX_PERIOD`
+is `invalidArgument 4`, and a budget above its period
 `rangeError` with the least budget and the period, all answered in the decode
 before the context is looked up, as seL4-MCS's
 `decodeSchedControl_ConfigureFlags` answers them.  The discriminant round trip is over codes, the
@@ -4813,7 +4815,13 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
 
 The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
 
-- **Register values**: `RegValue` wraps `Nat` with `isWord64` validity predicate.
+- **Register values**: `RegValue` holds a `UInt64` word (`RegValue.word`, since
+  v0.37.21), so every register value is valid by its type; `RegValue.val` reads
+  the word back as a `Nat` for the specifications.  A decode tests a bound on
+  the word (`wordLtNat`) before it makes a `Nat`, and the syscall number, message
+  info and capability address are decoded from the word (`@[csimp]`
+  `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word`, `decodeCapPtr_eq_word`), so
+  a register word `≥ 2^63` costs no heap number on those paths.
 - **Badges**: `Badge` holds a `UInt64` word (since v0.36.77), so every badge is
   valid by its type (`Badge.valid_of_word`) and a badge `≥ 2^63` costs no heap
   number; `Badge.ofNatMasked` reduces a `Nat` modulo `2^64`, and `Badge.val`
