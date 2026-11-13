@@ -6176,7 +6176,10 @@ Every kernel object has a decidable well-formedness predicate:
   flag instead of building the optional receiver.  A refused audit read
   answers from the read's own inputs (`auditReadFastRefusal`, proven the
   specification's refusal by `auditReadFastRefusal_spec`), not from its
-  payload words.  A refused declassification
+  payload words.  A drain that is not admitted refuses `illegalAuthority` in
+  place (`auditedArmSpec_auditDrain_refused`), and an admitted drain compares
+  its count word to the trail's length on the word (`auditDrainCountW`,
+  proven by `auditDrainPerform_countW`).  A refused declassification
   read 19 to 25 heap cells before; it reads 0.
 - **The timer tick, the reschedule SGI and each core's first entry allocate
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore

@@ -191,6 +191,27 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   word (`auditReadTrailR_eq`). New QEMU scenarios:
   `audit-read-entry-chunk-past`, `audit-read-entry-index-past`,
   `audit-read-refusal-slot-past` and `audit-read-unknown-op`.
+- **A refused audit drain answers in place.** A drain on an audit-trail
+  capability that is not admitted answered through the specification's
+  general form. The drain arm now refuses `illegalAuthority` in place
+  (`auditedArmSpec_auditDrain_refused`). Its count word is compared to the
+  trail's length on the word (`natLeWord`, `auditDrainCountW`, proven by
+  `auditDrainPerform_countW`), so a count at or above `2^63` is not made a
+  number. New QEMU scenarios: `audit-drain-read-only-refused` (through a
+  read-only copy of the audit capability, minted unmeasured into slot 60)
+  and `audit-drain-wide-count`.
+- **The audit general forms no export reaches.** `auditTargetGeneralR` and
+  its theorem are deleted. `auditGeneralR` stays, recorded proof-only in the
+  reachability census, because `auditOperand_spec` and `auditReadTrailR_eq`
+  are built on it.
+- **The object table is never due a resize, given the count bound.**
+  `proofLayerInvariantBundle.objects_noResizeDue` derives the resize
+  conjunct of `findsInPlace` from the bundle's presized tables and the
+  object count bound (`objects_findsInPlace_iff`). The count bound is
+  enforced by the carve and established at boot but is not a bundle
+  component, so the conjunct stays and the gap is a registered debt row.
+  A second row records that an audit read's index and chunk words at or
+  above `2^63` are still made numbers.
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
