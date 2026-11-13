@@ -2820,6 +2820,12 @@ const READ_WRITE_RIGHTS: u64 = 0x3;
 /// and may not receive.
 #[cfg(feature = "hw_target")]
 const WRITE_ONLY_RIGHTS: u64 = 0x2;
+/// The read right alone (`AccessRight.read`, bit 0).
+#[cfg(feature = "hw_target")]
+const READ_ONLY_RIGHTS: u64 = 0x1;
+/// `KernelError.illegalAuthority`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const ILLEGAL_AUTHORITY: u64 = 3;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -9869,7 +9875,7 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
 /// past the last), each answered in place; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 26] = [
+const AUDIT_SCENARIO: [RoundTrip; 30] = [
     // A drain and a read a word short of their arguments, through the audit
     // capability: refused `TruncatedMessage` once the target and the right
     // are checked, the trail untouched.
@@ -10161,6 +10167,50 @@ const AUDIT_SCENARIO: [RoundTrip; 26] = [
         caps_or_badges: None,
         overflow: None,
         returns: refused(INVALID_SYSCALL_ARGUMENT),
+    },
+    // A read-only copy of the audit capability, which cannot drain
+    // (`syscallRequiredRight .auditDrain` is the write right): the drain
+    // through it is refused `IllegalAuthority` in place
+    // (`auditedArmSpec_auditDrain_refused`), and the copy deleted.
+    mint(
+        "audit-cap-mint-read-only",
+        AUDIT_SLOT,
+        EMPTY_DEST_SLOT,
+        READ_ONLY_RIGHTS,
+        0,
+        ROOT_IPC_BUFFER,
+    ),
+    RoundTrip {
+        name: "audit-drain-read-only-refused",
+        syscall: AUDIT_DRAIN,
+        cptr: cap_address(EMPTY_DEST_SLOT),
+        msg_len: 1,
+        msg: [256, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(ILLEGAL_AUTHORITY),
+    },
+    invocation(
+        "audit-cap-read-only-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [EMPTY_DEST_SLOT, 0, 0, 0],
+    ),
+    // A drain whose count is at or above `2 ^ 63`: the whole trail, the count
+    // read on the word (`auditDrainCountW`).
+    RoundTrip {
+        name: "audit-drain-wide-count",
+        syscall: AUDIT_DRAIN,
+        cptr: AUDIT_CAP,
+        msg_len: 1,
+        msg: [WIDE_WORD, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: None,
     },
     RoundTrip {
         name: "audit-drain",

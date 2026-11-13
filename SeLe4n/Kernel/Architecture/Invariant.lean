@@ -618,6 +618,35 @@ theorem proofLayerInvariantBundle.asidTable_insert_eq_insertNoResize {st : Syste
     st.asidTable.insert a oid = st.asidTable.insertNoResize a oid :=
   st.asidTable_insert_eq_insertNoResize h.tablesPresized hS a oid
 
+/-- **No object-table resize is due on a live state**: in a state the bundle
+holds of, with at most `maxObjects` objects, the object table is at least the
+boot capacity (`tablesPresized`), so its load is below the 75% at which an
+insert resizes (`4 · 65536 < 3 · 131072`).  The resize conjunct of every
+in-place store predicate (`RHTable.findsInPlace`) therefore holds there, and an
+in-place IPC store never falls to its general form for a resize
+(`proofLayerInvariantBundle.objects_findsInPlace_iff`). -/
+theorem proofLayerInvariantBundle.objects_noResizeDue {st : SystemState}
+    (h : proofLayerInvariantBundle st) (hS : st.objects.size ≤ SeLe4n.Model.maxObjects) :
+    st.objects.noResizeDue := by
+  have hP := h.tablesPresized.objectsBootSized
+  unfold RobinHood.RHTable.noResizeDue
+  unfold bootTableCapacity at hP
+  unfold SeLe4n.Model.maxObjects at hS
+  omega
+
+/-- On such a state the in-place store predicate asks only whether the probe
+finds the key. -/
+theorem proofLayerInvariantBundle.objects_findsInPlace_iff {st : SystemState}
+    (h : proofLayerInvariantBundle st) (hS : st.objects.size ≤ SeLe4n.Model.maxObjects)
+    (k : SeLe4n.ObjId) :
+    st.objects.findsInPlace k = decide (RobinHood.findIdxLoop st.objects.capacity
+      (RobinHood.idealIndex k st.objects.capacity st.objects.hCapPos) k 0 st.objects.slots
+      st.objects.capacity st.objects.hSlotsLen st.objects.hCapPos < st.objects.capacity) := by
+  have hN := h.objects_noResizeDue hS
+  unfold RobinHood.RHTable.noResizeDue at hN
+  unfold RobinHood.RHTable.findsInPlace
+  simp only [hN, decide_false, Bool.not_false, Bool.true_and]
+
 -- ============================================================================
 -- WS-ZA ZA6.4: the refill guarantees, system-wide
 -- ============================================================================

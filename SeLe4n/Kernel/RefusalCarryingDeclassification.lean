@@ -596,6 +596,59 @@ return registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
   ({ st with declassificationAudit := st.declassificationAudit.dropFront removed }).updateTcb tid
     (TCB.withReturnWords · w 0 0 0 0 0)
 
+/-- A configured clearance validates exactly when it dominates every subject
+label (`auditClearanceDominates`). -/
+theorem validatedAuditMonitorClearance_eq (ctx : LabelingContext) (m : SecurityDomain)
+    (hM : ctx.auditMonitorClearance = some m) :
+    validatedAuditMonitorClearance ctx = if auditClearanceDominates m then some m else none := by
+  by_cases hD : auditClearanceDominates m = true
+  · rw [validatedAuditMonitorClearance_eq_some ctx m hM hD, if_pos hD]
+  · rw [if_neg hD]
+    simp only [auditClearanceDominates, Bool.and_eq_true, not_and] at hD
+    simp only [validatedAuditMonitorClearance, hM, legacySubjectLabels, List.all_cons, List.all_nil,
+      embedLegacyLabel, Bool.and_true, Bool.and_eq_true]
+    split
+    · next hAll =>
+      exact absurd hAll.2.2.2 (hD ⟨⟨hAll.1, hAll.2.1⟩, hAll.2.2.1⟩)
+    · rfl
+
+/-- Whether the number `n` is at most the word `w`, read without making `w` a
+number: a number past `2 ^ 64` is above every word (`natLeWord_eq`). -/
+@[inline] def natLeWord (n : Nat) (w : UInt64) : Bool :=
+  decide (n < 18446744073709551616) && n.toUInt64 ≤ w
+
+theorem natLeWord_eq (n : Nat) (w : UInt64) : natLeWord n w = decide (n ≤ w.toNat) := by
+  unfold natLeWord
+  by_cases h : n < 18446744073709551616
+  · have hR : n.toUInt64.toNat = n := by simp only [Nat.toUInt64_eq]; exact Nat.mod_eq_of_lt h
+    simp only [h, decide_true, Bool.true_and, decide_eq_decide, UInt64.le_iff_toNat_le, hR]
+  · have hW := w.toNat_lt
+    simp only [h, decide_false, Bool.false_and, Bool.false_eq, decide_eq_false_iff_not]
+    omega
+
+/-- A drain's count, word `w`, against a trail of `len` entries: the trail's
+length when the word asks for all of it, read on the word, else the word.  The
+word is made a number only when it is below the length (`auditDrainCountW_min`),
+so a count at or above `2 ^ 63` is never one on a trail shorter than that. -/
+@[inline] def auditDrainCountW (len : Nat) (w : UInt64) : Nat :=
+  if natLeWord len w then len else w.toNat
+
+theorem auditDrainCountW_min (len : Nat) (w : UInt64) :
+    min (auditDrainCountW len w) len = min w.toNat len := by
+  unfold auditDrainCountW
+  rw [natLeWord_eq]
+  by_cases h : len ≤ w.toNat
+  · simp only [h, decide_true, ↓reduceIte, Nat.min_self]; omega
+  · simp only [h, decide_false, Bool.false_eq_true, ↓reduceIte]
+
+/-- The drain performed with its count read on the word is the drain with the
+count made a number. -/
+theorem auditDrainPerform_countW (tid : SeLe4n.ThreadId) (w : UInt64) (st : SystemState) :
+    auditDrainPerform tid (auditDrainCountW st.declassificationAudit.length w) st =
+      auditDrainPerform tid w.toNat st := by
+  unfold auditDrainPerform
+  simp only [auditDrainCountW_min]
+
 /-- An admitted drain is the specification's. -/
 theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -631,6 +684,65 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
     rw [Architecture.writeReturnFrameToTcb_ofWord_eq_words]
     rfl
   · cases hA
+
+/-- **A drain the trail does not admit is refused `illegalAuthority`**, the
+specification's answer whichever check fails: the drain's right, the
+clearance, its domination, the running subject, the flow, or a trail entry the
+subject does not see (`auditDrainVisiblePrefix`). -/
+theorem auditedArmSpec_auditDrain_refused (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) (st : SystemState) (code : Nat) (hT : cap.target = .auditTrail code)
+    (hTr : auditTruncated .auditDrain regs cap = false)
+    (hA : auditDrainAdmitted ctx st executingCore cap = false) :
+    auditedArmSpec ctx .auditDrain capAddr regs tid executingCore cap st =
+      .error .illegalAuthority := by
+  by_cases hRight : cap.hasRight (syscallRequiredRight .auditDrain) = true
+  · have hL := Nat.not_lt.mpr (auditTruncated_false_le hTr hT hRight)
+    have hNot : (auditMonitorGate (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx) st
+        executingCore && auditDrainViewComplete (liftLegacyContext ctx) st executingCore) = false := by
+      unfold auditDrainAdmitted at hA
+      rw [hT] at hA
+      cases hM : ctx.auditMonitorClearance with
+      | none =>
+        simp only [validatedAuditMonitorClearance, hM, auditMonitorGate]
+        split <;> simp [auditMonitorAuthorized]
+      | some m =>
+        rw [validatedAuditMonitorClearance_eq ctx m hM]
+        cases hCur : st.scheduler.currentOnCore executingCore with
+        | none => simp [auditMonitorGate, auditReaderDomain, hCur]
+        | some reader =>
+          rw [hM, hCur] at hA
+          simp only [hRight, Bool.true_and, Bool.and_eq_false_iff] at hA
+          by_cases hDom : auditClearanceDominates m = true
+          · simp only [hDom, ↓reduceIte, auditMonitorGate, auditReaderDomain, hCur, Option.map_some,
+              auditMonitorAuthorized, liftLegacyContext_policy, liftLegacyContext_threadDomainOf,
+              auditDrainViewComplete, Bool.and_eq_false_iff]
+            rcases hA with (hD | hF) | hV
+            · simp [hDom] at hD
+            · exact .inl hF
+            · right
+              rw [auditWindowAllVisible_eq, ← AuditRing.toList_eq_window] at hV
+              simp only [decide_eq_false_iff_not]
+              intro hEq
+              have hAll : st.declassificationAuditLog.all
+                  (auditEntryVisibleLegacy ctx (embedLegacyLabel (ctx.threadLabelOf reader))) = true := by
+                rw [List.all_eq_true]
+                intro a ha
+                rw [auditEntryVisibleLegacy_eq]
+                rw [← hEq] at ha
+                unfold auditLogVisibleTo at ha
+                exact (List.mem_filter.mp ha).2
+              exact absurd hAll (by simpa [SystemState.declassificationAuditLog] using hV)
+          · simp only [hDom, Bool.false_eq_true, ↓reduceIte, auditMonitorGate]
+            split <;> simp [auditMonitorAuthorized]
+    simp only [auditedArmSpec, auditedDecoded, hT,
+      extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
+      Architecture.SyscallArgDecode.decodeAuditDrainArgs,
+      Architecture.SyscallArgDecode.requireMessageLength, hL,
+      auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure,
+      Except.pure, auditDrainVisiblePrefix, hNot, Bool.false_eq_true]
+  · simp only [auditedArmSpec, hT, extractAuditAuthority, auditedGate,
+      Bool.eq_false_iff.mpr hRight, Bool.false_eq_true, ↓reduceIte]
 
 /-- An audit call's general form: the specification's arm, whose taint step is
 the identity (`auditTaintStep_eq`), every refusal carrying the state it was
@@ -697,8 +809,11 @@ length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
       else if auditTruncated .auditDrain regs cap then .error (.truncatedMessage, st)
       else if auditDrainAdmitted ctx st executingCore cap then
-        .ok ((), auditDrainPerform tid (auditedArgWord regs 0).toNat st)
-      else auditTargetGeneralR ctx .auditDrain regs capAddr tid executingCore cap st
+        .ok ((), auditDrainPerform tid
+          (auditDrainCountW st.declassificationAudit.length (auditedArgWord regs 0)) st)
+      else match cap.target with
+        | .auditTrail _ => .error (.illegalAuthority, st)
+        | _ => .error (.invalidCapability 0, st)
 
 /-- What an audit call's operand check leaves to its arm: the specification's
 arm and taint step, through the typed gate, is the arm alone on a capability
@@ -792,8 +907,15 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
       split
       · next hA =>
         simp only [auditGeneralR, auditedArmSpec_auditDrain_admitted ctx decoded.capAddr regs tid
-          executingCore cap st (Bool.eq_false_iff.mpr hTr) hA]
-      · exact auditTargetGeneralR_eq ctx _ regs _ tid executingCore cap st (.inr rfl)
+          executingCore cap st (Bool.eq_false_iff.mpr hTr) hA, auditDrainPerform_countW]
+      · next hA =>
+        cases hT : cap.target with
+        | auditTrail code =>
+          simp only [auditGeneralR, auditedArmSpec_auditDrain_refused ctx decoded.capAddr regs tid
+            executingCore cap st code hT (Bool.eq_false_iff.mpr hTr) (Bool.eq_false_iff.mpr hA)]
+        | _ =>
+          simp only [auditGeneralR, auditedArmSpec_audit_not_trail ctx .auditDrain decoded.capAddr
+            regs tid executingCore cap st (.inr rfl) (fun c h => by rw [hT] at h; cases h)]
 
 /-! ## `.auditRead` -/
 
@@ -2020,22 +2142,6 @@ registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
     (st : SystemState) (regs : SeLe4n.RegisterFile) : Nat :=
   auditReadFastCode ctx readerDomain st (auditedArgWord regs 0).toNat
     (auditedArgWord regs 1).toNat (auditedArgWord regs 2).toNat
-
-/-- A configured clearance validates exactly when it dominates every subject
-label (`auditClearanceDominates`). -/
-theorem validatedAuditMonitorClearance_eq (ctx : LabelingContext) (m : SecurityDomain)
-    (hM : ctx.auditMonitorClearance = some m) :
-    validatedAuditMonitorClearance ctx = if auditClearanceDominates m then some m else none := by
-  by_cases hD : auditClearanceDominates m = true
-  · rw [validatedAuditMonitorClearance_eq_some ctx m hM hD, if_pos hD]
-  · rw [if_neg hD]
-    simp only [auditClearanceDominates, Bool.and_eq_true, not_and] at hD
-    simp only [validatedAuditMonitorClearance, hM, legacySubjectLabels, List.all_cons, List.all_nil,
-      embedLegacyLabel, Bool.and_true, Bool.and_eq_true]
-    split
-    · next hAll =>
-      exact absurd hAll.2.2.2 (hD ⟨⟨hAll.1, hAll.2.1⟩, hAll.2.2.1⟩)
-    · rfl
 
 /-- **A monitor's audit read on the trail, in place**: the read's right, its
 opcode (checked on the word), the configured clearance, the reader and the

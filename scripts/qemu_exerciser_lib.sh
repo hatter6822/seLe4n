@@ -272,7 +272,8 @@ for driver in drivers:
         # the exerciser (smp_exercisers.rs) must change this set too, so the
         # evidence cannot disappear while the gate stays green.
         expected = {
-            "audit-drain", "audit-drain-first", "audit-read-basis-chunk",
+            "audit-drain", "audit-drain-first", "audit-cap-mint-read-only",
+            "audit-drain-read-only-refused", "audit-cap-read-only-delete", "audit-drain-wide-count", "audit-read-basis-chunk",
             "audit-read-basis-count", "audit-read-chain-archived", "audit-read-chain-entry",
             "audit-read-chain-predecessor", "audit-read-entry",
             "audit-read-entry-chunk-past", "audit-read-entry-index-past",

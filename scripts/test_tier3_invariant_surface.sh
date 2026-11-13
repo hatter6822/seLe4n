@@ -6437,6 +6437,15 @@ run_check "INVARIANT" rg -n '^theorem auditReadTrailR_eq($|[ ({:\[\]])' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem auditReadFastRefusal_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n -U '\| \.auditTrail _ => auditReadTrailR ctx regs tid executingCore cap st' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_negative_check "INVARIANT" rg -n 'auditReadAdmitted' SeLe4n
+# A drain the trail does not admit is refused in place, and an admitted drain's
+# count is read on the word.
+run_check "INVARIANT" rg -n '^theorem auditedArmSpec_auditDrain_refused($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U 'else match cap\.target with\n\s*\| \.auditTrail _ => \.error \(\.illegalAuthority, st\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '\.ok \(\(\), auditDrainPerform tid\n\s*\(auditDrainCountW st\.declassificationAudit\.length \(auditedArgWord regs 0\)\) st\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem auditDrainPerform_countW($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_negative_check "INVARIANT" rg -n 'auditDrainPerform tid \(auditedArgWord regs 0\)\.toNat st\)$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+# On a live state no object-table resize is due.
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objects_noResizeDue($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
