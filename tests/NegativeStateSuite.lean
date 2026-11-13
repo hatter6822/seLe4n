@@ -4204,12 +4204,12 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
     objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "configure zero period"
     (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 50 0 0 stWithSc)
-    (.invalidArgument 0)
+    (.rangeError SeLe4n.Kernel.configureMinBudget SeLe4n.Kernel.configureMaxPeriod)
 
   -- Z8-L-03: Configure with budget > period
   expectErr "configure budget>period"
     (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 50 0 0 stWithSc)
-    (.invalidArgument 0)
+    (.rangeError SeLe4n.Kernel.configureMinBudget 100)
 
   -- Z8-L-04: Bind to non-existent SchedContext
   let tid : SeLe4n.ThreadId := ⟨9902⟩

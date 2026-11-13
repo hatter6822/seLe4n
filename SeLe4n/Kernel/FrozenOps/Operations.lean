@@ -1504,14 +1504,14 @@ reservation, and the gate says so rather than this arm assuming it. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
-    -- Parameter validation (mirrors SchedContextOps.validateSchedContextParams)
-    -- AK6-A (SC-H01): reject zero-budget to preserve replenishmentListWellFormed.
-    if period == 0 then .error (.invalidArgument 0)
-    else if budget == 0 then .error (.invalidArgument 0)
-    else if budget > period then .error (.invalidArgument 0)
-    else if priority > 255 then .error (.invalidArgument 0)
-    else if domain ≥ 16 then .error (.invalidArgument 0)
-    else
+    -- Parameter validation: the live operation's own
+    -- (`SchedContextOps.validateSchedContextParams`), so the two answer every
+    -- refusal with one error and payload.  AK6-A (SC-H01): a zero budget is
+    -- refused, preserving replenishmentListWellFormed.
+    match SeLe4n.Kernel.SchedContextOps.validateSchedContextParams budget period priority
+        deadline domain with
+    | .error e => .error e
+    | .ok () =>
       match st.getObject? scId with
       | some (.schedContext sc) =>
         -- WS-ZA ZA6.4: the live configure's refills (`configuredSchedContext`):

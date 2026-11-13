@@ -1260,9 +1260,9 @@ private def runConfigureAndResumeChecks : IO Unit := do
   assertBool "a read-only capability is refused at set time on rights"
     (errorOf (dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
       == some .illegalAuthority)
-  assertBool "an empty slot is refused at set time as no capability"
+  assertBool "an empty slot is refused at set time as no capability, naming the handler"
     (errorOf (dispatchWithCap (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
-      == some (.invalidCapability 0))
+      == some (.invalidCapability 1))
   assertBool "a refused configuration leaves the field as it was"
     (match dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
      | .ok _ => false

@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.37.20` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 628,928 across 625 Lean files |
-| **Test LoC** | 89,557 across 70 Lean test suites |
+| **Production LoC** | 629,076 across 625 Lean files |
+| **Test LoC** | 89,569 across 70 Lean test suites |
 | **Proved declarations** | 24,087 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -3146,7 +3146,18 @@ carries a `LookupFault` — `invalidRoot`, `missingCapability bitsLeft`,
 bitsFound`, seL4's `lookup_fault`.  `invalidArgument` names the argument's word
 index; a CNode invocation's refusals take seL4's lookup faults (an empty source
 is `failedLookup true (missingCapability srcDepth)`, `cnode.c`), and an untyped's
-`memoryLeft` is its free bytes.  The discriminant round trip is over codes, the
+`memoryLeft` is its free bytes.  `invalidCapability` names the capability that
+failed, `0` for the invoked one and `i + 1` for argument capability `i` in the
+current word layout (`KernelError.forArgumentCap`): a configure's context, a
+bind's thread, a bound notification, a mapped frame, a page-table map's root, an
+issue's destination CNode, an interrupt handler's notification and a fault
+handler are `1`, a set-space's CSpace root `1` and VSpace root `2`; each number
+has one owner that the specification and the compiled form both read.  A
+configure's budget or period below the least is `rangeError` with
+`configureMinBudget` and `configureMaxPeriod`, and a budget above its period
+`rangeError` with the least budget and the period, all answered in the decode
+before the context is looked up, as seL4-MCS's
+`decodeSchedControl_ConfigureFlags` answers them.  The discriminant round trip is over codes, the
 payload ignored (`ofDiscriminant?_toDiscriminant` with `erasePayload`).  The
 error frame (`errorFrame`) writes the payload in seL4's message-register order,
 `setMRs_syscall_error` and `setMRs_lookup_failure`: MR0–MR3 in x2–x5, MR4 to the

@@ -139,11 +139,11 @@
 [MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
 [MEI-006] multi-ep all 3 endpoints drained: true
 [SCO-001] validateSchedContextParams valid: Except.ok ()
-[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.invalidArgument 0)
-[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument 0)
-[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument 0)
-[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument 0)
-[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.invalidArgument 0)
+[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.rangeError 1 18446744073709551615)
+[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.rangeError 1 1000)
+[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument 3)
+[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument 3)
+[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.rangeError 1 18446744073709551615)
 [SCO-006] schedContextConfigure success budget=100 period=1000
 [SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
 [SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState

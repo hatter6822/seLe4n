@@ -920,11 +920,12 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
      | .ok ((), st') => (st'.getTcb? (SeLe4n.ThreadId.ofNat 70)).any (fun t => decide (t.boundNotification = some ntfnId))
      | .error _ => false)
     "authorized bind did not bind the target TCB"
-  -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
+  -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability,
+  -- naming the notification: argument capability 0, so 1).
   let rNoCap := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
   expect "sd050_bindNtfn_no_cap_rejected"
-    (match rNoCap with | .error (.invalidCapability 0) => true | _ => false)
-    "bind without a held notification cap should fail with invalidCapability"
+    (match rNoCap with | .error (.invalidCapability 1) => true | _ => false)
+    "bind without a held notification cap should fail with invalidCapability 1 (the notification operand)"
   -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
   let rRO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
   expect "sd050_bindNtfn_readonly_cap_rejected"

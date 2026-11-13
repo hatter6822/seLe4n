@@ -76,6 +76,34 @@ now returns seL4's error payload in the message registers, in
   whose capability is not a notification, are refused `.illegalState`, the
   model's code for seL4's `seL4_IllegalOperation` (`decodeSetSpace`,
   `decodeBindNotification`), where they were `invalidCapability`.
+- **Each refusal names its own argument.** A review found sites still at the
+  placeholder `0`; every one that names an argument now carries its number.
+  - A configure refuses as `decodeSchedControl_ConfigureFlags` does, in its
+    order and in the decode, before the context's capability is looked at. A
+    budget or period below the least is `rangeError configureMinBudget
+    configureMaxPeriod` (`1` and the word's greatest value). A budget above
+    its period is `rangeError configureMinBudget period`. The parameter word
+    is `invalidArgument 3`. `validateSchedContextParams` and the frozen
+    configure, which now calls it, answer the same.
+  - An argument capability's refusal names it (`KernelError.forArgumentCap`):
+    `0` is the invoked capability and `i + 1` is argument capability `i`, in
+    the current word layout. These are `invalidCapability 1`: the configure's
+    context, the bind's thread, the bound notification, the frame a map names
+    (the remap's other-ASID refusal reads the same number), a page-table map's
+    root, an issue's destination CNode, an interrupt handler's notification
+    and a fault handler. A set-space's CSpace root is `1` and its VSpace root
+    `2`. A failed lookup of the argument, an empty or reserved slot, and the
+    wrong kind of object all carry the number. A missing right stays
+    `illegalAuthority`.
+  - A retype's child id is `invalidArgument 1`. An audit read names its index
+    word (`1`) or its chunk word (`2`); a causal-pair read checks `earlier <
+    later` before it reads either entry.
+  - Each number has one owner (`configureContextCapNumber`,
+    `vspaceMapFrameCapNumber`, `UntypedRetypeArgs.childIdWord`, …). The
+    specification and its compiled continuation form both read it, and the
+    `_eq` proofs join them.
+  - The QEMU `configure-refused-*` scenarios check the range error's two
+    words.
 - **Proofs.**
   - `ofDiscriminant?_toDiscriminant` (the code round trip, the payload
     erased).
@@ -108,8 +136,8 @@ now returns seL4's error payload in the message registers, in
   - Every other reading is 0, the new payload scenarios and both carve
     refusals (`untyped-retype-region-exhausted`, `untyped-retype-slot-occupied`)
     among them.
-- **Boot heap** (the same runs, identical in both): 758 pages (103357 live
-  allocations) after the library initializer and 1350 pages (109461) after
+- **Boot heap** (the same runs, identical in both): 758 pages (103384 live
+  allocations) after the library initializer and 1350 pages (109488) after
   the install, one page more than at `v0.37.19`: the payload's closed
   constants and code.
 

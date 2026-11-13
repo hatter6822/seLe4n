@@ -9305,6 +9305,10 @@ const fn refused_with(
 const RANGE_ERROR: u64 = 59;
 #[cfg(feature = "hw_target")]
 const FAILED_LOOKUP: u64 = 60;
+/// The least budget a configure admits (`configureMinBudget`, seL4-MCS's
+/// `MIN_BUDGET`): the `rangeErrorMin` of a configure's budget refusal.
+#[cfg(feature = "hw_target")]
+const CONFIGURE_MIN_BUDGET: u64 = 1;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -11831,12 +11835,25 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         SCHED_CONTEXT_PERIOD,
         PARTNER_PRIORITY,
     ];
+    // A budget above its period is seL4-MCS's `seL4_RangeError` with
+    // `MIN_BUDGET` and the period (`decodeSchedControl_ConfigureFlags`): the
+    // payload carries the period the caller passed, a word read at the entry.
+    let budget_over_period = refused_with(
+        RANGE_ERROR,
+        2,
+        [
+            Some(CONFIGURE_MIN_BUDGET),
+            Some(SCHED_CONTEXT_PERIOD),
+            None,
+            None,
+        ],
+    );
     let refused_fills = RoundTrip {
-        returns: refused(INVALID_ARGUMENT),
+        returns: budget_over_period,
         ..configure("configure-refused-fills", refused_args)
     };
     let refused_held = RoundTrip {
-        returns: refused(INVALID_ARGUMENT),
+        returns: budget_over_period,
         ..configure("configure-refused-held", refused_args)
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);

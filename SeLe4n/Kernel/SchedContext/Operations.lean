@@ -393,14 +393,22 @@ Returns error if any parameter violates well-formedness constraints:
   starves its bound thread)
 - `budget ≤ period` (cannot use more than 100% of a period)
 - `priority ≤ maxPriority` (within valid priority range)
-- `domain < numDomains` (within valid domain range) -/
+- `domain < numDomains` (within valid domain range)
+
+Each refusal is seL4-MCS's (`decodeSchedControl_ConfigureFlags`): a budget or
+period below the least is `seL4_RangeError` with `MIN_BUDGET` and `MAX_PERIOD`
+(`configureMinBudget`, `configureMaxPeriod`), and a budget above its period
+`seL4_RangeError` with `MIN_BUDGET` and the period.  The priority and the domain
+share the parameter word (`configureSchedParamsWord`), which an out-of-range one
+names (`invalidArgument`).  The configure's decode answers the budget and
+period refusals first, in this order (`decodeSchedContextConfigureArgsChecked`). -/
 @[inline] def validateSchedContextParams (budget period priority _deadline domain : Nat)
     : Except KernelError Unit :=
-  if period == 0 then .error (.invalidArgument 0)
-  else if budget == 0 then .error (.invalidArgument 0)
-  else if budget > period then .error (.invalidArgument 0)
-  else if priority > maxPriorityVal then .error (.invalidArgument 0)
-  else if domain ≥ numDomainsVal then .error (.invalidArgument 0)
+  if period == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if budget == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if budget > period then .error (.rangeError configureMinBudget (UInt64.ofNat period))
+  else if priority > maxPriorityVal then .error (.invalidArgument configureSchedParamsWord)
+  else if domain ≥ numDomainsVal then .error (.invalidArgument configureSchedParamsWord)
   else .ok ()
 
 -- ============================================================================

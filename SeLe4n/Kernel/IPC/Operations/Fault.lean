@@ -675,6 +675,11 @@ def installFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
   st.rewriteObject tid.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
     (SystemState.rewriteAdmissible_tcb hTcb _)
 
+/-- The handler a `.tcbSetFaultHandler` names at MR0: its argument capability
+`0` (seL4-MCS's `decodeSetSpace` answers a fault endpoint that is no valid
+handler `invalidCapNumber = 1`). -/
+def faultHandlerCapNumber : UInt64 := 1
+
 /-- **`seL4_TCB_SetSpace`'s fault endpoint, as a kernel operation.**  Install
 `cptr` as the target thread's fault handler.
 
@@ -705,7 +710,7 @@ def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadI
   | none => .error .objectNotFound
   | some ⟨tcb, hTcb⟩ =>
       match resolveFaultHandlerCPtr st tcb cptr with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap faultHandlerCapNumber)
       | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr)
 
 /-- WS-ZA ZA5.2: does `cptr` resolve, through `tcb`'s CSpace, to a handler
@@ -762,7 +767,7 @@ def setThreadFaultHandlerOpImpl (st : SystemState) (vTargetTid : SeLe4n.ValidThr
   | none => .error .objectNotFound
   | some tcb =>
       match resolveFaultHandlerCPtr st tcb cptr with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap faultHandlerCapNumber)
       | .ok _ => .ok (st.updateTcb vTargetTid.val (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr }))
 
 @[csimp] theorem setThreadFaultHandlerOp_eq_impl :
@@ -872,12 +877,14 @@ theorem setThreadFaultHandlerOp_scheduler_eq (st st' : SystemState)
           rfl
 
 /-- A CPtr that does not resolve to an authorised endpoint capability is
-refused — the negative that keeps "configured" and "usable" the same thing. -/
+refused — the negative that keeps "configured" and "usable" the same thing —
+with the refusal naming the handler (`faultHandlerCapNumber`). -/
 theorem setThreadFaultHandlerOp_rejects (st : SystemState)
     (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (tcb : TCB) (e : KernelError)
     (hTcb : st.getTcb? vTargetTid.val = some tcb)
     (hR : resolveFaultHandlerCPtr st tcb cptr = .error e) :
-    setThreadFaultHandlerOp st vTargetTid cptr = .error e := by
+    setThreadFaultHandlerOp st vTargetTid cptr =
+      .error (e.forArgumentCap faultHandlerCapNumber) := by
   simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR]
 
 /-- **Resuming a thread that carries a fault retires the fault** — seL4's

@@ -31,6 +31,7 @@ model analyses (e.g., NI proofs, CBS scheduler reasoning).
 
 open SeLe4n.Kernel.Architecture.SyscallArgDecode
 open SeLe4n.Testing
+open SeLe4n.Kernel (configureMinBudget configureMaxPeriod)
 
 namespace SeLe4n.Testing.DecodeValidation
 
@@ -102,19 +103,25 @@ def test_t05_sc_rejects_high_domain : IO Unit := do
 def test_t06_sc_rejects_zero_budget : IO Unit := do
   let stub := stubOf #[7, 0, 10000, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error (.invalidArgument _) =>
-    IO.println "check passed [budget = 0 rejected]"
+  | .error (.rangeError lo hi) =>
+    if lo == configureMinBudget && hi == configureMaxPeriod then
+      IO.println "check passed [budget = 0 rejected]"
+    else
+      throw <| IO.userError s!"T06: expected rangeError(min budget, max period), got rangeError {lo} {hi}"
   | _ =>
-    throw <| IO.userError "T06: expected invalidArgument for budget = 0"
+    throw <| IO.userError "T06: expected rangeError for budget = 0"
 
 /-- T07: AK3-J — checked schedContextConfigure rejects period = 0. -/
 def test_t07_sc_rejects_zero_period : IO Unit := do
   let stub := stubOf #[7, 1000, 0, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error (.invalidArgument _) =>
-    IO.println "check passed [period = 0 rejected]"
+  | .error (.rangeError lo hi) =>
+    if lo == configureMinBudget && hi == configureMaxPeriod then
+      IO.println "check passed [period = 0 rejected]"
+    else
+      throw <| IO.userError s!"T07: expected rangeError(min budget, max period), got rangeError {lo} {hi}"
   | _ =>
-    throw <| IO.userError "T07: expected invalidArgument for period = 0"
+    throw <| IO.userError "T07: expected rangeError for period = 0"
 
 /-- T08: AK3-J — checked schedContextConfigure accepts valid args. -/
 def test_t08_sc_accepts_valid : IO Unit := do

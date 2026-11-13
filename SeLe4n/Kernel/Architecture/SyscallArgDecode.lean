@@ -281,6 +281,10 @@ structure UntypedRetypeArgs where
   dstSlot  : Slot
   deriving Repr, DecidableEq
 
+/-- The message word a retype's child id is read from (MR1), the word a child
+id the kernel refuses names (`invalidArgument`). -/
+def UntypedRetypeArgs.childIdWord : UInt64 := 1
+
 /-- Per-syscall argument structure for `vspaceMap`.
     Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
     T6-C/M-ARCH-1: `perms` is typed as `PagePermissions` instead of raw `Nat`.
@@ -1493,15 +1497,26 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
     - period > 0       (CBS replenishment math requires positive period)
 
-    Rejects violations with `.invalidArgument`. The underlying
+    - budget ≤ period  (a server cannot hold more than its period)
+
+    Each refusal is seL4-MCS's, in its order
+    (`decodeSchedControl_ConfigureFlags`): the budget and the period first, each
+    below the least refused `seL4_RangeError` with `MIN_BUDGET` and
+    `MAX_PERIOD` (`configureMinBudget`, `configureMaxPeriod`), then a budget
+    above its period `seL4_RangeError` with `MIN_BUDGET` and the period, all
+    before the context's capability is looked at; the parameter word, which
+    seL4's configure does not carry, last (`invalidArgument`, naming the word,
+    `configureSchedParamsWord`).  The underlying
     `decodeSchedContextConfigureArgs` remains unchanged so existing error
     theorems and round-trip proofs are preserved. -/
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.schedParams ≥ 4096 then .error (.invalidArgument 3)
-  else if args.budget = 0 then .error (.invalidArgument 1)
-  else if args.period = 0 then .error (.invalidArgument 2)
+  if args.budget = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if args.period = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if args.budget > args.period then
+    .error (.rangeError configureMinBudget (UInt64.ofNat args.period))
+  else if args.schedParams ≥ 4096 then .error (.invalidArgument configureSchedParamsWord)
   else pure args
 
 /-- AK3-J: A successful checked configure decode satisfies all CBS invariants. -/
@@ -1522,15 +1537,17 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
       · simp at hOk
       · split at hOk
         · simp at hOk
-        · rename_i hD hB hPer
-          simp only [pure, Except.pure, Except.ok.injEq] at hOk
-          subst hOk
-          have hW := Nat.not_le.mp hD
-          refine ⟨hW, ?_, ?_, ?_, ?_⟩
-          · unfold SchedContextConfigureArgs.priority; omega
-          · unfold SchedContextConfigureArgs.domain; omega
-          · omega
-          · omega
+        · split at hOk
+          · simp at hOk
+          · rename_i hB hPer _ hD
+            simp only [pure, Except.pure, Except.ok.injEq] at hOk
+            subst hOk
+            have hW := Nat.not_le.mp hD
+            refine ⟨hW, ?_, ?_, ?_, ?_⟩
+            · unfold SchedContextConfigureArgs.priority; omega
+            · unfold SchedContextConfigureArgs.domain; omega
+            · omega
+            · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
     Requires 1 message register (`tcbCPtr`, the TCB capability's address in
@@ -2479,9 +2496,10 @@ read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if 4096 ≤ r3 then .error (.invalidArgument 3)
-  else if r1.toNat = 0 then .error (.invalidArgument 1)
-  else if r2.toNat = 0 then .error (.invalidArgument 2)
+  if r1.toNat = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if r2.toNat = 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if r2 < r1 then .error (.rangeError configureMinBudget r2)
+  else if 4096 ≤ r3 then .error (.invalidArgument configureSchedParamsWord)
   else pure { scCPtr := SeLe4n.CPtr.ofWord r0, budget := r1.toNat, period := r2.toNat,
               schedParams := r3.toNat, deadline := r4.toNat }
 
@@ -2501,7 +2519,7 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat]
+      schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat, UInt64.lt_iff_toNat_lt, UInt64.ofNat_toNat]
 
 /-- `decodeCSpaceMintArgs` over a reader: a copy's four words, then the badge,
 the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/

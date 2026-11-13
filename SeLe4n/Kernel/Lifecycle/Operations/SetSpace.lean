@@ -290,6 +290,14 @@ not final or named nothing retirable. -/
   retireFinalObject executingCore target (recorderFor st target tid.toObjId slot)
     (threadSlotCopied st tid slot srcCNode srcSlot rights)
 
+/-- The CSpace root a `.tcbSetSpace` names at MR0: its argument capability `0`,
+numbered `1` as seL4 numbers a refusal's capability (`invalidCapNumber`). -/
+def setSpaceCSpaceRootCapNumber : UInt64 := 1
+
+/-- The VSpace root a `.tcbSetSpace` names at MR1: its argument capability `1`,
+numbered `2`. -/
+def setSpaceVSpaceRootCapNumber : UInt64 := 2
+
 /-- The CSpace-root source check: the slot holds a capability naming a CNode. -/
 @[inline] def cspaceRootSourceAdmitted (st : SystemState) (src : CSpaceAddr) : Bool :=
   match SystemState.lookupSlotCap st src with
@@ -332,8 +340,10 @@ def copyThreadSpaces (executingCore : Concurrency.CoreId) (st : SystemState)
   | some tcb =>
     if tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive then
       .error .illegalState
-    else if !cspaceRootSourceAdmitted st cnSrc then .error (.invalidCapability 0)
-    else if !vspaceRootSourceAdmitted st vrSrc then .error (.invalidCapability 0)
+    else if !cspaceRootSourceAdmitted st cnSrc then
+      .error (.invalidCapability setSpaceCSpaceRootCapNumber)
+    else if !vspaceRootSourceAdmitted st vrSrc then
+      .error (.invalidCapability setSpaceVSpaceRootCapNumber)
     else .ok (copyThreadSpacesPerform executingCore st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode
       vrSrc.slot)
 
