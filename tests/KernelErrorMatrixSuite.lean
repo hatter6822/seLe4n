@@ -142,7 +142,7 @@ private def mkDecoded (msgRegs : Array RegValue) (label : Nat := 0)
 
 /-- A `RegValue` with the supplied raw value.  Wrapper to keep matrix rows
 short. -/
-@[inline] private def rv (n : Nat) : RegValue := ⟨n⟩
+@[inline] private def rv (n : Nat) : RegValue := SeLe4n.RegValue.ofNat n
 
 -- ============================================================================
 -- AN11-A.2 — Baseline coverage layer (already-tested variants)
@@ -166,7 +166,7 @@ private def row_rangeError_period_zero : KernelErrorRejection :=
                      " replenishmentListWellFormed downstream)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 0) (priority := 5) (_deadline := 0)
+        (budget := 100) (period := 0) (priority := 5) (deadline := 0)
         (domain := 0) }
 
 /-- Row: `validateIpcBufferAddress` rejects unaligned address with
@@ -237,17 +237,6 @@ private def row_invalidMessageInfo : KernelErrorRejection :=
       -- Length field 127 > maxMessageRegisters, rejected by MessageInfo.decode
       -- (every bit above 12 is the 52-bit label, so only a field bound fails).
       runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo (rv 0x7F)) }
-
-/-- Row: `decodeCapPtr` rejects values exceeding word64 with
-`.invalidCapPtr`. -/
-private def row_invalidCapPtr : KernelErrorRejection :=
-  { syscall       := "decodeCapPtr"
-    expectedError := .invalidCapPtr
-    scenarioTag   := "AN11A.2.invalidCapPtr.over_word64"
-    scenarioDesc  := "Cap-pointer register value exceeding 2^64 is" ++
-                     " rejected at decode time"
-    runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr (rv (2^64))) }
 
 /-- Row: `validateRegBound` rejects out-of-range register name with
 `.invalidRegister`. -/
@@ -543,7 +532,7 @@ private def row_rangeError_budget_zero : KernelErrorRejection :=
                      " — every replenishment amount must be positive)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 0) (period := 1000) (priority := 5) (_deadline := 0)
+        (budget := 0) (period := 1000) (priority := 5) (deadline := 0)
         (domain := 0) }
 
 /-- Row: `validateSchedContextParams` rejects budget > period with seL4-MCS's
@@ -556,7 +545,7 @@ private def row_rangeError_budget_over_period : KernelErrorRejection :=
                      " more than 100% of a period)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 2000) (period := 1000) (priority := 5) (_deadline := 0)
+        (budget := 2000) (period := 1000) (priority := 5) (deadline := 0)
         (domain := 0) }
 
 /-- Row: `validateSchedContextParams` rejects priority > 255 with
@@ -568,7 +557,7 @@ private def row_invalidArgument_priority_overflow : KernelErrorRejection :=
     scenarioDesc  := "SchedContext priority must be ≤ maxPriorityVal (255)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 256) (_deadline := 0)
+        (budget := 100) (period := 1000) (priority := 256) (deadline := 0)
         (domain := 0) }
 
 /-- Row: `validateSchedContextParams` rejects domain ≥ 16 with
@@ -580,7 +569,7 @@ private def row_invalidArgument_domain_overflow : KernelErrorRejection :=
     scenarioDesc  := "SchedContext domain must be < numDomainsVal (16)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 5) (_deadline := 0)
+        (budget := 100) (period := 1000) (priority := 5) (deadline := 0)
         (domain := 16) }
 
 /-- Row: `validatePriorityAuthority` rejects priority above
@@ -991,7 +980,6 @@ def errorMatrix : List KernelErrorRejection :=
     row_invalidArgument_mint_rights,
     row_invalidSyscallNumber,
     row_invalidMessageInfo,
-    row_invalidCapPtr,
     row_invalidRegister,
     row_ipcMessageTooLarge,
     row_ipcMessageTooLarge_replyRecv,

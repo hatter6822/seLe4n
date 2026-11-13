@@ -1723,7 +1723,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   -- wake shares, so a fault handler reads every word the model encodes.
   let st0 := mappedBuffersState true
   let thirteen : IpcMessage :=
-    { registers := (Array.range 13).map (fun i => (⟨100 + i⟩ : SeLe4n.RegValue)) }
+    { registers := (Array.range 13).map (fun i => (SeLe4n.RegValue.ofNat (100 + i))) }
   let stW : SystemState :=
     match st0.objects[callerTid.toObjId]? with
     | some (.tcb tcb) =>

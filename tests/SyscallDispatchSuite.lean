@@ -1054,7 +1054,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     { capAddr := SeLe4n.CPtr.ofNat 2,
       msgInfo := { length := 1, extraCaps := 0, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[⟨tcbCPtr⟩], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
   expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
     (match dispatchCapabilityOnly (bindDecoded 0) scCap caller bootCoreId with
