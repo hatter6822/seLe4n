@@ -5409,6 +5409,8 @@ run_check "INVARIANT" rg -n '^theorem cspaceRootSourceAdmitted_dataFits($|[ ({:\
 run_check "INVARIANT" rg -n -U '@\[inline\] def spaceCopyGuard \(cap : Capability\) \(data : UInt64\) : Nat :=\n  if data = 0 then cap\.cnodeGuard else capDataGuard data' SeLe4n/Model/ObjectSlots.lean
 run_check "INVARIANT" rg -n -U '@\[inline\] def resolveAddressBitsK \{α : Type\}[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n  resolveAddressBitsLevel \(resolveAddressBitsWalk nodeCap cptr nBits st fun c _ => c\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "THEOREM" rg -n '^theorem resolveAddressBitsK_eq ' SeLe4n/Kernel/Capability/Operations.lean
+run_check "THEOREM" rg -n '^theorem cspaceMintWithCdt_of_dataRefused ' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'if securityFlowsTo \(ctx\.objectLabelOf srcCNode\) \(ctx\.objectLabelOf dstCNode\) &&\n\s+cspaceMintDataRefused ' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpacesZombie_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => 38$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/Kernel/API.lean

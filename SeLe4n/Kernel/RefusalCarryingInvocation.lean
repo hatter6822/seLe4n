@@ -2343,6 +2343,10 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
         args.srcIndex args.srcDepth st
         (fun e => .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
+          if securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
+              cspaceMintDataRefused ⟨srcCNode, srcSlot⟩
+                (mintMaskedRights st ⟨srcCNode, srcSlot⟩ args.rights) args.badge.word st
+          then .error (.illegalState, st) else
           RefusalCarrying.ofChecked
             (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
               cspaceMintAdmittedAt srcCNode srcSlot dstCNode dstSlot
@@ -2377,6 +2381,17 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
         rw [show cnodeInvoked cnodeId st = true from
           cnodeInvoked_of_resolveCNodeOpSlots_ok hR hT]
         simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+        by_cases hRef : (securityFlowsTo (ctx.objectLabelOf sc) (ctx.objectLabelOf dc) &&
+            cspaceMintDataRefused ⟨sc, ss⟩ (mintMaskedRights st ⟨sc, ss⟩ args.rights)
+              args.badge.word st) = true
+        · rw [if_pos hRef]
+          simp only [Bool.and_eq_true] at hRef
+          have hR2 := hRef.2
+          rw [← mintDataWord_ofRegister] at hR2
+          simp only [RefusalCarrying.ofKernel, dispatchMintBy, hT, hD, cspaceMintChecked,
+            hRef.1, ↓reduceIte, cnodeInvoked, cnodeInvoked_of_resolveCNodeOpSlots_ok hR hT, hR,
+            Bool.not_true, Bool.false_eq_true, cspaceMintWithCdt_of_dataRefused hR2]
+        rw [if_neg hRef]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA

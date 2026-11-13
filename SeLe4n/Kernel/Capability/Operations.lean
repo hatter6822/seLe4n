@@ -2678,6 +2678,41 @@ theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRig
     simp only [hNN, hM, cspaceInsertSlot_of_admitted hD, hU, Bool.false_eq_true, ↓reduceIte]
     rfl
 
+/-- **A mint's `updateCapData` refusal, read before any write**: the source
+holds a capability that is not null, the rights attenuate it, and
+`updateCapData` refuses the data word `w` (`capDataRefusedAt`): a badged
+endpoint or notification capability, or a CNode guard that does not fit.
+The mint then answers `illegalState` (`cspaceMintWithCdt_of_dataRefused`), so
+the compiled arm answers it from these reads. -/
+@[inline] def cspaceMintDataRefused (src : CSpaceAddr) (rights : AccessRightSet)
+    (w : UInt64) (st : SystemState) : Bool :=
+  match SystemState.lookupSlotCap st src with
+  | some parent => parent.isNotNull && rightsSubset rights parent.rights &&
+      capDataRefusedAt st parent w
+  | none => false
+
+/-- A mint whose data `updateCapData` refuses is refused `illegalState`, seL4's
+`IllegalOperation`. -/
+theorem cspaceMintWithCdt_of_dataRefused {src dst : CSpaceAddr} {rights : AccessRightSet}
+    {badge : Option SeLe4n.Badge} {st : SystemState}
+    (h : cspaceMintDataRefused src rights (SeLe4n.Badge.ofOption badge).word st = true) :
+    cspaceMintWithCdt src dst rights badge st = .error .illegalState := by
+  unfold cspaceMintDataRefused at h
+  unfold cspaceMintWithCdt cspaceMint cspaceLookupSlot
+  cases hL : SystemState.lookupSlotCap st src with
+  | none => simp [hL] at h
+  | some parent =>
+    simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨⟨hN, hR⟩, hK⟩ := h
+    have hNN : parent.toNonNull? = some ⟨parent, hN⟩ := by
+      unfold Capability.toNonNull?; rw [dif_pos hN]
+    have hM : mintDerivedCap ⟨parent, hN⟩ rights (capDataKind st parent) badge =
+        .error .illegalState := by
+      rw [capDataRefusedAt_eq] at hK
+      unfold mintDerivedCap
+      simp only [hR, ↓reduceIte, hK]
+    simp only [hNN, hM]
+
 /-- WS-ZA ZA5.3: the reply capability a reply-capability mint writes. -/
 @[inline] def mintedReplyCap (rid : SeLe4n.ReplyId) (parentRights : AccessRightSet) : Capability :=
   { target := .replyCap rid, rights := replyCapRightsFrom parentRights }

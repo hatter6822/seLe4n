@@ -264,7 +264,7 @@ for driver in drivers:
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
             "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (19, 2040), "sched-context/7": (8, 440), "cnode/2": (23, 1128),
+            "tcb/0": (19, 2072), "sched-context/7": (8, 440), "cnode/2": (23, 1168),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }
