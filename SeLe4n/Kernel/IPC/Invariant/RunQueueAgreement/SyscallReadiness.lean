@@ -716,8 +716,8 @@ theorem cspaceRevokeCdtFinalising_readyKeptStage {S : SeLe4n.ThreadId → Prop} 
     (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h).2
 
 theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : readyKeptStage S st st' :=
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : readyKeptStage S st st' :=
   (copyThreadSpacesZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
       readyKeptStage S st s)
     (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
@@ -1197,7 +1197,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep

@@ -1531,12 +1531,15 @@ private def spaceScenario : SystemState :=
     | .error _ => st1
 
 /-- `.tcbSetSpace` on the TCB capability at `tcbSlot`: MR0 the new CSpace root's
-capability address, MR1 the new VSpace root's. -/
-private def decodeSetSpace (tcbSlot cnSlot vrSlot : Nat) : SyscallDecodeResult :=
+capability address, MR1 the new VSpace root's, MR2 the CSpace root data word
+(`0`: the root keeps its source capability's guard). -/
+private def decodeSetSpace (tcbSlot cnSlot vrSlot : Nat) (rootData : Nat := 0) :
+    SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
   , syscallId := .tcbSetSpace
-  , msgRegs   := #[SeLe4n.RegValue.ofNat cnSlot, SeLe4n.RegValue.ofNat vrSlot] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat cnSlot, SeLe4n.RegValue.ofNat vrSlot,
+                   SeLe4n.RegValue.ofNat rootData] }
 
 /-- The retired reading of "suspended": the stored flag alone.  Spelled here and
 nowhere else, so the witness can show the live check discriminates. -/
@@ -1585,6 +1588,25 @@ private def runSetSpaceChecks : IO Unit := do
       (flagOnlySuspended st1 carveOwner)
     assertBool "a thread the scheduler runs is refused (illegalState), whatever its flag says"
       (isErr .illegalState (dispatchSyscallAsCurrent (decodeSetSpace slotOwnerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId st1))
+    -- seL4's `cspace_root_data` (MR2): a nonzero word sets the new root's guard
+    -- through `updateCapData`; a guard size that does not fit beside the
+    -- CNode's radix is refused `.illegalState` before anything is written.
+    let radix := ((st1.getCNode? carveCn).map (·.radixWidth)).getD 0
+    let fitSize := 64 - radix
+    let fitData := (5 <<< 6) ||| fitSize
+    assertBool "CONTROL: the CSpace root's CNode has a radix of at least 2"
+      (2 ≤ radix)
+    assertBool "a root data guard size that overflows the word beside the radix is refused (illegalState)"
+      (isErr .illegalState (dispatchSyscallAsCurrent
+        (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 ((5 <<< 6) ||| 63)) carveOwner
+        Concurrency.bootCoreId st1))
+    match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 fitData) carveOwner
+        Concurrency.bootCoreId st1 with
+    | .error e => assertBool s!"a fitting root data word is admitted (got {repr e})" false
+    | .ok ((), stG) =>
+      assertBool "the new CSpace root carries the data word's guard and guard size"
+        (((stG.getTcb? spaceWorker).bind (·.spaceSlotCap TCB.cspaceRootSlot)).map
+          (fun c => (c.cnodeGuard, c.cnodeGuardSize)) == some (5, fitSize))
     match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId st1 with
     | .error e => assertBool s!"setting the suspended worker's space succeeds (got {repr e})" false
     | .ok ((), st2) => do

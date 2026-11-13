@@ -402,9 +402,9 @@ theorem cspaceDeleteSlotZombie_preserves_bookkeepingAgrees (ec : Concurrency.Cor
 
 theorem threadSlotCopied_preserves_bookkeepingAgrees {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64)
     (hB : st.bookkeepingAgrees) :
-    (threadSlotCopied st tid slot srcCNode srcSlot rights).bookkeepingAgrees := by
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data).bookkeepingAgrees := by
   have hS := threadSlotCleared_store hT slot
   have hInvC := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
   have hBC := storeObject_preserves_bookkeepingAgrees _ _ _ _ hB hInv hS
@@ -412,7 +412,7 @@ theorem threadSlotCopied_preserves_bookkeepingAgrees {st : SystemState} {tid : S
     { cnode := tid.toObjId, slot := slot }
   have hBD := hR.bookkeepingAgrees hInvC (hBC.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   have hID := hR.invExt hInvC
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hBD
   · rw [e]
     exact cdtAddChild_preserves_bookkeepingAgrees
@@ -422,33 +422,33 @@ theorem threadSlotCopied_preserves_bookkeepingAgrees {st : SystemState} {tid : S
 theorem threadSlotSet_preserves_bookkeepingAgrees (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t)
     (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (hB : st.bookkeepingAgrees) :
-    (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt ∧
-      (threadSlotSet ec st tid slot srcCNode srcSlot rights).bookkeepingAgrees := by
-  have hI := (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2
+    (rights : AccessRightSet) (data : UInt64) (hB : st.bookkeepingAgrees) :
+    (threadSlotSet ec st tid slot srcCNode srcSlot rights data).objects.invExt ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights data).bookkeepingAgrees := by
+  have hI := (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights data).2
   unfold threadSlotSet
   dsimp only
   exact ⟨(retireFinalObject_frame ec _ _ _ hI).1, retireFinalObject_preserves_bookkeepingAgrees
-    ec _ _ _ hI (threadSlotCopied_preserves_bookkeepingAgrees hInv hT slot srcCNode srcSlot rights hB)⟩
+    ec _ _ _ hI (threadSlotCopied_preserves_bookkeepingAgrees hInv hT slot srcCNode srcSlot rights data hB)⟩
 
 theorem copyThreadSpaces_preserves_bookkeepingAgrees (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     st'.objects.invExt ∧ st'.bookkeepingAgrees := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨hI1, hB1⟩ := threadSlotSet_preserves_bookkeepingAgrees ec hInv hT TCB.cspaceRootSlot
-    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hB
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hB
   obtain ⟨t1, hT1⟩ := cspaceRootSet_getTcb? ec hInv hT hCn
   exact threadSlotSet_preserves_bookkeepingAgrees ec hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
-    vrSrc.slot TCB.vspaceRootRights hB1
+    vrSrc.slot TCB.vspaceRootRights 0 hB1
 
 /-- **Setting a thread's space through the zombie delete keeps the agreement**:
 finalising deletes and finalisations, then the plain space change. -/
 theorem copyThreadSpacesZombie_preserves_bookkeepingAgrees (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     st'.bookkeepingAgrees := by
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
   · exact (copyThreadSpaces_preserves_bookkeepingAgrees ec hInv hB h1).2

@@ -573,6 +573,32 @@ structure Capability where
   cnodeGuardSize : Nat := 0
   deriving Repr, DecidableEq, Inhabited
 
+/-- seL4's `cnodeCapData_get_guardSize` (64-bit): bits 5:0 of the data word. -/
+@[inline] def capDataGuardSize (w : UInt64) : Nat := (w &&& 63).toNat
+
+/-- seL4's `cnodeCapData_get_guard` masked to the guard size: bits 63:6 of the
+data word, `& MASK(guardSize)`. -/
+@[inline] def capDataGuard (w : UInt64) : Nat :=
+  ((w >>> 6) % ((1 : UInt64) <<< (w &&& 63))).toNat
+
+theorem capDataGuardSize_lt (w : UInt64) : capDataGuardSize w < 64 := by
+  unfold capDataGuardSize
+  have : (w &&& 63).toNat ≤ 63 := by
+    rw [UInt64.toNat_and]; exact Nat.and_le_right
+  omega
+
+theorem capDataGuard_lt (w : UInt64) : capDataGuard w < 2 ^ capDataGuardSize w := by
+  have hs := capDataGuardSize_lt w
+  unfold capDataGuard
+  unfold capDataGuardSize at hs ⊢
+  have hm : ((1 : UInt64) <<< (w &&& 63)).toNat = 2 ^ (w &&& 63).toNat := by
+    rw [UInt64.toNat_shiftLeft]
+    simp only [UInt64.toNat_one, Nat.one_shiftLeft]
+    rw [Nat.mod_eq_of_lt (by omega : (w &&& 63).toNat < 64)]
+    exact Nat.mod_eq_of_lt (Nat.pow_lt_pow_right (by decide) hs)
+  rw [UInt64.toNat_mod, hm]
+  exact Nat.mod_lt _ (Nat.two_pow_pos _)
+
 namespace Capability
 
 /-- WS-ZA ZA5.4: **the capability's mapping record**, the `Option` view of the

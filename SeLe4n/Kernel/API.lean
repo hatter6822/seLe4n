@@ -1929,6 +1929,11 @@ its kind, or the call is refused `.illegalState` (seL4's `decodeSetSpace` answer
 a CNode or VSpace capability of the wrong kind `seL4_IllegalOperation`); the
 operation checks the kinds again against the store, so a resolver and an
 operation that disagreed about them would refuse rather than install.
+MR2 is seL4's `cspace_root_data`: a nonzero word sets the CSpace root copy's
+guard through `updateCapData`, and a guard size that does not fit beside the
+CNode's radix is refused `.illegalState` (`cspaceRootDataRefused`; seL4's null
+capability, then `seL4_IllegalOperation`), before the VSpace root is resolved,
+as `decodeSetSpace` orders it.
 The slots are returned, not the objects: the operation copies each slot's
 capability into the thread's slot, derived from it. -/
 def resolveSetSpace (callerTid : SeLe4n.ThreadId)
@@ -1939,6 +1944,7 @@ def resolveSetSpace (callerTid : SeLe4n.ThreadId)
   | .ok (cnSrc, cnCap, cnId) =>
     if !cnCap.hasRight .write then .error .illegalAuthority
     else if (st.getCNode? cnId).isNone then .error .illegalState
+    else if cspaceRootDataRefused st cnId args.cspaceRootData then .error .illegalState
     else
       match resolveCallerCapSlot callerTid args.vspaceRoot .write st with
       | .error e => .error (e.forArgumentCap setSpaceVSpaceRootCapNumber)
@@ -2093,6 +2099,7 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
     (KernelError.argumentCapRefusal setSpaceCSpaceRootCapNumber onErr) (fun cnC cnS cnCap cnId =>
     if !cnCap.hasRight .write then onErr .illegalAuthority
     else if (st.getCNode? cnId).isNone then onErr .illegalState
+    else if cspaceRootDataRefused st cnId args.cspaceRootData then onErr .illegalState
     else
       resolveCallerCapSlotK callerTid args.vspaceRoot .write st
         (KernelError.argumentCapRefusal setSpaceVSpaceRootCapNumber onErr) (fun vrC vrS _ vrId =>
@@ -2119,6 +2126,9 @@ theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
       by_cases hC : (st.getCNode? cnId).isNone = true
       · simp only [hC, ↓reduceIte]
       · simp only [hC, Bool.false_eq_true, ↓reduceIte]
+        by_cases hD : cspaceRootDataRefused st cnId args.cspaceRootData = true
+        · simp only [hD, ↓reduceIte]
+        simp only [hD, Bool.false_eq_true, ↓reduceIte]
         rw [resolveCallerCapSlotK_eq]
         cases resolveCallerCapSlot callerTid args.vspaceRoot .write st with
         | error e => rfl
@@ -2222,6 +2232,9 @@ theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
       | none => simp [hCn] at h
       | some _ =>
         simp only [hCn, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at h
+        by_cases hD : cspaceRootDataRefused st cnId args.cspaceRootData = true
+        · simp [hD] at h
+        simp only [hD, Bool.false_eq_true, ↓reduceIte] at h
         cases hV : resolveCallerCapSlot callerTid args.vspaceRoot .write st with
         | error e => rw [hV] at h; cases h
         | ok q =>
@@ -3786,7 +3799,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match resolveSetSpace tid args st with
             | .error e => .error e
             | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -4356,13 +4369,14 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr
+                      args.cspaceRootData with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
                       exact copyThreadSpacesZombie_preserves_ipcInvariantFull executingCore st st'
-                        vtid cn vr hObjInv hInv hPack.lentContextsHeadedByLender
+                        vtid cn vr _ hObjInv hInv hPack.lentContextsHeadedByLender
                         hPack.schedContextLinks hSet
     all_goals try cases hStep
   case pageTableMap =>
@@ -8587,7 +8601,7 @@ theorem dispatchWithCap_tcbSetSpace_delegates
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid)
     (hResolve : resolveSetSpace tid args st = .ok (cnSrc, vrSrc)) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
+      (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
        | .ok st' => .ok ((), st')
        | .error e => .error e) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hValid, hResolve]
@@ -9054,7 +9068,7 @@ def syscallDelegates : SyscallId → Prop
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         resolveSetSpace tid args st = .ok (cnSrc, vrSrc) →
         dispatchWithCap decoded tid executingCore gate cap st =
-          (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
+          (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
   -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the

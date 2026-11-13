@@ -362,7 +362,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             match resolveSetSpace tid args st with
             | .error e => .error e
             | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => .error (.invalidCapability 0)
@@ -618,8 +618,10 @@ refusal is read where it is, never rebuilt. -/
         | .ok vtid =>
           resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnC cnS vrC vrS =>
             RefusalCarrying.ofChecked
-              (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS })
-              (fun st => copyThreadSpacesZombiePerform executingCore st vtid cnC cnS vrC vrS)
+              (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS }
+                args.cspaceRootData)
+              (fun st => copyThreadSpacesZombiePerform executingCore st vtid cnC cnS vrC vrS
+                args.cspaceRootData)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability 0, st)
   | .schedContextBind =>

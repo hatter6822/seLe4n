@@ -34,18 +34,18 @@ spliced, then, when the source holds a capability, the slot written and its
 derivation edge. -/
 theorem threadSlotCopied {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    RecordsFrame st (_root_.SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hPre := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
   have F1 := storeObject hInv (threadSlotCleared_store hT slot) (by rw [hPre]; rfl) (fun _ => by simp)
   have F2 := F1.trans (withCdt _ ((threadSlotCleared tid.toObjId slot st).cdt.spliceNode
     { cnode := tid.toObjId, slot := slot }) F1.invExt)
   have F3 := F2.trans (of_linkReach (spliceDeletedCdtNode_reach _ _) F2.invExt)
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact F3
   · rw [e]
     have F4 := F3.trans (updateTcb _ tid F3.invExt (fun _ => rfl)
-      (f := (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))))
+      (f := (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))))
     exact F4.trans (cdtAddChild _ _ _ _ F4.invExt)
 
 end RecordsFrame
@@ -67,33 +67,33 @@ carrying the reply-waiter queues. -/
 theorem threadSlotSet_kernelRecordsSound (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (h : st.kernelRecordsSound) (hR : ipcReachable st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    (threadSlotSet ec st tid slot srcCNode srcSlot rights).kernelRecordsSound := by
-  have hR' := threadSlotSet_preserves_ipcReachable ec hR hT slot srcCNode srcSlot rights
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    (threadSlotSet ec st tid slot srcCNode srcSlot rights data).kernelRecordsSound := by
+  have hR' := threadSlotSet_preserves_ipcReachable ec hR hT slot srcCNode srcSlot rights data
   unfold threadSlotSet at hR' ⊢
   exact retireFinalObject_kernelRecordsSound ec _ _
     ((RecordsFrame.threadSlotCopied (KernelRecords.objects_invExt h) hT slot srcCNode srcSlot
-      rights).preserves h) hR'.2.2.2.2.2.2
+      rights data).preserves h) hR'.2.2.2.2.2.2
 
 /-- **The space change carries the records**: each slot set does. -/
 theorem copyThreadSpaces_kernelRecordsSound (ec : Concurrency.CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (h : st.kernelRecordsSound)
-    (hR : ipcReachable st) (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : st.kernelRecordsSound)
+    (hR : ipcReachable st) (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     st'.kernelRecordsSound := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec hR.objects_invExt hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
-  exact threadSlotSet_kernelRecordsSound ec (threadSlotSet_kernelRecordsSound ec h hR hT _ _ _ _)
-    (threadSlotSet_preserves_ipcReachable ec hR hT _ _ _ _) hT1' _ _ _ _
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
+  exact threadSlotSet_kernelRecordsSound ec (threadSlotSet_kernelRecordsSound ec h hR hT _ _ _ _ _)
+    (threadSlotSet_preserves_ipcReachable ec hR hT _ _ _ _ _) hT1' _ _ _ _ _
 
 /-- **The space change through the zombie delete carries the records**: the
 loop's passes carry them with the bundle the deletes read, and the space change
 after them. -/
 theorem copyThreadSpacesZombie_kernelRecordsSound (ec : Concurrency.CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (h : deleteRecordsCarried st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : st'.kernelRecordsSound := by
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : deleteRecordsCarried st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : st'.kernelRecordsSound := by
   have hChain : ∀ n s, ZombieRun ec n st s → deleteRecordsCarried s := fun _ _ hR =>
     hR.chain.closed deleteRecordsCarried
       (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_deleteRecordsCarried hQ hD)

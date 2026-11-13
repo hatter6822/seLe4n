@@ -465,14 +465,14 @@ capability to a CNode holding capabilities, whose zombie loop may wake waiters
 on their own cores (`copyThreadSpacesZombie_confinedToCores`). -/
 theorem copyThreadSpacesZombie_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (st st' : SystemState)
     (c : CoreId) (hInv : st.objects.invExt)
-    (hStep : copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc = .ok st')
+    (hStep : copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc cnData = .ok st')
     (hne : c ∉ copyThreadSpacesZombieCores st vtid)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc hInv hStep) hShared
+    (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc cnData hInv hStep) hShared
 
 /-- WS-ZA ZA6.32: **the bind's copy writes no core** — the node slot's capability
 and its derivation edge are the object store and the CDT. -/

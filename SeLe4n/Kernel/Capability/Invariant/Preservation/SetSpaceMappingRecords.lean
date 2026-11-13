@@ -36,8 +36,9 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- The capability a space slot is set from records no mapping. -/
-@[simp] theorem TCB.spaceCopyOf_mapping (cap : Capability) (rights : AccessRightSet) :
-    (TCB.spaceCopyOf cap rights).mapping = none := rfl
+@[simp] theorem TCB.spaceCopyOf_mapping (cap : Capability) (rights : AccessRightSet)
+    (data : UInt64) :
+    (TCB.spaceCopyOf cap rights data).mapping = none := rfl
 
 /-- **The retire keeps the mappings recorded when no slot names its target**:
 it keeps every slot's capability and every root it does not erase, and it
@@ -68,9 +69,9 @@ object agrees off its derivation links, and the thread's slot holds the copy,
 which records nothing, or nothing. -/
 theorem threadSlotCopied_threadSlotsDrawnFrom {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    SystemState.threadSlotsDrawnFrom st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
-  obtain ⟨hFar, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    SystemState.threadSlotsDrawnFrom st (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
+  obtain ⟨hFar, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   have hPre := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
   intro k t2 s c hT2 hc
   by_cases hk : k = tid.toObjId
@@ -81,7 +82,7 @@ theorem threadSlotCopied_threadSlotsDrawnFrom {st : SystemState} {tid : SeLe4n.T
     split at hc
     · exact .inr ⟨t, hPre, TCB.spaceSlotCap_removeSpaceCap_back hc⟩
     · rcases TCB.spaceSlotCap_insertSpaceCap_back hc with rfl | hc'
-      · exact .inl (TCB.spaceCopyOf_mapping _ _)
+      · exact .inl (TCB.spaceCopyOf_mapping _ _ _)
       · exact .inr ⟨t, hPre, TCB.spaceSlotCap_removeSpaceCap_back hc'⟩
   · rcases hFar k hk with e | ⟨cn, cn', h1, h2, hw⟩ | ⟨t0, t0', h1, h2, hw⟩
     · exact .inr ⟨t2, e ▸ hT2, hc⟩
@@ -98,18 +99,18 @@ nothing, and the copy it writes records none. -/
 theorem threadSlotCopied_preserves_liveMappingsRecorded {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t)
     {slot : SeLe4n.Slot} (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (hL : st.liveMappingsRecorded) :
-    (threadSlotCopied st tid slot srcCNode srcSlot rights).liveMappingsRecorded := by
-  obtain ⟨hFar, -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+    (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
+  obtain ⟨hFar, -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   have hPre := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
   -- A key holding a root or a frame after the copy is no thread's: it agrees.
   have hNotTcb : ∀ (k : SeLe4n.ObjId) (o : KernelObject),
-      (threadSlotCopied st tid slot srcCNode srcSlot rights).objects[k]? = some o →
+      (threadSlotCopied st tid slot srcCNode srcSlot rights data).objects[k]? = some o →
       (∀ cn, o ≠ .cnode cn) → (∀ t0, o ≠ .tcb t0) → st.objects[k]? = some o := by
     intro k o hk hCn hTcb
     have hne : k ≠ tid.toObjId := by
       intro e; subst e
-      obtain ⟨-, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+      obtain ⟨-, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
       rw [(SystemState.getTcb?_eq_some_iff _ tid t').mp hT'] at hk
       cases hk; exact hTcb t' rfl
     rcases hFar k hne with e | ⟨cn, cn', h1, h2, hw⟩ | ⟨t0, t0', h1, h2, hw⟩
@@ -118,7 +119,7 @@ theorem threadSlotCopied_preserves_liveMappingsRecorded {st : SystemState}
     · rw [hk] at h2; cases h2; exact absurd rfl (hTcb t0')
   refine SystemState.liveMappingsRecorded.of_shrink (fun rid r' hR => ?_)
     (SystemState.mappingRecordsKept.of_fwd (fun r cap hc hm => ?_) (fun fid f hf => ?_))
-    (threadSlotCopied_threadSlotsDrawnFrom hObjInv hT slot srcCNode srcSlot rights) hL
+    (threadSlotCopied_threadSlotsDrawnFrom hObjInv hT slot srcCNode srcSlot rights data) hL
   · exact ⟨r', hNotTcb rid _ hR (fun _ h => by cases h) (fun _ h => by cases h), rfl,
       fun _ _ h => h, fun _ _ h => h⟩
   · refine ⟨r, cap, ?_, rfl, rfl⟩
@@ -143,33 +144,33 @@ theorem threadSlotSet_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
     (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (hL : st.liveMappingsRecorded) :
-    (threadSlotSet ec st tid slot srcCNode srcSlot rights).liveMappingsRecorded := by
+    (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
+    (threadSlotSet ec st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   unfold threadSlotSet
   dsimp only
   exact retireFinalObject_preserves_liveMappingsRecorded ec _ _ _
-    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
-    (threadSlotCopied_retireTargetUnnamed hInv hT hs srcCNode srcSlot rights)
-    (threadSlotCopied_preserves_liveMappingsRecorded hObjInv hT hs srcCNode srcSlot rights hL)
+    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data).2
+    (threadSlotCopied_retireTargetUnnamed hInv hT hs srcCNode srcSlot rights data)
+    (threadSlotCopied_preserves_liveMappingsRecorded hObjInv hT hs srcCNode srcSlot rights data hL)
 
 /-- **Setting a thread's space keeps the mappings recorded**: each of its two
 slot sets does (`threadSlotSet_preserves_liveMappingsRecorded`), the second from
 the capability bundle the first keeps
 (`threadSlotSet_preserves_capabilityInvariantBundle`). -/
 theorem copyThreadSpaces_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st) (hL : st.liveMappingsRecorded)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     st'.liveMappingsRecorded := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have hL1 := threadSlotSet_preserves_liveMappingsRecorded ec hInv hT (by decide) cnSrc.cnode
-    cnSrc.slot TCB.cspaceRootRights (slot := TCB.cspaceRootSlot) hL
+    cnSrc.slot TCB.cspaceRootRights cnData (slot := TCB.cspaceRootSlot) hL
   obtain ⟨t1, hT1⟩ := cspaceRootSet_getTcb? ec hObjInv hT hCn
   exact threadSlotSet_preserves_liveMappingsRecorded ec
     (cspaceRootSet_preserves_capabilityInvariantBundle ec hInv hT hCn) hT1 (by decide)
-    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights hL1
+    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0 hL1
 
 /-- **Setting a thread's space through the zombie delete keeps the mappings
 recorded**: the loop's passes are finalising deletes and finalisations, which
@@ -179,10 +180,10 @@ keep them with the capability bundle and the teardown's well-formedness
 deletes the old roots by `cteDelete`, the zombie loop, before it inserts the new
 ones. -/
 theorem copyThreadSpacesZombie_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st) (hW : teardownWellFormed st)
     (hL : st.liveMappingsRecorded)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     st'.liveMappingsRecorded := by
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
   · exact copyThreadSpaces_preserves_liveMappingsRecorded ec hInv hL h1

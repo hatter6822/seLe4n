@@ -156,7 +156,7 @@ pub enum SyscallId {
     UntypedReset = 37,
     /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
     /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
-    /// roots in the caller's CSpace.
+    /// roots in the caller's CSpace, x4 = the CSpace root data word.
     TcbSetSpace = 38,
     /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table (seL4's
     /// `seL4_ARM_PageTable_Map`); x2 = the address-space capability address,

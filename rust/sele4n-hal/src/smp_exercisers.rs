@@ -3529,7 +3529,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PARTNER_TCB_CAP,
             0,
         ),
-        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 2),
         RoundTrip {
             msg_len: 6,
             ..configure(

@@ -467,12 +467,12 @@ theorem setThreadFaultHandlerOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.V
 
 theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    capabilityKeyFrame st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    capabilityKeyFrame st (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD : capabilityKeyFrame st _ :=
     cspaceDeleteSlot_keyInputsEq st _ _ hObjInv (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     have hU : capabilityKeyFrame
@@ -480,7 +480,7 @@ theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t 
           { cnode := tid.toObjId, slot := slot })
         (SystemState.updateTcb (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
           { cnode := tid.toObjId, slot := slot }) tid
-          (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))) := by
+          (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))) := by
       rw [SystemState.updateTcb_eq_of_some hT']
       exact insertObjects_tcbKeyKeeping_keyFrame hI
         ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl

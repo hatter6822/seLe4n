@@ -2044,10 +2044,10 @@ only a space change replacing the last capability to a populated CNode takes
 it.  The source slots cross as words, so the call builds no address record. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnCNode : SeLe4n.ObjId) (cnSlot : SeLe4n.Slot)
-    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) : SystemState :=
+    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) (cnData : UInt64) : SystemState :=
   let s := zombiePasses executingCore vtid.val.toObjId TCB.cspaceRootSlot (zombieFuel st) st
-  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ then
-    copyThreadSpacesPerform executingCore s vtid.val cnCNode cnSlot vrCNode vrSlot
+  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ cnData then
+    copyThreadSpacesPerform executingCore s vtid.val cnCNode cnSlot vrCNode vrSlot cnData
   else s
 
 /-- **An admitted space change's writes, the old CSpace root deleted as
@@ -2057,11 +2057,11 @@ otherwise the loop first (`copyThreadSpacesAfterZombie`).  A VSpace root holds
 no slots, so the VSpace slot's old capability never needs the loop. -/
 @[inline] def copyThreadSpacesZombiePerform (executingCore : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnCNode : SeLe4n.ObjId) (cnSlot : SeLe4n.Slot)
-    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) : SystemState :=
+    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) (cnData : UInt64) : SystemState :=
   if zombieSlotClass st vtid.val.toObjId TCB.cspaceRootSlot vtid.val.toObjId TCB.cspaceRootSlot = 0 then
-    copyThreadSpacesPerform executingCore st vtid.val cnCNode cnSlot vrCNode vrSlot
+    copyThreadSpacesPerform executingCore st vtid.val cnCNode cnSlot vrCNode vrSlot cnData
   else
-    copyThreadSpacesAfterZombie executingCore st vtid cnCNode cnSlot vrCNode vrSlot
+    copyThreadSpacesAfterZombie executingCore st vtid cnCNode cnSlot vrCNode vrSlot cnData
 
 /-- **`.tcbSetSpace`: seL4's `TCB_SetSpace`**, the old roots deleted through the
 zombie delete: refused, committing nothing, as `copyThreadSpaces` refuses
@@ -2069,18 +2069,19 @@ zombie delete: refused, committing nothing, as `copyThreadSpaces` refuses
 root's object emptied first (`copyThreadSpacesZombiePerform`, on the source
 slots' words, so the dispatcher builds no address record). -/
 def copyThreadSpacesZombie (executingCore : Concurrency.CoreId) (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : Except KernelError SystemState :=
-  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) :
+    Except KernelError SystemState :=
+  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc cnData then
     .ok (copyThreadSpacesZombiePerform executingCore st vtid cnSrc.cnode cnSrc.slot vrSrc.cnode
-      vrSrc.slot)
-  else copyThreadSpaces executingCore st vtid cnSrc vrSrc
+      vrSrc.slot cnData)
+  else copyThreadSpaces executingCore st vtid cnSrc vrSrc cnData
 
 /-- An admitted space change through the zombie delete is its writes. -/
 theorem copyThreadSpacesZombie_of_admitted {ec : Concurrency.CoreId} {st : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
-    (h : copyThreadSpacesAdmitted st vtid cnSrc vrSrc = true) :
-    copyThreadSpacesZombie ec st vtid cnSrc vrSrc =
-      .ok (copyThreadSpacesZombiePerform ec st vtid cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot) := by
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesAdmitted st vtid cnSrc vrSrc cnData = true) :
+    copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData =
+      .ok (copyThreadSpacesZombiePerform ec st vtid cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot cnData) := by
   unfold copyThreadSpacesZombie; rw [if_pos h]
 
 /-- **What a successful space change through the zombie delete consists of**:
@@ -2088,10 +2089,10 @@ the plain space change from the pre-state (`copyThreadSpaces`), or a run of the
 zombie loop's passes on the old CSpace root slot (`ZombieRun`) and then either
 nothing more or the plain space change from the state the passes leave. -/
 theorem copyThreadSpacesZombie_cases {ec : Concurrency.CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
-    copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st' ∨
-      ∃ n s, ZombieRun ec n st s ∧ (st' = s ∨ copyThreadSpaces ec s vtid cnSrc vrSrc = .ok st') := by
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st' ∨
+      ∃ n s, ZombieRun ec n st s ∧ (st' = s ∨ copyThreadSpaces ec s vtid cnSrc vrSrc cnData = .ok st') := by
   unfold copyThreadSpacesZombie at h
   split at h
   · next hA =>
@@ -2113,12 +2114,12 @@ theorem copyThreadSpacesZombie_cases {ec : Concurrency.CoreId} {st st' : SystemS
 /-- **A space change through the zombie delete keeps whatever every finalising
 delete, every finalisation and every plain space change keeps.** -/
 theorem copyThreadSpacesZombie_closed {ec : Concurrency.CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (Q : SystemState → Prop)
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (Q : SystemState → Prop)
     (hDel : ∀ (c : CSpaceAddr) (s s' : SystemState), Q s →
       cspaceDeleteSlotFinalising ec c s = .ok ((), s') → Q s')
     (hFin : ∀ (target : Nat) (s : SystemState), Q s → Q (finaliseFinalObject target s))
-    (hSet : ∀ s s', Q s → copyThreadSpaces ec s vtid cnSrc vrSrc = .ok s' → Q s')
-    (hQ : Q st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : Q st' := by
+    (hSet : ∀ s s', Q s → copyThreadSpaces ec s vtid cnSrc vrSrc cnData = .ok s' → Q s')
+    (hQ : Q st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : Q st' := by
   rcases copyThreadSpacesZombie_cases h with h1 | ⟨n, s, hR, rfl | h2⟩
   · exact hSet _ _ hQ h1
   · exact hR.chain.closed Q hDel hFin hQ

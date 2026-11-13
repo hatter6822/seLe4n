@@ -213,28 +213,32 @@ impl SetFaultHandlerArgs {
 /// Register mapping: x2 = the address, in the **caller's** CSpace, of a
 /// capability to the new CSpace root (a CNode, held with `Grant` and `Write`);
 /// x3 = the address of a capability to the new VSpace root (held with
-/// `Write`).  The target thread must be suspended.
+/// `Write`); x4 = seL4's `cspace_root_data`: when nonzero, the CSpace root
+/// copy's guard (bits 63:6) and guard size (bits 5:0), as `updateCapData`
+/// reads a CNode capability's data word.  The target thread must be suspended.
 ///
-/// Lean: `SetSpaceArgs` (SyscallArgDecode.lean, WS-BP BP7.1)
+/// Lean: `SetSpaceArgs` (SyscallArgDecode.lean, WS-BP BP7.1, WS-SX SX2.3)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SetSpaceArgs {
     pub cspace_root: u64,
     pub vspace_root: u64,
+    pub cspace_root_data: u64,
 }
 
 impl SetSpaceArgs {
-    pub const fn encode(&self) -> [u64; 2] {
-        [self.cspace_root, self.vspace_root]
+    pub const fn encode(&self) -> [u64; 3] {
+        [self.cspace_root, self.vspace_root, self.cspace_root_data]
     }
 
-    /// Decode from message registers. Requires 2 registers.
+    /// Decode from message registers. Requires 3 registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 2 {
+        if regs.len() < 3 {
             return Err(KernelError::InvalidMessageInfo);
         }
         Ok(Self {
             cspace_root: regs[0],
             vspace_root: regs[1],
+            cspace_root_data: regs[2],
         })
     }
 }
@@ -250,14 +254,15 @@ mod tests {
         let args = SetSpaceArgs {
             cspace_root: 0x11,
             vspace_root: 0x22,
+            cspace_root_data: (0x5 << 6) | 3,
         };
         assert_eq!(SetSpaceArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
-    fn set_space_requires_two_registers() {
+    fn set_space_requires_three_registers() {
         assert_eq!(
-            SetSpaceArgs::decode(&[1]),
+            SetSpaceArgs::decode(&[1, 2]),
             Err(KernelError::InvalidMessageInfo)
         );
     }

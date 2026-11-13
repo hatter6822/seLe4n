@@ -5627,13 +5627,13 @@ theorem threadSlotCopied_preserves_projection (ctx : LabelingContext) (observer 
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hHigh : objectObservable ctx observer tid.toObjId = false)
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    projectState ctx observer (threadSlotCopied st tid slot srcCNode srcSlot rights) =
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    projectState ctx observer (threadSlotCopied st tid slot srcCNode srcSlot rights data) =
       projectState ctx observer st := by
   have hD := cspaceDeleteSlot_preserves_projection ctx observer
     { cnode := tid.toObjId, slot := slot } st _ hHigh hObjInv (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e, projectState_cdtAddChild ctx observer _ _ _ _
       (SystemState.updateTcb_preserves_objects_invExt _ tid _ hI),
@@ -5692,12 +5692,12 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
       objectObservable ctx observer o = false ∧
         (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
         ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    projectState ctx observer (threadSlotSet ec st tid slot srcCNode srcSlot rights) =
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    projectState ctx observer (threadSlotSet ec st tid slot srcCNode srcSlot rights data) =
       projectState ctx observer st := by
-  have hI := (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
-  have hUt := threadSlotCopied_getUntyped? hObjInv hT slot srcCNode srcSlot rights
-  have hRec : ∀ w o, untypedRecordsChild (threadSlotCopied st tid slot srcCNode srcSlot rights) w o =
+  have hI := (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data).2
+  have hUt := threadSlotCopied_getUntyped? hObjInv hT slot srcCNode srcSlot rights data
+  have hRec : ∀ w o, untypedRecordsChild (threadSlotCopied st tid slot srcCNode srcSlot rights data) w o =
       untypedRecordsChild st w o := by
     intro w o; unfold untypedRecordsChild; rw [hUt]
   have hNamed : slotRetireTarget st tid.toObjId slot ≠ 0 →
@@ -5719,7 +5719,7 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
     (fun h0 w hw => (hNamed h0).2.1 w (by rw [← hRec]; exact hw))
     (fun h0 y hy => (hNamed h0).2.2 y (by rw [← hRec]; exact hy))
     (fun hr => ?_)]
-  · exact threadSlotCopied_preserves_projection ctx observer hHigh hObjInv hT _ _ _ _
+  · exact threadSlotCopied_preserves_projection ctx observer hHigh hObjInv hT _ _ _ _ _
   · unfold recorderFor at hr ⊢
     split at hr
     · exact absurd rfl hr
@@ -5734,7 +5734,7 @@ recording one, are hidden.  The VSpace slot's set reads the state after the
 CSpace slot's, which holds the same VSpace slot and records no new child. -/
 theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     {ec : Concurrency.CoreId} {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr}
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hHigh : objectObservable ctx observer vtid.val.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hHid : ∀ s : SeLe4n.Slot, s.toNat < 2 → ∀ c o,
@@ -5742,18 +5742,18 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
         objectObservable ctx observer o = false ∧
           (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
           ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1', hF1⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
-    (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
+    (by decide) TCB.cspaceRootRights cnData (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
   have hUt := threadSlotCopied_getUntyped? hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   generalize hS1 : threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights = st1
+    TCB.cspaceRootRights cnData = st1
   have hS1' := hS1
   unfold threadSlotSet at hS1'
   dsimp only at hS1'
@@ -5772,7 +5772,7 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
     obtain ⟨hob, hw, hy⟩ := hHid TCB.vspaceRootSlot (by decide) c o hc hn
     have hRec : ∀ a b, untypedRecordsChild
         (threadSlotCopied st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-          TCB.cspaceRootRights) a b = untypedRecordsChild st a b := by
+          TCB.cspaceRootRights cnData) a b = untypedRecordsChild st a b := by
       intro a b; unfold untypedRecordsChild; rw [hUt]
     -- A record the retire made is a splice through the CSpace slot's old
     -- target, which that slot names, so its recorder and children are hidden.
@@ -5798,6 +5798,6 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
       · exact h.2
   unfold copyThreadSpacesPerform
   rw [hS1]
-  exact (threadSlotSet_preserves_projection ctx observer ec hHigh hI2 hT2 _ hHid2 _ _ _).trans
+  exact (threadSlotSet_preserves_projection ctx observer ec hHigh hI2 hT2 _ hHid2 _ _ _ _).trans
     (hS1 ▸ threadSlotSet_preserves_projection ctx observer ec hHigh hObjInv hT _
-      (hHid TCB.cspaceRootSlot (by decide)) _ _ _)
+      (hHid TCB.cspaceRootSlot (by decide)) _ _ _ _)

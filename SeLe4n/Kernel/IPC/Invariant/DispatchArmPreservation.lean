@@ -5201,12 +5201,12 @@ the edge writes links alone. -/
 theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
     (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
@@ -5223,11 +5223,11 @@ holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
     (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 2)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) {cap : Capability}
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
-    ((threadSlotSet ec st tid slot srcCNode srcSlot rights).getTcb? tid).isSome := by
-  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
-  obtain ⟨t1, hT1, hF⟩ := threadSlotCopied_slotFilled hObjInv hT hs rights hL
+    ((threadSlotSet ec st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome := by
+  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data
+  obtain ⟨t1, hT1, hF⟩ := threadSlotCopied_slotFilled hObjInv hT hs rights data hL
   unfold threadSlotSet
   dsimp only
   rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl

@@ -139,24 +139,31 @@ pub fn tcb_set_fault_handler(tcb_cap: CPtr, handler_cptr: u64) -> KernelResult<S
 /// and `Write`), the second the new VSpace root (held with `Write`) — for
 /// instance one carved from an untyped.  Requires `.write` on the target TCB
 /// capability, and the target must be suspended (`IllegalState` otherwise).
+/// `cspace_root_data` is seL4's `cspace_root_data`: zero keeps the source
+/// capability's guard; a nonzero word sets the new root's guard and guard size
+/// (`updateCapData`), refused (`IllegalState`) when the guard size and the
+/// CNode's radix exceed 64 bits.
 ///
-/// Lean: `setThreadSpace` (Lifecycle/Operations/SetSpace.lean), dispatched as
+/// Lean: `copyThreadSpacesZombie` (Capability/FrameFinalise.lean) over
+/// `copyThreadSpaces` (Lifecycle/Operations/SetSpace.lean), dispatched as
 /// `SyscallId.tcbSetSpace` in `API.lean` (WS-BP BP7.1).
 #[inline]
 pub fn tcb_set_space(
     tcb_cap: CPtr,
     cspace_root: CPtr,
     vspace_root: CPtr,
+    cspace_root_data: u64,
 ) -> KernelResult<SyscallResponse> {
     let args = SetSpaceArgs {
         cspace_root: cspace_root.raw(),
         vspace_root: vspace_root.raw(),
+        cspace_root_data,
     };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
-        msg_info: MessageInfo::new_const(2, 0, 0),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new_const(3, 0, 0),
+        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::TcbSetSpace,
     })
 }

@@ -378,8 +378,8 @@ theorem cspaceDeleteSlotZombie_mappingStage {ec : Concurrency.CoreId} {addr : CS
     fun hI hB => cspaceDeleteSlotZombie_preserves_bookkeepingAgrees ec hI hB h
 
 theorem copyThreadSpacesZombie_mappingStage {ec : Concurrency.CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (P : MappingArmPremises st)
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : MappingStage st st' :=
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (P : MappingArmPremises st)
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (copyThreadSpacesZombie_preserves_capabilityInvariantBundle ec P.caps h))
     (fun _ hL => copyThreadSpacesZombie_preserves_liveMappingsRecorded ec P.caps P.teardown hL h)

@@ -288,26 +288,48 @@ theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toN
   · simp
   · exact h
 
-/-- **The capability a thread's space slot holds when set from `cap`**: `cap`'s
-target under its CNode guard, its rights masked by the slot's own (`rights`),
-with no badge and no mapping record.  A derivation of `cap`, as seL4's
-`deriveCap` is: it never carries a right `cap` lacks, and a CNode capability
-keeps the guard it resolves through. -/
-@[inline] def spaceCopyOf (cap : Capability) (rights : AccessRightSet) : Capability :=
+/-- **The CNode guard a thread's space slot takes from `cap` and the data word
+`data`** — seL4's `decodeSetSpace`: a nonzero root data word goes through
+`updateCapData`, which sets a CNode capability's guard from the word
+(`capDataGuard`); a zero word leaves the capability as it is. -/
+@[inline] def spaceCopyGuard (cap : Capability) (data : UInt64) : Nat :=
+  if data = 0 then cap.cnodeGuard else capDataGuard data
+
+/-- The guard size of `spaceCopyGuard`: the data word's (`capDataGuardSize`)
+when it is nonzero, `cap`'s own otherwise. -/
+@[inline] def spaceCopyGuardSize (cap : Capability) (data : UInt64) : Nat :=
+  if data = 0 then cap.cnodeGuardSize else capDataGuardSize data
+
+/-- **The capability a thread's space slot holds when set from `cap`** with the
+data word `data`: `cap`'s target under the guard `data` gives it
+(`spaceCopyGuard`), its rights masked by the slot's own (`rights`), with no badge
+and no mapping record.  A derivation of `cap`, as seL4's `deriveCap` is: it never
+carries a right `cap` lacks, and a CNode capability keeps the guard it resolves
+through unless the data word sets a new one, as `updateCapData` does. -/
+@[inline] def spaceCopyOf (cap : Capability) (rights : AccessRightSet) (data : UInt64) :
+    Capability :=
   ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0,
-    cap.cnodeGuard, cap.cnodeGuardSize⟩
+    spaceCopyGuard cap data, spaceCopyGuardSize cap data⟩
 
-@[simp] theorem spaceCopyOf_target (cap : Capability) (rights : AccessRightSet) :
-    (spaceCopyOf cap rights).target = cap.target := rfl
+@[simp] theorem spaceCopyOf_target (cap : Capability) (rights : AccessRightSet) (data : UInt64) :
+    (spaceCopyOf cap rights data).target = cap.target := rfl
 
-@[simp] theorem spaceCopyOf_badge (cap : Capability) (rights : AccessRightSet) :
-    (spaceCopyOf cap rights).badge = none := rfl
+@[simp] theorem spaceCopyOf_badge (cap : Capability) (rights : AccessRightSet) (data : UInt64) :
+    (spaceCopyOf cap rights data).badge = none := rfl
 
-@[simp] theorem spaceCopyOf_cnodeGuard (cap : Capability) (rights : AccessRightSet) :
-    (spaceCopyOf cap rights).cnodeGuard = cap.cnodeGuard := rfl
+@[simp] theorem spaceCopyOf_cnodeGuard (cap : Capability) (rights : AccessRightSet)
+    (data : UInt64) : (spaceCopyOf cap rights data).cnodeGuard = spaceCopyGuard cap data := rfl
 
-@[simp] theorem spaceCopyOf_cnodeGuardSize (cap : Capability) (rights : AccessRightSet) :
-    (spaceCopyOf cap rights).cnodeGuardSize = cap.cnodeGuardSize := rfl
+@[simp] theorem spaceCopyOf_cnodeGuardSize (cap : Capability) (rights : AccessRightSet)
+    (data : UInt64) :
+    (spaceCopyOf cap rights data).cnodeGuardSize = spaceCopyGuardSize cap data := rfl
+
+/-- A zero data word keeps `cap`'s guard. -/
+@[simp] theorem spaceCopyGuard_zero (cap : Capability) : spaceCopyGuard cap 0 = cap.cnodeGuard :=
+  rfl
+
+@[simp] theorem spaceCopyGuardSize_zero (cap : Capability) :
+    spaceCopyGuardSize cap 0 = cap.cnodeGuardSize := rfl
 
 end TCB
 

@@ -4607,7 +4607,7 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
     unless SeLe4n.Kernel.zombieSlotClass stS tId SeLe4n.Model.TCB.cspaceRootSlot tId
         SeLe4n.Model.TCB.cspaceRootSlot != 0 do
       throw <| IO.userError "the thread's old CSpace root must name a CNode holding a capability"
-    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc with
+    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 with
     | .error e => throw <| IO.userError s!"the space change must succeed, got {repr e}"
     | .ok stS' =>
       match stS'.getTcb? ⟨6⟩ with
