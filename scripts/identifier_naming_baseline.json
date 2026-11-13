@@ -585,9 +585,6 @@
  "h31": {
   "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 3
  },
- "h64": {
-  "SeLe4n/Kernel/Architecture/RegisterDecode.lean": 2
- },
  "hSm1": {
   "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2
  },
