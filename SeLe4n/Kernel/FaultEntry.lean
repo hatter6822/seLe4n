@@ -403,7 +403,7 @@ theorem unknownSyscallEntryStep_eq_state (lctx : LabelingContext) (st : SystemSt
 /-- WS-ZA ZA6.31: the shared delivery's state handed the fault as words
 (`faultEntryDeliverState`, `faultEntryDeliverWords_eq`). -/
 @[inline] def faultEntryDeliverWords (lctx : LabelingContext) (st : SystemState) (k : Nat)
-    (flag : Bool) (w0 w1 : UInt64) (lk : KernelError) (elr spsr : UInt64)
+    (flag : Bool) (w0 w1 : UInt64) (lk : UInt64) (elr spsr : UInt64)
     (w : FaultRegisterWindow) (c : CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
   | none => PriorityInheritance.dispatchVacatedCore st c
@@ -435,7 +435,7 @@ and the delivery handed them, so no fault, context or window record is built. -/
     if ectx.takenFromEl0 then
       if faultKindOfEsr ectx.esr = 0 then st
       else faultEntryDeliverWords lctx st (faultKindOfEsr ectx.esr) (faultFlagOfEsr ectx.esr)
-        (faultWord0OfEsr ectx.esr ectx.far) ectx.esr (.invalidCapability 0) ectx.elr ectx.spsr w
+        (faultWord0OfEsr ectx.esr ectx.far) ectx.esr 0 ectx.elr ectx.spsr w
         ⟨coreId.toNat, h⟩
     else st
   else st
@@ -453,7 +453,9 @@ and the delivery handed them, so no fault, context or window record is built. -/
         have hK : ¬ faultKindOfEsr ectx.esr = 0 := fun h =>
           absurd ((faultOfExceptionContext_none_iff_kind ectx).mpr h) (by rw [hF]; simp)
         obtain ⟨h1, h2, h3, h4, h5⟩ := faultOfExceptionContext_words ectx f hF
-        rw [if_neg hK, ← h1, ← h2, ← h3, ← h4, ← h5, faultEntryDeliverWords_eq]
+        have hE := faultEntryDeliverWords_eq lctx st f ectx w ⟨coreId.toNat, ‹_›⟩
+        rw [h1, h2, h3, h4, h5] at hE
+        rw [if_neg hK, hE]
     · rfl
   · rfl
 
@@ -464,7 +466,7 @@ window's `x7`). -/
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
   if h : coreId.toNat < numCores then
     if ectx.takenFromEl0 then
-      faultEntryDeliverWords lctx st 3 false w.x7 0 (.invalidCapability 0)
+      faultEntryDeliverWords lctx st 3 false w.x7 0 0
         (Platform.FFI.svcFaultIP ectx.elr) ectx.spsr w ⟨coreId.toNat, h⟩
     else st
   else st

@@ -1350,11 +1350,11 @@ private def errorPayloadLayoutLines : List String :=
   , errorPayloadLayoutLine "failedLookup.invalidRoot" []
       (fun ws _ _ _ => .failedLookup ws .invalidRoot)
   , errorPayloadLayoutLine "failedLookup.missingCapability" ["bitsLeft"]
-      (fun ws a _ _ => .failedLookup ws (.missingCapability a))
+      (fun ws a _ _ => .failedLookup ws (.missingCapability a.toUInt8))
   , errorPayloadLayoutLine "failedLookup.depthMismatch" ["bitsLeft", "bitsFound"]
-      (fun ws a b _ => .failedLookup ws (.depthMismatch a b))
+      (fun ws a b _ => .failedLookup ws (.depthMismatch a.toUInt8 b.toUInt8))
   , errorPayloadLayoutLine "failedLookup.guardMismatch" ["bitsLeft", "guardFound", "bitsFound"]
-      (fun ws a b c => .failedLookup ws (.guardMismatch a b c))
+      (fun ws a b c => .failedLookup ws (.guardMismatch a.toUInt8 b c.toUInt8))
   , errorPayloadLayoutLine "illegalState" [] (fun _ _ _ _ => .illegalState) ]
 
 /-- Which field of a move's CNode operation word owns bit `j`, decided by

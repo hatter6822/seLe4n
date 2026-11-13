@@ -432,8 +432,10 @@ rather than on a representative. -/
 private def allFaultKinds : List Fault :=
   [ .vmFault 0xDEAD_0000 0x9600_0007 false
   , .vmFault 0xBEEF_1000 0x8200_000F true
-  , .capFault 0x2A false (.invalidCapability 0)
-  , .capFault 0x2B true .objectNotFound
+  , .capFault 0x2A false .invalidRoot
+  , .capFault 0x2B true (.missingCapability 0)
+  , .capFault 0x2C false (.depthMismatch 60 4)
+  , .capFault 0x2D false (.guardMismatch 64 0xFFFF_FFFF_FFFF_FFFF 58)
   , .unknownSyscall 0xFFFF
   , .userException 0x22 0x0100_0000 ]
 
@@ -463,6 +465,24 @@ private def runEncodingChecks : IO Unit := do
   assertBool "vmFault MR1 is the fault address" (wordAt vmRegs 1 == 0xDEAD_0000)
   assertBool "vmFault MR2 is the prefetch flag" (wordAt vmRegs 2 == 1)
   assertBool "vmFault MR3 is the syndrome" (wordAt vmRegs 3 == 0x9600_0007)
+  -- A capability fault carries its lookup failure at seL4's `seL4_CapFault_*`
+  -- offsets: 4 words for an invalid root up to 7 for a guard mismatch.
+  let (gmMi, gmRegs) := encodeFault (.capFault 0x2D true (.guardMismatch 64 0xABC 58)) sampleCtx
+  assertBool "capFault guard mismatch: 7 words, type 4, bitsLeft, guardFound, bitsFound"
+    (gmMi.length == 7 && wordAt gmRegs 1 == 0x2D && wordAt gmRegs 2 == 1 &&
+      wordAt gmRegs 3 == 4 && wordAt gmRegs 4 == 64 && wordAt gmRegs 5 == 0xABC &&
+      wordAt gmRegs 6 == 58)
+  assertBool "capFault lengths: invalid root 4, missing 5, depth 6, guard 7"
+    ((encodeFault (.capFault 0 false .invalidRoot) sampleCtx).1.length == 4 &&
+     (encodeFault (.capFault 0 false (.missingCapability 0)) sampleCtx).1.length == 5 &&
+     (encodeFault (.capFault 0 false (.depthMismatch 1 2)) sampleCtx).1.length == 6)
+  assertBool "a capFault whose bit count does not re-encode is refused"
+    (decodeFault gmMi (gmRegs.set! 4 (regOf 300)) == none)
+  assertBool "a capFault whose length is not its lookup failure's is refused"
+    (decodeFault { gmMi with length := 6 } gmRegs == none)
+  for f in allFaultKinds do
+    assertBool s!"the thread's two lookup words hold the fault: {repr f}"
+      ((ThreadFaultWords.ofFault f sampleCtx).fault? == some f)
   let (_, usRegs) := encodeFault (.unknownSyscall 0x1234) sampleCtx
   assertBool "unknownSyscall MR0-MR7 are the argument window"
     (List.range 8 |>.all (fun i => wordAt usRegs i == sampleCtx.gprAt i))
@@ -1430,7 +1450,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
         (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
       assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"
         ((pendingFaultOf s.afterFault faulter).map (·.fault)
-          == some (.capFault 3 false (.invalidCapability 0)))
+          == some (.capFault 3 false (.missingCapability 0)))
       assertBool "the restart PC is the SVC instruction (ELR - 4), never the return address"
         ((pendingFaultOf s.afterFault faulter).map (·.context.faultIP) == some (svcElr - 4))
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
@@ -1444,11 +1464,10 @@ private def runSyscallCapFaultChecks : IO Unit := do
         (!dispatchableOn s.afterFault faulter c0)
       assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
         ((deliveredMessageOf s.afterRecv handler).map (·.label) == some FaultLabel.capFault)
-      assertBool "MR0..MR3 = FaultIP, the CPtr, InRecvPhase = 0, the lookup failure's discriminant"
+      assertBool "MR0..MR4 = FaultIP, the CPtr, InRecvPhase = 0, seL4_MissingCapability, BitsLeft"
         ((deliveredMessageOf s.afterRecv handler).map (·.registers) ==
           some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat 3,
-                 SeLe4n.RegValue.ofNat 0,
-                 SeLe4n.RegValue.ofNat (KernelError.toDiscriminant (.invalidCapability 0))])
+                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat 0])
       assertBool "a payload-free reply restarts the caller AT the SVC — the syscall is re-issued"
         (s.replyOutcome.restartPC? == some (svcElr - 4) &&
           savedPcOf s.afterReply faulter == some (svcElr - 4).toNat)
@@ -1460,16 +1479,16 @@ private def runSyscallCapFaultChecks : IO Unit := do
   -- not the object invoked: every `seL4_Call` invocation faults, `seL4_Signal`
   -- is `seL4_Send`, and the receive-side syscalls set the phase flag.
   assertBool "a Receive at the same CPtr faults IN the receive phase"
-    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.invalidCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.missingCapability 0)))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
     (seamCapFault (seamDispatch seamCtx .notificationSignal 3)
-      (.capFault 3 false (.invalidCapability 0)))
+      (.capFault 3 false (.missingCapability 0)))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
-    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false (.invalidCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false (.missingCapability 0)))
   -- A short message: the lookup comes first, as in seL4, so an unresolvable
   -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
   assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
-    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false (.invalidCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false (.missingCapability 0)))
   -- A CNode capability parked at slot 3 of the caller's root: the delete's
   -- type.  The checks run lookup, type, right, length.
   let cnodeCapAt3 (rights : List AccessRight) : SystemState :=

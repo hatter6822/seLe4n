@@ -5605,7 +5605,7 @@ run_check "INVARIANT" rg -n -U '^          let st := Architecture\.saveCapturedS
 # rewound context and the compiled step hands the delivery the rewound word.
 run_check "INVARIANT" rg -n '^def unknownSyscallContext \(ectx : ExceptionContext\) : ExceptionContext :=$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U 'faultEntryDeliverState lctx st \(\.unknownSyscall \(w\.gprAt 7\)\) \(unknownSyscallContext ectx\) w$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U 'faultEntryDeliverWords lctx st 3 false w\.x7 0 \(\.invalidCapability 0\)\n        \(Platform\.FFI\.svcFaultIP ectx\.elr\) ectx\.spsr w ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U 'faultEntryDeliverWords lctx st 3 false w\.x7 0 0\n        \(Platform\.FFI\.svcFaultIP ectx\.elr\) ectx\.spsr w ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^        let mid := \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
@@ -5857,6 +5857,17 @@ run_check "INVARIANT" rg -n '^name = "fault_handling_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^inductive Fault where' SeLe4n/Model/Fault.lean
 run_check "INVARIANT" rg -n '^def encodeFault($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^theorem decodeFault_encodeFault($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
+# A capability fault carries seL4's lookup failure: the message is 4 to 7
+# words at the seL4_CapFault_* offsets, and a thread stores it in two words.
+run_check "INVARIANT" rg -n '^      \(lookupFailure : LookupFault\)$' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^  \| \.capFault _ _ lf      => 3 \+ lf\.wordCount$' SeLe4n/Kernel/Architecture/Fault.lean
+run_negative_check "INVARIANT" rg -n 'def codeOnly' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem ofStored_stored($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem word_ofStored($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^  lookup : UInt64 := 0$' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def KernelError\.capFaultLookup($|[ ({:\[\]])' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^theorem faultFrameW_capFault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultMessage_overflowRegs_capFault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^def resolveFaultHandler($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^def faultDeliverOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 run_check "INVARIANT" rg -n '^def faultReplyOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
@@ -9900,7 +9911,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def fpAccessTagOnCore \(st : SystemS
 run_check "INVARIANT" rg -n '^@\[noinline\] def fpLoadedContext \(st : SystemState\)' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^  \{ ms with fpOwnerCode := ms\.fpOwnerCode\.set c\.val \(ThreadId\.optCode t\?\) c\.isLt \}$' SeLe4n/Machine.lean
 run_negative_check "INVARIANT" rg -n 'restoreTargetAt|Platform\.FFI\.restoreTrapFrame |applyFpAccessOutcome r' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n 'some \(\.capFault decoded\.capAddr\.word inRecv e\)' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'some \(\.capFault decoded\.capAddr\.word inRecv e\.capFaultLookup\)' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'capFault \(UInt64\.ofNat' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def faultRestartFrameOfContext \(ctx : FaultContext\)' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean

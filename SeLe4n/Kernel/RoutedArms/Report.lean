@@ -408,13 +408,13 @@ alternatives are the same code (`noCapRefusalW_eq`). -/
         1 0 0 0 s
     | .failedLookup w (.missingCapability l) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        2 l 0 0 s
+        2 l.toUInt64 0 0 s
     | .failedLookup w (.depthMismatch l f) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        3 l f 0 s
+        3 l.toUInt64 f.toUInt64 0 s
     | .failedLookup w (.guardMismatch l g f) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        4 l g f s
+        4 l.toUInt64 g f.toUInt64 s
     | e => kErr e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)
         (e.payloadWord 3) (e.payloadWord 4) s
 

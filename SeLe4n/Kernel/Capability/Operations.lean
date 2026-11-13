@@ -171,11 +171,11 @@ def resolveAddressBits (nodeCap : Capability) (cptr : SeLe4n.CPtr) (nBits : Nat)
       if nodeCap.cnodeGuardSize > nBits ∨
           cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
             nodeCap.cnodeGuard then
-        .error (.guardMismatch nBits.toUInt64 nodeCap.cnodeGuard.toUInt64
-          nodeCap.cnodeGuardSize.toUInt64)
+        .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard.toUInt64
+          nodeCap.cnodeGuardSize.toUInt8)
       else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
           nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
-        .error (.depthMismatch nBits.toUInt64 (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt64)
+        .error (.depthMismatch nBits.toUInt8 (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt8)
       else
         let level := nodeCap.cnodeGuardSize + cn.radixWidth
         let slot := SeLe4n.Slot.ofNat (cptr.slotBits (nBits - level) cn.radixWidth)
@@ -209,10 +209,12 @@ at any depth; equal to the specification (`resolveAddressBitsK_eq`). -/
       if nodeCap.cnodeGuardSize > nBits ∨
           cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
             nodeCap.cnodeGuard then
-        onErr 4 nBits.toUInt64 nodeCap.cnodeGuard.toUInt64 nodeCap.cnodeGuardSize.toUInt64
+        onErr 4 nBits.toUInt8.toUInt64 nodeCap.cnodeGuard.toUInt64
+          nodeCap.cnodeGuardSize.toUInt8.toUInt64
       else if hL : nodeCap.cnodeGuardSize + cn.radixWidth > nBits ∨
           nodeCap.cnodeGuardSize + cn.radixWidth = 0 then
-        onErr 3 nBits.toUInt64 (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt64 0
+        onErr 3 nBits.toUInt8.toUInt64
+          (nodeCap.cnodeGuardSize + cn.radixWidth).toUInt8.toUInt64 0
       else
         if hEq : nBits = nodeCap.cnodeGuardSize + cn.radixWidth then
           onOk id (SeLe4n.Slot.ofNat (cptr.slotBits (nBits - (nodeCap.cnodeGuardSize +
@@ -399,8 +401,8 @@ theorem resolveAddressBits_guard_reject
     (hBadGuard : cptr.guardBits (nBits - nodeCap.cnodeGuardSize) 0 nodeCap.cnodeGuardSize ≠
         nodeCap.cnodeGuard) :
     resolveAddressBits nodeCap cptr nBits st =
-      .error (.guardMismatch nBits.toUInt64 nodeCap.cnodeGuard.toUInt64
-        nodeCap.cnodeGuardSize.toUInt64) := by
+      .error (.guardMismatch nBits.toUInt8 nodeCap.cnodeGuard.toUInt64
+        nodeCap.cnodeGuardSize.toUInt8) := by
   have hCN : st.getCNode? id = some cn := (SystemState.getCNode?_eq_some_iff st id cn).mpr hObj
   rw [resolveAddressBits, hTarget]
   simp only [hCN]
@@ -582,7 +584,7 @@ def lookupSlotForCNodeOp (isSource : Bool) (root : Capability) (cptr : SeLe4n.CP
     | .error f => .error (.failedLookup isSource f)
     | .ok (ref, rem) =>
       if rem = 0 then .ok ref
-      else .error (.failedLookup isSource (.depthMismatch rem.toUInt64 0))
+      else .error (.failedLookup isSource (.depthMismatch rem.toUInt8 0))
 
 /-- `lookupSlotForCNodeOp` in continuation form: the walk is
 `resolveAddressBitsK`'s, its lookup fault rebuilt at each of its refusals
@@ -598,7 +600,7 @@ def lookupSlotForCNodeOp (isSource : Bool) (root : Capability) (cptr : SeLe4n.CP
       (fun t a b c => onErr (.failedLookup isSource (LookupFault.ofWords t a b c)))
       (fun cnode slot rem =>
         if rem = 0 then onOk cnode slot
-        else onErr (.failedLookup isSource (.depthMismatch rem.toUInt64 0)))
+        else onErr (.failedLookup isSource (.depthMismatch rem.toUInt8 0)))
 
 theorem lookupSlotForCNodeOpK_eq {α : Type} (isSource : Bool) (root : Capability)
     (cptr : SeLe4n.CPtr) (depth : Nat) (st : SystemState)
@@ -703,7 +705,7 @@ def resolveCNodeOpSlots (callerTid : SeLe4n.ThreadId) (destRoot : Capability)
             | .error e => .error e
             | .ok src =>
               if (SystemState.lookupSlotCap st src).isNone then
-                .error (.failedLookup true (.missingCapability srcDepth.toUInt64))
+                .error (.failedLookup true (.missingCapability srcDepth.toUInt8))
               else .ok (src, dst)
 
 /-- Resolved slots name a destination in the CNode the invoked capability
@@ -760,7 +762,7 @@ is built (`resolveCNodeOpSlotsK_eq`). -/
             | some srcRootCap =>
               lookupSlotForCNodeOpK true srcRootCap srcIndex srcDepth st onErr fun sCn sSlot =>
                 if (SystemState.lookupSlotCap st { cnode := sCn, slot := sSlot }).isNone then
-                  onErr (.failedLookup true (.missingCapability srcDepth.toUInt64))
+                  onErr (.failedLookup true (.missingCapability srcDepth.toUInt8))
                 else onOk sCn sSlot dCn dSlot
 
 theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)

@@ -9,6 +9,7 @@
 
 import SeLe4n.Machine
 import SeLe4n.Model.KernelError
+import Std.Tactic.BVDecide
 
 /-!
 # WS-RR RR4.1/RR4.2 — the `Fault` value a thread carries
@@ -56,15 +57,10 @@ thread's saved register file and are spliced in by
   `capAddress` is the CPtr that failed to resolve, `inReceivePhase`
   seL4's `seL4_CapFault_InRecvPhase`, and `lookupFailure` the reason.
 
-  seL4 carries the reason as a separate `lookup_fault_t` with its own
-  four-word tail; this model already has a total, typed vocabulary for
-  exactly that — the `KernelError` the lookup (`lookupSlot`) is refused with — so the
-  reason rides as that error rather than as a second inductive whose
-  constructors would duplicate it.  The fault message carries the error's
-  code, as the discriminant `KernelError.toDiscriminant` pins and
-  `KernelError.ofDiscriminant?` inverts; an error's payload (seL4's error
-  payload, `KernelError.erasePayload`) does not ride in the fault, which is
-  `Fault.codeOnly`.  WS-SX SX2.2 gives the fault seL4's lookup-fault words.
+  The reason is seL4's `lookup_fault_t` (`LookupFault`): the fault message
+  carries it as `setMRs_lookup_failure` writes it, its type word and then its
+  fields, so a capability fault's message is 4 to 7 words long
+  (`Architecture.faultMessageLength`).
 * `unknownSyscall` — a syscall number outside the kernel's ABI.  The
   syscall number is the fault-specific word; the whole `x0`-`x7` window
   rides as context, so a handler can emulate the call and reply with the
@@ -75,7 +71,7 @@ thread's saved register file and are spliced in by
 inductive Fault where
   | vmFault (address : UInt64) (status : UInt64) (prefetch : Bool)
   | capFault (capAddress : UInt64) (inReceivePhase : Bool)
-      (lookupFailure : KernelError)
+      (lookupFailure : LookupFault)
   | unknownSyscall (syscallNumber : UInt64)
   | userException (number : UInt64) (code : UInt64)
   deriving Repr, DecidableEq
@@ -96,17 +92,6 @@ instance : LawfulBEq Fault := inferInstance
 
 namespace Fault
 
-/-- The fault as its message carries it: a capability fault's error with its
-payload cleared (`KernelError.erasePayload`), every other fault as it is. -/
-def codeOnly : Fault → Fault
-  | .capFault a r e => .capFault a r e.erasePayload
-  | f => f
-
-/-- A fault whose capability-fault error carries no payload is its own message's. -/
-theorem codeOnly_eq_self_of_capFault (a : UInt64) (r : Bool) (e : KernelError)
-    (h : e.erasePayload = e) : (Fault.capFault a r e).codeOnly = .capFault a r e := by
-  simp [codeOnly, h]
-
 /-- WS-RR RR4.2 (congruence): two `vmFault`s are equal exactly when all three
 payload fields agree. -/
 @[simp] theorem vmFault_inj {a₁ a₂ s₁ s₂ : UInt64} {p₁ p₂ : Bool} :
@@ -116,7 +101,7 @@ payload fields agree. -/
   · rintro ⟨rfl, rfl, rfl⟩; rfl
 
 /-- WS-RR RR4.2 (congruence): `capFault` injectivity. -/
-@[simp] theorem capFault_inj {a₁ a₂ : UInt64} {r₁ r₂ : Bool} {e₁ e₂ : KernelError} :
+@[simp] theorem capFault_inj {a₁ a₂ : UInt64} {r₁ r₂ : Bool} {e₁ e₂ : LookupFault} :
     Fault.capFault a₁ r₁ e₁ = Fault.capFault a₂ r₂ e₂ ↔ a₁ = a₂ ∧ r₁ = r₂ ∧ e₁ = e₂ := by
   constructor
   · intro h; cases h; exact ⟨rfl, rfl, rfl⟩
@@ -139,7 +124,7 @@ payload fields agree. -/
 /-- WS-RR RR4.2: the four constructors are pairwise distinct — the property a
 label-keyed decoder relies on (a decoded label picks exactly one arm). -/
 theorem constructors_pairwise_distinct
-    (a s : UInt64) (p : Bool) (ca : UInt64) (rp : Bool) (e : KernelError)
+    (a s : UInt64) (p : Bool) (ca : UInt64) (rp : Bool) (e : LookupFault)
     (n : UInt64) (un cd : UInt64) :
     Fault.vmFault a s p ≠ Fault.capFault ca rp e ∧
     Fault.vmFault a s p ≠ Fault.unknownSyscall n ∧
@@ -430,6 +415,81 @@ structure ThreadFault where
   context : FaultContext
   deriving Repr, DecidableEq, Inhabited
 
+namespace LookupFault
+
+/-- **A lookup fault's first stored word**: the type word in byte 0, `bitsLeft`
+in byte 1, `bitsFound` in byte 2, the fields seL4's `lookup_fault_t` packs
+into its first word.  The guard is the second (`guardWord`). -/
+@[inline] def storedWord : LookupFault → UInt64
+  | .invalidRoot => 1
+  | .missingCapability l => (2 : UInt64) ||| (l.toUInt64 <<< 8)
+  | .depthMismatch l b => (3 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)
+  | .guardMismatch l _ b => (4 : UInt64) ||| (l.toUInt64 <<< 8) ||| (b.toUInt64 <<< 16)
+
+/-- A lookup fault's second stored word: a guard mismatch's guard, else `0`. -/
+@[inline] def guardWord : LookupFault → UInt64
+  | .guardMismatch _ g _ => g
+  | _ => 0
+
+/-- The type word two stored words hold: byte 0 of the first, when it is a
+type word seL4 defines past `seL4_InvalidRoot`, else `seL4_InvalidRoot` (1). -/
+@[inline] def storedType (lk : UInt64) : UInt64 :=
+  if lk &&& 0xFF = 2 then 2 else if lk &&& 0xFF = 3 then 3
+  else if lk &&& 0xFF = 4 then 4 else 1
+
+/-- Message word `i` (`LookupFault.word`) read off the two stored words. -/
+@[inline] def storedMessageWord (lk g : UInt64) (i : Nat) : UInt64 :=
+  match i with
+  | 0 => storedType lk
+  | 1 => if storedType lk = 1 then 0 else (lk >>> 8).toUInt8.toUInt64
+  | 2 => if storedType lk = 3 then (lk >>> 16).toUInt8.toUInt64
+      else if storedType lk = 4 then g else 0
+  | 3 => if storedType lk = 4 then (lk >>> 16).toUInt8.toUInt64 else 0
+  | _ => 0
+
+/-- The message words (`wordCount`) the stored lookup fault writes. -/
+@[inline] def storedWordCount (lk : UInt64) : Nat :=
+  if storedType lk = 2 then 2 else if storedType lk = 3 then 3
+  else if storedType lk = 4 then 4 else 1
+
+/-- The lookup fault two stored words hold. -/
+@[inline] def ofStored (lk g : UInt64) : LookupFault :=
+  if storedType lk = 2 then .missingCapability (lk >>> 8).toUInt8
+  else if storedType lk = 3 then .depthMismatch (lk >>> 8).toUInt8 (lk >>> 16).toUInt8
+  else if storedType lk = 4 then .guardMismatch (lk >>> 8).toUInt8 g (lk >>> 16).toUInt8
+  else .invalidRoot
+
+private theorem storedType_cases (lk : UInt64) :
+    storedType lk = 1 ∨ storedType lk = 2 ∨ storedType lk = 3 ∨ storedType lk = 4 := by
+  unfold storedType; split <;> (try split) <;> (try split) <;> simp
+
+/-- **The stored words' message words are the stored fault's.** -/
+@[simp] theorem word_ofStored (lk g : UInt64) (i : Nat) :
+    (ofStored lk g).word i = storedMessageWord lk g i := by
+  rcases storedType_cases lk with h | h | h | h <;>
+    match i with
+    | 0 | 1 | 2 | 3 | n + 4 =>
+      simp [ofStored, storedMessageWord, h, word, typeWord]
+
+@[simp] theorem wordCount_ofStored (lk g : UInt64) :
+    (ofStored lk g).wordCount = storedWordCount lk := by
+  rcases storedType_cases lk with h | h | h | h <;>
+    simp [ofStored, storedWordCount, h, wordCount]
+
+@[simp] theorem ofStored_stored (f : LookupFault) : ofStored f.storedWord f.guardWord = f := by
+  cases f <;> simp only [ofStored, storedType, storedWord, guardWord] <;>
+    (repeat' split) <;> first | rfl | (exfalso; bv_decide) | (congr 1 <;> bv_decide)
+
+@[simp] theorem storedMessageWord_stored (f : LookupFault) (i : Nat) :
+    storedMessageWord f.storedWord f.guardWord i = f.word i := by
+  rw [← word_ofStored, ofStored_stored]
+
+@[simp] theorem storedWordCount_stored (f : LookupFault) :
+    storedWordCount f.storedWord = f.wordCount := by
+  rw [← wordCount_ofStored f.storedWord f.guardWord, ofStored_stored]
+
+end LookupFault
+
 /-- WS-ZA ZA6.31: **the fault record as the TCB stores it** — plain words.
 
 A thread's fault is written on every fault entry and cleared on every resume
@@ -452,10 +512,13 @@ structure ThreadFaultWords where
   /-- A VM fault's address, a capability fault's address, an unknown
       syscall's number, a user exception's number. -/
   word0 : UInt64 := 0
-  /-- A VM fault's status, a user exception's code. -/
+  /-- A VM fault's status, a user exception's code, a capability fault's
+      lookup-failure guard (`LookupFault.guardWord`). -/
   word1 : UInt64 := 0
-  /-- A capability fault's lookup failure. -/
-  lookup : KernelError := (.invalidCapability 0)
+  /-- A capability fault's lookup failure: its type word and bit counts
+      (`LookupFault.storedWord`).  With `word1` it is the lookup failure's two
+      words, seL4's `tcbLookupFailure`. -/
+  lookup : UInt64 := 0
   ip : UInt64 := 0
   sp : UInt64 := 0
   lr : UInt64 := 0
@@ -495,7 +558,7 @@ def fault? (w : ThreadFaultWords) : Option Fault :=
   match w.kind with
   | 0 => none
   | 1 => some (.vmFault w.word0 w.word1 w.flag)
-  | 2 => some (.capFault w.word0 w.flag w.lookup)
+  | 2 => some (.capFault w.word0 w.flag (LookupFault.ofStored w.lookup w.word1))
   | 3 => some (.unknownSyscall w.word0)
   | _ => some (.userException w.word0 w.word1)
 
@@ -541,7 +604,8 @@ theorem decode_isNone (w : ThreadFaultWords) : w.decode.isNone = !w.isFault := b
       x4 := ctx.x4, x5 := ctx.x5, x6 := ctx.x6, x7 := ctx.x7 }
   match f with
   | .vmFault a s p => { base with word0 := a, word1 := s, flag := p }
-  | .capFault a r e => { base with word0 := a, flag := r, lookup := e }
+  | .capFault a r e =>
+    { base with word0 := a, flag := r, word1 := e.guardWord, lookup := e.storedWord }
   | .unknownSyscall n => { base with word0 := n }
   | .userException n c => { base with word0 := n, word1 := c }
 
@@ -552,7 +616,7 @@ theorem decode_isNone (w : ThreadFaultWords) : w.decode.isNone = !w.isFault := b
 
 @[simp] theorem fault?_ofFault (f : Fault) (ctx : FaultContext) :
     (ofFault f ctx).fault? = some f := by
-  cases f <;> rfl
+  cases f <;> first | rfl | simp [ofFault, fault?, Fault.kindCode]
 
 @[simp] theorem kind_ofFault (f : Fault) (ctx : FaultContext) :
     (ofFault f ctx).kind = f.kindCode := by

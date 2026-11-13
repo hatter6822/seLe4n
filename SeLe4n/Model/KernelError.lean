@@ -52,12 +52,17 @@ order.
   that names no CNode).
 - `guardMismatch bitsLeft guardFound bitsFound`: the address's guard bits do
   not match the CNode capability's guard `guardFound`, `bitsFound` bits wide,
-  with `bitsLeft` bits left. -/
+  with `bitsLeft` bits left.
+
+A bit count is at most a word's 64 bits, and seL4 holds `bitsLeft` and
+`bitsFound` in 7-bit fields of the two-word `lookup_fault_t`; here each is a
+byte (`UInt8`), so a thread's stored fault holds every lookup fault in two
+words without loss (`ThreadFaultWords`). -/
 inductive LookupFault where
   | invalidRoot
-  | missingCapability (bitsLeft : UInt64)
-  | depthMismatch (bitsLeft bitsFound : UInt64)
-  | guardMismatch (bitsLeft guardFound bitsFound : UInt64)
+  | missingCapability (bitsLeft : UInt8)
+  | depthMismatch (bitsLeft bitsFound : UInt8)
+  | guardMismatch (bitsLeft : UInt8) (guardFound : UInt64) (bitsFound : UInt8)
   deriving Repr, DecidableEq
 
 namespace LookupFault
@@ -83,12 +88,12 @@ then `bitsLeft`, then `bitsFound` (a depth mismatch) or `guardFound` and
 @[inline] def word (f : LookupFault) (i : Nat) : UInt64 :=
   match f, i with
   | f, 0 => f.typeWord
-  | .missingCapability l, 1 => l
-  | .depthMismatch l _, 1 => l
-  | .depthMismatch _ b, 2 => b
-  | .guardMismatch l _ _, 1 => l
+  | .missingCapability l, 1 => l.toUInt64
+  | .depthMismatch l _, 1 => l.toUInt64
+  | .depthMismatch _ b, 2 => b.toUInt64
+  | .guardMismatch l _ _, 1 => l.toUInt64
   | .guardMismatch _ g _, 2 => g
-  | .guardMismatch _ _ b, 3 => b
+  | .guardMismatch _ _ b, 3 => b.toUInt64
   | _, _ => 0
 
 /-- **The fault its words name** (WS-SX SX2): the type word picks the
@@ -97,14 +102,14 @@ seL4 does not define reads as `invalidRoot`.  A resolver in continuation form
 hands its fault on as words, constant type words at each refusal, so the
 constructor is fixed where the words are made (`ofWords_word`). -/
 @[inline] def ofWords (t w1 w2 w3 : UInt64) : LookupFault :=
-  if t = 2 then .missingCapability w1
-  else if t = 3 then .depthMismatch w1 w2
-  else if t = 4 then .guardMismatch w1 w2 w3
+  if t = 2 then .missingCapability w1.toUInt8
+  else if t = 3 then .depthMismatch w1.toUInt8 w2.toUInt8
+  else if t = 4 then .guardMismatch w1.toUInt8 w2 w3.toUInt8
   else .invalidRoot
 
 @[simp] theorem ofWords_word (f : LookupFault) :
     ofWords (f.word 0) (f.word 1) (f.word 2) (f.word 3) = f := by
-  cases f <;> rfl
+  cases f <;> simp [ofWords, word, typeWord]
 
 end LookupFault
 
@@ -333,6 +338,15 @@ Inlined, so a refusal built at its site is renumbered at its site. -/
 @[inline] def KernelError.forArgumentCap (capNumber : UInt64) : KernelError → KernelError
   | .invalidCapability _ => .invalidCapability capNumber
   | e => e
+
+/-- **The lookup fault a capability fault carries for a refused resolution**
+(seL4 `current_lookup_fault`): a failed lookup's own fault; a resolution that
+found a slot holding no capability of the kind asked for is
+`missingCapability 0`, the fault `handleRecv` raises there (`syscall.c`).
+Every resolution refusal the entry delivers as a fault is one of these two. -/
+@[inline] def KernelError.capFaultLookup : KernelError → LookupFault
+  | .failedLookup _ f => f
+  | _ => .missingCapability 0
 
 /-- **The refusal continuation of an argument capability's resolution**: every
 refusal the resolution hands on is renumbered for argument capability

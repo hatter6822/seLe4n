@@ -517,7 +517,7 @@ caller's fault words (`deliverFaultFrame`), read before any write. -/
 @[noinline] def performFaultReceiveDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (core : CoreId) (badgeWord : SeLe4n.Badge) (badged : Bool) (k : Nat) (flag : Bool)
-    (w0 w1 : UInt64) (lk : KernelError) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
+    (w0 w1 : UInt64) (lk : UInt64) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
     SystemState :=
   deliverFaultFrame (PriorityInheritance.propagatePipChainCrossCore
       (storeReceiveCallReady st endpointId s nextCode receiver rid) receiver core).1 receiver

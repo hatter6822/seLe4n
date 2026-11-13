@@ -117,7 +117,7 @@ theorem recordPendingFault_eq_words (st : SystemState) (tid : SeLe4n.ThreadId)
       recordFaultWords st tid (ThreadFaultWords.ofFault tf.fault tf.context) := rfl
 
 /-- The words a fault and its context are stored as, field by field. -/
-@[inline] def faultWordsOf (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : KernelError)
+@[inline] def faultWordsOf (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : ThreadFaultWords :=
   { kind := k, flag := flag, word0 := w0, word1 := w1, lookup := lk, ip := ip, sp := sp,
     lr := lr, spsr := spsr, x0 := x0, x1 := x1, x2 := x2, x3 := x3, x4 := x4, x5 := x5,
@@ -191,8 +191,10 @@ theorem stageWokenDelivery_performCallRendezvous_held (st : SystemState)
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some]
 
 /-- The message length of the fault a kind code names (`faultMessageLength`). -/
-@[inline] def faultLengthOfKind : Nat → Nat
-  | 1 | 2 => 4
+@[inline] def faultLengthOfKind (k : Nat) (lk : UInt64) : Nat :=
+  match k with
+  | 1 => 4
+  | 2 => 3 + LookupFault.storedWordCount lk
   | 3 => 13
   | _ => 5
 
@@ -206,8 +208,8 @@ theorem stageWokenDelivery_performCallRendezvous_held (st : SystemState)
 /-- The message-info word a delivered fault's frame carries, `overflow` words
 written past the frame.  Out of line, as `regMessageInfoWord`, so the
 `MessageInfo` it encodes is never built. -/
-@[noinline] def faultInfoWord (k overflow : Nat) : UInt64 :=
-  (({ length := min (min (faultLengthOfKind k) (4 + overflow)) maxMessageRegisters
+@[noinline] def faultInfoWord (k : Nat) (lk : UInt64) (overflow : Nat) : UInt64 :=
+  (({ length := min (min (faultLengthOfKind k lk) (4 + overflow)) maxMessageRegisters
       extraCaps := 0 % 4
       label := min (faultLabelOfKind k) (errorLabelBase - 1)
       capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
@@ -226,24 +228,53 @@ out of line, so the frame is a straight run of words and never built. -/
   if k == 1 || k == 2 then encodeFlag flag else if k == 3 then x2 else spsr
 
 /-- The frame's `MR3` for a fault of kind `k`. -/
-@[noinline] def faultFrameMR3 (k : Nat) (w0 w1 : UInt64) (lk : KernelError) (x3 : UInt64) :
+@[noinline] def faultFrameMR3 (k : Nat) (w0 w1 : UInt64) (lk : UInt64) (x3 : UInt64) :
     UInt64 :=
   if k == 1 then w1
-  else if k == 2 then Nat.toUInt64 (KernelError.toDiscriminant lk)
+  else if k == 2 then LookupFault.storedMessageWord lk w1 0
   else if k == 3 then x3 else w0
 
 /-- **The frame a delivered fault writes**, word by word from the fault's words
 (`encodeFault`'s layout: `MR0`-`MR3` in `x2`-`x5`), the badge in `x0`
 (`faultFrameW_eq`). -/
-@[inline] def faultFrameW (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : KernelError)
+@[inline] def faultFrameW (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp spsr x0 x1 x2 x3 : UInt64) (overflow : Nat) (badgeWord : SeLe4n.Badge)
     (badged : Bool) : SyscallReturnFrame :=
   { x0 := badgeWordIf badgeWord badged
-    x1 := faultInfoWord k overflow
+    x1 := faultInfoWord k lk overflow
     x2 := faultFrameMR0 k ip x0
     x3 := faultFrameMR1 k w0 x1 sp
     x4 := faultFrameMR2 k flag x2 spsr
     x5 := faultFrameMR3 k w0 w1 lk x3 }
+
+/-- **A capability fault's frame is its message's**, for any two stored
+lookup-failure words: the fault they decode to (`LookupFault.ofStored`). -/
+theorem faultFrameW_capFault (flag : Bool) (w0 g lk : UInt64) (ctx : FaultContext)
+    (overflow : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) :
+    faultFrameW 2 flag w0 g lk ctx.faultIP ctx.sp ctx.spsr ctx.x0 ctx.x1 ctx.x2 ctx.x3
+        overflow badgeWord badged =
+      Architecture.returnFrameOfMessage
+        (faultMessage (.capFault w0 flag (LookupFault.ofStored lk g)) ctx
+          (SeLe4n.Badge.opt badgeWord badged)) 0 overflow := by
+  have hB : badgeWordIf badgeWord badged =
+      ((SeLe4n.Badge.opt badgeWord badged).map SeLe4n.Badge.word).getD 0 := by
+    rw [← badgeWordOrZero_opt]; rfl
+  have hW : LookupFault.storedMessageWord lk g 0 = (LookupFault.ofStored lk g).word 0 :=
+    (LookupFault.word_ofStored lk g 0).symm
+  have hC : LookupFault.storedWordCount lk = (LookupFault.ofStored lk g).wordCount :=
+    (LookupFault.wordCount_ofStored lk g).symm
+  simp only [faultFrameW, faultFrameMR3, faultInfoWord, faultLengthOfKind, hW, hC]
+  generalize LookupFault.ofStored lk g = lf
+  cases lf <;>
+    simp only [faultFrameW, faultFrameMR0, faultFrameMR1, faultFrameMR2, faultFrameMR3,
+      Architecture.returnFrameOfMessage, faultMessage, encodeFault, hB,
+      faultInfoWord, Architecture.returnMessageInfo, faultLengthOfKind, faultLabelOfKind,
+      faultMessageLength, faultLabel, ThreadFaultWords.ofFault, Fault.kindCode, regOf,
+      FaultContext.gprAt, List.size_toArray, List.length_cons, List.length_nil,
+      List.getElem?_toArray, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.toUInt64_eq,
+      UInt64.ofNat_toNat] <;> simp only [Nat.reduceBEq, Bool.or_false, Bool.or_true,
+        Bool.false_eq_true, ↓reduceIte] <;> rfl
 
 /-- **The fault's frame is its message's.** -/
 theorem faultFrameW_eq (f : Fault) (ctx : FaultContext) (overflow : Nat)
@@ -257,16 +288,21 @@ theorem faultFrameW_eq (f : Fault) (ctx : FaultContext) (overflow : Nat)
   have hB : badgeWordIf badgeWord badged =
       ((SeLe4n.Badge.opt badgeWord badged).map SeLe4n.Badge.word).getD 0 := by
     rw [← badgeWordOrZero_opt]; rfl
-  cases f <;>
-    simp only [faultFrameW, faultFrameMR0, faultFrameMR1, faultFrameMR2, faultFrameMR3,
-      Architecture.returnFrameOfMessage, faultMessage, encodeFault, hB,
-      faultInfoWord, Architecture.returnMessageInfo, faultLengthOfKind, faultLabelOfKind,
-      faultMessageLength, faultLabel, ThreadFaultWords.ofFault, Fault.kindCode, regOf,
-      FaultContext.gprAt, List.size_toArray, List.length_cons, List.length_nil,
-      List.getElem?_toArray, List.getElem?_cons_zero,
-      List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.toUInt64_eq,
-      UInt64.ofNat_toNat] <;> simp only [Nat.reduceBEq, Bool.or_false, Bool.or_true,
-        Bool.false_eq_true, ↓reduceIte] <;> rfl
+  cases f with
+  | capFault a r lf =>
+    have h := faultFrameW_capFault r a lf.guardWord lf.storedWord ctx overflow badgeWord badged
+    rw [LookupFault.ofStored_stored] at h
+    exact h
+  | _ =>
+      simp only [faultFrameW, faultFrameMR0, faultFrameMR1, faultFrameMR2, faultFrameMR3,
+        Architecture.returnFrameOfMessage, faultMessage, encodeFault, hB,
+        faultInfoWord, Architecture.returnMessageInfo, faultLengthOfKind, faultLabelOfKind,
+        faultMessageLength, faultLabel, ThreadFaultWords.ofFault, Fault.kindCode, regOf,
+        FaultContext.gprAt, List.size_toArray, List.length_cons, List.length_nil,
+        List.getElem?_toArray, List.getElem?_cons_zero,
+        List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.toUInt64_eq,
+        UInt64.ofNat_toNat] <;> simp only [Nat.reduceBEq, Bool.or_false, Bool.or_true,
+          Bool.false_eq_true, ↓reduceIte] <;> rfl
 
 -- ============================================================================
 -- §2b  The words past the fourth, written into the handler's IPC buffer
@@ -385,47 +421,50 @@ def overflowSlotsFrom (S : SystemState) (r : SeLe4n.ThreadId) : Nat → Nat → 
 
 /-- The number of message registers past the fourth a fault of kind `k`
 carries (`encodeFault`'s layout): nine for an unknown syscall, one for a user
-exception, none for a VM or capability fault. -/
-@[inline] def faultOverflowLength (k : Nat) : Nat :=
-  if k == 1 || k == 2 then 0 else if k == 3 then 9 else 1
+exception, none for a VM fault, and a capability fault's lookup-failure words
+past its type word (none to three). -/
+@[inline] def faultOverflowLength (k : Nat) (lk : UInt64) : Nat :=
+  if k == 1 then 0 else if k == 2 then LookupFault.storedWordCount lk - 1
+  else if k == 3 then 9 else 1
 
-/-- Overflow word `i` of a fault of kind `k` (`encodeFault`'s `MR4` on): an
-unknown syscall's `x4`-`x7`, restart PC, `SP`, `LR`, `SPSR` and number, a user
-exception's code. -/
-@[noinline] def faultOverflowWord (k i : Nat) (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) :
+/-- Overflow word `i` of a fault of kind `k` (`encodeFault`'s `MR4` on): a
+capability fault's lookup-failure fields, an unknown syscall's `x4`-`x7`,
+restart PC, `SP`, `LR`, `SPSR` and number, a user exception's code. -/
+@[noinline] def faultOverflowWord (k i : Nat) (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) :
     UInt64 :=
-  if k == 3 then
+  if k == 2 then LookupFault.storedMessageWord lk w1 (i + 1)
+  else if k == 3 then
     match i with
     | 0 => x4 | 1 => x5 | 2 => x6 | 3 => x7 | 4 => ip | 5 => sp | 6 => lr | 7 => spsr
     | _ => w0
   else w1
 
 /-- The overflow registers `faultOverflowWord` names, `n` of them from `i`. -/
-def faultOverflowRegs (k : Nat) (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) :
+def faultOverflowRegs (k : Nat) (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) :
     Nat → Nat → List SeLe4n.RegValue
   | _, 0 => []
-  | i, n + 1 => regOf (faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7) ::
-      faultOverflowRegs k w0 w1 ip sp lr spsr x4 x5 x6 x7 (i + 1) n
+  | i, n + 1 => regOf (faultOverflowWord k i w0 w1 lk ip sp lr spsr x4 x5 x6 x7) ::
+      faultOverflowRegs k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 (i + 1) n
 
-theorem faultOverflowRegs_length (k : Nat) (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) :
-    ∀ (i n : Nat), (faultOverflowRegs k w0 w1 ip sp lr spsr x4 x5 x6 x7 i n).length = n
+theorem faultOverflowRegs_length (k : Nat) (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) :
+    ∀ (i n : Nat), (faultOverflowRegs k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 i n).length = n
   | _, 0 => rfl
   | i, n + 1 => by
     simp only [faultOverflowRegs, List.length_cons,
-      faultOverflowRegs_length k w0 w1 ip sp lr spsr x4 x5 x6 x7 (i + 1) n]
+      faultOverflowRegs_length k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 (i + 1) n]
 
 /-- **The fault's words past the fourth, written in place**: each recorded as a
 user-word store at its slot's address, word by word, up to the first slot that
 does not resolve (`faultOverflowStore_eq`). -/
 def faultOverflowStore (S : SystemState) (r : SeLe4n.ThreadId) (k : Nat)
-    (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) : Nat → Nat → SystemState
+    (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) : Nat → Nat → SystemState
   | _, 0 => S
   | i, n + 1 =>
     match overflowSlotOf S r i with
     | some pa => faultOverflowStore
         (S.recordPhysicalWrite (.storeUserWord pa
-          (faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7)))
-        r k w0 w1 ip sp lr spsr x4 x5 x6 x7 (i + 1) n
+          (faultOverflowWord k i w0 w1 lk ip sp lr spsr x4 x5 x6 x7)))
+        r k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 (i + 1) n
     | none => S
 
 theorem overflowSlotsFrom_eq (S : SystemState) (r : SeLe4n.ThreadId) (X : SystemState) (t : TCB)
@@ -442,12 +481,12 @@ theorem overflowSlotsFrom_eq (S : SystemState) (r : SeLe4n.ThreadId) (X : System
     · next hPa => rw [hPa]; rfl
 
 theorem faultOverflowStore_eq (r : SeLe4n.ThreadId) (X : SystemState) (t : TCB) (k : Nat)
-    (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) :
+    (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) :
     ∀ (n i : Nat) (S : SystemState),
       (∀ j, overflowSlotOf S r j = Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t j true) →
-      faultOverflowStore S r k w0 w1 ip sp lr spsr x4 x5 x6 x7 i n =
+      faultOverflowStore S r k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 i n =
         Architecture.recordPhysicalWrites S (Architecture.overflowDeliveryWrites X t
-          (faultOverflowRegs k w0 w1 ip sp lr spsr x4 x5 x6 x7 i n) i)
+          (faultOverflowRegs k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 i n) i)
   | 0, _, S, _ => (Architecture.recordPhysicalWrites_nil S).symm
   | n + 1, i, S, hS => by
     simp only [faultOverflowStore, faultOverflowRegs, hS]
@@ -455,28 +494,53 @@ theorem faultOverflowStore_eq (r : SeLe4n.ThreadId) (X : SystemState) (t : TCB) 
     split
     · next pa hPa =>
       rw [hPa, recordPhysicalWrites_cons]
-      have hReg : (regOf (faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7)).val.toUInt64 =
-          faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7 := by
+      have hReg : (regOf (faultOverflowWord k i w0 w1 lk ip sp lr spsr x4 x5 x6 x7)).val.toUInt64 =
+          faultOverflowWord k i w0 w1 lk ip sp lr spsr x4 x5 x6 x7 := by
         simp only [regOf, Nat.toUInt64_eq, UInt64.ofNat_toNat]
       rw [hReg]
-      exact faultOverflowStore_eq r X t k w0 w1 ip sp lr spsr x4 x5 x6 x7 n (i + 1) _
+      exact faultOverflowStore_eq r X t k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 n (i + 1) _
         (fun j => hS j)
     · next hPa => rw [hPa]; exact (Architecture.recordPhysicalWrites_nil S).symm
+
+/-- A capability fault's registers past the fourth, for any two stored
+lookup-failure words, are `faultOverflowRegs`'s: its lookup failure's fields. -/
+theorem faultMessage_overflowRegs_capFault (flag : Bool) (w0 g lk : UInt64)
+    (ctx : FaultContext) (b : Option SeLe4n.Badge) :
+    (faultMessage (.capFault w0 flag (LookupFault.ofStored lk g)) ctx b).registers.toList.drop 4 =
+      faultOverflowRegs 2 w0 g lk ctx.faultIP ctx.sp ctx.lr ctx.spsr ctx.x4 ctx.x5 ctx.x6
+        ctx.x7 0 (faultOverflowLength 2 lk) := by
+  have hW : ∀ i, LookupFault.storedMessageWord lk g i = (LookupFault.ofStored lk g).word i :=
+    fun i => (LookupFault.word_ofStored lk g i).symm
+  have hC : LookupFault.storedWordCount lk = (LookupFault.ofStored lk g).wordCount :=
+    (LookupFault.wordCount_ofStored lk g).symm
+  have hO : ∀ i, faultOverflowWord 2 i w0 g lk ctx.faultIP ctx.sp ctx.lr ctx.spsr ctx.x4
+      ctx.x5 ctx.x6 ctx.x7 = (LookupFault.ofStored lk g).word (i + 1) := fun i => by
+    simp only [faultOverflowWord, Nat.reduceBEq, ↓reduceIte, hW]
+  simp only [faultOverflowLength, Nat.reduceBEq, Bool.false_eq_true, ↓reduceIte, hC]
+  generalize LookupFault.ofStored lk g = lf at hO ⊢
+  cases lf <;> simp only [faultOverflowRegs, hO, LookupFault.wordCount] <;> rfl
 
 /-- A fault message's registers past the fourth are `faultOverflowRegs`'s. -/
 theorem faultMessage_overflowRegs (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) :
     (faultMessage f ctx b).registers.toList.drop 4 =
       faultOverflowRegs (ThreadFaultWords.ofFault f ctx).kind
         (ThreadFaultWords.ofFault f ctx).word0 (ThreadFaultWords.ofFault f ctx).word1
+        (ThreadFaultWords.ofFault f ctx).lookup
         ctx.faultIP ctx.sp ctx.lr ctx.spsr ctx.x4 ctx.x5 ctx.x6 ctx.x7 0
-        (faultOverflowLength (ThreadFaultWords.ofFault f ctx).kind) := by
-  cases f <;> rfl
+        (faultOverflowLength (ThreadFaultWords.ofFault f ctx).kind
+          (ThreadFaultWords.ofFault f ctx).lookup) := by
+  cases f with
+  | capFault a r lf =>
+    have h := faultMessage_overflowRegs_capFault r a lf.guardWord lf.storedWord ctx b
+    rw [LookupFault.ofStored_stored] at h
+    exact h
+  | _ => rfl
 
 /-- The fault message held where the woken handler is, unexpectedly, not
 ready (`writeDeliveredFrameIfReady`'s `otherwise`).  Out of line, so the
 message is built only on that path. -/
 @[noinline] def holdFaultMessageBody (X : SystemState) (r : SeLe4n.ThreadId)
-    (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : KernelError)
+    (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (badgeWord : SeLe4n.Badge)
     (badged : Bool) : SystemState :=
   let w := faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
@@ -493,23 +557,23 @@ unexpectedly, not ready holds the message (`holdFaultMessageBody`).  Each step
 reads the words it needs before it writes (`deliverFaultFrame_eq`). -/
 @[inline] def deliverFaultFrame (X : SystemState) (r : SeLe4n.ThreadId)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (k : Nat) (flag : Bool) (w0 w1 : UInt64)
-    (lk : KernelError) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
+    (lk : UInt64) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
   match X.getTcb? r with
   | some t =>
     if t.ipcState = .ready then
-      let n := overflowSlotsFrom X r 0 (faultOverflowLength k)
+      let n := overflowSlotsFrom X r 0 (faultOverflowLength k lk)
       faultOverflowStore
         (X.mapTcbInPlace r (withFrameWords (badgeWordIf badgeWord badged)
-          (faultInfoWord k n) (faultFrameMR0 k ip x0) (faultFrameMR1 k w0 x1 sp)
+          (faultInfoWord k lk n) (faultFrameMR0 k ip x0) (faultFrameMR1 k w0 x1 sp)
           (faultFrameMR2 k flag x2 spsr) (faultFrameMR3 k w0 w1 lk x3)))
-        r k w0 w1 ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength k)
+        r k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength k lk)
     else holdFaultMessageBody X r k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
       badgeWord badged
   | none => X
 
 /-- Every kind code from `4` up names a user exception's frame. -/
 theorem faultFrameW_of_user (k : Nat) (h1 : k ≠ 1) (h2 : k ≠ 2) (h3 : k ≠ 3) (flag : Bool)
-    (w0 w1 : UInt64) (lk : KernelError) (ip sp spsr x0 x1 x2 x3 : UInt64) (overflow : Nat)
+    (w0 w1 : UInt64) (lk : UInt64) (ip sp spsr x0 x1 x2 x3 : UInt64) (overflow : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) :
     faultFrameW k flag w0 w1 lk ip sp spsr x0 x1 x2 x3 overflow badgeWord badged =
       faultFrameW 4 flag w0 w1 lk ip sp spsr x0 x1 x2 x3 overflow badgeWord badged := by
@@ -526,14 +590,17 @@ theorem faultFrameW_of_user (k : Nat) (h1 : k ≠ 1) (h2 : k ≠ 2) (h3 : k ≠ 
 
 /-- And its words past the fourth. -/
 theorem faultOverflowRegs_of_user (k : Nat) (h1 : k ≠ 1) (h2 : k ≠ 2) (h3 : k ≠ 3)
-    (w0 w1 ip sp lr spsr x4 x5 x6 x7 : UInt64) :
-    faultOverflowRegs k w0 w1 ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength k) =
-      faultOverflowRegs 4 w0 w1 ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength 4) := by
+    (w0 w1 lk ip sp lr spsr x4 x5 x6 x7 : UInt64) :
+    faultOverflowRegs k w0 w1 lk ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength k lk) =
+      faultOverflowRegs 4 w0 w1 lk ip sp lr spsr x4 x5 x6 x7 0 (faultOverflowLength 4 lk) := by
   have e1 : (k == 1) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact h1
   have e2 : (k == 2) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact h2
   have e3 : (k == 3) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact h3
   simp only [faultOverflowLength, faultOverflowRegs, faultOverflowWord, e1, e2, e3,
     Nat.reduceBEq, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
+
+section
+attribute [local irreducible] LookupFault.ofStored
 
 /-- The frame a thread's fault words name is the message's of the fault they
 decode to. -/
@@ -543,27 +610,38 @@ theorem faultFrameW_eq_words (w : ThreadFaultWords) (f : Fault) (hf : w.fault? =
         overflow badgeWord badged =
       Architecture.returnFrameOfMessage
         (faultMessage f w.context (SeLe4n.Badge.opt badgeWord badged)) 0 overflow := by
+  have hLk : ∀ k, k ≠ 2 → faultFrameW k w.flag w.word0 w.word1 w.lookup w.ip w.sp w.spsr w.x0
+      w.x1 w.x2 w.x3 overflow badgeWord badged =
+      faultFrameW k w.flag w.word0 w.word1 0 w.ip w.sp w.spsr w.x0 w.x1 w.x2 w.x3 overflow
+        badgeWord badged := fun k hk2 => by
+    have e2 : (k == 2) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact hk2
+    have hl : faultLengthOfKind k w.lookup = faultLengthOfKind k 0 := by
+      unfold faultLengthOfKind; split <;> simp_all
+    simp only [faultFrameW, faultFrameMR3, faultInfoWord, hl, e2, Bool.false_eq_true,
+      ↓reduceIte]
   rcases hk : w.kind with _ | _ | _ | _ | n <;>
     simp only [ThreadFaultWords.fault?, hk, reduceCtorEq, Option.some.injEq] at hf <;> subst hf
-  · exact faultFrameW_eq (.vmFault _ _ _) w.context _ _ _
-  · exact faultFrameW_eq (.capFault _ _ _) w.context _ _ _
-  · exact faultFrameW_eq (.unknownSyscall _) w.context _ _ _
-  · rw [faultFrameW_of_user _ (by omega) (by omega) (by omega)]
+  · rw [hLk 1 (by decide)]; exact faultFrameW_eq (.vmFault _ _ _) w.context _ _ _
+  · exact faultFrameW_capFault w.flag w.word0 w.word1 w.lookup w.context overflow badgeWord badged
+  · rw [hLk 3 (by decide)]; exact faultFrameW_eq (.unknownSyscall _) w.context _ _ _
+  · rw [hLk _ (by omega), faultFrameW_of_user _ (by omega) (by omega) (by omega)]
     exact faultFrameW_eq (.userException _ _) w.context _ _ _
 
 /-- And its words past the fourth are the message's. -/
 theorem faultMessage_overflowRegs_words (w : ThreadFaultWords) (f : Fault)
     (hf : w.fault? = some f) (b : Option SeLe4n.Badge) :
     (faultMessage f w.context b).registers.toList.drop 4 =
-      faultOverflowRegs w.kind w.word0 w.word1 w.ip w.sp w.lr w.spsr w.x4 w.x5 w.x6 w.x7 0
-        (faultOverflowLength w.kind) := by
+      faultOverflowRegs w.kind w.word0 w.word1 w.lookup w.ip w.sp w.lr w.spsr w.x4 w.x5 w.x6 w.x7 0
+        (faultOverflowLength w.kind w.lookup) := by
   rcases hk : w.kind with _ | _ | _ | _ | n <;>
     simp only [ThreadFaultWords.fault?, hk, reduceCtorEq, Option.some.injEq] at hf <;> subst hf
   · exact faultMessage_overflowRegs (.vmFault _ _ _) w.context b
-  · exact faultMessage_overflowRegs (.capFault _ _ _) w.context b
+  · exact faultMessage_overflowRegs_capFault w.flag w.word0 w.word1 w.lookup w.context b
   · exact faultMessage_overflowRegs (.unknownSyscall _) w.context b
   · rw [faultOverflowRegs_of_user _ (by omega) (by omega) (by omega)]
     exact faultMessage_overflowRegs (.userException _ _) w.context b
+
+end
 
 /-- And the message `holdFaultMessageBody` holds is the fault's. -/
 theorem holdFaultMessageBody_words (X : SystemState) (r : SeLe4n.ThreadId)
@@ -601,12 +679,12 @@ theorem deliverFaultFrame_eq (X : SystemState) (r : SeLe4n.ThreadId) (w : Thread
             Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t j true := fun a b c d e g j => by
         simp only [overflowSlotOf, SystemState.getTcb?_mapTcbInPlace, hT, Option.map_some]
         exact ipcBufferSlotPAddr?_mapTcbInPlace X r _ t _ j true rfl rfl
-      have hLen := faultOverflowRegs_length w.kind w.word0 w.word1 w.ip w.sp w.lr w.spsr w.x4
-        w.x5 w.x6 w.x7 0 (faultOverflowLength w.kind)
-      have hC := overflowSlotsFrom_eq X r X t hX (faultOverflowRegs w.kind w.word0 w.word1 w.ip
-        w.sp w.lr w.spsr w.x4 w.x5 w.x6 w.x7 0 (faultOverflowLength w.kind)) 0
+      have hLen := faultOverflowRegs_length w.kind w.word0 w.word1 w.lookup w.ip w.sp w.lr w.spsr w.x4
+        w.x5 w.x6 w.x7 0 (faultOverflowLength w.kind w.lookup)
+      have hC := overflowSlotsFrom_eq X r X t hX (faultOverflowRegs w.kind w.word0 w.word1 w.lookup w.ip
+        w.sp w.lr w.spsr w.x4 w.x5 w.x6 w.x7 0 (faultOverflowLength w.kind w.lookup)) 0
       rw [hLen] at hC
-      rw [faultOverflowStore_eq r X t _ _ _ _ _ _ _ _ _ _ _ _ 0 _ (hS _ _ _ _ _ _), hC,
+      rw [faultOverflowStore_eq r X t _ _ _ _ _ _ _ _ _ _ _ _ _ 0 _ (hS _ _ _ _ _ _), hC,
         ← faultFrameW_eq_words w f hf _ badgeWord badged]
       rfl
     · exact holdFaultMessageBody_words X r w f hf badgeWord badged
@@ -617,7 +695,7 @@ message, the priority walk, then the fault delivered in place
 (`performFaultCallDelivered_eq`). -/
 @[noinline] def performFaultCallDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId) (cap : Capability)
-    (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : KernelError)
+    (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (core : CoreId) : SystemState :=
   deliverFaultFrame (PriorityInheritance.propagatePipChainCrossCore
       (storeCallRendezvousReady st endpointId caller r nextCode rid core) r core).1 r
@@ -682,7 +760,7 @@ theorem performFaultCallDelivered_eq (st : SystemState) (endpointId : SeLe4n.Obj
 the fault as words: the specification's delivery of the fault the words name
 (`faultDeliverOnCore`).  Out of line, the fallback of `faultDeliverHandledWords`. -/
 @[noinline] def faultDeliverHandledSpec (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : KernelError)
+    (c : CoreId) (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
   let w := faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
   match w.fault? with
@@ -747,7 +825,7 @@ and blocked in place (`performFaultCallBlock`), likewise; every other delivery
 is the specification's (`faultDeliverHandledWords_eq`). -/
 @[noinline] def faultDeliverHandledWords (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (epId : SeLe4n.ObjId) (cap : Capability) (k : Nat) (flag : Bool)
-    (w0 w1 : UInt64) (lk : KernelError) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
+    (w0 w1 : UInt64) (lk : UInt64) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
     SystemState :=
   match st.getEndpoint? epId with
   | some ep =>
@@ -877,7 +955,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
 flow gate, and on every refusal the suspend with the fault recorded as words. -/
 @[noinline] def faultDeliverCheckedWords (lctx : LabelingContext) (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (k : Nat) (flag : Bool) (w0 w1 : UInt64)
-    (lk : KernelError) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
+    (lk : UInt64) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
   resolveFaultHandlerK st tid
     (fun _ => recordFaultWords (faultSuspendOnCore st tid c) tid
       (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7))
@@ -930,7 +1008,7 @@ window spilled into the faulting thread, the context read off the spilled
 registers as the specification's `faultContextOfThread` reads it, and the
 checked delivery handed the fault's words and the context's. -/
 @[inline] def faultDeliveredWords (lctx : LabelingContext) (st : SystemState) (k : Nat)
-    (flag : Bool) (w0 w1 : UInt64) (lk : KernelError) (ip spsr : UInt64)
+    (flag : Bool) (w0 w1 : UInt64) (lk : UInt64) (ip spsr : UInt64)
     (w : FaultRegisterWindow) (c : CoreId) (tid : SeLe4n.ThreadId) : SystemState :=
   let stRegs := writeFaultRegistersToTcb st tid w
   match stRegs.getTcb? tid with
@@ -987,7 +1065,7 @@ theorem faultOfExceptionContext_words (ectx : ExceptionContext) (f : Fault)
     (ThreadFaultWords.ofFault f {}).flag = faultFlagOfEsr ectx.esr ∧
     (ThreadFaultWords.ofFault f {}).word0 = faultWord0OfEsr ectx.esr ectx.far ∧
     (ThreadFaultWords.ofFault f {}).word1 = ectx.esr ∧
-    (ThreadFaultWords.ofFault f {}).lookup = (.invalidCapability 0) := by
+    (ThreadFaultWords.ofFault f {}).lookup = 0 := by
   unfold faultOfExceptionContext classifySynchronousException at h
   unfold faultKindOfEsr faultFlagOfEsr faultWord0OfEsr
   cases hc : classifySynchronousExceptionOfEsr ectx.esr <;> rw [hc] at h <;> cases h <;>

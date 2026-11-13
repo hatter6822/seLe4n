@@ -348,7 +348,7 @@ theorem faultMessage_decodes (f : Fault) (ctx : FaultContext)
     Architecture.decodeFault
         { length := Architecture.faultMessageLength f, extraCaps := 0,
           label := (faultMessage f ctx badge).label }
-        (faultMessage f ctx badge).registers = some f.codeOnly :=
+        (faultMessage f ctx badge).registers = some f :=
   Architecture.decodeFault_encodeFault f ctx
 
 -- ============================================================================

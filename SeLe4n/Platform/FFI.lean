@@ -3115,7 +3115,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         match syscallOperandLookup decoded.syscallId gate st with
         | .error e =>
-            if e = ke then some (.capFault decoded.capAddr.word inRecv e)
+            if e = ke then some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
             else none
         | .ok _ => none
   | _ => none
@@ -3138,7 +3138,7 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
         match syscallOperandLookup decoded.syscallId gate st with
         | .error e =>
             if e.matchesWords d w0 w1 w2 w3 w4 then
-              some (.capFault decoded.capAddr.word inRecv e)
+              some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
             else none
         | .ok _ => none
   | _ => none
@@ -3386,7 +3386,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (onFault : SystemState → Fault → β) (onRefuse : KernelError → SystemState → β)
     (onOk : SystemState → β) (onLookupFault : SystemState → UInt64 → Bool → KernelError → β)
-    (hF : ∀ s w b e, onLookupFault s w b e = onFault s (.capFault w b e)) :
+    (hF : ∀ s w b e, onLookupFault s w b e = onFault s (.capFault w b e.capFaultLookup)) :
     syscallEntryCheckedK ctx executingCore st (syscallRefusalOutcome tid onFault onRefuse onOk)
         (syscallArmOutcome onRefuse onOk) (syscallLookupOutcome onLookupFault onRefuse) =
       syscallRefusalOutcome tid onFault onRefuse onOk (syscallEntryCheckedR ctx executingCore st) := by
@@ -3445,7 +3445,7 @@ entry's every failed-resolution site calls it with scalars, and equal to
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (e : KernelError)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
     SystemState :=
-  deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e)
+  deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e.capFaultLookup)
     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr
 
 /-- WS-ZA ZA4: a returning caller's boundary words, read off its post-state:
