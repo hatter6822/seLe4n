@@ -61,7 +61,7 @@ theorem resolveVSpaceMapFrame_congr {s t : SystemState} (tid : SeLe4n.ThreadId)
     (hT : ∀ id, s.getTcb? id = t.getTcb? id) (hC : ∀ id, s.getCNode? id = t.getCNode? id)
     (hF : ∀ id, s.getFrame? id = t.getFrame? id) :
     resolveVSpaceMapFrame tid args s = resolveVSpaceMapFrame tid args t := by
-  unfold resolveVSpaceMapFrame syscallLookupCap syscallResolveCap
+  unfold resolveVSpaceMapFrame syscallLookupArgumentCap syscallLookupCap syscallResolveCap
   rw [hT]
   split
   · rfl

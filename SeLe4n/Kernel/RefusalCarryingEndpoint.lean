@@ -3863,11 +3863,11 @@ alone, with the gate the caller's own CSpace gives
       capAddr := replyAddr
       capDepth := callerCspaceDepth st tid
       requiredRight := .write }
-  match syscallLookupCap gate st with
+  match syscallLookupArgumentCap recvReplyCapNumber gate st with
   | .error e => .error e
   | .ok (rcap, _) =>
       match extractReplyId rcap with
-      | .error e => .error e
+      | .error e => .error (e.forArgumentCap recvReplyCapNumber)
       | .ok rid =>
           match st.getReply? rid with
           | some r =>
@@ -3924,10 +3924,10 @@ slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. 
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
   if len = 0 then onOk 0 else
   resolveCapAddressKUnrolled (callerCspaceRoot st tid) (replyAddr)
-    (callerCspaceDepth st tid) st onErr
+    (callerCspaceDepth st tid) st (KernelError.argumentCapRefusal recvReplyCapNumber onErr)
     (fun cnode slot =>
       recvReplyCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-        onErr onOk)
+        (KernelError.argumentCapRefusal recvReplyCapNumber onErr) onOk)
 
 theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
@@ -3938,7 +3938,8 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
   unfold resolveRecvReplyK resolveRecvReplyIdR
   by_cases h0 : len = 0
   · simp only [h0, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
-  · simp only [h0, ↓reduceIte, syscallLookupCap, syscallResolveCap]
+  · simp only [h0, ↓reduceIte, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
+      KernelError.argumentCapRefusal]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) (replyAddr)
         (callerCspaceDepth st tid) st with
@@ -3950,7 +3951,7 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | some cap =>
         simp only []
         by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-        · simp only [hIdle, ↓reduceIte]
+        · simp only [hIdle, ↓reduceIte] <;> rfl
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
             unfold extractReplyId
@@ -3962,7 +3963,7 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
             | some r =>
               simp only []
               split <;> rfl
-          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 /-- The checked receive arm's rendezvous through the specification: the
 WithCaps receive, the rendezvous hand-off, then the woken sender's completion

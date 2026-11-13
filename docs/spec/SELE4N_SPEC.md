@@ -3150,9 +3150,14 @@ is `failedLookup true (missingCapability srcDepth)`, `cnode.c`), and an untyped'
 failed, `0` for the invoked one and `i + 1` for argument capability `i` in the
 current word layout (`KernelError.forArgumentCap`): a configure's context, a
 bind's thread, a bound notification, a mapped frame, a page-table map's root, an
-issue's destination CNode, an interrupt handler's notification and a fault
-handler are `1`, a set-space's CSpace root `1` and VSpace root `2`; each number
-has one owner that the specification and the compiled form both read.  A
+issue's destination CNode, an interrupt handler's notification, a fault
+handler and the reply capability a receive or a reply-receive names are `1`, a
+set-space's CSpace root `1` and VSpace root `2`; each number has one owner that
+the specification and the compiled form both read, and every argument
+capability is resolved through one boundary that applies it
+(`syscallLookupArgumentCap` in the specification,
+`KernelError.argumentCapRefusal` as the compiled forms' refusal continuation),
+so only the invoked capability answers `0`.  A
 configure's budget or period below the least is `rangeError` with
 `configureMinBudget` and `configureMaxPeriod`, and a budget above its period
 `rangeError` with the least budget and the period, all answered in the decode

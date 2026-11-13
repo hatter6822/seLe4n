@@ -53,11 +53,11 @@ def resolveReplyRecvReplyR (st : SystemState) (tid : SeLe4n.ThreadId) (len : Nat
           capAddr := SeLe4n.CPtr.ofNat r0.val
           capDepth := callerCspaceDepth st tid
           requiredRight := .write }
-      match syscallLookupCap gate st with
+      match syscallLookupArgumentCap replyRecvReplyCapNumber gate st with
       | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error e => .error e
+          | .error e => .error (e.forArgumentCap replyRecvReplyCapNumber)
           | .ok rid =>
               match replyAnsweredCaller? st rid with
               | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
@@ -170,10 +170,10 @@ through `resolveCapAddressKUnrolled`, as the operand is.  WS-ZA ZA4.7. -/
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   if len = 0 then onErr .replyCapInvalid else
   resolveCapAddressKUnrolled (callerCspaceRoot st tid) replyAddr
-    (callerCspaceDepth st tid) st onErr
+    (callerCspaceDepth st tid) st (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr)
     (fun cnode slot =>
       replyRecvCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-        onErr onOk)
+        (KernelError.argumentCapRefusal replyRecvReplyCapNumber onErr) onOk)
 
 theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (regs : Array SeLe4n.RegValue)
@@ -193,8 +193,8 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       obtain ⟨hs, hv⟩ := h
       simp only [requireMsgReg, hs, ↓reduceDIte, hv]
     have hL : (len == 0) = false := by simp [h0]
-    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupCap, syscallResolveCap,
-      SeLe4n.CPtr.ofNat_toNat]
+    simp only [h0, ↓reduceIte, hL, Bool.false_eq_true, hR, syscallLookupArgumentCap, syscallLookupCap,
+      syscallResolveCap, KernelError.argumentCapRefusal, SeLe4n.CPtr.ofNat_toNat]
     rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
     cases resolveCapAddress (callerCspaceRoot st tid) replyAddr
         (callerCspaceDepth st tid) st with
@@ -206,7 +206,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | some cap =>
         simp only []
         by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-        · simp only [hIdle, ↓reduceIte]
+        · simp only [hIdle, ↓reduceIte] <;> rfl
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
             unfold extractReplyId
@@ -214,7 +214,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
             rename_i rid
             simp only []
             cases replyAnsweredCaller? st rid <;> rfl
-          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
 then blocks, every write in its slot: the caller's reply leg may write in place

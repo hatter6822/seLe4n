@@ -2359,6 +2359,123 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
         "clearing the stash must not consume the reply object"
   | .error _ => failLine "sd053g" "clearWokenReceiverStash should succeed"
 
+/-- **Every argument capability's refusal names its argument.**  Under the
+payload convention the invoked capability is `invalidCapability 0` and argument
+capability `i` is `invalidCapability (i + 1)` (`KernelError.forArgumentCap`);
+every argument capability is resolved through `syscallLookupArgumentCap` (the
+specification) or with `KernelError.argumentCapRefusal` as its refusal
+continuation (the compiled forms).  At each site an argument word names a
+capability of the wrong kind or an empty slot, and the refusal must carry the
+argument's number — on the specification's resolver and on its compiled form
+where the site has one.  The caller's CNode holds an endpoint capability at
+slot 0 and a capability to the CNode itself at slot 3; slot 9 is empty. -/
+private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let epObj  : SeLe4n.ObjId := ⟨80⟩
+  let all := AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
+  let epCap : Capability := { target := .object epObj, rights := all }
+  let cnCap : Capability := { target := .object cnId, rights := all }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (epObj, .endpoint {}),
+      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, epCap),
+        (SeLe4n.Slot.ofNat 3, cnCap)]))
+    ]
+  let gate : SyscallGate :=
+    { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 0,
+      capDepth := 4, requiredRight := .read }
+  let decoded (sid : SyscallId) (ws : List Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := ws.length, extraCaps := 0, label := 0 },
+      syscallId := sid, msgRegs := (ws.map SeLe4n.RegValue.ofNat).toArray,
+      inlineCount := ws.length, overflowCount := 0 }
+  let capNum {α : Type} (r : Except KernelError α) : Option UInt64 :=
+    match r with
+    | .error (.invalidCapability n) => some n
+    | _ => none
+  let kNum (r : Option KernelError) : Option UInt64 :=
+    match r with
+    | some (.invalidCapability n) => some n
+    | _ => none
+  let cptr (w : Nat) := SeLe4n.CPtr.ofNat w
+  -- A non-reply capability (the CNode's, slot 3) and an empty slot (9).
+  for (w, what) in [(3, "wrong_kind"), (9, "empty")] do
+    -- `.receive`'s reply capability (MR0): argument capability 0.
+    expect s!"argcap_receive_reply_{what}"
+      (capNum (resolveRecvReplyId gate (decoded .receive [w]) st) == some 1 &&
+       capNum (resolveRecvReplyIdR st caller 1 (cptr w)) == some 1 &&
+       kNum (resolveRecvReplyK st caller 1 (cptr w) some (fun _ => none)) == some 1)
+      "a receive's reply argument is refused invalidCapability 1 on the spec, R and K forms"
+    expect s!"argcap_receive_reply_{what}_dispatch"
+      (capNum (dispatchSyscallAsCurrent (decoded .receive [w]) caller bootCoreId st) == some 1)
+      "a receive through the dispatcher answers its reply argument's number"
+    -- `.replyRecv`'s reply capability (MR0): argument capability 0.
+    expect s!"argcap_replyRecv_reply_{what}"
+      (capNum (resolveReplyRecvReply gate (decoded .replyRecv [w]) st) == some 1 &&
+       capNum (resolveReplyRecvReplyR st caller 1 #[SeLe4n.RegValue.ofNat w]) == some 1 &&
+       kNum (resolveReplyRecvK st caller 1 (cptr w) some (fun _ _ _ _ => none)) == some 1)
+      "a reply-receive's reply argument is refused invalidCapability 1 on the spec, R and K forms"
+    expect s!"argcap_replyRecv_reply_{what}_dispatch"
+      (capNum (dispatchSyscallAsCurrent (decoded .replyRecv [w]) caller bootCoreId st) == some 1)
+      "a reply-receive through the dispatcher answers its reply argument's number"
+    -- `.schedContextBind`'s thread (MR0).
+    expect s!"argcap_schedContextBind_thread_{what}"
+      (capNum (resolveSchedContextBindThread caller
+        (Architecture.SyscallArgDecode.decodeSchedContextBindArgs
+          (decoded .schedContextBind [w])) st) == some 1)
+      "a bind's thread argument is refused invalidCapability 1"
+    -- `.schedContextConfigure`'s context (MR0).
+    expect s!"argcap_configure_context_{what}"
+      (capNum (resolveSchedControlConfigureTarget caller 0 (cptr w) st) == some 1 &&
+       kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) st some (fun _ => none))
+         == some 1)
+      "a configure's context argument is refused invalidCapability 1 on the spec and K forms"
+    -- `.tcbSetSpace`: an empty root is its argument's number.
+    if what == "empty" then
+      expect "argcap_setSpace_cspace_root_empty"
+        (capNum (resolveSetSpace caller { cspaceRoot := cptr w, vspaceRoot := cptr 3 } st)
+           == some 1 &&
+         kNum (resolveSetSpaceK caller { cspaceRoot := cptr w, vspaceRoot := cptr 3 } st some
+           (fun _ _ _ _ => none)) == some 1)
+        "an empty CSpace root is refused invalidCapability 1"
+      expect "argcap_setSpace_vspace_root_empty"
+        (capNum (resolveSetSpace caller { cspaceRoot := cptr 3, vspaceRoot := cptr w } st)
+           == some 2 &&
+         kNum (resolveSetSpaceK caller { cspaceRoot := cptr 3, vspaceRoot := cptr w } st some
+           (fun _ _ _ _ => none)) == some 2)
+        "an empty VSpace root is refused invalidCapability 2"
+      -- An IRQ handler's notification (MR0).
+      expect "argcap_irqHandler_notification_empty"
+        (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0
+          (.ok { notificationCPtr := cptr w }) st) == some 1)
+        "an IRQ handler's empty notification argument is refused invalidCapability 1"
+  -- An issue's destination CNode: an endpoint capability (slot 0), an empty slot.
+  for (w, what) in [(0, "wrong_kind"), (9, "empty")] do
+    expect s!"argcap_issuing_destination_{what}"
+      (capNum (resolveIssuingSlots caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st) == some 1 &&
+       kNum (resolveIssuingSlotsK caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st some
+         (fun _ _ _ _ => none)) == some 1)
+      "an issue's destination CNode argument is refused invalidCapability 1 on the spec and K forms"
+  -- An IRQ handler's notification of the wrong kind (the CNode's capability).
+  expect "argcap_irqHandler_notification_wrong_kind"
+    (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0
+      (.ok { notificationCPtr := cptr 3 }) st) == some 1)
+    "an IRQ handler's non-notification argument is refused invalidCapability 1"
+  -- A page-table map's address space (MR0), an empty slot.
+  let ptCap : Capability := { target := .object ⟨90⟩, rights := all }
+  expect "argcap_pageTableMap_root_empty"
+    (match dispatchCapabilityOnly (decoded .pageTableMap [9, 0]) ptCap caller bootCoreId with
+     | some k => capNum (k st) == some 1
+     | none => false)
+    "a page-table map's empty address-space argument is refused invalidCapability 1"
+  -- The invoked capability keeps 0: a `.receive` whose invoked slot is empty.
+  expect "argcap_invoked_capability_is_zero"
+    (capNum (dispatchSyscallAsCurrent
+      { decoded .receive [3] with capAddr := cptr 9 } caller bootCoreId st) == some 0)
+    "the invoked capability's refusal is invalidCapability 0"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -2419,4 +2536,6 @@ def main : IO Unit := do
   sd061_every_kind_is_carved
   IO.println "--- the in-place retype checks authority before it reads its target ---"
   sd062_carve_checks_authority_before_child
+  IO.println "--- every argument capability's refusal names its argument ---"
+  argumentCapRefusalsCarryTheirNumbers
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

@@ -995,6 +995,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
               | some rootCn =>
                   simp only [hRoot] at hStep
                   try dsimp only [] at hStep
+                  simp only [syscallLookupArgumentCap] at hStep
                   cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
                   | error e => simp only [hCap2] at hStep; cases hStep
                   | ok pair =>

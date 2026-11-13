@@ -114,10 +114,23 @@ now returns seL4's error payload in the message registers, in
     context, the bind's thread, the bound notification, the frame a map names
     (the remap's other-ASID refusal reads the same number), a page-table map's
     root, an issue's destination CNode, an interrupt handler's notification
-    and a fault handler. A set-space's CSpace root is `1` and its VSpace root
-    `2`. A failed lookup of the argument, an empty or reserved slot, and the
-    wrong kind of object all carry the number. A missing right stays
-    `illegalAuthority`.
+    and a fault handler, and the reply capability a receive or a
+    reply-receive names at MR0 (the endpoint is the invoked capability; a
+    reply's own reply capability is invoked and stays `0`). A set-space's
+    CSpace root is `1` and its VSpace root `2`. A failed lookup of the
+    argument, an empty or reserved slot, and the wrong kind of object all
+    carry the number. A missing right stays `illegalAuthority`.
+  - Every argument capability is resolved through one boundary, so a new
+    site cannot answer the invoked capability's number:
+    `syscallLookupArgumentCap capNumber gate` in the specification and
+    `KernelError.argumentCapRefusal capNumber onErr` as the compiled forms'
+    refusal continuation (`resolveRecvReplyK`, `resolveReplyRecvK`, the
+    bind, configure, set-space, issue, interrupt and page-table resolvers),
+    each reading the argument's number constant (`recvReplyCapNumber`,
+    `replyRecvReplyCapNumber`, …). `syscallLookupArgumentCap_ok_iff`: the
+    boundary renumbers refusals only. A suite group drives a wrong-kind and
+    an empty argument capability at each site, on the specification's
+    resolver and its compiled form, and checks the number.
   - A retype's child id is `invalidArgument 1`. An audit read names its index
     word (`1`) or its chunk word (`2`); a causal-pair read checks `earlier <
     later` before it reads either entry.
