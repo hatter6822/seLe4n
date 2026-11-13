@@ -190,20 +190,21 @@ inventory was written:
   - `Invariant/PriorityPreservation.lean` — D2: transport lemmas, `authority_nonEscalation` proofs for priority ops.
   - Re-export hubs: `SeLe4n/Kernel/SchedContext/Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
-  - `syscallEntry` — top-level register-sourced user-space entry point,
+  - `syscallEntryChecked` — top-level register-sourced, flow-checked user-space entry point
+    (the unchecked, boot-pinned `syscallEntry` retired at `v0.37.22`),
   - `lookupThreadRegisterContext` — TCB register context extraction,
-  - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvokeTyped`,
-  - `dispatchWithCap` — per-syscall routing for all 35 `SyscallId` variants
+  - `dispatchSyscallChecked` — routes decoded arguments through `SyscallGate`/`syscallInvokeTyped`,
+  - `dispatchWithCapChecked` — per-syscall routing, flow-checked; `dispatchWithCap` is
+    its unchecked specification tier, kept because the checked tier's proofs are built
+    from it — per-syscall routing for all `SyscallId` variants
     (13 base + IPC compound + SchedContext + TCB/notification + the SM9
     declassification/audit family); accepts `SyscallDecodeResult` (WS-K-C);
     IPC message body population from decoded registers via `extractMessageRegisters`
     (WS-K-E); SchedContext ops via `dispatchCapabilityOnly` (WS-Z5). *(WS-Q1:
     `ServiceConfig`-sourced policy for service start/stop removed — registry-only model.)*
   - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
-  - soundness theorems on the legacy entry: `syscallEntry_requires_valid_decode`,
-    `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
-    `lookupThreadRegisterContext_state_unchanged`,
-  - **the same guarantee on the live, flow-checked path the hardware takes**
+  - `lookupThreadRegisterContext_state_unchanged`,
+  - **the capability-held guarantee on the live, flow-checked path the hardware takes**
     (WS-RR RR7.3): `dispatchSyscallChecked_requires_right` and
     `syscallEntryChecked_implies_capability_held`, parameterized over the
     *executing* core rather than the boot core, through the one typed gate
@@ -215,7 +216,8 @@ inventory was written:
     the exported seam,
   - 12 delegation theorems (WS-K-C/K-D/K-E): 4 CSpace + 3 lifecycle/VSpace +
     2 service + 3 IPC message population,
-  - `dispatchWithCap_layer2_decode_pure`, `dispatchWithCap_preservation_composition_witness` (WS-K-F).
+  - `dispatchWithCapChecked_layer2_decode_pure` (WS-K-F); the entry's bundle preservation
+    `syscallEntryChecked_preserves_proofLayerInvariantBundle`.
 
 ### Model
 
@@ -510,8 +512,8 @@ and its non-interference status are in
     `msgRegs` when `msgInfo.length > inlineCount`. Substantive preservation
     theorems: `decodeSyscallArgsFromState_header_preserved` (capAddr, msgInfo,
     syscallId), `decodeSyscallArgsFromState_size_invariant` (msgRegs.size =
-    inlineCount + overflowCount). `syscallEntry` and `syscallEntryChecked`
-    switched to the state-aware decoder to unblock 5-arg syscalls.
+    inlineCount + overflowCount). `syscallEntryChecked` uses the state-aware
+    decoder to unblock 5-arg syscalls.
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1; extended WS-K-F v0.16.5)*
   - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
     7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
@@ -522,7 +524,7 @@ and its non-interference status are in
     `decode_layer2_roundtrip_all` composed conjunction. Zero sorry/axiom.
 - `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` — AK4-A (R-ABI-C01, v0.29.8): pure read-only `ipcBufferReadMr` helper that resolves the caller's IPC-buffer VAddr through the thread's VSpace and returns the `UInt64` at overflow slot `idx`. All failure modes (missing TCB, missing VSpaceRoot, unmapped VAddr, out-of-range index) collapse into `KernelError.invalidMessageInfo` at the decode boundary. Used by `decodeSyscallArgsFromState` (RegisterDecode.lean) for the two production 5-arg syscalls (`serviceRegister`, `schedContextConfigure`). NI-safety witness: `ipcBufferReadMr_reads_only_caller_tcb` proves the read scope is exclusively the caller's own TCB + VSpace.
 - `SeLe4n/Kernel/Architecture/IpcBufferValidation.lean` — D3: `setIPCBufferOp` with VSpace bounds checking, page permission validation, determinism and frame lemmas.
-- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` — AG3-C/F: ARM64 exception types (synchronous/irq/fiq/serror), ESR_EL1 classification, exception dispatch routing SVC→`syscallEntry`. AG5-G: interrupt-disabled region atomicity proofs (`saveOutgoingContext`, `restoreIncomingContext`, `setCurrentThread`, `interruptDispatchSequence` preservation of `interruptsEnabled`).
+- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` — AG3-C/F: ARM64 exception types (synchronous/irq/fiq/serror), ESR_EL1 classification, exception dispatch routing SVC→`syscallEntryChecked` and faults→`faultDeliverOnCoreChecked` under a caller-supplied labeling context. AG5-G: interrupt-disabled region atomicity proofs (`saveOutgoingContext`, `restoreIncomingContext`, `setCurrentThread`, `interruptDispatchSequence` preservation of `interruptsEnabled`).
 - `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` — AG3-D: GIC-400 interrupt dispatch model (`InterruptId := Fin 320`, `acknowledgeInterrupt`/`endOfInterrupt`/`handleInterrupt`/`interruptDispatchSequence`). AG5-E: `timerInterruptHandler`, `handleInterrupt_timer` theorem. AI2-A: EOI always sent on error path; `interruptDispatchSequence_always_ok` theorem.
 - `SeLe4n/Kernel/Architecture/TimerModel.lean` — AG3-E: Hardware timer model (54 MHz RPi5, monotonicity proof). AG5-E: `TimerInterruptBinding` structure with `handleTimerInterrupt`, 4 preservation theorems.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
@@ -603,7 +605,7 @@ and its non-interference status are in
 - `SeLe4n/Kernel/API.lean`
   - Unified public API with two layers: (1) raw internal kernel operations
     for trusted kernel paths, and (2) the capability-gated dispatch pipeline
-    (`SyscallGate` → `syscallResolveCap` → `syscallInvokeTyped` → `dispatchWithCap`)
+    (`SyscallGate` → `syscallResolveCap` → `syscallInvokeTyped` → `dispatchWithCapChecked`)
     that models the seL4 CSpace-lookup + rights-check pattern for user-space
     invocations, with 3 soundness theorems. (The WS-H15c-era `api*` wrapper
     layer was removed in S5-A; the pipeline is the single dispatch surface.)

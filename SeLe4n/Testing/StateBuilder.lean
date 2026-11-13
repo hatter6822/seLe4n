@@ -369,27 +369,31 @@ def fixtureMappableRoot (asid : SeLe4n.ASID)
       { level := l, index := PageTableSlot.indexOf l (fixtureUserVAddr 0),
         table := SeLe4n.ObjId.ofNat (0xF_0000 + l) } }
 
-/-- Install `tid` as the thread current on `core`.  The dispatchers refuse a
+/-- Install `tid` as the thread current on `core`.  The dispatcher refuses a
 caller that is not current on the executing core
-(`dispatchSyscall_refuses_mismatched_core`), so a fixture that drives a dispatcher
+(`dispatchSyscallChecked_refuses_mismatched_core`), so a fixture that drives it
 directly makes its caller current first, exactly as the trap entry finds it. -/
 def withCurrentOnCore (st : SystemState) (core : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
     SystemState :=
   { st with scheduler := st.scheduler.setCurrentOnCore core (some tid) }
 
-/-- `dispatchSyscall` from a fixture whose caller is made current on `core`
-first (`withCurrentOnCore`) — the consistent caller/core pair the entry
-supplies. -/
-def dispatchSyscallAsCurrent (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (core : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState) :
-    Except KernelError (Unit × SystemState) :=
-  SeLe4n.Kernel.dispatchSyscall decoded tid core (withCurrentOnCore st core tid)
-
-/-- The checked twin of `dispatchSyscallAsCurrent`. -/
+/-- The kernel's syscall dispatcher, `dispatchSyscallChecked`, under `ctx`, from a
+fixture whose caller is made current on `core` first (`withCurrentOnCore`) — the
+consistent caller/core pair the entry supplies. -/
 def dispatchSyscallCheckedAsCurrent (ctx : SeLe4n.Kernel.LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (core : SeLe4n.Kernel.Concurrency.CoreId)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=
   SeLe4n.Kernel.dispatchSyscallChecked ctx decoded tid core (withCurrentOnCore st core tid)
+
+/-- `dispatchSyscallCheckedAsCurrent` under the harness deployment labeling
+(`harnessLabelingContext`), the context the simulation paths install.  Every
+fixture entity is public under it, so it admits every flow a fixture makes; a
+suite that exercises a refusal passes its own separated context to the checked
+form above. -/
+def dispatchSyscallAsCurrent (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (core : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  dispatchSyscallCheckedAsCurrent SeLe4n.Kernel.harnessLabelingContext decoded tid core st
 
 /-- Queue `entries` on core `c`, in order, through the kernel's own enqueue
 (`runEnqueueOnCore`): each thread's TCB carries the run-queue links the kernel

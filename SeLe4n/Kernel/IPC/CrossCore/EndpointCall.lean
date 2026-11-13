@@ -8,7 +8,7 @@
 -/
 
 -- WS-SM SM6.A: PRODUCTION (LANDED). `endpointCallOnCore` entered the production
--- import closure when the live `.call` dispatch (`API.dispatchWithCap{,Checked}`)
+-- import closure when the live `.call` dispatch (`API.dispatchWithCapChecked`)
 -- was wired through the cross-core call (`endpointCallCrossCoreDispatch`, which
 -- builds on this transition). (Former "STATUS: staged" marker replaced with this
 -- landing note per the implement-the-improvement rule; see

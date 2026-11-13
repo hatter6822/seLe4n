@@ -71,8 +71,8 @@ thread's home core is the boot core (`computeCrossCoreSgis_nil_single_core`), an
 a word with no flag raised fires nothing (`Concurrency.fireRaisedReschedules`).  So on the single-core
 configuration the entry is observably identical to the boot-pinned
 `syscallDispatchInner` — it commits the same state and performs no IPI.  The
-model-layer trace harness exercises the pure `syscallEntry`, not this BaseIO
-seam, so the golden trace is unaffected.
+model-layer trace harness exercises the pure `syscallEntryChecked`, not this
+BaseIO seam, so the golden trace is unaffected.
 
 The `@[export lean_syscall_dispatch_cross_core]` keeps the symbol live for the
 Rust extern.  The live switchover (the trap handler calling this instead of the

@@ -1181,7 +1181,7 @@ private def diffCallerOwnSc : SeLe4n.Kernel.SchedContext :=
 
 A frozen operation is the syscall, not the bare transition: with no dispatcher in
 the frozen phase it applies the provenance step inline, while the live kernel
-applies it afterwards at the seam (`applySyscallTaint` in `dispatchSyscall*`).
+applies it afterwards at the seam (`applySyscallTaint` in `dispatchSyscallChecked`).
 Comparing a frozen operation against a bare live transition therefore compares
 two different layers — and passes only while every taint is empty, which is
 exactly what `mkEmptyIntermediateState` gives.  It would have started failing on

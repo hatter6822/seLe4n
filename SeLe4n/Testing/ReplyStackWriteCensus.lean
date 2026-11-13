@@ -52,7 +52,7 @@ on the day it is written.
 ## Why one level rather than the transitive closure
 
 The plan's phrase is "every transition reaching a write of reply-stack data",
-and taken transitively that is the whole syscall dispatcher: `dispatchSyscall`
+and taken transitively that is the whole syscall dispatcher: `dispatchSyscallChecked`
 reaches `Reply.consumed` like everything below it.  The frontier this census
 uses is the **direct** one — a definition whose own `getUsedConstants` contains
 a chain-write primitive — and that loses nothing, because it is closed under
@@ -543,7 +543,7 @@ every IPC composite a candidate, which is the frontier this census deliberately
 stops at (a composite inherits its chain result by `donationChainFrame`'s
 algebra).  Measured rather than assumed: pairing this with the *transitive*
 constructor half reports 22 composites — `endpointCall`, `endpointReply`,
-`dispatchWithCap` among them.
+`dispatchWithCapChecked` among them.
 
 So **each disjunct of the frontier has one direct side**, which is what keeps a
 composite out: it builds no chain record in its own body.  A candidate either

@@ -160,10 +160,10 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
 since SM8.E.3 carries the two-phase-locking bracket the per-object lock
 discipline introduces) and the fourteen live cross-core wrappers.
 
-The canonical entries are **kept**, not replaced: the boot-pinned
-`syscallEntry` (`Kernel/API.lean` — driven by the trace harness and every
-single-core suite) still reaches the single-core wrappers, so both surfaces
-are live and both must be classified. -/
+The canonical entries are **kept**, not replaced: the canonical list is the
+one `enforcementBoundaryComplete` maps every `SyscallId` against, and the
+single-core wrappers it names are still in the tree, so both surfaces are
+classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
@@ -228,8 +228,8 @@ This is the **single-core** half of the audit: it re-checks the canonical
 mapping against the extended list, so a future edit that *replaces* rather than
 appends is caught.  The SMP half — that the wrappers the live cross-core
 dispatch reaches are classified — is
-`enforcementBoundaryPerCore_is_complete_crossCore` below.  Both are needed: the
-boot-pinned `syscallEntry` still reaches the single-core wrappers.
+`enforcementBoundaryPerCore_is_complete_crossCore` below.  Both are needed:
+the canonical list still names the single-core wrappers.
 
 Decided rather than argued, and with `decide` rather than `native_decide` — the
 Lean runtime evaluator stays out of the trusted computing base (AF4-A). -/
@@ -1563,7 +1563,6 @@ rather than a copy-paste. -/
 theorem covertChannelEvidence_shared_only_for_residency :
     (CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 7 := by decide
 
-
 -- ============================================================================
 -- §3  SM8.B.11 — `endpointPolicyRestricted_perCore`
 -- ============================================================================
@@ -1736,96 +1735,12 @@ theorem endpointPolicyRestricted_perCore_is_necessary :
 -- The bridge runs in both directions, and both are worth having:
 --
 --   * **up** — a release-grade witness plus boot-core confinement gives the
---     per-core statement on every core (`…_preserves_projectionOnCore`);
+--     per-core statement on every core (`syscallEntryChecked_preserves_projectionOnCore`
+--     and its siblings, in `InformationFlow/FineLockFlow.lean` beside the
+--     entry's own projection witness);
 --   * **down** — the per-core statement *implies* the release-grade one
 --     (instantiate at `bootCoreId`), so SM8.B strengthens the release surface
 --     rather than running beside it.
-
-/-- SM8.B.12 (up): the syscall-entry non-interference witness lifts to every
-core, given that the entry's writes stay on the boot core.
-
-`syscallEntry_preserves_projection` is the release-grade statement at the live
-entry point: decode is pure, the register lookup is read-only, and the caller
-supplies the dispatched operation's projection-preservation proof.  This lifts
-it from the boot-core observer to all of them.
-
-The confinement premise is not decoration.  The *live* SMP entry is
-`syscallDispatchCrossCoreEntry`, whose cross-core arms genuinely write a remote
-core's run queue, so a per-core statement cannot be free.
-
-Where the premise comes from depends on which arm ran, and the split is worth
-stating precisely rather than gesturing at:
-
-* for a dispatch that stays on the executing core, §4 of
-  `NonInterferencePerCore` derives boot-core confinement from the operation's
-  own semantics — thirty-one of the thirty-five operations;
-* for a dispatch that routes cross-core (`.call` → `endpointCallOnCore`,
-  `.reply` → `endpointReplyOnCore`, `.notificationSignal` →
-  `notificationSignalOnCore`, `.tcbSuspend` → the `descheduleThread` leg), the
-  premise is **false in general** — those transitions really do write a remote
-  core.  What holds instead is the set-of-cores statement, and
-  the production `SlotConfinement` modules prove it for each of them (the
-  writes stay inside a write set computed from the pre-state) and
-  `NonInterferenceCrossCore` turns each into the remote observer's statement.
-
-  **Read that boundary precisely.**  Those write sets bound the *below-API
-  transitions*, and the live dispatch is more than the transition: the `.call`
-  arm is `endpointCallCrossCoreDispatch`, which additionally runs
-  `applyCallDonation` (per-core silent) and `propagatePipChainCrossCore` (which
-  re-buckets each boosted server's run queue on that server's **home** core, so
-  it can write cores the call's own write set does not name).  A statement about
-  the live arm has to be made against the union —
-  `endpointCallLiveWriteSet` — and anything narrower would be false.  The chain
-  leg is `pipChainWriteSet`, proved sound by fuel induction mirroring the walk's
-  own recursion; note it is **not** recoverable from the pre-state, because the
-  live walk starts at the resolved *receiver* at the *post-donation* state, and
-  both the call and the donation move `blockingServer`.
-
-(The two inner witnesses,
-`dispatchCapabilityOnly_preserves_projection` and
-`dispatchSyscallChecked_preserves_projection`, are reached through this one:
-their hypotheses mention `dispatchCapabilityOnly` / `dispatchWithCapChecked`,
-which are `private` to `API.lean`, so their per-core statements belong at the
-public entry point.) -/
-theorem syscallEntry_preserves_projectionOnCore (ctx : LabelingContext)
-    (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st st' : SystemState)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-      projectState ctx observer stPost = projectState ctx observer st)
-    (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
-    lowEquivalent_smp ctx observer st' st :=
-  lowEquivalent_smp_of_projection_and_confinement ctx observer
-    (syscallEntry_preserves_projection ctx observer layout regCount st st' hOk hDispatchProj)
-    hConfined
-
-/-- SM8.B.12 (up, the `NonInterferenceStep` form): a successful syscall entry
-through a non-observable current thread yields a per-core non-interference
-result, composing the WS-J1-D bridge with §3 of `NonInterferencePerCore`. -/
-theorem syscallEntry_success_perCore_NI (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
-      threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid bootCoreId st = .ok ((), stPost) →
-      projectState ctx observer stPost = projectState ctx observer st)
-    (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
-    lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (syscallEntry_success_yields_NI_step ctx observer layout regCount st st' hOk hCurrentHigh
-      hDispatchProj)
-    hConfined
-
-/-- SM8.B.12 (up): a *failed* syscall entry changes nothing, so it is per-core
-non-interfering with no premise at all — the fail-closed half of the bridge. -/
-theorem syscallEntry_error_perCore_NI (ctx : LabelingContext) (observer : IfObserver)
-    (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat) (st : SystemState)
-    (e : KernelError) (_hErr : syscallEntry layout regCount st = .error e) :
-    lowEquivalent_smp ctx observer st st :=
-  lowEquivalent_smp_of_projection_and_confinement ctx observer rfl
-    (observableSlotsConfinedToCore_refl st bootCoreId)
 
 /-- SM8.B.12 (down): the per-core statement implies the release-grade one.
 
@@ -1846,6 +1761,5 @@ theorem nonInterference_release_of_perCore_observer (ctx : LabelingContext)
     (h : lowEquivalent_smp ctx (IfObserver.ofLabel L) st' st) :
     lowEquivalentForObserver ctx (PerCoreObserver.onBootCore L) st' st :=
   h bootCoreId
-
 
 end SeLe4n.Kernel

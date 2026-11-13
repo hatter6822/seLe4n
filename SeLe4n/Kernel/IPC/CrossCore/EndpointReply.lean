@@ -9,7 +9,7 @@
 
 -- WS-SM SM6.C: PRODUCTION (LANDED).  `endpointReplyOnCore` enters the production
 -- import closure when the live `.reply` / `.replyRecv` dispatch
--- (`API.dispatchWithCap{,Checked}`) routes through the cross-core reply
+-- (`API.dispatchWithCapChecked`) routes through the cross-core reply
 -- (`endpointReplyCrossCoreDispatch`, which builds on this transition).  See
 -- WS-SM SM6.C.
 

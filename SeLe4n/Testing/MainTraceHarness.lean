@@ -1239,7 +1239,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   | .ok decoded =>
       IO.println s!"[RDT-002] register decode success: syscall={reprStr decoded.syscallId}, capAddr={decoded.capAddr.toNat}, msgRegs={decoded.msgRegs.size}"
 
-  -- RDT-003: Full syscallEntry with valid registers (send to endpoint).
+  -- RDT-003: Full syscallEntryChecked with valid registers (send to endpoint).
   -- Build a self-contained state with a properly configured CNode (depth=4, radixWidth=4)
   -- so that lookupSlot succeeds through the register-sourced path.
   let rdtTid : SeLe4n.ObjId := ⟨500⟩
@@ -1264,17 +1264,18 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRdt with
+  match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+      SeLe4n.arm64DefaultLayout bootCoreId 32 stRdt with
   | .ok (_, stPost) =>
       match stPost.getEndpoint? rdtEp with
       | some ep =>
           let hasSender := ep.sendQ.head.isSome
-          IO.println s!"[RDT-003] syscallEntry send success, endpoint has sender: {hasSender}"
-      | none => IO.println "[RDT-004] syscallEntry send success, but endpoint not found"
+          IO.println s!"[RDT-003] syscallEntryChecked send success, endpoint has sender: {hasSender}"
+      | none => IO.println "[RDT-004] syscallEntryChecked send success, but endpoint not found"
   | .error err =>
-      IO.println s!"[RDT-005] syscallEntry send error: {reprStr err}"
+      IO.println s!"[RDT-005] syscallEntryChecked send error: {reprStr err}"
 
-  -- RDT-006: syscallEntry with invalid syscall number → decode error.
+  -- RDT-006: syscallEntryChecked with invalid syscall number → decode error.
   let invalidSyscallRegs : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
         if r == 7 then 99  -- invalid syscall number
@@ -1298,13 +1299,14 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvalidSyscall with
+  match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+      SeLe4n.arm64DefaultLayout bootCoreId 32 stInvalidSyscall with
   | .error err =>
-      IO.println s!"[RDT-006] syscallEntry invalid syscall decode error: {reprStr err}"
+      IO.println s!"[RDT-006] syscallEntryChecked invalid syscall decode error: {reprStr err}"
   | .ok _ =>
-      IO.println "[RDT-007] unexpected syscallEntry success with invalid syscall"
+      IO.println "[RDT-007] unexpected syscallEntryChecked success with invalid syscall"
 
-  -- RDT-008: syscallEntry with malformed msgInfo → decode error.
+  -- RDT-008: syscallEntryChecked with malformed msgInfo → decode error.
   let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
         if r == 1 then 127  -- length=127 > 120 → invalid
@@ -1329,11 +1331,12 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalformedMsgInfo with
+  match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+      SeLe4n.arm64DefaultLayout bootCoreId 32 stMalformedMsgInfo with
   | .error err =>
-      IO.println s!"[RDT-008] syscallEntry malformed msgInfo decode error: {reprStr err}"
+      IO.println s!"[RDT-008] syscallEntryChecked malformed msgInfo decode error: {reprStr err}"
   | .ok _ =>
-      IO.println "[RDT-009] unexpected syscallEntry success with malformed msgInfo"
+      IO.println "[RDT-009] unexpected syscallEntryChecked success with malformed msgInfo"
 
   -- RDT-010: Register decode with namespace mismatch — out-of-bounds layout
   let outOfBoundsLayout : SeLe4n.SyscallRegisterLayout := {
@@ -1342,11 +1345,12 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
     syscallNumReg := ⟨7⟩
   }
-  match SeLe4n.Kernel.syscallEntry outOfBoundsLayout 32 stRdt with
+  match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+      outOfBoundsLayout bootCoreId 32 stRdt with
   | .error err =>
-      IO.println s!"[RDT-010] syscallEntry out-of-bounds layout error: {reprStr err}"
+      IO.println s!"[RDT-010] syscallEntryChecked out-of-bounds layout error: {reprStr err}"
   | .ok _ =>
-      IO.println "[RDT-011] unexpected syscallEntry success with out-of-bounds layout"
+      IO.println "[RDT-011] unexpected syscallEntryChecked success with out-of-bounds layout"
 
   checkInvariants counter "post-register-decode-trace" st1
 
@@ -1548,14 +1552,14 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
 -- V8-A: End-to-end syscallEntryChecked pipeline trace
 -- ============================================================================
 
-/-- V8-A (A1-A6): Full pipeline test from raw registers through checked
-    dispatch to result validation and trace equivalence.
+/-- V8-A (A1-A5): Full pipeline test from raw registers through checked
+    dispatch to result validation.
     A1: Fixture — CSpace with endpoint cap, thread with send registers, IF policy.
     A2: Register encoding — decodeSyscall extracts correct typed IDs.
     A3: Argument decode — SyscallArgDecode produces correct typed struct.
     A4: Dispatch — dispatchWithCapChecked succeeds on send.
     A5: Invariant preservation — post-dispatch state passes invariant checks.
-    A6: Trace equivalence — checked and unchecked paths produce identical state. -/
+    (A6, the trace equivalence against the unchecked entry, left with that entry.) -/
 private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
   -- A1: Build self-contained state with 3 capabilities (endpoint, notification,
   -- CNode) per V8-A1 spec. Thread registers encode a Send syscall
@@ -1638,18 +1642,6 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
       counter.modify (· + 1)
     else
       IO.println s!"[PIP-006] A5 post-dispatch invariant failures: {reprStr pipeFailures}"
-
-    -- A6: Trace equivalence — unchecked path should produce identical state
-    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stPipe with
-    | .error e => IO.println s!"[PIP-007] A6 unchecked syscallEntry error: {reprStr e}"
-    | .ok (_, stUnchecked) =>
-      -- Compare object stores: both endpoints should have same sendQ state
-      let checkedEp := stChecked.getObject? pipeEp
-      let uncheckedEp := stUnchecked.getObject? pipeEp
-      let objectsMatch := checkedEp == uncheckedEp
-      -- Compare scheduler current thread (simpler than full scheduler BEq)
-      let schedMatch := (stChecked.scheduler.currentOnCore bootCoreId) == (stUnchecked.scheduler.currentOnCore bootCoreId)
-      IO.println s!"[PIP-006] A6 trace equivalence: objects={objectsMatch} scheduler={schedMatch}"
 
 -- ============================================================================
 -- V8-B: cspaceMove end-to-end test

@@ -16,8 +16,7 @@ import SeLe4n.Kernel.MappingRecordStage.Fault
 /-! # The dispatchers keep the mappings recorded
 
 The capability-only dispatch, the capability dispatch with its IPC, audit and
-declassification arms, the checked syscall dispatch, and the unchecked
-capability and syscall dispatch the specification keeps are `MappingStage`s:
+declassification arms, and the checked syscall dispatch are `MappingStage`s:
 each arm is one (`Kernel/MappingRecordStage/*.lean`), the capability resolution
 reads, and the taint pass writes the taint ledger alone.  The map, the unmap,
 the deletes and the space set read the capability invariants and the teardown's
@@ -550,7 +549,6 @@ theorem dispatchCapabilityOnly_mappingStage
       exact pageTableUnmap_mappingStage hStep
     all_goals try cases hStep
 
-
 /-! ### The wrapping steps of the capability dispatch -/
 
 /-- The tail every waking arm ends with: clear the woken receiver's stash, then
@@ -735,162 +733,5 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
       (applySyscallTaint_ghostsKept _ _ _))
   obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
   exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
-
-/-! ### The unchecked dispatchers
-
-The specification's dispatch without the flow checks, which the trace harness
-runs; its arms are the checked dispatch's, ungated. -/
-
-/-- The unchecked reply: the fault reply, or the reply and the delivered frame. -/
-theorem replyTransferOnCore_mappingStage {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
-    {executingCore : Concurrency.CoreId} {st st' : SystemState}
-    (h : replyTransferOnCore replier callerTid mi regs msg grant executingCore st = .ok ((), st')) :
-    MappingStage st st' := by
-  unfold replyTransferOnCore at h
-  split at h
-  · have hF := faultReplyOnCore_mappingStage (replier := replier) (faulted := callerTid)
-      (mi := mi) (regs := regs) (executingCore := executingCore) (st := st)
-    revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs executingCore st = r
-    obtain ⟨s, res⟩ := r
-    cases res with
-    | error _ => intro h; cases h
-    | ok _ => intro h hF; cases h; exact hF
-  · have hR := endpointReplyCrossCoreDispatch_mappingStage (replier := replier)
-      (target := callerTid) (msg := msg) (executingCore := executingCore) (st := st)
-    revert h hR
-    generalize endpointReplyCrossCoreDispatch replier callerTid msg executingCore st = r
-    obtain ⟨s, res⟩ := r
-    cases res with
-    | error _ => intro h; cases h
-    | ok _ =>
-      intro h hR
-      simp only [] at h
-      cases hX : replyTransferCaps st replier callerTid grant s with
-      | error _ => rw [hX] at h; cases h
-      | ok p =>
-        obtain ⟨summary, sX⟩ := p
-        rw [hX] at h
-        cases h
-        exact (hR.trans (receiveTransferCaps_mappingStage hX)).trans
-          (stageDeliveredMessage_mappingStage sX callerTid summary.capInfo)
-
-/-- **Every arm the unchecked `dispatchWithCap` routes keeps the mappings
-recorded**, the capability-only arms included. -/
-theorem dispatchWithCap_mappingStage (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (st st' : SystemState) (P : MappingArmPremises st)
-    (h : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
-    MappingStage st st' := by
-  unfold dispatchWithCap at h
-  cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
-  | some k =>
-    rw [hC] at h
-    exact dispatchCapabilityOnly_mappingStage decoded cap tid executingCore k st st' hC P h
-  | none =>
-  rw [hC] at h
-  dsimp only at h
-  cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
-  all_goals first | (cases h; done) | skip
-  all_goals
-    cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
-  all_goals first | (cases h; done) | skip
-  case none.send.object epId =>
-    split at h
-    · cases h
-    rename_i hSend
-    exact clearStashStage_mappingStage
-      (MappingStage.of_fst_eq endpointSendDualWithCapsOnCore_mappingStage hSend)
-      (fun x => stageWokenDelivery_mappingStage x _ _) h
-  case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-      (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-        (stageWokenSendCompletion_mappingStage _ _)).trans
-        (stageDeliveredMessage_mappingStage _ _ _))
-  case none.call.object epId =>
-    split at h
-    · rename_i hCall
-      cases h
-      exact (MappingStage.of_fst_eq endpointCallCrossCoreDispatch_mappingStage hCall).trans
-        (stageWokenDelivery_mappingStage _ _ _)
-    · cases h
-  case none.reply.replyCap rid =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    exact replyTransferOnCore_mappingStage h
-  case none.cspaceMint.object cnodeId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    all_goals exact cspaceMintWithCdt_mappingStage P.caps h
-  case none.cspaceCopy.object cnodeId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    exact cspaceCopy_mappingStage P.caps h
-  case none.cspaceMove.object cnodeId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    exact cspaceMove_mappingStage P.caps h
-  case none.serviceRegister.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    exact registerService_mappingStage h
-  case none.notificationSignal.object notifId =>
-    try dsimp only at h
-    split at h
-    · rename_i hSig
-      exact clearStashStage_mappingStage
-        (MappingStage.of_fst_eq notificationSignalBoundOnCore_mappingStage hSig)
-        (fun x => stageWokenDeliveryTwice_mappingStage x _ _) h
-    · cases h
-  case none.notificationWait.object notifId =>
-    split at h
-    · rename_i hW
-      cases h
-      exact (MappingStage.of_fst_eq notificationWaitOnCore_mappingStage hW).trans
-        (writeReturnFrameToTcb_mappingStage _ _ _)
-    · rename_i hW
-      cases h
-      exact MappingStage.of_fst_eq notificationWaitOnCore_mappingStage hW
-    · cases h
-  case none.replyRecv.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ stR hRR
-    cases h
-    exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)
-
-/-- **The unchecked syscall dispatch keeps the mappings recorded.** -/
-theorem dispatchSyscall_mappingStage (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (P : MappingArmPremises st)
-    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    MappingStage st st' := by
-  unfold dispatchSyscall at h
-  split at h
-  · cases h
-  by_cases hY : decoded.syscallId = .yield
-  · simp only [hY, ↓reduceIte, dispatchYield] at h
-    split at h
-    · cases h
-    · rename_i hYieldOk
-      cases h
-      exact yieldOnCore_mappingStage hYieldOk
-  simp only [hY, ↓reduceIte] at h
-  split at h <;> try (cases h; done)
-  split at h
-  · cases h
-  rename_i stPost hD
-  cases h
-  refine MappingStage.trans (st' := stPost) ?_
-    (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
-        (applySyscallTaint_objectsAgreeOffTaint _ _ _)
-      (applySyscallTaint_ghostsKept _ _ _))
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
-  exact dispatchWithCap_mappingStage decoded tid executingCore _ cap _ stPost P hD
 
 end SeLe4n.Kernel

@@ -9,7 +9,7 @@
 
 -- WS-SM SM6.A: PRODUCTION (LANDED).  The SM0.I LockKind + LockId total order
 -- entered the production import closure when the live `.call` dispatch was wired
--- through the cross-core call (`API.dispatchWithCap{,Checked}` →
+-- through the cross-core call (`API.dispatchWithCapChecked` →
 -- `endpointCallCrossCoreDispatch`), which acquires the per-object lock-set under
 -- this hierarchy.  (Former "STATUS: staged" marker replaced with this landing
 -- note per the implement-the-improvement rule.)

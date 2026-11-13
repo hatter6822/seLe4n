@@ -299,18 +299,19 @@ private def row_ipcMessageTooLarge_replyRecv : KernelErrorRejection :=
       runUnit (endpointReplyRecv (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 1)
         (ThreadId.ofNat 2) oversized none (default : SystemState)) }
 
-/-- Row: `syscallEntry` rejects empty current-thread slot with
-`.illegalState`.  The default state has no scheduler `current`. -/
+/-- Row: `syscallEntryChecked`, under the harness deployment labeling the
+guard admits, rejects an empty current-thread slot on the executing core with
+`.illegalState`.  The default state has no current thread on any core. -/
 private def row_illegalState_no_current : KernelErrorRejection :=
-  { syscall       := "syscallEntry"
+  { syscall       := "syscallEntryChecked"
     expectedError := .illegalState
     scenarioTag   := "AN11A.2.illegalState.no_current_thread"
-    scenarioDesc  := "syscallEntry on a state with no scheduled current" ++
-                     " thread cannot identify the caller and rejects with" ++
-                     " .illegalState"
+    scenarioDesc  := "syscallEntryChecked on a state with no thread current" ++
+                     " on the executing core cannot identify the caller and" ++
+                     " rejects with .illegalState"
     runScenario   := fun _ =>
-      runUnit (syscallEntry SeLe4n.arm64DefaultLayout 32
-        (default : SystemState)) }
+      runUnit (syscallEntryChecked harnessLabelingContext SeLe4n.arm64DefaultLayout
+        Concurrency.bootCoreId 32 (default : SystemState)) }
 
 /-- Row: `syscallEntryChecked` with the insecure default labeling context
 rejects with `.policyDenied` (AI5-C / M-19). -/
@@ -684,7 +685,7 @@ private def row_notSupported_fiq : KernelErrorRejection :=
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := 0, elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchException .fiq ectx 0
+      runUnit (SeLe4n.Kernel.Architecture.dispatchException harnessLabelingContext .fiq ectx 0
         (default : SystemState)) }
 
 /-- Row: `dispatchException .serror` returns `.hardwareFault`. -/
@@ -697,7 +698,7 @@ private def row_hardwareFault_serror : KernelErrorRejection :=
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := 0, elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchException .serror ectx 0
+      runUnit (SeLe4n.Kernel.Architecture.dispatchException harnessLabelingContext .serror ectx 0
         (default : SystemState)) }
 
 /-- Row: `dispatchSynchronousException` on a data abort **the kernel cannot
@@ -707,7 +708,7 @@ WS-RR RR4.21 changed what this row means, and the change is the phase's whole
 point.  Before RR4 this arm returned `.error .vmFault` for *every* data abort:
 a pure error, no state change, and the faulting thread left runnable at the
 instruction that faulted.  Now an abort taken by a running thread is
-**delivered** to that thread's fault handler (`faultDeliverOnCore`), and
+**delivered** to that thread's fault handler (`faultDeliverOnCoreChecked`), and
 `.vmFault` survives only for an abort on a core with **no current thread** —
 an idle core or the kernel itself — where there is no thread to contain and
 reporting is the fail-closed answer.  The state here is `default`, whose boot
@@ -725,7 +726,8 @@ private def row_vmFault_data_abort : KernelErrorRejection :=
       -- [31:26] of the ESR register, so the raw value is 0x24 << 26.
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := UInt64.ofNat (0x24 <<< 26), elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchSynchronousException ectx
+      runUnit (SeLe4n.Kernel.Architecture.dispatchSynchronousException
+        harnessLabelingContext ectx
         (default : SystemState)) }
 
 /-- Row: `dispatchSynchronousException` on a PC-alignment fault the kernel
@@ -741,7 +743,8 @@ private def row_userException_pc_alignment : KernelErrorRejection :=
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := UInt64.ofNat (0x22 <<< 26), elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchSynchronousException ectx
+      runUnit (SeLe4n.Kernel.Architecture.dispatchSynchronousException
+        harnessLabelingContext ectx
         (default : SystemState)) }
 
 /-- Row: `cspaceMint` on absent CNode returns `.objectNotFound`. -/

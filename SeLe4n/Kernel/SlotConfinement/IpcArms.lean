@@ -107,7 +107,7 @@ theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
 -- stays here: `observableSlotsConfinedToCores` is this module's predicate.
 
 /-- SM8.B.2 (**the live `.call` bound**): `endpointCallCrossCoreDispatch` — the
-function `API.dispatchWithCap`'s `.call` arm routes through — writes no core
+function `API.dispatchWithCapChecked`'s `.call` arm routes through — writes no core
 outside `endpointCallDispatchWriteSet`.
 
 This is the theorem the composition rule §5a was missing. The proof splits on
@@ -206,7 +206,7 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
 -- §5c The live `.reply` arm itself
 -- ============================================================================
 --
--- `API.dispatchWithCap`'s `.reply` arm does not call `endpointReplyOnCore`; it
+-- `API.dispatchWithCapChecked`'s `.reply` arm does not call `endpointReplyOnCore`; it
 -- calls `endpointReplyCrossCoreDispatch`, which runs the reply, then returns the
 -- **recorded server's** donated SchedContext — descheduling that server on *its
 -- own* core — then reverts the priority-inheritance chain from that server.
@@ -285,7 +285,7 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
 -- is this module's predicate.
 
 /-- SM8.B.2 (**the live `.reply` bound**): `endpointReplyCrossCoreDispatch` — the
-function `API.dispatchWithCap`'s `.reply` arm routes through — writes no core
+function `API.dispatchWithCapChecked`'s `.reply` arm routes through — writes no core
 outside `endpointReplyDispatchWriteSet`.
 
 The proof splits on exactly the scrutinees the dispatch splits on, so each
@@ -370,7 +370,7 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
 -- §5c-bis  WS-RR RR8.12 Cut C6d — the live `.reply` ARM's confinement
 -- ============================================================================
 --
--- §5c bounds `endpointReplyCrossCoreDispatch`.  The arm `API.dispatchWithCap`
+-- §5c bounds `endpointReplyCrossCoreDispatch`.  The arm `API.dispatchWithCapChecked`
 -- actually runs is `replyTransferOnCore` — seL4's `doReplyTransfer` branch —
 -- whose post-state is not the dispatch's: on an unfaulted caller it is the
 -- dispatch's plus the delivered-message staging, and on a faulted one the
@@ -473,7 +473,7 @@ theorem faultReplyOnCore_confinedToCores (replier faulted : SeLe4n.ThreadId)
               (Architecture.decodeFaultReply tf.fault tf.context mi regs))
 
 /-- **Cut C6d** (**the live `.reply` arm's bound**): `replyTransferOnCore` — the
-transition `API.dispatchWithCap`'s `.reply` arm routes through — writes no core
+transition `API.dispatchWithCapChecked`'s `.reply` arm routes through — writes no core
 outside `replyTransferWriteSet`.
 
 The branch is the seam's own predicate `threadHasPendingFault`, so the bound and
@@ -541,7 +541,7 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
 -- §5d The live `.replyRecv` arm itself
 -- ============================================================================
 --
--- `API.dispatchWithCap`'s `.replyRecv` arm routes to `endpointReplyRecvOnCore`, which is
+-- `API.dispatchWithCapChecked`'s `.replyRecv` arm routes to `endpointReplyRecvOnCore`, which is
 -- the reply leg, `replyRecvPopDonation`, the receive leg **and**
 -- `replyRecvPostReceiveDonation` — the last of which may donate the new client's
 -- SchedContext, may deschedule the now-passive recorded server on its own core,
@@ -847,7 +847,7 @@ theorem replyRecvAnswerCaller_confinedToCores (answer : Option Architecture.Faul
   | some outcome => exact faultReplyApplyOnCore_confinedToCores st prevCaller outcome
 
 /-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
-`API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
+`API.dispatchWithCapChecked`'s `.replyRecv` arm routes through — writes no core outside
 `endpointReplyRecvWriteSet`.
 
 The reply leg, the donation pop, the receive leg and the post-receive

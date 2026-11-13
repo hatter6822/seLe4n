@@ -23,9 +23,9 @@ import SeLe4n.Kernel.IPC.Invariant.FaultProgress
 
 Models the ARM64 exception vector table and exception dispatch. ARM64 defines
 4 exception types × 4 execution states = 16 vector entries. The kernel's
-`syscallEntry` is currently a pure function call; this module wraps it in the
-hardware exception dispatch path so that SVC instructions route through the
-proper exception classification pipeline.
+syscall entry `syscallEntryChecked` is a pure function call; this module wraps
+it in the hardware exception dispatch path so that SVC instructions route
+through the proper exception classification pipeline.
 
 ## Exception Types
 
@@ -49,9 +49,11 @@ dispatch path sets the appropriate level on entry/exit.
 
 This module is implemented and proven but not yet imported into the main
 kernel execution path. The `dispatchException` function routes SVC
-instructions to `syscallEntry` (API.lean), but an import cycle prevents
+instructions to `syscallEntryChecked` (API.lean), but an import cycle prevents
 direct integration (ExceptionModel imports API, which cannot import
-ExceptionModel back). See §8.15.1 of SELE4N_SPEC.md for the activation
+ExceptionModel back).  For the same reason the deployment's labeling context
+is a parameter here rather than read from `Platform.FFI`: the caller passes the
+context the live seams read (`Platform.FFI.getKernelLabelingContext`). See §8.15.1 of SELE4N_SPEC.md for the activation
 roadmap. Hardware-integration activation closed by AN9-F (SVC FFI wiring,
 DEF-R-HAL-L14).
 -/
@@ -213,11 +215,14 @@ def unhandledFaultError : Fault → KernelError
 
 /-- AG3-C, rewired by **WS-RR RR4.21**: dispatch a synchronous exception.
 
-* **SVC** → `syscallEntry`, the syscall path.  Unchanged.
+* **SVC** → `syscallEntryChecked`, the flow-checked syscall entry, on the
+  executing core.
 * **Everything else** → the fault is classified out of the syndrome registers
   (`faultOfExceptionContext`) and **delivered to the faulting thread's fault
-  handler** (`faultDeliverOnCore`), which blocks the thread awaiting the
-  handler's reply or, fail-closed, suspends it.
+  handler** through the flow-checked delivery (`faultDeliverOnCoreChecked`),
+  which blocks the thread awaiting the handler's reply or, fail-closed — the
+  handler unresolvable, or its endpoint one the thread's label may not flow
+  to — suspends it.
 
 This retires the pre-RR4 arms, which returned `.error .vmFault` /
 `.error .userException` as *pure errors with no state change*: the faulting
@@ -230,23 +235,21 @@ Deliberately landed **after** RR4.17–RR4.20: this is the sub-task that makes
 the delivery reachable, and a live kernel transition must not land ahead of
 its own invariant surface.  The preservation
 (`faultDeliverOnCore_preserves_ipcInvariantFull`), progress
-(`faultDeliverOnCore_not_dispatchable`) and non-interference
+(`faultDeliverOnCoreChecked_not_dispatchable`) and non-interference
 (`faultDeliverOnCoreChecked_*`) theorems all predate this wiring.
 
 The result carries the optional cross-core SGI the delivery surfaced (the
 handler's home core, when the handler was woken elsewhere) — the runtime fires
 it after the state commit, exactly as the syscall seam does.
 
-**Both arms here are the *unchecked* transitions, and that is not the live
-contract.**  This wrapper takes no `LabelingContext`, so its SVC arm calls
-`syscallEntry` and its fault arms call `faultDeliverOnCore` — internally
-symmetric, and a model of the dispatch *shape* rather than of the kernel's
-enforcement.  The live seams gate: the SVC path runs `syscallEntryChecked`
-through `Platform.FFI.syscallDispatchFromAbi`, and the fault path runs
-`faultDeliverOnCoreChecked` through `Kernel/FaultEntry.lean`, each reading the
-deployment context from `Platform.FFI.getKernelLabelingContext`.  New code must
-not read this module's arms as evidence that a fault is delivered without a flow
-check.
+**Both arms are the flow-checked transitions the live seams run.**  The SVC
+arm is `syscallEntryChecked` — what `Platform.FFI.syscallDispatchFromAbi` runs
+— and the fault arms are `faultDeliverOnCoreChecked` — what
+`Kernel/FaultEntry.lean` runs — each under the labeling context `ctx`, which the
+live seams read from `Platform.FFI.getKernelLabelingContext` and the caller of
+this model passes in.  So the model gates exactly where the kernel does: an
+insecure default context refuses the syscall (`.policyDenied`), and a fault
+whose delivery the policy forbids suspends the thread instead of delivering.
 
 **Nor as evidence of where the fault context comes from.**  The fault arms
 here build the context off the thread's saved `registerContext` as the model
@@ -264,12 +267,13 @@ diagnostic says what actually happened.  That arm is a kernel-side fault (the
 core was idle, or the kernel itself faulted); there is no thread to contain, so
 reporting is the fail-closed answer.  `faultOfExceptionContext` is `none` only
 for the SVC class, which this match has already routed away. -/
-def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
-    (executingCore : CoreId := bootCoreId) :
+def dispatchSynchronousException (ctx : LabelingContext) (ectx : ExceptionContext)
+    (st : SystemState) (executingCore : CoreId := bootCoreId) :
     Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
   match classifySynchronousException ectx with
   | .svc =>
-      match syscallEntry arm64DefaultLayout st.machine.registerCount st with
+      match syscallEntryChecked ctx arm64DefaultLayout executingCore
+          st.machine.registerCount st with
       | .error e => .error e
       | .ok ((), st') => .ok (none, st')
   -- Review round (PR #887): a current-EL abort is the kernel's own fault.
@@ -291,7 +295,7 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
           | none => .error (unhandledFaultError f)
           | some tid =>
               let fctx := faultContextOfThread st tid ectx.elr ectx.spsr
-              let delivered := Kernel.faultDeliverOnCore st tid f fctx executingCore
+              let delivered := Kernel.faultDeliverOnCoreChecked ctx st tid f fctx executingCore
               .ok (delivered.2.sgi, delivered.1)
 
 /-- AG3-C/AG3-D: Top-level exception dispatch on the executing core.
@@ -307,12 +311,12 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
     WS-RR RR4.21: the result carries the synchronous path's optional cross-core
     SGI; the IRQ path surfaces none of its own here (the per-core IRQ handler
     fires its own). -/
-def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
-    (rawIntId : Nat := 0)
+def dispatchException (ctx : LabelingContext) (etype : ExceptionType)
+    (ectx : ExceptionContext) (rawIntId : Nat := 0)
     (st : SystemState) (executingCore : CoreId := bootCoreId) :
     Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
   match etype with
-  | .synchronous => dispatchSynchronousException ectx st executingCore
+  | .synchronous => dispatchSynchronousException ctx ectx st executingCore
   | .irq =>
       match interruptDispatchSequence st executingCore rawIntId with
       | .error e => .error e
@@ -325,28 +329,30 @@ def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
 -- ============================================================================
 
 /-- AG3-C: FIQ dispatch always returns `.notSupported`. -/
-theorem dispatchException_fiq (ectx : ExceptionContext) (n : Nat) (st : SystemState)
-    (c : CoreId) : dispatchException .fiq ectx n st c = .error .notSupported := rfl
+theorem dispatchException_fiq (ctx : LabelingContext) (ectx : ExceptionContext) (n : Nat)
+    (st : SystemState) (c : CoreId) :
+    dispatchException ctx .fiq ectx n st c = .error .notSupported := rfl
 
 /-- AG3-C: SError dispatch always returns `.hardwareFault`. -/
-theorem dispatchException_serror (ectx : ExceptionContext) (n : Nat) (st : SystemState)
-    (c : CoreId) : dispatchException .serror ectx n st c = .error .hardwareFault := rfl
+theorem dispatchException_serror (ctx : LabelingContext) (ectx : ExceptionContext) (n : Nat)
+    (st : SystemState) (c : CoreId) :
+    dispatchException ctx .serror ectx n st c = .error .hardwareFault := rfl
 
-/-- AG3-C: Synchronous SVC exception dispatches to `syscallEntry` — and to
-nothing else: the SVC class is the one arm RR4.21 left alone, because an `SVC`
-is a syscall, not a fault. -/
-theorem dispatchException_svc (ectx : ExceptionContext) (n : Nat) (st : SystemState)
-    (c : CoreId) (hSvc : classifySynchronousException ectx = .svc) :
-    dispatchException .synchronous ectx n st c =
-      (match syscallEntry arm64DefaultLayout st.machine.registerCount st with
+/-- AG3-C: Synchronous SVC exception dispatches to `syscallEntryChecked` on the
+executing core — and to nothing else: the SVC class is the one arm RR4.21 left
+alone, because an `SVC` is a syscall, not a fault. -/
+theorem dispatchException_svc (ctx : LabelingContext) (ectx : ExceptionContext) (n : Nat)
+    (st : SystemState) (c : CoreId) (hSvc : classifySynchronousException ectx = .svc) :
+    dispatchException ctx .synchronous ectx n st c =
+      (match syscallEntryChecked ctx arm64DefaultLayout c st.machine.registerCount st with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := by
   simp [dispatchException, dispatchSynchronousException, hSvc]
 
 /-- AG3-D: IRQ dispatch delegates to `interruptDispatchSequence`. -/
-theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat)
+theorem dispatchException_irq (ctx : LabelingContext) (ectx : ExceptionContext) (rawIntId : Nat)
     (st : SystemState) (c : CoreId) :
-    dispatchException .irq ectx rawIntId st c =
+    dispatchException ctx .irq ectx rawIntId st c =
       (match interruptDispatchSequence st c rawIntId with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := rfl
@@ -355,14 +361,14 @@ theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat)
 one.  The pre-RR4 statement of this theorem was
 `… = .error .vmFault` — a pure error, no state change, and a thread left
 runnable at the faulting instruction.  This is what replaces it. -/
-theorem dispatchSynchronousException_dataAbort (ectx : ExceptionContext)
+theorem dispatchSynchronousException_dataAbort (ctx : LabelingContext) (ectx : ExceptionContext)
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (hCls : classifySynchronousException ectx = .dataAbort)
     (hCur : st.scheduler.currentOnCore c = some tid) :
-    dispatchSynchronousException ectx st c =
-      .ok ((Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr false)
+    dispatchSynchronousException ctx ectx st c =
+      .ok ((Kernel.faultDeliverOnCoreChecked ctx st tid (.vmFault ectx.far ectx.esr false)
               (faultContextOfThread st tid ectx.elr ectx.spsr) c).2.sgi,
-           (Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr false)
+           (Kernel.faultDeliverOnCoreChecked ctx st tid (.vmFault ectx.far ectx.esr false)
               (faultContextOfThread st tid ectx.elr ectx.spsr) c).1) := by
   simp only [dispatchSynchronousException, hCls,
     faultOfExceptionContext_dataAbort ectx hCls, hCur]
@@ -370,14 +376,14 @@ theorem dispatchSynchronousException_dataAbort (ectx : ExceptionContext)
 /-- **WS-RR RR4.21**: an instruction abort delivers a **prefetch** VM fault —
 the flag that tells the handler to map an executable page rather than a data
 page. -/
-theorem dispatchSynchronousException_instrAbort (ectx : ExceptionContext)
+theorem dispatchSynchronousException_instrAbort (ctx : LabelingContext) (ectx : ExceptionContext)
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (hCls : classifySynchronousException ectx = .instrAbort)
     (hCur : st.scheduler.currentOnCore c = some tid) :
-    dispatchSynchronousException ectx st c =
-      .ok ((Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr true)
+    dispatchSynchronousException ctx ectx st c =
+      .ok ((Kernel.faultDeliverOnCoreChecked ctx st tid (.vmFault ectx.far ectx.esr true)
               (faultContextOfThread st tid ectx.elr ectx.spsr) c).2.sgi,
-           (Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr true)
+           (Kernel.faultDeliverOnCoreChecked ctx st tid (.vmFault ectx.far ectx.esr true)
               (faultContextOfThread st tid ectx.elr ectx.spsr) c).1) := by
   simp only [dispatchSynchronousException, hCls,
     faultOfExceptionContext_instrAbort ectx hCls, hCur]
@@ -387,21 +393,21 @@ reported as `.vmFault` rather than delivered — the arm that keeps that
 `KernelError` variant reachable, now meaning "a VM fault the kernel could not
 attribute to a thread" rather than "a VM fault handed back to the thread that
 took it". -/
-theorem dispatchSynchronousException_dataAbort_unattributable (ectx : ExceptionContext)
-    (st : SystemState) (c : CoreId)
+theorem dispatchSynchronousException_dataAbort_unattributable (ctx : LabelingContext)
+    (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
     (hCls : classifySynchronousException ectx = .dataAbort)
     (hIdle : st.scheduler.currentOnCore c = none) :
-    dispatchSynchronousException ectx st c = .error .vmFault := by
+    dispatchSynchronousException ctx ectx st c = .error .vmFault := by
   simp only [dispatchSynchronousException, hCls,
     faultOfExceptionContext_dataAbort ectx hCls, hIdle, unhandledFaultError]
 
 /-- **WS-RR RR4.21**: and an alignment fault on an idle core is reported as
 `.userException`, symmetrically. -/
-theorem dispatchSynchronousException_alignment_unattributable (ectx : ExceptionContext)
-    (st : SystemState) (c : CoreId)
+theorem dispatchSynchronousException_alignment_unattributable (ctx : LabelingContext)
+    (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
     (hCls : classifySynchronousException ectx = .pcAlignment)
     (hIdle : st.scheduler.currentOnCore c = none) :
-    dispatchSynchronousException ectx st c = .error .userException := by
+    dispatchSynchronousException ctx ectx st c = .error .userException := by
   simp only [dispatchSynchronousException, faultOfExceptionContext, hCls, hIdle,
     unhandledFaultError]
 
@@ -413,14 +419,14 @@ layer's `eret` then returned the thread to the instruction that faulted.
 Stated over the *faulting thread's dispatchability* rather than over the
 result value, because that is the property the livelock needs: whatever the
 delivery decided, the thread is not runnable on the core it faulted on. -/
-theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable
+theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable (ctx : LabelingContext)
     (ectx : ExceptionContext) (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
     (hK : classifySynchronousException ectx ≠ .kernelAbort)
     (hFp : classifySynchronousException ectx ≠ .fpAccess)
     (hCur : st.scheduler.currentOnCore c = some tid)
-    (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
+    (hStep : dispatchSynchronousException ctx ectx st c = .ok (sgi?, st')) :
     ¬ SeLe4n.Kernel.dispatchableOnCore st' tid c := by
   have hFault : (faultOfExceptionContext ectx).isSome :=
     faultOfExceptionContext_isSome_of_ne_svc ectx hCls hK hFp
@@ -437,11 +443,11 @@ theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable
       | some f =>
           rw [hF, hCur] at hStep
           simp only at hStep
-          have hEq : (Kernel.faultDeliverOnCore st tid f
+          have hEq : (Kernel.faultDeliverOnCoreChecked ctx st tid f
               (faultContextOfThread st tid ectx.elr ectx.spsr) c).1 = st' :=
             (congrArg Prod.snd (Except.ok.inj hStep))
           rw [← hEq]
-          exact SeLe4n.Kernel.faultDeliverOnCore_not_dispatchable st tid f _ c
+          exact SeLe4n.Kernel.faultDeliverOnCoreChecked_not_dispatchable ctx st tid f _ c
 
 -- ============================================================================
 -- AG5-G: Interrupt-disabled region enforcement

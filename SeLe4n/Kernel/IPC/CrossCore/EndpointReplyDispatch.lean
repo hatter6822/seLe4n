@@ -8,7 +8,7 @@
 -/
 
 -- WS-SM SM6.C: PRODUCTION (LANDED).  The pure cross-core `.reply` dispatch op below
--- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
+-- the API layer; the live `API.dispatchWithCapChecked` `.reply` arm routes through
 -- `endpointReplyCrossCoreDispatch{,Checked}` here, passing the core the syscall
 -- trapped on (threaded from the entry).  The live `.replyRecv` arm routes
 -- through the reply-object-aware `endpointReplyRecvOnCore` (in
@@ -887,7 +887,7 @@ with the delivery (`consumeCallerReply` — clear `target.replyObject` *and*
 `reply.caller := none`, keyed on the woken caller's own `replyObject`).  This
 dispatch helper therefore adds only the SchedContext donation **return** and the
 PIP **reversion** on top; the live `.reply` dispatch arm
-(`API.dispatchWithCap{,Checked}`) resolves the reply *capability* to
+(`API.dispatchWithCapChecked`) resolves the reply *capability* to
 `(rid, reply.caller = target)` and routes here with **no** separate consume step.
 A direct below-API caller of `endpointReplyOnCore` now gets single-use reply
 semantics by construction — the Reply object is freed the moment the reply is

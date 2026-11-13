@@ -44,6 +44,14 @@ private def expectErr
     (expected : KernelError) : IO Unit :=
   SeLe4n.Testing.expectError label actual expected (msgPrefix := "operation-chain check")
 
+/-- The kernel's syscall entry, `syscallEntryChecked`, on the boot core under the
+harness deployment labeling (the context the simulation paths install, and one
+the fail-closed guard admits).  Every fixture entity is public under it, so no
+flow decision is changed by it. -/
+private def syscallEntryOnBoot (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
+    SeLe4n.arm64DefaultLayout bootCoreId 32 st
+
 /-- The slot's derivation node, if its links place it in the tree.  Since WS-ZA
 ZA5.3 part 2 the slot is the node, so this is the slot itself whenever an edge
 touches it. -/
@@ -600,8 +608,8 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withCurrent (some ⟨300⟩)
       |>.buildChecked)
 
-  -- Step 1: Sender (current) does syscallEntry (send) → queues on endpoint
-  let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+  -- Step 1: Sender (current) does syscallEntryChecked (send) → queues on endpoint
+  let stAfterSend ← match syscallEntryOnBoot st0 with
     | .ok (_, st') => pure st'
     | .error err => throw <| IO.userError s!"chain10 send failed: {toString err}"
   -- Verify sender queued on endpoint
@@ -620,7 +628,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   -- (dequeue through the TCB links so the live queue, not just the ghost, drops 301)
   let stDeq := stAfterSend.runRemoveOnCore bootCoreId ⟨301⟩
   let stRecv := { stDeq with scheduler := stDeq.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩) }
-  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
+  let stFinal ← match syscallEntryOnBoot stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
       match stAfterRecv.objects[epId]? with
@@ -665,9 +673,9 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withCurrent (some ⟨400⟩)
       |>.buildChecked)
 
-  -- syscallEntry send: the badge from the CNode cap should be attached
+  -- syscallEntryChecked send: the badge from the CNode cap should be attached
   let stSend := st0
-  let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stSend with
+  let stFinal ← match syscallEntryOnBoot stSend with
   | .ok (_, stAfter) =>
       -- Verify sender queued on endpoint
       match stAfter.objects[epId]? with
@@ -2406,7 +2414,7 @@ private def chain26BootSequence : IO Unit := do
 
 -- ============================================================================
 -- T7-C: Syscall dispatch tests for remaining variants (M-TST-4)
--- Each test exercises the full syscallEntry → decode → dispatchWithCap path
+-- Each test exercises the full syscallEntryChecked → decode → dispatchWithCapChecked path
 -- ============================================================================
 
 /-- Helper: build a state with a single current thread whose registers encode
@@ -2487,7 +2495,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   return { st with machine := machine }
 
 /-- T7-C: CSpace syscall dispatch — cspaceMint, cspaceCopy, cspaceMove, cspaceDelete
-via full syscallEntry path. -/
+via full syscallEntryChecked path. -/
 private def chain27SyscallCSpaceOps : IO Unit := do
   let cnodeTarget : SeLe4n.ObjId := ⟨600⟩
   let epId : SeLe4n.ObjId := ⟨601⟩
@@ -2504,7 +2512,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     [(2, 1), (3, 0), (4, 0), (5, 4 + 4 * 256 + 3 * 65536)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
     (overflowWords := [42])
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMint with
+  match syscallEntryOnBoot stMint with
   | .ok (_, stAfter) =>
     -- Verify slot 1 now has a minted cap
     match stAfter.objects[cnodeTarget]? with
@@ -2527,7 +2535,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 0)]  -- targetSlot=0
     [(cnodeTarget, .cnode), (epId, .endpoint)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stDel with
+  match syscallEntryOnBoot stDel with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
@@ -2542,7 +2550,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stCopy with
+  match syscallEntryOnBoot stCopy with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
@@ -2556,7 +2564,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 3), (3, 0), (4, 0), (5, 4 + 4 * 256)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMove with
+  match syscallEntryOnBoot stMove with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
@@ -2571,7 +2579,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] args
       [(cnodeTarget, .cnode), (epId, .endpoint)]
       [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
-    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stBad with
+    match syscallEntryOnBoot stBad with
     | .error err => expect s!"chain27: {label} refused {toString want} (got {toString err})" (err == want)
     | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
   copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] (.rangeError 1 64)
@@ -2587,9 +2595,9 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   copyRefusal "copy whose operation word sets a bit past the rights"
     [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 3)
 
-/-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
+/-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntryChecked.
 
-**Repaired (PR #845 review).**  This was the project's only `syscallEntry`-level
+**Repaired (PR #845 review).**  This was the project's only syscall-entry-level
 VSpace coverage, and it had been silently vacuous: `buildSyscallState` always
 installs its own `.vspaceRoot` at `⟨502⟩` with `asid := ⟨1⟩`, while this chain
 added a second root at `⟨700⟩` *also* carrying `asid := ⟨1⟩`.  The builder's
@@ -2628,7 +2636,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 17)]
     [(vsId, .vspaceRoot), (frameId, .frame)]
     [(1, frameCap)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
+  match syscallEntryOnBoot stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
     match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (fixtureUserVAddr 0x2000) stAfter with
@@ -2649,14 +2657,14 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     [(vsId, .vspaceRoot vsWithMapping)]
     [(2, 2), (3, 0x4000)]
     [(vsId, .vspaceRoot)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stUnmap with
+  match syscallEntryOnBoot stUnmap with
   | .ok (_, stAfter) =>
     match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x4000) stAfter with
     | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
     throw <| IO.userError s!"chain28: vspaceUnmap dispatch failed ({toString err})"
-  -- === The PR #845 binding, end-to-end through `syscallEntry`. ===
+  -- === The PR #845 binding, end-to-end through `syscallEntryChecked`. ===
   -- Same scenario, but naming the ASID of the *builder's own* root (`⟨1⟩` at
   -- `⟨502⟩`) while holding a capability to `⟨700⟩`.  Before the binding this
   -- unmapped a page in an address space the caller had no capability for.
@@ -2665,7 +2673,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     [(vsId, .vspaceRoot vsWithMapping)]
     [(2, 1), (3, 0x4000)]
     [(vsId, .vspaceRoot)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stConfused with
+  match syscallEntryOnBoot stConfused with
   | .error .illegalAuthority =>
     IO.println "operation-chain check passed [chain28: cross-address-space unmap refused]"
   | .error err =>
@@ -2673,7 +2681,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
 
-/-- WS-ZA ZA5.4 part 14: a carve via `syscallEntry` (syscall 36), and the retired
+/-- WS-ZA ZA5.4 part 14: a carve via `syscallEntryChecked` (syscall 36), and the retired
 number 8 refused at decode.  x2 = type word (notification, 2), x3 = child id,
 x4 = the destination CNode's capability address (slot 1, the caller's root,
 writable), x5 = destination slot. -/
@@ -2688,7 +2696,7 @@ private def chain29SyscallCarve : IO Unit := do
     [(2, 2), (3, 801), (4, 1), (5, 2)]
     [(utId, .untyped)]
     [(1, rootCap)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+  match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     match stAfter.objects[child]? with
     | some (.notification _) =>
@@ -2702,7 +2710,7 @@ private def chain29SyscallCarve : IO Unit := do
     [(2, 2), (3, 801), (4, 1), (5, 2)]
     [(utId, .untyped)]
     [(1, rootCap)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRetired with
+  match syscallEntryOnBoot stRetired with
   | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
   | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
 
@@ -2716,7 +2724,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     [(epId, .endpoint {})]
     [(2, 1), (3, 3), (4, 1024), (5, 512)]
     [(epId, .endpoint)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+  match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     -- Verify service was registered
     -- Verify dispatch reached the serviceRegister handler
@@ -2728,7 +2736,7 @@ private def chain30SyscallServiceOps : IO Unit := do
       IO.println "operation-chain check passed [chain30: serviceRegister dispatch reached]"
     -- === serviceQuery (syscallId=13): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
-    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
+    match syscallEntryOnBoot
         { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok _ =>
       IO.println "operation-chain check passed [chain30: serviceQuery dispatch]"
@@ -2737,7 +2745,7 @@ private def chain30SyscallServiceOps : IO Unit := do
       IO.println "operation-chain check passed [chain30: serviceQuery dispatch reached]"
     -- === serviceRevoke (syscallId=12): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
-    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
+    match syscallEntryOnBoot
         { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok (_, stFinal) =>
       IO.println "operation-chain check passed [chain30: serviceRevoke dispatch]"
@@ -2748,7 +2756,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     -- Even if registration fails, the dispatch path was exercised
     IO.println s!"operation-chain check passed [chain30: serviceRegister dispatch reached ({toString err})]"
 
-/-- T7-C: IPC reply via syscallEntry (syscallId=3).
+/-- T7-C: IPC reply via syscallEntryChecked (syscallId=3).
 Requires a blocked caller to reply to. -/
 private def chain31SyscallReply : IO Unit := do
   -- Set up: sender 503 is blockedOnCall, current thread 500 has a reply cap
@@ -2798,7 +2806,7 @@ private def chain31SyscallReply : IO Unit := do
       |>.withRunnable []
       |>.withCurrent (some tid)
       |>.buildChecked)
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+  match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     -- Reply should unblock the caller
     match stAfter.objects[senderId]? with
@@ -2809,7 +2817,7 @@ private def chain31SyscallReply : IO Unit := do
     -- Reply may fail if state setup is imperfect — dispatch path still exercised
     IO.println s!"operation-chain check passed [chain31: reply dispatch reached ({toString err})]"
 
-/-- T7-C: IPC call via syscallEntry (syscallId=2).
+/-- T7-C: IPC call via syscallEntryChecked (syscallId=2).
 Call is like send but marks the caller as blockedOnCall for reply. -/
 private def chain32SyscallCall : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨950⟩
@@ -2819,7 +2827,7 @@ private def chain32SyscallCall : IO Unit := do
     [(epId, .endpoint {})]
     []  -- no extra message registers needed for call
     [(epId, .endpoint)]
-  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
+  match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     -- Caller should be blockedOnCall or result state modified
     IO.println "operation-chain check passed [chain32: call dispatch succeeded]"

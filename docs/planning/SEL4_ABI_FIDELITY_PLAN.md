@@ -214,7 +214,7 @@ The label is unchanged until SX10.
 
 ### SX2 — The guard in the capability, and `resolveAddressBits` (D4, D5, D17)
 
-**LANDED at `v0.37.22`.** The compiled resolver recurses only for the
+**LANDED at `v0.37.23`.** The compiled resolver recurses only for the
 capability and the bits where the walk stops (`resolveAddressBitsWalk`) and
 answers that level with the caller's continuations (`resolveAddressBitsLevel`),
 so a refused second-capability lookup builds no result on the heap. The QEMU

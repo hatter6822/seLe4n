@@ -557,11 +557,9 @@ private def runRendezvousChecks : IO Unit := do
 #check @capabilityDispatchQuiescence
 #check @dispatchCapabilityOnly_preserves_ipcInvariantFull
 #check @syscallDispatchQuiescence
-#check @dispatchWithCap_preserves_ipcInvariantFull
-#check @dispatchSyscall_preserves_ipcInvariantFull
 -- WS-RR RR3.22 (third item) — the flow-checked dispatch tier: the checked
--- dispatcher's payoffs (mirrored arms reduced to the unchecked payoff, the
--- four SM9 arms closed from their frames), and the packs' inhabitation
+-- dispatcher's payoffs (each IPC arm's flow gate discharged before its
+-- bundle, the four SM9 arms closed from their frames), and the packs' inhabitation
 -- witnesses, whose state is built through the retype and binding levers:
 #check @checkedSyscallDispatchQuiescence
 #check @dispatchWithCapChecked_preserves_ipcInvariantFull

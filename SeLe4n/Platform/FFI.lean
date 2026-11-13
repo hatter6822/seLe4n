@@ -4524,8 +4524,9 @@ theorem syscallDispatchFromAbi_blocked_returns_no_frame
 /-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
 
 Register §4 finding 5: the flagship "syscall entry implies capability held"
-theorem was stated over the legacy `syscallEntry`, whose only non-test callers
-are the trace harness and the exception model, while the path the hardware takes
+theorem was stated over the legacy boot-pinned entry (since retired, owner
+decision 2026-11-13), whose only non-test callers were the trace harness and the
+exception model, while the path the hardware takes
 is `@[export lean_syscall_dispatch_cross_core]` →
 `syscallDispatchCrossCoreEntry` → this function → `syscallEntryChecked` →
 `dispatchSyscallChecked`.  `syscallEntryChecked_implies_capability_held` covers
@@ -4598,9 +4599,9 @@ theorem syscallDispatchFromAbi_implies_capability_held
 
 WS-RA RA.B.4's content survives the ledger: an error still stages nothing into
 any TCB (`syscallDispatchFromAbi_error_stages_no_frame`, whose second conjunct
-is exactly that), which is what keeps `syscallEntry_error_perCore_NI` and
-`syscallEntry_error_preserves_proofLayerInvariantBundle` trivially true — both
-are statements about `syscallEntryChecked`, whose error arm carries no
+is exactly that), which is what keeps `syscallEntryChecked_error_perCore_NI` and
+`syscallEntryChecked_error_preserves_proofLayerInvariantBundle` trivially true —
+both are statements about `syscallEntryChecked`, whose error arm carries no
 post-state at all.  What the ledger adds is confined to one `SystemState`
 field: `recordSyscallRefusal_frame` names it, and the projection, machine,
 scheduler, object-store and bundle frames say what it costs (nothing). -/

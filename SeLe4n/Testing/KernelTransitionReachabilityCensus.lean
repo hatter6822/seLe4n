@@ -1144,8 +1144,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-ZA ZA5.5: the routed service register's specification arm; the entry
   -- runs `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq`).
   , `SeLe4n.Kernel.dispatchServiceRegisterBy
-  , `SeLe4n.Kernel.dispatchSyscall
-  , `SeLe4n.Kernel.dispatchWithCap
   , `SeLe4n.Kernel.donationChainWitness
   , `SeLe4n.Kernel.endpointCall
   , `SeLe4n.Kernel.endpointCallChecked
@@ -1356,7 +1354,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- domain accounting runs (`switchDomainOnCore_eq_state`).
   , `SeLe4n.Kernel.switchDomainOnCore
   , `SeLe4n.Kernel.syncThreadStates
-  , `SeLe4n.Kernel.syscallEntry
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
   , `SeLe4n.Kernel.syscallEntryUnderLockSet
   , `SeLe4n.Kernel.syscallLookupReplyId

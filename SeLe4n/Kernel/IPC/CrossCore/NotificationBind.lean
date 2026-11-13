@@ -577,7 +577,7 @@ def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of the **live**
 `.notificationSignal` arm.
 
-`API.dispatchWithCap{,Checked}` routes `.notificationSignal` through
+`API.dispatchWithCapChecked` routes `.notificationSignal` through
 `notificationSignalBoundCrossCoreDispatch{,Checked}`, hence through
 `notificationSignalBoundOnCore` — so this, not
 `schedLockSet_notificationSignalOnCore`, is the footprint the syscall seam must

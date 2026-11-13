@@ -63,7 +63,7 @@ pipelines** threaded through the evolving state:
   runs the transition when the flow is permitted and fails closed with
   `.flowDenied` (state unchanged) when it is not — for both the call
   (caller→endpoint) and the reply (replier→target) gates;
-* **§3.12** the **live API dispatch** path (`dispatchSyscall` `.call`): the
+* **§3.12** the **live API dispatch** path (`dispatchSyscallChecked` `.call`): the
   full CSpace capability resolution + authority gate + cross-core dispatch
   composition (authorized call succeeds; no-cap / read-only-cap / wrong-kind
   fail closed), plus the checked (`dispatchSyscallChecked`) info-flow variant;
@@ -152,7 +152,7 @@ open SeLe4n.Testing
 #check @securityFlowsTo
 #check @LabelingContext.threadLabelOf
 -- Live API dispatch (`.call` through CSpace cap resolution, production):
-#check @dispatchSyscall
+#check @dispatchSyscallChecked
 #check @dispatchSyscallChecked
 -- Cancellation × IPC composition (SM6.E, production):
 #check @cancelIpcBlockingOnCore
@@ -1427,7 +1427,7 @@ private def runFlowCheckedChecks : IO Unit := do
             == (uncheckedReply.1.runQueueWalk c0))
 
 -- ============================================================================
--- §3.12 Live API dispatch (`dispatchSyscall` .call through CSpace resolution)
+-- §3.12 Live API dispatch (`dispatchSyscallChecked` .call through CSpace resolution)
 -- ============================================================================
 
 private def apiCn : SeLe4n.ObjId := ⟨860⟩
@@ -1460,7 +1460,7 @@ private def stApi (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
     |>.build)
 
 /-- Block the server on the endpoint, then dispatch the caller's `.call` syscall
-through the full public entry (`dispatchSyscall` → CSpace lookup → cross-core). -/
+through the full public entry (`dispatchSyscallChecked` → CSpace lookup → cross-core). -/
 private def apiDispatch (slots : List (SeLe4n.Slot × Capability)) (capSlot : Nat) :
     Except KernelError (Unit × SystemState) :=
   match endpointReceiveDual apiEp apiServer (some apiReply) (stApi slots) with
@@ -1468,7 +1468,7 @@ private def apiDispatch (slots : List (SeLe4n.Slot × Capability)) (capSlot : Na
   | .ok (_, stRecv) => dispatchSyscallAsCurrent (apiCallDecoded capSlot) apiCaller bootCoreId stRecv
 
 private def runLiveApiChecks : IO Unit := do
-  IO.println "--- §3.12 live API dispatch (dispatchSyscall .call: CSpace lookup + authority + cross-core) ---"
+  IO.println "--- §3.12 live API dispatch (dispatchSyscallChecked .call: CSpace lookup + authority + cross-core) ---"
   -- AUTHORIZED: an endpoint cap with `.write` at slot 0 → the call rendezvouses.
   match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCap)] 0 with
   | .error _ => assertBool "authorized live .call succeeds" false

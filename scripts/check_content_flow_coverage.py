@@ -90,10 +90,9 @@ import lean_code_view  # noqa: E402  (needs the path insert above)
 API = os.path.join(REPO, "SeLe4n", "Kernel", "API.lean")
 TAINT = os.path.join(REPO, "SeLe4n", "Kernel", "InformationFlow", "TaintPropagation.lean")
 
-# The three dispatch functions whose arms are the live roots.  `dispatchWithCap`
-# is the unchecked twin; it is walked too, because a content move reachable only
-# from the unchecked arm is still a content move.
-DISPATCHERS = ("dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked")
+# The two dispatch functions whose arms are the live roots: the capability-only
+# tier and the flow-checked dispatcher that matches it first.
+DISPATCHERS = ("dispatchCapabilityOnly", "dispatchWithCapChecked")
 
 # WS-SM SM9.D.7 (C): the declared taint-writing surface.  Every other constant
 # in the tree must leave the objects' taint words alone — which is what makes
@@ -198,17 +197,16 @@ DECLARED_FROZEN_TAINT_WRITERS = {
 # without being part of it — the live entry point that applies a plan, and the
 # planner that builds one.  Anything else naming the API is a finding.
 DECLARED_TAINT_CONSUMERS = {
-    # PR #873 round 6: the seam sits at the two **dispatchers**, not at the two
-    # entries above them.  It used to be the entries, and that was the defect:
-    # `dispatchSyscall`'s own docstring points integrators at
-    # `dispatchSyscallChecked` for production user-space entry, and an integrator
-    # who called it directly never reached a seam sitting one layer up — content
-    # moved with no provenance.
-    # Both dispatchers now apply the plan and both entries inherit it, which is
-    # why the entries no longer appear here: they name the dispatcher, not the
-    # API.
+    # PR #873 round 6: the seam sits at the **dispatcher**, not at the entry
+    # above it.  It used to be the entry, and that was the defect: an
+    # integrator writing a production user-space entry calls
+    # `dispatchSyscallChecked` directly and never reached a seam sitting one
+    # layer up — content moved with no provenance.
+    # The dispatcher now applies the plan and the entry inherits it, which is
+    # why the entry does not appear here: it names the dispatcher, not the
+    # API.  (The unchecked dispatcher that also applied it was retired, owner
+    # decision 2026-11-13.)
     "SeLe4n.Kernel.dispatchSyscallChecked",
-    "SeLe4n.Kernel.dispatchSyscall",
     # WS-ZA: the arm-then-apply steps inside the checked dispatchers' compiled
     # forms, each form proven equal to the dispatcher it replaces
     # (`dispatchSyscallChecked_eq_impl`; the refusal-carrying signal and wait
@@ -509,25 +507,6 @@ private def {SELF_TEST_BODY_MATCHER} (t : SeLe4n.Model.TCB)
   match o with
   | ⟨u, _⟩ => u
 """
-
-# PR #873 round 10: implementations that deliberately **refuse**.
-#
-# Splitting the reachability key per dispatcher (so a healthy arm can no longer
-# mask a broken sibling) surfaces the arms that exist in a dispatcher only to
-# fail closed: `.declassify` and `.declassifySignal` have no unchecked form,
-# because their authority *is* a policy and "unchecked" would mean "every
-# downgrade is authorized".  Their `dispatchWithCap` arms are
-# `fun _ => .error .declassificationDenied`.
-#
-# Named rather than inferred, like `RETURN_FRAME_DELIVERY` and
-# `AUDIT_APPEND_EXEMPT`, and given the same bite: a listed implementation must
-# reach **nothing** — no content write and no trail write.  An entry that starts
-# reaching one is a refusal that stopped refusing, which is a worse defect than
-# the masking this set exists to allow past.
-FAIL_CLOSED_ARMS: set[tuple[str, str]] = {
-    ("dispatchWithCap", "declassify"),
-    ("dispatchWithCap", "declassifySignal"),
-}
 
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
 TYPES = os.path.join(REPO, "SeLe4n", "Model", "Object", "Types.lean")
@@ -985,7 +964,7 @@ Dropping the spelling test means a constructor application counts as a write of
 every field, which is right for a rewrite and wrong for a construction: something
 has to build the first state, and it necessarily supplies the watched field.  The
 tree has exactly one such definition, so it is named rather than inferred — the
-`FAIL_CLOSED_ARMS` shape, and for the same reason.  A structural test was tried
+`RETURN_FRAME_DELIVERY` shape, and for the same reason.  A structural test was tried
 first and is the wrong tool: "takes a `SystemState` argument" reads false for
 every monadic definition, whose state argument lives inside `Kernel α`.
 
@@ -1261,7 +1240,7 @@ def arm_roots() -> dict[str, set[str]]:
     """Root stems per `(dispatcher, arm)`, read off the dispatch arms' own text.
 
     PR #873 round 10: keyed on the **pair**, not on the syscall alone.  Merging
-    `dispatchCapabilityOnly`, `dispatchWithCap` and `dispatchWithCapChecked`
+    `dispatchCapabilityOnly` and `dispatchWithCapChecked`
     under one name let a healthy implementation mask a broken sibling: if the
     checked `.receive` arm stopped reaching its `pendingMessage` write while the
     unchecked one still did, the union kept a content hit and check (B) reported
@@ -1585,17 +1564,22 @@ def main() -> int:
             print("      detecting: every production finding below would be a false PASS.")
             return 1
         # PR #873 round 10: the dispatchers must stay SEPARATE keys.  Merging
-        # them let a healthy implementation mask a broken sibling — a checked
-        # `.receive` that lost its `pendingMessage` write still passed on the
-        # unchecked arm's hit.  A collapse back to one key per syscall would be
-        # invisible in the verdict, so it is asserted here: `.receive` is
-        # implemented in two dispatchers and both must reach a content write.
+        # them let a healthy implementation mask a broken sibling.  A collapse
+        # back to one key per syscall would be invisible in the verdict, so it
+        # is asserted here: every key names its dispatcher, both dispatchers
+        # contribute keys, and `.receive` (implemented in the checked
+        # dispatcher only) must reach a content write under its own key.
+        seen = {dispatcher_of(k) for k in roots if k != SELF_TEST_ROOT_ARM}
+        if "" in seen or not set(DISPATCHERS) <= seen:
+            print("FAIL: --self-test — the reach keys do not name their")
+            print(f"      dispatchers (saw {sorted(seen)}, want {list(DISPATCHERS)}).")
+            print("      The reach key has collapsed back to the syscall name, so one")
+            print("      dispatcher's healthy arm can again mask a broken sibling.")
+            return 1
         recv_keys = [k for k in roots if arm_of(k) == "receive"]
-        if len(recv_keys) < 2:
-            print("FAIL: --self-test — `.receive` resolved to fewer than two")
-            print(f"      dispatcher implementations ({recv_keys}).  The reach key")
-            print("      has collapsed back to the syscall name, so one dispatcher's")
-            print("      healthy arm can again mask a broken sibling.")
+        if not recv_keys:
+            print("FAIL: --self-test — `.receive` resolved to no dispatcher")
+            print("      implementation at all.")
             return 1
         blind_recv = [k for k in recv_keys if hits.get(k, 0) == 0]
         if blind_recv:
@@ -1839,25 +1823,12 @@ def main() -> int:
                 f"`syscallRecordsDeclassification` says it cannot record — "
                 f"`applySyscallTaint` would skip the origination diff and lose "
                 f"every causal chain through this arm")
-        elif declared and not reached and (dispatcher_of(key), arm) not in FAIL_CLOSED_ARMS:
+        elif declared and not reached:
             failures.append(
                 f"  `.{arm}` (in `{dispatcher_of(key)}`) is declared as "
                 f"recording a declassification but "
                 f"reaches no writer of `declassificationAudit`, so it pays the "
                 f"trail diff on every call for events it cannot produce")
-
-    # …and the exemption's bite.  A refusal that reaches a write is not a
-    # refusal, and without this the set above would be a way to switch checks off.
-    for key in sorted(roots):
-        arm = arm_of(key)
-        if (dispatcher_of(key), arm) not in FAIL_CLOSED_ARMS:
-            continue
-        if hits.get(key, 0) > 0 or audit_hits.get(key, 0) > 0:
-            failures.append(
-                f"  `.{arm}` (in `{dispatcher_of(key)}`) is listed as failing "
-                f"closed but reaches {hits.get(key, 0)} content write(s) and "
-                f"{audit_hits.get(key, 0)} audit write(s) — the arm that is "
-                f"supposed to refuse is doing something")
 
     # (B) no vacuous classification.  A content-moving arm must either write a
     # content channel or deliver through the WS-RA return frame.
@@ -1880,8 +1851,6 @@ def main() -> int:
     shapes = return_shapes()
     for key in sorted(roots):
         arm = arm_of(key)
-        if (dispatcher_of(key), arm) in FAIL_CLOSED_ARMS:
-            continue
         if cls[arm] == "movesContent" and hits.get(key, 0) == 0:
             if arm not in RETURN_FRAME_DELIVERY:
                 shape = shapes.get(arm, "unit")
