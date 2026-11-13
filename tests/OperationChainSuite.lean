@@ -901,7 +901,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   -- the unwrap with the capabilities resolved before it — resolved by the
   -- rendezvous's own resolver, from the sender's CSpace, as a transient array.
   let senderRoot : Capability :=
-    cnodeCapOf senderCNode 0 (((st1.getCNode? senderCNode).map (64 - ·.radixWidth)).getD 0)
+    cnodeCapOf senderCNode 0 (((st1.getCNode? senderCNode).map (fun cn => (64 - cn.radixWidth).toUInt8)).getD 0)
   let resolved : Array TransferCap :=
     SeLe4n.Kernel.resolveExtraCaps senderRoot #[SeLe4n.CPtr.ofNat srcSlot.toNat] true st1
   expect "chain12b: the resolver names the real source slot"

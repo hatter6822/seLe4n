@@ -10144,7 +10144,7 @@ run_check "INVARIANT" rg -n '^inductive DeclassifiedSignalHop($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^def DeclassifiedSignalHop.refusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem DeclassifiedSignalHop.refusal_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^  \| declassificationDeniedAtReceiver' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n 'declassificationDeniedAtReceiver *=> 56' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'declassificationDeniedAtReceiver *=> 56' SeLe4n/Model/KernelErrorWords.lean
 # NEGATIVE: the second hop must not collapse onto the first's discriminant —
 # that is exactly the information a refusal ledger exists to preserve.
 run_negative_check "INVARIANT" rg -n 'notificationToReceiver => \.declassificationDenied$' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
