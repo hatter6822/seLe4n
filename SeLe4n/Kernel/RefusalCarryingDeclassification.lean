@@ -439,7 +439,7 @@ hardware layout. -/
 theorem auditedDecoded_msgReg (regs : SeLe4n.RegisterFile) (i : Nat) (hi : i < 4) :
     Architecture.SyscallArgDecode.requireMsgReg
         (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) i =
-      .ok ⟨(auditedArgWord regs i).toNat⟩ := by
+      .ok ⟨auditedArgWord regs i⟩ := by
   have hs : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := by decide
   simp only [Architecture.SyscallArgDecode.requireMsgReg_map_readReg,
     Architecture.SyscallArgDecode.msgRegOfFile, auditedArgWord, hs, hi, ↓reduceDIte, Except.map]
@@ -1497,7 +1497,7 @@ theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeL
     Architecture.SyscallArgDecode.decodeAuditReadArgs,
     Architecture.SyscallArgDecode.requireMessageLength, hL, auditedDecoded_msgReg regs 0 (by decide),
     auditedDecoded_msgReg regs 1 (by decide), auditedDecoded_msgReg regs 2 (by decide), bind,
-    Except.bind, pure, Except.pure, hV]
+    Except.bind, pure, Except.pure, hV, SeLe4n.RegValue.val_mk]
   revert hSpec
   cases decodeAuditReadOp (auditedArgWord regs 0).toNat (auditedArgWord regs 1).toNat
       (auditedArgWord regs 2).toNat with

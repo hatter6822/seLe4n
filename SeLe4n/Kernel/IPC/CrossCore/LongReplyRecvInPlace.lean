@@ -59,9 +59,8 @@ theorem overflowCopyStoreFrom_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : 
     split
     · next pa hPa =>
       rw [hPa, recordPhysicalWrites_cons]
-      have hReg : (⟨(overflowWordAt Y s j).toNat⟩ : SeLe4n.RegValue).val.toUInt64 =
-          overflowWordAt Y s j := by
-        simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
+      have hReg : (⟨overflowWordAt Y s j⟩ : SeLe4n.RegValue).word =
+          overflowWordAt Y s j := rfl
       rw [hReg, hA.overflowWordAt]
       have hA' := (ipcBufferReadsAgree_recordPhysicalWrite S
         (.storeUserWord pa (overflowWordAt Y s j))).words.trans hA
@@ -108,7 +107,7 @@ theorem longReplyRecvRegs_tail (rf : SeLe4n.RegisterFile) (S : SystemState)
 
 theorem longReplyRecvRegs_word (rf : SeLe4n.RegisterFile) (S : SystemState)
     (s : SeLe4n.ThreadId) (len : Nat) (hLen : 5 ≤ len) (i : Nat) (hi : i < 3) :
-    ((((longReplyRecvRegs rf S s len)[i]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+    (((longReplyRecvRegs rf S s len)[i]?).map SeLe4n.RegValue.word).getD 0 =
       Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf (i + 1) := by
   rw [← Architecture.regMessageRegs_word]
   have hSz := longSendMessage_size SeLe4n.arm64DefaultLayout rf S s len none rfl (by omega)
@@ -120,7 +119,7 @@ theorem longReplyRecvRegs_word (rf : SeLe4n.RegisterFile) (S : SystemState)
 
 theorem longReplyRecvRegs_word3 (rf : SeLe4n.RegisterFile) (S : SystemState)
     (s : SeLe4n.ThreadId) (len : Nat) (hLen : 5 ≤ len) :
-    ((((longReplyRecvRegs rf S s len)[3]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+    (((longReplyRecvRegs rf S s len)[3]?).map SeLe4n.RegValue.word).getD 0 =
       overflowWordAt S s 0 := by
   have hSz := longSendMessage_size SeLe4n.arm64DefaultLayout rf S s len none rfl (by omega)
   have hN : len - 4 = (len - 5) + 1 := by omega
@@ -129,7 +128,7 @@ theorem longReplyRecvRegs_word3 (rf : SeLe4n.RegisterFile) (S : SystemState)
   simp only [longSendMessage]
   have hL4 : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [Array.getElem?_append_right (by simp [Architecture.regMessageRegs, hL4]), hN]
-  simp [Architecture.regMessageRegs, overflowRegsFrom, Nat.toUInt64_eq, hL4]
+  simp [Architecture.regMessageRegs, overflowRegsFrom, hL4]
 
 theorem longReplyRecvFrame_eq (rf : SeLe4n.RegisterFile) (S : SystemState)
     (s : SeLe4n.ThreadId) (len k capInfo : Nat) (badge : Option SeLe4n.Badge) (hLen : 5 ≤ len) :

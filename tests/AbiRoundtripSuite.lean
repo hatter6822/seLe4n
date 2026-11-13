@@ -82,12 +82,12 @@ private def buildAbiState
     -- Register file populated per ARM64 layout: x2..x5 = inline regs.
     let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
       if r.val == 0 then ⟨0⟩                       -- capPtr
-      else if r.val == 1 then ⟨msgLen⟩             -- msgInfo (length field, low 7 bits)
-      else if r.val == 7 then ⟨syscallId⟩          -- syscallId
-      else if r.val == 2 then ⟨(inlineRegs[0]? |>.getD 0).toNat⟩
-      else if r.val == 3 then ⟨(inlineRegs[1]? |>.getD 0).toNat⟩
-      else if r.val == 4 then ⟨(inlineRegs[2]? |>.getD 0).toNat⟩
-      else if r.val == 5 then ⟨(inlineRegs[3]? |>.getD 0).toNat⟩
+      else if r.val == 1 then SeLe4n.RegValue.ofNat msgLen             -- msgInfo (length field, low 7 bits)
+      else if r.val == 7 then SeLe4n.RegValue.ofNat syscallId          -- syscallId
+      else if r.val == 2 then SeLe4n.RegValue.ofNat ((inlineRegs[0]? |>.getD 0).toNat)
+      else if r.val == 3 then SeLe4n.RegValue.ofNat ((inlineRegs[1]? |>.getD 0).toNat)
+      else if r.val == 4 then SeLe4n.RegValue.ofNat ((inlineRegs[2]? |>.getD 0).toNat)
+      else if r.val == 5 then SeLe4n.RegValue.ofNat ((inlineRegs[3]? |>.getD 0).toNat)
       else ⟨0⟩
     let vsRoot : SeLe4n.Model.VSpaceRoot :=
       { asid := ⟨1⟩

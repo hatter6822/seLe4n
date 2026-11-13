@@ -456,9 +456,9 @@ disposition:
   by AK3-C — the new `AckError` inductive distinguishes spurious /
   out-of-range / handled with no truncation.
 
-- **A-L5** `decodeCapPtr.isWord64Dec` proof-level invariant. Documented at
-  the `CPtr` type level; no runtime-observable effect because CPtr construction
-  already guarantees word-boundedness.
+- **A-L5** `decodeCapPtr.isWord64Dec` proof-level invariant. Retired by
+  WS-SX SX1.3: a register is a 64-bit word, so `decodeCapPtr` reads the word as
+  the address and has no bound to check.
 
 - **A-L6** Timer 64-bit wraparound. At 54 MHz, the CNTPCT_EL0 counter wraps
   at 2^64 / 54M ≈ 1.08 × 10^10 years. Not material to any realistic

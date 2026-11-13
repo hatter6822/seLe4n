@@ -422,7 +422,7 @@ theorem ipcBufferReadsAgree.overflowWordAt {S S' : SystemState} (h : ipcBufferRe
 /-- The registers `n` overflow slots of thread `s`'s buffer hold, from slot `i`. -/
 def overflowRegsFrom (S : SystemState) (s : SeLe4n.ThreadId) : Nat → Nat → List SeLe4n.RegValue
   | _, 0 => []
-  | i, n + 1 => (⟨(overflowWordAt S s i).toNat⟩ : SeLe4n.RegValue) :: overflowRegsFrom S s (i + 1) n
+  | i, n + 1 => (⟨overflowWordAt S s i⟩ : SeLe4n.RegValue) :: overflowRegsFrom S s (i + 1) n
 
 theorem overflowRegsFrom_length (S : SystemState) (s : SeLe4n.ThreadId) :
     ∀ (i n : Nat), (overflowRegsFrom S s i n).length = n
@@ -468,9 +468,8 @@ theorem overflowCopyStore_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : TCB)
     split
     · next pa hPa =>
       rw [hPa, recordPhysicalWrites_cons]
-      have hReg : (⟨(overflowWordAt Y s i).toNat⟩ : SeLe4n.RegValue).val.toUInt64 =
-          overflowWordAt Y s i := by
-        simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
+      have hReg : (⟨overflowWordAt Y s i⟩ : SeLe4n.RegValue).word =
+          overflowWordAt Y s i := rfl
       rw [hReg, hA.overflowWordAt]
       have hA' := (ipcBufferReadsAgree_recordPhysicalWrite S
         (.storeUserWord pa (overflowWordAt Y s i))).words.trans hA
@@ -549,8 +548,8 @@ theorem longSendMessage_tail (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4
 theorem longSendMessage_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (S : SystemState) (s : SeLe4n.ThreadId) (len : Nat) (badge : Option SeLe4n.Badge)
     (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) (i : Nat) (hi : i < 4) :
-    (((((longSendMessage layout rf S s len badge).registers)[i]?).map SeLe4n.RegValue.val).getD
-        0).toUInt64 = Architecture.regMessageWord layout rf len i := by
+    ((((longSendMessage layout rf S s len badge).registers)[i]?).map SeLe4n.RegValue.word).getD
+        0 = Architecture.regMessageWord layout rf len i := by
   rw [← Architecture.regMessageBody_word]
   have hA : ((longSendMessage layout rf S s len badge).registers)[i]? =
       (Architecture.regMessageBody layout rf len)[i]? := by
@@ -648,7 +647,7 @@ unexpectedly, not ready. -/
 
 theorem overflowRegsFrom_eq_map (S : SystemState) (s : SeLe4n.ThreadId) :
     ∀ (i n : Nat), overflowRegsFrom S s i n =
-      (List.range' i n).map (fun j => (⟨(overflowWordAt S s j).toNat⟩ : SeLe4n.RegValue))
+      (List.range' i n).map (fun j => (⟨overflowWordAt S s j⟩ : SeLe4n.RegValue))
   | _, 0 => rfl
   | i, n + 1 => by
     rw [List.range'_succ, List.map_cons, ← overflowRegsFrom_eq_map S s (i + 1) n]

@@ -151,7 +151,7 @@ theorem word_ofWords (t w1 w2 w3 : UInt64) (i : Nat) :
 
 end LookupFault
 
-/-- F-04: Kernel error codes. This inductive has 60 variants.
+/-- F-04: Kernel error codes. This inductive has 59 variants.
 Five carry seL4's error payload (`setMRs_syscall_error`, `src/object/tcb.c`):
 `invalidCapability`, `invalidArgument`, `rangeError`, `failedLookup` and
 `untypedRegionExhausted`.  The payload rides in the message registers of the
@@ -214,7 +214,9 @@ inductive KernelError where
   | invalidMessageInfo      -- WS-J1-B: malformed message-info word (length/caps out of bounds)
   | invalidTypeTag          -- WS-K-D: retype type tag not in modeled object set (0–5)
   | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
-  | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
+  -- Discriminant 35 is retired (WS-SX SX1.3): it was `invalidCapPtr`, a
+  -- capability-pointer register value past `2^64`, which no register can hold
+  -- once a register is a 64-bit word.  It is reserved and never reassigned.
   | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
   -- Discriminant 37 is retired (WS-ZA ZA5.4 part 14): it was
   -- `allocationMisaligned`, returned by no carve once the free index is rounded

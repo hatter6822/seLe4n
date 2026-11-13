@@ -1210,7 +1210,7 @@ fn identifier_validation() {
 fn kernel_error_variant_count() {
     // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
     const KERNEL_ERROR_COUNT: u32 = 61;
-    // All expected variants exist, and the retired discriminant (37) has none
+    // All expected variants exist, and the retired discriminants (35, 37) have none
     for i in 0..KERNEL_ERROR_COUNT {
         assert_eq!(
             KernelError::from_u32(i).is_some(),

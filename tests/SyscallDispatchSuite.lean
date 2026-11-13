@@ -130,13 +130,18 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_32_invalidMessageInfo"           .invalidMessageInfo           32
   pin "sd001_33_invalidTypeTag"               .invalidTypeTag               33
   pin "sd001_34_resourceExhausted"            .resourceExhausted            34
-  pin "sd001_35_invalidCapPtr"                .invalidCapPtr                35
+  -- 35 is retired (the former `invalidCapPtr`): a register is a 64-bit word,
+  -- so no capability pointer exceeds it.
+  expect "sd001_35_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 35 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 35)).isNone)
+    "discriminant 35 is retired: it must decode to no error"
   pin "sd001_36_objectStoreCapacityExceeded"  .objectStoreCapacityExceeded  36
   -- 37 is retired (the former `allocationMisaligned`): no error has it, and it
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [37] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -1054,7 +1059,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     { capAddr := SeLe4n.CPtr.ofNat 2,
       msgInfo := { length := 1, extraCaps := 0, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[⟨tcbCPtr⟩], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
   expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
     (match dispatchCapabilityOnly (bindDecoded 0) scCap caller bootCoreId with

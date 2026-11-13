@@ -164,6 +164,42 @@ def syncedWordFrom (mem : Memory) (b : ByteArray) (pa : PAddr) : Nat → Nat →
   | i, k + 1 =>
     if pairAddr b i = pa.toNat then pairWord b i else syncedWordFrom mem b pa (i + 1) k
 
+/-- Whether pair `i`'s address word is `pa`, tested on the word: an address
+`pa` beyond the word's range is no pair's, and one within it is compared as a
+word, so the pair's full-width word is never made a `Nat` (a heap number at or
+above `2 ^ 63`; WS-SX SX1.3). -/
+@[inline] def pairAddrIs (b : ByteArray) (i : Nat) (pa : PAddr) : Bool :=
+  if pa.toNat < UInt64.size then le64At b (16 * i) == UInt64.ofNat pa.toNat else false
+
+theorem pairAddrIs_iff (b : ByteArray) (i : Nat) (pa : PAddr) :
+    pairAddrIs b i pa = true ↔ pairAddr b i = pa.toNat := by
+  unfold pairAddrIs pairAddr
+  split
+  · rename_i h
+    rw [beq_iff_eq, ← UInt64.toNat_inj, UInt64.toNat_ofNat', Nat.mod_eq_of_lt h]
+  · rename_i h
+    simp only [Bool.false_eq_true, false_iff]
+    intro hEq
+    exact h (hEq ▸ UInt64.toNat_lt _)
+
+/-- `syncedWordFrom` as compiled: each pair's address tested on its word
+(`pairAddrIs`). -/
+def syncedWordFromW (mem : Memory) (b : ByteArray) (pa : PAddr) : Nat → Nat → UInt64
+  | _, 0 => SeLe4n.Kernel.Architecture.readUInt64 mem pa
+  | i, k + 1 =>
+    if pairAddrIs b i pa then pairWord b i else syncedWordFromW mem b pa (i + 1) k
+
+@[csimp] theorem syncedWordFrom_eq_w : @syncedWordFrom = @syncedWordFromW := by
+  funext mem b pa i k
+  induction k generalizing i with
+  | zero => rfl
+  | succ k ih =>
+    unfold syncedWordFrom syncedWordFromW
+    rw [ih (i + 1)]
+    by_cases h : pairAddr b i = pa.toNat
+    · rw [if_pos h, if_pos ((pairAddrIs_iff b i pa).mpr h)]
+    · rw [if_neg h, if_neg (fun h' => h ((pairAddrIs_iff b i pa).mp h'))]
+
 /-- **WS-ZA ZA5.2: a word of a thread's IPC buffer at physical address `pa`, as
 the syscall decode reads it** — the word this entry read from RAM there (the
 first of the entry's `n` pairs naming `pa`), else the model's `memory`.  A

@@ -368,6 +368,11 @@ for driver in drivers:
             "receive-for-call", "receive-from-badged-sender", "receive-from-sender",
             "receive-on-carved", "receive-queued-fault", "receive-stashing-reply",
             "range-error-payload",
+            # Argument words at or above 2^63, each refused on the word, and
+            # the measured mint of a badge at 2^63.
+            "vspace-map-wide-asid", "vspace-map-wide-vaddr", "vspace-map-wide-perms",
+            "vspace-unmap-wide-vaddr", "tcb-set-affinity-wide",
+            "mint-wide-badged-notification",
             "receive-tainted", "receive-with-carved-reply", "refill-bind-root",
             "refill-configure", "refill-drain-tick", "refill-unbind-root", "refill-wait-tick",
             "refill-yield", "reply", "reply-cap-delete", "reply-cap-mint",
@@ -753,7 +758,8 @@ for driver in drivers:
             "configure-fills-ipc-buffer", "configure-cap-fault-held",
             "receive-configure-cap-fault-held", "reply-configure-cap-fault-held",
             "configure-refused-held", "configure-zero-budget-max-period",
-            "configure-budget-over-wide-period", "configure-held-ipc-buffer",
+            "configure-budget-over-wide-period", "configure-wide-budget-and-period",
+            "configure-wide-deadline", "configure-held-ipc-buffer",
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",

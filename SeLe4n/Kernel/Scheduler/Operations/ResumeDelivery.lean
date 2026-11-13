@@ -54,12 +54,12 @@ resumes, read the way `readReturnFrame` reads a TCB's.  An idle core and an
 empty core deliver none. -/
 def RestoreTarget.deliveredFrame? : RestoreTarget → Option SyscallReturnFrame
   | .user ctx _ _ _ =>
-    some { x0 := (ctx.gpr ⟨0⟩).val.toUInt64
-           x1 := (ctx.gpr ⟨1⟩).val.toUInt64
-           x2 := (ctx.gpr ⟨2⟩).val.toUInt64
-           x3 := (ctx.gpr ⟨3⟩).val.toUInt64
-           x4 := (ctx.gpr ⟨4⟩).val.toUInt64
-           x5 := (ctx.gpr ⟨5⟩).val.toUInt64 }
+    some { x0 := (ctx.gpr ⟨0⟩).word
+           x1 := (ctx.gpr ⟨1⟩).word
+           x2 := (ctx.gpr ⟨2⟩).word
+           x3 := (ctx.gpr ⟨3⟩).word
+           x4 := (ctx.gpr ⟨4⟩).word
+           x5 := (ctx.gpr ⟨5⟩).word }
   | .idle => Option.none
   | .none => Option.none
 
@@ -131,8 +131,6 @@ theorem readReturnFrame_of_withReturnFrame (st : SystemState) (tid : SeLe4n.Thre
   simp only
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := (t.registerContext).stageReturnFrame_reads_back f
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
-  cases f
-  simp [UInt64.ofNat_toNat]
 
 /-- **The timeout half's frame**: the thread the timeout's object prefix
 unblocks reads `.ipcTimeout` out of its own context. -/

@@ -24,7 +24,7 @@ def main : IO Unit := do
       { capAddr := SeLe4n.CPtr.ofNat 0,
         msgInfo := { (default : MessageInfo) with length := truncationMinimum .untypedRetype },
         syscallId := .untypedRetype,
-        msgRegs := #[⟨n⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] }
+        msgRegs := #[SeLe4n.RegValue.ofNat n, ⟨0⟩, ⟨0⟩, ⟨0⟩] }
     match decodeUntypedRetypeArgs decoded with
     | .ok args => IO.println s!"{n} {repr args.newType}"
     | .error _ => pure ()

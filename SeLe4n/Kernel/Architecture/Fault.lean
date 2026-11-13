@@ -429,12 +429,11 @@ flag reader; the round trip below pins `decodeFlag ∘ encodeFlag = id`. -/
   cases b <;> rfl
 
 /-- WS-RR RR4.4: a `UInt64` wire word as a model register value. -/
-@[inline] def regOf (w : UInt64) : SeLe4n.RegValue := ⟨w.toNat⟩
+@[inline] def regOf (w : UInt64) : SeLe4n.RegValue := ⟨w⟩
 
-/-- WS-RR RR4.4: a model register value back as a wire word.  Total: an
-out-of-range `RegValue` (unreachable — every register the model writes is
-below `machineWordMax`) truncates, exactly as the hardware register would. -/
-@[inline] def wordOf (v : SeLe4n.RegValue) : UInt64 := v.val.toUInt64
+/-- WS-RR RR4.4: a model register value back as a wire word: the word itself
+(WS-SX SX1.3: a `RegValue` is its word). -/
+@[inline] def wordOf (v : SeLe4n.RegValue) : UInt64 := v.word
 
 @[simp] theorem wordOf_regOf (w : UInt64) : wordOf (regOf w) = w := by
   simp [wordOf, regOf]

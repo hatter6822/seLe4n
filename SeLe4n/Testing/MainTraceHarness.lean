@@ -1381,7 +1381,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     msgInfo := { length := 5, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
     msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      ⟨SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 1⟩, ⟨42⟩]
+      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 1), ⟨42⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintDecoded with
   | .error e => IO.println s!"[KSD-001] cspaceMint decode error: {reprStr e}"
@@ -1391,7 +1391,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     | .error e, _ | _, .error e =>
       IO.println s!"[KSD-001] cspaceMint slot resolution error: {reprStr e}"
     | .ok mintSrc, .ok mintDst =>
-    let badge : Option SeLe4n.Badge := if args.badge.val = 0 then none else some args.badge
+    let badge : Option SeLe4n.Badge := if args.badge.word = 0 then none else some args.badge
     match SeLe4n.Kernel.cspaceMint mintSrc mintDst
         (SeLe4n.Kernel.mintMaskedRights stKsd mintSrc args.rights) badge stKsd with
     | .error e => IO.println s!"[KSD-001] cspaceMint dispatch error: {reprStr e}"
@@ -1407,7 +1407,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     syscallId := .cspaceCopy
     -- destIndex=1, srcRoot, srcIndex=0, both depths the CNode's width
     msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      ⟨SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 31⟩]
+      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 31)]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
   | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
@@ -1504,7 +1504,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     -- asid=10, vaddr=one page into the user window (WS-BP BP7.2), frame cap at
     -- slot 0, perms=17 (read | cacheable): a RAM frame maps cacheable or not at
     -- all since v0.36.32 (`frameMappingAdmissible_cacheable_iff_ram`)
-    msgRegs := #[⟨10⟩, ⟨(fixtureUserVAddr 4096).toNat⟩, ⟨0⟩, ⟨17⟩]
+    msgRegs := #[⟨10⟩, SeLe4n.RegValue.ofNat (fixtureUserVAddr 4096).toNat, ⟨0⟩, ⟨17⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
@@ -1679,7 +1679,7 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceMove
     msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩,
-      ⟨SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack 2 2 0⟩]
+      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack 2 2 0)]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
   | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"

@@ -4603,7 +4603,7 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (len : Nat) (replyAddr : SeLe4n.CPtr)
     (hRecv : decoded.syscallId = .receive)
     (hLen : decoded.msgInfo.length = len)
-    (hReplyAddr : len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.toNat⟩) :
+    (hReplyAddr : len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.word⟩) :
     dispatchReceiveCheckedR ctx decoded.capAddr len replyAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRecv]; decide)
@@ -4614,7 +4614,7 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     rw [Array.getElem?_eq_some_iff] at h
     obtain ⟨h0, hv⟩ := h
     simp only [decodeRecvArgs, requireMsgReg, h0, ↓reduceDIte, hv, bind, Except.bind, pure, Except.pure,
-      SeLe4n.CPtr.ofNat_toNat]
+      SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
   have hRid := resolveRecvReplyIdR_eq st tid
     { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     decoded len replyAddr rfl (by simp only [callerCspaceRoot, hTcb]) hLen hArgs

@@ -1818,7 +1818,7 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (h : decoded.syscallId = .schedContextConfigure)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchConfigureBy layout regs w tid cap st := by
@@ -1919,7 +1919,7 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .schedContextConfigure)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
@@ -1984,7 +1984,7 @@ theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (h : decoded.syscallId = .serviceRegister)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchServiceRegisterBy ctx tid layout regs w cap st := by
@@ -2244,7 +2244,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .serviceRegister)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
@@ -2302,7 +2302,7 @@ register file `regs` through `layout` and then the overflow word `w`
       | .error e => .error e
       | .ok (src, dst) =>
         let badge : Option SeLe4n.Badge :=
-          if args.badge.val = 0 then none else some args.badge
+          if args.badge.word = 0 then none else some args.badge
         cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
   | _ => .error (.invalidCapability 0)
 
@@ -2312,7 +2312,7 @@ theorem dispatchWithCapChecked_eq_mintBy (ctx : LabelingContext)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (h : decoded.syscallId = .cspaceMint)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchMintBy ctx tid layout regs w cap st := by
@@ -2440,7 +2440,7 @@ theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .cspaceMint)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchMintCheckedR ctx decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
@@ -2495,7 +2495,7 @@ theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hR : Architecture.RegisterDecode.routedOverflowOne decoded.syscallId = true)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by

@@ -385,7 +385,7 @@ def numDomainsVal : Nat := 16
 
 /-- Z5-F1: Validate SchedContext configuration parameters.
 Returns error if any parameter violates well-formedness constraints:
-- `period > 0` (required for CBS)
+- `period > 0` (required for CBS), and at most `configureMaxPeriod`
 - `budget > 0` (AK6-A / SC-H01: zero-budget rejection — a stored
   replenishment with `amount.val = 0` would violate the
   `replenishmentListWellFormed` invariant which forbids zero-amount
@@ -394,21 +394,27 @@ Returns error if any parameter violates well-formedness constraints:
 - `budget ≤ period` (cannot use more than 100% of a period)
 - `priority ≤ maxPriority` (within valid priority range)
 - `domain < numDomains` (within valid domain range)
+- `deadline ≤ configureMaxPeriod` (WS-SX SX1.3: a deadline is a time, held to
+  the bound a configure's times are held to, `configureDeadlineWord`)
 
 Each refusal is seL4-MCS's (`decodeSchedControl_ConfigureFlags`): a budget or
-period below the least is `seL4_RangeError` with `MIN_BUDGET` and `MAX_PERIOD`
+period below the least or above the greatest is `seL4_RangeError` with
+`MIN_BUDGET` and `MAX_PERIOD`
 (`configureMinBudget`, `configureMaxPeriod`), and a budget above its period
 `seL4_RangeError` with `MIN_BUDGET` and the period.  The priority and the domain
 share the parameter word (`configureSchedParamsWord`), which an out-of-range one
 names (`invalidArgument`).  The configure's decode answers the budget and
 period refusals first, in this order (`decodeSchedContextConfigureArgsChecked`). -/
-@[inline] def validateSchedContextParams (budget period priority _deadline domain : Nat)
+@[inline] def validateSchedContextParams (budget period priority deadline domain : Nat)
     : Except KernelError Unit :=
-  if period == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
-  else if budget == 0 then .error (.rangeError configureMinBudget configureMaxPeriod)
+  if period == 0 || configureMaxPeriod.toNat < period then
+    .error (.rangeError configureMinBudget configureMaxPeriod)
+  else if budget == 0 || configureMaxPeriod.toNat < budget then
+    .error (.rangeError configureMinBudget configureMaxPeriod)
   else if budget > period then .error (.rangeError configureMinBudget (UInt64.ofNat period))
   else if priority > maxPriorityVal then .error (.invalidArgument configureSchedParamsWord)
   else if domain ≥ numDomainsVal then .error (.invalidArgument configureSchedParamsWord)
+  else if configureMaxPeriod.toNat < deadline then .error (.invalidArgument configureDeadlineWord)
   else .ok ()
 
 -- ============================================================================

@@ -2450,7 +2450,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
              else match args.find? (fun (idx, _) => idx == r.val) with
                   | some (_, val) => val
                   | none => if r.val == 1 then msgLen else 0
-    ⟨v⟩
+    SeLe4n.RegValue.ofNat v
   let bufferMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
       (SeLe4n.PAddr × SeLe4n.Model.PagePermissions) :=
     if overflowWords.isEmpty then SeLe4n.Kernel.RobinHood.RHTable.ofList []

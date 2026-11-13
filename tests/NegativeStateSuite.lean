@@ -2673,7 +2673,7 @@ def runWSJ1DecodeChecks : IO Unit := do
 
   -- J1-NEG-09: decodeMsgInfo with valid boundary values → success
   -- length=120, extraCaps=3, label=0 → valid.
-  let boundaryMsgInfo : SeLe4n.RegValue := ⟨120 ||| (3 <<< 7)⟩
+  let boundaryMsgInfo : SeLe4n.RegValue := SeLe4n.RegValue.ofNat (120 ||| (3 <<< 7))
   let _ ← expectOkVal "J1 decodeMsgInfo valid boundary (len=120, caps=3)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo boundaryMsgInfo)
 

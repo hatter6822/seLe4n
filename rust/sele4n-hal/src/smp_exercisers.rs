@@ -2044,7 +2044,7 @@ const fn signal(name: &'static str) -> RoundTrip {
     }
 }
 
-/// The notification capability minted, unmeasured, into the mint slot with a
+/// The notification capability minted, measured, into the mint slot with a
 /// badge that does not fit a scalar `Nat` ([`WIDE_SIGNAL_BADGE`]) for the
 /// round trips one thread makes alone, and deleted before the partner setup
 /// mints the badged endpoint there ([`WIDE_BADGE_SETUP`],
@@ -2058,8 +2058,8 @@ const WIDE_SIGNAL_BADGE: u64 = 1 << 63;
 /// Read and write: a signal needs the write right.
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_MINT_RIGHTS: u64 = 0x3;
-/// The badged notification capability's mint (unmeasured, before the round
-/// trips one thread makes alone).
+/// The badged notification capability's mint (measured twice, a delete
+/// between, before the round trips one thread makes alone).
 #[cfg(feature = "hw_target")]
 const WIDE_BADGE_SETUP: [RoundTrip; 1] = [mint(
     "mint-wide-badged-notification",
@@ -3685,6 +3685,57 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [NOTIFICATION_SLOT, 0, 0, 0],
         )),
+        // Argument words at or above `2^63`, each refused on the word before
+        // it is made a number: an ASID past the configured bound
+        // (`AsidNotBound`), an address past the canonical bound
+        // (`AddressOutOfBounds`), a permission word past five bits
+        // (`InvalidSyscallArgument`), and an affinity past the cores and the
+        // unbind marker (`InvalidArgument 0`).
+        RoundTrip {
+            returns: refused(ASID_NOT_BOUND),
+            ..invocation(
+                "vspace-map-wide-asid",
+                VSPACE_MAP,
+                VSPACE_CAP,
+                [WIDE_WORD, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+            )
+        },
+        RoundTrip {
+            returns: refused(ADDRESS_OUT_OF_BOUNDS),
+            ..invocation(
+                "vspace-map-wide-vaddr",
+                VSPACE_MAP,
+                VSPACE_CAP,
+                [ROOT_ASID, WIDE_WORD, FRAME_CAP, FRAME_PERMS],
+            )
+        },
+        RoundTrip {
+            returns: refused(INVALID_SYSCALL_ARGUMENT),
+            ..invocation(
+                "vspace-map-wide-perms",
+                VSPACE_MAP,
+                VSPACE_CAP,
+                [ROOT_ASID, FRAME_VADDR, FRAME_CAP, WIDE_WORD],
+            )
+        },
+        RoundTrip {
+            returns: refused(ADDRESS_OUT_OF_BOUNDS),
+            ..invocation(
+                "vspace-unmap-wide-vaddr",
+                VSPACE_UNMAP,
+                VSPACE_CAP,
+                [ROOT_ASID, WIDE_WORD, 0, 0],
+            )
+        },
+        RoundTrip {
+            returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+            ..invocation(
+                "tcb-set-affinity-wide",
+                TCB_SET_AFFINITY,
+                ROOT_TCB_CAP,
+                [WIDE_WORD, 0, 0, 0],
+            )
+        },
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
@@ -9528,10 +9579,26 @@ const FAILED_LOOKUP: u64 = 60;
 /// `MIN_BUDGET`): the `rangeErrorMin` of a configure's budget refusal.
 #[cfg(feature = "hw_target")]
 const CONFIGURE_MIN_BUDGET: u64 = 1;
-/// A period past `2^63` (its top bit set), the word a configure's budget
-/// refusal answers when the budget is above it.
+/// The greatest budget or period a configure admits (`configureMaxPeriod`,
+/// seL4-MCS's `MAX_PERIOD_US` in ticks, `UINT64_MAX / 8`): the
+/// `rangeErrorMax` of a configure's budget or period refusal.
+#[cfg(feature = "hw_target")]
+const CONFIGURE_MAX_PERIOD: u64 = 0x1FFF_FFFF_FFFF_FFFF;
+/// A period past `2^63` (its top bit set), above `CONFIGURE_MAX_PERIOD`.
 #[cfg(feature = "hw_target")]
 const WIDE_PERIOD: u64 = 1 << 63;
+/// An argument word at or above `2^63`, the least word a `Nat` holds only as
+/// a heap number.
+#[cfg(feature = "hw_target")]
+const WIDE_WORD: u64 = 1 << 63;
+/// `KernelError.asidNotBound`, `.addressOutOfBounds` and
+/// `.invalidSyscallArgument`'s discriminants (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const ASID_NOT_BOUND: u64 = 9;
+#[cfg(feature = "hw_target")]
+const ADDRESS_OUT_OF_BOUNDS: u64 = 26;
+#[cfg(feature = "hw_target")]
+const INVALID_SYSCALL_ARGUMENT: u64 = 41;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -10872,9 +10939,23 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     if !secondary_core_windows(" (first call)") {
         return Some(false);
     }
-    for step in WIDE_BADGE_SETUP.iter() {
-        if !unmeasured(step, "the wide-badge mint failed") {
-            return Some(false);
+    // The mint of a badge at `2^63`, measured twice like every round trip:
+    // its badge is tested as a word, so the mint builds no heap number.  The
+    // slot is emptied (unmeasured) between the two runs, and the second mint
+    // stays for the round trips below.
+    for first in [true, false] {
+        if !first {
+            for step in WIDE_BADGE_TEARDOWN.iter() {
+                if !unmeasured(step, "the wide-badge delete failed") {
+                    return Some(false);
+                }
+            }
+        }
+        let which = if first { " (first call)" } else { "" };
+        for step in WIDE_BADGE_SETUP.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
         }
     }
     for trip in ROUND_TRIPS.iter() {
@@ -12090,32 +12171,53 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         returns: budget_over_period,
         ..configure("configure-refused-held", refused_args)
     };
-    // Full-width payload words through the report (seL4-MCS
-    // `decodeSchedControl_ConfigureFlags`): a budget of zero answers
-    // `MIN_BUDGET` and `MAX_PERIOD`, `0xFFFF_FFFF_FFFF_FFFF`; a budget above a
-    // period past `2^63` answers that period.  Each payload word is at or
-    // above `2^63`, the least word a `Nat` holds only as a heap number.
+    // seL4-MCS's bounds (`decodeSchedControl_ConfigureFlags`): a budget or
+    // period below `MIN_BUDGET` or above `MAX_PERIOD` answers `MIN_BUDGET` and
+    // `MAX_PERIOD`.  A budget of zero; a budget of `2^64 - 1` over a period
+    // past `2^63`; a budget and a period both past `2^63`; and a deadline past
+    // `2^63`, the fifth word, read from the buffer (`invalidArgument 4`).
+    // Each argument word past `2^63` is tested as a word, so none is made a
+    // heap number.
+    let max_period_refusal = refused_with(
+        RANGE_ERROR,
+        2,
+        [
+            Some(CONFIGURE_MIN_BUDGET),
+            Some(CONFIGURE_MAX_PERIOD),
+            None,
+            None,
+        ],
+    );
     let zero_budget = RoundTrip {
-        returns: refused_with(
-            RANGE_ERROR,
-            2,
-            [Some(CONFIGURE_MIN_BUDGET), Some(u64::MAX), None, None],
-        ),
+        returns: max_period_refusal,
         ..configure(
             "configure-zero-budget-max-period",
             [SCHED_CONTEXT_CAP, 0, SCHED_CONTEXT_PERIOD, PARTNER_PRIORITY],
         )
     };
     let wide_period = RoundTrip {
-        returns: refused_with(
-            RANGE_ERROR,
-            2,
-            [Some(CONFIGURE_MIN_BUDGET), Some(WIDE_PERIOD), None, None],
-        ),
+        returns: max_period_refusal,
         ..configure(
             "configure-budget-over-wide-period",
             [SCHED_CONTEXT_CAP, u64::MAX, WIDE_PERIOD, PARTNER_PRIORITY],
         )
+    };
+    let wide_budget_and_period = RoundTrip {
+        returns: max_period_refusal,
+        ..configure(
+            "configure-wide-budget-and-period",
+            [
+                SCHED_CONTEXT_CAP,
+                WIDE_PERIOD,
+                WIDE_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        )
+    };
+    let wide_deadline = RoundTrip {
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(4), None, None, None]),
+        overflow: Some((FRAME_VADDR, WIDE_WORD)),
+        ..configure("configure-wide-deadline", admitted_args)
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
     let held = configure("configure-held-ipc-buffer", admitted_args);
@@ -12191,6 +12293,8 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
         && heap_allocations_round_trip(&zero_budget, which) == Some(true)
         && heap_allocations_round_trip(&wide_period, which) == Some(true)
+        && heap_allocations_round_trip(&wide_budget_and_period, which) == Some(true)
+        && heap_allocations_round_trip(&wide_deadline, which) == Some(true)
         && heap_allocations_round_trip(&held, which) == Some(true)
         && queued_overflow_cap_fault(
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),

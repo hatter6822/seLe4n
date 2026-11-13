@@ -50,11 +50,14 @@ theorem validateSchedContextParams_implies_wellFormed
         · simp at hOk
         · split at hOk
           · simp at hOk
-          · rename_i h1 h2 h3 _ _
-            refine ⟨?_, ?_, ?_⟩
-            · omega
-            · omega
-            · omega
+          · split at hOk
+            · simp at hOk
+            · rename_i h1 h2 h3 _ _ _
+              simp only [Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq, not_or] at h1 h2
+              refine ⟨?_, ?_, ?_⟩
+              · omega
+              · omega
+              · omega
 
 -- ============================================================================
 -- Z5-M: schedContextConfigure output well-formedness

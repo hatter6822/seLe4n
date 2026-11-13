@@ -107,16 +107,25 @@ seL4-MCS's `MIN_BUDGET`, the `rangeErrorMin` of every configure refusal of a
 budget or a period (`decodeSchedControl_ConfigureFlags`). -/
 def configureMinBudget : UInt64 := 1
 
-/-- **The greatest period a configure admits**, in ticks: seL4-MCS's
-`MAX_PERIOD_US`, the `rangeErrorMax` of a configure refusal of a budget or a
-period below the least.  This kernel bounds a period by its word alone, so the
-greatest is the word's greatest value. -/
-def configureMaxPeriod : UInt64 := 0xFFFFFFFFFFFFFFFF
+/-- **The greatest budget, and greatest period, a configure admits**, in ticks:
+seL4-MCS's `MAX_PERIOD_US`, `getMaxUsToTicks() / 8` (`sporadic.h`), which in
+ticks is the word's greatest value over eight.  A budget or period above it is
+refused `seL4_RangeError` with `MIN_BUDGET` and `MAX_PERIOD`
+(`decodeSchedControl_ConfigureFlags`), as one below the least is; so every
+budget and period a context holds is below `2 ^ 61` (WS-SX SX1.3). -/
+def configureMaxPeriod : UInt64 := 0x1FFFFFFFFFFFFFFF
 
 /-- **The configure's parameter word**: the message word that carries the
 priority (bits 0–7) and the domain (bits 8–11), the word an out-of-range
 priority or domain names (`invalidArgument`). -/
 def configureSchedParamsWord : UInt64 := 3
+
+/-- **The configure's deadline word**: the message word that carries the
+context's first deadline, which seL4-MCS's configure does not carry.  A deadline
+is a time, held to the bound seL4-MCS holds a configure's times to
+(`configureMaxPeriod`); a deadline above it is refused `invalidArgument`, naming
+the word (WS-SX SX1.3). -/
+def configureDeadlineWord : UInt64 := 4
 
 -- ============================================================================
 -- Z1-E: ReplenishmentEntry structure

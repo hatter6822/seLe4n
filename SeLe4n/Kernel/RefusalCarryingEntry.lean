@@ -437,7 +437,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
             have hD := dispatchOverflowOneCheckedR_eq ctx
               { capAddr, msgInfo, syscallId := sid,
                 msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
-                  #[(⟨w.toNat⟩ : RegValue)],
+                  #[(⟨w⟩ : RegValue)],
                 inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 }
               tcb.registerContext w tid executingCore hRouted (.of_eq rfl 5)
               (show 5 ≤ msgInfo.length by rw [hMl]; decide)
@@ -1991,7 +1991,7 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
             tcb.registerContext 32 = .ok
               { capAddr, msgInfo, syscallId := sid,
                 msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
-                  #[(⟨w.toNat⟩ : RegValue)],
+                  #[(⟨w⟩ : RegValue)],
                 inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 } := by
           rw [hDecM]
           simp only [SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR0]
