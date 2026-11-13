@@ -238,6 +238,21 @@ private def row_invalidMessageInfo : KernelErrorRejection :=
       -- (every bit above 12 is the 52-bit label, so only a field bound fails).
       runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo (rv 0x7F)) }
 
+/-- Row: a configure whose period exceeds seL4-MCS's `MAX_PERIOD`
+(`UINT64_MAX / 8` ticks) is refused `rangeError MIN_BUDGET MAX_PERIOD`, so no
+stored period reaches `2^63` (WS-SX SX1.3). -/
+private def row_rangeError_period_over_max : KernelErrorRejection :=
+  { syscall       := "validateSchedContextParams"
+    expectedError := (.rangeError SeLe4n.Kernel.configureMinBudget
+      SeLe4n.Kernel.configureMaxPeriod)
+    scenarioTag   := "AN11A.2.rangeError.period_over_max"
+    scenarioDesc  := "SchedContext configure with a period above MAX_PERIOD" ++
+                     " must reject, as seL4-MCS's decode does"
+    runScenario   := fun _ =>
+      SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
+        (budget := 100) (period := SeLe4n.Kernel.configureMaxPeriod.toNat + 1)
+        (priority := 5) (deadline := 0) (domain := 0) }
+
 /-- Row: `validateRegBound` rejects out-of-range register name with
 `.invalidRegister`. -/
 private def row_invalidRegister : KernelErrorRejection :=
@@ -980,6 +995,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_invalidArgument_mint_rights,
     row_invalidSyscallNumber,
     row_invalidMessageInfo,
+    row_rangeError_period_over_max,
     row_invalidRegister,
     row_ipcMessageTooLarge,
     row_ipcMessageTooLarge_replyRecv,

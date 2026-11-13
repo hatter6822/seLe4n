@@ -45,7 +45,8 @@ decodes later SX phases re-decode, which keep a narrowed row.
   `RegValue.ofNat` or the word. A register can no longer hold a number past
   `2^64`, so `decodeCapPtr` never answers `invalidCapPtr`: the decoding suite
   checks that such a number wraps as the hardware register would, and the
-  error matrix drops its `invalidCapPtr` row. `main_trace_smoke.expected` is
+  error matrix replaces its `invalidCapPtr` row with a configure over
+  `MAX_PERIOD`. `main_trace_smoke.expected` is
   regenerated for two reasons: the configure refusals' `MAX_PERIOD` is now
   `2305843009213693951`, and a register prints as `{ word := n }`.
 - **The reply-receive's reply address** is read as a word
