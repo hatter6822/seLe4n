@@ -531,10 +531,10 @@ theorem startInitialThreadOnCore_preserves_objectTypeMetadataConsistent (st : Sy
 
 /-- WS-UC UC2: the start keeps the bookkeeping ghosts in agreement with the
 object store — it writes no ghost, and it neither adds nor removes an object. -/
-theorem startInitialThreadOnCore_preserves_bookkeepingAgrees (st : SystemState)
+theorem startInitialThreadOnCore_preserves_bookkeepingAgreesUnbounded (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (hA : SystemState.bookkeepingAgrees st) :
-    SystemState.bookkeepingAgrees (startInitialThreadOnCore st tid) :=
+    (hA : SystemState.bookkeepingAgreesUnbounded st) :
+    SystemState.bookkeepingAgreesUnbounded (startInitialThreadOnCore st tid) :=
   hA.of_frame
     (by rw [startInitialThreadOnCore_frame st tid])
     (by rw [startInitialThreadOnCore_frame st tid])

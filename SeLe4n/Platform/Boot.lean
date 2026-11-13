@@ -3952,7 +3952,7 @@ def storeIdleThread (ist : IntermediateState)
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := storeIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := storeIdleThreadOnCore_preserves_bookkeepingAgrees
+  hLifecycleConsistent := storeIdleThreadOnCore_preserves_bookkeepingAgreesUnbounded
     ist.state c ist.hAllTables ist.hLifecycleConsistent
 
 /-- **v0.35.68** (the derivation, pinned): the boot's idle install *is* the
@@ -4901,6 +4901,39 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_objectCountBounded
         unfold objectCountBounded
         rw [← (cores.foldl storeIdleThread base).hLifecycleConsistent.objectIndex_length
           (cores.foldl storeIdleThread base).hAllTables.objects]
+        omega
+      · simp [hAff] at h
+
+/-- **A successful idle boot leaves room for the interrupt nodes**: the budget
+conjunct reserves `InterruptLineSet.capacity` index entries past the config's
+objects, the boot root and the idle threads, so the started boot's node install
+(`installIrqNodes`) keeps the index within `maxObjects`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    ist.state.objectIndex.length + InterruptLineSet.capacity ≤ maxObjects := by
+  have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hBase : bootFromPlatformChecked config with
+  | error e => rw [hBase] at h; simp [Except.bind] at h
+  | ok base =>
+      rw [hBase] at h
+      simp only [Except.bind] at h
+      by_cases hAff : bootAffinitiesDeclared cores config
+      · simp only [hAff, if_true, if_pos hNd] at h
+        obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config base hBase
+        have hBudget := PlatformConfig.wellFormed_objectBudgetRespected config hWf
+        unfold objectBudgetRespected at hBudget
+        have hBudget' : config.initialObjects.length + 1 +
+            SeLe4n.Kernel.Concurrency.numCores + InterruptLineSet.capacity ≤ maxObjects := by
+          simpa using decide_eq_true_eq.mp hBudget
+        have hChecked := bootFromPlatformChecked_ok_objectIndex_length_le config base hBase
+        have hFold := foldl_storeIdleThread_objectIndex_length_le cores base
+        have hIst : ist = cores.foldl storeIdleThread base := by
+          simpa using h.symm
+        subst hIst
         omega
       · simp [hAff] at h
 
@@ -5910,7 +5943,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hRun : ist.state.runQueueRefined)
     (hBindings : notificationBindingReciprocal ist.state)
     (hRel : ist.state.releaseQueueRefined)
-    (hRefill : ist.state.refillsSound) :
+    (hRefill : ist.state.refillsSound)
+    (hCount : ist.state.objectIndex.length ≤ maxObjects) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape, hKinds, hGeom⟩ := hTree
@@ -6381,12 +6415,13 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         show (0, sc.yieldFromCode) = (0, 0)
         rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
       | _ => rfl
-  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries it.
+  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries the
+  -- agreement, and the caller bounds the object count.
   -- Compose all 22 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ist.hLifecycleConsistent⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ⟨ist.hLifecycleConsistent, hCount⟩⟩
 
 /-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
 resident** — no boot thread yields to a context, so every yield-to code is 0
@@ -8556,7 +8591,8 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
     hypotheses is discharged from the boot core's queue facts and the default
     scheduler; the rest is passed through. -/
 theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
-    (h : bootLinkedShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
+    (h : bootLinkedShape ist) (hCount : ist.state.objectIndex.length ≤ maxObjects) :
+    Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
     hTree, hBindings⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
@@ -8624,7 +8660,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (fun oid sc hO => ⟨((hShape _ _ hO).2.2.2.2.2.1 sc rfl).1,
       ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.1⟩)
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun hBindings hRel hRefill
+    ?_ ?_ hRun hBindings hRel hRefill hCount
   · have hE : ist.state.scheduler.replenishQueueOnCore bootCoreId = ReplenishQueue.empty := by
       rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).2.2.1
     simp only [replenishQueueValid, hE]
@@ -8713,6 +8749,7 @@ theorem emptyBoot_proofLayerInvariantBundle :
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
       (bootFromPlatform { initialObjects := [] }).state :=
   proofLayerInvariantBundle_of_bootLinkedShape _ emptyBoot_bootLinkedShape
+    (Nat.le_trans (bootFromPlatform_objectIndex_length_le _) (Nat.zero_le _))
 
 /-- U6-G Step 3: Freeze preserves the API invariant bundle.
     If the builder-phase state satisfies `apiInvariantBundle`, then the

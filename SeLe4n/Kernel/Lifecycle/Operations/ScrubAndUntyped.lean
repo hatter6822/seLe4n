@@ -409,6 +409,32 @@ theorem retypeFromUntyped_insert_eq_insertNoResize
     (Nat.le_of_lt (retypeFromUntyped_capacity_gated authority untypedId childId newObj
       allocSize st st' hOk)) k v
 
+/-- **A carve runs only below the object bound**: a successful
+`retypeFromUntyped` passed its capacity check (`objectStoreCapacityExceeded`
+otherwise), so the table it stores the child into held fewer than
+`maxObjects` objects. -/
+theorem retypeFromUntyped_ok_size_lt
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (st st' : SystemState)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    st.objects.size < maxObjects := by
+  unfold retypeFromUntyped SystemState.getObject? at hOk
+  cases h1 : st.objects[untypedId]? with
+  | none => simp [h1] at hOk
+  | some obj =>
+    simp [h1] at hOk
+    cases obj with
+    | untyped ut =>
+      simp at hOk
+      split at hOk
+      · simp at hOk
+      · omega
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+      simp at hOk
+
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
     `childId` was NOT in the object store before allocation. This is the formal
     foundation for typed ID namespace disjointness: since every new object
