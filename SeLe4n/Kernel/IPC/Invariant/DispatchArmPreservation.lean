@@ -1186,16 +1186,32 @@ theorem cspaceMint_preserves_ipcInvariantFull
       split at hStep
       · contradiction
       · rename_i child hMint
-        have hChildBadge : child.badge = badge := by
-          unfold mintDerivedCap at hMint
-          split at hMint
-          · split at hMint
-            · contradiction
-            · cases hMint; simp
-          · contradiction
+        -- The child's badge is `updateCapData`'s (`mintedBadge`): the
+        -- requested badge, or the parent's own, valid by the pre-state's
+        -- `capabilityBadgesWellFormed`.
+        have hV : parentNN.val = parent := by
+          unfold Capability.toNonNull? at hNN; split at hNN
+          · cases hNN; rfl
+          · cases hNN
+        have hParentValid : ∀ b, parent.badge = some b → b.valid := by
+          intro b hb
+          have hC := (cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 (hMid ▸ hLk)
+          rw [SystemState.lookupSlotCap] at hC
+          cases hCN : SystemState.lookupCNode st src.cnode with
+          | none => rw [hCN] at hC; exact absurd hC (by simp)
+          | some cn =>
+            rw [hCN] at hC
+            exact hInv.badgeWellFormed.2 src.cnode (.cnode cn) src.slot parent b
+              ((SystemState.lookupCNode_eq_some_iff st src.cnode cn).1 hCN) hC hb
+        have hChildBadge : ∀ b, child.badge = some b → b.valid := by
+          intro b hb
+          rw [mintDerivedCap_badge_propagated parentNN rights _ badge child hMint] at hb
+          unfold mintedBadge at hb
+          split at hb
+          · exact hBadgeValid b hb
+          · exact hParentValid b (hV ▸ hb)
         exact cspaceInsertSlot_preserves_ipcInvariantFull stMid st' dst child
-          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
-          (fun b hb => hBadgeValid b (hChildBadge ▸ hb)) hStep
+          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv) hChildBadge hStep
 
 /-- The CDT-recording tail every `WithCdt` form ends in touches neither
 objects nor the scheduler. -/
@@ -5185,12 +5201,12 @@ the edge writes links alone. -/
 theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
     (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
@@ -5207,11 +5223,11 @@ holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
     (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 2)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) {cap : Capability}
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
-    ((threadSlotSet ec st tid slot srcCNode srcSlot rights).getTcb? tid).isSome := by
-  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
-  obtain ⟨t1, hT1, hF⟩ := threadSlotCopied_slotFilled hObjInv hT hs rights hL
+    ((threadSlotSet ec st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome := by
+  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data
+  obtain ⟨t1, hT1, hF⟩ := threadSlotCopied_slotFilled hObjInv hT hs rights data hL
   unfold threadSlotSet
   dsimp only
   rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl

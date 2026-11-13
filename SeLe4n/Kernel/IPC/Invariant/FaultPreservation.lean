@@ -587,7 +587,7 @@ receive slot's CNode, derivation metadata and TCB queue links only
 (`receiveTransferCaps_object_cases`), none of which is a Reply or a
 SchedContext. -/
 theorem receiveTransferCaps_donationChainFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary} (hObjInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :

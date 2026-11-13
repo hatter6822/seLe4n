@@ -41,12 +41,13 @@ private def vaddrPrimary : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 4096)
 private def paddrPrimary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 12288)
 
 private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
--- WS-RR RR8.16 (`v0.35.201`): `cnodeId` consumes 4 bits per hop, so a path into
--- it carries at least that depth; CPtr 0 still names slot 0.
-private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 4 }
-private def guardedPathBadDepth : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 1 }
 private def badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := SeLe4n.Slot.ofNat 0 }
-private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 3 }
+-- `cnodeId` has a 4-bit radix and its capability no guard, so CPtr 0 at depth
+-- 4 names slot 0.  `guardedCnodeId` has a 2-bit radix; its capability carries a
+-- 1-bit guard of 1 (seL4 keeps a CNode's guard in `cap_cnode_cap`), so a path
+-- into it resolves 3 bits.
+private def cnodeRootCap : Capability := cnodeCapOf cnodeId
+private def guardedCnodeCap : Capability := cnodeCapOf guardedCnodeId 1 1
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
@@ -55,14 +56,14 @@ private def baseState : SystemState :=
     -- declared `radixWidth := 0` — one slot — while the checks below move,
     -- mint and map CDT nodes at slot indices up to 12, none of which any CPtr
     -- could have named.
-    |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
         })
       ])))
     |>.withObject wrongTypeId (.endpoint {})
-    |>.withObject guardedCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 1 1 2 (SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject guardedCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 1, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
@@ -210,7 +211,7 @@ private def f2UntypedState : SystemState :=
       children := []
       isDevice := false
     })
-    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -230,7 +231,7 @@ private def f2DeviceState : SystemState :=
       children := []
       isDevice := true
     })
-    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -248,15 +249,16 @@ private def runBaselineLookupNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
     .objectNotFound
   let _ ← expectOkVal "lookup path resolved"
-    (SeLe4n.Kernel.cspaceLookupPath slot0Path baseState)
+    (pathLookupCap cnodeRootCap 0 4 baseState)
 
+  -- the guard matches (CPtr 2 at depth 2), but the guard and radix need 3 bits
   expectErr "lookup path depth mismatch"
-    (SeLe4n.Kernel.cspaceLookupPath guardedPathBadDepth baseState)
-    .illegalState
+    (pathLookupCap guardedCnodeCap 2 2 baseState)
+    (.failedLookup false (.depthMismatch 2 3))
 
   expectErr "lookup path guard mismatch"
-    (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
-    (.invalidCapability 0)
+    (pathLookupCap guardedCnodeCap 0 3 baseState)
+    (.failedLookup false (.guardMismatch 3 1 1))
 
 
 /-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, and the
@@ -337,7 +339,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   }
   let txSeed : SeLe4n.Model.SystemState := {
     baseState with
-      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 0 0 8 [
+      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 [
         (txRootSlot.slot, rootCap), (txChildSlotA.slot, rootCap),
         (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
@@ -955,7 +957,7 @@ private def runUntypedF2NegativeChecks : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1546,7 +1548,7 @@ private def runSlotLinkAgreementChecks : IO Unit := do
     { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let seed : SystemState := {
     baseState with
-      objects := baseState.objects.insert wideId (.cnode (CNode.ofList 16 0 0 16
+      objects := baseState.objects.insert wideId (.cnode (CNode.ofList 16
         [(rootSlot.slot, cap), (childSlot.slot, cap)]))
   } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
   let ids := wideId :: invariantObjectIds
@@ -1587,7 +1589,7 @@ private def runSlotLinkShapeChecks : IO Unit := do
     { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let seed : SystemState := {
     baseState with
-      objects := baseState.objects.insert cnId (.cnode (CNode.ofList 8 0 0 8
+      objects := baseState.objects.insert cnId (.cnode (CNode.ofList 8
         [(rootSlot.slot, cap), (childSlot.slot, cap), (spareSlot, cap)]))
       cdt := CapDerivationTree.empty
   } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
@@ -1685,7 +1687,7 @@ private def runH2NegativeChecks : IO Unit := do
         children := [{ objId := ⟨60⟩, offset := 0, size := 64 }]
         isDevice := false
       })
-      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1811,7 +1813,7 @@ private def runAuditCoverageChecks : IO Unit := do
   -- runtime-test surface. Constructs a small CNode with `Capability.null`
   -- in slot 0 and asserts the rejection path returns the explicit
   -- `.nullCapability` error code.
-  let nullSrcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF
+  let nullSrcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat 0, Capability.null)]))
   let nullCnodeId : SeLe4n.ObjId := ⟨200⟩
   let nullSlot : SeLe4n.Kernel.CSpaceAddr :=
@@ -1840,15 +1842,15 @@ private def runWSH7Checks : IO Unit := do
   let capA : Capability := { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write] }
   let cn1 : CNode :=
-    (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)]))
+    (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)]))
   let cn2 : CNode :=
-    (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)]))
+    (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)]))
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 1 0 0 1 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, capA)]))
+  let lifecycleCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 1 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, capA)]))
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -2091,7 +2093,7 @@ private def runWSH15Checks : IO Unit := do
   let callerId : SeLe4n.ThreadId := ⟨1⟩
   let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write] }
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read] }
-  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap)
     ]))
@@ -2104,17 +2106,17 @@ private def runWSH15Checks : IO Unit := do
 
   -- H15-NEG-01: syscallLookupCap with non-existent CSpace root
   let badRootGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := ⟨9999⟩,
-    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
+    callerId := callerId, cspaceRootCap := some (cnodeCapOf ⟨9999⟩ 0 60),
+    capAddr := SeLe4n.CPtr.ofNat 0, requiredRight := .write
   }
   expectErr "H15 syscallLookupCap non-existent CSpace root"
     (SeLe4n.Kernel.syscallLookupCap badRootGate st)
-    .objectNotFound
+    (.failedLookup false .invalidRoot)
 
   -- H15-NEG-02: syscallLookupCap with valid CSpace but missing capability (slot 15)
   let missingSlotGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := SeLe4n.CPtr.ofNat 15, capDepth := 4, requiredRight := .write
+    callerId := callerId, cspaceRootCap := some (cnodeCapOf cnodeId 0 60),
+    capAddr := SeLe4n.CPtr.ofNat 15, requiredRight := .write
   }
   expectErr "H15 syscallLookupCap valid CSpace missing capability"
     (SeLe4n.Kernel.syscallLookupCap missingSlotGate st)
@@ -2122,8 +2124,8 @@ private def runWSH15Checks : IO Unit := do
 
   -- H15-NEG-03: syscallLookupCap with valid capability but wrong right
   let wrongRightGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := SeLe4n.CPtr.ofNat 1, capDepth := 4, requiredRight := .write   -- slot 1 has .read only
+    callerId := callerId, cspaceRootCap := some (cnodeCapOf cnodeId 0 60),
+    capAddr := SeLe4n.CPtr.ofNat 1, requiredRight := .write   -- slot 1 has .read only
   }
   expectErr "H15 syscallLookupCap valid capability wrong right"
     (SeLe4n.Kernel.syscallLookupCap wrongRightGate st)
@@ -2131,8 +2133,8 @@ private def runWSH15Checks : IO Unit := do
 
   -- H15-NEG-04: syscallLookupCap succeeds with correct right
   let goodGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
+    callerId := callerId, cspaceRootCap := some (cnodeCapOf cnodeId 0 60),
+    capAddr := SeLe4n.CPtr.ofNat 0, requiredRight := .write
   }
   match SeLe4n.Kernel.syscallLookupCap goodGate st with
   | .ok (cap, _) =>
@@ -2153,14 +2155,14 @@ private def runWSH15Checks : IO Unit := do
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
     (.invalidCapability 0)
 
-  -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
-  let zeroDepthGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0, requiredRight := .write
+  -- H15-NEG-06: syscallLookupCap with no CSpace root capability → invalidRoot
+  let noRootGate : SeLe4n.Kernel.SyscallGate := {
+    callerId := callerId, cspaceRootCap := none,
+    capAddr := SeLe4n.CPtr.ofNat 0, requiredRight := .write
   }
-  expectErr "H15 syscallLookupCap zero depth"
-    (SeLe4n.Kernel.syscallLookupCap zeroDepthGate st)
-    .illegalState
+  expectErr "H15 syscallLookupCap no CSpace root"
+    (SeLe4n.Kernel.syscallLookupCap noRootGate st)
+    (.failedLookup false .invalidRoot)
 
   IO.println "all WS-H15 syscall capability negative checks passed"
 
@@ -2232,7 +2234,7 @@ def runRetypeHeapCapacityChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject utId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
-      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 2 [
+      |>.withObject cnId (.cnode (CNode.ofList 2 [
           (SeLe4n.Slot.ofNat 0, { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] })
         ]))
       |>.withLifecycleObjectType utId .untyped
@@ -2287,7 +2289,7 @@ def runObjectStoreCapacityBoundaryChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject utId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
-      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 2 [
+      |>.withObject cnId (.cnode (CNode.ofList 2 [
           (SeLe4n.Slot.ofNat 0, { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] })
         ]))
       |>.withLifecycleObjectType utId .untyped
@@ -2356,7 +2358,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withObject h16TargetId (.endpoint {})
       -- Radix 1: the cleanup and read-only slot is slot 1, which a radix-0
       -- CNode has no entry for (WS-ZA ZA5.3 slot array).
-      |>.withObject h16CnodeId (.cnode (CNode.ofList 0 0 0 1 [
+      |>.withObject h16CnodeId (.cnode (CNode.ofList 1 [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -2391,7 +2393,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withObject h16TargetId (.endpoint {})
       |>.withObject carveRefusalUtId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x2000 })
-      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 2 [
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 2 [
           (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] }),
           (SeLe4n.Slot.ofNat 1, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write] }),
           (SeLe4n.Slot.ofNat 2, { target := .object h16TargetId, rights := AccessRightSet.ofList [.read, .write, .retype] })
@@ -2441,7 +2443,7 @@ def runWSH16LifecycleChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject carveRefusalUtId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
-      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 3 [
           (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] })
         ]))
       |>.withLifecycleObjectType carveRefusalUtId .untyped
@@ -2488,7 +2490,7 @@ def runWSH16LifecycleChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject carveRefusalUtId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x10000 })
-      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 3 [
           (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] })
         ]))
       |>.withLifecycleObjectType carveRefusalUtId .untyped
@@ -2518,7 +2520,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject fullRegionCnodeId (.cnode (CNode.ofList 0 0 0 1 [
+      |>.withObject fullRegionCnodeId (.cnode (CNode.ofList 1 [
           (SeLe4n.Slot.ofNat 0, {
             target := .object fullRegionUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -2560,7 +2562,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         children := []
         isDevice := true     -- device untyped
       })
-      |>.withObject h16DeviceCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject h16DeviceCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -2820,7 +2822,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   -- K-G-NEG-06: cspaceCopy fails — source slot empty (invalidCapability)
   let emptyCnodeState : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨200⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty))  -- no slots occupied
+      |>.withObject ⟨200⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 0 SeLe4n.UniqueSlotMap.empty))  -- no slots occupied
       |>.withLifecycleObjectType ⟨200⟩ .cnode
       |>.buildChecked)
   let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 0 }
@@ -2860,7 +2862,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   let carveCn : SeLe4n.ObjId := ⟨501⟩
   let carveState : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject carveCn (.cnode (CNode.ofList 0 0 0 2 [
+      |>.withObject carveCn (.cnode (CNode.ofList 2 [
           (SeLe4n.Slot.ofNat 0, { target := .object ⟨500⟩, rights := AccessRightSet.ofList [.read, .write, .retype] }),
           (SeLe4n.Slot.ofNat 1, { target := .object ⟨500⟩, rights := AccessRightSet.ofList [.read, .write] }),
           (SeLe4n.Slot.ofNat 2, { target := .replyCap ⟨502⟩, rights := AccessRightSet.ofList [.read, .write, .retype] })
@@ -3128,14 +3130,14 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   }
 
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
-  let fullCNode : CNode := CNode.ofList 4 0 0 2 [
+  let fullCNode : CNode := CNode.ofList 2 [
       (SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap), (SeLe4n.Slot.ofNat 3, cap)
     ]
 
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject receiverRoot (.cnode fullCNode)
-      |>.withObject senderRoot (.cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]))
+      |>.withObject senderRoot (.cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, cap)]))
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject endpointObj (.endpoint {})
       |>.buildChecked)
@@ -3227,7 +3229,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     scBindingScCode := 0, scBindingOwnerCode := 0
   }
 
-  let senderCNode : CNode := CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
+  let senderCNode : CNode := CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
 
   let st0 :=
     (BootstrapBuilder.empty
@@ -3272,310 +3274,195 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   IO.println "all L-13 cap transfer short-circuit tests passed"
 
 -- ============================================================================
--- WS-M4-A: Multi-level resolveCapAddress edge case tests (M-T01)
+-- WS-M4-A: Multi-level resolveAddressBits edge case tests (M-T01)
 -- ============================================================================
 
-/-- M4-A1: guard-only CNode (radixWidth=0). -/
+/-- One `resolveAddressBits` outcome against the expected one: seL4's slot and
+    the bits left unresolved, or its lookup fault. -/
+private def expectResolve (label : String)
+    (actual expected : Except LookupFault (SlotRef × Nat)) : IO Unit :=
+  match actual, expected with
+  | .ok (r, n), .ok (r', n') =>
+      if r = r' ∧ n = n' then IO.println s!"check passed [{label}]"
+      else throw <| IO.userError s!"{label}: expected {reprStr (r', n')}, got {reprStr (r, n)}"
+  | .error f, .error f' =>
+      if f = f' then IO.println s!"check passed [{label}]"
+      else throw <| IO.userError s!"{label}: expected {reprStr f'}, got {reprStr f}"
+  | .ok (r, n), .error f' =>
+      throw <| IO.userError s!"{label}: expected {reprStr f'}, got {reprStr (r, n)}"
+  | .error f, .ok (r', n') =>
+      throw <| IO.userError s!"{label}: expected {reprStr (r', n')}, got {reprStr f}"
+
+/-- M4-A1: guard-only CNode (radixWidth=0); the guard is the capability's. -/
 private def runWSM4GuardOnlyChecks : IO Unit := do
-  -- M4-A1: Guard-only CNode (radixWidth=0, guardWidth=4, guardValue=0xA)
-  -- With radixWidth=0, slot index = addr % 2^0 = addr % 1 = 0 always.
+  -- A 4-bit guard of 0xA on the capability, over a CNode of one slot.
   let guardOnlyRoot : SeLe4n.ObjId := ⟨6000⟩
   let guardOnlyTarget : SeLe4n.ObjId := ⟨6001⟩
   let stGuardOnly :=
     (BootstrapBuilder.empty
-      |>.withObject guardOnlyRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 4 0xA 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject guardOnlyRoot (.cnode (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject guardOnlyTarget (.endpoint {})
       |>.buildChecked)
+  let cap := cnodeCapOf guardOnlyRoot 0xA 4
+  expectResolve "guard-only CNode resolves to slot 0"
+    (SeLe4n.Kernel.resolveAddressBits cap (SeLe4n.CPtr.ofNat 0xA) 4 stGuardOnly)
+    (.ok ({ cnode := guardOnlyRoot, slot := SeLe4n.Slot.ofNat 0 }, 0))
+  -- seL4's guard mismatch: the bits left, the capability's guard, its width
+  expectResolve "guard-only CNode rejects wrong guard"
+    (SeLe4n.Kernel.resolveAddressBits cap (SeLe4n.CPtr.ofNat 0xB) 4 stGuardOnly)
+    (.error (.guardMismatch 4 0xA 4))
 
-  -- Correct guard: addr=0xA (top 4 bits encode guard 0xA)
-  let resultOk := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot (SeLe4n.CPtr.ofNat 0xA) 4 stGuardOnly
-  match resultOk with
-  | .ok ref =>
-      if ref.cnode = guardOnlyRoot ∧ ref.slot = SeLe4n.Slot.ofNat 0 then
-        IO.println "check passed [guard-only CNode resolves to slot 0]"
-      else
-        throw <| IO.userError s!"expected slot 0 at guardOnlyRoot, got {toString ref}"
-  | .error e =>
-      throw <| IO.userError s!"expected success, got {toString e}"
-
-  -- Wrong guard: addr=0xB (guard extracted = 0xB ≠ 0xA)
-  let resultBad := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot (SeLe4n.CPtr.ofNat 0xB) 4 stGuardOnly
-  match resultBad with
-  | .error (.invalidCapability _) =>
-      IO.println "check passed [guard-only CNode rejects wrong guard]"
-  | .error e =>
-      throw <| IO.userError s!"expected invalidCapability, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "expected error for wrong guard, got success"
-
-
-/-- M4-A4 + M4-A5: single-level leaf, partial bits, zero bits.  Folded because
-    A4 and A5 share the leafRoot/leafTarget/stLeaf setup. -/
+/-- M4-A4 + M4-A5: single-level leaf, partial bits, zero bits. -/
 private def runWSM4SmallBitsChecks : IO Unit := do
-  -- M4-A5: Single-level leaf resolution (guardWidth=0, radixWidth=4)
-  -- addr=5 → slot 5, consumed = 4 bits, bitsRemaining - consumed = 0 → leaf
   let leafRoot : SeLe4n.ObjId := ⟨6010⟩
   let leafTarget : SeLe4n.ObjId := ⟨6011⟩
   let stLeaf :=
     (BootstrapBuilder.empty
-      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
-
-  let resultLeaf := SeLe4n.Kernel.resolveCapAddress leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
-  match resultLeaf with
-  | .ok ref =>
-      if ref.cnode = leafRoot ∧ ref.slot = SeLe4n.Slot.ofNat 5 then
-        IO.println "check passed [single-level leaf resolves to slot 5]"
-      else
-        throw <| IO.userError s!"expected slot 5, got {toString ref}"
-  | .error e =>
-      throw <| IO.userError s!"expected success, got {toString e}"
-
-  -- M4-A4: Partial bit consumption (bitsRemaining < guardWidth + radixWidth)
-  -- CNode needs 6 bits (guardWidth=2 + radixWidth=4), but only 4 available
+  expectResolve "single-level leaf resolves to slot 5"
+    (SeLe4n.Kernel.resolveAddressBits (cnodeCapOf leafRoot) (SeLe4n.CPtr.ofNat 5) 4 stLeaf)
+    (.ok ({ cnode := leafRoot, slot := SeLe4n.Slot.ofNat 5 }, 0))
+  -- M4-A4: the capability's 2-bit guard and the 4-bit radix need 6 bits; 4 given
   let partialRoot : SeLe4n.ObjId := ⟨6020⟩
   let stPartial :=
     (BootstrapBuilder.empty
-      |>.withObject partialRoot (.cnode (SeLe4n.Model.CNode.ofSlots 6 2 0 4 SeLe4n.UniqueSlotMap.empty))
+      |>.withObject partialRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 SeLe4n.UniqueSlotMap.empty))
       |>.buildChecked)
+  let partialCap := cnodeCapOf partialRoot 0 2
+  expectResolve "partial bits is seL4's depth mismatch"
+    (SeLe4n.Kernel.resolveAddressBits partialCap (SeLe4n.CPtr.ofNat 0) 4 stPartial)
+    (.error (.depthMismatch 4 6))
+  -- zero bits: the guard does not fit, seL4's guard mismatch
+  expectResolve "zero bits is seL4's guard mismatch"
+    (SeLe4n.Kernel.resolveAddressBits partialCap (SeLe4n.CPtr.ofNat 0) 0 stPartial)
+    (.error (.guardMismatch 0 0 2))
 
-  let resultPartial := SeLe4n.Kernel.resolveCapAddress partialRoot (SeLe4n.CPtr.ofNat 0) 4 stPartial
-  match resultPartial with
-  | .error .illegalState =>
-      IO.println "check passed [partial bits returns illegalState]"
-  | .error e =>
-      throw <| IO.userError s!"expected illegalState, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "expected error for partial bits, got success"
-
-  -- M4-A4 zero bits
-  let resultZero := SeLe4n.Kernel.resolveCapAddress partialRoot (SeLe4n.CPtr.ofNat 0) 0 stPartial
-  match resultZero with
-  | .error .illegalState =>
-      IO.println "check passed [zero bitsRemaining returns illegalState]"
-  | .error e =>
-      throw <| IO.userError s!"zero: expected illegalState, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "zero: expected error for zero bits, got success"
-
-
-/-- M4-A3: guard mismatch at intermediate level. -/
+/-- M4-A3: guard mismatch at an intermediate level; each level's guard is the
+    capability's that names it. -/
 private def runWSM4GuardMismatchChecks : IO Unit := do
-  -- M4-A3: Guard mismatch at intermediate level
-  -- 3-level chain: level0 (guard=3, gw=2, rw=2, 4 bits) →
-  --               level1 (guard=1, gw=2, rw=2, 4 bits) →
-  --               level2 (guard=0, gw=0, rw=4, 4 bits, leaf)
-  -- Total = 12 bits
+  -- lvl0 (cap guard 3 of 2 bits, radix 2) → lvl1 (cap guard 1 of 2 bits,
+  -- radix 2) → lvl2 (no guard, radix 4), 12 bits:
+  -- [guard0=0b11][slot0=0][guard1=0b01][slot1=0][slot2=7] = 0xC47;
+  -- guard1 = 0b10 instead is 0xC87.
   let lvl0 : SeLe4n.ObjId := ⟨6030⟩
   let lvl1 : SeLe4n.ObjId := ⟨6031⟩
   let lvl2 : SeLe4n.ObjId := ⟨6032⟩
   let lvl2Target : SeLe4n.ObjId := ⟨6033⟩
-
-  -- For 12-bit addr with correct guards:
-  -- Level 0 consumes bits [11..8]: guard=3 (2 bits), slot index (2 bits)
-  -- Level 1 consumes bits [7..4]: guard=1 (2 bits), slot index (2 bits)
-  -- Level 2 consumes bits [3..0]: slot index (4 bits)
-  --
-  -- addr layout (12 bits): [guard0=0b11][slot0][guard1=0b01][slot1][slot2]
-  -- slot0 = 0 → lookup slot 0 at lvl0 → points to lvl1
-  -- slot1 = 0 → lookup slot 0 at lvl1 → points to lvl2
-  -- slot2 = 7 → leaf at lvl2 slot 7
-  --
-  -- Correct addr = 0b_11_00_01_00_0111 = 0xC47
-  -- Wrong guard at lvl1: guard1 = 0b10 instead of 0b01
-  -- Wrong addr = 0b_11_00_10_00_0111 = 0xC87
   let stMidGuard :=
     (BootstrapBuilder.empty
-      |>.withObject lvl0 (.cnode (SeLe4n.Model.CNode.ofSlots 12 2 3 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write] })
+      |>.withObject lvl0 (.cnode (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
+            (SeLe4n.Slot.ofNat 0, cnodeCapOf lvl1 1 2)
           ])))
-      |>.withObject lvl1 (.cnode (SeLe4n.Model.CNode.ofSlots 8 2 1 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write] })
+      |>.withObject lvl1 (.cnode (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
+            (SeLe4n.Slot.ofNat 0, cnodeCapOf lvl2)
           ])))
-      |>.withObject lvl2 (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject lvl2 (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject lvl2Target (.endpoint {})
       |>.buildChecked)
-
-  -- Correct: all guards match, should resolve to lvl2 slot 7
-  let resultCorrect := SeLe4n.Kernel.resolveCapAddress lvl0 (SeLe4n.CPtr.ofNat 0xC47) 12 stMidGuard
-  match resultCorrect with
-  | .ok ref =>
-      if ref.cnode = lvl2 ∧ ref.slot = SeLe4n.Slot.ofNat 7 then
-        IO.println "check passed [correct guards resolve through 3 levels]"
-      else
-        throw <| IO.userError s!"expected lvl2 slot 7, got {toString ref}"
-  | .error e =>
-      throw <| IO.userError s!"expected success for correct guards, got {toString e}"
-
-  -- Wrong guard at level 1: guard1=2 instead of 1
-  let resultWrongMid := SeLe4n.Kernel.resolveCapAddress lvl0 (SeLe4n.CPtr.ofNat 0xC87) 12 stMidGuard
-  match resultWrongMid with
-  | .error (.invalidCapability _) =>
-      IO.println "check passed [guard mismatch at intermediate level returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"expected invalidCapability for wrong mid guard, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "expected error for wrong mid guard, got success"
-
+  let rootCap := cnodeCapOf lvl0 3 2
+  expectResolve "correct guards resolve through 3 levels"
+    (SeLe4n.Kernel.resolveAddressBits rootCap (SeLe4n.CPtr.ofNat 0xC47) 12 stMidGuard)
+    (.ok ({ cnode := lvl2, slot := SeLe4n.Slot.ofNat 7 }, 0))
+  expectResolve "guard mismatch at intermediate level"
+    (SeLe4n.Kernel.resolveAddressBits rootCap (SeLe4n.CPtr.ofNat 0xC87) 12 stMidGuard)
+    (.error (.guardMismatch 8 1 2))
 
 /-- M4-A2: maximum depth (8 CNodes × 8 bits each = 64-bit address chain).
     Isolated because the inner `for i in List.range 7 do` loop builder
     generates per-iteration nesting that compounds heavily in C codegen. -/
 private def runWSM4MaxDepthLoopChecks : IO Unit := do
-  -- M4-A2: Maximum depth (64 bits) — 8 CNodes each consuming 8 bits
-  -- Build chain of 8 CNodes (radixWidth=8, guardWidth=0 each)
-  -- addr encodes slot index for each level in 8-bit chunks
-  -- Level 0: bits [63..56] → slot at lvl0 → points to lvl1
-  -- Level 1: bits [55..48] → slot at lvl1 → points to lvl2
-  -- ...
-  -- Level 7: bits [7..0] → leaf slot at lvl7
   let maxDepthIds : Array SeLe4n.ObjId := #[⟨6100⟩, ⟨6101⟩, ⟨6102⟩, ⟨6103⟩, ⟨6104⟩, ⟨6105⟩, ⟨6106⟩, ⟨6107⟩]
   let maxDepthLeafTarget : SeLe4n.ObjId := ⟨6108⟩
-
-  -- Use slot index 1 at each level for simplicity
-  -- addr = 0x0101010101010101 (each byte = 1)
+  -- slot 1 at each level: addr = 0x0101010101010101
   let mut builder := BootstrapBuilder.empty
   for i in List.range 7 do
     let cnodeId := maxDepthIds[i]!
     let nextId := maxDepthIds[i + 1]!
-    builder := builder.withObject cnodeId (.cnode (CNode.ofList (64 - i * 8) 0 0 8 [
-        (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write] })
+    builder := builder.withObject cnodeId (.cnode (CNode.ofList 8 [
+        (SeLe4n.Slot.ofNat 1, cnodeCapOf nextId)
       ]))
-  -- Level 7 (leaf): slot 1 holds the target cap
-  builder := builder.withObject maxDepthIds[7]! (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [
+  builder := builder.withObject maxDepthIds[7]! (.cnode (SeLe4n.Model.CNode.ofSlots 8 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read] })
     ])))
   builder := builder.withObject maxDepthLeafTarget (.endpoint {})
   let stMaxDepth := builder.buildChecked
-
-  -- Resolve with 64 bits: 0x0101010101010101
   let addr64 : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0x0101010101010101
-  let resultMax := SeLe4n.Kernel.resolveCapAddress maxDepthIds[0]! addr64 64 stMaxDepth
-  match resultMax with
-  | .ok ref =>
-      if ref.cnode = maxDepthIds[7]! ∧ ref.slot = SeLe4n.Slot.ofNat 1 then
-        IO.println "check passed [64-bit resolution across 8 CNodes succeeds]"
-      else
-        throw <| IO.userError s!"expected leaf at level 7 slot 1, got {toString ref}"
-  | .error e =>
-      throw <| IO.userError s!"expected success for 64-bit resolution, got {toString e}"
-
-  -- 65 bits: shiftedAddr = addr >>> 57 at level 0, which shifts the address
-  -- one bit further than the 64-bit case, yielding slot index 0 instead of 1.
-  -- Since slot 0 is empty in our CNodes → invalidCapability.
-  let result65 := SeLe4n.Kernel.resolveCapAddress maxDepthIds[0]! addr64 65 stMaxDepth
-  match result65 with
-  | .error (.invalidCapability _) =>
-      IO.println "check passed [65-bit overflow returns invalidCapability (empty slot)]"
-  | .error e =>
-      throw <| IO.userError s!"overflow: expected invalidCapability, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "overflow: expected error for 65 bits, got success"
-
+  expectResolve "64-bit resolution across 8 CNodes"
+    (SeLe4n.Kernel.resolveAddressBits (cnodeCapOf maxDepthIds[0]!) addr64 64 stMaxDepth)
+    (.ok ({ cnode := maxDepthIds[7]!, slot := SeLe4n.Slot.ofNat 1 }, 0))
+  -- 65 bits: the first level reads one bit higher, slot 0, which is empty, so
+  -- the walk stops there with 57 bits left (seL4 leaves a missing capability
+  -- to the caller)
+  expectResolve "65 bits stops at an empty slot"
+    (SeLe4n.Kernel.resolveAddressBits (cnodeCapOf maxDepthIds[0]!) addr64 65 stMaxDepth)
+    (.ok ({ cnode := maxDepthIds[0]!, slot := SeLe4n.Slot.ofNat 0 }, 57))
 
 /-- M4-A6 + M4-A7: empty intermediate slot + non-CNode at intermediate level. -/
 private def runWSM4SlotEdgeChecks : IO Unit := do
-  -- M4-A6: Empty slot at intermediate (non-leaf) level.
-  -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
-  -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
-  -- unconditionally. So we need 3 levels where the middle level has an empty slot
-  -- and there are still bits remaining for recursion.
-  --
-  -- lvl0 (gw=0, rw=4, 4 bits) → slot 3 → lvl1 (gw=0, rw=4, empty, 4 bits)
-  -- Total bitsRemaining = 10. At lvl1: bits=6, consumed=4, remaining=2 > 0
-  -- → tries to recurse → slot lookup → empty → invalidCapability
+  -- M4-A6: lvl0 (radix 4) slot 3 → lvl1 (radix 4, empty), 10 bits: the walk
+  -- reaches lvl1 slot 0 with 2 bits left, finds no capability, and stops there.
   let emptyMidRoot : SeLe4n.ObjId := ⟨6040⟩
   let emptyMidChild : SeLe4n.ObjId := ⟨6041⟩
   let stEmptyMid :=
     (BootstrapBuilder.empty
-      |>.withObject emptyMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 10 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read] })
+      |>.withObject emptyMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
+            (SeLe4n.Slot.ofNat 3, cnodeCapOf emptyMidChild)
           ])))
-      |>.withObject emptyMidChild (.cnode (SeLe4n.Model.CNode.ofSlots 6 0 0 4 SeLe4n.UniqueSlotMap.empty))  -- all slots empty
+      |>.withObject emptyMidChild (.cnode (SeLe4n.Model.CNode.ofSlots 4 SeLe4n.UniqueSlotMap.empty))
       |>.buildChecked)
-
-  -- addr=0xC0 (10 bits): lvl0 shift=(10-4)=6, 0xC0>>>6=3, slot 3 → lvl1.
-  -- At lvl1: bits=6, shift=(6-4)=2, 0xC0>>>2=48, slot=48%16=0. Remaining=2>0.
-  -- Slot 0 is empty → invalidCapability (intermediate recursion path, line 106).
-  let resultEmptyMid := SeLe4n.Kernel.resolveCapAddress emptyMidRoot (SeLe4n.CPtr.ofNat 0xC0) 10 stEmptyMid
-  match resultEmptyMid with
-  | .error (.invalidCapability _) =>
-      IO.println "check passed [empty slot at intermediate level returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"expected invalidCapability, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "expected error for empty intermediate slot, got success"
-
-  -- M4-A7: Non-CNode target at intermediate level — slot holds cap targeting endpoint
-  -- 2-level chain: lvl0 slot 1 → endpoint (not a CNode) → objectNotFound on recursion
+  expectResolve "empty slot at intermediate level stops the walk"
+    (SeLe4n.Kernel.resolveAddressBits (cnodeCapOf emptyMidRoot) (SeLe4n.CPtr.ofNat 0xC0) 10 stEmptyMid)
+    (.ok ({ cnode := emptyMidChild, slot := SeLe4n.Slot.ofNat 0 }, 2))
+  -- seL4's CNode operation refuses the bits left as a depth mismatch
+  expectErr "CNode operation on an unresolved remainder"
+    (pathLookupCap (cnodeCapOf emptyMidRoot) 0xC0 10 stEmptyMid)
+    (.failedLookup false (.depthMismatch 2 0))
+  -- M4-A7: lvl0 slot 1 holds an endpoint capability; the walk stops there.
   let nonCnodeMidRoot : SeLe4n.ObjId := ⟨6050⟩
   let nonCnodeMidEp : SeLe4n.ObjId := ⟨6051⟩
   let stNonCnodeMid :=
     (BootstrapBuilder.empty
-      |>.withObject nonCnodeMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject nonCnodeMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject nonCnodeMidEp (.endpoint {})
       |>.buildChecked)
+  expectResolve "non-CNode capability at intermediate level stops the walk"
+    (SeLe4n.Kernel.resolveAddressBits (cnodeCapOf nonCnodeMidRoot) (SeLe4n.CPtr.ofNat 0x15) 8 stNonCnodeMid)
+    (.ok ({ cnode := nonCnodeMidRoot, slot := SeLe4n.Slot.ofNat 1 }, 4))
 
-  -- addr=0x15 (8 bits): lvl0 slot = 1 → cap targets endpoint, recurse with 4 bits
-  -- endpoint is not a CNode → objectNotFound
-  let resultNonCnode := SeLe4n.Kernel.resolveCapAddress nonCnodeMidRoot (SeLe4n.CPtr.ofNat 0x15) 8 stNonCnodeMid
-  match resultNonCnode with
-  | .error .objectNotFound =>
-      IO.println "check passed [non-CNode target at intermediate level returns objectNotFound]"
-  | .error e =>
-      throw <| IO.userError s!"expected objectNotFound, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "expected error for non-CNode mid target, got success"
-
-
-/-- M4-A8: cspaceLookupMultiLevel wrapper integration.  Rebuilds leafRoot/
-    leafTarget/stLeaf locally (was reused from M4-A5; rebuild keeps the
-    helper self-contained without parameter threading). -/
+/-- M4-A8: the CNode-operation lookup (`lookupSlotForCNodeOp`) end to end. -/
 private def runWSM4WrapperIntegrationChecks : IO Unit := do
-  -- M4-A8 rebuild: leafRoot/leafTarget/stLeaf (originally shared with M4-A5).
   let leafRoot : SeLe4n.ObjId := ⟨6010⟩
   let leafTarget : SeLe4n.ObjId := ⟨6011⟩
   let stLeaf :=
     (BootstrapBuilder.empty
-      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
-
-  -- M4-A8: cspaceLookupMultiLevel wrapper integration — verify full pipeline
-  -- Reuse the single-level leaf state (stLeaf): leafRoot slot 5 → leafTarget endpoint
-  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
-  match resultWrapper with
-  | .ok (cap, _) =>
+  match pathLookupCap (cnodeCapOf leafRoot) 5 4 stLeaf with
+  | .ok cap =>
       if cap.target = .object leafTarget then
-        IO.println "check passed [cspaceLookupMultiLevel returns correct capability]"
+        IO.println "check passed [CNode-operation lookup returns correct capability]"
       else
         throw <| IO.userError s!"unexpected cap target {toString cap.target}"
   | .error e =>
       throw <| IO.userError s!"expected success, got {toString e}"
+  expectErr "CNode-operation lookup of an empty slot"
+    (pathLookupCap (cnodeCapOf leafRoot) 15 4 stLeaf)
+    (.invalidCapability 0)
 
-  -- Wrapper negative: nonexistent slot → invalidCapability
-  let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 15) 4 stLeaf
-  match resultWrapperBad with
-  | .error (.invalidCapability _) =>
-      IO.println "check passed [cspaceLookupMultiLevel empty slot returns invalidCapability]"
-  | .error e =>
-      throw <| IO.userError s!"neg: expected invalidCapability, got {toString e}"
-  | .ok _ =>
-      throw <| IO.userError "neg: expected error for empty slot wrapper, got success"
-
-
-/-- WS-M4-A (M-T01): Multi-level `resolveCapAddress` edge case tests.
+/-- WS-M4-A (M-T01): Multi-level `resolveAddressBits` edge case tests.
 
 Scenarios exercised:
 - SCN-RESOLVE-GUARD-ONLY (M4-A1): Guard-only CNode (radixWidth=0)
@@ -3584,14 +3471,14 @@ Scenarios exercised:
 - SCN-RESOLVE-PARTIAL-BITS (M4-A4): Insufficient bits for CNode consumption
 - SCN-RESOLVE-SINGLE-LEVEL (M4-A5): Single-level leaf resolution -/
 def runWSM4ResolveEdgeCaseChecks : IO Unit := do
-  IO.println "\n=== WS-M4-A: resolveCapAddress edge case tests ==="
-  runWSM4GuardOnlyChecks                -- [was 2669-2707: M4-A1]
-  runWSM4SmallBitsChecks                -- [was 2708-2768: M4-A5/A4/A4-zero, folded]
-  runWSM4GuardMismatchChecks            -- [was 2769-2844: M4-A3]
-  runWSM4MaxDepthLoopChecks             -- [was 2845-2906: M4-A2 max-depth for-loop, isolated]
-  runWSM4SlotEdgeChecks                 -- [was 2907-2978: M4-A6/A7, folded]
-  runWSM4WrapperIntegrationChecks       -- [was 2979-3000: M4-A8 wrapper]
-  IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
+  IO.println "\n=== WS-M4-A: resolveAddressBits edge case tests ==="
+  runWSM4GuardOnlyChecks
+  runWSM4SmallBitsChecks
+  runWSM4GuardMismatchChecks
+  runWSM4MaxDepthLoopChecks
+  runWSM4SlotEdgeChecks
+  runWSM4WrapperIntegrationChecks
+  IO.println "all WS-M4-A resolveAddressBits edge case tests passed"
 
 
 -- ============================================================================
@@ -3610,7 +3497,7 @@ def runRevocationRefusalChecks : IO Unit := do
   let r2EmptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let r2State : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject r2CnodeId (.cnode (CNode.ofList 0 0 0 3 []))
+      |>.withObject r2CnodeId (.cnode (CNode.ofList 3 []))
       |>.buildChecked)
   expectErr "revoke of a slot in a missing CNode"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId r2BadSlot r2State)
@@ -3634,7 +3521,7 @@ def runThreadSlotInvocationRefusalChecks : IO Unit := do
   let cells := SeLe4n.Model.TCB.spaceCellsOf cnId vsId
   let st : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 3 []))
+      |>.withObject cnId (.cnode (CNode.ofList 3 []))
       |>.withObject vsId (.vspaceRoot { asid := asidPrimary, mappings := {} })
       |>.withObject tId (.tcb {
           tid := ⟨6⟩
@@ -3647,8 +3534,8 @@ def runThreadSlotInvocationRefusalChecks : IO Unit := do
   let threadCap : Capability :=
     { target := .object tId, rights := AccessRightSet.ofList [.read, .write, .grant] }
   let gate : SeLe4n.Kernel.SyscallGate :=
-    { callerId := ⟨6⟩, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 2,
-      requiredRight := .write }
+    { callerId := ⟨6⟩, cspaceRootCap := some (cnodeCapOf cnId 0 61),
+      capAddr := SeLe4n.CPtr.ofNat 0, requiredRight := .write }
   for (sid, name) in [(SyscallId.cspaceDelete, "CNode_Delete"), (SyscallId.cspaceRevoke, "CNode_Revoke")] do
     for slot in [0, 1] do
       let decoded : SyscallDecodeResult :=
@@ -3661,7 +3548,7 @@ def runThreadSlotInvocationRefusalChecks : IO Unit := do
   -- holds both roots.
   let rootsKept (s : SystemState) : Bool :=
     match s.getTcb? ⟨6⟩ with
-    | some t => t.spaceCells == cells && t.cspaceRoot == cnId && t.vspaceRoot == vsId
+    | some t => t.spaceCells[1] == cells[1] && t.cspaceRoot == cnId && t.vspaceRoot == vsId
     | none => false
   unless rootsKept st do
     throw <| IO.userError "a refused CNode invocation must leave the thread's two root slots"
@@ -3811,7 +3698,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let mintSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
   -- slot0 in baseState has rights [read, write]; create a read-only source
-  let readOnlyCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
+  let readOnlyCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
         rights := AccessRightSet.ofList [.read]
@@ -3853,7 +3740,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- against a comment that has always said 2, so "full" named a CNode holding
   -- three capabilities no CPtr could reach.  At radix 2 it is genuinely full.
   let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
-  let fullCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
+  let fullCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write] }),
       (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read] }),
       (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write] }),
@@ -3879,7 +3766,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   }
   let deepSeed : SystemState :=
     { baseState with
-      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 0 0 8
+      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8
         ((deepRootSlot :: deepNodes).map fun (r : SlotRef) => (r.slot, deepCap))))
       cdt := CapDerivationTree.empty
     } |>.withDerivationEdges
@@ -3947,7 +3834,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject exhaustedAuthCnode (.cnode (CNode.ofList 0 0 0 1 [
+      |>.withObject exhaustedAuthCnode (.cnode (CNode.ofList 1 [
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -4327,8 +4214,8 @@ def runAC1CdtTrackingChecks : IO Unit := do
     rights := allRights, }
 
   -- Create CNodes with proper structure
-  let srcCnode : CNode := CNode.ofList 0 0 0 4 [(srcSlot, cap)]
-  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 4 SeLe4n.UniqueSlotMap.empty)
+  let srcCnode : CNode := CNode.ofList 4 [(srcSlot, cap)]
+  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 4 SeLe4n.UniqueSlotMap.empty)
 
   let st1 := { st0 with
     objects := st0.objects
@@ -4391,9 +4278,9 @@ private def r1BaseState : SystemState :=
     |>.withObject r1EpId (.endpoint {})
     |>.withObject r1TargetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject r1CallerCNode (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)])))
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)])))
     |>.withObject r1ReceiverCNode (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject r1CallerTid.toObjId (.tcb
         { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
           spaceCells := SeLe4n.Model.TCB.spaceCellsOf r1CallerCNode ⟨0⟩,
@@ -4559,7 +4446,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   IO.println "=== WS-RR RR8.16: CSpace destination slots are radix-bounded ==="
   -- A four-slot CNode (indices 0..3) holding one capability at slot 0.
   let rangeCnodeId : SeLe4n.ObjId := ⟨71⟩
-  let rangeCnode : CNode := (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
+  let rangeCnode : CNode := (SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, ({ target := .object endpointId, rights := AccessRightSet.ofList [.read, .write] } : Capability))
     ]))
   let rangeState : SystemState :=
@@ -4592,7 +4479,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   let fullCnodeId : SeLe4n.ObjId := ⟨72⟩
   let occupied : Capability :=
     { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
-  let fullCnode : CNode := CNode.ofList 2 0 0 2 [
+  let fullCnode : CNode := CNode.ofList 2 [
       (SeLe4n.Slot.ofNat 0, occupied), (SeLe4n.Slot.ofNat 1, occupied),
       (SeLe4n.Slot.ofNat 2, occupied), (SeLe4n.Slot.ofNat 3, occupied) ]
   let fullState : SystemState :=
@@ -4658,10 +4545,10 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
      (SeLe4n.Slot.ofNat 3, { target := .object deepId, rights := rw })]
   let build (inner : List (SeLe4n.Slot × Capability)) : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject rootId (.cnode (CNode.ofList 0 0 0 3
+      |>.withObject rootId (.cnode (CNode.ofList 3
           [(SeLe4n.Slot.ofNat 0, { target := .object innerId, rights := rw })]))
-      |>.withObject innerId (.cnode (CNode.ofList 0 0 0 3 inner))
-      |>.withObject deepId (.cnode (CNode.ofList 0 0 0 3
+      |>.withObject innerId (.cnode (CNode.ofList 3 inner))
+      |>.withObject deepId (.cnode (CNode.ofList 3
           [(SeLe4n.Slot.ofNat 0, { target := .object ep2Id, rights := rw })]))
       |>.withObject epId (.endpoint {})
       |>.withObject ep2Id (.endpoint {})
@@ -4694,13 +4581,13 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
   let vsId : SeLe4n.ObjId := ⟨20⟩
   let stS : SystemState :=
     ((BootstrapBuilder.empty
-      |>.withObject rootId (.cnode (CNode.ofList 0 0 0 3
+      |>.withObject rootId (.cnode (CNode.ofList 3
           [(SeLe4n.Slot.ofNat 0, { target := .object newCn, rights := rw }),
            (SeLe4n.Slot.ofNat 1, { target := .object vsId, rights := rw })]))
-      |>.withObject innerId (.cnode (CNode.ofList 0 0 0 3
+      |>.withObject innerId (.cnode (CNode.ofList 3
           [(SeLe4n.Slot.ofNat 2, { target := .object epId, rights := rw })]))
       |>.withObject epId (.endpoint {})
-      |>.withObject newCn (.cnode (CNode.ofList 0 0 0 3 []))
+      |>.withObject newCn (.cnode (CNode.ofList 3 []))
       |>.withObject vsId (.vspaceRoot { asid := asidPrimary, mappings := {} })
       |>.withObject tId (.tcb {
           tid := ⟨6⟩
@@ -4721,7 +4608,7 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
     unless SeLe4n.Kernel.zombieSlotClass stS tId SeLe4n.Model.TCB.cspaceRootSlot tId
         SeLe4n.Model.TCB.cspaceRootSlot != 0 do
       throw <| IO.userError "the thread's old CSpace root must name a CNode holding a capability"
-    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc with
+    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 with
     | .error e => throw <| IO.userError s!"the space change must succeed, got {repr e}"
     | .ok stS' =>
       match stS'.getTcb? ⟨6⟩ with
@@ -4779,7 +4666,7 @@ private def runUntypedRetireSpliceChecks : IO Unit := do
   let rw : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let st : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 3
+      |>.withObject cnId (.cnode (CNode.ofList 3
           [(SeLe4n.Slot.ofNat 0, { target := .object u1, rights := rw })]))
       |>.withObject u0 (.untyped {
           regionBase := (SeLe4n.PAddr.ofNat 0x100000)

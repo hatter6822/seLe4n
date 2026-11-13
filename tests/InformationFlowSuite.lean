@@ -693,8 +693,8 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write] })]))))
-      |>.withObject ⟨101⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF []))))
+      |>.withObject ⟨100⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 ((SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write] })]))))
+      |>.withObject ⟨101⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 ((SeLe4n.UniqueSlotMap.ofListWF []))))
       |>.buildChecked)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -1026,7 +1026,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
-      |>.withObject ⟨50⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
+      |>.withObject ⟨50⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 ((SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] })
           , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write] })
           , ((SeLe4n.Slot.ofNat 2), { target := .replyCap (SeLe4n.ReplyId.ofNat 1), rights := AccessRightSet.ofList [.read] })
@@ -1081,7 +1081,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
-      |>.withObject ⟨60⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
+      |>.withObject ⟨60⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 ((SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read] })
           , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read] })
           ]))))
@@ -1551,13 +1551,13 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject nonCNodeRoot (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject senderCNode (.cnode
-            (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
+            (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.buildChecked)
     -- The capabilities the rendezvous resolves from the sender's CSpace, as
     -- the transient array the unwrap installs from.
     let resolved : Array TransferCap :=
-      SeLe4n.Kernel.resolveExtraCaps senderCNode #[SeLe4n.CPtr.ofNat 0]
-        (((st.getCNode? senderCNode).map (·.depth)).getD 0) true st
+      SeLe4n.Kernel.resolveExtraCaps (cnodeCapOf senderCNode 0 60) #[SeLe4n.CPtr.ofNat 0]
+        true st
     expect "the sender's capability address resolves" (resolved.size = 1)
     let rtcb : TCB :=
       { tid := ⟨3541⟩, priority := ⟨1⟩, domain := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
@@ -1577,7 +1577,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject epId (.endpoint {})
         |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject senderCNode (.cnode
-            (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
+            (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
               spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
@@ -1621,7 +1621,7 @@ def runInformationFlowChecks : IO Unit := do
         (BootstrapBuilder.empty
           |>.withObject epId (.endpoint {})
           |>.withObject callerCNode (.cnode
-              (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
+              (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
           |>.withObject callerTid.toObjId (.tcb
               { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
                 spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCNode ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)

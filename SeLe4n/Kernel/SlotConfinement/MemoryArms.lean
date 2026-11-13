@@ -552,10 +552,10 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
 slot delete, the thread's record and the derivation edge. -/
 theorem threadSlotCopied_framed {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    SchedulerMachineFramed st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    SchedulerMachineFramed st (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   obtain ⟨hs, hm⟩ := cspaceDeleteSlot_scheduler_machine _ st _ (copyIntoThreadSlot_delete hT slot)
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact ⟨hs, hm⟩
   · rw [e]
     exact ⟨(SystemState.cdtAddChild_scheduler _ _ _ _).trans
@@ -567,12 +567,12 @@ theorem threadSlotCopied_framed {st : SystemState} {tid : SeLe4n.ThreadId} {t : 
 copy, then the retire. -/
 theorem threadSlotSet_framed (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    SchedulerMachineFramed st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
-  obtain ⟨hs, hm⟩ := threadSlotCopied_framed hT slot srcCNode srcSlot rights
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    SchedulerMachineFramed st (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
+  obtain ⟨hs, hm⟩ := threadSlotCopied_framed hT slot srcCNode srcSlot rights data
   obtain ⟨-, hs2, hm2⟩ := retireFinalObject_fields ec (slotRetireTarget st tid.toObjId slot)
     (recorderFor st (slotRetireTarget st tid.toObjId slot) tid.toObjId slot)
-    (threadSlotCopied st tid slot srcCNode srcSlot rights)
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data)
   exact ⟨hs2.trans hs, hm2.trans hm⟩
 
 /-- WS-ZA ZA5.4 part 22: **the live `.tcbSetSpace` arm writes no core.**  Its
@@ -580,24 +580,24 @@ two slot sets each copy into the thread's slot and retire what the old
 capability took with it, writing the object store, the CDT and (for a root) the
 TLB state, never a scheduler slot or a register bank. -/
 theorem copyThreadSpaces_confinedToCores (ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   obtain ⟨t1', hT1', hF⟩ := threadSlotCopied_slotFilled hInv hT (slot := TCB.cspaceRootSlot)
-    (by decide) TCB.cspaceRootRights hCL
+    (by decide) TCB.cspaceRootRights cnData hCL
   obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
     (show ((threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-        TCB.cspaceRootRights).getTcb? vtid.val).isSome by
+        TCB.cspaceRootRights cnData).getTcb? vtid.val).isSome by
       unfold threadSlotSet; dsimp only
       rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF]; rfl)
   obtain ⟨hs1, hm1⟩ := threadSlotSet_framed ec hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   obtain ⟨hs2, hm2⟩ := threadSlotSet_framed ec hT1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
-    TCB.vspaceRootRights
+    TCB.vspaceRootRights 0
   exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 /-- **The cores a space change through the zombie delete may write**: none when
@@ -613,13 +613,13 @@ delete, writes only the cores `copyThreadSpacesZombieCores` names**: with a
 leaf old CSpace root it is the plain space change, which writes no core
 (`copyThreadSpaces_confinedToCores`); otherwise every core is named. -/
 theorem copyThreadSpacesZombie_confinedToCores (ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     observableSlotsConfinedToCores st st' (copyThreadSpacesZombieCores st vtid) := by
   unfold copyThreadSpacesZombieCores
   split
   · next h0 =>
-    have hPlain : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st' := by
+    have hPlain : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st' := by
       unfold copyThreadSpacesZombie at hStep
       split at hStep
       · next hA =>
@@ -627,7 +627,7 @@ theorem copyThreadSpacesZombie_confinedToCores (ec : CoreId) (st st' : SystemSta
         rw [if_pos h0] at hStep
         rw [copyThreadSpaces_of_admitted hA]; exact hStep
       · exact hStep
-    exact copyThreadSpaces_confinedToCores ec st st' vtid cnSrc vrSrc hInv hPlain
+    exact copyThreadSpaces_confinedToCores ec st st' vtid cnSrc vrSrc cnData hInv hPlain
   · exact observableSlotsConfinedToCores_allCores st st'
 
 -- ============================================================================

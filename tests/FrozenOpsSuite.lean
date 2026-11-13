@@ -452,8 +452,8 @@ private def fo007_cspaceLookup : IO Unit := do
     target := .object ⟨42⟩
     rights := .ofNat 7
   }
-  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
-  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := (CNodeRadix.empty 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   -- Lookup slot 3 (CPtr with value 3)
   match frozenCspaceLookup fst (SeLe4n.CPtr.ofNat 3) ⟨10⟩ with
@@ -463,8 +463,8 @@ private def fo007_cspaceLookup : IO Unit := do
 
 /-- FO-008: frozenCspaceLookup — missing slot returns error -/
 private def fo008_cspaceLookupMissing : IO Unit := do
-  let radix := CNodeRadix.empty 0 0 4
-  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := CNodeRadix.empty 4
+  let cn : FrozenCNode := { radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   match frozenCspaceLookup fst (SeLe4n.CPtr.ofNat 5) ⟨10⟩ with
   | .ok _ => throw <| IO.userError "should fail"
@@ -533,8 +533,8 @@ private def fo012_serviceLookupMissing : IO Unit := do
 /-- FO-013: frozenCspaceDelete — erase slot from frozen CNode -/
 private def fo013_cspaceDelete : IO Unit := do
   let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 7 }
-  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
-  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := (CNodeRadix.empty 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
   | .ok ((), fst') =>
@@ -554,14 +554,14 @@ private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
   let cap : Capability :=
     Capability.withMapping { target := .object ⟨42⟩, rights := .ofNat 7 }
       (some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
-  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
-  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := (CNodeRadix.empty 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
   | .ok _ => throw <| IO.userError "deleting a mapping-recording capability should be refused"
   | .error e => expect "mapping record → revocationRequired" (e == .revocationRequired)
   -- CONTROL: the same capability, record stripped, deletes.
-  let radix' := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap.withoutMapping
+  let radix' := (CNodeRadix.empty 4).insert (SeLe4n.Slot.ofNat 3) cap.withoutMapping
   let fst' := mkFrozenState [(⟨10⟩, .cnode { cn with slots := radix' })]
   match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst' with
   | .ok _ => expect "CONTROL: no record → the delete succeeds" true
@@ -576,8 +576,8 @@ no longer holds the table (a stale record, which the live kernel reads as not
 installed), and a capability naming a table installed nowhere — both delete. -/
 private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
   let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 3 }
-  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
-  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := (CNodeRadix.empty 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { radixWidth := 4, slots := radix }
   let inst : PageTableInstall := { root := ⟨20⟩, level := 1, index := 0 }
   let table : PageTableObject :=
     { base := SeLe4n.PAddr.ofNat 0x5000, installed := true, installRoot := inst.root,
@@ -739,8 +739,8 @@ private def fo020_frozenCspaceMint : IO Unit := do
   let cnodeId : ObjId := ⟨10⟩
   let epId : ObjId := ⟨11⟩
   -- Build a frozen CNode with an empty CNodeRadix (flat array)
-  let radix := CNodeRadix.empty 0 0 4
-  let frozenCNode : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let radix := CNodeRadix.empty 4
+  let frozenCNode : FrozenCNode := { radixWidth := 4, slots := radix }
   let objs := [(cnodeId, FrozenKernelObject.cnode frozenCNode), (epId, FrozenKernelObject.endpoint {})]
   let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
   let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
@@ -1073,7 +1073,7 @@ empty, which is agreement about nothing. -/
 private def diffAddCSpace (ist : IntermediateState)
     (caps : List (SeLe4n.Slot × Capability)) : IntermediateState :=
   Builder.createObject ist diffCnId
-    (.cnode (CNode.ofList 4 0 0 4 caps))
+    (.cnode (CNode.ofList 4 caps))
     (fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _)
     (fun _ h => nomatch h)
 

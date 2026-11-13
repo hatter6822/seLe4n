@@ -62,9 +62,9 @@ theorem threadSlotDeleted_getUntyped? {st : SystemState} {tid : SeLe4n.ThreadId}
 each object up to links, and the thread is a thread before and after. -/
 theorem threadSlotCopied_getUntyped? {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    (threadSlotCopied st tid slot srcCNode srcSlot rights).getUntyped? = st.getUntyped? := by
-  obtain ⟨hFar, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data).getUntyped? = st.getUntyped? := by
+  obtain ⟨hFar, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   funext k
   by_cases h : k = tid.toObjId
   · rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, h,
@@ -84,6 +84,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     (hs : slot.toNat < 2) (hEmpty : t.spaceSlotCap slot = none)
     (hSrc : SystemState.lookupSlotCap st src = some cap)
     (hBacked : capTargetKindBackedAt st c.target)
+    (hGeo : cnodeCapGeometryAt st c)
     (hTgt : c.target = cap.target)
     (hNotUt : ∀ u, cap.target = .object u → st.getUntyped? u = none) :
     capabilityInvariantBundle
@@ -130,11 +131,6 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
       exact ⟨.tcb (t.insertSpaceCap slot c), by rw [h]; exact hAt,
         TCB.spaceSlotCap_insertSpaceCap_mono t hs c _ hL⟩
     · rw [hNe _ (Ne.symm h)]; exact hComp ref hM
-  have hDepth1 : cspaceDepthConsistent st1 := by
-    intro k cn hO
-    by_cases h : k = tid.toObjId
-    · rw [h, hAt] at hO; cases hO
-    · rw [hNe _ (Ne.symm h)] at hO; exact hDepth k cn hO
   have hReply : ∀ rid : SeLe4n.ReplyId, st1.getReply? rid = st.getReply? rid := by
     intro rid
     unfold SystemState.getReply?
@@ -148,6 +144,15 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     · rw [h, hAt, hPre]
     · rw [hNe _ (Ne.symm h)]
   have hKind := capTargetKindBackedAt_congr hReply hCNode
+  have hGeoT := cnodeCapGeometryAt_congr hCNode
+  have hDepth1 : cnodeCapGeometry st1 := by
+    intro oid o s cap' hO hL
+    by_cases h : oid = tid.toObjId
+    · rw [h, hAt] at hO; cases hO
+      rcases TCB.spaceSlotCap_insertSpaceCap_back hL with rfl | hL'
+      · exact hGeoT _ hGeo
+      · exact hGeoT _ (hDepth tid.toObjId (.tcb t) s cap' hPre hL')
+    · rw [hNe _ (Ne.symm h)] at hO; exact hGeoT _ (hDepth oid o s cap' hO hL)
   have hRCPV1 : capTargetKindBacked st1 := by
     intro oid o s cap' hO hL
     by_cases h : oid = tid.toObjId
@@ -201,7 +206,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
   refine capabilityInvariantBundle_of_linkReach ?_
     (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_ hShape1
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,
-      cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
+      cnodeCapGeometry_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
       capTargetKindBacked_of_objects_eq rfl hRCPV1⟩
     · rcases hM with ⟨e, he, hr⟩ | hr
       · simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
@@ -219,6 +224,25 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
       (slotInObject_of_occupied hSrcPost) (slotInObject_of_occupied hDstOcc)
       (by rw [hCdt1]; exact hDstFresh) hNeSD
 
+/-- **A thread slot's delete keeps every CNode's radix**: it stores a thread
+over a thread and writes links. -/
+theorem threadSlotDeleted_cnodeRadix {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (id : SeLe4n.ObjId) (cn' : CNode)
+    (h : (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+      { cnode := tid.toObjId, slot := slot }).getCNode? id = some cn') :
+    ∃ cn, st.getCNode? id = some cn ∧ cn'.radixWidth = cn.radixWidth := by
+  have hS := threadSlotCleared_store hT slot
+  have hInvC := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
+  obtain ⟨cn, hc, hw⟩ := (spliceDeletedCdtNode_agree hInvC _).1.cnode_back
+    ((SystemState.getCNode?_eq_some_iff _ _ _).mp h)
+  have hne : id ≠ tid.toObjId := by
+    intro e; subst e
+    rw [storeObject_objects_eq _ _ _ _ hObjInv hS] at hc; cases hc
+  rw [storeObject_objects_ne _ _ _ _ _ hne hObjInv hS] at hc
+  refine ⟨cn, (SystemState.getCNode?_eq_some_iff _ _ _).mpr hc, ?_⟩
+  rw [← CNode.radixWidth_withoutLinks cn', hw, CNode.radixWidth_withoutLinks]
+
 /-- **A thread space slot's copy keeps the capability bundle**: its delete is the
 slot delete (`copyIntoThreadSlot_delete`), which keeps the bundle and leaves the
 slot empty, and the fill and edge keep it
@@ -227,15 +251,18 @@ theorem threadSlotCopied_preserves_capabilityInvariantBundle
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
     (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet)
+    (rights : AccessRightSet) (data : UInt64)
     (hSrcNotUt : ∀ cap, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
-      some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none) :
-    capabilityInvariantBundle (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+      some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)
+    (hData : ∀ cap id cn, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
+      some cap → cap.target = .object id → st.getCNode? id = some cn → data ≠ 0 →
+      (capDataGuardSize data).toNat + cn.radixWidth ≤ 64) :
+    capabilityInvariantBundle (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have hD := cspaceDeleteSlot_preserves_capabilityInvariantBundle st _ _ hInv
     (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', hW⟩, -⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, hCap, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, hCap, e⟩
   · rw [e]; exact hD
   · rw [e]
     have hCells : t'.spaceCells = (t.removeSpaceCap slot).spaceCells := by
@@ -244,8 +271,23 @@ theorem threadSlotCopied_preserves_capabilityInvariantBundle
       have h := TCB.spaceSlotCap_removeSpaceCap t slot slot
       simp only [if_true] at h
       rw [← h]; unfold TCB.spaceSlotCap; rw [hCells]
+    have hCapSt : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap := by
+      rw [← threadSlotDeleted_lookupSlotCap hObjInv hT slot]; exact hCap
+    have hGeom : cnodeCapGeometryAt (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+        { cnode := tid.toObjId, slot := slot }) (TCB.spaceCopyOf cap rights data) := by
+      by_cases h0 : data = 0
+      · subst h0
+        exact cnodeCapGeometryAt_of_fields
+          (hD.capGeometry.slotCapAt (SystemState.slotCapAt_of_lookupSlotCap hCap)) rfl rfl rfl
+      · refine ⟨?_, fun id cn hTg hC => ?_⟩
+        · simp only [TCB.spaceCopyOf_cnodeGuard, TCB.spaceCopyOf_cnodeGuardSize,
+            TCB.spaceCopyGuard, TCB.spaceCopyGuardSize, if_neg h0]
+          exact capDataGuard_lt data
+        · simp only [TCB.spaceCopyOf_cnodeGuardSize, TCB.spaceCopyGuardSize, if_neg h0]
+          obtain ⟨cn0, hC0, hR⟩ := threadSlotDeleted_cnodeRadix hObjInv hT slot id cn hC
+          rw [hR]; exact hData cap id cn0 hCapSt hTg hC0 h0
     refine threadSlotFilled_preserves_capabilityInvariantBundle hD hT' hs hEmpty hCap ?_
-      (TCB.spaceCopyOf_target _ _) ?_
+      hGeom (TCB.spaceCopyOf_target _ _ _) ?_
     rotate_left
     · intro u hu
       rw [threadSlotDeleted_getUntyped? hObjInv hT slot]
@@ -275,9 +317,9 @@ source names, a CNode slot, not the thread's.  What the retire of
 theorem threadSlotCopied_retireTargetUnnamed {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} {slot : SeLe4n.Slot} (hInv : capabilityInvariantBundle st)
     (hT : st.getTcb? tid = some t) (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
     slotRetireTarget st tid.toObjId slot ≠ 0 → ∀ r, ¬ SystemState.namesAt
-      (threadSlotCopied st tid slot srcCNode srcSlot rights).slotCapAt r
+      (threadSlotCopied st tid slot srcCNode srcSlot rights data).slotCapAt r
       (SeLe4n.ObjId.ofNat (slotRetireTarget st tid.toObjId slot - 1)) := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   intro hT0 r hr
@@ -317,18 +359,21 @@ theorem threadSlotSet_preserves_capabilityInvariantBundle (ec : Concurrency.Core
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
     (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet)
+    (rights : AccessRightSet) (data : UInt64)
     (hSrcNotUt : ∀ cap, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
-      some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none) :
-    capabilityInvariantBundle (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+      some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)
+    (hData : ∀ cap id cn, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
+      some cap → cap.target = .object id → st.getCNode? id = some cn → data ≠ 0 →
+      (capDataGuardSize data).toNat + cn.radixWidth ≤ 64) :
+    capabilityInvariantBundle (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have h1 := threadSlotCopied_preserves_capabilityInvariantBundle hInv hT hs srcCNode srcSlot
-    rights hSrcNotUt
+    rights data hSrcNotUt hData
   unfold threadSlotSet
   dsimp only
   refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ _ h1
-    (threadSlotCopied_retireTargetUnnamed hInv hT hs srcCNode srcSlot rights) (fun hT0 => ?_)
-  have hU := threadSlotCopied_getUntyped? hObjInv hT slot srcCNode srcSlot rights
+    (threadSlotCopied_retireTargetUnnamed hInv hT hs srcCNode srcSlot rights data) (fun hT0 => ?_)
+  have hU := threadSlotCopied_getUntyped? hObjInv hT slot srcCNode srcSlot rights data
   obtain ⟨hS1, hS0⟩ := recorderWord_spec st
     (SeLe4n.ObjId.ofNat (slotRetireTarget st tid.toObjId slot - 1)) tid.toObjId slot
     hInv.2.2.2.2.1
@@ -354,39 +399,40 @@ theorem sourceAdmitted_notUntyped {st : SystemState} {src : CSpaceAddr}
 /-- **A space change's CSpace-root set keeps the capability bundle**: its
 source names a CNode, so no untyped (`threadSlotSet_preserves_capabilityInvariantBundle`). -/
 theorem cspaceRootSet_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
-    {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB} {cnSrc : CSpaceAddr}
+    {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB} {cnSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some tcb)
-    (hCn : cspaceRootSourceAdmitted st cnSrc = true) :
+    (hCn : cspaceRootSourceAdmitted st cnSrc cnData = true) :
     capabilityInvariantBundle
-      (threadSlotSet ec st tid TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights) :=
+      (threadSlotSet ec st tid TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData) :=
   threadSlotSet_preserves_capabilityInvariantBundle ec hInv hT (by decide)
-    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
     (sourceAdmitted_notUntyped (cspaceRootSourceAdmitted_spec hCn) fun id h => by
       unfold SystemState.getCNode? at h; unfold SystemState.getUntyped?
       split at h <;> simp_all)
+    (cspaceRootSourceAdmitted_dataFits hCn)
 
 /-- **After a space change's CSpace-root set the thread is stored as the copy
 left it**, its CSpace root slot filled: the retire after the copy erases no
 thread holding a capability. -/
 theorem cspaceRootSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {cnSrc : CSpaceAddr} (hObjInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some tcb) (hCn : cspaceRootSourceAdmitted st cnSrc = true) :
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {cnSrc : CSpaceAddr} {cnData : UInt64} (hObjInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some tcb) (hCn : cspaceRootSourceAdmitted st cnSrc cnData = true) :
     ∃ t1, (threadSlotSet ec st tid TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights).getTcb? tid = some t1 := by
+      TCB.cspaceRootRights cnData).getTcb? tid = some t1 := by
   obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1', hF1⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
-    (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
+    (by decide) TCB.cspaceRootRights cnData (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
   exact ⟨t1, by unfold threadSlotSet; dsimp only
                 exact retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF1⟩
 
 /-- **Setting a thread's space keeps the capability bundle**: each of its two
 slot sets does (`threadSlotSet_preserves_capabilityInvariantBundle`). -/
 theorem copyThreadSpaces_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     capabilityInvariantBundle st' := by
   obtain ⟨tcb, hT, -, -, hCn, hVr, rfl⟩ := copyThreadSpaces_ok hStep
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
@@ -395,11 +441,12 @@ theorem copyThreadSpaces_preserves_capabilityInvariantBundle (ec : Concurrency.C
     split at h <;> simp_all
   have h1 := cspaceRootSet_preserves_capabilityInvariantBundle ec hInv hT hCn
   obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
+    TCB.cspaceRootRights cnData
   obtain ⟨t1, hT1⟩ := cspaceRootSet_getTcb? ec hObjInv hT hCn
   unfold copyThreadSpacesPerform
   refine threadSlotSet_preserves_capabilityInvariantBundle ec h1 hT1
-    (by decide) vrSrc.cnode vrSrc.slot TCB.vspaceRootRights fun cap hL u hu => ?_
+    (by decide) vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0 (fun cap hL u hu => ?_)
+    (fun _ _ _ _ _ _ h0 => absurd rfl h0)
   unfold threadSlotSet at hL ⊢
   dsimp only at hL ⊢
   rw [retireFinalObject_lookupSlotCap _ _ _ _ hI1, threadSlotCopied_lookupSlotCap hObjInv hT] at hL
@@ -412,9 +459,9 @@ bundle**: the loop's passes are finalising deletes and finalisations, which keep
 it, and the plain space change after them does
 (`copyThreadSpaces_preserves_capabilityInvariantBundle`). -/
 theorem copyThreadSpacesZombie_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     capabilityInvariantBundle st' :=
   copyThreadSpacesZombie_closed capabilityInvariantBundle
     (fun c s s' hs hD => cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec c s s' hs hD)

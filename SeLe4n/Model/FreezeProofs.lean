@@ -658,7 +658,7 @@ theorem lookup_freeze_cnode_slots_some (cn : CNode) (slot : SeLe4n.Slot)
   have hP' : p < cn.slots.table.slots.toList.length := by
     rw [Array.length_toList]; exact hSlotsSz
   refine foldl_generic_establishes_lookup cn.slots.table.slots.toList
-    (CNodeRadix.empty _ _ _) slot cap _ (fun acc => rfl) (fun acc e => rfl) ?_ ?_ ?_
+    (CNodeRadix.empty _) slot cap _ (fun acc => rfl) (fun acc e => rfl) ?_ ?_ ?_
   · -- hOcc: entry exists at position p
     exact ⟨p, hP', e, by rw [Array.getElem_toList]; exact hSlotP,
       hKeyEq, hValE⟩
@@ -690,9 +690,9 @@ theorem lookup_freeze_cnode_slots_some (cn : CNode) (slot : SeLe4n.Slot)
     have hGetEi := get_ne_none_of_slot_occupied cn.slots.table h.1 i hi'' ei hSi'
     have hGetEj := get_ne_none_of_slot_occupied cn.slots.table h.1 j hj'' ej hSj'
     show extractBits ei.key.toNat 0
-        (CNodeRadix.empty cn.guardWidth cn.guardValue cn.radixWidth).radixWidth ≠
+        (CNodeRadix.empty cn.radixWidth).radixWidth ≠
       extractBits ej.key.toNat 0
-        (CNodeRadix.empty cn.guardWidth cn.guardValue cn.radixWidth).radixWidth
+        (CNodeRadix.empty cn.radixWidth).radixWidth
     simp [CNodeRadix.empty]
     exact hUri ei.key ej.key hGetEi hGetEj hKeyNe
 
@@ -709,8 +709,8 @@ theorem lookup_freeze_cnode_slots_none (cn : CNode) (slot : SeLe4n.Slot)
   unfold freezeCNodeSlots CNodeRadix.ofCNode buildCNodeRadix CNodeConfig.ofCNode
   unfold RHTable.fold; rw [← Array.foldl_toList]
   refine foldl_generic_preserves_none cn.slots.table.slots.toList
-    (CNodeRadix.empty _ _ _) slot _ (fun acc => rfl) (fun acc e => rfl)
-    (CNodeRadix.lookup_empty cn.guardWidth cn.guardValue cn.radixWidth slot) ?_
+    (CNodeRadix.empty _) slot _ (fun acc => rfl) (fun acc e => rfl)
+    (CNodeRadix.lookup_empty cn.radixWidth slot) ?_
   intro i hi ei hSi
   simp [CNodeRadix.empty]
   have hi' : i < cn.slots.table.slots.size := by rw [Array.length_toList] at hi; exact hi

@@ -913,7 +913,7 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   -- The derivation links name slots of CNodes, never an idle object, and so do
   -- the occupancy links; the spare records are no slot's capability
   -- (`SpareCells`: logically one value).
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+  | ⟨_radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
       _occHead, _, _spare⟩ =>
     !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedKernelObject cap)
 
@@ -1656,6 +1656,39 @@ def bootCapabilitiesNameObjectsOfTheirKind (config : PlatformConfig) : Bool :=
   (config.initialObjects.flatMap bootEntryCapabilities).all
     (bootCapTargetKindInstalled config.initialObjects)
 
+/-- **Whether configured entry `e`, were it the object a capability with guard
+    width `guardSize` names at `o`, leaves the guard and its radix inside the
+    64-bit word**: true unless `e` is a CNode at `o` whose radix and the width
+    together exceed 64. -/
+@[inline] def bootEntryRadixFits (guardSize : Nat) (o : SeLe4n.ObjId) (e : ObjectEntry) : Bool :=
+  match e.obj with
+  | .cnode cn => !(decide (e.id = o)) || decide (guardSize + cn.radixWidth ≤ 64)
+  | _ => true
+
+/-- **Whether a boot capability has seL4's CNode geometry**
+    (`cnodeCapGeometryAt`): its guard fits its guard width, and every
+    configured CNode it names takes the guard and its radix within the 64-bit
+    word, the bound seL4's `updateCapData` puts on a CNode capability. -/
+@[inline] def bootCapGeometryHolds (objs : List ObjectEntry) (c : Capability) : Bool :=
+  decide (c.cnodeGuard.toNat < 2 ^ c.cnodeGuardSize.toNat) &&
+  match c.target with
+  | .object o => objs.all (bootEntryRadixFits c.cnodeGuardSize.toNat o)
+  | _ => true
+
+/-- **WS-SX SX2**: **every boot capability has seL4's CNode geometry** — the
+    capability invariant's `cnodeCapGeometry` at boot.  The guard sits in the
+    capability (seL4's `cap_cnode_cap`), so whether it fits a CNode is a fact
+    about a capability and the object it names, read off the configuration.
+    Not attacker-reachable — the configuration is the integrator's. -/
+def bootCapabilitiesHaveCNodeGeometry (config : PlatformConfig) : Bool :=
+  (config.initialObjects.flatMap bootEntryCapabilities).all
+    (bootCapGeometryHolds config.initialObjects)
+
+/-- The geometry conjunct's diagnostic. -/
+def bootCapabilityGeometryBootError : String :=
+  "boot: a CNode capability's guard exceeds its width, or its guard and the CNode's radix " ++
+    "exceed the 64-bit word"
+
 /-- The kind conjunct's diagnostic. -/
 def bootCapabilityKindBootError : String :=
   "boot: a CNode-slot or reply capability names a configured object of another kind"
@@ -1745,7 +1778,7 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
     untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&
     bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&
     bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&
-    irqNodeIdsReserved config
+    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config
 
 /-- **WS-ZA ZA5.5**: a well-formed config installs service interfaces with
     distinct, non-sentinel ids. -/
@@ -1806,6 +1839,10 @@ theorem PlatformConfig.wellFormed_bootCapabilitiesNameInstalledObjects (config :
 
 /-- A well-formed config's CNode-slot and reply capabilities name configured
     objects of their kind. -/
+theorem PlatformConfig.wellFormed_bootCapabilitiesHaveCNodeGeometry (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootCapabilitiesHaveCNodeGeometry config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
 theorem PlatformConfig.wellFormed_bootCapabilitiesNameObjectsOfTheirKind (config : PlatformConfig)
     (h : config.wellFormed = true) : bootCapabilitiesNameObjectsOfTheirKind config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
@@ -1860,7 +1897,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (bootCapabilitiesNameObjectsOfTheirKind config, bootCapabilityKindBootError),
    (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
    (bootInterfacesWellFormed config, bootInterfaceBootError),
-   (irqNodeIdsReserved config, irqNodeIdReservationBootError)]
+   (irqNodeIdsReserved config, irqNodeIdReservationBootError),
+   (bootCapabilitiesHaveCNodeGeometry config, bootCapabilityGeometryBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -2121,9 +2159,11 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
   cap.freeIndex == 0
 
 /-- A boot **CNode** is structurally well-formed, and every capability it holds
-    passes `bootSafeCapCheck`.  The structural conditions are over derived
-    projections (`bitsConsumed`, `guardBounded`), which the pattern's fields
-    determine; the slot count needs no check, since every CNode holds at most
+    passes `bootSafeCapCheck`.  The structural condition is its radix, at most
+    the word's 64 bits, and its slot array, one slot per radix value (an
+    interrupt node's radix is 0: one slot);
+    its guard is the capabilities' that name it (WS-SX SX2), checked against
+    the radix by `bootCapabilitiesHaveCNodeGeometry`.  The slot count needs no check, since every CNode holds at most
     `slotCount` capabilities (`CNode.slotCountBounded_holds`).  The
     per-capability condition walks the slot array, so `decide` evaluates it on
     a configured CNode; `bootSafeCnodeCheck_def` reads it back as a fold over
@@ -2132,18 +2172,15 @@ def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
   -- The spare records are no slot's capability (`SpareCells`: logically one value);
   -- the occupancy links name slots of this CNode alone.
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+  | ⟨_radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
       _occHead, _, _spare⟩ =>
-    decide (cn.depth ≤ maxCSpaceDepth) &&
-    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
+    decide (cn.radixWidth ≤ 64) && decide (cn.cells.size = 2 ^ cn.radixWidth) &&
     cn.allCells (fun _ cap => bootSafeCapCheck cap) &&
     cn.linksClear
 
 @[simp] theorem bootSafeCnodeCheck_def (cn : CNode) :
     bootSafeCnodeCheck cn =
-      (decide (cn.depth ≤ maxCSpaceDepth) &&
-       decide (cn.bitsConsumed > 0 →
-         cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
+      (decide (cn.radixWidth ≤ 64) && decide (cn.cells.size = 2 ^ cn.radixWidth) &&
        cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap) &&
        cn.linksClear) := by
   unfold bootSafeCnodeCheck
@@ -2482,8 +2519,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- CNodes: structural, and (WS-BP BP3.5) every held capability's badge is
     -- valid and none is a reply capability
     (∀ cn, obj = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧
-      (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+      cn.radixWidth ≤ 64 ∧ cn.cells.size = 2 ^ cn.radixWidth ∧
       (∀ slot cap badge, cn.lookup slot = some cap →
         cap.badge = some badge → badge.valid) ∧
       (∀ slot cap rid, cn.lookup slot = some cap →
@@ -2642,8 +2678,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
       notif.pendingBadge = none) ∧
     (∀ cn, obj = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧
-      (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+      cn.radixWidth ≤ 64 ∧ cn.cells.size = 2 ^ cn.radixWidth ∧
       (∀ slot cap badge, cn.lookup slot = some cap →
         cap.badge = some badge → badge.valid) ∧
       (∀ slot cap rid, cn.lookup slot = some cap →
@@ -3917,7 +3952,7 @@ def storeIdleThread (ist : IntermediateState)
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := storeIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := storeIdleThreadOnCore_preserves_bookkeepingAgrees
+  hLifecycleConsistent := storeIdleThreadOnCore_preserves_bookkeepingAgreesUnbounded
     ist.state c ist.hAllTables ist.hLifecycleConsistent
 
 /-- **v0.35.68** (the derivation, pinned): the boot's idle install *is* the
@@ -4341,6 +4376,19 @@ theorem bootCapabilitiesNameObjectsOfTheirKind_withoutExtents (c : PlatformConfi
   simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
     Function.comp_def, ObjectEntry.withoutUntypedExtent_id, hT]
 
+theorem bootCapabilitiesHaveCNodeGeometry_withoutExtents (c : PlatformConfig) :
+    bootCapabilitiesHaveCNodeGeometry c.withoutExtents =
+      bootCapabilitiesHaveCNodeGeometry c := by
+  have hF : ∀ (g : Nat) (o : SeLe4n.ObjId) (e : ObjectEntry),
+      bootEntryRadixFits g o e.withoutUntypedExtent = bootEntryRadixFits g o e := by
+    intro g o e
+    unfold bootEntryRadixFits
+    simp only [ObjectEntry.withoutUntypedExtent_obj, ObjectEntry.withoutUntypedExtent_id]
+    cases e.obj <;> rfl
+  unfold bootCapabilitiesHaveCNodeGeometry bootCapGeometryHolds PlatformConfig.withoutExtents
+  simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.all_map,
+    Function.comp_def, hF]
+
 theorem bootIssuesNoInterruptHandler_withoutExtents (c : PlatformConfig) :
     bootIssuesNoInterruptHandler c.withoutExtents = bootIssuesNoInterruptHandler c := by
   unfold bootIssuesNoInterruptHandler PlatformConfig.withoutExtents
@@ -4447,11 +4495,13 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, bootIssuesNoInterruptHandler_withoutExtents] at hLines
   have hNodes := irqNodeIdsReserved_withoutExtents c
   rw [hEq, irqNodeIdsReserved_withoutExtents] at hNodes
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, wLines⟩, w9⟩, wKinds⟩, wRecip⟩, wIf⟩,
-    wNodes⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+  have hGeo := bootCapabilitiesHaveCNodeGeometry_withoutExtents c
+  rw [hEq, bootCapabilitiesHaveCNodeGeometry_withoutExtents] at hGeo
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, wLines⟩, w9⟩, wKinds⟩, wRecip⟩, wIf⟩,
+    wNodes⟩, wGeo⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
     h8 ▸ w8⟩, hLines ▸ wLines⟩, h9 ▸ w9⟩, hKinds ▸ wKinds⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩,
-    hNodes ▸ wNodes⟩
+    hNodes ▸ wNodes⟩, hGeo ▸ wGeo⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -4851,6 +4901,39 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_objectCountBounded
         unfold objectCountBounded
         rw [← (cores.foldl storeIdleThread base).hLifecycleConsistent.objectIndex_length
           (cores.foldl storeIdleThread base).hAllTables.objects]
+        omega
+      · simp [hAff] at h
+
+/-- **A successful idle boot leaves room for the interrupt nodes**: the budget
+conjunct reserves `InterruptLineSet.capacity` index entries past the config's
+objects, the boot root and the idle threads, so the started boot's node install
+(`installIrqNodes`) keeps the index within `maxObjects`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    ist.state.objectIndex.length + InterruptLineSet.capacity ≤ maxObjects := by
+  have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hBase : bootFromPlatformChecked config with
+  | error e => rw [hBase] at h; simp [Except.bind] at h
+  | ok base =>
+      rw [hBase] at h
+      simp only [Except.bind] at h
+      by_cases hAff : bootAffinitiesDeclared cores config
+      · simp only [hAff, if_true, if_pos hNd] at h
+        obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config base hBase
+        have hBudget := PlatformConfig.wellFormed_objectBudgetRespected config hWf
+        unfold objectBudgetRespected at hBudget
+        have hBudget' : config.initialObjects.length + 1 +
+            SeLe4n.Kernel.Concurrency.numCores + InterruptLineSet.capacity ≤ maxObjects := by
+          simpa using decide_eq_true_eq.mp hBudget
+        have hChecked := bootFromPlatformChecked_ok_objectIndex_length_le config base hBase
+        have hFold := foldl_storeIdleThread_objectIndex_length_le cores base
+        have hIst : ist = cores.foldl storeIdleThread base := by
+          simpa using h.symm
+        subst hIst
         omega
       · simp [hAff] at h
 
@@ -5329,8 +5412,7 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- `replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle` vacuously true
   -- for the boot state.
   (∀ cn, obj = .cnode cn →
-    cn.depth ≤ maxCSpaceDepth ∧
-    (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+    cn.radixWidth ≤ 64 ∧ cn.cells.size = 2 ^ cn.radixWidth ∧
     (∀ slot cap badge, cn.lookup slot = some cap →
       cap.badge = some badge → badge.valid) ∧
     (∀ slot cap rid, cn.lookup slot = some cap →
@@ -5431,8 +5513,7 @@ theorem not_bootSafeObject_rpi5BootVSpaceRoot :
 /-- What the proof-layer bundle reads of a boot CNode: bounded depth,
     well-formed bit allocation, valid badges and no reply capability. -/
 def bootCNodeShape (cn : CNode) : Prop :=
-  cn.depth ≤ maxCSpaceDepth ∧
-  (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+  cn.radixWidth ≤ 64 ∧ cn.cells.size = 2 ^ cn.radixWidth ∧
   (∀ slot cap badge, cn.lookup slot = some cap →
     cap.badge = some badge → badge.valid) ∧
   (∀ slot cap rid, cn.lookup slot = some cap →
@@ -5805,10 +5886,11 @@ def bootQuiescentFields (st : SystemState) : Prop :=
     the slots' links spell it — and its shape over the slots: every slot
     holding a capability is in it, and it has a preorder (`CapTreeShape`); and
     the capabilities it orders name objects of the kinds their targets claim
-    (`capTargetKindBacked`). -/
+    (`capTargetKindBacked`), each with seL4's CNode geometry
+    (`cnodeCapGeometry`). -/
 def bootDerivationTreeSound (st : SystemState) : Prop :=
   cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st.CapTreeShape ∧
-    capTargetKindBacked st
+    capTargetKindBacked st ∧ cnodeCapGeometry st
 
 /-- The empty tree, over objects that hold no link, agrees with their links. -/
 theorem cdtLinksAgree_of_bootEmpty {st : SystemState}
@@ -5861,10 +5943,11 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hRun : ist.state.runQueueRefined)
     (hBindings : notificationBindingReciprocal ist.state)
     (hRel : ist.state.releaseQueueRefined)
-    (hRefill : ist.state.refillsSound) :
+    (hRefill : ist.state.refillsSound)
+    (hCount : ist.state.objectIndex.length ≤ maxObjects) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
-  obtain ⟨hComp, hAcyc, hLinks, hTreeShape, hKinds⟩ := hTree
+  obtain ⟨hComp, hAcyc, hLinks, hTreeShape, hKinds, hGeom⟩ := hTree
   have hAllTables := ist.hAllTables
   have hBS := hShape
   have h1 := hSched
@@ -5873,14 +5956,10 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     -- The per-CNode `slotsUnique` and slot-count invariants are carried
     -- structurally (`UniqueSlotMap`, the fixed slot array), so neither is a
     -- conjunct of this bundle.
-    refine ⟨?_, ?_, ?_, ?_, hAllTables.objects.1, hKinds, hLinks, hTreeShape⟩
+    refine ⟨?_, ?_, ?_, hGeom, hAllTables.objects.1, hKinds, hLinks, hTreeShape⟩
     · exact cspaceLookupSound_holds _
     · exact hComp
     · exact hAcyc
-    · -- cspaceDepthConsistent
-      intro cnodeId cn hObj
-      have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
-      exact ⟨hCN.1, hCN.2.1⟩
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
     ist.hLifecycleConsistent.types
@@ -6336,12 +6415,13 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         show (0, sc.yieldFromCode) = (0, 0)
         rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
       | _ => rfl
-  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries it.
+  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries the
+  -- agreement, and the caller bounds the object count.
   -- Compose all 22 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ist.hLifecycleConsistent⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ⟨ist.hLifecycleConsistent, hCount⟩⟩
 
 /-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
 resident** — no boot thread yields to a context, so every yield-to code is 0
@@ -7702,6 +7782,23 @@ theorem untypedRegionsDisjoint_of_untyped_subset {st st' : SystemState}
     Kernel.untypedRegionsDisjoint st' :=
   fun oid₁ oid₂ ut₁ ut₂ h₁ h₂ => h oid₁ oid₂ ut₁ ut₂ (hSub _ _ h₁) (hSub _ _ h₂)
 
+/-- A CNode a successful checked boot holds is one the plain boot installed —
+    the binding's root is not a CNode. -/
+private theorem bootFromPlatformChecked_ok_cnode (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (cn : CNode)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.cnode cn)) :
+    (bootFromPlatform config).state.objects[oid]? = some (KernelObject.cnode cn) := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · rwa [bootEnableInterruptsOp_objects_eq] at hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj
+    · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
+
 /-- **WS-BP BP3.5**: an untyped a successful checked boot holds is one the
     plain boot installed — the binding's root is not an untyped. -/
 private theorem bootFromPlatformChecked_ok_untyped (config : PlatformConfig)
@@ -8113,6 +8210,65 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untyped_of_config
         (bootFromPlatformChecked_ok_untyped config base hChecked oid ut hB)
     · cases hc
 
+/-- **Every CNode the idle-storing boot holds is a configured CNode at its id**
+    — the binding's root and the idle threads are not CNodes. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_cnode_of_config
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (oid : SeLe4n.ObjId) (cn : CNode)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.cnode cn)) :
+    ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = .cnode cn := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+    cases h
+  | ok base =>
+    have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)
+      hNd] at h
+    injection h with h
+    subst h
+    rcases foldl_storeIdleThread_objects_cases cores base oid _ hObj with hB | ⟨c, _, hc⟩
+    · exact bootFromPlatform_objects_of_config config oid _
+        (bootFromPlatformChecked_ok_cnode config base hChecked oid cn hB)
+    · cases hc
+
+/-- **WS-SX SX2**: **every capability the idle-storing boot installs has seL4's
+    CNode geometry** — the capability invariant's `cnodeCapGeometry` at boot.
+    A capability is a configured object's, so one of the configuration's boot
+    capabilities, which the configuration check holds to its guard width and to
+    every configured CNode it names (`bootCapabilitiesHaveCNodeGeometry`); a
+    CNode the boot holds is a configured one. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_cnodeCapGeometry
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    cnodeCapGeometry ist.state := by
+  intro oid obj slot c hO hc
+  obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+    cores config ist h oid obj hO slot (by rw [hc]; exact Option.some_ne_none _)
+  have hMem := mem_bootEntryCapabilities_of_slotCap (e := e) (s := slot) (by rw [hObj]; exact hc)
+  have hWf : config.wellFormed = true := by
+    cases hChecked : bootFromPlatformChecked config with
+    | error err =>
+      rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+      cases h
+    | ok base => exact (bootFromPlatformChecked_ok_shape config base hChecked).1
+  have hChk := config.wellFormed_bootCapabilitiesHaveCNodeGeometry hWf
+  unfold bootCapabilitiesHaveCNodeGeometry at hChk
+  have hC := List.all_eq_true.mp hChk c (List.mem_flatMap.mpr ⟨e, he, hMem⟩)
+  unfold bootCapGeometryHolds at hC
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hC
+  refine ⟨hC.1, fun id cn hT hCn => ?_⟩
+  have hR := hC.2
+  rw [hT] at hR
+  obtain ⟨e', he', hId, hE⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_cnode_of_config
+    cores config ist h id cn ((SystemState.getCNode?_eq_some_iff _ _ _).mp hCn)
+  have hF := List.all_eq_true.mp hR e' he'
+  unfold bootEntryRadixFits at hF
+  rw [hE] at hF
+  simpa [hId] using hF
+
 /-- The configuration the idle-storing boot accepted is well formed and every
     configured object passed its boot-safety check. -/
 private theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_checks
@@ -8435,7 +8591,8 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
     hypotheses is discharged from the boot core's queue facts and the default
     scheduler; the rest is passed through. -/
 theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
-    (h : bootLinkedShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
+    (h : bootLinkedShape ist) (hCount : ist.state.objectIndex.length ≤ maxObjects) :
+    Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
     hTree, hBindings⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
@@ -8503,7 +8660,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (fun oid sc hO => ⟨((hShape _ _ hO).2.2.2.2.2.1 sc rfl).1,
       ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.1⟩)
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun hBindings hRel hRefill
+    ?_ ?_ hRun hBindings hRel hRefill hCount
   · have hE : ist.state.scheduler.replenishQueueOnCore bootCoreId = ReplenishQueue.empty := by
       rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).2.2.1
     simp only [replenishQueueValid, hE]
@@ -8567,6 +8724,7 @@ theorem emptyBoot_bootLinkedShape :
   · refine ⟨fun ref h => absurd h (CapDerivationTree.empty_not_mentions ref),
       CapDerivationTree.empty_edgeWellFounded,
       cdtLinksAgree_of_bootEmpty rfl (fun oid _ h => (by rw [hO] at h; cases h)), ?_,
+      fun oid cn slot cap hObj _ => (by rw [hO] at hObj; cases hObj),
       fun oid cn slot cap hObj _ => (by rw [hO] at hObj; cases hObj)⟩
     exact ⟨fun r hr => absurd (emptyBoot_slotCapAt_none r) hr,
       ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
@@ -8591,6 +8749,7 @@ theorem emptyBoot_proofLayerInvariantBundle :
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
       (bootFromPlatform { initialObjects := [] }).state :=
   proofLayerInvariantBundle_of_bootLinkedShape _ emptyBoot_bootLinkedShape
+    (Nat.le_trans (bootFromPlatform_objectIndex_length_le _) (Nat.zero_le _))
 
 /-- U6-G Step 3: Freeze preserves the API invariant bundle.
     If the builder-phase state satisfies `apiInvariantBundle`, then the

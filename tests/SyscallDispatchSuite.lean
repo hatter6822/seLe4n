@@ -910,7 +910,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode (CNode.ofList 4 0 0 4 slots))
+      (cnId, .cnode (CNode.ofList 4 slots))
     ]
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,                 -- primary TCB cap at slot 0
@@ -955,7 +955,7 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (other.toObjId, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])))
     ]
   let decoded : SyscallDecodeResult :=
@@ -1009,12 +1009,12 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
-      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)])))
     ]
   let gate (slot : Nat) : SyscallGate :=
-    { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat slot,
-      capDepth := 4, requiredRight := .write }
+    { callerId := caller, cspaceRootCap := some (cnodeCapOf cnId 0 60), capAddr := SeLe4n.CPtr.ofNat slot,
+      requiredRight := .write }
   expect "sd054_idle_target_cap_resolves_invalidCapability"
     (match syscallResolveCap (gate 0) st with
      | .error (.invalidCapability _) => true
@@ -1383,7 +1383,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       (replyObj, .reply { replyId := rid }),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0, primary)
+      (cnId, .cnode (CNode.ofList 4 [ (SeLe4n.Slot.ofNat 0, primary)
             , (SeLe4n.Slot.ofNat 1, replyObjectCap)
             , (SeLe4n.Slot.ofNat 3, ntfnObjectCap) ]))
     ]
@@ -1427,8 +1427,8 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       -- 2. The minted handle resolves at the reply gate's own required right.
       -- A rights regression in the mint shows up here and nowhere in a field read.
       let replyGate : SyscallGate :=
-        { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 2,
-          capDepth := 4, requiredRight := SeLe4n.Kernel.syscallRequiredRight .reply }
+        { callerId := caller, cspaceRootCap := some (cnodeCapOf cnId 0 60), capAddr := SeLe4n.CPtr.ofNat 2,
+          requiredRight := SeLe4n.Kernel.syscallRequiredRight .reply }
       expect "sd058_minted_cap_passes_the_reply_gate"
         (match SeLe4n.Kernel.syscallLookupCap replyGate stMinted with
          | .ok (cap, _) => decide (cap.target = .replyCap rid)
@@ -1520,13 +1520,13 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnA)),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnA, .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0, primary)
+      (cnA, .cnode (CNode.ofList 4 [ (SeLe4n.Slot.ofNat 0, primary)
             , (SeLe4n.Slot.ofNat 1, ntfnCap)
             -- An INDEPENDENT capability to the same object: no CDT edge links it
             -- to slot 1, so revoking slot 1 must leave it alone.
             , (SeLe4n.Slot.ofNat 2, ntfnCap)
             , (SeLe4n.Slot.ofNat 3, cnBCap) ])),
-      (cnB, .cnode (CNode.ofList 4 0 0 4 []))
+      (cnB, .cnode (CNode.ofList 4 []))
     ]
   let cnodeCapWrite : Capability :=
     { target := .object cnA, rights := AccessRightSet.ofList [.read, .write] }
@@ -1650,7 +1650,7 @@ capability to the CNode itself at slot 3.  Through `dispatchSyscallChecked`: slo
 binds (the SchedContext names the thread and the thread names it back); slot 2
 is `.illegalAuthority`; slot 3 is `.invalidCapability` (not a TCB); and the
 RETIRED reading — the target's raw thread id in MR0 — is refused, because `70`
-is an address in the caller's CSpace and no capability sits there: *naming a
+is an address in the caller's CSpace that fails its root guard: *naming a
 thread is not holding it*. -/
 private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
@@ -1668,7 +1668,7 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
-      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
              (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)]))
     ]
   let decoded (tcbCPtr : Nat) : SyscallDecodeResult :=
@@ -1707,10 +1707,11 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | _ => false)
     "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
   -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
-  -- is an address, it masks to an empty slot, and the chokepoint refuses it.
+  -- is an address, its bits above the 4-bit radix fail the root capability's
+  -- 60-bit zero guard, and the lookup refuses it (seL4 `resolveAddressBits`).
   expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
     (match dispatchSyscallAsCurrent (decoded tgtTid.toNat) caller bootCoreId st with
-     | .error (.invalidCapability _) => true
+     | .error (.failedLookup _ (.guardMismatch 64 0 60)) => true
      | _ => false)
     "naming the thread's id is not holding a capability to it"
   -- Negative 4: an empty slot beside the held ones.
@@ -1761,7 +1762,7 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
       (scObj, .schedContext (SeLe4n.Kernel.SchedContext.empty scId)),
       (scBObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scBId with
           boundThreadCode := SeLe4n.ThreadId.optCode (some tgtTid) }),
-      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, scCap),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, scCap),
              (SeLe4n.Slot.ofNat 1, Capability.schedControlOf 0),
              (SeLe4n.Slot.ofNat 2, Capability.schedControlOf 1),
              (SeLe4n.Slot.ofNat 3, cnCap), (SeLe4n.Slot.ofNat 4, scBCap)]))
@@ -1847,7 +1848,7 @@ private def sd061_every_kind_is_carved : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (utObj, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x10000 }),
       (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
-      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, capTo utObj [.read, .write, .retype]),
              (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
              (SeLe4n.Slot.ofNat 2, capTo frObj [.read, .retype]),
@@ -1920,7 +1921,7 @@ private def sd062_carve_checks_authority_before_child : IO Unit := do
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (utObj, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x10000 }),
       (epObj, .endpoint {}),
-      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, capTo utObj [.read, .write, .retype]),
              (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
              (SeLe4n.Slot.ofNat 3, capTo utObj [.read, .write])]))) ] }
@@ -2381,12 +2382,13 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (epObj, .endpoint {}),
-      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, epCap),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, epCap),
         (SeLe4n.Slot.ofNat 3, cnCap)]))
     ]
   let gate : SyscallGate :=
-    { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 0,
-      capDepth := 4, requiredRight := .read }
+    { callerId := caller,
+      cspaceRootCap := (st.getTcb? caller).bind (fun t => t.spaceCells[0]),
+      capAddr := SeLe4n.CPtr.ofNat 0, requiredRight := .read }
   let decoded (sid : SyscallId) (ws : List Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
       msgInfo := { length := ws.length, extraCaps := 0, label := 0 },

@@ -101,7 +101,7 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- counterpart passed.  A binding here that goes unused is a field nobody
   -- compared, which the unused-variable linter reports; adding a field to
   -- either structure breaks this pattern until someone decides about it.
-  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots, flinks⟩),
+  | .cnode (fc@⟨frw, _fslots, flinks⟩),
     -- The live slot array is not compared: `slots_agree` makes it the slot map's.
     -- The derivation links are compared word for word (PR #956 review): the
     -- frozen CNode carries them, and `frozenStateAgrees` compares the tree's
@@ -109,9 +109,9 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     -- slot's capability (`SpareCells`: logically one value).  The occupancy
     -- links are not compared: the frozen CNode keeps no order of its slots,
     -- and the links list exactly the slots the slot map fills (`occ_agree`).
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _, _locc, _, _lhead, _,
+    .cnode (lc@⟨lrw, _lslots, _lcells, _, _, llinks, _, _locc, _, _lhead, _,
       _lspare⟩) =>
-      fd == ld && fgw == lgw && fgv == lgv && frw == lrw
+      frw == lrw
         && frozenCNodeSlotsAgree fc lc && flinks == llinks
   -- The spare mapping cells are not compared: they are no mapping
   -- (`MappingSpare`, `EpochSpare`, `TableSlotCell`: each logically one value).

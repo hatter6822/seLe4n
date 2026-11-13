@@ -336,8 +336,8 @@ def capability_toNonNull_roundtrip : IO Unit := do
 /-- Build a SystemState with `Capability.null` in slot 0 of a CNode for the
 NonNullCap end-to-end tests. -/
 private def al1bStateWithNullCapSlot : SystemState :=
-  let srcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)]))
-  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability))))
+  let srcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)]))
+  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 (SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability))))
   let base : SystemState := default
   let st1 : SystemState :=
     { base with objects := base.objects.insert ⟨10⟩ (.cnode srcCnode) }
@@ -358,6 +358,60 @@ def cspaceMint_from_null_rejected : IO Unit := do
       throw <| IO.userError s!"wrong error: expected nullCapability, got {repr e}"
   | .ok _ =>
       throw <| IO.userError "mint from null should have been rejected"
+
+/-- A CNode (`10`, radix 2) holding a badged endpoint capability (slot 0), an
+unbadged one (slot 1) and a capability to CNode `12` (radix 4, slot 2), an
+empty destination CNode `11` and the endpoint `20`: seL4's `updateCapData`
+under Mint. -/
+private def mintDataState : SystemState :=
+  let ep : Capability := { target := .object ⟨20⟩, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let cn : Capability := { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let src : CNode := SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF
+    [((SeLe4n.Slot.ofNat 0), { ep with badgeWord := SeLe4n.Badge.ofNatMasked 7, badged := true }),
+     ((SeLe4n.Slot.ofNat 1), ep), ((SeLe4n.Slot.ofNat 2), cn)])
+  let dst : CNode := SeLe4n.Model.CNode.ofSlots 2 (SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability)))
+  let walked : CNode := SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability)))
+  let base : SystemState := default
+  { base with objects := ((base.objects.insert ⟨10⟩ (.cnode src)).insert ⟨11⟩ (.cnode dst)
+      |>.insert ⟨12⟩ (.cnode walked)).insert ⟨20⟩ (.endpoint {}) }
+
+private def mintDataFrom (slot : Nat) (badge : Option SeLe4n.Badge) :
+    Except KernelError (Unit × SystemState) :=
+  SeLe4n.Kernel.cspaceMint { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat slot }
+    { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 0 } (AccessRightSet.ofList [.read]) badge mintDataState
+
+private def mintDataChild (r : Except KernelError (Unit × SystemState)) : Option Capability :=
+  match r with
+  | .ok ((), st) => SystemState.lookupSlotCap st { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 0 }
+  | .error _ => none
+
+/-- seL4 never rebadges: a mint of a badged endpoint capability is refused
+(`IllegalOperation`), whatever badge it asks for, and an unbadged one takes
+the badge. -/
+def cspaceMint_rebadge_refused : IO Unit := do
+  match mintDataFrom 0 (some (SeLe4n.Badge.ofNatMasked 9)) with
+  | .error .illegalState => expect "rebadge of a badged endpoint → .illegalState" true
+  | _ => throw <| IO.userError "rebadging a badged endpoint should be refused"
+  match mintDataFrom 0 none with
+  | .error .illegalState => expect "unbadging a badged endpoint → .illegalState" true
+  | _ => throw <| IO.userError "unbadging a badged endpoint should be refused"
+  match mintDataChild (mintDataFrom 1 (some (SeLe4n.Badge.ofNatMasked 9))) with
+  | some c => expect "an unbadged endpoint takes the badge" (c.badge == some (SeLe4n.Badge.ofNatMasked 9))
+  | none => throw <| IO.userError "badging an unbadged endpoint should succeed"
+
+/-- A mint of a CNode capability takes the data word as its guard (bits 63:6)
+and guard size (bits 5:0); a guard that does not fit beside the radix is
+refused. -/
+def cspaceMint_cnode_guard : IO Unit := do
+  -- guard 5 in 3 bits: word (5 <<< 6) ||| 3 = 323
+  match mintDataChild (mintDataFrom 2 (some (SeLe4n.Badge.ofNatMasked 323))) with
+  | some c =>
+      expect "minted CNode guard" (c.cnodeGuard.toNat == 5 && c.cnodeGuardSize.toNat == 3 && c.badge == none)
+  | none => throw <| IO.userError "a CNode mint with a fitting guard should succeed"
+  -- guard size 61 beside radix 4 exceeds the word
+  match mintDataFrom 2 (some (SeLe4n.Badge.ofNatMasked 61)) with
+  | .error .illegalState => expect "a guard past the word → .illegalState" true
+  | _ => throw <| IO.userError "a CNode guard past the word should be refused"
 
 /-- `cspaceCopy` from a null-cap source returns `.nullCapability`. -/
 def cspaceCopy_from_null_rejected : IO Unit := do
@@ -475,7 +529,7 @@ def cnode_slotsUnique_holds_witness : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty }
   let cn : CNode :=
-    CNode.ofList 0 0 0 0 [(SeLe4n.Slot.ofNat 0, cap)]
+    CNode.ofList 0 [(SeLe4n.Slot.ofNat 0, cap)]
   let _hUniq : cn.slotsUnique := SeLe4n.Model.CNode.slotsUnique_holds cn
   expect "CNode.slotsUnique_holds is reachable" true
 
@@ -787,7 +841,7 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   let plain : SeLe4n.ObjId := ⟨201⟩   -- a non-Reply object (endpoint)
   let cnId : SeLe4n.ObjId := ⟨100⟩
   let mkCn : KernelObject := .cnode
-    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
+    (SeLe4n.Model.CNode.ofSlots 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
             { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
         , ((SeLe4n.Slot.ofNat 2),
@@ -964,7 +1018,7 @@ def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
   let danglingRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨301⟩
   let cnId : SeLe4n.ObjId := ⟨110⟩
   let mkCn : KernelObject := .cnode
-    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
+    (SeLe4n.Model.CNode.ofSlots 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
             { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write] })
         , ((SeLe4n.Slot.ofNat 1),
@@ -1008,7 +1062,7 @@ def reply_cap_end_to_end_carve_mint_link : IO Unit := do
     { target := .object utId,
       rights := AccessRightSet.ofList [.read, .write, .retype] }
   let mkCn : KernelObject := .cnode
-    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 2), utCap) ]))
+    (SeLe4n.Model.CNode.ofSlots 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 2), utCap) ]))
   let callerTcb : TCB :=
     { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
@@ -2300,6 +2354,8 @@ def main : IO Unit := do
   capability_toNonNull_accepts_nonnull
   capability_toNonNull_roundtrip
   cspaceMint_from_null_rejected
+  cspaceMint_rebadge_refused
+  cspaceMint_cnode_guard
   cspaceCopy_from_null_rejected
   cspaceMove_from_null_rejected
   cspaceMutate_from_null_rejected

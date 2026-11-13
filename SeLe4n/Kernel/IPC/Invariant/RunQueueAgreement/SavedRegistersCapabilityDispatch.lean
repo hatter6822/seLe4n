@@ -1207,9 +1207,9 @@ theorem storeTcbWith_scheduler (st : SystemState) (id : SeLe4n.ObjId) (f : TCB �
 
 /-- A thread slot's copy keeps the scheduler. -/
 theorem threadSlotCopied_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    (threadSlotCopied st tid slot srcCNode srcSlot rights).scheduler = st.scheduler := by
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩ <;>
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data).scheduler = st.scheduler := by
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩ <;>
     rw [e] <;>
     simp [threadSlotCleared, storeTcbWith_scheduler, SystemState.updateTcb_scheduler]
 
@@ -1217,9 +1217,9 @@ theorem threadSlotCopied_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (s
 cells and every derivation link, nothing else. -/
 theorem threadSlotCopied_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t)
-    (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    savedRegsKeptExcept W st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
-  obtain ⟨hO, t', hT', hw⟩ := threadSlotCopied_frame hInv hT slot srcCNode srcSlot rights
+    (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    savedRegsKeptExcept W st (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
+  obtain ⟨hO, t', hT', hw⟩ := threadSlotCopied_frame hInv hT slot srcCNode srcSlot rights data
   refine savedRegsKeptExcept.of_slotsTcb fun k => ?_
   by_cases hk : k = tid.toObjId
   · subst hk
@@ -1238,13 +1238,13 @@ thread its retire removes**, which no core holds (`retireFinalObject_savedRegs`)
 the slot set keeps the scheduler and the machine. -/
 theorem threadSlotSet_savedRegs {e ec : CoreId} {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (u : SeLe4n.ThreadId) :
-    (threadSlotSet ec st tid slot srcCNode srcSlot rights).savedRegs u = st.savedRegs u ∨
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) (u : SeLe4n.ThreadId) :
+    (threadSlotSet ec st tid slot srcCNode srcSlot rights data).savedRegs u = st.savedRegs u ∨
       offCoreFree e st u := by
   unfold threadSlotSet
-  have hI := (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2
+  have hI := (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights data).2
   have k := threadSlotCopied_savedRegsKeptExcept (W := fun _ => False) hInv hT slot srcCNode srcSlot
-    rights u id
+    rights data u id
   rcases retireFinalObject_savedRegs e ec (slotRetireTarget st tid.toObjId slot)
       (recorderFor st (slotRetireTarget st tid.toObjId slot) tid.toObjId slot) _ hI u with r | r
   · exact .inl (r.trans k)
@@ -1254,43 +1254,43 @@ theorem threadSlotSet_savedRegs {e ec : CoreId} {st : SystemState} {tid : SeLe4n
 
 /-- A thread slot set keeps the scheduler and the machine. -/
 theorem threadSlotSet_scheduler_machine (ec : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    (threadSlotSet ec st tid slot srcCNode srcSlot rights).scheduler = st.scheduler ∧
-      (threadSlotSet ec st tid slot srcCNode srcSlot rights).machine = st.machine := by
+    (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    (threadSlotSet ec st tid slot srcCNode srcSlot rights data).scheduler = st.scheduler ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights data).machine = st.machine := by
   unfold threadSlotSet
   obtain ⟨-, hs, hm⟩ := retireFinalObject_fields ec (slotRetireTarget st tid.toObjId slot)
     (recorderFor st (slotRetireTarget st tid.toObjId slot) tid.toObjId slot)
-    (threadSlotCopied st tid slot srcCNode srcSlot rights)
-  exact ⟨hs.trans (threadSlotCopied_scheduler _ _ _ _ _ _),
-    hm.trans (threadSlotCopied_machine _ _ _ _ _ _)⟩
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data)
+  exact ⟨hs.trans (threadSlotCopied_scheduler _ _ _ _ _ _ _),
+    hm.trans (threadSlotCopied_machine _ _ _ _ _ _ _)⟩
 
 /-- WS-ZA ZA6.25: **a space change writes the saved registers only of threads no
 core holds after it**: each slot set writes only a thread its retire removes,
 and neither moves the scheduler or the machine. -/
 theorem copyThreadSpaces_savedRegs {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (hInv : st.objects.invExt)
-    (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') (u : SeLe4n.ThreadId) :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (hInv : st.objects.invExt)
+    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') (u : SeLe4n.ThreadId) :
     st'.savedRegs u = st.savedRegs u ∨ offCoreFree e st' u := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
   have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights).objects.invExt := by
+      TCB.cspaceRootRights cnData).objects.invExt := by
     unfold threadSlotSet
     exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
   obtain ⟨hs1, hm1⟩ := threadSlotSet_scheduler_machine ec st vtid.val TCB.cspaceRootSlot
-    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
   obtain ⟨hs2, hm2⟩ := threadSlotSet_scheduler_machine ec
-    (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights)
-    vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights
+    (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData)
+    vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
   unfold copyThreadSpacesPerform
   rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
-      vrSrc.slot TCB.vspaceRootRights u with r2 | r2
+      vrSrc.slot TCB.vspaceRootRights 0 u with r2 | r2
   · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.cspaceRootSlot cnSrc.cnode
-        cnSrc.slot TCB.cspaceRootRights u with r1 | r1
+        cnSrc.slot TCB.cspaceRootRights cnData u with r1 | r1
     · exact .inl (r2.trans r1)
     · right; unfold offCoreFree at r1 ⊢; rw [hs2, hm2, hs1, hm1]; exact r1
   · right; unfold offCoreFree at r2 ⊢; rw [hs2, hm2]; exact r2
@@ -1300,8 +1300,8 @@ registers of no thread another core holds**: the zombie passes are a delete
 chain (`finaliseCensusChain`), and the plain space change writes only threads no
 core holds after it (`copyThreadSpaces_savedRegs`). -/
 theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (B : FinaliseCensusBase st)
-    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (B : FinaliseCensusBase st)
+    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     savedRegsKeptOffCore e st st' := by
   rcases copyThreadSpacesZombie_cases h with h1 | ⟨n, s, hR, rfl | h2⟩
   · intro d hd t ht
@@ -1315,7 +1315,7 @@ theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : Sy
       (fun d _ hQ => hQ.finalise B d) (.start hB)).2.2
   · have Q := hR.chain.closed (finaliseCensusChain e st) (fun _ _ _ hQ hD => hQ.delete B hD)
       (fun d _ hQ => hQ.finalise B d) (.start hB)
-    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc Q.1.2.1.2.1 Q.1.2.1.1 Q.1.2.2 h2).1
+    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData Q.1.2.1.2.1 Q.1.2.1.1 Q.1.2.2 h2).1
     exact savedRegsKeptOffCore_extend Q.2.2 C (stepCovers_trans Q.1.1 C)
       (fun t => (copyThreadSpaces_savedRegs (e := e) Q.1.2.1.2.1 h2 t).imp_right .inr)
 

@@ -262,9 +262,6 @@ theorem FrozenMap.insert_preserves_wellFormed [BEq κ] [Hashable κ] [LawfulBEq 
 /-- Q5-B: Frozen CNode — slots backed by `CNodeRadix` (flat radix array)
 instead of `RHTable`. Zero-hash O(1) lookup via bit extraction. -/
 structure FrozenCNode where
-  depth      : Nat
-  guardWidth : Nat
-  guardValue : Nat
   radixWidth : Nat
   slots      : CNodeRadix
   /-- WS-ZA ZA5.3 part 4 (PR #956 review): the slots' derivation links, the
@@ -565,10 +562,7 @@ def freezeMap [BEq κ] [Hashable κ] [LawfulBEq κ] (rt : RHTable κ ν) : Froze
 /-- Q5-C: Freeze a CNode's RHTable-backed slots into a `CNodeRadix` flat
 radix array. Delegates to Q4-D's `freezeCNodeSlots`. -/
 def freezeCNode (cn : CNode) : FrozenCNode :=
-  { depth := cn.depth
-    guardWidth := cn.guardWidth
-    guardValue := cn.guardValue
-    radixWidth := cn.radixWidth
+  { radixWidth := cn.radixWidth
     slots := freezeCNodeSlots cn
     links := cn.links }
 

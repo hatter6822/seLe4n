@@ -122,12 +122,12 @@ theorem KeepsWordReads.recordUnwrappedBadge {B s : SystemState} (h : KeepsWordRe
 /-- **The transfer keeps every buffer's words**: it reads every thread's
 buffer address, every VSpace root and the machine where it found them. -/
 theorem receiveTransferCaps_wordReads
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     {B Z Z' : SystemState} {r : CapTransferSummary} (hK : KeepsWordReads B Z)
     (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) : KeepsWordReads B Z' := by
   unfold receiveTransferCaps at h
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · cases h; exact hK
   · simp only [] at h
     split at h
@@ -141,7 +141,7 @@ theorem receiveTransferCaps_wordReads
 
 /-- The transfer's state reads every buffer's words as the state it ran on. -/
 theorem ipcWordReadsAgree_receiveTransferCaps
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     {Z Z' : SystemState} {r : CapTransferSummary} (hNo : Z.objects.noResizeDue)
     (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) : ipcWordReadsAgree Z' Z :=
@@ -256,8 +256,8 @@ the transfer reads of them (`capTransferK`), read before the rendezvous. -/
     (r : SeLe4n.ThreadId) (nextCode : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     deliverLongCapsFrame
@@ -284,8 +284,8 @@ theorem sendRendezvousCaps_eq_deliveredLong (st : SystemState) (endpointId : SeL
           s.capInfo
       | .error _ => st) =
       performSendCapsDeliveredLong st endpointId r (ThreadId.optCode next) layout rf len sender
-        badgeWord badged core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count rt.vspaceRoot
-        rt.ipcBuffer rt.cspaceRoot := by
+        badgeWord badged core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count rt.vspaceRoot
+        rt.ipcBuffer rt.spaceCells[0] := by
   have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
   have hNoY := wakeThread_noResizeDue _ r core hNo0
   have hAY0 : ipcBufferReadsAgree
@@ -353,8 +353,8 @@ frame with the transfer's report. -/
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeCallRendezvousReady st endpointId caller r nextCode rid core
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     finishCallCapsLong
@@ -381,8 +381,8 @@ theorem callRendezvousCaps_eq_deliveredLong (st : SystemState) (endpointId : SeL
           (PriorityInheritance.propagatePipChainCrossCore st'' r core).1 (some r) s.capInfo
       | .error _ => st) =
       performCallCapsDeliveredLong st endpointId caller r (ThreadId.optCode next) rid layout rf len
-        badgeWord badged core ctcb.vspaceRoot ctcb.ipcBuffer ctcb.cspaceRoot count rt.vspaceRoot
-        rt.ipcBuffer rt.cspaceRoot := by
+        badgeWord badged core ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0] count rt.vspaceRoot
+        rt.ipcBuffer rt.spaceCells[0] := by
   have hNoX := storeCallRendezvousReady_noResizeDue st endpointId caller r
     (ThreadId.optCode next) rid core hNo
   have hA := ipcBufferReadsAgree_storeCallRendezvousReady st endpointId caller r
@@ -464,8 +464,8 @@ before the take. -/
 @[noinline] def performTakeCapsDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (core : Concurrency.CoreId)
     (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) (w0 w1 w2 w3 : UInt64)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1.updateTcb receiver receiverReady
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -483,8 +483,8 @@ which the take leaves unwritten (the caller stays blocked). -/
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (core : Concurrency.CoreId) (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeReceiveCallReady st endpointId s nextCode receiver rid
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     finishCallCapsLong (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)

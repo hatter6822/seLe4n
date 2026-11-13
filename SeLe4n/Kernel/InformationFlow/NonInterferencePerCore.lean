@@ -1440,7 +1440,7 @@ theorem cspaceMint_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr)
     | none => simp [hNN] at hStep
     | some parentNN =>
       simp only [hNN] at hStep
-      cases hMint : mintDerivedCap parentNN rights badge with
+      cases hMint : mintDerivedCap parentNN rights (capDataKind st parent) badge with
       | error e => simp [hMint] at hStep
       | ok child =>
         simp only [hMint] at hStep

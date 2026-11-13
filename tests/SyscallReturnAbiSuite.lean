@@ -182,7 +182,7 @@ private def witnessState : SystemState :=
   BootstrapBuilder.empty
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
     |>.withObject callerCn (.cnode
-        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+        (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)])))
     |>.withObject ntfnId (.notification
         { state := .idle, 
@@ -279,7 +279,7 @@ transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
 deliberately free — the receiver's receive path names it
 (`capsSendScenario`), so the granted transfer installs there. -/
 private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
        (SeLe4n.Slot.ofNat replyCapPtr, replyCap),
@@ -748,7 +748,7 @@ private def auditWitnessState : SystemState :=
   { (BootstrapBuilder.empty
       |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
       |>.withObject callerCn (.cnode
-          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
                (SeLe4n.Slot.ofNat auditCapPtr, auditCap),
                (SeLe4n.Slot.ofNat ordinaryCapPtr,
@@ -1350,11 +1350,11 @@ private def errorPayloadLayoutLines : List String :=
   , errorPayloadLayoutLine "failedLookup.invalidRoot" []
       (fun ws _ _ _ => .failedLookup ws .invalidRoot)
   , errorPayloadLayoutLine "failedLookup.missingCapability" ["bitsLeft"]
-      (fun ws a _ _ => .failedLookup ws (.missingCapability a))
+      (fun ws a _ _ => .failedLookup ws (.missingCapability a.toUInt8))
   , errorPayloadLayoutLine "failedLookup.depthMismatch" ["bitsLeft", "bitsFound"]
-      (fun ws a b _ => .failedLookup ws (.depthMismatch a b))
+      (fun ws a b _ => .failedLookup ws (.depthMismatch a.toUInt8 b.toUInt8))
   , errorPayloadLayoutLine "failedLookup.guardMismatch" ["bitsLeft", "guardFound", "bitsFound"]
-      (fun ws a b c => .failedLookup ws (.guardMismatch a b c))
+      (fun ws a b c => .failedLookup ws (.guardMismatch a.toUInt8 b c.toUInt8))
   , errorPayloadLayoutLine "illegalState" [] (fun _ _ _ _ => .illegalState) ]
 
 /-- Which field of a move's CNode operation word owns bit `j`, decided by

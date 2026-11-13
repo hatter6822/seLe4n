@@ -476,10 +476,13 @@ theorem cdtCompleteness_of_objectsAgreeOffTaint
   obtain ⟨w, hO'⟩ := objectsAgreeOffTaint.some_fwd_eq hA hO
   exact ⟨_, hO', by rw [KernelObject.slotCap_withTaintWords]; exact hS⟩
 
-theorem cspaceDepthConsistent_of_objectsAgreeOffTaint
-    (hA : st.objectsAgreeOffTaint { st with objects := O }) (h : cspaceDepthConsistent st) :
-    cspaceDepthConsistent { st with objects := O } := fun cid cn hC =>
-  h cid cn ((objectsAgreeOffTaint.inert_iff hA _ rfl).mp hC)
+theorem cnodeCapGeometry_of_objectsAgreeOffTaint
+    (hA : st.objectsAgreeOffTaint { st with objects := O }) (h : cnodeCapGeometry st) :
+    cnodeCapGeometry { st with objects := O } := by
+  intro oid o slot cap hO hS
+  obtain ⟨o0, w, h0, rfl⟩ := objectsAgreeOffTaint.some_back_eq hA hO
+  exact cnodeCapGeometryAt_congr (objectsAgreeOffTaint.getCNode?_eq hA) _
+    (h oid o0 slot cap h0 (by rw [← KernelObject.slotCap_withTaintWords o0 w]; exact hS))
 
 theorem capTargetKindBacked_of_objectsAgreeOffTaint
     (hA : st.objectsAgreeOffTaint { st with objects := O })
@@ -514,7 +517,7 @@ theorem capabilityInvariantBundle_of_objectsAgreeOffTaint
   obtain ⟨h1, h2, h3, h4, -, h6, h7, h8⟩ := h
   exact ⟨cspaceLookupSound_of_objectsAgreeOffTaint hA h1,
     cdtCompleteness_of_objectsAgreeOffTaint hA h2, h3,
-    cspaceDepthConsistent_of_objectsAgreeOffTaint hA h4, hI,
+    cnodeCapGeometry_of_objectsAgreeOffTaint hA h4, hI,
     capTargetKindBacked_of_objectsAgreeOffTaint hA h6,
     cdtLinksAgree_of_objectsAgreeOffTaint hA h7,
     capTreeShape_of_objectsAgreeOffTaint hA h8⟩

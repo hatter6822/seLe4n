@@ -2514,6 +2514,24 @@ const fn cnode_refusal(
     }
 }
 
+/// `trip` refused for a second capability whose address misses the root
+/// CNode's guard: `seL4_FailedLookup`, not the source, `GuardMismatch` (4),
+/// 64 bits left and the root's guard, its width (58) the fifth word, written
+/// to the root task's buffer `msg[4]` while the window's frame is that buffer
+/// ([`RoundTrip::overflow`], as `failed-lookup-guard-mismatch`).
+#[cfg(feature = "hw_target")]
+const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
+    RoundTrip {
+        overflow: Some((FRAME_VADDR, 0)),
+        returns: refused_with(
+            FAILED_LOOKUP,
+            5,
+            [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+        ),
+        ..trip
+    }
+}
+
 /// A root slot no scenario fills: the empty source a Copy is refused from.
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
@@ -2524,6 +2542,36 @@ const EMPTY_SOURCE_SLOT: u64 = 48;
 /// capability (`AUDIT_SLOT`) when the refusal scenarios run.
 #[cfg(feature = "hw_target")]
 const EMPTY_DEST_SLOT: u64 = 49;
+
+/// The root slots of the multi-level walk: the root CNode's capability minted
+/// with a 52-bit guard, minted with none, and the walk's copy.  None is filled
+/// at boot (the boot's own slots end at 36) and each is emptied again.
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_SLOT: u64 = 50;
+#[cfg(feature = "hw_target")]
+const GUARDLESS_CNODE_SLOT: u64 = 51;
+#[cfg(feature = "hw_target")]
+const WALK_COPY_SLOT: u64 = 52;
+
+/// A CNode capability's data word (seL4's `seL4_CNode_CapData`): the guard
+/// in bits 63:6 and its size in bits 5:0.  The 52-bit guard has its top bit
+/// set, so a guarded index is a word `≥ 2^63`.
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_GUARD: u64 = 1 << 51;
+#[cfg(feature = "hw_target")]
+const GUARDED_CNODE_DATA: u64 = (GUARDED_CNODE_GUARD << 6) | 52;
+
+/// The root CNode's own guard and size as a data word: a SetSpace with it
+/// gives the partner's CSpace root the geometry it had.
+#[cfg(feature = "hw_target")]
+const ROOT_CNODE_DATA: u64 = ((ROOT_CNODE_GUARD >> 6) << 6) | 58;
+
+/// A 64-bit source index through the 52-bit-guarded capability: its guard,
+/// then `first` (the guarded level's slot), then `second` (the next level's).
+#[cfg(feature = "hw_target")]
+const fn guarded_index(first: u64, second: u64) -> u64 {
+    (GUARDED_CNODE_GUARD << 12) | (first << 6) | second
+}
 
 /// The long send's message length: four words in the sender's registers and
 /// two in its IPC buffer's overflow slots 0 and 1, which share a page.
@@ -2772,6 +2820,12 @@ const READ_WRITE_RIGHTS: u64 = 0x3;
 /// and may not receive.
 #[cfg(feature = "hw_target")]
 const WRITE_ONLY_RIGHTS: u64 = 0x2;
+/// The read right alone (`AccessRight.read`, bit 0).
+#[cfg(feature = "hw_target")]
+const READ_ONLY_RIGHTS: u64 = 0x1;
+/// `KernelError.illegalAuthority`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const ILLEGAL_AUTHORITY: u64 = 3;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -2824,7 +2878,7 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     &[
         invocation(
             "cspace-copy",
@@ -2859,6 +2913,111 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CSPACE_REVOKE,
             CNODE_CAP,
             [NOTIFICATION_SLOT, 0, 0, 0],
+        ),
+    ],
+    // seL4's `updateCapData` under Mint and `resolveAddressBits` over more
+    // than one level: the root CNode's capability minted with a 52-bit guard
+    // (its top bit set) and with none, so a source index of the guard, the
+    // guardless capability's slot and a slot of the second level resolves
+    // through both to the notification, which is copied out and the copy
+    // deleted; an index naming the notification at the first level stops
+    // there with six bits left, a depth mismatch for a CNode operation
+    // (`lookupSlotForCNodeOp`).  Then a badged endpoint capability minted
+    // again with another badge, and with data zero, both refused (seL4's
+    // `updateCapData` answers a null capability for a badged endpoint,
+    // `IllegalOperation`): a badge is never rewritten nor stripped.
+    &[
+        mint(
+            "cnode-mint-guard",
+            CNODE_SLOT,
+            GUARDED_CNODE_SLOT,
+            ALL_RIGHTS,
+            GUARDED_CNODE_DATA,
+            ROOT_IPC_BUFFER,
+        ),
+        mint(
+            "cnode-mint-guardless",
+            CNODE_SLOT,
+            GUARDLESS_CNODE_SLOT,
+            ALL_RIGHTS,
+            0,
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "cnode-multi-level-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [
+                cap_address(WALK_COPY_SLOT),
+                cap_address(GUARDED_CNODE_SLOT),
+                guarded_index(GUARDLESS_CNODE_SLOT, NOTIFICATION_SLOT),
+                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+            ],
+        ),
+        invocation(
+            "cnode-multi-level-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [WALK_COPY_SLOT, 0, 0, 0],
+        ),
+        cnode_refusal(
+            "lookup-stops-at-non-cnode",
+            [
+                cap_address(WALK_COPY_SLOT),
+                cap_address(GUARDED_CNODE_SLOT),
+                guarded_index(NOTIFICATION_SLOT, 0),
+                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+            ],
+            // The source; DepthMismatch (3), six bits left, none found.
+            refused_with(FAILED_LOOKUP, 4, [Some(1), Some(3), Some(6), Some(0)]),
+        ),
+        invocation(
+            "cnode-mint-guardless-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [GUARDLESS_CNODE_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "cnode-mint-guard-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [GUARDED_CNODE_SLOT, 0, 0, 0],
+        ),
+        mint(
+            "cnode-mint-badged-endpoint",
+            ENDPOINT_SLOT,
+            GUARDED_CNODE_SLOT,
+            ALL_RIGHTS,
+            5,
+            ROOT_IPC_BUFFER,
+        ),
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..mint(
+                "cnode-mint-rebadge-refused",
+                GUARDED_CNODE_SLOT,
+                GUARDLESS_CNODE_SLOT,
+                ALL_RIGHTS,
+                6,
+                ROOT_IPC_BUFFER,
+            )
+        },
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..mint(
+                "cnode-mint-unbadge-refused",
+                GUARDED_CNODE_SLOT,
+                GUARDLESS_CNODE_SLOT,
+                ALL_RIGHTS,
+                0,
+                ROOT_IPC_BUFFER,
+            )
+        },
+        invocation(
+            "cnode-mint-badged-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [GUARDED_CNODE_SLOT, 0, 0, 0],
         ),
     ],
     &[
@@ -2918,6 +3077,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PARTNER_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
+        // The CSpace root's guard taken from `cspace_root_data` (seL4's
+        // `updateCapData` in `decodeSetSpace`): the root's own 58-bit guard,
+        // so the partner's addresses resolve as before; then a guard size
+        // that does not fit beside the radix, refused.
+        invocation(
+            "set-space-root-data",
+            TCB_SET_SPACE,
+            PARTNER_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, ROOT_CNODE_DATA, 0],
+        ),
+        RoundTrip {
+            returns: refused(ILLEGAL_STATE),
+            ..invocation(
+                "set-space-root-data-refused",
+                TCB_SET_SPACE,
+                PARTNER_TCB_CAP,
+                [CNODE_CAP, VSPACE_CAP, 59, 0],
+            )
+        },
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
     ],
@@ -3466,6 +3644,62 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
                 ),
             )
         },
+        // A second capability whose address misses the root CNode's guard,
+        // one per arm that resolves one (seL4's `lookupCap` of an argument,
+        // `seL4_FailedLookup` with the guard-mismatch words): the receive's
+        // and the reply-receive's reply capability, the configure's
+        // scheduling context (the `.overflowOne` route), and the SetSpace
+        // CSpace root and the bound notification an invocation resolves.
+        // Each is refused before anything changes, its fifth word in the
+        // buffer as above.
+        guard_mismatch_refusal(RoundTrip {
+            msg_len: 1,
+            ..invocation(
+                "receive-reply-cap-guard-mismatch",
+                RECEIVE,
+                ENDPOINT_CAP,
+                [REPLY_CAP_SLOT, 0, 0, 0],
+            )
+        }),
+        guard_mismatch_refusal(RoundTrip {
+            msg_len: 2,
+            ..invocation(
+                "reply-recv-reply-cap-guard-mismatch",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                [REPLY_CAP_SLOT, 0x99, 0, 0],
+            )
+        }),
+        guard_mismatch_refusal(configure(
+            "configure-sched-context-guard-mismatch",
+            [
+                SCHED_CONTEXT_SLOT,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        )),
+        guard_mismatch_refusal(invocation(
+            "set-space-root-guard-mismatch",
+            TCB_SET_SPACE,
+            PARTNER_TCB_CAP,
+            [CNODE_SLOT, VSPACE_CAP, 0, 0],
+        )),
+        guard_mismatch_refusal(invocation(
+            "bind-notification-guard-mismatch",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            [NOTIFICATION_SLOT, 0, 0, 0],
+        )),
+        // The fault handler a fault-handler set names
+        // (`setThreadFaultHandlerOpK`): resolved, like the bound
+        // notification, as an argument capability, and refused in place.
+        guard_mismatch_refusal(invocation(
+            "set-fault-handler-guard-mismatch",
+            TCB_SET_FAULT_HANDLER,
+            PARTNER_TCB_CAP,
+            [ENDPOINT_SLOT, 0, 0, 0],
+        )),
         // Argument words at or above `2^63`, each refused on the word before
         // it is made a number: an ASID past the configured bound
         // (`AsidNotBound`), an address past the canonical bound
@@ -3580,7 +3814,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PARTNER_TCB_CAP,
             0,
         ),
-        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 2),
         RoundTrip {
             msg_len: 6,
             ..configure(
@@ -9613,15 +9847,50 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
 /// `KernelError::FlowDenied`'s discriminant.
 #[cfg(feature = "hw_target")]
 const FLOW_DENIED: u64 = 13;
+/// A declassification whose capability address misses the root guard, measured:
+/// a refused lookup whose error carries a payload (a guard mismatch) recorded in
+/// the refusal ledger from its words, so neither the error nor the record is
+/// built on the entry path.  The address is a bare slot number, below the root
+/// guard.  The fifth word (`GuardFound`'s size) goes to the root task's IPC
+/// buffer, so the length is 5; the buffer is not at `FRAME_VADDR` in this
+/// phase, so the word itself is not probed.
+#[cfg(feature = "hw_target")]
+const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
+    name: "declassify-guard-mismatch-refused",
+    cptr: 1,
+    returns: refused_with(
+        FAILED_LOOKUP,
+        5,
+        [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+    ),
+    ..DECLASSIFICATION_REFUSAL
+};
+/// A root slot no other scenario names: the read-only audit capability's.
+#[cfg(feature = "hw_target")]
+const READ_ONLY_AUDIT_SLOT: u64 = 60;
+/// The boot audit capability minted read-only into [`READ_ONLY_AUDIT_SLOT`],
+/// unmeasured, while the root task's IPC buffer holds the mint's fifth word
+/// (after [`PARTNER_SETUP`]); deleted with the boot audit capability.
+#[cfg(feature = "hw_target")]
+const READ_ONLY_AUDIT_MINT: RoundTrip = mint(
+    "mint-read-only-audit-capability",
+    AUDIT_SLOT,
+    READ_ONLY_AUDIT_SLOT,
+    READ_ONLY_RIGHTS,
+    0,
+    ROOT_IPC_BUFFER,
+);
 /// **The audit monitor's reads** (WS-ZA ZA5.13, every opcode family at
 /// ZA6.35), through the boot audit capability ([`AUDIT_CAP`]): the trail's
 /// first entry drained, so the trail has an epoch for the archived verdict to
 /// read below; the status, an entry's field, its authorization basis (a chunk
 /// past the first among them), the refusal ledger's status, counters and the
-/// refused declassification's slot, and the causality verdicts; then the
+/// refused declassification's slot, and the causality verdicts; four refused
+/// reads (a chunk, an entry and a ledger slot past the last, and an opcode
+/// past the last), each answered in place; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 22] = [
+const AUDIT_SCENARIO: [RoundTrip; 33] = [
     // A drain and a read a word short of their arguments, through the audit
     // capability: refused `TruncatedMessage` once the target and the right
     // are checked, the trail untouched.
@@ -9854,6 +10123,158 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         cptr: AUDIT_CAP,
         msg_len: 3,
         msg: [29, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: None,
+    },
+    // Refused reads, each answered in place from the read's own code
+    // (`auditReadFastRefusal`): a chunk past the first visible entry's
+    // target object (`InvalidArgument` of the chunk word),
+    RoundTrip {
+        name: "audit-read-entry-chunk-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, 99, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // an entry past the visible ones (`InvalidArgument` of the index word),
+    RoundTrip {
+        name: "audit-read-entry-index-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [9, 1000, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a refusal-ledger slot past the ring (the index word again),
+    RoundTrip {
+        name: "audit-read-refusal-slot-past",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, 1000, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // and an opcode past the last (`InvalidSyscallArgument`).
+    RoundTrip {
+        name: "audit-read-unknown-op",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [30, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(INVALID_SYSCALL_ARGUMENT),
+    },
+    // Reads whose index or chunk word is at or above `2 ^ 63`, each read on
+    // the word (`auditReadFastCodeW`, `auditReadFastRefusalW`), so no word is
+    // made a number: an entry index (`InvalidArgument` of the index word),
+    RoundTrip {
+        name: "audit-read-entry-index-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a chunk of the first visible entry's target object (the chunk word),
+    RoundTrip {
+        name: "audit-read-entry-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // a refusal-ledger slot (the index word),
+    RoundTrip {
+        name: "audit-read-refusal-slot-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, WIDE_WORD, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // a causality verdict between two wide entries, compared on the words
+    // (the index word),
+    RoundTrip {
+        name: "audit-read-chain-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [28, WIDE_WORD + 1, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
+    },
+    // and an archived predecessor past the epoch (the chunk word).
+    RoundTrip {
+        name: "audit-read-archived-chunk-wide",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [29, 0, WIDE_WORD, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
+    },
+    // A drain through the read-only copy of the audit capability
+    // ([`READ_ONLY_AUDIT_MINT`]), which cannot drain
+    // (`syscallRequiredRight .auditDrain` is the write right): refused
+    // `IllegalAuthority` in place (`auditedArmSpec_auditDrain_refused`).
+    RoundTrip {
+        name: "audit-drain-read-only-refused",
+        syscall: AUDIT_DRAIN,
+        cptr: cap_address(READ_ONLY_AUDIT_SLOT),
+        msg_len: 1,
+        msg: [256, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(ILLEGAL_AUTHORITY),
+    },
+    // A drain whose count is at or above `2 ^ 63`: the whole trail, the count
+    // read on the word (`auditDrainCountW`).
+    RoundTrip {
+        name: "audit-drain-wide-count",
+        syscall: AUDIT_DRAIN,
+        cptr: AUDIT_CAP,
+        msg_len: 1,
+        msg: [WIDE_WORD, 0, 0, 0],
         primed: None,
         blocks: false,
         caps_or_badges: None,
@@ -10185,7 +10606,45 @@ fn bound_declassified_signals(which: &str) -> bool {
         name: "irq-signal-bound",
         enter: irq_bound_line_entry,
     };
+    // A capability fault to a handler waiting with no reply object: the low
+    // thread names the boot endpoint as its fault handler, the root task's
+    // receive on it (no reply object, message length 0) blocks it, and the
+    // low thread's fault finds the handler holding no reply to link it to, so
+    // it is suspended with the fault recorded (seL4's `sendFaultIPC` failing
+    // into `handleDoubleFault`), the handler left waiting.  The bound line's
+    // interrupt wakes the root task through its bound notification, and the
+    // low thread is resumed.
+    let set_low_handler = invocation(
+        "low-thread-set-fault-handler",
+        TCB_SET_FAULT_HANDLER,
+        LOW_THREAD_CAP,
+        [ENDPOINT_CAP, 0, 0, 0],
+    );
+    let irq_wakes_handler = KernelEntry {
+        name: "irq-wakes-handler-without-reply",
+        enter: irq_bound_line_entry,
+    };
+    let resume_low = invocation(
+        "low-thread-resume-after-fault",
+        TCB_RESUME,
+        LOW_THREAD_CAP,
+        [0; 4],
+    );
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
+        || !unmeasured(
+            &set_low_handler,
+            "the low thread's fault handler was not set",
+        )
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the root task's receive did not block",
+        )
+        || heap_allocations_trap(&cap_fault("cap-fault-to-handler-without-reply"), which)
+            != Some(true)
+        || !fault_not_delivered("cap-fault-to-handler-without-reply")
+        || !heap_allocations_interrupt(&irq_wakes_handler, which)
+        || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
+        || !unmeasured(&resume_low, "the low thread was not resumed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
@@ -10766,6 +11225,12 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             return Some(false);
         }
     }
+    if !unmeasured(
+        &READ_ONLY_AUDIT_MINT,
+        "the read-only audit capability was not minted",
+    ) {
+        return Some(false);
+    }
     for scenario in PARTNER_SCENARIOS.iter() {
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
@@ -10808,6 +11273,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
             return Some(false);
         }
+        if heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) != Some(true) {
+            return Some(false);
+        }
         for step in AUDIT_SCENARIO.iter() {
             if heap_allocations_round_trip(step, which) != Some(true) {
                 return Some(false);
@@ -10842,6 +11310,18 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if !ok {
             return Some(false);
         }
+    }
+    let delete_read_only_audit = invocation(
+        "delete-read-only-audit-capability",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [READ_ONLY_AUDIT_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(
+        &delete_read_only_audit,
+        "the read-only audit capability was not deleted",
+    ) {
+        return Some(false);
     }
     let delete_audit = invocation(
         "delete-audit-capability",
@@ -11849,9 +12329,19 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 }
 
 /// The `x1` a capability fault reaches its receiver with: `seL4_Fault_CapFault`
-/// (1) as the label, the frame's four words as the length.
+/// (1) as the label and the words `setMR` wrote as the length.  An empty
+/// slot's fault is seL4's five `seL4_CapFault_*` words (`IP`, `Addr`,
+/// `InRecvPhase`, `LookupFailureType`, `BitsLeft` of `seL4_MissingCapability`);
+/// the fifth lands in the receiving partner's IPC buffer, the window's page
+/// (`tcb-set-ipc-buffer`), so while that page is mapped the length is five.
 #[cfg(feature = "hw_target")]
-const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 4;
+const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 5;
+
+/// The same fault while the partner's buffer page is unmapped: the fifth word
+/// has nowhere to go, so the length is the four message registers (seL4's
+/// `setMR` with no buffer answers `n_msgRegisters`).
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_UNMAPPED_BUFFER_INFO: u64 = (1 << 12) | 4;
 
 /// One overflow capability fault queued and answered: the partner resumed,
 /// the root task's trap queued on its handler's endpoint, the partner's
@@ -11862,6 +12352,7 @@ fn queued_overflow_cap_fault(
     trap: &TrapTrip,
     receive: &'static str,
     reply: &'static str,
+    info: u64,
     which: &str,
 ) -> bool {
     let receive = RoundTrip {
@@ -11874,7 +12365,7 @@ fn queued_overflow_cap_fault(
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((CAP_FAULT_MESSAGE_INFO, [None; 4])),
+        returns: Some((info, [None; 4])),
     };
     let reply = partner_step(reply, REPLY, REPLY_CAP, 0, [0, 0], false);
     unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
@@ -12019,6 +12510,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             ),
             "receive-long-send-unmapped-buffer-cap-fault",
             "reply-long-send-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12029,6 +12521,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             ),
             "receive-long-call-unmapped-buffer-cap-fault",
             "reply-long-call-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12038,6 +12531,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             },
             "receive-long-receive-unmapped-buffer-cap-fault",
             "reply-long-receive-unmapped-buffer-cap-fault",
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
@@ -12046,6 +12540,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-fills", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault",
             "reply-configure-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&fills, which) == Some(true)
@@ -12053,6 +12548,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-held", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault-held",
             "reply-configure-cap-fault-held",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
@@ -12065,12 +12561,14 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
             "receive-service-register-cap-fault",
             "reply-service-register-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && queued_overflow_cap_fault(
             &overflow_cap_fault("long-send-cap-fault", SEND, LONG_SEND_LENGTH),
             "receive-long-send-cap-fault",
             "reply-long-send-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         // A receive past its inline words on the CNode capability: seL4's
@@ -12083,6 +12581,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             },
             "receive-overflowed-receive-cap-fault",
             "reply-overflowed-receive-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && receive_phase_cap_faults(which)
@@ -12134,16 +12633,19 @@ fn receive_phase_cap_faults(which: &str) -> bool {
         &receive_phase_cap_fault("receive-wrong-type-cap-fault", RECEIVE, CNODE_CAP),
         "receive-receive-wrong-type-cap-fault",
         "reply-receive-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && queued_overflow_cap_fault(
         &receive_phase_cap_fault("wait-wrong-type-cap-fault", WAIT, CNODE_CAP),
         "receive-wait-wrong-type-cap-fault",
         "reply-wait-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && queued_overflow_cap_fault(
         &receive_phase_cap_fault("reply-recv-wrong-type-cap-fault", REPLY_RECV, CNODE_CAP),
         "receive-reply-recv-wrong-type-cap-fault",
         "reply-reply-recv-wrong-type-cap-fault",
+        CAP_FAULT_MESSAGE_INFO,
         which,
     ) && heap_allocations_round_trip(&mint_no_receive, which) == Some(true)
         && queued_overflow_cap_fault(
@@ -12154,6 +12656,7 @@ fn receive_phase_cap_faults(which: &str) -> bool {
             ),
             "receive-receive-no-right-cap-fault",
             "reply-receive-no-right-cap-fault",
+            CAP_FAULT_MESSAGE_INFO,
             which,
         )
         && heap_allocations_round_trip(&delete_no_receive, which) == Some(true)
@@ -12296,6 +12799,39 @@ const FAULT_PLAIN_REPLIES: [&str; 5] = [
 /// synchronous-exception handler entered with IRQs masked, and this core's
 /// heap counter read before and after.  The handler returns only through a
 /// context the kernel restored (it halts the core otherwise).
+/// Whether the thread a capability-fault trap restored is its handler,
+/// woken holding the fault: its `x1` carries `seL4_Fault_CapFault`'s tag (1).
+#[cfg(feature = "hw_target")]
+fn restored_cap_fault() -> bool {
+    TRAP_RESTORED_X1.load(Ordering::SeqCst) >> 12 == 1
+}
+
+/// The trap named `name` delivered its capability fault to the handler.
+#[cfg(feature = "hw_target")]
+fn fault_delivered(name: &str) -> bool {
+    if !restored_cap_fault() {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler was not woken with the fault (x1={:#x})",
+            TRAP_RESTORED_X1.load(Ordering::SeqCst)
+        );
+        return false;
+    }
+    true
+}
+
+/// The trap named `name` did not deliver its capability fault: the handler
+/// was left waiting.
+#[cfg(feature = "hw_target")]
+fn fault_not_delivered(name: &str) -> bool {
+    if restored_cap_fault() {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler was woken with the fault"
+        );
+        return false;
+    }
+    true
+}
+
 #[cfg(feature = "hw_target")]
 fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr();
@@ -12324,6 +12860,8 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
         Ordering::SeqCst,
     );
     let after = own_heap_allocations(core as usize);
+    TRAP_RESTORED_X1.store(frame.gprs[1], Ordering::SeqCst);
+    TRAP_RESTORED_X5.store(frame.gprs[5], Ordering::SeqCst);
     crate::interrupts::restore_interrupts(saved_daif);
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
     crate::fp_context::set_trap_for_resume(false);
@@ -12355,6 +12893,18 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     print_reading(name, core as usize, which, before, after, window_start());
     Some(true)
 }
+
+/// `x1` and `x5` of the context the last [`heap_allocations_trap`]'s entry
+/// restored: a delivered fault's message info and its fourth message word.
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X1: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "hw_target")]
+static TRAP_RESTORED_X5: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// The `x1` a guard-mismatch capability fault reaches a handler with an IPC
+/// buffer: `seL4_Fault_CapFault` (1) and its seven words.
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_GUARD_MISMATCH_INFO: u64 = (1 << 12) | 7;
 
 /// Whether the last [`heap_allocations_trap`]'s entry loaded an FP/SIMD
 /// context: an access answered `.load`, where one answered `.retry` loads
@@ -12603,6 +13153,68 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
     }
+    // A capability fault from a thread running on a scheduling context, to a
+    // passive handler waiting with a reply object: the fault's call lends the
+    // faulting thread's context to the handler (seL4-MCS `sendFaultIPC`, the
+    // call's `schedContext_donate`), each write in its slot.  The handler's
+    // reply hands the context back and restarts the faulting thread, which is
+    // then suspended and the context unbound from it.  The timer is
+    // masked across the sequence, so no tick switches the threads between steps.
+    let donating_setup = [
+        configure(
+            "fault-donating-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "fault-donating-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("fault-donating-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+    ];
+    let donating_reply = partner_step(
+        "cap-fault-donating-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    let donating_teardown = [
+        invocation(
+            "fault-donating-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "fault-donating-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+    ];
+    let ticks = crate::interrupts::disable_interrupts();
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured_all(&donating_setup, "the donating fault's setup failed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(&fault_trip(2, "cap-fault-donating-delivered"), which)
+                != Some(true)
+            || !fault_delivered("cap-fault-donating-delivered")
+            || heap_allocations_round_trip(&donating_reply, which) != Some(true)
+            || !unmeasured_all(&donating_teardown, "the donating fault's teardown failed")
+        {
+            return Some(false);
+        }
+    }
+    crate::interrupts::restore_interrupts(ticks);
     // A capability fault answered by a reply at the longest message, 120
     // words, and then by a reply-receive at that length: the reply's words
     // past the fourth are read from the handler's IPC buffer, so a page is
@@ -12676,6 +13288,70 @@ fn fault_entries() -> Option<bool> {
             ) != Some(true)
             || heap_allocations_round_trip_resuming(&long_reply_recv, which, Some(fault_restart(2)))
                 != Some(true)
+            || !unmeasured(&wake_handler, "the waiting handler was not woken")
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
+    // A capability fault on an address that misses the root CNode's guard
+    // (seL4's `seL4_GuardMismatch`): delivered to the handler while its IPC
+    // buffer is mapped, so all seven `seL4_CapFault_*` words reach it (`IP`,
+    // `Addr`, `InRecvPhase`, `LookupFailureType`, then `BitsLeft`,
+    // `GuardMismatch_GuardFound` and `GuardMismatch_BitsFound` in the
+    // buffer), the length seven and `LookupFailureType` GuardMismatch (4).
+    // The three buffer words go back to zero before the handler's reply.
+    let guard_mismatch_reply = partner_step(
+        "cap-fault-guard-mismatch-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(
+                &TrapTrip {
+                    x0: EMPTY_SLOT,
+                    ..cap_fault("cap-fault-guard-mismatch")
+                },
+                which,
+            ) != Some(true)
+        {
+            return Some(false);
+        }
+        let info = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+        let lookup_type = TRAP_RESTORED_X5.load(Ordering::SeqCst);
+        if info != CAP_FAULT_GUARD_MISMATCH_INFO || lookup_type != 4 {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: cap-fault-guard-mismatch: the handler received x1={:#x} x5={:#x}",
+                info,
+                lookup_type
+            );
+            return Some(false);
+        }
+        if !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0])
+            || heap_allocations_round_trip(&guard_mismatch_reply, which) != Some(true)
+        {
+            return Some(false);
+        }
+        let (waited, _, _, resumed) = dispatch_round_trip(&handler_waits_again);
+        if !matches!(waited, Dispatched::Blocked) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: cap-fault-guard-mismatch-reply: the handler did not wait again"
+            );
+            return Some(false);
+        }
+        // A capability fault resumes its own context: the guard-mismatched
+        // address it trapped with in `x0`.
+        let restart = FaultRestart {
+            x0: EMPTY_SLOT,
+            ..fault_restart(2)
+        };
+        if !restarted_as("cap-fault-guard-mismatch-reply", &resumed, restart)
             || !unmeasured(&wake_handler, "the waiting handler was not woken")
             || !suspend_partner()
         {

@@ -497,13 +497,13 @@ include hG in
 thread write**: transferring after writing a thread's message slots, or before,
 yields the same summary and the same state up to that write. -/
 theorem receiveTransferCaps_mapTcbInPlace
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     (Z : SystemState) (hNo : Z.objects.noResizeDue) :
     receiveTransferCaps req endpointId target? (Z.mapTcbInPlace x G) =
       mapStepState x G (receiveTransferCaps req endpointId target? Z) := by
   unfold receiveTransferCaps
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · rfl
   · simp only []
     rw [resolveExtraCaps_congr_getCNode? (Z.mapTcbInPlace x G) Z
@@ -515,13 +515,13 @@ theorem receiveTransferCaps_mapTcbInPlace
       · exact ipcUnwrapCapsLoop_mapTcbInPlace hG x _ _ _ _ _ _ _ _ hNo
 
 theorem receiveTransferCaps_noResizeDue
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (req : Option (Capability × Array SeLe4n.CPtr))
     (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
     (Z Z' : SystemState) (r : CapTransferSummary) (hNo : Z.objects.noResizeDue)
     (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) :
     Z'.objects.noResizeDue := by
   unfold receiveTransferCaps at h
-  rcases req with _ | ⟨root, addrs, depth⟩
+  rcases req with _ | ⟨root, addrs⟩
   · cases h; exact hNo
   · simp only [] at h
     split at h

@@ -229,6 +229,22 @@ route's, which the entry holds. -/
 @[inline] def entryReportLookup (e : KernelError) (s : SystemState) : SystemState :=
   entryReportPushError 2 e s
 
+/-- **The third continuation on a resolver's failure words**: the failed
+lookup the words `t a b c` name (`LookupFault.ofWords`), pushed under kind `2`
+as its canonical payload words, computed on the words, so no fault and no
+error is built (`entryReportLookupW_eq`). -/
+@[inline] def entryReportLookupW (t a b c : UInt64) (s : SystemState) : SystemState :=
+  s.pushEntryReport (entryReportError 2 (.failedLookup false .invalidRoot)) 0
+    (LookupFault.wordOfWords t a b c 0) (LookupFault.wordOfWords t a b c 1)
+    (LookupFault.wordOfWords t a b c 2) (LookupFault.wordOfWords t a b c 3)
+
+theorem entryReportLookupW_eq (t a b c : UInt64) (s : SystemState) :
+    entryReportLookupW t a b c s =
+      entryReportLookup (.failedLookup false (LookupFault.ofWords t a b c)) s := by
+  simp only [entryReportLookupW, entryReportLookup, entryReportPushError, entryReportError,
+    KernelError.payloadWord, LookupFault.word_ofWords]
+  rfl
+
 /-- A continuation on results given as its committed half and its refusal half,
 the refusal taken as its discriminant and payload words. -/
 @[inline] def liftReport {β : Type} (kOk : SystemState → β)
@@ -246,7 +262,8 @@ discriminant and payload words, so no error is built (D2b); an operand's
 failed resolution as the error itself. -/
 @[inline] def entryReportOutcomeW {β : Type} (kGenOk kResOk : SystemState → β)
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (kLook : KernelError → SystemState → β) (s : SystemState) : β :=
+    (kLook : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (s : SystemState) : β :=
   let c := s.entryReportCode
   let w0 := s.machine.entryReportWord0
   let w1 := s.machine.entryReportWord1
@@ -260,7 +277,7 @@ failed resolution as the error itself. -/
     let d := c / 4 - 1
     if c % 4 = 0 then kGenErr d w0 w1 w2 w3 w4 s'
     else if c % 4 = 1 then kResErr d w0 w1 w2 w3 w4 s'
-    else kLook (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) s'
+    else kLook d w0 w1 w2 w3 w4 s'
 
 /-- **The report, handed on**: `entryReportOutcomeW` into continuations on
 results, each refusal rebuilt from its words. -/
@@ -270,7 +287,7 @@ results, each refusal rebuilt from its words. -/
   entryReportOutcomeW (fun s => kGen (.ok ((), s))) (fun s => kRes (.ok ((), s)))
     (fun d w0 w1 w2 w3 w4 s => kGen (.error (KernelError.ofPayloadWords d w0 w1 w2 w3 w4, s)))
     (fun d w0 w1 w2 w3 w4 s => kRes (.error (KernelError.ofPayloadWords d w0 w1 w2 w3 w4, s)))
-    kLook s
+    (fun d w0 w1 w2 w3 w4 s => kLook (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) s) s
 
 /-- Lifting a continuation's halves, each refusal rebuilt from its words, is
 the continuation. -/
@@ -291,14 +308,16 @@ private theorem entryReportError_div (kind : Nat) (hk : kind < 4) (e : KernelErr
 
 private theorem entryReportOutcomeW_pushError {β : Type} (kGenOk kResOk : SystemState → β)
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (kLook : KernelError → SystemState → β) (kind : Nat) (hk : kind < 4) (e : KernelError)
+    (kLook : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) (kind : Nat) (hk : kind < 4)
+    (e : KernelError)
     (s : SystemState) :
     entryReportOutcomeW kGenOk kResOk kGenErr kResErr kLook (entryReportPushError kind e s) =
       (if kind = 0 then kGenErr e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1)
           (e.payloadWord 2) (e.payloadWord 3) (e.payloadWord 4) s
        else if kind = 1 then kResErr e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1)
           (e.payloadWord 2) (e.payloadWord 3) (e.payloadWord 4) s
-       else kLook e s) := by
+       else kLook e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)
+          (e.payloadWord 3) (e.payloadWord 4) s) := by
   obtain ⟨h1, h2, h3⟩ := entryReportError_div kind hk e
   have hl := entryReportError_lt hk e
   obtain ⟨hw0, hw1, hw2, hw3, hw4⟩ :=
@@ -306,12 +325,11 @@ private theorem entryReportOutcomeW_pushError {β : Type} (kGenOk kResOk : Syste
       (w1 := e.payloadWord 1) (w2 := e.payloadWord 2) (w3 := e.payloadWord 3)
       (w4 := e.payloadWord 4)
   simp only [entryReportOutcomeW, entryReportPushError, s.entryReportCode_pushEntryReport hl,
-    s.popEntryReport_pushEntryReport hl, h1, h2, h3, hw0, hw1, hw2, hw3, hw4, if_false,
-    KernelError.ofPayloadWords_payloadWord]
+    s.popEntryReport_pushEntryReport hl, h1, h2, h3, hw0, hw1, hw2, hw3, hw4, if_false]
 
 theorem entryReportOutcomeW_general {β : Type} (kGenOk kResOk : SystemState → β)
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (kLook : KernelError → SystemState → β)
+    (kLook : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (r : Except (KernelError × SystemState) (Unit × SystemState)) :
     entryReportOutcomeW kGenOk kResOk kGenErr kResErr kLook (entryReportGeneral r) =
       liftReport kGenOk kGenErr r := by
@@ -325,7 +343,7 @@ theorem entryReportOutcomeW_general {β : Type} (kGenOk kResOk : SystemState →
 
 theorem entryReportOutcomeW_resolved {β : Type} (kGenOk kResOk : SystemState → β)
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (kLook : KernelError → SystemState → β)
+    (kLook : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (r : Except (KernelError × SystemState) (Unit × SystemState)) :
     entryReportOutcomeW kGenOk kResOk kGenErr kResErr kLook (entryReportResolved r) =
       liftReport kResOk kResErr r := by
@@ -340,9 +358,11 @@ theorem entryReportOutcomeW_resolved {β : Type} (kGenOk kResOk : SystemState �
 
 theorem entryReportOutcomeW_lookup {β : Type} (kGenOk kResOk : SystemState → β)
     (kGenErr kResErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (kLook : KernelError → SystemState → β) (e : KernelError) (s : SystemState) :
+    (kLook : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) (e : KernelError)
+    (s : SystemState) :
     entryReportOutcomeW kGenOk kResOk kGenErr kResErr kLook (entryReportLookup e s) =
-      kLook e s := by
+      kLook e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)
+        (e.payloadWord 3) (e.payloadWord 4) s := by
   simp only [entryReportLookup, entryReportOutcomeW_pushError _ _ _ _ _ 2 (by decide)]
   simp
 
@@ -367,7 +387,7 @@ theorem entryReportOutcome_lookup {β : Type}
     (kLook : KernelError → SystemState → β) (e : KernelError) (s : SystemState) :
     entryReportOutcome kGen kRes kLook (entryReportLookup e s) = kLook e s := by
   unfold entryReportOutcome
-  rw [entryReportOutcomeW_lookup]
+  rw [entryReportOutcomeW_lookup, KernelError.ofPayloadWords_payloadWord]
 
 /-- Push a refusal for continuation `kind` given as its discriminant `d` and
 payload words, as `entryReportPushError` pushes an error with those words. -/
@@ -408,13 +428,13 @@ alternatives are the same code (`noCapRefusalW_eq`). -/
         1 0 0 0 s
     | .failedLookup w (.missingCapability l) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        2 l 0 0 s
+        2 l.toUInt64 0 0 s
     | .failedLookup w (.depthMismatch l f) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        3 l f 0 s
+        3 l.toUInt64 f.toUInt64 0 s
     | .failedLookup w (.guardMismatch l g f) =>
       kErr (KernelError.failedLookup false .invalidRoot).toDiscriminant (if w then 1 else 0)
-        4 l g f s
+        4 l.toUInt64 g f.toUInt64 s
     | e => kErr e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)
         (e.payloadWord 3) (e.payloadWord 4) s
 
@@ -450,24 +470,21 @@ reaches the report as scalars (`dispatchOperandCheckedKW_eq`). -/
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) : β :=
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) : β :=
   if !(st.scheduler.currentOnCore executingCore).isEqSome tid then
     kPre (.error (.illegalState, st))
   else
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    match st.getObject? tcb.cspaceRoot with
-    | some (.cnode rootCn) =>
-      resolveCapAddressKUnrolled tcb.cspaceRoot capAddr rootCn.depth st
-        (fun e => onLookup e st)
-        (fun cnode slot =>
-          let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-          if slotEmpty c then onLookup (.invalidCapability 0) st
-          else
-            let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr onLookup (arm c st)
-            if receiveRefusedAt sid st c then k true else k (capHeldNone c))
-    | some _ => kPre (.error (.invalidCapability 0, st))
-    | none => kPre (.error (.objectNotFound, st))
+    lookupSlotK tcb capAddr st
+      (fun t a b c => onLookupW t a b c st)
+      (fun cnode slot =>
+        let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
+        if slotEmpty c then onLookup (.invalidCapability 0) st
+        else
+          let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr onLookup (arm c st)
+          if receiveRefusedAt sid st c then k true else k (capHeldNone c))
   | some _ => kPre (.error (.illegalState, st))
   | none => kPre (.error (.objectNotFound, st))
 
@@ -477,12 +494,16 @@ theorem dispatchOperandCheckedKW_eq {β : Type} (sid : SyscallId) (capAddr : SeL
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) :
-    dispatchOperandCheckedKW sid capAddr tid executingCore arm st kPre kArmOk kArmErr onLookup =
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (hW : ∀ t a b c s, onLookupW t a b c s =
+      onLookup (.failedLookup false (LookupFault.ofWords t a b c)) s) :
+    dispatchOperandCheckedKW sid capAddr tid executingCore arm st kPre kArmOk kArmErr onLookup
+        onLookupW =
       dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre
         (liftReport kArmOk kArmErr) onLookup := by
   unfold dispatchOperandCheckedKW dispatchOperandCheckedK
-  simp only [noCapRefusalW_eq]
+  simp only [noCapRefusalW_eq, hW]
   rfl
 
 /-- `dispatchOperandFilledK` with its arm's result handed on as words
@@ -495,12 +516,15 @@ entry held handed back. -/
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) : β :=
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) : β :=
   dispatchOperandCheckedKW sid capAddr tid executingCore arm stF
     (undoFillRefusalK held executingCore n0 kPre) kArmOk
     (fun d w0 w1 w2 w3 w4 s => kArmErr d w0 w1 w2 w3 w4
       (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
     (fun e s => onLookup e
+      (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
+    (fun t a b c s => onLookupW t a b c
       (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
 
 theorem dispatchOperandFilledKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
@@ -510,13 +534,21 @@ theorem dispatchOperandFilledKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) :
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (hW : ∀ t a b c s, onLookupW t a b c s =
+      onLookup (.failedLookup false (LookupFault.ofWords t a b c)) s) :
     dispatchOperandFilledKW sid capAddr tid executingCore arm held n0 stF kPre kArmOk kArmErr
-        onLookup =
+        onLookup onLookupW =
       dispatchOperandFilledK sid capAddr tid executingCore arm held n0 stF kPre
         (liftReport kArmOk kArmErr) onLookup := by
   unfold dispatchOperandFilledKW dispatchOperandFilledK
-  rw [dispatchOperandCheckedKW_eq]
+  rw [dispatchOperandCheckedKW_eq _ _ _ _ _ _ _ _ _
+    (fun e s => onLookup e
+      (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
+    (fun t a b c s => onLookupW t a b c
+      (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
+    (fun t a b c s => hW t a b c _)]
   congr 1
   funext r
   rcases r with ⟨e, s⟩ | ⟨⟨⟩, s⟩ <;> rfl
@@ -528,12 +560,13 @@ theorem dispatchOperandFilledKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) : β :=
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) : β :=
   let held := SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid n
   let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
   dispatchOperandFilledKW sid capAddr tid executingCore arm held n0
     (if held then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid n)
-    kPre kArmOk kArmErr onLookup
+    kPre kArmOk kArmErr onLookup onLookupW
 
 theorem longOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -541,12 +574,15 @@ theorem longOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) :
-    longOperandKW sid capAddr tid executingCore arm n st kPre kArmOk kArmErr onLookup =
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (hW : ∀ t a b c s, onLookupW t a b c s =
+      onLookup (.failedLookup false (LookupFault.ofWords t a b c)) s) :
+    longOperandKW sid capAddr tid executingCore arm n st kPre kArmOk kArmErr onLookup onLookupW =
       longOperandK sid capAddr tid executingCore arm n st kPre (liftReport kArmOk kArmErr)
         onLookup := by
   unfold longOperandKW longOperandK
-  exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _
+  exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW
 
 /-- `overflowOneOperandK` with its arm's result handed on as words. -/
 @[inline] def overflowOneOperandKW {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
@@ -555,12 +591,13 @@ theorem longOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) : β :=
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β) : β :=
   let held := SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
   let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
   dispatchOperandFilledKW sid capAddr tid executingCore arm held n0
     (if held then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1)
-    kPre kArmOk kArmErr onLookup
+    kPre kArmOk kArmErr onLookup onLookupW
 
 theorem overflowOneOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -568,12 +605,53 @@ theorem overflowOneOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
-    (onLookup : KernelError → SystemState → β) :
-    overflowOneOperandKW sid capAddr tid executingCore arm st kPre kArmOk kArmErr onLookup =
+    (onLookup : KernelError → SystemState → β)
+    (onLookupW : UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (hW : ∀ t a b c s, onLookupW t a b c s =
+      onLookup (.failedLookup false (LookupFault.ofWords t a b c)) s) :
+    overflowOneOperandKW sid capAddr tid executingCore arm st kPre kArmOk kArmErr onLookup
+        onLookupW =
       overflowOneOperandK sid capAddr tid executingCore arm st kPre (liftReport kArmOk kArmErr)
         onLookup := by
   unfold overflowOneOperandKW overflowOneOperandK
-  exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _
+  exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW
+
+/-- **The reporting operand dispatch is the specification's**: the KW forms
+into the report continuations, a lookup failure pushed from its words
+(`entryReportLookupW`), are the K forms into `entryReportResolved` and
+`entryReportLookup`. -/
+theorem dispatchOperandCheckedKW_report (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
+    (kPre : Except (KernelError × SystemState) (Unit × SystemState) → SystemState) :
+    dispatchOperandCheckedKW sid capAddr tid executingCore arm st kPre (entryReportPushOk 1)
+        (entryReportPushErrorW 1) entryReportLookup entryReportLookupW =
+      dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre entryReportResolved
+        entryReportLookup := by
+  rw [dispatchOperandCheckedKW_eq _ _ _ _ _ _ _ _ _ _ _ entryReportLookupW_eq,
+    liftReport_entryReportResolved]
+
+theorem longOperandKW_report (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (arm : Option Capability → RefusalCarrying Unit) (n : Nat) (st : SystemState)
+    (kPre : Except (KernelError × SystemState) (Unit × SystemState) → SystemState) :
+    longOperandKW sid capAddr tid executingCore arm n st kPre (entryReportPushOk 1)
+        (entryReportPushErrorW 1) entryReportLookup entryReportLookupW =
+      longOperandK sid capAddr tid executingCore arm n st kPre entryReportResolved
+        entryReportLookup := by
+  rw [longOperandKW_eq _ _ _ _ _ _ _ _ _ _ _ _ entryReportLookupW_eq,
+    liftReport_entryReportResolved]
+
+theorem overflowOneOperandKW_report (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
+    (kPre : Except (KernelError × SystemState) (Unit × SystemState) → SystemState) :
+    overflowOneOperandKW sid capAddr tid executingCore arm st kPre (entryReportPushOk 1)
+        (entryReportPushErrorW 1) entryReportLookup entryReportLookupW =
+      overflowOneOperandK sid capAddr tid executingCore arm st kPre entryReportResolved
+        entryReportLookup := by
+  rw [overflowOneOperandKW_eq _ _ _ _ _ _ _ _ _ _ _ entryReportLookupW_eq,
+    liftReport_entryReportResolved]
 
 /-- **`dispatchOperandCheckedK` commutes with a function of its result**: a
 function of what it hands on is what it hands on to the continuations composed
@@ -591,14 +669,12 @@ theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (sid : Syscal
   split
   · rfl
   split
-  · split
-    · simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-      split
+  · simp only [lookupSlotK_eq]
+    split
+    · rfl
+    · split
       · rfl
-      · split
-        · rfl
-        · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
-    all_goals rfl
+      · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
   all_goals rfl
 
 /-- **`longOperandK` commutes with a function of its result**, as

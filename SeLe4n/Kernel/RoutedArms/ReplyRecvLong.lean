@@ -46,10 +46,11 @@ apart, a result under the first. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st)
-            (fun _ => longOperandK .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))
-                  (length - 4) st entryReportGeneral entryReportResolved entryReportLookup))
+                  (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+                  entryReportLookup entryReportLookupW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

@@ -499,10 +499,10 @@ theorem setThreadFaultHandlerOp_runQueueStage {st st' : SystemState}
 space slot alone, then link writes. -/
 theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    RunQueueStage st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    RunQueueStage st (threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD := cspaceDeleteSlot_runQueueStage (copyIntoThreadSlot_delete hT slot)
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     refine hD.trans (RunQueueStage.trans ?_ (cdtRecord_runQueueStage _ _ _ _))
@@ -516,14 +516,14 @@ theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId
 /-- A thread space slot's set is a run-queue stage: the copy, then the retire. -/
 theorem threadSlotSet_runQueueStage (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    RunQueueStage st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    RunQueueStage st (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   unfold threadSlotSet
-  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
+  exact (threadSlotCopied_runQueueStage hT _ _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
 
 theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
@@ -531,9 +531,9 @@ theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : Syste
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
       cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights hCL)
-  exact (threadSlotSet_runQueueStage ec hT _ _ _ _).trans
-    (threadSlotSet_runQueueStage ec hT1' _ _ _ _)
+      TCB.cspaceRootRights cnData hCL)
+  exact (threadSlotSet_runQueueStage ec hT _ _ _ _ _).trans
+    (threadSlotSet_runQueueStage ec hT1' _ _ _ _ _)
 
 theorem bindNotification_runQueueStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :
@@ -950,8 +950,8 @@ theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
 the loop's passes are finalising deletes and finalisations, and the plain space
 change after them is a run-queue stage (`copyThreadSpaces_runQueueStage`). -/
 theorem copyThreadSpacesZombie_runQueueEntryStage {ec : Concurrency.CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     SystemState.RunQueueEntryStage st st' :=
   copyThreadSpacesZombie_closed (SystemState.RunQueueEntryStage st)
     (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))

@@ -113,14 +113,12 @@ private def fs009_freezeCNode : IO Unit := do
     { target := .object ⟨100⟩
       rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
-    CNode.ofList 16 4 0 4 [(SeLe4n.Slot.ofNat 3, cap)]
+    CNode.ofList 4 [(SeLe4n.Slot.ofNat 3, cap)]
   let frozen := freezeObject (.cnode cn)
   expect "frozen CNode has correct type" (frozen.objectType == .cnode)
   -- Verify the frozen CNode slots use CNodeRadix (flat array)
   match frozen with
   | .cnode fc =>
-    expect "guard width preserved" (fc.guardWidth == 4)
-    expect "guard value preserved" (fc.guardValue == 0)
     expect "radix width preserved" (fc.radixWidth == 4)
     expect "radix lookup finds cap" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == some cap)
     expect "radix lookup misses" (fc.slots.lookup (SeLe4n.Slot.ofNat 7) == none)

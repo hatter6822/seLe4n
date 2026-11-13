@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.22` (`lakefile.toml`) |
+| **Package version** | `0.37.23` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 627,799 across 625 Lean files |
-| **Test LoC** | 89,698 across 70 Lean test suites |
-| **Proved declarations** | 24,074 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 630,360 across 625 Lean files |
+| **Test LoC** | 89,699 across 70 Lean test suites |
+| **Proved declarations** | 24,184 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3185,6 +3185,41 @@ words, rebuilding the error only where the declassification ledger records it,
 so a refusal reads 0 heap cells.  `syscallAbiVersion` is 5; the Rust mirror is
 `sele4n_types::{LookupFault, SyscallError}` and `sele4n_abi::decode_error`.
 
+**WS-SX SX2 (v0.37.23) — the guard in the capability, and seL4's
+`resolveAddressBits`.**  A CNode capability carries its guard and guard size
+(`cnodeGuard : UInt64`, `cnodeGuardSize : UInt8`, seL4's `cap_cnode_cap`
+words, held unboxed); the CNode keeps only its radix, so two capabilities to
+one CNode resolve through it with their own guards, and the resolver compares
+the address's guard bits with the guard as a word (`CPtr.guardWord`).  One
+resolver, `resolveAddressBits nodeCap cptr nBits`, follows `cspace.c`: a
+non-CNode root is `invalidRoot`; at each level the guard is checked before the
+depth (`guardMismatch bitsLeft guardFound guardSize`, then `depthMismatch
+bitsLeft levelBits`); a level that consumes the last bits answers its slot; a
+slot holding anything but a CNode capability stops the walk with the bits still
+left.  `lookupSlot` resolves the full 64 bits from the thread's CSpace root
+capability, and `lookupSlotForCNodeOp` refuses a walk that stops early as
+`depthMismatch bitsLeft 0`.  A `LookupFault`'s `bitsLeft` and `bitsFound` are
+`UInt8` (seL4's six-bit fields).  `cnodeCapGeometry` (guard size plus radix at
+most 64, the guard below `2^guardSize`) is the fourth conjunct of
+`capabilityInvariantBundle`.  A capability fault carries its `LookupFault`, and
+its message is seL4's `seL4_CapFault_*` words, four to seven by the fault
+(`IP`, `Addr`, `InRecvPhase`, `LookupFailureType`, then the fault's own words in
+the receiver's IPC buffer), its length as `setMR` returns it.  Mint applies
+seL4's `updateCapData` to the parent's kind, read from the store: an endpoint or
+notification capability takes the data as its badge only when it carries none,
+and a badged one is refused `illegalState` (seL4's `IllegalOperation`) whatever
+the data, zero included (`mintDerivedCap_rebadge_refused`); a CNode capability
+takes bits 63:6 as its guard and bits 5:0 as its size, refused when they do not
+fit beside the radix (`mintDerivedCap_keeps_cnodeCapGeometry`).  SetSpace takes
+a third word, `cspace_root_data` (`truncationMinimum .tcbSetSpace` is 3): when
+nonzero, the CSpace root's copy takes its guard from it, refused `illegalState`
+when it does not fit (`cspaceRootSourceAdmitted_dataFits`); zero keeps the
+source capability's guard.  The compiled resolver (`resolveAddressBitsK`,
+`resolveAddressBitsK_eq`) recurses only for the capability and the bits where
+the walk stops (`resolveAddressBitsWalk`) and answers that one level with the
+caller's continuations (`resolveAddressBitsLevel`), so a refused lookup of an
+invoked or an argument capability builds no result on the heap.
+
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both
 unblocking paths staged nothing at all, so the SM10.1 context restore would
@@ -4697,7 +4732,16 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
 - **Bound predicate**: `objectCountBounded st` asserts
   `st.objects.size ≤ maxObjects` (defined in `Model/State.lean`); the ghost
   index has the same length wherever the bookkeeping agrees
-  (`SystemState.bookkeepingAgrees.objectIndex_length`).
+  (`SystemState.bookkeepingAgreesUnbounded.objectIndex_length`,
+  `.objects_size_eq`).  Since `v0.37.23` the bundle carries it:
+  `bookkeepingAgrees` bounds the ghost index by `maxObjects`
+  (`countBounded`), a store over a stored key keeps the index, the carve
+  stores past its capacity check (`retypeFromUntyped_ok_size_lt`), a retire
+  shortens the index, and the started boot leaves room for its interrupt
+  nodes (`bootFromPlatformCheckedStartedFor_objectIndex_length_le`), so
+  `proofLayerInvariantBundle.objectCountBounded` holds of every live state.
+  The boot's builder carries the agreement without the bound
+  (`bookkeepingAgreesUnbounded`), since its inserts pass no capacity check.
 - **Capacity enforcement**: the carve (`retypeFromUntyped`) and
   `storeObjectChecked` (AC3-E) return `objectStoreCapacityExceeded` when a new
   object would be inserted with `objects.size ≥ maxObjects`, before any write;
@@ -4724,7 +4768,11 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   `proofLayerInvariantBundle.objects_insert_eq_insertNoResize`,
   `.asidTable_insert_eq_insertNoResize`,
   `retypeFromUntyped_insert_eq_insertNoResize`; the carve's heap model reads no
-  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).  Only the boot's
+  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).  With the bundle's
+  count bound no object-table resize is due on a live state
+  (`proofLayerInvariantBundle.objects_noResizeDue`), so the in-place store
+  predicate asks only whether the probe finds the key
+  (`proofLayerInvariantBundle.objects_findsInPlace_iff`).  Only the boot's
   own state holds boot-sized tables: the boot starts from
   `SystemState.bootEmpty ()` (through `mkEmptyIntermediateState ()`), which
   builds both tables where the boot calls it (`RHTable.emptyFresh`,
@@ -6130,11 +6178,24 @@ Every kernel object has a decidable well-formedness predicate:
   slot's own cell (`recordRefusalWords`, the seam's form by the `@[csimp]`
   `recordSyscallRefusal_eq_impl`); the boot rebuilds the ledger out of its
   closed term (`SystemState.withFreshRefusalLedger`), so the first record
-  owns the cells it writes.  The declassify and declassified-signal arms answer
+  owns the cells it writes.  Since `v0.37.23` a slot holds the refusal's error
+  as its discriminant and five payload words (`RefusalSlot.reasonCode`,
+  `reasonW0`–`reasonW4`, read through `RefusalSlot.reason`), and the entry's
+  record writes the words as handed (`recordSyscallRefusalW_eq`), so a refused
+  lookup's payload builds no error.  The declassify and declassified-signal arms answer
   a refusal without the specification's general arm (`declassifyRefusal`,
   `declassifySignalPlanRefusal`, `declassifySignalPresentRefusal`, each proven
   equal to `auditedArmSpec`), and the audit read splits a slot on its receiver
-  flag instead of building the optional receiver.  A refused declassification
+  flag instead of building the optional receiver.  A refused audit read
+  answers from the read's own inputs (`auditReadFastRefusal`, proven the
+  specification's refusal by `auditReadFastRefusal_spec`), not from its
+  payload words.  A drain that is not admitted refuses `illegalAuthority` in
+  place (`auditedArmSpec_auditDrain_refused`), and an admitted drain compares
+  its count word to the trail's length on the word (`auditDrainCountW`,
+  proven by `auditDrainPerform_countW`).  A read's index and chunk words are
+  read as words (`auditReadFastCodeW`, `auditReadFastRefusalW`, proven equal
+  to the code and refusal of their numbers), so no word at or above `2^63` is
+  made a number.  A refused declassification
   read 19 to 25 heap cells before; it reads 0.
 - **The timer tick, the reschedule SGI and each core's first entry allocate
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore

@@ -63,32 +63,27 @@ Each entry corresponds to a slot index in `[0, 2^radixWidth)`. Lookup is O(1)
 via direct array indexing after bit extraction — no hashing required.
 
 Fields:
-- `guardWidth`: width of the guard field in bits
-- `guardValue`: expected guard value for traversal authorization
 - `radixWidth`: width of the radix field in bits (determines fanout)
 - `slots`: fixed-size array of `2^radixWidth` optional capabilities
 - `hSlotSize`: proof that the array size equals `2^radixWidth` -/
 structure CNodeRadix where
-  guardWidth : Nat
-  guardValue : Nat
   radixWidth : Nat
   slots      : Array (Option Capability)
   hSlotSize  : slots.size = 2 ^ radixWidth
 
 instance : Repr CNodeRadix where
   reprPrec r _ :=
-    f!"CNodeRadix(guard={r.guardValue}/{r.guardWidth}, radix={r.radixWidth}, slots={r.slots.size})"
+    f!"CNodeRadix(radix={r.radixWidth}, slots={r.slots.size})"
 
 -- ============================================================================
 -- Q4-B1: Construction
 -- ============================================================================
 
-/-- Create an empty CNodeRadix with the given guard and radix parameters.
+/-- Create an empty CNodeRadix of the given radix (WS-SX SX2: a CNode holds no
+guard; the guard is its capability's).
 All slots initialized to `none`. -/
-def CNodeRadix.empty (guardWidth guardValue radixWidth : Nat) : CNodeRadix :=
-  { guardWidth := guardWidth
-    guardValue := guardValue
-    radixWidth := radixWidth
+def CNodeRadix.empty (radixWidth : Nat) : CNodeRadix :=
+  { radixWidth := radixWidth
     slots      := ⟨List.replicate (2 ^ radixWidth) none⟩
     hSlotSize  := by simp [Array.size] }
 

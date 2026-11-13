@@ -30,7 +30,7 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 /-!
 # WS-RR RR7.41 — the interior of a CSpace walk
 
-`resolveCapAddress` descends through child CNodes while address bits remain, and
+`resolveAddressBits` descends through child CNodes while address bits remain, and
 every per-object footprint in the tree names only the walk's **root**
 (`cnodeLock cnodeRootObjId`), because the interior is discovered from the guard
 and radix of each CNode the walk reads and so cannot be named from the
@@ -72,8 +72,8 @@ other, which is what makes the wider footprint affordable.
 
 `lockSetForSyscall`'s arms name the root alone, and that is **complete** rather
 than approximate — §3b proves it.  RR7.12's `abiEntryGate` admits a resolution
-only when `rootCn.depth = rootCn.guardWidth + rootCn.radixWidth`, so the root
-consumes every address bit and `resolveCapAddress` reaches its leaf arm on the
+only when the root capability's guard size plus the root CNode's radix is 64
+(`rootCapGuardSize`), so the root consumes every address bit and `resolveAddressBits` reaches its leaf arm on the
 first hop; `cspaceWalkPath_single_level` says the walk is then exactly
 `[rootId]`, and `cspaceWalkLockSet_single_level` that the footprint is exactly
 the root's read lock.  A multi-level walk, for which a root-only footprint
@@ -100,14 +100,14 @@ open SeLe4n.Kernel.Concurrency (LockId LockSet AccessMode CoreId cnodeLock lockS
 root first — every CNode it passes through and, when the walk ends on a key
 that holds no CNode, that key too.
 
-Derived from the **same** recursion `resolveCapAddress` runs — same guard check,
-same radix split, same child selection, same `bitsRemaining` descent — because a
+Derived from the **same** recursion `resolveAddressBits` runs — same guard check,
+same radix split, same child selection, same `nBits` descent — because a
 footprint resolved from a different walk is a footprint for a different
-resolution.  Every arm on which `resolveCapAddress` gives up yields the keys
+resolution.  Every arm on which `resolveAddressBits` gives up yields the keys
 read so far, which is the fail-closed direction: a refused resolution still
 read the keys it reached, so its footprint must still name them.
 
-**A failed lookup is a read** (PR #892 review round 4).  `resolveCapAddress`
+**A failed lookup is a read** (PR #892 review round 4).  `resolveAddressBits`
 reads the store at the root, and at every child it selects, *before* it knows
 whether a CNode is there; when the key is absent or holds another kind of
 object the resolution fails, and its outcome depended on that key's state.  The
@@ -116,85 +116,43 @@ not name it, so a concurrent retype or deletion at exactly that key shared no
 lock with the resolution and could change its verdict between the bracket's
 revalidation and its walk.  The key is now on the path, and
 `cspaceWalkKeyLock` says which lock it declares. -/
-def cspaceWalkPath (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
+def cspaceWalkPath (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
     (st : SystemState) : List SeLe4n.ObjId :=
-  if hZero : bitsRemaining = 0 then []
-  else
-    match st.getCNode? rootId with
-    | none => [rootId]
+  match root.target with
+  | .object id =>
+    match st.getCNode? id with
+    | none => [id]
     | some cn =>
-      let consumed := cn.guardWidth + cn.radixWidth
-      if hCons : consumed = 0 then [rootId]
-      else if bitsRemaining < consumed then [rootId]
+      if root.cnodeGuardSize.toNat > nBits ∨
+          addr.guardWord (nBits - root.cnodeGuardSize.toNat) root.cnodeGuardSize.toNat ≠
+            root.cnodeGuard then [id]
+      else if hL : root.cnodeGuardSize.toNat + cn.radixWidth > nBits ∨
+          root.cnodeGuardSize.toNat + cn.radixWidth = 0 then [id]
+      else if nBits = root.cnodeGuardSize.toNat + cn.radixWidth then [id]
       else
-        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
-        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
-        if guardExtracted ≠ cn.guardValue then [rootId]
-        else if bitsRemaining - consumed = 0 then [rootId]
-        else
-          match cn.lookup (SeLe4n.Slot.ofNat slotIndex) with
-          | some cap =>
-            match cap.target with
-            | .object childId =>
-              have hConsPos : consumed > 0 := Nat.pos_of_ne_zero hCons
-              have hBitsPos : bitsRemaining > 0 := Nat.pos_of_ne_zero hZero
-              have : bitsRemaining - consumed < bitsRemaining := Nat.sub_lt hBitsPos hConsPos
-              rootId :: cspaceWalkPath childId addr (bitsRemaining - consumed) st
-            | _ => [rootId]
-          | none => [rootId]
-  termination_by bitsRemaining
+        match cn.lookup (SeLe4n.Slot.ofNat (addr.slotBits
+            (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) cn.radixWidth)) with
+        | some cap =>
+          match cap.target with
+          | .object _ =>
+            have : nBits - (root.cnodeGuardSize.toNat + cn.radixWidth) < nBits := by omega
+            id :: cspaceWalkPath cap addr (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) st
+          | _ => [id]
+        | none => [id]
+  | _ => []
+  termination_by nBits
 
-/-- **WS-RR RR7.41**: a walk with bits remaining and a resolvable root begins at
-that root — so the footprint always names the CNode the caller supplied, and the
-existing root-only footprints are contained in this one. -/
-theorem cspaceWalkPath_head (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) (cn : CNode)
-    (hBits : bitsRemaining ≠ 0) (hRoot : st.getCNode? rootId = some cn) :
-    rootId ∈ cspaceWalkPath rootId addr bitsRemaining st := by
+/-- **PR #892 review round 4**: a walk from a capability naming an object
+begins at that object *whatever the key holds* — a CNode continues (or stops)
+there, a key holding no CNode records the key it read.  This is the shape the
+interior theorem below recurses on. -/
+theorem cspaceWalkPath_cons (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
+    (st : SystemState) (rootId : SeLe4n.ObjId) (hT : root.target = .object rootId) :
+    ∃ rest, cspaceWalkPath root addr nBits st = rootId :: rest := by
   unfold cspaceWalkPath
-  rw [dif_neg hBits, hRoot]
+  rw [hT]
   simp only
-  split
-  · exact List.mem_singleton.mpr rfl
-  · split
-    · exact List.mem_singleton.mpr rfl
-    · split
-      · exact List.mem_singleton.mpr rfl
-      · split
-        · exact List.mem_singleton.mpr rfl
-        · split
-          · split
-            · exact List.mem_cons_self
-            · exact List.mem_singleton.mpr rfl
-          · exact List.mem_singleton.mpr rfl
-
-/-- **WS-RR RR7.41**: a zero-bit walk reads no CNode and declares nothing — the
-`.illegalState` arm `resolveCapAddress` takes first. -/
-@[simp] theorem cspaceWalkPath_zero (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (st : SystemState) : cspaceWalkPath rootId addr 0 st = [] := by
-  unfold cspaceWalkPath; rw [dif_pos rfl]
-
-/-- **WS-RR RR7.41 / PR #892 review round 4**: an unresolvable root is still
-*read* — the `.objectNotFound` arm looked the key up — so the walk names it and
-nothing else.  (The first cut returned `[]` here, which declared no lock for a
-read the resolution's verdict depended on.) -/
-theorem cspaceWalkPath_no_root (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) (hBits : bitsRemaining ≠ 0)
-    (h : st.getCNode? rootId = none) :
-    cspaceWalkPath rootId addr bitsRemaining st = [rootId] := by
-  unfold cspaceWalkPath
-  rw [dif_neg hBits, h]
-
-/-- **PR #892 review round 4**: a walk with bits remaining begins at its root
-*whatever the root holds* — a resolvable root continues (or stops) there, an
-unresolvable one records the key it read.  `cspaceWalkPath_head` is the
-resolvable half; this is the shape the interior theorem below recurses on. -/
-theorem cspaceWalkPath_cons (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) (hBits : bitsRemaining ≠ 0) :
-    ∃ rest, cspaceWalkPath rootId addr bitsRemaining st = rootId :: rest := by
-  unfold cspaceWalkPath
-  rw [dif_neg hBits]
-  cases hRoot : st.getCNode? rootId with
+  cases st.getCNode? rootId with
   | none => exact ⟨[], rfl⟩
   | some cn =>
     simp only
@@ -205,12 +163,40 @@ theorem cspaceWalkPath_cons (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
       · split
         · exact ⟨[], rfl⟩
         · split
-          · exact ⟨[], rfl⟩
           · split
-            · split
-              · exact ⟨_, rfl⟩
-              · exact ⟨[], rfl⟩
+            · exact ⟨_, rfl⟩
             · exact ⟨[], rfl⟩
+          · exact ⟨[], rfl⟩
+
+/-- **WS-RR RR7.41**: a walk from a capability naming an object begins at that
+object — so the footprint always names the CNode the caller supplied, and the
+existing root-only footprints are contained in this one. -/
+theorem cspaceWalkPath_head (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
+    (st : SystemState) (rootId : SeLe4n.ObjId) (hT : root.target = .object rootId) :
+    rootId ∈ cspaceWalkPath root addr nBits st := by
+  obtain ⟨rest, h⟩ := cspaceWalkPath_cons root addr nBits st rootId hT
+  rw [h]; exact List.mem_cons_self
+
+/-- **WS-RR RR7.41**: a capability naming no object reads no CNode and declares
+nothing — the `invalidRoot` arm `resolveAddressBits` takes first. -/
+theorem cspaceWalkPath_not_object (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
+    (st : SystemState) (h : ∀ id, root.target ≠ .object id) :
+    cspaceWalkPath root addr nBits st = [] := by
+  unfold cspaceWalkPath
+  split
+  · rename_i id hT; exact absurd hT (h id)
+  · rfl
+
+/-- **WS-RR RR7.41 / PR #892 review round 4**: an unresolvable root is still
+*read* — the `invalidRoot` arm looked the key up — so the walk names it and
+nothing else. -/
+theorem cspaceWalkPath_no_root (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
+    (st : SystemState) (rootId : SeLe4n.ObjId) (hT : root.target = .object rootId)
+    (h : st.getCNode? rootId = none) :
+    cspaceWalkPath root addr nBits st = [rootId] := by
+  unfold cspaceWalkPath
+  rw [hT]
+  simp only [h]
 
 /-- **PR #892 review round 4**: every key on the path **before the last** holds
 a CNode — the walk continued through it — so a key holding no CNode can only be
@@ -219,17 +205,16 @@ footprint rests on: a walk declares at most **one** state-level member, and the
 CNode read locks it declares are exactly the interior it passed through.  By
 strong induction on the bits remaining, which is what the walk recurses on. -/
 theorem cspaceWalkPath_dropLast_cnode (addr : SeLe4n.CPtr) (st : SystemState) :
-    ∀ (bitsRemaining : Nat) (rootId oid : SeLe4n.ObjId),
-      oid ∈ (cspaceWalkPath rootId addr bitsRemaining st).dropLast →
+    ∀ (nBits : Nat) (root : Capability) (oid : SeLe4n.ObjId),
+      oid ∈ (cspaceWalkPath root addr nBits st).dropLast →
       (st.getCNode? oid).isSome := by
-  intro bitsRemaining
-  induction bitsRemaining using Nat.strongRecOn with
-  | ind bitsRemaining ih =>
-  intro rootId oid hMem
-  by_cases hZero : bitsRemaining = 0
-  · subst hZero
-    simp at hMem
-  · rw [cspaceWalkPath, dif_neg hZero] at hMem
+  intro nBits
+  induction nBits using Nat.strongRecOn with
+  | ind nBits ih =>
+  intro root oid hMem
+  rw [cspaceWalkPath] at hMem
+  split at hMem
+  · rename_i rootId hT
     cases hRoot : st.getCNode? rootId with
     | none =>
       rw [hRoot] at hMem
@@ -241,28 +226,26 @@ theorem cspaceWalkPath_dropLast_cnode (addr : SeLe4n.CPtr) (st : SystemState) :
       · simp at hMem
       · split at hMem
         · simp at hMem
-        · split at hMem
+        · rename_i hL
+          split at hMem
           · simp at hMem
-          · split at hMem
-            · simp at hMem
-            · split at hMem
-              · split at hMem
-                · rename_i childId _
-                  by_cases hRest : bitsRemaining - (cn.guardWidth + cn.radixWidth) = 0
-                  · rw [hRest, cspaceWalkPath_zero] at hMem
-                    simp at hMem
-                  · obtain ⟨rest, hPath⟩ :=
-                      cspaceWalkPath_cons childId addr
-                        (bitsRemaining - (cn.guardWidth + cn.radixWidth)) st hRest
-                    rw [hPath] at hMem
-                    simp only [List.dropLast, List.mem_cons] at hMem
-                    rcases hMem with rfl | hMem
-                    · rw [hRoot]; rfl
-                    · rw [← hPath] at hMem
-                      exact ih (bitsRemaining - (cn.guardWidth + cn.radixWidth))
-                        (by omega) childId oid hMem
-                · simp at hMem
+          · rename_i hEq
+            split at hMem
+            · rename_i cap _
+              split at hMem
+              · rename_i childId hC
+                obtain ⟨rest, hPath⟩ := cspaceWalkPath_cons cap addr
+                  (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth)) st childId hC
+                rw [hPath] at hMem
+                simp only [List.dropLast, List.mem_cons] at hMem
+                rcases hMem with rfl | hMem
+                · rw [hRoot]; rfl
+                · rw [← hPath] at hMem
+                  exact ih (nBits - (root.cnodeGuardSize.toNat + cn.radixWidth))
+                    (by omega) cap oid hMem
               · simp at hMem
+            · simp at hMem
+  · simp at hMem
 
 -- ============================================================================
 -- §2  The footprint
@@ -298,9 +281,9 @@ the result into the SM0.I ladder order the bracket acquires in.  The walk's own
 order is the CSpace's, which is not the ladder's — sorting is what lets the
 existing deadlock-freedom argument carry, and is why this is a revalidating
 bracket rather than a coupling walk. -/
-def cspaceWalkLockSet (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
+def cspaceWalkLockSet (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat)
     (st : SystemState) : LockSet :=
-  lockSetOfList ((cspaceWalkPath rootId addr bitsRemaining st).map (cspaceWalkKeyLock st))
+  lockSetOfList ((cspaceWalkPath root addr nBits st).map (cspaceWalkKeyLock st))
 
 /-- **WS-RR RR7.41**: the resolution's declared footprint, in the shape the
 bracket takes.
@@ -319,18 +302,18 @@ declaration, and this footprint has none — its bound is the refusal.  So a wal
 above the ceiling declares nothing, and the bracket falls back to the coarser
 serialisation, which is always sound
 (`declaredLockSetForCSpaceWalk_some_size_le`, `…_none_of_gt`). -/
-def declaredLockSetForCSpaceWalk (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) : SystemState → Option LockSet :=
+def declaredLockSetForCSpaceWalk (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) : SystemState → Option LockSet :=
   fun st =>
-    let S := cspaceWalkLockSet rootId addr bitsRemaining st
+    let S := cspaceWalkLockSet root addr nBits st
     if S.size ≤ Concurrency.maxLockSetSize then some S else none
 
 /-- **PR #892 review round 4**: every footprint the walk *declares* is within
 the ceiling — the premise the bounded-wait and WCRT results take, discharged at
 the one place a walk-derived footprint reaches the bracket. -/
-theorem declaredLockSetForCSpaceWalk_some_size_le (rootId : SeLe4n.ObjId)
-    (addr : SeLe4n.CPtr) (bitsRemaining : Nat) (st : SystemState) (S : LockSet)
-    (h : declaredLockSetForCSpaceWalk rootId addr bitsRemaining st = some S) :
+theorem declaredLockSetForCSpaceWalk_some_size_le (root : Capability)
+    (addr : SeLe4n.CPtr) (nBits : Nat) (st : SystemState) (S : LockSet)
+    (h : declaredLockSetForCSpaceWalk root addr nBits st = some S) :
     S.size ≤ Concurrency.maxLockSetSize := by
   unfold declaredLockSetForCSpaceWalk at h
   simp only at h
@@ -342,31 +325,31 @@ theorem declaredLockSetForCSpaceWalk_some_size_le (rootId : SeLe4n.ObjId)
 
 /-- **PR #892 review round 4**: a walk within the ceiling declares exactly its
 footprint. -/
-theorem declaredLockSetForCSpaceWalk_of_le (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState)
-    (h : (cspaceWalkLockSet rootId addr bitsRemaining st).size ≤ Concurrency.maxLockSetSize) :
-    declaredLockSetForCSpaceWalk rootId addr bitsRemaining st
-      = some (cspaceWalkLockSet rootId addr bitsRemaining st) := by
+theorem declaredLockSetForCSpaceWalk_of_le (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState)
+    (h : (cspaceWalkLockSet root addr nBits st).size ≤ Concurrency.maxLockSetSize) :
+    declaredLockSetForCSpaceWalk root addr nBits st
+      = some (cspaceWalkLockSet root addr nBits st) := by
   unfold declaredLockSetForCSpaceWalk
   simp only [h, if_true]
 
 /-- **PR #892 review round 4 (the load-bearing negative)**: a walk above the
 ceiling declares **nothing**, so the bracket takes its undeclared arm rather
 than acquiring a footprint the bounded-wait reasoning is silent about. -/
-theorem declaredLockSetForCSpaceWalk_none_of_gt (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState)
-    (h : Concurrency.maxLockSetSize < (cspaceWalkLockSet rootId addr bitsRemaining st).size) :
-    declaredLockSetForCSpaceWalk rootId addr bitsRemaining st = none := by
+theorem declaredLockSetForCSpaceWalk_none_of_gt (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState)
+    (h : Concurrency.maxLockSetSize < (cspaceWalkLockSet root addr nBits st).size) :
+    declaredLockSetForCSpaceWalk root addr nBits st = none := by
   unfold declaredLockSetForCSpaceWalk
   simp only [Nat.not_le.mpr h, if_false]
 
 /-- **WS-RR RR7.41**: every CNode on the walk's path has its read lock declared
 — the coverage half, and the one a false footprint would fail. -/
-theorem mem_cspaceWalkLockSet_cnode (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) (oid : SeLe4n.ObjId)
-    (h : oid ∈ cspaceWalkPath rootId addr bitsRemaining st)
+theorem mem_cspaceWalkLockSet_cnode (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState) (oid : SeLe4n.ObjId)
+    (h : oid ∈ cspaceWalkPath root addr nBits st)
     (hCn : (st.getCNode? oid).isSome) :
-    ∃ m, (cnodeLock oid, m) ∈ (cspaceWalkLockSet rootId addr bitsRemaining st).pairs := by
+    ∃ m, (cnodeLock oid, m) ∈ (cspaceWalkLockSet root addr nBits st).pairs := by
   unfold cspaceWalkLockSet
   refine Concurrency.lockSetOfList_mem_of_mem _ (cnodeLock oid) AccessMode.read
     (List.mem_map.mpr ⟨oid, h, ?_⟩)
@@ -378,12 +361,12 @@ theorem mem_cspaceWalkLockSet_cnode (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
 /-- **PR #892 review round 4**: a key on the path that holds no CNode declares
 the state-level read lock — the member that conflicts with every structural
 writer, so a failed lookup is a read the footprint names. -/
-theorem mem_cspaceWalkLockSet_missing (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) (oid : SeLe4n.ObjId)
-    (h : oid ∈ cspaceWalkPath rootId addr bitsRemaining st)
+theorem mem_cspaceWalkLockSet_missing (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState) (oid : SeLe4n.ObjId)
+    (h : oid ∈ cspaceWalkPath root addr nBits st)
     (hNone : st.getCNode? oid = none) :
     ∃ m, (Concurrency.stateLevelLock, m)
-      ∈ (cspaceWalkLockSet rootId addr bitsRemaining st).pairs := by
+      ∈ (cspaceWalkLockSet root addr nBits st).pairs := by
   unfold cspaceWalkLockSet
   refine Concurrency.lockSetOfList_mem_of_mem _ Concurrency.stateLevelLock AccessMode.read
     (List.mem_map.mpr ⟨oid, h, ?_⟩)
@@ -407,13 +390,13 @@ and exactly what could not be said while the footprint named only the root.
 Stated against `ktiSharesConflictingLock`, the relation SM3.E's conflict order is
 built from, so the result is consumed by the existing argument rather than being
 a fresh claim beside it. -/
-theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState)
+theorem cspaceWalk_conflicts_with_delete (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (deleteRoot targetCnode : SeLe4n.ObjId)
     (unmappedRoot : Option SeLe4n.ObjId)
-    (hOnPath : targetCnode ∈ cspaceWalkPath rootId addr bitsRemaining st) :
+    (hOnPath : targetCnode ∈ cspaceWalkPath root addr nBits st) :
     ∃ (l : Concurrency.LockKey) (m₁ m₂ : AccessMode),
-      (l, m₁) ∈ (cspaceWalkLockSet rootId addr bitsRemaining st).pairs ∧
+      (l, m₁) ∈ (cspaceWalkLockSet root addr nBits st).pairs ∧
       (l, m₂) ∈ (Concurrency.lockSet_cspaceDelete callerTid deleteRoot targetCnode
         unmappedRoot).pairs ∧
       AccessMode.conflicts m₁ m₂ = true := by
@@ -422,14 +405,14 @@ theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.
   -- CNode at conflicts on the state-level lock the delete also declares.
   cases hCn : st.getCNode? targetCnode with
   | some _ =>
-      obtain ⟨m, hm⟩ := mem_cspaceWalkLockSet_cnode rootId addr bitsRemaining st targetCnode
+      obtain ⟨m, hm⟩ := mem_cspaceWalkLockSet_cnode root addr nBits st targetCnode
         hOnPath (by rw [hCn]; rfl)
       refine ⟨cnodeLock targetCnode, m, AccessMode.write, hm, ?_, ?_⟩
       · exact Concurrency.lockSet_cspaceDelete_target_write_mem callerTid deleteRoot targetCnode
           unmappedRoot
       · cases m <;> rfl
   | none =>
-      obtain ⟨m, hm⟩ := mem_cspaceWalkLockSet_missing rootId addr bitsRemaining st targetCnode
+      obtain ⟨m, hm⟩ := mem_cspaceWalkLockSet_missing root addr nBits st targetCnode
         hOnPath hCn
       refine ⟨Concurrency.stateLevelLock, m, AccessMode.write, hm, ?_, ?_⟩
       · exact Concurrency.lockSet_cspaceDelete_stateLevel_write_mem callerTid deleteRoot
@@ -445,8 +428,8 @@ theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.
 
 This is the fact the existing root-only footprints rest on, and until now it was
 argued rather than proved.  RR7.12's `abiEntryGate` refuses a resolution unless
-`rootCn.depth = rootCn.guardWidth + rootCn.radixWidth` — the root consumes all
-the bits, so `resolveCapAddress` reaches its leaf arm on the first hop and never
+the root capability's guard size plus the root CNode's radix is 64 — the root
+consumes all the bits, so `resolveAddressBits` reaches its leaf arm on the first hop and never
 descends.  Under that condition `cspaceWalkPath` is `[rootId]`, so
 `cnodeLock cnodeRootObjId` **is** the complete CNode footprint of every
 resolution the live seam declares one for.
@@ -457,53 +440,49 @@ multi-level walk — which `abiEntryGate` refuses, so no footprint is declared f
 it — has `cspaceWalkLockSet` if a future consumer wants to admit one.  The
 mechanism and the reason it is not yet needed are both stated, which is what
 "the domain is covered" has to mean. -/
-theorem cspaceWalkPath_single_level (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (st : SystemState) (cn : CNode)
+theorem cspaceWalkPath_single_level (root : Capability) (addr : SeLe4n.CPtr)
+    (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
+    (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hDepth : cn.depth = cn.guardWidth + cn.radixWidth)
-    (hPos : cn.depth ≠ 0) :
-    cspaceWalkPath rootId addr cn.depth st = [rootId] := by
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
+    cspaceWalkPath root addr 64 st = [rootId] := by
   unfold cspaceWalkPath
-  rw [dif_neg hPos, hRoot]
-  simp only
-  by_cases hCons : cn.guardWidth + cn.radixWidth = 0
-  · rw [dif_pos hCons]
-  · rw [dif_neg hCons]
-    -- the root consumes every bit, so neither the short-bit arm nor the descent
-    -- arm can fire
-    rw [if_neg (by rw [hDepth]; exact Nat.lt_irrefl _)]
-    split
+  rw [hT]
+  simp only [hRoot]
+  split
+  · rfl
+  · split
     · rfl
-    · rw [if_pos (by rw [hDepth]; exact Nat.sub_self _)]
+    · rw [if_pos hFull.symm]
 
 /-- **WS-RR RR7.41**: the single-level footprint is exactly the root's read lock
 — so a root-only declaration is *complete*, not an approximation, for every
 resolution the live ABI seam admits. -/
-theorem cspaceWalkLockSet_single_level (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (st : SystemState) (cn : CNode)
+theorem cspaceWalkLockSet_single_level (root : Capability) (addr : SeLe4n.CPtr)
+    (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
+    (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hDepth : cn.depth = cn.guardWidth + cn.radixWidth)
-    (hPos : cn.depth ≠ 0) :
-    (cspaceWalkLockSet rootId addr cn.depth st).pairs
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
+    (cspaceWalkLockSet root addr 64 st).pairs
       = [(cnodeLock rootId, AccessMode.read)] := by
   unfold cspaceWalkLockSet
-  rw [cspaceWalkPath_single_level rootId addr st cn hRoot hDepth hPos]
+  rw [cspaceWalkPath_single_level root addr st rootId cn hT hRoot hFull]
   simp only [List.map, cspaceWalkKeyLock, hRoot]
   rfl
 
 /-- **PR #892 review round 4**: and it is within the ceiling, so the live seam's
 single-level resolution is always *declared* — the refusal above touches only
 walks deeper than the ladder can carry. -/
-theorem declaredLockSetForCSpaceWalk_single_level (rootId : SeLe4n.ObjId)
-    (addr : SeLe4n.CPtr) (st : SystemState) (cn : CNode)
+theorem declaredLockSetForCSpaceWalk_single_level (root : Capability)
+    (addr : SeLe4n.CPtr) (st : SystemState) (rootId : SeLe4n.ObjId) (cn : CNode)
+    (hT : root.target = .object rootId)
     (hRoot : st.getCNode? rootId = some cn)
-    (hDepth : cn.depth = cn.guardWidth + cn.radixWidth)
-    (hPos : cn.depth ≠ 0) :
-    declaredLockSetForCSpaceWalk rootId addr cn.depth st
-      = some (cspaceWalkLockSet rootId addr cn.depth st) := by
+    (hFull : root.cnodeGuardSize.toNat + cn.radixWidth = 64) :
+    declaredLockSetForCSpaceWalk root addr 64 st
+      = some (cspaceWalkLockSet root addr 64 st) := by
   apply declaredLockSetForCSpaceWalk_of_le
   unfold LockSet.size
-  rw [cspaceWalkLockSet_single_level rootId addr st cn hRoot hDepth hPos,
+  rw [cspaceWalkLockSet_single_level root addr st rootId cn hT hRoot hFull,
     List.length_singleton]
   decide
 
@@ -523,20 +502,20 @@ writer (`cspaceWalk_conflicts_with_delete`, §3), not for a write of its own.
 This is the mechanism a CPtr-resolving footprint adopts to cover its interior; it
 is not yet what `lockSetForSyscall`'s arms run, which still name the root alone
 and whose ABI seam refuses a multi-level walk outright. -/
-def cspaceWalkBracket (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) :
-    Concurrency.BracketSpec (Except KernelError SlotRef) where
-  declared := declaredLockSetForCSpaceWalk rootId addr bitsRemaining
-  step := fun s => (resolveCapAddress rootId addr bitsRemaining s, s)
+def cspaceWalkBracket (root : Capability) (addr : SeLe4n.CPtr) (nBits : Nat) :
+    Concurrency.BracketSpec (Except LookupFault (SlotRef × Nat)) where
+  declared := declaredLockSetForCSpaceWalk root addr nBits
+  step := fun s => (resolveAddressBits root addr nBits s, s)
   inv := fun _ => True
   covers := fun st _ _ _ => footprintCoversWrites_refl _ st
 
 /-- **WS-RR RR7.41**: the bracket returns exactly the resolution
-`resolveCapAddress` computes — bracketing declares which locks the walk is
+`resolveAddressBits` computes — bracketing declares which locks the walk is
 under, never what the walk resolves to.  `rfl`, because `BracketSpec.run` is
 the step. -/
-theorem cspaceWalkBracket_run (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
-    (bitsRemaining : Nat) (st : SystemState) :
-    (cspaceWalkBracket rootId addr bitsRemaining).run st
-      = (resolveCapAddress rootId addr bitsRemaining st, st) := rfl
+theorem cspaceWalkBracket_run (root : Capability) (addr : SeLe4n.CPtr)
+    (nBits : Nat) (st : SystemState) :
+    (cspaceWalkBracket root addr nBits).run st
+      = (resolveAddressBits root addr nBits st, st) := rfl
 
 end SeLe4n.Kernel

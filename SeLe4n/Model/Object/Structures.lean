@@ -987,74 +987,21 @@ namespace CNode
 
 open SeLe4n.Kernel.RobinHood
 
-inductive ResolveError where
-  | depthMismatch
-  | guardMismatch
-  deriving Repr, DecidableEq
-
 def empty : CNode :=
-  ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty
+  ofSlots 0 SeLe4n.UniqueSlotMap.empty
 
-/-- Construct a CNode at a given depth with guard/radix parameters.
+/-- Construct an empty CNode of radix `rw` (`2 ^ rw` slots).
     WS-RC R4.A: `s` is now `UniqueSlotMap Capability` carrying `invExtK`
     structurally. Callers that previously passed `RHTable.empty 16` should
     pass `SeLe4n.UniqueSlotMap.empty`; callers that built tables from
     literals via `RHTable.ofList` should use `SeLe4n.UniqueSlotMap.ofListWF`. -/
 
-def mk' (d gw gv rw : Nat) : CNode :=
-  ofSlots d gw gv rw SeLe4n.UniqueSlotMap.empty
+def mk' (rw : Nat) : CNode :=
+  ofSlots rw SeLe4n.UniqueSlotMap.empty
 
 /-- Number of addressable slots represented by this CNode radix width. -/
 def slotCount (node : CNode) : Nat :=
   2 ^ node.radixWidth
-
-/-- Total bits consumed by one resolution step at this CNode. -/
-def bitsConsumed (node : CNode) : Nat :=
-  node.guardWidth + node.radixWidth
-
-/-- T2-J (L-NEW-4): CNode guard value is bounded by guard width.
-    The guard value must fit in `guardWidth` bits, i.e., `guardValue < 2^guardWidth`.
-    When `guardWidth = 0`, only `guardValue = 0` is valid (no guard bits). -/
-def guardBounded (cn : CNode) : Prop :=
-  cn.guardValue < 2 ^ cn.guardWidth
-
-instance (cn : CNode) : Decidable cn.guardBounded :=
-  inferInstanceAs (Decidable (cn.guardValue < 2 ^ cn.guardWidth))
-
-/-- WS-H13 + T2-J: CNode well-formedness — consumed bits fit in remaining depth,
-at least one bit is consumed (ensures termination of multi-level resolution),
-and the guard value fits within the guard width (L-NEW-4). -/
-def wellFormed (node : CNode) : Prop :=
-  node.bitsConsumed ≤ node.depth ∧ 0 < node.bitsConsumed ∧ node.guardBounded
-
-/-- Resolve a CPtr/depth pair into the local slot index using guard/radix semantics.
-
-WS-H13: Uses `guardWidth` and `radixWidth` fields directly for compressed-path
-resolution. The `bitsRemaining` parameter indicates how many address bits
-remain to be resolved at this level.
-
-S4-C: The slot index and guard are bit fields of the address's 64-bit word
-(`CPtr.slotBits`, `CPtr.guardBits`); an address is a machine word since WS-ZA
-ZA4.8, so the word mask in their statement is the identity. -/
-def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) : Except ResolveError SeLe4n.Slot :=
-  let consumed := node.bitsConsumed
-  if bitsRemaining < consumed then
-    .error .depthMismatch
-  else
-    -- S4-C: the slot index and guard are bit fields of the address word
-    let slotIndex := cptr.slotBits (bitsRemaining - consumed) node.radixWidth
-    let guardExtracted := cptr.guardBits (bitsRemaining - consumed) node.radixWidth node.guardWidth
-    if guardExtracted = node.guardValue then
-      .ok (SeLe4n.Slot.ofNat slotIndex)
-    else
-      .error .guardMismatch
-
-/-- S4-C: The word64 mask is idempotent — masking an already-bounded value
-    produces the same result. This ensures `resolveSlot` behaves identically
-    for bounded and unbounded inputs when the value fits in 64 bits. -/
-theorem resolveSlot_mask_idempotent (n : Nat) (h : n < SeLe4n.machineWordMax) :
-    n % SeLe4n.machineWordMax = n :=
-  Nat.mod_eq_of_lt h
 
 /-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`.  WS-ZA ZA5.3:
 compiled code reads the slot array instead (`lookup_eq_lookupCells`). -/
@@ -1444,12 +1391,11 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
 
 /-- WS-ZA ZA5.3 part 6: two CNodes that agree on every field but their spare
 records are equal; the spares are logically one value. -/
-theorem ext_of_fields {a b : CNode} (h1 : a.depth = b.depth) (h2 : a.guardWidth = b.guardWidth)
-    (h3 : a.guardValue = b.guardValue) (h4 : a.radixWidth = b.radixWidth)
+theorem ext_of_fields {a b : CNode} (h4 : a.radixWidth = b.radixWidth)
     (h5 : a.slotsGhost = b.slotsGhost) (h6 : a.cells = b.cells) (h7 : a.links = b.links)
     (h8 : a.occ = b.occ) (h9 : a.occHead = b.occHead) :
     a = b := by
-  cases a; cases b; simp only at h1 h2 h3 h4 h5 h6 h7 h8 h9; subst h1 h2 h3 h4 h5 h6 h7 h8 h9
+  cases a; cases b; simp only at h4 h5 h6 h7 h8 h9; subst h4 h5 h6 h7 h8 h9
   congr; exact Subsingleton.elim _ _
 
 /-- The slot map with `cap` at `slot` agrees with the slot array holding it
@@ -1526,9 +1472,9 @@ theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
   simp only [h, dite_true]
   split
   · split
-    · next r _ => exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hfill r]) rfl rfl rfl
-    · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
-  · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
+    · next r _ => exact ext_of_fields rfl rfl (by simp only [hfill r]) rfl rfl rfl
+    · exact ext_of_fields rfl rfl (by simp only [hbuild]) rfl rfl rfl
+  · exact ext_of_fields rfl rfl (by simp only [hbuild]) rfl rfl rfl
 
 /-- `insertCellWith` writing `cap`'s fields over the record
 (`Capability.overwrite`); the stored capability is `cap`'s fields, so a caller
@@ -1537,12 +1483,13 @@ passing `cap` as a literal never builds it. -/
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
   node.insertCellWith slot
     ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapAsid, cap.mapVaddr, cap.mapEpoch,
-      cap.mapped, cap.freeIndex⟩
+      cap.mapped, cap.freeIndex, cap.cnodeGuard, cap.cnodeGuardSize⟩
     (fun r => Capability.overwrite r cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
-      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex)
-    (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _ _)
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex cap.cnodeGuard cap.cnodeGuardSize)
+    (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _ _ _ _)
     (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
-      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex) (Capability.ofFields_eq _ _ _ _ _ _ _ _ _)
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex cap.cnodeGuard cap.cnodeGuardSize)
+      (Capability.ofFields_eq _ _ _ _ _ _ _ _ _ _ _)
     h a
 
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
@@ -1582,16 +1529,16 @@ slot kept one. -/
     (rights : AccessRightSet) : CNode :=
   if h : slot.toNat < node.cells.size then
     Quot.lift (fun a => node.insertCellWith slot
-        ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
-        (fun r => r.overwriteObject id rights) (fun r => Capability.overwriteObject_eq r id rights)
-        (fun _ => Capability.ofObject id rights) rfl h a)
+        ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, 0, 0⟩
+        (fun r => r.overwriteObject id rights 0 0) (fun r => Capability.overwriteObject_eq r id rights 0 0)
+        (fun _ => Capability.ofObject id rights 0 0) rfl h a)
       (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
   else node.unchanged
 
 theorem insertObjectCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (id : SeLe4n.ObjId)
     (rights : AccessRightSet) :
     node.insertObjectCap slot id rights =
-      node.insert slot ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+      node.insert slot ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, 0, 0⟩ := by
   unfold insertObjectCap
   split
   · next h =>
@@ -1607,7 +1554,7 @@ the slot kept one. -/
     (rights : AccessRightSet) : CNode :=
   if h : slot.toNat < node.cells.size then
     Quot.lift (fun a => node.insertCellWith slot
-        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, 0, 0⟩
         (fun r => r.overwriteIrqHandler line rights)
         (fun r => Capability.overwriteIrqHandler_eq r line rights)
         (fun _ => Capability.ofIrqHandler line rights) rfl h a)
@@ -1618,7 +1565,7 @@ theorem insertIrqHandlerCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (line 
     (rights : AccessRightSet) :
     node.insertIrqHandlerCap slot line rights =
       node.insert slot
-        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, 0, 0⟩ := by
   unfold insertIrqHandlerCap
   split
   · next h =>
@@ -1639,13 +1586,16 @@ written in place, and the fields go straight into the slot's own record (mint,
 copy).  The fields are a literal here, not a match on a record argument, so the
 capability is never built. -/
 def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) : CNode :=
-  node.insertCell slot ⟨target, rights, badgeWord, badged, default, default, 0, false, freeIndex⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) (guard : UInt64) (guardSize : UInt8) : CNode :=
+  node.insertCell slot
+    ⟨target, rights, badgeWord, badged, default, default, 0, false, freeIndex, guard, guardSize⟩
 
 theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
-    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) :
-    node.insertFields slot target rights badgeWord badged freeIndex =
-      node.insert slot ((Capability.ofWords target rights badgeWord badged none).withFreeIndex freeIndex) :=
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat)
+    (guard : UInt64) (guardSize : UInt8) :
+    node.insertFields slot target rights badgeWord badged freeIndex guard guardSize =
+      node.insert slot (((Capability.ofWords target rights badgeWord badged none).withFreeIndex
+        freeIndex).withCNodeGuard guard guardSize) :=
   insertCell_eq_insert _ _ _
 
 /-- A slot array with entry `i` rewritten by `f` (which keeps an empty entry
@@ -1730,7 +1680,7 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
   | none =>
     dsimp only
     rw [hL', hA] at hL
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl rfl rfl
+    refine ext_of_fields rfl ?_ ?_ rfl rfl rfl
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = _
       rw [SeLe4n.Erased.out_map]; unfold slotsWithMapping
@@ -1754,7 +1704,7 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
       · assumption
       · exact absurd hL (by simp)
     simp only [hB, dite_true] at hL ⊢
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    refine ext_of_fields rfl ?_ ?_ rfl
       (by show node.occ = fillOcc _ _ _ _; unfold fillOcc; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
       (by show node.occHead = fillHead _ _ _; unfold fillHead; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
     · apply SeLe4n.Erased.ext
@@ -1827,7 +1777,7 @@ theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
   | none =>
     dsimp only
     rw [hL', hA] at hL
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl rfl rfl
+    refine ext_of_fields rfl ?_ ?_ rfl rfl rfl
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = _
       rw [SeLe4n.Erased.out_map]; unfold slotsWithFreeIndex
@@ -1851,7 +1801,7 @@ theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
       · assumption
       · exact absurd hL (by simp)
     simp only [hB, dite_true] at hL ⊢
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    refine ext_of_fields rfl ?_ ?_ rfl
       (by show node.occ = fillOcc _ _ _ _; unfold fillOcc; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
       (by show node.occHead = fillHead _ _ _; unfold fillHead; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
     · apply SeLe4n.Erased.ext
@@ -1869,8 +1819,8 @@ theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past
 `2 ^ rw` holds nothing, as `insert` leaves it. -/
-def ofList (d gw gv rw : Nat) (xs : List (SeLe4n.Slot × Capability)) : CNode :=
-  xs.foldl (fun cn kv => cn.insert kv.1 kv.2) (mk' d gw gv rw)
+def ofList (rw : Nat) (xs : List (SeLe4n.Slot × Capability)) : CNode :=
+  xs.foldl (fun cn kv => cn.insert kv.1 kv.2) (mk' rw)
 
 /-- WS-G5/F-P03: O(1) amortized slot removal via `RHTable.erase`.  WS-ZA ZA5.3:
 the slot's array entry is cleared in place. -/
@@ -1918,7 +1868,7 @@ def removeImpl (node : CNode) (slot : SeLe4n.Slot) : CNode :=
   unfold removeImpl
   split
   · next h =>
-    exact ext_of_fields rfl rfl rfl rfl rfl (by simp [remove, Array.setIfInBounds, h]) rfl rfl rfl
+    exact ext_of_fields rfl rfl (by simp [remove, Array.setIfInBounds, h]) rfl rfl rfl
   · rfl
 
 /-- WS-ZA ZA5.3: a removal erases the slot from the ghost map. -/
@@ -1989,11 +1939,6 @@ slots leaves every derivation link where it was. -/
 @[simp] theorem filterSlots_links (node : CNode) (f : SeLe4n.Slot → Capability → Bool) :
     (node.filterSlots f).links = node.links := rfl
 @[simp] theorem cells_withoutLinks (node : CNode) : node.withoutLinks.cells = node.cells := rfl
-@[simp] theorem depth_withoutLinks (node : CNode) : node.withoutLinks.depth = node.depth := rfl
-@[simp] theorem guardWidth_withoutLinks (node : CNode) :
-    node.withoutLinks.guardWidth = node.guardWidth := rfl
-@[simp] theorem guardValue_withoutLinks (node : CNode) :
-    node.withoutLinks.guardValue = node.guardValue := rfl
 @[simp] theorem radixWidth_withoutLinks (node : CNode) :
     node.withoutLinks.radixWidth = node.radixWidth := rfl
 @[simp] theorem lookup_withoutLinks (node : CNode) (s : SeLe4n.Slot) :
@@ -2068,48 +2013,6 @@ theorem lookup_mem_of_some (node : CNode) (slot : SeLe4n.Slot) (cap : Capability
   simp [lookup, SeLe4n.UniqueSlotMap.get?] at h
   exact (RHTable.mem_iff_isSome_getElem? node.slots.table slot).mpr (by simp [h])
 
-theorem resolveSlot_depthMismatch
-    (node : CNode)
-    (cptr : SeLe4n.CPtr)
-    (bitsRemaining : Nat)
-    (hDepth : bitsRemaining < node.bitsConsumed) :
-    node.resolveSlot cptr bitsRemaining = .error .depthMismatch := by
-  unfold resolveSlot bitsConsumed at *
-  have h : bitsRemaining < node.guardWidth + node.radixWidth := hDepth
-  simp [h]
-
-/-- T2-J (L-NEW-4): If a CNode's guard value violates `guardBounded`
-    (i.e., `guardValue ≥ 2^guardWidth`), then `resolveSlot` always returns
-    `guardMismatch` for any CPtr and bitsRemaining (assuming sufficient depth).
-
-    **Proof**: The extracted guard is computed as
-    `(shiftedAddr / 2^radixWidth) % 2^guardWidth`, which is always
-    `< 2^guardWidth`. Since `guardValue ≥ 2^guardWidth`, the equality check
-    `guardExtracted = guardValue` is always false. -/
-theorem resolveSlot_guardMismatch_of_not_guardBounded
-    (node : CNode)
-    (cptr : SeLe4n.CPtr)
-    (bitsRemaining : Nat)
-    (hBits : node.bitsConsumed ≤ bitsRemaining)
-    (hNotBounded : ¬node.guardBounded) :
-    node.resolveSlot cptr bitsRemaining = .error .guardMismatch := by
-  simp only [guardBounded] at hNotBounded
-  unfold resolveSlot
-  have hNotLt : ¬(bitsRemaining < node.bitsConsumed) := by omega
-  simp only [hNotLt, ↓reduceIte]
-  -- After the depth check passes, resolveSlot computes:
-  --   guardExtracted := (shiftedAddr / 2^radixWidth) % 2^guardWidth
-  -- which is always < 2^guardWidth by Nat.mod_lt.
-  -- Since ¬(guardValue < 2^guardWidth), guardExtracted ≠ guardValue.
-  split
-  · -- guardExtracted = guardValue case: derive contradiction
-    rename_i hEq
-    have hExtractLt := SeLe4n.CPtr.guardBits_lt cptr (bitsRemaining - node.bitsConsumed)
-      node.radixWidth node.guardWidth
-    omega
-  · -- guardExtracted ≠ guardValue case: already .error .guardMismatch
-    rfl
-
 /-- WS-G5: Source slot is preserved by `revokeTargetLocal` because the filter
 predicate always includes entries where `s = sourceSlot`.
 Requires slot invariant for RHTable filter correctness. -/
@@ -2169,11 +2072,6 @@ theorem lookup_revokeTargetLocal_of_keeps
   simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
   exact RHTable.filter_getElem?_of_pred node.slots.table _ slot cap hUniq.1 hLookup hKeeps
-
-/-- T2-J (L-NEW-4): The empty CNode trivially satisfies `guardBounded`
-    (guardValue = 0 < 2^0 = 1). -/
-theorem empty_guardBounded : CNode.empty.guardBounded := by
-  simp [empty, guardBounded]
 
 /-- WS-N4/WS-RC R4.A: The empty CNode's slots satisfy the slot invariant.
     Now trivial via `UniqueSlotMap.hWF`. -/
@@ -2248,7 +2146,7 @@ theorem slotCountBounded_holds (cn : CNode) : cn.slotCountBounded := by
 /-- **WS-RR RR8.16** (`v0.35.201`): *is this slot index addressable by this
 CNode's radix width?*
 
-`resolveSlot` extracts a slot by masking with `2 ^ radixWidth`, so an index at or
+The resolver extracts a slot by masking with `2 ^ radixWidth` (`resolveAddressBits`), so an index at or
 above `slotCount` can be **stored** and can never be **reached** by any CPtr.  A
 capability installed there is therefore invisible to its holder while still
 consuming a slot-table entry in an object whose memory was accounted, at retype
@@ -2297,40 +2195,6 @@ theorem insert_eq_self_of_not_addressable (cn : CNode) (slot : SeLe4n.Slot) (cap
 @[simp] theorem insert_radixWidth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
     (cn.insert slot cap).radixWidth = cn.radixWidth := by
   unfold insert; split <;> rfl
-
-@[simp] theorem insert_depth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).depth = cn.depth := by
-  unfold insert; split <;> rfl
-
-@[simp] theorem insert_guardWidth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).guardWidth = cn.guardWidth := by
-  unfold insert; split <;> rfl
-
-@[simp] theorem insert_guardValue (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).guardValue = cn.guardValue := by
-  unfold insert; split <;> rfl
-
-/-- **WS-RR RR8.16** (`v0.35.201`): ...and so does CSpace resolution, which is
-the other half of the claim: the guard refuses exactly the slots no CPtr can
-name. -/
-theorem resolveSlot_slotAddressable
-    (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) (s : SeLe4n.Slot)
-    (hRes : node.resolveSlot cptr bitsRemaining = .ok s) :
-    node.slotAddressable s = true := by
-  unfold resolveSlot at hRes
-  by_cases hDepth : bitsRemaining < node.bitsConsumed
-  · simp only [hDepth, if_pos] at hRes
-    exact absurd hRes (by simp)
-  · simp only [hDepth, if_neg, not_false_eq_true] at hRes
-    by_cases hGuard :
-        cptr.guardBits (bitsRemaining - node.bitsConsumed) node.radixWidth node.guardWidth =
-          node.guardValue
-    · simp only [hGuard, if_pos] at hRes
-      cases hRes
-      unfold slotAddressable slotCount SeLe4n.Slot.toNat SeLe4n.Slot.ofNat
-      exact decide_eq_true (SeLe4n.CPtr.slotBits_lt _ _ _)
-    · simp only [hGuard, if_neg, not_false_eq_true] at hRes
-      exact absurd hRes (by simp)
 
 /-- WS-G5: If a slot is present in the RHTable, lookup returns its value.
 With RHTable-backed slots, key uniqueness is maintained by the `noDupKeys`
@@ -2394,41 +2258,28 @@ theorem lookup_insert_ne_none (cn : CNode) (slot s : SeLe4n.Slot) (cap : Capabil
 end CNode
 
 /-- WS-H13/WS-N4: `BEq` instance for `CNode` using entry-wise comparison on the
-RHTable-backed slots. Two CNodes are equal iff their depth, guardWidth,
-guardValue, radixWidth, all slot entries and (WS-ZA ZA5.3 part 4) all derivation
+RHTable-backed slots. Two CNodes are equal iff their radixWidth, all slot entries and (WS-ZA ZA5.3 part 4) all derivation
 link words agree: a comparison that ignored the links would pass a CNode whose
 links a step wrote wrongly. -/
 
 instance : BEq CNode where
   beq a b :=
-    a.depth == b.depth && a.guardWidth == b.guardWidth &&
-    a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
+    a.radixWidth == b.radixWidth &&
     decide (a.cells = b.cells) && decide (a.links = b.links)
 
 /-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
-equal depth, guardWidth, guardValue, radixWidth, the same capability at
+equal radixWidth, the same capability at
 every slot (WS-ZA ZA5.3: the two slot arrays are equal) and the same link words.
 
 WS-SM SM3.A.3 audit-pass note: written with `obtain` so that a future per-CNode
 field added to `BEq` does not silently shift positional indices. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
-    a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
-    a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
+    a.radixWidth = b.radixWidth ∧
     (∀ s, a.lookup s = b.lookup s) ∧ a.links = b.links := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hCells⟩, hLinks⟩ := h
-  refine ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, fun s => ?_, hLinks⟩
+  obtain ⟨⟨hRadixWidth, hCells⟩, hLinks⟩ := h
+  refine ⟨hRadixWidth, fun s => ?_, hLinks⟩
   rw [CNode.lookup_eq_lookupCells]; simp only [CNode.lookupCells, hCells]
-
--- ============================================================================
--- WS-H13: CSpace depth consistency predicates
--- ============================================================================
-
-/-- WS-H13: Empty CNode is trivially well-formed only when depth = 0.
-For non-trivial resolution, CNodes must have positive bitsConsumed. -/
-theorem CNode.empty_not_wellFormed : ¬ CNode.empty.wellFormed := by
-  intro ⟨_, hProg⟩
-  simp [CNode.empty, CNode.bitsConsumed] at hProg
 
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model
@@ -4040,7 +3891,9 @@ namespace KernelObject
 For each object kind, this checks structural validity constraints that must hold
 at construction time:
 - **TCB**: `cspaceRoot` and `vspaceRoot` must reference existing objects in the store.
-- **CNode**: guard value must be bounded by guard width (`guardBounded` from T2-J).
+- **CNode**: resolves at least one bit (`0 < radixWidth`), the fact seL4's
+  retype checks of a CNode's size (`decodeUntypedInvocation`, a CapTable of
+  size 0 is `seL4_InvalidArgument`) and `resolveAddressBits` asserts.
 - **Endpoint**: always well-formed (no structural constraints beyond queue invariants,
   which are tracked separately by `ipcInvariant`).
 - **Notification**: always well-formed (waiter validity tracked by `crossSubsystemInvariant`).
@@ -4056,7 +3909,7 @@ def wellFormed (obj : KernelObject)
   | .tcb t =>
       objects[t.cspaceRoot]? ≠ none ∧
       objects[t.vspaceRoot]? ≠ none
-  | .cnode c => c.guardBounded
+  | .cnode c => 0 < c.radixWidth
   | .endpoint _ => True
   | .notification _ => True
   | .vspaceRoot _ => True

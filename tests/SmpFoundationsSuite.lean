@@ -26,6 +26,7 @@ import SeLe4n.Platform.Sim.Contract
 -- WS-SM SM4.E: the SMP-shape boot witnesses (`bootFromPlatform_smp_witness`,
 -- `…_smp_currentAllNone`) that the retirement ledger points at live here.
 import SeLe4n.Platform.Boot
+import SeLe4n.Testing.StateBuilder
 
 /-!
 # WS-SM SM0.S — Foundations test suite
@@ -906,26 +907,30 @@ private def runPipChainFootprintChecks : IO Unit := do
 
 private def runCSpaceWalkFootprintChecks : IO Unit := do
   -- **WS-RR RR7.41**: the interior of a multi-level CSpace walk.
-  -- `resolveCapAddress` descends through child CNodes discovered from each
-  -- CNode's own guard and radix, and every per-object footprint named only the
+  -- `resolveAddressBits` descends through child CNodes discovered from each
+  -- CNode capability's guard and its CNode's radix, and every per-object
+  -- footprint named only the
   -- root -- so a concurrent `cspaceDelete` of an interior slot had no conflicting
   -- lock against a resolution passing through it.
   IO.println "--- §2.24 WS-RR RR7.41 CSpace-walk interior footprint ---"
   let st : SeLe4n.Model.SystemState := default
-  let root : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 7
+  let rootId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 7
+  let root : SeLe4n.Model.Capability := cnodeCapOf rootId
   let addr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
-  -- 1. The fail-closed arms.  A zero-bit walk reads no CNode and declares
-  --    nothing.  An unresolvable root is READ -- the `.objectNotFound` arm looked
+  -- 1. The fail-closed arms.  A capability naming no object reads no CNode and
+  --    declares nothing.  An unresolvable root is READ -- the `.invalidRoot` arm looked
   --    the key up, and its verdict depended on what it found -- so the walk
   --    names the key and, with no CNode there to lock, declares the state-level
   --    lock in read mode (PR #892 review round 4: the first cut returned `[]`
   --    here, so a concurrent retype or deletion at exactly that key shared no
   --    lock with the resolution whose verdict it changed).  A footprint is owed
   --    exactly where a read happened, and a failed read is a read.
-  assertBool "a zero-bit walk reads no CNode"
-    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 0 st = []))
+  let replyRoot : SeLe4n.Model.Capability :=
+    { target := .replyCap (SeLe4n.ReplyId.ofNat 3), rights := SeLe4n.Model.AccessRightSet.empty }
+  assertBool "a capability naming no object reads no CNode"
+    (decide (SeLe4n.Kernel.cspaceWalkPath replyRoot addr 32 st = []))
   assertBool "an unresolvable root is the walk's one read"
-    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 32 st = [root]))
+    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 32 st = [rootId]))
   assertBool "…and it declares the state-level read lock"
     (decide ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs
       = [(SeLe4n.Kernel.Concurrency.stateLevelLock,
@@ -940,18 +945,18 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   let stEp : SeLe4n.Model.SystemState := { st with
     objects := st.objects.insert epKey (.reply default) }
   assertBool "a key holding another kind of object declares the state-level read lock"
-    (decide ((SeLe4n.Kernel.cspaceWalkLockSet epKey addr 32 stEp).pairs
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (cnodeCapOf epKey) addr 32 stEp).pairs
       = [(SeLe4n.Kernel.Concurrency.stateLevelLock,
           SeLe4n.Kernel.Concurrency.AccessMode.read)]))
   assertBool "cspaceDelete declares the state-level WRITE lock the failed read conflicts with"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ root epKey).pairs))
+      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ rootId epKey).pairs))
   assertBool "…and so does the carve that could install a CNode at that key"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype ⟨3⟩ root root
-        (SeLe4n.ObjId.ofNat 12) epKey root .cnode).pairs))
+      (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype ⟨3⟩ rootId rootId
+        (SeLe4n.ObjId.ofNat 12) epKey rootId .cnode).pairs))
   -- 2. The declaration is REFUSED above the ceiling (PR #892 review round 4).
   --    `maxLockSetSize` is the premise `boundedWait_under_2pl` and the WCRT
   --    surface are stated at, and a walk reads one key per level, so a CSpace
@@ -973,31 +978,31 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   let overCeiling : Nat := ceiling + 1
   let chainId : Nat → SeLe4n.ObjId := fun k => SeLe4n.ObjId.ofNat (100 + k)
   let link : Nat → SeLe4n.Model.CNode := fun k =>
-    SeLe4n.Model.CNode.ofList 1 0 0 1 [(SeLe4n.Slot.ofNat 0,
+    SeLe4n.Model.CNode.ofList 1 [(SeLe4n.Slot.ofNat 0,
         { target := .object (chainId (k + 1)),
           rights := SeLe4n.Model.AccessRightSet.empty })]
   let stChain : SeLe4n.Model.SystemState :=
     (List.range overCeiling).foldl (fun s k => { s with
       objects := s.objects.insert (chainId k) (.cnode (link k)) }) st
   assertBool "a walk one level past the ceiling reads one key per level"
-    (decide ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr overCeiling stChain).length
+    (decide ((SeLe4n.Kernel.cspaceWalkPath (cnodeCapOf (chainId 0)) addr overCeiling stChain).length
       = overCeiling))
   assertBool "…every key before the last of which holds a CNode"
-    ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr overCeiling stChain).dropLast.all
+    ((SeLe4n.Kernel.cspaceWalkPath (cnodeCapOf (chainId 0)) addr overCeiling stChain).dropLast.all
       (fun k => (stChain.getCNode? k).isSome))
   assertBool "…and its footprint is one member past the ceiling"
-    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr overCeiling stChain).size
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (cnodeCapOf (chainId 0)) addr overCeiling stChain).size
       = ceiling + 1))
   assertBool "…so the declaration is REFUSED rather than stated past the bound"
-    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr overCeiling stChain
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (cnodeCapOf (chainId 0)) addr overCeiling stChain
       |>.isNone)
   assertBool "a walk at the ceiling declares, and its footprint is exactly the bound"
-    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr ceiling stChain).size
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (cnodeCapOf (chainId 0)) addr ceiling stChain).size
       = ceiling))
   assertBool "…and that is the walk the declaration accepts"
-    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr ceiling stChain |>.isSome)
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (cnodeCapOf (chainId 0)) addr ceiling stChain |>.isSome)
   assertBool "NEGATIVE: a refused walk is never handed a footprint of any size"
-    (match SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr overCeiling stChain with
+    (match SeLe4n.Kernel.declaredLockSetForCSpaceWalk (cnodeCapOf (chainId 0)) addr overCeiling stChain with
      | some _ => false
      | none => true)
   -- 3. The delete's side of the conflict: `cspaceDelete` takes the target
@@ -1006,7 +1011,7 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   assertBool "cspaceDelete declares the target CNode's write lock"
     (decide ((SeLe4n.Kernel.Concurrency.cnodeLock target,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ root target).pairs))
+      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ rootId target).pairs))
   -- 4. The conflict itself: a read and a write on the same key conflict, and two
   --    reads do not -- which is what makes the wider read footprint affordable.
   assertBool "a read and a write on the same CNode conflict"
@@ -1031,7 +1036,7 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
     (decide (bracket.declared st = SeLe4n.Kernel.declaredLockSetForCSpaceWalk root addr 32 st))
   assertBool "the bracketed resolution returns the resolution's own verdict"
     (decide ((bracket.run st).1.toOption
-      = (SeLe4n.Kernel.resolveCapAddress root addr 32 st).toOption))
+      = (SeLe4n.Kernel.resolveAddressBits root addr 32 st).toOption))
 
 private def runSchedLockDomainChecks : IO Unit := do
   -- **WS-RR RR7.39**: the scheduler lock domain, and the bracket the three

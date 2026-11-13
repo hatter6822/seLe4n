@@ -84,9 +84,9 @@ the build.
 For each of the 7 inventory entries, the references are listed in
 order matching `Concurrency.Assumptions.smpLatentInventory`. -/
 example : True := by
-  -- Entry 1: cspaceLookupMultiLevel_smpLatent (H-05 / AN4-D)
-  let _ := @SeLe4n.Kernel.cspaceLookupMultiLevel
-  let _ := @SeLe4n.Kernel.resolveCapAddress_result_valid_cnode
+  -- Entry 1: lookupSlot_smpLatent (H-05 / AN4-D)
+  let _ := @SeLe4n.Kernel.lookupSlot
+  let _ := @SeLe4n.Kernel.resolveAddressBits_result_valid_cnode
   -- Entry 2: cspaceCopyMoveMutate_smpLatent (AK7-F.cascade / AN10-B)
   let _ := @SeLe4n.Kernel.cspaceCopy
   let _ := @SeLe4n.Kernel.cspaceCopy_preserves_capabilityInvariantBundle

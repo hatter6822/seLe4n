@@ -33,7 +33,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.RobinHood
 
 /-- An interrupt node at boot: a CNode of one slot (radix 0), empty. -/
-def irqNodeCNode : CNode := CNode.ofList 0 0 0 0 []
+def irqNodeCNode : CNode := CNode.ofList 0 []
 
 /-- The boot object of line `line`'s interrupt node. -/
 def irqNodeEntry (line : Nat) : ObjectEntry where
@@ -287,6 +287,28 @@ theorem installIrqNodes_capTargetKindBacked {n : Nat} {ist : IntermediateState}
     cases e : ist.state.objects[cn]? with
     | none => rw [e] at hC; exact absurd rfl hC
     | some o0 => rw [installIrqNodes_objects_of_some hFresh e]; rw [e] at hC; exact hC
+
+/-- **The install keeps every capability's CNode geometry**: its capabilities
+are the ones the state held, and a node it adds sits where nothing was, so no
+capability names it (`hLive`); every other CNode is where it was. -/
+theorem installIrqNodes_cnodeCapGeometry {n : Nat} {ist : IntermediateState}
+    (hFresh : irqNodesFresh n ist.state = true)
+    (hLive : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o)
+    (h : SeLe4n.Kernel.cnodeCapGeometry ist.state) :
+    SeLe4n.Kernel.cnodeCapGeometry (installIrqNodes n ist).state := by
+  intro oid o slot c hO hc
+  have hS : (installIrqNodes n ist).state.slotCapAt ⟨oid, slot⟩ = some c := by
+    rw [SystemState.slotCapAt_of_object hO]; exact hc
+  rw [installIrqNodes_slotCapAt hFresh] at hS
+  have hG := h.slotCapAt hS
+  refine ⟨hG.1, fun id cn hT hC => ?_⟩
+  have hPres := (hLive ⟨oid, slot⟩ id ⟨c, hS, by
+    unfold Capability.namedObject; rw [hT]⟩).1
+  have hC' := (SystemState.getCNode?_eq_some_iff _ _ _).mp hC
+  rcases installIrqNodes_objects_cases hFresh id with e | ⟨e0, -⟩
+  · rw [e] at hC'
+    exact hG.2 id cn hT ((SystemState.getCNode?_eq_some_iff _ _ _).mpr hC')
+  · exact absurd e0 hPres
 
 /-- An empty node has the boot shape. -/
 theorem irqNodeCNode_bootObjectShape : bootObjectShape (.cnode irqNodeCNode) :=

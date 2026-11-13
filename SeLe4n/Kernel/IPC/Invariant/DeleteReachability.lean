@@ -283,16 +283,16 @@ theorem finaliseDestroyedCapabilities {ec : CoreId} {named : List SeLe4n.ObjId}
 into the thread's space slot, and the derivation edge. -/
 theorem threadSlotCopied {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ReachLinkFrame st (SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ReachLinkFrame st (SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD := cspaceDeleteSlot hInv (copyIntoThreadSlot_delete hT slot)
   obtain ⟨-, hI⟩ := threadSlotDeleted_tcb hInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     have hU := SystemState.updateTcb_preserves_objects_invExt _ tid
-      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
-    exact hD.trans ((updateTcb _ tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
+      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
+    exact hD.trans ((updateTcb _ tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
       fun _ => rfl).trans (cdtAddChild _ _ _ _ hU))
 
 end ReachLinkFrame
@@ -383,14 +383,14 @@ own theorem, the budgets by the scheduling-link frame, the queues by this
 module's frame. -/
 theorem threadSlotCopied_preserves_ipcReachable {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (h : ipcReachable st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ipcReachable (threadSlotCopied st tid slot srcCNode srcSlot rights) :=
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ipcReachable (threadSlotCopied st tid slot srcCNode srcSlot rights data) :=
   ⟨threadSlotCopied_preserves_ipcInvariantFull h.objects_invExt h.ipcInvariantFull hT slot
-      srcCNode srcSlot rights,
-    (threadSlotCopied_tcb h.objects_invExt hT slot srcCNode srcSlot rights).2,
+      srcCNode srcSlot rights data,
+    (threadSlotCopied_tcb h.objects_invExt hT slot srcCNode srcSlot rights data).2,
     allTimeoutBudgetsNone_of_aux (SchedLinkFrame.threadSlotCopied h.objects_invExt hT slot
-      srcCNode srcSlot rights).aux h.allTimeoutBudgetsNone,
-    (ReachLinkFrame.threadSlotCopied h.objects_invExt hT slot srcCNode srcSlot rights).preserves
+      srcCNode srcSlot rights data).aux h.allTimeoutBudgetsNone,
+    (ReachLinkFrame.threadSlotCopied h.objects_invExt hT slot srcCNode srcSlot rights data).preserves
       h.reachQueueInvariant⟩
 
 /-- **A thread space slot's set keeps the reachable state**: the copy, then the
@@ -398,36 +398,36 @@ retire after it. -/
 theorem threadSlotSet_preserves_ipcReachable (ec : CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (h : ipcReachable st) (hT : st.getTcb? tid = some t)
     (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) :
-    ipcReachable (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+    (rights : AccessRightSet) (data : UInt64) :
+    ipcReachable (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   unfold threadSlotSet
   exact retireFinalObject_preserves_ipcReachable ec _ _
-    (threadSlotCopied_preserves_ipcReachable h hT slot srcCNode srcSlot rights)
+    (threadSlotCopied_preserves_ipcReachable h hT slot srcCNode srcSlot rights data)
 
 /-- **A space change keeps the reachable state** — each slot set does. -/
 theorem copyThreadSpaces_preserves_ipcReachable (ec : CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (h : ipcReachable st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') : ipcReachable st' := by
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : ipcReachable st)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') : ipcReachable st' := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec h.objects_invExt hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
   exact threadSlotSet_preserves_ipcReachable ec
-    (threadSlotSet_preserves_ipcReachable ec h hT _ _ _ _) hT1' _ _ _ _
+    (threadSlotSet_preserves_ipcReachable ec h hT _ _ _ _ _) hT1' _ _ _ _ _
 
 /-- `.tcbSetSpace` through the zombie delete: **the loop's passes keep the
 reachable state and the bundle, and the space change after them keeps the
 reachable state and the scheduling links.** -/
 theorem copyThreadSpacesZombie_preserves_ipcReachable (ec : CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (h : reachableDeleteBundle st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : reachableDeleteBundle st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
     ipcReachable st' ∧ schedContextLinkInvariant st' := by
   have hChain : ∀ n s, ZombieRun ec n st s → reachableDeleteBundle s := fun _ _ hR =>
     hR.chain.closed reachableDeleteBundle
       (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle ec c s s' hQ hD)
       (fun d s hQ => finaliseFinalObject_preserves_reachableDeleteBundle d s hQ) h
-  have step : ∀ s, reachableDeleteBundle s → copyThreadSpaces ec s vtid cnSrc vrSrc = .ok st' →
+  have step : ∀ s, reachableDeleteBundle s → copyThreadSpaces ec s vtid cnSrc vrSrc cnData = .ok st' →
       ipcReachable st' ∧ schedContextLinkInvariant st' := fun s hs hC =>
     ⟨copyThreadSpaces_preserves_ipcReachable ec hs.1 hC,
       copyThreadSpaces_preserves_schedContextLinkInvariant ec hs.1.objects_invExt hs.2.2 hC⟩

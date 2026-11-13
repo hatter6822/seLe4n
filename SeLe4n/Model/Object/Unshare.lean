@@ -178,7 +178,6 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
   | .cnode c => .cnode { c with
-      depth := opaqueId c.depth
       cells := c.cells.map unshareSlotCell
       cells_size := by rw [Array.size_map]; exact c.cells_size
       slots_agree := by
@@ -225,7 +224,7 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     have hC : unshareSlotCell = id := funext unshareSlotCell_eq
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hC, hId, hIdN, Array.map_id, opaqueId,
       KernelObject.cnode.injEq]
-    exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl
   case vspaceRoot v =>
     simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId, RHTable.unshare,
       KernelObject.vspaceRoot.injEq]

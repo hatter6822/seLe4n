@@ -116,7 +116,7 @@ private def fp010_cnodeRadixSingle : IO Unit := do
     { target := .object ⟨100⟩
       rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
-    CNode.ofList 16 4 0 4 [(SeLe4n.Slot.ofNat 3, cap)]
+    CNode.ofList 4 [(SeLe4n.Slot.ofNat 3, cap)]
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
@@ -132,7 +132,7 @@ private def fp011_cnodeRadixMulti : IO Unit := do
     { target := .object ⟨n⟩
       rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
-    CNode.ofList 16 0 0 4
+    CNode.ofList 4
       [(SeLe4n.Slot.ofNat 1, mkCap 1), (SeLe4n.Slot.ofNat 2, mkCap 2),
        (SeLe4n.Slot.ofNat 5, mkCap 5)]
   let frozen := freezeObject (.cnode cn)
@@ -147,7 +147,7 @@ private def fp011_cnodeRadixMulti : IO Unit := do
 /-- FP-012: CNode radix — empty CNode slots all none -/
 private def fp012_cnodeRadixEmpty : IO Unit := do
   let cn : CNode :=
-    (SeLe4n.Model.CNode.ofSlots 16 4 0 4 SeLe4n.UniqueSlotMap.empty)
+    (SeLe4n.Model.CNode.ofSlots 4 SeLe4n.UniqueSlotMap.empty)
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
@@ -161,12 +161,10 @@ private def fp013_cnodeRadixStructure : IO Unit := do
     { target := .object ⟨42⟩
       rights := AccessRightSet.ofList [.read, .write] }
   let cn : CNode :=
-    CNode.ofList 16 2 1 3 [(SeLe4n.Slot.ofNat 4, cap)]
+    CNode.ofList 3 [(SeLe4n.Slot.ofNat 4, cap)]
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
-    expect "guardWidth preserved" (fc.guardWidth == 2)
-    expect "guardValue preserved" (fc.guardValue == 1)
     expect "radixWidth preserved" (fc.radixWidth == 3)
   | _ => throw <| IO.userError "expected FrozenCNode"
 

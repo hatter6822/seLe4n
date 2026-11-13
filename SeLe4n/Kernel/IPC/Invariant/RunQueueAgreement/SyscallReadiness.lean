@@ -716,8 +716,8 @@ theorem cspaceRevokeCdtFinalising_readyKeptStage {S : SeLe4n.ThreadId → Prop} 
     (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h).2
 
 theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : readyKeptStage S st st' :=
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : readyKeptStage S st st' :=
   (copyThreadSpacesZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
       readyKeptStage S st s)
     (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
@@ -990,23 +990,19 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | none => simp only [hCaller] at hStep; cases hStep
           | some callerTcb =>
               simp only [hCaller] at hStep
-              cases hRoot : st.getCNode? callerTcb.cspaceRoot with
-              | none => simp only [hRoot] at hStep; cases hStep
-              | some rootCn =>
-                  simp only [hRoot] at hStep
-                  try dsimp only [] at hStep
-                  simp only [syscallLookupArgumentCap] at hStep
-                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
-                  | error e => simp only [hCap2] at hStep; cases hStep
-                  | ok pair =>
-                      obtain ⟨ntfnCap, stL⟩ := pair
-                      simp only [hCap2] at hStep
-                      cases hNT : ntfnCap.target with
-                      | object notifId =>
-                          simp only [hNT] at hStep
-                          refine readyKeptStage.of_stage ?_
-                          exact bindNotification_runQueueStage hStep
-                      | _ => simp only [hNT] at hStep; cases hStep
+              try dsimp only [] at hStep
+              simp only [syscallLookupArgumentCap] at hStep
+              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
+              | error e => simp only [hCap2] at hStep; cases hStep
+              | ok pair =>
+                  obtain ⟨ntfnCap, stL⟩ := pair
+                  simp only [hCap2] at hStep
+                  cases hNT : ntfnCap.target with
+                  | object notifId =>
+                      simp only [hNT] at hStep
+                      refine readyKeptStage.of_stage ?_
+                      exact bindNotification_runQueueStage hStep
+                  | _ => simp only [hNT] at hStep; cases hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1201,7 +1197,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
@@ -1479,7 +1475,6 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
       cases h
       exact yieldOnCore_readyKeptStage hYieldOk (P.placeable executingCore)
   simp only [hY, ↓reduceIte] at h
-  split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
   split at h
   · cases h

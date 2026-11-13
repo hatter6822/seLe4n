@@ -597,7 +597,7 @@ thread's writes, so those words must be read from RAM by this entry, beside the
 caller's own: the sender at the head of the send queue of the endpoint the
 caller's capability names (`receiveRendezvousSender?`, the thread the receive
 dequeues and its lock footprint declares).  The resolution is the operand's
-(`resolveCapAddressKUnrolled`, as `dispatchOperandCheckedR` resolves it), on the
+(`lookupSlotK`, as `dispatchOperandCheckedR` resolves it), on the
 state the step runs on; a capability that does not resolve or names no
 endpoint with a sender names none, and one the step then refuses only reads
 words the step never uses.  A code, so the entry builds no `Option`. -/
@@ -606,27 +606,24 @@ words the step never uses.  A code, so the entry builds no `Option`. -/
   if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn =>
-        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
-          (fun _ => 0)
-          (fun cnode slot =>
-            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-            | some cap =>
-              match cap.target with
-              | .object epId =>
-                -- `receiveRendezvousSender?` read in place
-                -- (`receiveRendezvousSender?_eq_endpoint`): its lookup's
-                -- `some` is never built.
-                match st.getEndpoint? epId with
-                | some ep =>
-                  match ep.sendQ.head with
-                  | some sender => sender.toNat + 1
-                  | none => 0
+      lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
+        (fun _ _ _ _ => 0)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .object epId =>
+              -- `receiveRendezvousSender?` read in place
+              -- (`receiveRendezvousSender?_eq_endpoint`): its lookup's
+              -- `some` is never built.
+              match st.getEndpoint? epId with
+              | some ep =>
+                match ep.sendQ.head with
+                | some sender => sender.toNat + 1
                 | none => 0
-              | _ => 0
-            | none => 0)
-      | none => 0
+              | none => 0
+            | _ => 0
+          | none => 0)
     | none => 0
   else 0
 
@@ -645,43 +642,37 @@ capability for only has three words read that the step never uses. -/
   else if syscallId.toNat = SyscallId.send.toNat ∨ syscallId.toNat = SyscallId.call.toNat then
     match st.getTcb? tid with
     | some tcb =>
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn =>
-        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
-          (fun _ => 0)
-          (fun cnode slot =>
-            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-            | some cap =>
-              match cap.target with
-              | .object epId =>
-                match st.getEndpoint? epId with
-                | some ep =>
-                  match ep.receiveQ.head with
-                  | some r => r.toNat + 1
-                  | none => 0
+      lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
+        (fun _ _ _ _ => 0)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .object epId =>
+              match st.getEndpoint? epId with
+              | some ep =>
+                match ep.receiveQ.head with
+                | some r => r.toNat + 1
                 | none => 0
-              | _ => 0
-            | none => 0)
-      | none => 0
+              | none => 0
+            | _ => 0
+          | none => 0)
     | none => 0
   else if syscallId.toNat = SyscallId.reply.toNat then
     match st.getTcb? tid with
     | some tcb =>
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn =>
-        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
-          (fun _ => 0)
-          (fun cnode slot =>
-            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-            | some cap =>
-              match cap.target with
-              | .replyCap rid =>
-                match replyAnsweredCaller? st rid with
-                | some c => c.toNat + 1
-                | none => 0
-              | _ => 0
-            | none => 0)
-      | none => 0
+      lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
+        (fun _ _ _ _ => 0)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .replyCap rid =>
+              match replyAnsweredCaller? st rid with
+              | some c => c.toNat + 1
+              | none => 0
+            | _ => 0
+          | none => 0)
     | none => 0
   else 0
 
@@ -698,21 +689,18 @@ has three words read that the step never uses. -/
   if syscallId.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn =>
-        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord replyWord) rootCn.depth st
-          (fun _ => 0)
-          (fun cnode slot =>
-            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-            | some cap =>
-              match cap.target with
-              | .replyCap rid =>
-                match replyAnsweredCaller? st rid with
-                | some c => c.toNat + 1
-                | none => 0
-              | _ => 0
-            | none => 0)
-      | none => 0
+      lookupSlotK tcb (SeLe4n.CPtr.ofWord replyWord) st
+        (fun _ _ _ _ => 0)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .replyCap rid =>
+              match replyAnsweredCaller? st rid with
+              | some c => c.toNat + 1
+              | none => 0
+            | _ => 0
+          | none => 0)
     | none => 0
   else 0
 

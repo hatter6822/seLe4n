@@ -68,7 +68,7 @@ theorem cspaceMint_preserves_badgeWellFormed
     have hToNN : pair.1.toNonNull? = some ⟨pair.1, hNotNull⟩ :=
       Capability.toNonNull?_of_not_null hNotNull
     simp only [hToNN] at hStep
-    cases hMint : mintDerivedCap ⟨pair.1, hNotNull⟩ rights badge with
+    cases hMint : mintDerivedCap ⟨pair.1, hNotNull⟩ rights (capDataKind pair.2 pair.1) badge with
     | error e => simp [hMint] at hStep
     | ok child =>
       simp only [hMint] at hStep
@@ -81,11 +81,23 @@ theorem cspaceMint_preserves_badgeWellFormed
       have hObj : pair.2.objects[dst.cnode]? = some (.cnode cn) :=
         (SystemState.getCNode?_eq_some_iff pair.2 dst.cnode cn).mp hCnOpt
       have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-      -- Extract child.badge from mintDerivedCap. AN4-E (H-06) refactors the body
-      -- to wrap the `.ok` in a second `if` that rejects null-valued candidates,
-      -- so walk both splits.
-      have hChildBadge : child.badge = badge :=
-        mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights badge child hMint
+      -- The child's badge is `updateCapData`'s (`mintedBadge`): the requested
+      -- badge, or the parent's own, valid by the pre-state invariant.
+      have hChildBadge : ∀ b, child.badge = some b → b.valid := by
+        intro b hb
+        rw [mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights _ badge child hMint] at hb
+        unfold mintedBadge at hb
+        split at hb
+        · exact hBadgeValid b hb
+        · have hC : SystemState.lookupSlotCap pair.2 src = some pair.1 :=
+            (cspaceLookupSlot_ok_iff_lookupSlotCap pair.2 src pair.1).1 hLookup
+          rw [SystemState.lookupSlotCap] at hC
+          cases hCN : SystemState.lookupCNode pair.2 src.cnode with
+          | none => rw [hCN] at hC; exact absurd hC (by simp)
+          | some cn =>
+            rw [hCN] at hC
+            exact hCap src.cnode (.cnode cn) src.slot pair.1 b
+              ((SystemState.lookupCNode_eq_some_iff pair.2 src.cnode cn).1 hCN) hC hb
       exact ⟨storeObject_cnode_preserves_notificationBadgesWellFormed
           pair.2 st' dst.cnode _ hNtfn hObjInv hStore,
         storeObject_cnode_preserves_capabilityBadgesWellFormed
@@ -95,8 +107,8 @@ theorem cspaceMint_preserves_badgeWellFormed
             · subst hSlotEq
               rw [CNode.lookup_insert_eq cn dst.slot child hUniq
                 (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
-              cases hLk; rw [hChildBadge] at hBdg
-              exact hBadgeValid badge' hBdg
+              cases hLk
+              exact hChildBadge badge' hBdg
             · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
               exact hCap dst.cnode (.cnode cn) slot' cap' badge' hObj hLk hBdg)⟩
 
@@ -180,7 +192,7 @@ theorem setCapFreeIndex_slotTarget {st : SystemState} {a : CSpaceAddr} {cn : CNo
     (idx : Nat) (hObjInv : st.objects.invExt) (hPre : st.objects[a.cnode]? = some (.cnode cn))
     (hLk : cn.lookup a.slot = some c) (r : SlotRef) {d : Capability}
     (h : st.slotCapAt r = some d) :
-    ∃ d', (setCapFreeIndex st a idx).slotCapAt r = some d' ∧ d'.target = d.target := by
+    ∃ d', (setCapFreeIndex st a idx).slotCapAt r = some d' ∧ (d'.target = d.target ∧ d'.cnodeGuard = d.cnodeGuard ∧ d'.cnodeGuardSize = d.cnodeGuardSize) := by
   have hS := setCapFreeIndex_eq_storeObject (idx := idx) hPre
   rw [CNode.setFreeIndex_of_lookup hLk] at hS
   by_cases e : r = a
@@ -191,19 +203,19 @@ theorem setCapFreeIndex_slotTarget {st : SystemState} {a : CSpaceAddr} {cn : CNo
         (CNode.slotAddressable_of_lookup _ _ _ hLk)
     have h0 : st.slotCapAt r = some c := (SystemState.slotCapAt_of_object hPre).trans hLk
     rw [h0] at h; cases h
-    exact ⟨_, h1, Capability.withFreeIndex_target _ _⟩
+    exact ⟨_, h1, Capability.withFreeIndex_target _ _, rfl, rfl⟩
   · exact ⟨d, (SystemState.slotCapAt_storeObject_ne hObjInv hPre hS
       (fun s' hs => CNode.lookup_insert_ne cn a.slot s' _ (Ne.symm hs) (CNode.slotsUnique_holds _))
-      r e).trans h, rfl⟩
+      r e).trans h, rfl, rfl, rfl⟩
 
 /-- Setting a derivation's source full keeps every occupied slot's target. -/
 theorem untypedSourceSetFull_slotTarget {st : SystemState} {a : CSpaceAddr} {cn : CNode}
     {c : Capability} (cap : Capability) (hObjInv : st.objects.invExt)
     (hPre : st.objects[a.cnode]? = some (.cnode cn)) (hLk : cn.lookup a.slot = some c)
     (r : SlotRef) {d : Capability} (h : st.slotCapAt r = some d) :
-    ∃ d', (untypedSourceSetFull st a cap).slotCapAt r = some d' ∧ d'.target = d.target :=
-  untypedSourceSetFull_of (P := fun s => ∃ d', s.slotCapAt r = some d' ∧ d'.target = d.target)
-    ⟨d, h, rfl⟩ fun idx => setCapFreeIndex_slotTarget idx hObjInv hPre hLk r h
+    ∃ d', (untypedSourceSetFull st a cap).slotCapAt r = some d' ∧ (d'.target = d.target ∧ d'.cnodeGuard = d.cnodeGuard ∧ d'.cnodeGuardSize = d.cnodeGuardSize) :=
+  untypedSourceSetFull_of (P := fun s => ∃ d', s.slotCapAt r = some d' ∧ (d'.target = d.target ∧ d'.cnodeGuard = d.cnodeGuard ∧ d'.cnodeGuardSize = d.cnodeGuardSize))
+    ⟨d, h, rfl, rfl, rfl⟩ fun idx => setCapFreeIndex_slotTarget idx hObjInv hPre hLk r h
 
 /-- **A transfer keeps every occupied slot's target**: it installs into an
 empty slot, records an edge, and may set its source full. -/
@@ -211,7 +223,7 @@ theorem ipcTransferSingleCap_slotTarget {st st' : SystemState} {cap : Capability
     {srcNode : SlotRef} {dst : CSpaceAddr} (hObjInv : st.objects.invExt)
     (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) (r : SlotRef)
     {d : Capability} (h : st.slotCapAt r = some d) :
-    ∃ d', st'.slotCapAt r = some d' ∧ d'.target = d.target := by
+    ∃ d', st'.slotCapAt r = some d' ∧ (d'.target = d.target ∧ d'.cnodeGuard = d.cnodeGuard ∧ d'.cnodeGuardSize = d.cnodeGuardSize) := by
   obtain ⟨_, st2, -, hSrc, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hStep
   obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
     (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
@@ -244,22 +256,25 @@ found empty (`cdt_addEdge_after_insert`). -/
 theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (st st' : SystemState) (cap : Capability) (srcNode : SlotRef) (dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hSrcCap : ∃ c, st.slotCapAt srcNode = some c ∧ cap.target = c.target)
+    (hSrcCap : ∃ c, st.slotCapAt srcNode = some c ∧ (cap.target = c.target ∧ cap.cnodeGuard = c.cnodeGuard ∧ cap.cnodeGuardSize = c.cnodeGuardSize))
     (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   obtain ⟨_, st2, -, hSrc, hRef, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hStep
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
     (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
-  obtain ⟨c0, hc0, hT0⟩ := hSrcCap
-  -- The transferred capability names its source slot's object, so its kind is
-  -- the source's, which the bundle backs.
+  obtain ⟨c0, hc0, hT0, hG0, hS0⟩ := hSrcCap
+  -- The transferred capability names its source slot's object under its guard,
+  -- so its kind and geometry are the source's, which the bundle backs.
   have hCapBacked : capTargetKindBackedAt st cap.withoutMapping.target := by
     rw [show cap.withoutMapping.target = cap.target from Capability.withMapping_target cap none, hT0]
     exact hInv.targetKindBacked.slotCapAt hc0
+  have hCapGeo : cnodeCapGeometryAt st cap.withoutMapping :=
+    cnodeCapGeometryAt_of_fields (hInv.capGeometry.slotCapAt hc0)
+      ((Capability.withMapping_target cap none).trans hT0) hG0 hS0
   rw [Option.some.inj (hc0.symm.trans (SystemState.slotCapAt_of_lookupSlotCap hLc))] at hT0
   have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
-    dst cap.withoutMapping hInv.offCoverage hCapBacked hIns
+    dst cap.withoutMapping hInv.offCoverage hCapBacked hCapGeo hIns
   have hCdt := cdt_addEdge_after_insert st st2 srcNode dst cap.withoutMapping .ipcTransfer
     hInv.2.1 hInv.2.2.1 hObjInv
     (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
@@ -279,7 +294,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
       hT0
   · exact ⟨cspaceLookupSound_holds _,
       hCdt.1, hCdt.2.1,
-      cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
+      cnodeCapGeometry_of_objects_eq st2 _ hDepth2 (hObjFinal _),
       (hObjFinal _) ▸ hObjInv2,
       capTargetKindBacked_of_objects_eq (hObjFinal _) hRCPV2⟩
 
@@ -313,11 +328,11 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (rtcb : TCB) (slot? : Option CSpaceAddr) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
     (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
-        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
+        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ (tc.cap.target = c.target ∧ tc.cap.cnodeGuard = c.cnodeGuard ∧ tc.cap.cnodeGuardSize = c.cnodeGuardSize))
     (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   let N : SystemState → Prop := fun s => ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
-    ∃ c, s.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target
+    ∃ c, s.slotCapAt tc.srcSlot = some c ∧ (tc.cap.target = c.target ∧ tc.cap.cnodeGuard = c.cnodeGuard ∧ tc.cap.cnodeGuardSize = c.cnodeGuardSize)
   have hR := ipcUnwrapCaps_rel
     (fun a b => capabilityInvariantBundle b → N b → capabilityInvariantBundle a ∧ N a)
     (fun _ h1 h2 => ⟨h1, h2⟩)
@@ -328,10 +343,10 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
       ⟨ipcTransferSingleCap_preserves_capabilityInvariantBundle s s' tc.cap tc.srcSlot dst hA
           (hN i tc hi) hT,
         fun j tc' hj => by
-          obtain ⟨c, hc, hTg⟩ := hN j tc' hj
-          obtain ⟨c', hc', hT'⟩ := ipcTransferSingleCap_slotTarget
+          obtain ⟨c, hc, hTg, hGg, hSg⟩ := hN j tc' hj
+          obtain ⟨c', hc', hT', hG', hS'⟩ := ipcTransferSingleCap_slotTarget
             (objects_invExt_of_capabilityInvariantBundle s hA) hT _ hc
-          exact ⟨c', hc', hTg.trans hT'.symm⟩⟩)
+          exact ⟨c', hc', hTg.trans hT'.symm, hGg.trans hG'.symm, hSg.trans hS'.symm⟩⟩)
     hStep
   exact (hR hInv hNames).1
 
@@ -386,8 +401,8 @@ case leaves the state unchanged
 -- V3-F (M-PRF-3): Post-resolution rights check composition
 -- ============================================================================
 
--- V3-F (M-PRF-3): See `resolveCapAddress_callers_check_rights` in API.lean.
--- All callers of `resolveCapAddress` perform post-resolution rights checks.
+-- V3-F (M-PRF-3): See `resolveAddressBits_callers_check_rights` in API.lean.
+-- All callers of `resolveAddressBits` perform post-resolution rights checks.
 -- The machine-checked proof lives in API.lean where `syscallInvokeTyped` is
 -- defined, avoiding circular imports.
 

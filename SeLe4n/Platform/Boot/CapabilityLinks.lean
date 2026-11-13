@@ -386,7 +386,7 @@ def linkBootCapabilities (config : PlatformConfig) (ist : IntermediateState) :
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := linkReach_perObjectMappingsInvariant (linkBootSlots_reach _ _) ist.hAllTables.objects.1
     ist.hPerObjectMappings
-  hLifecycleConsistent := (linkBootSlots_reach _ _).bookkeepingAgrees
+  hLifecycleConsistent := (linkBootSlots_reach _ _).bookkeepingAgreesUnbounded
     ist.hAllTables.objects.1
     (ist.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl) ist.hLifecycleConsistent.types)
 
@@ -452,7 +452,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     (hUncarved : ∀ u U, ist.state.getUntyped? u = some U → U.children = [])
     (hNamedU : ∀ r u, SystemState.namesAt ist.state.slotCapAt r u → ist.state.getUntyped? u ≠ none →
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u)
-    (hKinds : capTargetKindBacked ist.state) :
+    (hKinds : capTargetKindBacked ist.state) (hGeom : cnodeCapGeometry ist.state) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
     hBindings⟩ := h
@@ -496,7 +496,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
       (hUt ▸ h)) hx).elim,
     fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
-    fun r u hr hu => ?_, fun Q hQ o => ?_⟩, capTargetKindBacked_of_agree hA hKinds⟩,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩, capTargetKindBacked_of_agree hA hKinds,
+      cnodeCapGeometry_of_agree hA hGeom⟩,
     .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e

@@ -1,3 +1,242 @@
+## v0.37.23 — the guard in the capability, and seL4's `resolveAddressBits`
+
+WS-SX SX2 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D4, D5, D17). Capability
+addresses now resolve as seL4's `cspace.c` resolves them, a capability fault
+carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
+
+- **The guard is in the capability.** `Capability` gains `cnodeGuard` and
+  `cnodeGuardSize`, machine words (below); `CNode` keeps only its radix. The boot configurations move
+  each root guard into the root capability. `cnodeCapGeometry` (guard size plus
+  radix at most 64, the guard below `2^guardSize`) replaces
+  `cspaceDepthConsistent` as the fourth conjunct of
+  `capabilityInvariantBundle`.
+- **One resolver.** `resolveAddressBits nodeCap cptr nBits` follows
+  `cspace.c`: `invalidRoot` for a root that is not a CNode, the guard checked
+  before the depth, and a stop at a slot that holds no CNode capability.
+  `lookupSlot` resolves the full 64 bits from the thread's CSpace root, and
+  `lookupSlotForCNodeOp` refuses a walk that stops early as
+  `depthMismatch bitsLeft 0`. The old path resolvers and their theorems are
+  deleted. A `LookupFault`'s `bitsLeft` and `bitsFound` are `UInt8`, seL4's
+  six-bit fields, so no lookup fault holds a `Nat`.
+- **A capability fault carries its `LookupFault`.** The fault message is
+  seL4's `seL4_CapFault_*` words, four to seven of them: `IP`, `Addr`,
+  `InRecvPhase` and `LookupFailureType` in the registers, then the fault's own
+  words in the receiver's IPC buffer. Its length is what `setMR` returns, so a
+  receiver with no buffer reads 4. The fault reaches its handler from the
+  lookup's words (`deliverSyscallLookupFault_eq`).
+- **Security: Mint no longer rebadges.** Before this change, a thread holding
+  a badged endpoint or notification capability could Mint it again with any
+  badge, and so forge the badge a server trusts. With
+  data 0 it could also get an unbadged copy. Mint now applies seL4's
+  `updateCapData` to the parent's kind, read from the store
+  (`capDataKind`):
+  - An endpoint or notification capability takes the data as its badge only
+    when it carries none. A badged one is refused `illegalState` (seL4's
+    `IllegalOperation`), whatever the data, zero included
+    (`mintDerivedCap_rebadge_refused`).
+  - A CNode capability takes bits 63:6 as its guard and bits 5:0 as its size.
+    It is refused when they do not fit beside the radix
+    (`mintDerivedCap_keeps_cnodeCapGeometry`).
+  - Any other capability ignores the data.
+- **SetSpace takes `cspace_root_data`.** SetSpace has a third message word,
+  and `truncationMinimum .tcbSetSpace` is 3. The Rust `SetSpaceArgs` and
+  `tcb_set_space` carry the word too. When the word is nonzero, the CSpace
+  root's copy takes its guard from it (`TCB.spaceCopyOf`). It is refused
+  `illegalState` when the guard does not fit (`cspaceRootDataRefused`,
+  `cspaceRootSourceAdmitted_dataFits`). Zero keeps the source's guard. The
+  copy never takes the source's guard when data is given.
+- **A refused lookup builds nothing.** `resolveAddressBitsK` was a
+  `@[specialize]` recursion. Specialised at a routed arm, it returned the
+  arm's `Except` result, so every refusal of a second capability allocated:
+  the receive's and reply-receive's reply capability, the invocation and
+  overflow-one arms' argument capabilities, and the CNode operations. The
+  recursion is now `resolveAddressBitsWalk`, which returns only the capability
+  and the bits where the walk stops. `resolveAddressBitsLevel` answers that one
+  level with the caller's continuations. `resolveAddressBitsK_eq` keeps its
+  statement.
+- **`main_trace_smoke.expected`** changes four lines. Each now prints the seL4
+  lookup fault the resolver returns, where it used to print the old resolver's
+  error:
+  - ENT-003: `failedLookup false (depthMismatch 1 0)`, a walk that stops with
+    one bit left.
+  - SST-024: `depthMismatch 13 14`.
+  - SST-026: `guardMismatch 14 3 2`.
+  - SGT-004: `invalidRoot`, a root that is not a CNode, where it printed
+    `objectNotFound`.
+- **New QEMU heap-gate scenarios**, each pinned:
+  - The five second-capability guard-mismatch refusals:
+    `receive-reply-cap-`, `reply-recv-reply-cap-`,
+    `configure-sched-context-`, `set-space-root-` and
+    `bind-notification-guard-mismatch`.
+  - `cnode-mint-guard` and `cnode-mint-guardless`, then
+    `cnode-multi-level-copy` through both and its delete, and
+    `lookup-stops-at-non-cnode`.
+  - `cnode-mint-badged-endpoint`, then `cnode-mint-rebadge-refused` and
+    `cnode-mint-unbadge-refused`.
+  - `set-space-root-data` and `set-space-root-data-refused`.
+  - `cap-fault-guard-mismatch`, whose handler reads 7 words and
+    `LookupFailureType` 4, and its reply.
+- **A refused rebadge builds nothing.** The routed mint arm reads the
+  source's `updateCapData` refusal before the write
+  (`cspaceMintDataRefused`, after the flow check, in `mintDerivedCap`'s
+  order) and answers `illegalState` itself
+  (`cspaceMintWithCdt_of_dataRefused`). Before, it fell back to the
+  specification's mint, which built 8 cells for the rebadge and 7 for the
+  unbadge.
+- **The capability fault's length under QEMU.** A missing capability's fault
+  is five words. The fifth, `BitsLeft`, lands in the receiving partner's IPC
+  buffer when its page is mapped, so `CAP_FAULT_MESSAGE_INFO` is
+  `(1 << 12) | 5`. The three faults raised while the page is unmapped read
+  `(1 << 12) | 4` (`CAP_FAULT_UNMAPPED_BUFFER_INFO`).
+- **No `bv_decide` in the kernel's closure.** `Model/Fault.lean` imported
+  `Std.Tactic.BVDecide` for one proof. That put `Std.Data.ByteSlice` and the
+  LRAT checker's initializers in the image link, which needs runtime symbols
+  the kernel does not provide, so the archive build refused. The import is
+  gone, and `ofStored_stored` is proved with `Nat.shiftLeft_add_eq_or_of_lt`
+  and `omega`.
+- **The guard is held as machine words.** `cnodeGuard` is a `UInt64` and
+  `cnodeGuardSize` a `UInt8`, as seL4's `cap_cnode_cap` holds them, so the
+  record keeps both unboxed and a guard at or above `2^63` is no heap number.
+  The resolver compares the address's guard bits with the guard as a word
+  (`CPtr.guardWord`). `capDataGuard` and `capDataGuardSize` return the words.
+- **A recorded refusal builds no error.** The declassification seam rebuilt
+  each refusal it records as a `KernelError` from its words
+  (`withPayloadWordsFast`), so a refused lookup's `failedLookup` allocated its
+  error and its lookup fault. A ledger slot now holds the error as its
+  discriminant and five payload words (`RefusalSlot.reasonCode`, `reasonW0` to
+  `reasonW4`, read through `RefusalSlot.reason`), and `recordSyscallRefusalW`
+  writes them as handed (`recordSyscallRefusalW_eq`). The words' functions move
+  below the state, to `Model/KernelErrorWords.lean`. New QEMU scenario:
+  `declassify-guard-mismatch-refused`.
+- **Two carve pins move**, with their cell counts unchanged:
+  - tcb/0 goes from 19 / 2040 to 19 / 2056.
+  - cnode/2 goes from 23 / 1128 to 23 / 1136.
+
+  The cause is the `Capability` record, which holds the guard and its size.
+  The generated C builds it with `lean_alloc_ctor(0, 6, 19)`: six object
+  fields and 19 scalar bytes, 75 bytes rounded to 80. At v0.37.20 it was
+  `(0, 6, 10)`, 66 bytes rounded to 72. A carve builds each slot cell once,
+  unshared (`unshareSpaceCell`, `unshareSlotCell`), so that every later write
+  is in place:
+  - a TCB has two slot cells, +16 bytes;
+  - a radix-2 CNode has four, +32 bytes, and its record lost `depth`,
+    `guardWidth` and `guardValue`, 80 bytes to 56, so +8 in all.
+
+  This is the least any guard in the capability costs. The 72-byte record had
+  6 spare bytes; the guard and its size need 9, and even seL4's packed form (a
+  58-bit guard and a 6-bit size in one word) needs 8. No other entry
+  allocates.
+- **A fault delivery builds no fault on two more branches.** The handled
+  delivery's fallback rebuilt the fault from its words and re-resolved the
+  handler (`resolveAddressBits`, a `LookupFault`). Two of its branches are
+  reachable from user setups, and both now work in place:
+  - a donating fault call to a passive handler: the faulting thread's
+    SchedContext is lent and its replenishments migrated, then the fault is
+    written into the handler's frame (`performFaultCallDonatingDelivered`,
+    `performFaultCallDonatingDelivered_eq`, through the unchecked
+    `callDispatch_donating_inPlace` that the checked form now wraps);
+  - a handler waiting with no reply object: the specification's call refuses
+    (`linkServerStashedReply`), so the delivery suspends the faulting thread
+    with the fault recorded as words (`callRefusesNoReplyInPlace`,
+    `callOnCore_noReply_refused`).
+
+  New QEMU scenarios: `cap-fault-donating-delivered`,
+  `cap-fault-to-handler-without-reply` and `irq-wakes-handler-without-reply`.
+- **The fault frame asks no readiness.** `deliverFaultFrame` held the fault
+  message on a handler that was not ready (`holdFaultMessageBody`), which
+  built the fault and its message. Every delivery hands it a receiver its
+  rendezvous has just made ready (`storeCallRendezvousReady_ready`,
+  `storeReceiveCallReady_ready`, carried through the priority walk and the
+  donation by `ipcStateHolds`), so `deliverFaultFrame_eq` takes that as a
+  hypothesis and the branch and `holdFaultMessageBody` are gone.
+- **An audited call's general form runs its own arm alone.**
+  `auditedArmSpec` handed the four audited calls (`.declassify`,
+  `.declassifySignal`, `.auditRead`, `.auditDrain`) to the whole
+  `dispatchWithCapChecked`, so the compiled audited path carried a copy of
+  every other syscall's arm, among them the CNode-operation and
+  untyped-reset arms that build a lookup fault. No caller could reach them:
+  each passes one of the four ids. `auditedArmSpec` now matches on the
+  syscall and runs that call's arm; any other id takes a constant refusal.
+  It and `auditGeneralR` are inlined, so at each caller the match folds and
+  each call's general form is its own arm alone.
+  `dispatchWithCapChecked_eq_auditedArmSpec` still makes
+  `dispatchWithCapChecked` the specification.
+- **An audit read's tag word rebuilds no error.** The admitted read of a
+  refusal slot's tags (opcode 14) built the slot's refusal to read its
+  reason's discriminant, so a slot holding a refused lookup allocated its
+  `failedLookup` and `LookupFault`. It now reads the discriminant off the
+  slot's code (`KernelError.discriminantOfCode`,
+  `toDiscriminant_ofPayloadWords`, `refusalTagsSlotCode_eq`).
+- **The decoded routed arm is gone.** `decodedRoutedArm` ran the whole
+  `syscallEntryChecked` for the `.viaDecode` route, which the default layout
+  never returns (`registerRoutedSyscall_viaDecode`). The routed entry now
+  discharges that arm by the theorem and compiles none
+  (`syscallEntryRoutedWith_eq`); the route stays in the specification.
+  `RefusalCarrying.ofKernel`, whose last executed caller it was, is recorded
+  as proof-only in the reachability census.
+- **A refused fault-handler set builds nothing.** The routed
+  `tcbSetFaultHandler` arm runs `setThreadFaultHandlerOpK`: the handler's
+  lookup refuses through the lookup's failure words, as the bound
+  notification's does (`failedLookup` of the argument, seL4's lookup of an
+  extra capability), and the rest of the checks answer in place
+  (`setThreadFaultHandlerOpK_eq`). `setThreadFaultHandlerAdmitted` and
+  `faultHandlerResolves` are deleted. New QEMU scenario:
+  `set-fault-handler-guard-mismatch`.
+- **A refused audit read rebuilds no error.** A read whose code refuses
+  answered through the specification's read, which built the refusal from
+  its payload words (`withPayloadWordsFast`). The trail arm
+  (`auditReadTrailR`) now reads the refusal off the read's own inputs
+  (`auditReadFastRefusal`, proven the specification's refusal by
+  `auditReadFastRefusal_spec`), and refuses an opcode past the last on the
+  word (`auditReadTrailR_eq`). New QEMU scenarios:
+  `audit-read-entry-chunk-past`, `audit-read-entry-index-past`,
+  `audit-read-refusal-slot-past` and `audit-read-unknown-op`.
+- **A refused audit drain answers in place.** A drain on an audit-trail
+  capability that is not admitted answered through the specification's
+  general form. The drain arm now refuses `illegalAuthority` in place
+  (`auditedArmSpec_auditDrain_refused`). Its count word is compared to the
+  trail's length on the word (`natLeWord`, `auditDrainCountW`, proven by
+  `auditDrainPerform_countW`), so a count at or above `2^63` is not made a
+  number. New QEMU scenarios: `audit-drain-read-only-refused` (through a
+  read-only copy of the audit capability, minted unmeasured into slot 60)
+  and `audit-drain-wide-count`.
+- **The audit general forms no export reaches.** `auditTargetGeneralR` and
+  its theorem are deleted. `auditGeneralR` stays, recorded proof-only in the
+  reachability census, because `auditOperand_spec` and `auditReadTrailR_eq`
+  are built on it.
+- **An audit read's index and chunk are read as words.** The trail arm
+  made its index and chunk words numbers (`UInt64.toNat`), so a word at or
+  above `2^63` built a big number. It now reads them through
+  `auditReadFastCodeW` and `auditReadFastRefusalW`. Every index and chunk a
+  read answers to is below `2^32`, so a wider word is read as `2^32`
+  (`auditWordIndex`), and the two reads that compare the words (the
+  causality pair and the archived predecessor) compare them as words.
+  Each is proven equal to the code and the refusal of the words' numbers
+  (`auditReadFastCodeW_eq`, `auditReadFastRefusalW_eq`). New QEMU
+  scenarios: `audit-read-entry-index-wide`, `audit-read-entry-chunk-wide`,
+  `audit-read-refusal-slot-wide`, `audit-read-chain-wide` and
+  `audit-read-archived-chunk-wide`.
+- **The invariant bundle bounds the object count.** The bookkeeping
+  agreement, the bundle's 22nd component, now carries the bound on the
+  ghost index (`countBounded`, at most `maxObjects`). A store over a stored
+  key keeps the index, the carve stores past its capacity check
+  (`retypeFromUntyped_ok_size_lt`), a retire shortens the index, and the
+  started boot leaves room for its interrupt nodes
+  (`bootFromPlatformCheckedStartedFor_objectIndex_length_le`). The boot's
+  builder carries the agreement without the bound
+  (`bookkeepingAgreesUnbounded`), since its inserts pass no capacity check.
+  So `proofLayerInvariantBundle.objectCountBounded`, `objects_noResizeDue`
+  and `objects_findsInPlace_iff` follow from the bundle alone: on a live
+  state the resize conjunct of `RHTable.findsInPlace` always holds, and the
+  in-place store predicate asks only whether the probe finds the key.
+- **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
+  non-carve entry reads 0, including every new scenario. The pins are:
+  - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
+  - tcb 19 / 2056, sched-context 8 / 440, cnode 23 / 1136;
+  - frame 6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped
+    7 / 184;
+  - `owned-cnode-retire` 23 / 23.
+
 ## v0.37.22 — the unchecked syscall entry and dispatchers are retired
 
 Cleanup beside WS-SX (owner decision 2026-11-13). `syscallEntry`,

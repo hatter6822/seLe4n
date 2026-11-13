@@ -126,13 +126,14 @@ theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage
     (cap : Capability)
     (hInv : capabilityBundleOffCoverage st)
     (hCapBacked : capTargetKindBackedAt st cap.target)
+    (hCapGeo : cnodeCapGeometryAt st cap)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityBundleOffCoverage st' := by
   rcases hInv with ⟨⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩, hLinks, hOrd⟩
   -- WS-H4: Transfer new components through the storeObject(CNode) step
   have ⟨hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
       cdtCompleteness st' ∧ cdtAcyclicity st' ∧
-        cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ cdtLinksAgree st' := by
+        cnodeCapGeometry st' ∧ st'.objects.invExt ∧ cdtLinksAgree st' := by
     obtain ⟨preCn, hCnOpt, _hAddr, _hLookup, hStore⟩ :=
       cspaceInsertSlot_ok_decompose st st' addr cap hStep
     have hPre : st.objects[addr.cnode]? = some (.cnode preCn) :=
@@ -142,8 +143,8 @@ theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage
         (fun s h => CNode.lookup_insert_ne_none preCn addr.slot s cap h),
       cdtAcyclicity_of_cdt_eq st st' hAcyclic
         (storeObject_cdt_eq st st' addr.cnode _ hStore),
-      cspaceDepthConsistent_of_storeObject_insertCNode
-        st st' addr.cnode preCn addr.slot cap hDepthPre hObjInv hPre hStore,
+      cnodeCapGeometry_of_storeObject_insertCNode
+        st st' addr.cnode preCn addr.slot cap hDepthPre hObjInv hPre hStore hCapGeo,
       storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore,
       cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
         (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
@@ -219,6 +220,24 @@ theorem capTargetKindBacked_of_source_slot
       exact capTargetKindBacked_of_capabilityInvariantBundle st hInv
         src.cnode (.cnode cn) src.slot parent hObjCN hCap
 
+/-- A capability read from a live slot has seL4's CNode geometry. -/
+theorem cnodeCapGeometry_of_source_slot
+    (st : SystemState) (src : CSpaceAddr) (parent : Capability)
+    (hInv : capabilityInvariantBundle st)
+    (hSrc : cspaceLookupSlot src st = .ok (parent, st)) :
+    cnodeCapGeometryAt st parent := by
+  have hCap : SystemState.lookupSlotCap st src = some parent :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hSrc
+  rw [SystemState.lookupSlotCap] at hCap
+  cases hCN : SystemState.lookupCNode st src.cnode with
+  | none => rw [hCN] at hCap; exact absurd hCap (by simp)
+  | some cn =>
+      rw [hCN] at hCap
+      have hObjCN : st.objects[src.cnode]? = some (.cnode cn) :=
+        (SystemState.lookupCNode_eq_some_iff st src.cnode cn).1 hCN
+      exact cnodeCapGeometry_of_capabilityInvariantBundle st hInv
+        src.cnode (.cnode cn) src.slot parent hObjCN hCap
+
 /-- The base mint, which records no derivation, leaves the bundle without the
 tree's coverage; `cspaceMintWithCdt` records the edge. -/
 theorem cspaceMint_preserves_capabilityBundleOffCoverage
@@ -243,7 +262,7 @@ theorem cspaceMint_preserves_capabilityBundleOffCoverage
         · exact Bool.not_eq_true _ |>.mp h
       have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
         Capability.toNonNull?_of_not_null hNotNull
-      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (capDataKind st parent) badge with
       | error e => simp [hSrc, hToNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
@@ -251,9 +270,11 @@ theorem cspaceMint_preserves_capabilityBundleOffCoverage
           -- The minted child shares the parent's target; a reply-cap child therefore
           -- inherits the parent slot's backing via the pre-state invariant.
           have hChildTgt : child.target = parent.target :=
-            mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights badge hMint
+            mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights _ badge hMint
           exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst child hInv.offCoverage
             (by rw [hChildTgt]; exact capTargetKindBacked_of_source_slot st src parent hInv hSrc)
+            (mintDerivedCap_keeps_cnodeCapGeometry ⟨parent, hNotNull⟩ child rights badge hMint
+              (cnodeCapGeometry_of_source_slot st src parent hInv hSrc))
             hInsert
 
 /-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCap` leaves the bundle without the
@@ -285,7 +306,8 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
                     rights := replyCapRightsFrom parent.rights } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst _ hInv.offCoverage
-                (by show st.getReply? _ ≠ none; rw [hRep]; simp) hInsert
+                (by show st.getReply? _ ≠ none; rw [hRep]; simp)
+                (cnodeCapGeometryAt_of_noGuard rfl rfl (fun _ _ h => by cases h)) hInsert
       | cnodeSlotWord _ => simp [hSrc, hTgt] at hStep
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail _ => simp [hSrc, hTgt] at hStep

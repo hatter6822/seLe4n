@@ -130,14 +130,21 @@ theorem qemuVirtRegionMap_layout :
     capability address the allocation exerciser resolves is then a word that
     does not fit a scalar `Nat`, and its guard and slot are read from that word
     on every lookup the gate measures. -/
-def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 58
+def qemuVirtRootTaskCNodeGuard : UInt64 := 2 ^ 58
 
-/-- **WS-ZA ZA6.4**: the root CNode's geometry: one level resolving a whole
-    64-bit CPtr, the 59-bit guard `qemuVirtRootTaskCNodeGuard` over 32 slots —
+/-- The root CNode's guard width: 59 bits above its 5-bit radix, so one level
+    resolves a whole 64-bit CPtr.  Carried by the capabilities naming the root
+    CNode (the root task's CSpace root and the CNode's own slot 2), as seL4
+    keeps a CNode's guard in `cap_cnode_cap`. -/
+def qemuVirtRootTaskCNodeGuardSize : UInt8 := 59
+
+/-- **WS-ZA ZA6.4**: the root CNode's geometry: 32 slots, reached through the
+    59-bit guard `qemuVirtRootTaskCNodeGuard` its capabilities carry, so one
+    level resolves a whole 64-bit CPtr —
     the first sixteen the boot objects' and the exerciser's, the next four each
     core's scheduling control (`qemuVirtSchedControlSlotBase`). -/
 def qemuVirtRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
-  CNode.ofList 64 59 qemuVirtRootTaskCNodeGuard 5 slots
+  CNode.ofList 5 slots
 
 /-- **WS-ZA ZA6.4**: the first of the root task's scheduling-control slots, core
     `c`'s at `16 + c`. -/
@@ -157,7 +164,8 @@ def qemuVirtIrqControlSlot : Nat := 20
     at `qemuVirtIrqControlSlot`. -/
 def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
-  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply]
+      qemuVirtRootTaskCNodeGuard qemuVirtRootTaskCNodeGuardSize)
   , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtRootTaskVSpaceId [.read, .write])
   , (SeLe4n.Slot.ofNat 4, rpi5InitialCap qemuVirtInterruptNotificationId [.read, .write])
   , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype])
@@ -178,7 +186,8 @@ def qemuVirtRootTaskCNode : CNode :=
 def qemuVirtUntrustedCNode : CNode :=
   rpi5InitialCNode
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtUntrustedTcbId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtUntrustedCNodeId [.read, .write, .grant, .grantReply])
+    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtUntrustedCNodeId [.read, .write, .grant, .grantReply]
+      (guardSize := 60))
     , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtUntrustedVSpaceId [.read, .write]) ]
 
 private def tcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=
@@ -229,13 +238,15 @@ private def schedContextEntry (id : SeLe4n.ObjId) : ObjectEntry :=
 /-- The deployment's initial objects. -/
 def qemuVirtInitialObjects : List ObjectEntry :=
   [ tcbEntry qemuVirtRootTaskTcbId
-      (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
+      (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId
+        qemuVirtRootTaskCNodeGuard qemuVirtRootTaskCNodeGuardSize)
   , cnodeEntry qemuVirtRootTaskCNodeId qemuVirtRootTaskCNode
   , vspaceEntry qemuVirtRootTaskVSpaceId (SeLe4n.ASID.ofNat 1) 0
   , notificationEntry qemuVirtInterruptNotificationId
   , untypedEntry qemuVirtRootTaskUntypedId qemuVirtRootTaskUntyped
   , tcbEntry qemuVirtPartnerTcbId
-      (rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
+      (rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId
+        qemuVirtRootTaskCNodeGuard qemuVirtRootTaskCNodeGuardSize)
   , endpointEntry qemuVirtExerciserEndpointId
   , replyEntry qemuVirtExerciserReplyId
   , schedContextEntry qemuVirtExerciserSchedContextId
@@ -392,7 +403,8 @@ private theorem qemuVirtDeployment_initialThreads_startable :
   rcases hMem with h | h
   · rw [h]
     have hT := qemuVirtDeployment_tcb_idle qemuVirtRootTaskTcbId
-      (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
+      (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId
+        qemuVirtRootTaskCNodeGuard qemuVirtRootTaskCNodeGuardSize)
       (by simp [qemuVirtInitialObjects])
     exact bootFromPlatformCheckedWithIdleThreads_initialThreadStartable _ _
       qemuVirtBoundPlatformConfig_idleBoot_allCores _ _ hT
@@ -442,7 +454,8 @@ theorem qemuVirtDeploymentBootState_witnessesInstalled :
   rw [qemuVirt_deploymentLabeling_separatedThreads]
   simp only [Bool.and_eq_true]
   have h1 := qemuVirtDeployment_tcb_idle qemuVirtRootTaskTcbId
-    (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
+    (rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId
+        qemuVirtRootTaskCNodeGuard qemuVirtRootTaskCNodeGuardSize)
     (by simp [qemuVirtInitialObjects])
   have h2 := qemuVirtDeployment_tcb_idle qemuVirtUntrustedTcbId qemuVirtUntrustedThread
     (by simp [qemuVirtInitialObjects])

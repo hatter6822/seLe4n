@@ -27,8 +27,9 @@ open SeLe4n.Model
 gate, arm and taint step (`signalOperandArmThenTaintR`), its results reported. -/
 @[noinline] def signalRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedK .notificationSignal (SeLe4n.CPtr.ofWord capWord) tid executingCore
+  dispatchOperandCheckedKW .notificationSignal (SeLe4n.CPtr.ofWord capWord) tid executingCore
     (signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal))
-    st entryReportGeneral entryReportResolved entryReportLookup
+    st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+    entryReportLookup entryReportLookupW
 
 end SeLe4n.Kernel

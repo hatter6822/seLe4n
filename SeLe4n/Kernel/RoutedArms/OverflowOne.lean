@@ -36,8 +36,9 @@ message clamped to the inline words, as seL4's `handleInvocation` clamps a
 message with no IPC buffer, it is short of its fifth argument. -/
 @[noinline] def shortArgsRoutedArm (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (sid : SyscallId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
-    (shortArgsOperandArmR sid) st entryReportGeneral entryReportResolved entryReportLookup
+  dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    (shortArgsOperandArmR sid) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+    entryReportLookup entryReportLookupW
 
 /-- **The one-overflow-word arm**: the overflow word read, then
 `dispatchOverflowOneCheckedR` on the state with this core's TLB holding the
@@ -53,7 +54,8 @@ dispatch told them apart, a result under the first. -/
       (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
       (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
         (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
-        (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup)
+        (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
+        entryReportLookupW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

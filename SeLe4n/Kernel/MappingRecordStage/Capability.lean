@@ -228,8 +228,9 @@ theorem vspaceMapPage_preserves_bookkeepingAgrees {asid : SeLe4n.ASID} {vaddr : 
         | some root' =>
           rw [hMp] at h
           simp only at h
-          exact storeObject_preserves_bookkeepingAgrees (Architecture.recordPhysicalWrites st _) _
-            _ _ (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩) hObjInv h
+          exact storeObject_preserves_bookkeepingAgrees_of_some
+            (st := Architecture.recordPhysicalWrites st _) (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩) hObjInv h
+            (Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes).2.1
 
 /-- **The map keeps the agreement**: the root's store, the frame's and the
 root's epoch stores, and the record on the capability are each a store. -/
@@ -249,13 +250,17 @@ theorem vspaceMapFromFrameCap_preserves_bookkeepingAgrees {tid : SeLe4n.ThreadId
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hMB'
   subst hMB'
   have hB1 := (vspaceMapPage_preserves_bookkeepingAgrees hI hB hMB).of_objects_ghosts hO hG
-  obtain ⟨_, _, _, st3, -, -, -, h1, h2⟩ := tagFrameMapping_ok _ _ _ st1 st2 epoch hT
+  obtain ⟨f, rootId, root, st3, hF, hR, -, h1, h2⟩ := tagFrameMapping_ok _ _ _ st1 st2 epoch hT
   have hI3 := storeObject_preserves_objects_invExt _ _ _ _ hI1 h1
+  have hFP : (st3.objects[_]?).isSome := storeObject_objects_isSome_of_isSome h1 hI1
+    (by rw [(SystemState.getFrame?_eq_some_iff st1 _ f).mp hF]; rfl)
   have hB2 := storeObject_preserves_bookkeepingAgrees _ _ _ _
-    (storeObject_preserves_bookkeepingAgrees _ _ _ _ hB1 hI1 h1) hI3 h2
-  obtain ⟨_, _, -, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
-  exact storeObject_preserves_bookkeepingAgrees _ _ _ _ hB2
+    (storeObject_preserves_bookkeepingAgrees_of_some hB1 hI1 h1
+      (Architecture.resolveAsidRoot_some_implies_obj st1 _ rootId root hR).2.1) hI3 h2 (.inl hFP)
+  obtain ⟨cn, _, hCn, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  exact storeObject_preserves_bookkeepingAgrees_of_some hB2
     (storeObject_preserves_objects_invExt _ _ _ _ hI3 h2) hS
+    ((SystemState.getCNode?_eq_some_iff st2 _ cn).mp hCn)
 
 /-- **The unmap keeps the agreement**: it writes the root as a root
 (`unmapPageState`), and no ghost. -/
@@ -378,8 +383,8 @@ theorem cspaceDeleteSlotZombie_mappingStage {ec : Concurrency.CoreId} {addr : CS
     fun hI hB => cspaceDeleteSlotZombie_preserves_bookkeepingAgrees ec hI hB h
 
 theorem copyThreadSpacesZombie_mappingStage {ec : Concurrency.CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (P : MappingArmPremises st)
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : MappingStage st st' :=
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (P : MappingArmPremises st)
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (copyThreadSpacesZombie_preserves_capabilityInvariantBundle ec P.caps h))
     (fun _ hL => copyThreadSpacesZombie_preserves_liveMappingsRecorded ec P.caps P.teardown hL h)

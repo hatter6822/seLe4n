@@ -441,7 +441,7 @@ resolves it.**
 
 The planner needs the object the caller named, and the entry has only the raw
 `CPtr`.  This is the same resolution `syscallResolveCap` performs — caller's
-TCB, its CSpace root, `resolveCapAddress`, then the slot — so the plan is keyed
+TCB, its CSpace root capability, `lookupSlot` at 64 bits, then the slot — so the plan is keyed
 on the object the arm acts on rather than on a second reading of the operand.
 
 Shared with the SM9.B refusal seam (`Platform.FFI.refusedSignalReceiver?`),
@@ -452,12 +452,9 @@ def syscallOperandCap? (st : SystemState) (tid : SeLe4n.ThreadId)
   match st.getTcb? tid with
   | none => none
   | some tcb =>
-    match st.getCNode? tcb.cspaceRoot with
-    | none => none
-    | some rootCn =>
-      match resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st with
-      | .error _ => none
-      | .ok ref => SystemState.lookupSlotCap st ref
+    match lookupSlot tcb capPtr st with
+    | .error _ => none
+    | .ok ref => SystemState.lookupSlotCap st ref
 
 /-! ### WS-SM SM9.D — the accepted out-of-scope channel: capability provenance
 

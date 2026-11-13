@@ -354,17 +354,16 @@ end FaultLabel
 
 /-- WS-RR RR4.4: the message-register count each fault kind occupies.
 
-Three of the four are seL4's lengths verbatim (`seL4_VMFault_Length` = 4,
-`seL4_UnknownSyscall_Length` = 13, `seL4_UserException_Length` = 5).  The
-capability fault is **4** words here — IP, address, receive-phase flag, and
-the lookup-failure reason — where seL4's `setMRs_lookup_failure` appends one
-or two further words (`BitsLeft`, `BitsFound` / `GuardFound`) for the
-depth-mismatch and guard-mismatch failure kinds; this model's reason word is a
-`KernelError` discriminant with no such sub-fields, so the message has no
-extra words to carry. -/
+All four are seL4's lengths (`seL4_VMFault_Length` = 4,
+`seL4_UnknownSyscall_Length` = 13, `seL4_UserException_Length` = 5).  A
+capability fault is IP, address and receive-phase flag, then the lookup
+failure as `setMRs_lookup_failure` writes it (`LookupFault.wordCount` words:
+the type, then `BitsLeft`, then `BitsFound` or `GuardFound` and `BitsFound`),
+at seL4's `seL4_CapFault_*` offsets: **4** for an invalid root, 5 for a
+missing capability, 6 for a depth mismatch, 7 for a guard mismatch. -/
 def faultMessageLength : Fault → Nat
   | .vmFault _ _ _        => 4
-  | .capFault _ _ _       => 4
+  | .capFault _ _ lf      => 3 + lf.wordCount
   | .unknownSyscall _     => 13
   | .userException _ _    => 5
 
@@ -453,7 +452,7 @@ Word for word this is seL4's `setMRs_fault` on AArch64:
 | Fault | MR0 | MR1 | MR2 | MR3 | MR4 | … | MR12 |
 |---|---|---|---|---|---|---|---|
 | `vmFault` | IP | Addr | PrefetchFault | FSR | | | |
-| `capFault` | IP | Addr | InRecvPhase | LookupFailure | | | |
+| `capFault` | IP | Addr | InRecvPhase | LookupFailureType | BitsLeft | BitsFound / GuardFound | BitsFound (guard) |
 | `unknownSyscall` | x0 | x1 | x2 … | | x7 (MR7), IP (MR8), SP (MR9), LR (MR10), SPSR (MR11) | | Syscall |
 | `userException` | IP | SP | SPSR | Number | Code | | |
 
@@ -480,8 +479,19 @@ def encodeFault (f : Fault) (ctx : FaultContext) :
    | .vmFault address status prefetch =>
        #[regOf ctx.faultIP, regOf address, regOf (encodeFlag prefetch), regOf status]
    | .capFault capAddress inReceivePhase lookupFailure =>
-       #[regOf ctx.faultIP, regOf capAddress, regOf (encodeFlag inReceivePhase),
-         regOf (Nat.toUInt64 (KernelError.toDiscriminant lookupFailure))]
+       -- `setMRs_lookup_failure`: the type word, then the fields
+       match lookupFailure with
+       | .invalidRoot =>
+         #[regOf ctx.faultIP, regOf capAddress, regOf (encodeFlag inReceivePhase), regOf 1]
+       | .missingCapability l =>
+         #[regOf ctx.faultIP, regOf capAddress, regOf (encodeFlag inReceivePhase), regOf 2,
+           regOf l.toUInt64]
+       | .depthMismatch l b =>
+         #[regOf ctx.faultIP, regOf capAddress, regOf (encodeFlag inReceivePhase), regOf 3,
+           regOf l.toUInt64, regOf b.toUInt64]
+       | .guardMismatch l g b =>
+         #[regOf ctx.faultIP, regOf capAddress, regOf (encodeFlag inReceivePhase), regOf 4,
+           regOf l.toUInt64, regOf g, regOf b.toUInt64]
    | .unknownSyscall syscallNumber =>
        #[regOf (ctx.gprAt 0), regOf (ctx.gprAt 1), regOf (ctx.gprAt 2), regOf (ctx.gprAt 3),
          regOf (ctx.gprAt 4), regOf (ctx.gprAt 5), regOf (ctx.gprAt 6), regOf (ctx.gprAt 7),
@@ -499,16 +509,19 @@ def encodeFault (f : Fault) (ctx : FaultContext) :
 Fail-closed on three axes, each of which a malformed or forged message could
 otherwise slip past: the label must be a fault tag, the declared `length` must
 be exactly the tag's layout length, and the register array must actually hold
-that many words.  A `capFault` additionally requires its reason word to be a
-real `KernelError` discriminant. -/
+that many words.  A `capFault` additionally requires its lookup failure to be
+one `encodeFault` writes: a type word seL4 defines, the length its fields
+take, and each field word the one its fault re-encodes to. -/
 def decodeFault (mi : MessageInfo) (regs : Array SeLe4n.RegValue) : Option Fault :=
   if regs.size < mi.length then none
   else if mi.label = FaultLabel.vmFault ∧ mi.length = 4 then
     some (.vmFault (wordAt regs 1) (wordAt regs 3) (decodeFlag (wordAt regs 2)))
-  else if mi.label = FaultLabel.capFault ∧ mi.length = 4 then
-    match KernelError.ofDiscriminant? (wordAt regs 3).toNat with
-    | some e => some (.capFault (wordAt regs 1) (decodeFlag (wordAt regs 2)) e)
-    | none   => none
+  else if mi.label = FaultLabel.capFault ∧ 4 ≤ mi.length ∧ mi.length ≤ 7 then
+    let lf := LookupFault.ofWords (wordAt regs 3) (wordAt regs 4) (wordAt regs 5) (wordAt regs 6)
+    if 3 + lf.wordCount = mi.length ∧
+        ((List.range lf.wordCount).all fun i => lf.word i == wordAt regs (3 + i)) = true then
+      some (.capFault (wordAt regs 1) (decodeFlag (wordAt regs 2)) lf)
+    else none
   else if mi.label = FaultLabel.unknownSyscall ∧ mi.length = 13 then
     some (.unknownSyscall (wordAt regs 12))
   else if mi.label = FaultLabel.userException ∧ mi.length = 5 then
@@ -523,35 +536,28 @@ The context-independence is the point: the contextual words seL4 splices in
 word occupies, so a handler's view of *which fault this is* cannot be
 perturbed by the faulting thread's register content. -/
 theorem decodeFault_encodeFault (f : Fault) (ctx : FaultContext) :
-    decodeFault (encodeFault f ctx).1 (encodeFault f ctx).2 = some f.codeOnly := by
+    decodeFault (encodeFault f ctx).1 (encodeFault f ctx).2 = some f := by
   cases f with
   | vmFault address status prefetch =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault, Fault.codeOnly]
+        FaultLabel.vmFault]
   | capFault capAddress inReceivePhase lookupFailure =>
-      have hLt : KernelError.toDiscriminant lookupFailure < KernelError.kernelErrorEncodingBound :=
-        KernelError.toDiscriminant_lt lookupFailure
-      have hMod : KernelError.toDiscriminant lookupFailure % 18446744073709551616
-          = KernelError.toDiscriminant lookupFailure :=
-          Nat.mod_eq_of_lt (by rw [show KernelError.kernelErrorEncodingBound = 61 from rfl] at hLt; omega)
-      have hDisc : KernelError.ofDiscriminant? (KernelError.toDiscriminant lookupFailure)
-          = some lookupFailure.erasePayload :=
-        KernelError.ofDiscriminant?_toDiscriminant lookupFailure
-      simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault, FaultLabel.capFault, hMod, hDisc, Fault.codeOnly]
+      cases lookupFailure <;>
+        simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
+          FaultLabel.vmFault, FaultLabel.capFault, LookupFault.wordCount,
+          LookupFault.word, LookupFault.typeWord, LookupFault.ofWords, List.range_succ]
   | unknownSyscall syscallNumber =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
-        FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall, Fault.codeOnly]
+        FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall]
   | userException number code =>
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
         FaultLabel.vmFault, FaultLabel.capFault, FaultLabel.unknownSyscall,
-        FaultLabel.userException, Fault.codeOnly]
+        FaultLabel.userException]
 
-/-- WS-RR RR4.5 (corollary): the encoding is injective on what it carries —
-two faults that encode to the same message under the same context are the
-same fault, a capability fault's error up to its payload (`Fault.codeOnly`). -/
+/-- WS-RR RR4.5 (corollary): the encoding is injective — two faults that
+encode to the same message under the same context are the same fault. -/
 theorem encodeFault_injective (f g : Fault) (ctx : FaultContext)
-    (h : encodeFault f ctx = encodeFault g ctx) : f.codeOnly = g.codeOnly := by
+    (h : encodeFault f ctx = encodeFault g ctx) : f = g := by
   have hf := decodeFault_encodeFault f ctx
   have hg := decodeFault_encodeFault g ctx
   rw [h] at hf
@@ -565,7 +571,8 @@ theorem encodeFault_carries_faultIP (f : Fault) (ctx : FaultContext) :
       wordAt (encodeFault f ctx).2 i = ctx.faultIP := by
   cases f with
   | vmFault a s p => exact ⟨0, by simp [encodeFault], by simp [encodeFault, wordAt]⟩
-  | capFault a r e => exact ⟨0, by simp [encodeFault], by simp [encodeFault, wordAt]⟩
+  | capFault a r e =>
+    exact ⟨0, by cases e <;> simp [encodeFault], by cases e <;> simp [encodeFault, wordAt]⟩
   | unknownSyscall n => exact ⟨8, by simp [encodeFault], by simp [encodeFault, wordAt]⟩
   | userException n c => exact ⟨0, by simp [encodeFault], by simp [encodeFault, wordAt]⟩
 
@@ -579,14 +586,15 @@ declares a window it did not fill, which is what makes `decodeFault`'s
 tautology. -/
 @[simp] theorem encodeFault_size_eq_length (f : Fault) (ctx : FaultContext) :
     (encodeFault f ctx).2.size = (encodeFault f ctx).1.length := by
-  cases f <;> simp [encodeFault, faultMessageLength]
+  cases f <;> (try rename_i lf; try cases lf) <;>
+    simp [encodeFault, faultMessageLength, LookupFault.wordCount]
 
 /-- WS-RR RR4.6 (**the budget**): every fault encodes inside the seL4
 message-register bound, so a fault IPC never trips the `ipcMessageTooLarge`
 prefilter the delivery transition inherits from `endpointCall`. -/
 theorem encodeFault_within_budget (f : Fault) (ctx : FaultContext) :
     (encodeFault f ctx).2.size ≤ maxMessageRegisters := by
-  cases f <;> simp [encodeFault, maxMessageRegisters]
+  cases f <;> (try rename_i lf; try cases lf) <;> simp [encodeFault, maxMessageRegisters]
 
 /-- WS-RR RR4.6: and it carries no capabilities, so the extra-cap prefilter is
 never tripped either. -/
@@ -598,8 +606,8 @@ and the 52-bit label all inside their seL4 bounds, so the word encodes and
 decodes losslessly through `MessageInfo.encode`. -/
 theorem encodeFault_messageInfo_wellFormed (f : Fault) (ctx : FaultContext) :
     (encodeFault f ctx).1.wellFormed := by
-  refine ⟨?_, ?_, ?_⟩ <;> cases f <;>
-    simp [encodeFault, faultMessageLength, faultLabel, maxMessageRegisters,
+  refine ⟨?_, ?_, ?_⟩ <;> cases f <;> (try rename_i lf; try cases lf) <;>
+    simp [encodeFault, faultMessageLength, faultLabel, maxMessageRegisters, LookupFault.wordCount,
       Model.maxExtraCaps, MessageInfo.maxLabel, FaultLabel.vmFault, FaultLabel.capFault,
       FaultLabel.unknownSyscall, FaultLabel.userException]
 
@@ -745,7 +753,7 @@ handler that mapped the page has nothing to install. -/
 
 /-- WS-RR RR4.14: and a cap fault's, identically. -/
 @[simp] theorem decodeFaultReply_capFault (a : UInt64) (r : Bool)
-    (e : Model.KernelError) (ctx : FaultContext) (mi : MessageInfo)
+    (e : LookupFault) (ctx : FaultContext) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) :
     decodeFaultReply (.capFault a r e) ctx mi regs
       = .restart (faultRestartFrameOfContext ctx) := rfl

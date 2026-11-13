@@ -2415,7 +2415,7 @@ pre-state, or `none` when it dequeues nothing or the sender asks for nothing.
 The WithCaps receives resolve and install exactly this (`receiveTransferCaps`),
 and `receiveInstallsCaps` is its `isSome`. -/
 def receiveCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId) :
-    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+    Option (Capability × Array SeLe4n.CPtr) :=
   match receiveRendezvousSender? st endpointId with
   | none => none
   | some sender =>
@@ -2431,7 +2431,7 @@ then) or the sender asks for nothing.  The WithCaps sends resolve and install
 exactly this (`receiveTransferCaps`), only on the arm that delivers. -/
 def sendCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload) :
-    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+    Option (Capability × Array SeLe4n.CPtr) :=
   match (st.getEndpoint? endpointId).bind (·.receiveQ.head) with
   | none => none
   | some _ =>

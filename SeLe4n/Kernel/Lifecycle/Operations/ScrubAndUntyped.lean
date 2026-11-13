@@ -409,6 +409,32 @@ theorem retypeFromUntyped_insert_eq_insertNoResize
     (Nat.le_of_lt (retypeFromUntyped_capacity_gated authority untypedId childId newObj
       allocSize st st' hOk)) k v
 
+/-- **A carve runs only below the object bound**: a successful
+`retypeFromUntyped` passed its capacity check (`objectStoreCapacityExceeded`
+otherwise), so the table it stores the child into held fewer than
+`maxObjects` objects. -/
+theorem retypeFromUntyped_ok_size_lt
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (st st' : SystemState)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    st.objects.size < maxObjects := by
+  unfold retypeFromUntyped SystemState.getObject? at hOk
+  cases h1 : st.objects[untypedId]? with
+  | none => simp [h1] at hOk
+  | some obj =>
+    simp [h1] at hOk
+    cases obj with
+    | untyped ut =>
+      simp at hOk
+      split at hOk
+      · simp at hOk
+      · omega
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+      simp at hOk
+
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
     `childId` was NOT in the object store before allocation. This is the formal
     foundation for typed ID namespace disjointness: since every new object
@@ -957,7 +983,7 @@ slots, no guard, resolving exactly its radix bits: the CNode seL4's
 `createObject` makes for `seL4_CapTableObject`, whose capability carries guard
 size 0. -/
 def carvedCNode (radixBits : Nat) : CNode :=
-  CNode.ofSlots radixBits 0 0 radixBits SeLe4n.UniqueSlotMap.empty
+  CNode.ofSlots radixBits SeLe4n.UniqueSlotMap.empty
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14:
 what a carve can make.**
@@ -2162,14 +2188,15 @@ theorem untypedRetypeObject_ok_notification
   exact hAt (by intro _ h; simp [CarveRequest.object] at h)
     (by intro _ h; simp [CarveRequest.object] at h)
 
-/-- **A carved CNode** has `2 ^ radixBits` slots, every one empty, and no guard. -/
+/-- **A carved CNode** has `2 ^ radixBits` slots, every one empty (WS-SX SX2: a
+CNode holds no guard; the capability to it does). -/
 theorem untypedRetypeObject_ok_cnode
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (r : Nat) (hr : r ≤ maxCSpaceDepth)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : untypedRetypeObject src childId dst (.cnode r hr) st = .ok ((), st')) :
     ∃ cn : CNode, st'.objects[childId]? = some (.cnode cn) ∧
       cn.withoutLinks = (carvedCNode r).withoutLinks ∧
-      cn.radixWidth = (carvedCNode r).radixWidth ∧ cn.guardWidth = (carvedCNode r).guardWidth ∧
+      cn.radixWidth = (carvedCNode r).radixWidth ∧
       ∀ s, cn.lookup s = (carvedCNode r).lookup s := by
   obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.cnode r hr) st st' hObjInv hStep
@@ -2180,7 +2207,6 @@ theorem untypedRetypeObject_ok_cnode
     cases o <;> simp [CarveRequest.object, KernelObject.withoutLinks] at hW
     rename_i cn
     exact ⟨cn, rfl, hW, CNode.proj_eq_of_withoutLinks_eq CNode.radixWidth hW,
-      CNode.proj_eq_of_withoutLinks_eq CNode.guardWidth hW,
       fun s => CNode.proj_eq_of_withoutLinks_eq (fun c => c.lookup s) hW⟩
 
 /-- **A carved reply** answers no caller and is linked to no other reply. -/

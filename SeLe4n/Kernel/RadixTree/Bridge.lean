@@ -32,10 +32,8 @@ open SeLe4n.Kernel.RobinHood
 -- ============================================================================
 
 /-- Configuration parameters for building a CNodeRadix from an RHTable.
-Captures the guard and radix widths from the source CNode. -/
+Captures the radix width of the source CNode. -/
 structure CNodeConfig where
-  guardWidth : Nat
-  guardValue : Nat
   radixWidth : Nat
   deriving Repr
 
@@ -52,7 +50,7 @@ Multiple RHTable keys that map to the same radix index will overwrite each other
 within `[0, 2^radixWidth)` and map to distinct radix indices. -/
 def buildCNodeRadix (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
     : CNodeRadix :=
-  rt.fold (CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth)
+  rt.fold (CNodeRadix.empty config.radixWidth)
     (fun tree slot cap => tree.insert slot cap)
 
 -- ============================================================================
@@ -73,20 +71,6 @@ private theorem rhFold_preserves_field
     cases hd with
     | none => exact ih init
     | some e => simp only []; rw [ih]; exact hInsert _ _ _
-
-/-- `buildCNodeRadix` preserves guardWidth from config. -/
-theorem buildCNodeRadix_guardWidth (rt : RHTable SeLe4n.Slot Capability)
-    (config : CNodeConfig) :
-    (buildCNodeRadix rt config).guardWidth = config.guardWidth := by
-  exact rhFold_preserves_field
-    (fun _ _ _ => CNodeRadix.insert_guardWidth _ _ _) rt _
-
-/-- `buildCNodeRadix` preserves guardValue from config. -/
-theorem buildCNodeRadix_guardValue (rt : RHTable SeLe4n.Slot Capability)
-    (config : CNodeConfig) :
-    (buildCNodeRadix rt config).guardValue = config.guardValue := by
-  exact rhFold_preserves_field
-    (fun _ _ _ => CNodeRadix.insert_guardValue _ _ _) rt _
 
 /-- `buildCNodeRadix` preserves radixWidth from config. -/
 theorem buildCNodeRadix_radixWidth (rt : RHTable SeLe4n.Slot Capability)
@@ -111,9 +95,7 @@ theorem buildCNodeRadix_wf (rt : RHTable SeLe4n.Slot Capability)
 
 /-- Extract a `CNodeConfig` from a `CNode` structure. -/
 def CNodeConfig.ofCNode (cn : CNode) : CNodeConfig :=
-  { guardWidth := cn.guardWidth
-    guardValue := cn.guardValue
-    radixWidth := cn.radixWidth }
+  { radixWidth := cn.radixWidth }
 
 /-- Build a `CNodeRadix` directly from a `CNode`.  WS-ZA ZA5.3: compiled code
 takes the CNode's slot array as it stands (`ofCNode_eq_ofCNodeCells`). -/
@@ -123,8 +105,7 @@ noncomputable def CNodeRadix.ofCNode (cn : CNode) : CNodeRadix :=
 /-- WS-ZA ZA5.3: a CNode's slot array, read as the frozen radix tree: both are
 `2 ^ radixWidth` entries indexed by slot. -/
 def CNodeRadix.ofCNodeCells (cn : CNode) : CNodeRadix :=
-  { guardWidth := cn.guardWidth, guardValue := cn.guardValue,
-    radixWidth := cn.radixWidth, slots := cn.cells, hSlotSize := cn.cells_size }
+  { radixWidth := cn.radixWidth, slots := cn.cells, hSlotSize := cn.cells_size }
 
 
 -- ============================================================================
@@ -137,7 +118,7 @@ theorem buildCNodeRadix_empty_lookup (cap : Nat) (hCapGe4 : 4 ≤ cap)
     (buildCNodeRadix (RHTable.empty cap hCapGe4) config).lookup slot = none := by
   -- Use fold_preserves to show the result equals the initial empty tree
   have hEq : (buildCNodeRadix (RHTable.empty cap hCapGe4) config).lookup slot =
-      (CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth).lookup slot := by
+      (CNodeRadix.empty config.radixWidth).lookup slot := by
     unfold buildCNodeRadix
     congr 1
     unfold RHTable.fold
@@ -151,7 +132,7 @@ theorem buildCNodeRadix_empty_lookup (cap : Nat) (hCapGe4 : 4 ≤ cap)
       simp only [List.replicate_succ, List.foldl_cons]
       exact ih
   rw [hEq]
-  exact CNodeRadix.lookup_empty _ _ _ _
+  exact CNodeRadix.lookup_empty _ _
 
 -- ============================================================================
 -- Q4-D8: Unique radix index predicate
@@ -336,7 +317,7 @@ theorem buildCNodeRadix_lookup_equiv
   have hUnfold : (buildCNodeRadix rt config) =
       rt.slots.toList.foldl (fun (acc : CNodeRadix) (opt : Option (RHEntry SeLe4n.Slot Capability)) =>
         match opt with | none => acc | some e => acc.insert e.key e.value)
-      (CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth) := by
+      (CNodeRadix.empty config.radixWidth) := by
     unfold buildCNodeRadix RHTable.fold
     rw [← Array.foldl_toList]
     congr 1; funext acc opt; cases opt <;> rfl
@@ -344,8 +325,8 @@ theorem buildCNodeRadix_lookup_equiv
   cases hGet : rt.get? slot with
   | none =>
     -- None direction: no entry has key=slot, and hNoPhantom ensures no collisions
-    exact (foldl_preserves_none rt.slots.toList (CNodeRadix.empty _ _ _) slot
-      config.radixWidth rfl (CNodeRadix.lookup_empty _ _ _ _)
+    exact (foldl_preserves_none rt.slots.toList (CNodeRadix.empty _) slot
+      config.radixWidth rfl (CNodeRadix.lookup_empty _ _)
       (fun e hMem => by
         have hi := List.getElem_of_mem hMem
         obtain ⟨i, hi_lt, hi_eq⟩ := hi
@@ -405,8 +386,8 @@ theorem buildCNodeRadix_lookup_equiv
       have hGet2 := get_ne_none_of_slot_occupied rt hInvExt j hj_cap e2 hSj
       exact hUri e1.key e2.key hGet1 hGet2 hNe
     -- Apply foldl_establishes_some and let Lean handle the let-binding unification
-    exact @foldl_establishes_some rt.slots.toList (CNodeRadix.empty _ _ _) slot cap
-      config.radixWidth rfl (CNodeRadix.lookup_empty _ _ _ _)
+    exact @foldl_establishes_some rt.slots.toList (CNodeRadix.empty _) slot cap
+      config.radixWidth rfl (CNodeRadix.lookup_empty _ _)
       ⟨e, hMemList, hKeyEq, hValE⟩ hNoDupList hRadixList
 
 -- ============================================================================
@@ -474,8 +455,6 @@ theorem CNodeRadix.ofCNode_eq_ofCNodeCells (cn : CNode) :
     rw [extractBits_identity _ _ (hB s₁ h₁), extractBits_identity _ _ (hB s₂ h₂)] at heq
     apply hne
     rw [← SeLe4n.Slot.ofNat_toNat s₁, ← SeLe4n.Slot.ofNat_toNat s₂, heq]
-  have hgw := buildCNodeRadix_guardWidth cn.slots.table (CNodeConfig.ofCNode cn)
-  have hgv := buildCNodeRadix_guardValue cn.slots.table (CNodeConfig.ofCNode cn)
   have hrw := buildCNodeRadix_radixWidth cn.slots.table (CNodeConfig.ofCNode cn)
   have hLk : ∀ i, i < 2 ^ cn.radixWidth →
       (buildCNodeRadix cn.slots.table (CNodeConfig.ofCNode cn)).lookup (SeLe4n.Slot.ofNat i) =
@@ -485,10 +464,10 @@ theorem CNodeRadix.ofCNode_eq_ofCNodeCells (cn : CNode) :
       (buildCNodeRadix_hNoPhantom_auto_discharge _ _ hB _ hi)]
     exact cn.slots_agree _
   unfold CNodeRadix.ofCNode CNodeRadix.ofCNodeCells
-  generalize hR : buildCNodeRadix cn.slots.table (CNodeConfig.ofCNode cn) = R at hgw hgv hrw hLk
-  obtain ⟨gw, gv, rw, sl, hs⟩ := R
-  simp only [CNodeConfig.ofCNode] at hgw hgv hrw
-  subst hgw hgv hrw
+  generalize hR : buildCNodeRadix cn.slots.table (CNodeConfig.ofCNode cn) = R at hrw hLk
+  obtain ⟨rw, sl, hs⟩ := R
+  simp only [CNodeConfig.ofCNode] at hrw
+  subst hrw
   have hSl : sl = cn.cells := by
     apply Array.ext (by rw [hs, cn.cells_size])
     intro i h₁ h₂
@@ -520,16 +499,6 @@ occupied entries are below that bound (`CNode.slots_get?_bounded`), so
 phantom keys has nothing left to check and is retired. -/
 def freezeCNodeSlots (cn : CNode) : CNodeRadix :=
   CNodeRadix.ofCNode cn
-
-/-- `freezeCNodeSlots` preserves guard parameters from the source CNode. -/
-theorem freezeCNodeSlots_guardWidth (cn : CNode) :
-    (freezeCNodeSlots cn).guardWidth = cn.guardWidth :=
-  buildCNodeRadix_guardWidth cn.slots (CNodeConfig.ofCNode cn)
-
-/-- `freezeCNodeSlots` preserves guard value from the source CNode. -/
-theorem freezeCNodeSlots_guardValue (cn : CNode) :
-    (freezeCNodeSlots cn).guardValue = cn.guardValue :=
-  buildCNodeRadix_guardValue cn.slots (CNodeConfig.ofCNode cn)
 
 /-- `freezeCNodeSlots` preserves radix width from the source CNode. -/
 theorem freezeCNodeSlots_radixWidth (cn : CNode) :

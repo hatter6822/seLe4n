@@ -1541,13 +1541,20 @@ theorem linkReach.capacity_le {st₀ st : SystemState} (h : linkReach st₀ st) 
 
 /-- WS-UC UC2: link writes keep the ghost bookkeeping in agreement: they keep
 every ghost and every object's kind. -/
-theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st₀ st)
-    (hInv : st₀.objects.invExt) (hA : st₀.bookkeepingAgrees) : st.bookkeepingAgrees :=
+theorem linkReach.bookkeepingAgreesUnbounded {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hA : st₀.bookkeepingAgreesUnbounded) :
+    st.bookkeepingAgreesUnbounded :=
   hA.of_frame (by rw [h.fields]) (by rw [h.fields]) (fun x => by
       have e := congrArg Option.isSome ((h.agree hInv).objectType x)
       simpa only [Option.isSome_map] using e)
     (h.objectTypeMetadataConsistent hInv hA.types) (by rw [h.fields]) h.capacity_le
     (by rw [h.fields]; exact Nat.le_refl _)
+
+/-- Link writes keep the agreement and its count bound: they keep the index. -/
+theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hA : st₀.bookkeepingAgrees) : st.bookkeepingAgrees :=
+  { toUnbounded := h.bookkeepingAgreesUnbounded hInv hA.toUnbounded
+    countBounded := by rw [h.fields]; exact hA.countBounded }
 
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by

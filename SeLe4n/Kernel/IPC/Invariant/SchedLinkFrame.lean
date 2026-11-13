@@ -1836,16 +1836,16 @@ into the thread's space slot, which keeps every projection, and the derivation
 edge, which writes links alone. -/
 theorem threadSlotCopied {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    SchedLinkFrame st (SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    SchedLinkFrame st (SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
   have hD := cspaceDeleteSlot hInv (copyIntoThreadSlot_delete hT slot)
   obtain ⟨-, hI⟩ := threadSlotDeleted_tcb hInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hD
   · rw [e]
     have hU := SystemState.updateTcb_preserves_objects_invExt _ tid
-      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
-    exact hD.trans ((updateTcb _ tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI).trans
+      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
+    exact hD.trans ((updateTcb _ tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI).trans
       (cdtAddChild _ _ _ _ hU))
 
 end SchedLinkFrame
@@ -1870,25 +1870,25 @@ copy writes none of what they read, and the retire after it keeps them
 theorem threadSlotSet_preserves_schedContextLinkInvariant (ec : CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt) (h : schedContextLinkInvariant st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    schedContextLinkInvariant (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    schedContextLinkInvariant (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   unfold threadSlotSet
   exact retireFinalObject_preserves_schedContextLinkInvariant ec _ _ _
-    (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2
-    ((SchedLinkFrame.threadSlotCopied hInv hT slot srcCNode srcSlot rights).preserves h)
+    (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights data).2
+    ((SchedLinkFrame.threadSlotCopied hInv hT slot srcCNode srcSlot rights data).preserves h)
 
 /-- **A thread space slot's set keeps every thread's budget clear**: the copy
 writes no budget, and a thread the retire keeps is a thread of the copy. -/
 theorem threadSlotSet_preserves_allTimeoutBudgetsNone (ec : CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt)
     (hBudgets : allTimeoutBudgetsNone st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    allTimeoutBudgetsNone (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    allTimeoutBudgetsNone (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   unfold threadSlotSet
   intro tid' tcb hT'
   exact allTimeoutBudgetsNone_of_aux (SchedLinkFrame.threadSlotCopied hInv hT slot srcCNode
-    srcSlot rights).aux hBudgets tid' tcb (retireFinalObject_tcb_back ec _ _ _
-      (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2 hT')
+    srcSlot rights data).aux hBudgets tid' tcb (retireFinalObject_tcb_back ec _ _ _
+      (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights data).2 hT')
 
 /-- **A thread space slot's set preserves the IPC bundle**: the copy does
 (`threadSlotCopied_preserves_ipcInvariantFull`), and so does the retire after it
@@ -1897,53 +1897,53 @@ are the pre-state's. -/
 theorem threadSlotSet_preserves_ipcInvariantFull (ec : CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hBudgets : allTimeoutBudgetsNone st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
-      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights data) ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights data).objects.invExt := by
   unfold threadSlotSet
   exact retireFinalObject_preserves_ipcInvariantFull ec _ _ _
-    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
-    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
+    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data).2
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights data)
     (allTimeoutBudgetsNone_of_aux
-      (SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights).aux hBudgets)
+      (SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights data).aux hBudgets)
 
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
 slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
 theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : CoreId)
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hBudgets : allTimeoutBudgetsNone st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
   obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hBudgets hT
-    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
   exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1
-    (threadSlotSet_preserves_allTimeoutBudgetsNone ec hObjInv hBudgets hT _ _ _ _) hT1'
-    _ _ _ _).1
+    (threadSlotSet_preserves_allTimeoutBudgetsNone ec hObjInv hBudgets hT _ _ _ _ _) hT1'
+    _ _ _ _ _).1
 
 /-- **A space change keeps every scheduling-link invariant** — each slot set
 does (`threadSlotSet_preserves_schedContextLinkInvariant`). -/
 theorem copyThreadSpaces_preserves_schedContextLinkInvariant (ec : CoreId)
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : st.objects.invExt) (h : schedContextLinkInvariant st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     schedContextLinkInvariant st' := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
   obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
     (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
   have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights).objects.invExt := by
+      TCB.cspaceRootRights cnData).objects.invExt := by
     unfold threadSlotSet
     exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
   exact threadSlotSet_preserves_schedContextLinkInvariant ec hI1
-    (threadSlotSet_preserves_schedContextLinkInvariant ec hInv h hT _ _ _ _) hT1' _ _ _ _
+    (threadSlotSet_preserves_schedContextLinkInvariant ec hInv h hT _ _ _ _ _) hT1' _ _ _ _ _
 
 end SeLe4n.Kernel

@@ -1111,7 +1111,7 @@ private def bracketSlotCap : Capability :=
 /-- Depth 4 = `radixWidth`, so the resolution consumes every bit in one hop and
 the leaf **is** this root — the single-level shape `abiEntryGate` requires. -/
 private def bracketCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(bracketSlot, bracketSlotCap)]))
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(bracketSlot, bracketSlotCap)]))
 
 /-- A caller whose registers really decode to `.tcbSuspend` (`x7 = 20`) on the
 capability at slot 1 (`x0 = 1`). -/

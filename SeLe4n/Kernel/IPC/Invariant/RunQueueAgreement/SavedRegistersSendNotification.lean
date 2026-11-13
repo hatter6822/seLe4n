@@ -476,7 +476,7 @@ theorem endpointSendDualOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
 
 /-- The capability transfer writes CNodes and the derivation tree alone. -/
 theorem receiveTransferCaps_savedRegsUnwritten
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     savedRegsUnwritten st st' := by

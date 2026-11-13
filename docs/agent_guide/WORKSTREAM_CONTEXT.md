@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -161,7 +161,19 @@ word (`RegValue.word`, `readRegWord`) and tests a bound on the word
 that keeps a `Nat` is built only after that test; `.val` on a register is for
 specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
 raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
-still convert, under the narrowed `docs/REGISTERED_DEBT.md` row. SX2 is the next cut.
+still convert, under the narrowed `docs/REGISTERED_DEBT.md` row.
+
+SX2 (`v0.37.23`) moved the guard into the capability and made the lookup seL4's
+`resolveAddressBits` (guard before depth, a stop at a non-CNode slot); a
+capability fault carries its `LookupFault` in seL4's `seL4_CapFault_*` words;
+Mint and SetSpace's `cspace_root_data` apply seL4's `updateCapData`, so a badged
+endpoint or notification is never rebadged. **Standing constraints for new
+code:** resolve a capability address only through `resolveAddressBits`
+(`lookupSlot`, `lookupSlotForCNodeOp`, or their K forms); a compiled resolver's
+recursion returns only values the walk already holds (`resolveAddressBitsWalk`),
+never the caller's result type, so a refused lookup builds nothing on the heap;
+a CNode capability's guard comes from its capability, never from the CNode.
+SX3 is the next cut.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

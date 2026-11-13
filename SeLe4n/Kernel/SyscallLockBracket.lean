@@ -49,8 +49,8 @@ its target into `SyscallLockOperands`.  It is fail-closed four times over:
 
 * the caller must resolve to a TCB with a CNode root, since the footprint's CNode
   member *is* that root;
-* the resolution must be **single-level** (`rootCn.depth = guardWidth +
-  radixWidth`, and the resolved reference must land in the root).  A multi-level
+* the resolution must be **single-level** (`rootCapGuardSize tcb +
+  rootCn.radixWidth = 64`, and the resolved reference must land in the root).  A multi-level
   walk selects the target through interior CNodes the footprint holds no lock on,
   so a concurrent writer could redirect the resolution without conflicting with
   the declared set.  A `LockSet` is capped at `maxLockSetSize` and a CSpace path
@@ -275,10 +275,11 @@ Returns the `SyscallGate` `dispatchSyscallChecked` builds — same root, same
 depth, same required right — paired with the caller's TCB, or `none` where a
 footprint must not be declared.
 
-The guard is `rootCn.depth = rootCn.guardWidth + rootCn.radixWidth` together with
-the resolved reference landing back in the root.  `resolveCapAddress` consumes
-`guardWidth + radixWidth` bits per hop and recurses while any remain, so a root
-that consumes them all cannot descend at all — checking the final `ref.cnode`
+The guard is the root capability's guard size plus the root CNode's radix
+being 64 (`rootCapGuardSize`), together with the resolved reference landing
+back in the root.  `resolveAddressBits` consumes the capability's guard and the
+CNode's radix per hop and recurses while address bits remain, so a root that
+consumes all 64 bits cannot descend at all — checking the final `ref.cnode`
 alone would accept a path that leaves the root and cycles back to it, and the
 lookup would still have read an unlocked child CNode on the way.
 
@@ -297,16 +298,16 @@ def abiEntryGate (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : Sy
     match s.getCNode? tcb.cspaceRoot with
     | none => none
     | some rootCn =>
-      if rootCn.depth ≠ rootCn.guardWidth + rootCn.radixWidth then none
+      if rootCapGuardSize tcb + rootCn.radixWidth ≠ 64 then none
       else
-        match resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
+        match lookupSlot tcb decoded.capAddr s with
         | .error _ => none
         | .ok ref =>
           if ref.cnode ≠ tcb.cspaceRoot then none
           else
             some (tcb,
-              { callerId := tid, cspaceRoot := tcb.cspaceRoot,
-                capAddr := decoded.capAddr, capDepth := rootCn.depth,
+              { callerId := tid, cspaceRootCap := tcb.spaceCells[0],
+                capAddr := decoded.capAddr,
                 requiredRight := syscallRequiredRight decoded.syscallId })
 
 /-- **WS-RR RR8.12 Cut C4b**: the gate's CSpace root is the caller's own, and the
@@ -355,8 +356,8 @@ theorem abiEntryGate_components (decoded : SyscallDecodeResult) (tid : SeLe4n.Th
     (h : abiEntryGate decoded tid s = some (tcb, gate)) :
     s.getTcb? tid = some tcb ∧
       ∃ rootCn : CNode, s.getCNode? tcb.cspaceRoot = some rootCn ∧
-        gate = { callerId := tid, cspaceRoot := tcb.cspaceRoot,
-                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
+        gate = { callerId := tid, cspaceRootCap := tcb.spaceCells[0],
+                 capAddr := decoded.capAddr,
                  requiredRight := syscallRequiredRight decoded.syscallId } := by
   unfold abiEntryGate at h
   cases hTcb : s.getTcb? tid with

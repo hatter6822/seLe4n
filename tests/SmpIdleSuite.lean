@@ -654,7 +654,7 @@ private def runBootValidationParityChecks : IO Unit := do
   | .ok _ =>
       assertBool "NEGATIVE: a config referencing an idle slot must be refused" false
   let rootEntry : SeLe4n.Platform.Boot.ObjectEntry :=
-    { id := ⟨9⟩, obj := .cnode (CNode.ofList 4 0 0 4 []),
+    { id := ⟨9⟩, obj := .cnode (CNode.ofList 4 []),
       hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
       hMappings := fun _ h => nomatch h }
   let control := referrer ⟨9⟩
@@ -666,7 +666,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- CNode carrying a capability to an ordinary object does not; and the
   -- capability predicate itself decides by target.
   let cnodeWith (target : SeLe4n.ObjId) : KernelObject :=
-    .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0,
+    .cnode (CNode.ofList 4 [ (SeLe4n.Slot.ofNat 0,
                   { target := .object target, rights := AccessRightSet.ofList [.write] }) ])
   assertBool "NEGATIVE: a boot CNode holding a capability to an idle TCB references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
@@ -1019,7 +1019,7 @@ private def runBootUntypedCapabilityChecks : IO Unit := do
       hMappings := fun _ h => nomatch h }
   let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := ⟨111⟩
-      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
       hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
       hMappings := fun _ h => nomatch h }
   let withSlots (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.PlatformConfig :=
@@ -1059,7 +1059,7 @@ private def runBootCapabilityLiveChecks : IO Unit := do
       hMappings := fun _ h => nomatch h }
   let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := cnId
-      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
       hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
       hMappings := fun _ h => nomatch h }
   let withSlots (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.PlatformConfig :=
@@ -1118,7 +1118,7 @@ private def runBootInterruptHandlerChecks : IO Unit := do
   let cnId : SeLe4n.ObjId := ⟨131⟩
   let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := cnId
-      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
       hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
       hMappings := fun _ h => nomatch h }
   let withSlots (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.PlatformConfig :=

@@ -1117,6 +1117,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.advanceDomainOnCore
   , `SeLe4n.Kernel.advanceDomainOnCoreN
   , `SeLe4n.Kernel.applyReplyDonation
+  -- An audit call's general form: the specification's arm, refusal-carrying,
+  -- that `auditOperand_spec` and `auditReadTrailR_eq` state the routed audit
+  -- arms equal to.  Since the trail read and the drain refuse in place
+  -- (`auditReadTrailR`, `auditedArmSpec_auditDrain_refused`) no arm runs it.
+  , `SeLe4n.Kernel.auditGeneralR
   , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread
@@ -1124,10 +1129,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.chooseThreadInDomain
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.commitKernelAction
-  , `SeLe4n.Kernel.cspaceLookupMultiLevel
-  , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
-  , `SeLe4n.Kernel.cspaceResolvePath
   , `SeLe4n.Kernel.cspaceRevoke
   -- WS-LS LS2.4: the STAGED CSpace walk's bracket (`CSpaceWalkFootprint.lean`
   -- §4), which no committing seam runs; its predecessor
@@ -1168,6 +1170,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSendDualChecked
   , `SeLe4n.Kernel.endpointSendDualWithCaps
   , `SeLe4n.Kernel.endpointSweepBody
+  -- The operand dispatch's report of an arm's result, in the specification
+  -- forms (`dispatchOperandCheckedK`): every routed arm pushes the result from
+  -- its words (`entryReportPushOk 1`, `entryReportPushErrorW 1`), equal to it
+  -- by `liftReport_entryReportResolved`.
+  , `SeLe4n.Kernel.entryReportResolved
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
@@ -1371,6 +1378,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.withObjects
   , `SeLe4n.Model.Builder.markRunnable
   , `SeLe4n.Model.Builder.withTaint
+  -- The refusal-carrying form of a whole `Kernel` step: the specification
+  -- every in-place routed and dispatched arm is proven equal to
+  -- (`syscallEntryRoutedWith_eq`, `dispatchOperandCheckedR_eq`, the
+  -- `RefusalCarryingInvocation` arm lemmas).  The decoded route's runtime arm
+  -- was its last executed caller; that arm is discharged by
+  -- `registerRoutedSyscall_viaDecode` and compiles nothing, so only proofs
+  -- and the suites' refusal checks run it.
+  , `SeLe4n.Model.RefusalCarrying.ofKernel
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked

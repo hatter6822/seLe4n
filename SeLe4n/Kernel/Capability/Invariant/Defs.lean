@@ -45,8 +45,8 @@ def cspaceLookupSound (st : SystemState) : Prop :=
 /-- Attenuation rule operation-correctness lemma (proved by `cspaceAttenuationRule_holds`).
 Not a state invariant (no `st` parameter); removed from `capabilityInvariantBundle` in WS-F6/D1. -/
 def cspaceAttenuationRule : Prop :=
-  ∀ parent child rights badge,
-    mintDerivedCap parent rights badge = .ok child →
+  ∀ parent child rights kind badge,
+    mintDerivedCap parent rights kind badge = .ok child →
     capAttenuates parent child
 
 /-- Lifecycle-transition authority monotonicity obligations for the active slice.
@@ -164,19 +164,57 @@ edge-well-founded formulation for clean subset-preservation proofs. -/
 def cdtAcyclicity (st : SystemState) : Prop :=
   st.cdt.edgeWellFounded
 
-/-- WS-H13/H-01: CSpace depth consistency — every CNode has bounded depth and
-well-formed bit allocation.
+/-- **One capability's CNode geometry is seL4's**: its guard fits its guard
+size, and, where it names a CNode, its guard size and that CNode's radix use at
+most a word's 64 bits — the bound `updateCapData` (`objecttype.c:395`) refuses a
+Mint past, and the one `resolveAddressBits` (`cspace.c:126`) consumes a level
+by. -/
+def cnodeCapGeometryAt (st : SystemState) (cap : Capability) : Prop :=
+  cap.cnodeGuard.toNat < 2 ^ cap.cnodeGuardSize.toNat ∧
+  ∀ (id : SeLe4n.ObjId) (cn : CNode), cap.target = .object id →
+    st.getCNode? id = some cn → cap.cnodeGuardSize.toNat + cn.radixWidth ≤ 64
 
-Each CNode in the object store has `depth ≤ maxCSpaceDepth`, and whenever its
-`bitsConsumed` is positive it satisfies `CNode.wellFormed` (guard + radix ≤ depth,
-individual widths bounded). Combined with `bitsConsumed > 0`, this guarantees
-that multi-level `resolveCapAddress` terminates by structural recursion on
-remaining bit count — no cross-CNode depth ordering is required. -/
-def cspaceDepthConsistent (st : SystemState) : Prop :=
-  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-    st.objects[cnodeId]? = some (.cnode cn) →
-    cn.depth ≤ maxCSpaceDepth ∧
-    (cn.bitsConsumed > 0 → cn.wellFormed)
+/-- **Every slot's capability has seL4's CNode geometry** (`cnodeCapGeometryAt`),
+read through `KernelObject.slotCap` over CNode slots and thread space slots.  The
+4th conjunct of `capabilityInvariantBundle`.  seL4 keeps the guard in the
+capability (`cap_cnode_cap`); a CNode holds slots only. -/
+def cnodeCapGeometry (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability),
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
+    cnodeCapGeometryAt st cap
+
+/-- **A step that keeps every CNode's radix keeps every capability's geometry.** -/
+theorem cnodeCapGeometryAt_mono {st st' : SystemState}
+    (hRadix : ∀ (id : SeLe4n.ObjId) (cn' : CNode), st'.getCNode? id = some cn' →
+      ∃ cn, st.getCNode? id = some cn ∧ cn'.radixWidth = cn.radixWidth) :
+    ∀ cap, cnodeCapGeometryAt st cap → cnodeCapGeometryAt st' cap := by
+  intro cap h
+  refine ⟨h.1, fun id cn' hT hC => ?_⟩
+  obtain ⟨cn, hC0, hR⟩ := hRadix id cn' hC
+  rw [hR]; exact h.2 id cn hT hC0
+
+/-- A step that leaves every CNode where it was keeps every capability's geometry. -/
+theorem cnodeCapGeometryAt_congr {st st' : SystemState}
+    (hCNode : ∀ cn : SeLe4n.ObjId, st'.getCNode? cn = st.getCNode? cn) :
+    ∀ cap, cnodeCapGeometryAt st cap → cnodeCapGeometryAt st' cap :=
+  cnodeCapGeometryAt_mono fun id cn' h => ⟨cn', by rw [← hCNode]; exact h, rfl⟩
+
+/-- A capability that names no CNode-backed object and carries no guard has
+seL4's geometry in every state where its target's radix is at most 64. -/
+theorem cnodeCapGeometryAt_of_noGuard {st : SystemState} {cap : Capability}
+    (hG : cap.cnodeGuard = 0) (hS : cap.cnodeGuardSize = 0)
+    (hR : ∀ id cn, cap.target = .object id → st.getCNode? id = some cn → cn.radixWidth ≤ 64) :
+    cnodeCapGeometryAt st cap :=
+  ⟨by rw [hG, hS]; decide, fun id cn hT hC => by rw [hS, UInt8.toNat_zero, Nat.zero_add]; exact hR id cn hT hC⟩
+
+/-- Geometry reads only the guard words and the target. -/
+theorem cnodeCapGeometryAt_of_fields {st : SystemState} {cap cap' : Capability}
+    (h : cnodeCapGeometryAt st cap) (hT : cap'.target = cap.target)
+    (hG : cap'.cnodeGuard = cap.cnodeGuard) (hS : cap'.cnodeGuardSize = cap.cnodeGuardSize) :
+    cnodeCapGeometryAt st cap' := by
+  refine ⟨hG ▸ hS ▸ h.1, fun id cn hT' hC => ?_⟩
+  rw [hS]; exact h.2 id cn (hT ▸ hT') hC
 
 /-- **The kind a capability target claims of the object it names is the kind in
 the store**: a reply capability's reply is a Reply (`getReply?`), and a CNode-slot
@@ -288,6 +326,15 @@ theorem capTargetKindBacked.slotCapAt {st : SystemState} (h : capTargetKindBacke
   | none => rw [hO] at hC; cases hC
   | some o => rw [hO] at hC; exact h r.cnode o r.slot cap hO hC
 
+/-- The slot-reader form of `cnodeCapGeometry`. -/
+theorem cnodeCapGeometry.slotCapAt {st : SystemState} (h : cnodeCapGeometry st)
+    {r : SlotRef} {cap : Capability} (hC : st.slotCapAt r = some cap) :
+    cnodeCapGeometryAt st cap := by
+  unfold SystemState.slotCapAt SystemState.getObject? at hC
+  cases hO : st.objects[r.cnode]? with
+  | none => rw [hO] at hC; cases hC
+  | some o => rw [hO] at hC; exact h r.cnode o r.slot cap hO hC
+
 /-- The CNode reading of the reply-cap clause. -/
 theorem replyCapPointsToValidReply.cnode {st : SystemState} (h : replyCapPointsToValidReply st)
     {oid : SeLe4n.ObjId} {cn : CNode} {slot : SeLe4n.Slot} {cap : Capability}
@@ -324,6 +371,114 @@ theorem capTargetKindBacked_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (fun _ _ hO => let ⟨o, ho, hc, _⟩ := hA.slots_back hO; ⟨o, ho, hc⟩)
     (capTargetKindBackedAt_congr hA.getReply? hA.getCNode?)
 
+/-- **Geometry transported along the slot reading**: every post-state object reads
+the slots of a pre-state object at its key, and every capability's geometry
+survives the step. -/
+theorem cnodeCapGeometry_of_slotCap_back {st st' : SystemState}
+    (h : cnodeCapGeometry st)
+    (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
+      ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap)
+    (hGeo : ∀ cap, cnodeCapGeometryAt st cap → cnodeCapGeometryAt st' cap) :
+    cnodeCapGeometry st' := fun oid o' slot cap hO hL => by
+  obtain ⟨o, ho, he⟩ := hBack oid o' hO
+  exact hGeo _ (h oid o slot cap ho (he ▸ hL))
+
+/-- `cnodeCapGeometry` reads only the object store. -/
+theorem cnodeCapGeometry_of_objects_eq
+    (st st' : SystemState) (h : cnodeCapGeometry st) (hObjs : st'.objects = st.objects) :
+    cnodeCapGeometry st' :=
+  cnodeCapGeometry_of_slotCap_back h (fun oid o' hO => ⟨o', hObjs ▸ hO, rfl⟩)
+    (cnodeCapGeometryAt_congr (fun cn => by unfold SystemState.getCNode?; rw [hObjs]))
+
+/-- **A CNode stored over a CNode of the same radix keeps every capability's
+geometry**: no other CNode is touched. -/
+theorem cnodeCapGeometryAt_storeObject_cnode {st st' : SystemState} {k : SeLe4n.ObjId}
+    {cn cn' : CNode} (hObjInv : st.objects.invExt) (hPre : st.objects[k]? = some (.cnode cn))
+    (hStore : storeObject k (.cnode cn') st = .ok ((), st'))
+    (hRw : cn'.radixWidth = cn.radixWidth) :
+    ∀ cap, cnodeCapGeometryAt st cap → cnodeCapGeometryAt st' cap := by
+  have hSelf := storeObject_objects_eq st st' k _ hObjInv hStore
+  have hNe : ∀ oid, oid ≠ k → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' k oid _ h hObjInv hStore
+  refine cnodeCapGeometryAt_mono fun id c' hC => ?_
+  simp only [SystemState.getCNode?] at hC ⊢
+  by_cases hc : id = k
+  · subst hc; rw [hSelf] at hC; simp at hC; subst hC; exact ⟨cn, by rw [hPre], hRw⟩
+  · rw [hNe id hc] at hC; exact ⟨c', hC, rfl⟩
+
+/-- **Geometry through a CNode store**: the stored CNode keeps its radix and every
+capability it holds is one the pre-state CNode held, or one with seL4's geometry in
+the post-state (`hNew`). -/
+theorem cnodeCapGeometry_of_storeObject_cnode
+    (st st' : SystemState) (k : SeLe4n.ObjId) (cn cn' : CNode)
+    (h : cnodeCapGeometry st) (hObjInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.cnode cn))
+    (hStore : storeObject k (.cnode cn') st = .ok ((), st'))
+    (hRw : cn'.radixWidth = cn.radixWidth)
+    (hNew : ∀ slot cap, cn'.lookup slot = some cap →
+      cn.lookup slot = some cap ∨ cnodeCapGeometryAt st' cap) :
+    cnodeCapGeometry st' := by
+  have hGeo := cnodeCapGeometryAt_storeObject_cnode hObjInv hPre hStore hRw
+  intro oid o slot cap hO hL
+  by_cases hc : oid = k
+  · subst hc
+    rw [storeObject_objects_eq st st' oid _ hObjInv hStore] at hO; cases hO
+    rcases hNew slot cap hL with hOld | hG
+    · exact hGeo _ (h oid (.cnode cn) slot cap hPre hOld)
+    · exact hG
+  · rw [storeObject_objects_ne st st' k oid _ hc hObjInv hStore] at hO
+    exact hGeo _ (h oid o slot cap hO hL)
+
+/-- **Geometry through a store that adds no capability**: the stored object holds
+only capabilities the object it replaces held, and is a CNode only over a CNode of
+the same radix. -/
+theorem cnodeCapGeometry_of_storeObject_slotsBack
+    (st st' : SystemState) (k : SeLe4n.ObjId) (o o' : KernelObject)
+    (h : cnodeCapGeometry st) (hObjInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some o)
+    (hStore : storeObject k o' st = .ok ((), st'))
+    (hBack : ∀ s c, o'.slotCap s = some c → o.slotCap s = some c)
+    (hRadix : ∀ cn', o' = .cnode cn' → ∃ cn, o = .cnode cn ∧ cn'.radixWidth = cn.radixWidth) :
+    cnodeCapGeometry st' := by
+  have hSelf := storeObject_objects_eq st st' k _ hObjInv hStore
+  have hNe : ∀ oid, oid ≠ k → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid hn => storeObject_objects_ne st st' k oid _ hn hObjInv hStore
+  have hGeo : ∀ cap, cnodeCapGeometryAt st cap → cnodeCapGeometryAt st' cap := by
+    refine cnodeCapGeometryAt_mono fun id cn' hC => ?_
+    rw [SystemState.getCNode?_eq_some_iff] at hC
+    by_cases e : id = k
+    · subst e; rw [hSelf] at hC
+      obtain ⟨cn, rfl, hR⟩ := hRadix cn' (Option.some.inj hC)
+      exact ⟨cn, (SystemState.getCNode?_eq_some_iff _ _ _).mpr hPre, hR⟩
+    · rw [hNe id e] at hC; exact ⟨cn', (SystemState.getCNode?_eq_some_iff _ _ _).mpr hC, rfl⟩
+  intro oid o2 slot cap hO hL
+  by_cases e : oid = k
+  · subst e; rw [hSelf] at hO; cases hO
+    exact hGeo _ (h oid o slot cap hPre (hBack slot cap hL))
+  · rw [hNe oid e] at hO; exact hGeo _ (h oid o2 slot cap hO hL)
+
+/-- **Geometry through a CNode insert**: the inserted capability has seL4's
+geometry in the pre-state, and the CNode keeps its radix. -/
+theorem cnodeCapGeometry_of_storeObject_insertCNode
+    (st st' : SystemState) (k : SeLe4n.ObjId) (cn : CNode)
+    (slot : SeLe4n.Slot) (cap : Capability)
+    (h : cnodeCapGeometry st) (hObjInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.cnode cn))
+    (hStore : storeObject k (.cnode (cn.insert slot cap)) st = .ok ((), st'))
+    (hCap : cnodeCapGeometryAt st cap) :
+    cnodeCapGeometry st' := by
+  have hRw : (cn.insert slot cap).radixWidth = cn.radixWidth := CNode.insert_radixWidth ..
+  refine cnodeCapGeometry_of_storeObject_cnode st st' k cn _ h hObjInv hPre hStore hRw
+    (fun s c hL => ?_)
+  by_cases hs : s = slot
+  · subst hs
+    rw [CNode.lookup_insert_eq cn s cap (CNode.slotsUnique_holds cn)
+      (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hL)] at hL
+    cases hL
+    exact .inr (cnodeCapGeometryAt_storeObject_cnode hObjInv hPre hStore hRw _ hCap)
+  · rw [CNode.lookup_insert_ne cn slot s cap (Ne.symm hs) (CNode.slotsUnique_holds cn)] at hL
+    exact .inl hL
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
@@ -334,8 +489,9 @@ WS-H4: Extended with meaningful security predicates:
 - `cdtCompleteness`: CDT slot reachability (every slot the tree names lies in an existing object)
 - `cdtAcyclicity`: CDT cycle-freedom for sound revocation
 
-WS-H13: Extended with depth consistency:
-- `cspaceDepthConsistent`: child CNodes have strictly smaller depth than parents
+WS-SX SX2.1: CNode geometry lives in the capability, as in seL4:
+- `cnodeCapGeometry`: every slot's capability has guard < 2^guardSize and, where
+  it names a CNode, guardSize + radix ≤ 64
 
 WS-F6/D1: Reduced from 8-tuple to 6-tuple. Removed `cspaceAttenuationRule` (operation
 property of `mintDerivedCap`, not a state invariant — no `st` parameter) and
@@ -383,7 +539,7 @@ by it alone. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ capTargetKindBacked st ∧
+    cnodeCapGeometry st ∧ st.objects.invExt ∧ capTargetKindBacked st ∧
     cdtLinksAgree st ∧ SystemState.CapTreeShape st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
@@ -416,7 +572,7 @@ agree with the tree (`capabilityInvariantBundle_of_linkReach`). -/
 def capabilityBundleOffLinks (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ capTargetKindBacked st
+    cnodeCapGeometry st ∧ st.objects.invExt ∧ capTargetKindBacked st
 
 theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInvariantBundle st) :
     capabilityBundleOffLinks st :=
@@ -460,9 +616,8 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   cdtCompleteness : cdtCompleteness st
   /-- The capability derivation graph is acyclic. -/
   cdtAcyclicity : cdtAcyclicity st
-  /-- Child CNodes have strictly smaller guard/radix depth than their
-      parents. -/
-  depthConsistent : cspaceDepthConsistent st
+  /-- Every slot's capability has seL4's CNode geometry. -/
+  capGeometry : cnodeCapGeometry st
   /-- The kernel-level `objects` `RHTable` invariant holds (external hash,
       capacity positive, no duplicate keys). -/
   objectsInvExt : st.objects.invExt
@@ -487,11 +642,11 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
   · rintro ⟨hS, hComp, hAcyc, hDep, hObj, hRCPV, hLinks, hShape⟩
     exact { lookupSound := hS
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
-          , depthConsistent := hDep, objectsInvExt := hObj
+          , capGeometry := hDep, objectsInvExt := hObj
           , targetKindBacked := hRCPV, linksAgree := hLinks, treeShape := hShape }
   · intro h
     exact ⟨h.lookupSound,
-           h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
+           h.cdtCompleteness, h.cdtAcyclicity, h.capGeometry,
            h.objectsInvExt, h.targetKindBacked, h.linksAgree, h.treeShape⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
@@ -521,6 +676,10 @@ namespace capabilityInvariantBundle
 /-- WS-ZA ZA5.4 part 16: extract the tree's shape (the 8th conjunct). -/
 @[simp] abbrev treeShape {st : SystemState} (h : capabilityInvariantBundle st) :
     SystemState.CapTreeShape st := h.2.2.2.2.2.2.2
+
+/-- Extract the capabilities' CNode geometry (the 4th conjunct). -/
+@[simp] abbrev capGeometry {st : SystemState} (h : capabilityInvariantBundle st) :
+    cnodeCapGeometry st := h.2.2.2.1
 
 /-- Extract the target-kind backing (the 6th conjunct). -/
 @[simp] abbrev targetKindBacked {st : SystemState} (h : capabilityInvariantBundle st) :
@@ -857,9 +1016,9 @@ theorem cdtAcyclicity_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
     cdtAcyclicity st := hInv.2.2.1
 
-theorem cspaceDepthConsistent_of_capabilityInvariantBundle
+theorem cnodeCapGeometry_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := hInv.2.2.2.1
+    cnodeCapGeometry st := hInv.2.2.2.1
 
 theorem objects_invExt_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
@@ -909,10 +1068,12 @@ theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
   obtain ⟨o', hO', hc, _⟩ := hA.slots_fwd hO
   exact ⟨o', hO', hc ▸ hL⟩
 
-theorem cspaceDepthConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
-    (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cspaceDepthConsistent st) :
-    cspaceDepthConsistent st' :=
-  fun cnodeId cn hObj => hDepth cnodeId cn (hA.get_cnode_iff.mp hObj)
+theorem cnodeCapGeometry_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cnodeCapGeometry st) :
+    cnodeCapGeometry st' :=
+  cnodeCapGeometry_of_slotCap_back hDepth
+    (fun _ _ hO => let ⟨o, ho, hc, _⟩ := hA.slots_back hO; ⟨o, ho, hc⟩)
+    (cnodeCapGeometryAt_congr hA.getCNode?)
 
 /-- WS-H4: Transfer cdtCompleteness through storeObject.  Every key but `oid`
 keeps its object; at `oid` the stored object must hold every slot the tree names
@@ -1024,93 +1185,7 @@ private theorem storeTcbIpcState_cdt_eq
 -- `.reply` chains' bundle lifts read it.  Two answers to one question is what
 -- this project retires; the survivor is the one at the transition.
 
-/-- WS-H13: Transfer cspaceDepthConsistent when objects are unchanged. -/
-theorem cspaceDepthConsistent_of_objects_eq
-    (st st' : SystemState)
-    (hDepth : cspaceDepthConsistent st)
-    (hObjEq : st'.objects = st.objects) :
-    cspaceDepthConsistent st' := by
-  intro cnodeId cn hObj; rw [hObjEq] at hObj; exact hDepth cnodeId cn hObj
-
-/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when the stored
-object is NOT a CNode (endpoint, TCB, etc.). -/
-private theorem cspaceDepthConsistent_of_storeObject_nonCNode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hDepth : cspaceDepthConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid obj st = .ok ((), st'))
-    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    cspaceDepthConsistent st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = oid
-  · subst hEq
-    have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
-    rw [this] at hObj; cases obj with
-    | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => cases hObj
-  · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore] at hObj
-    exact hDepth cnodeId cn hObj
-
-/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when the stored
-CNode has the same depth and bit-width fields as the pre-state CNode at that oid.
-This covers CNode.insert, CNode.remove, and CNode.revokeTargetLocal. -/
-theorem cspaceDepthConsistent_of_storeObject_sameCNode
-    (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn cn' : CNode)
-    (hDepth : cspaceDepthConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
-    (hStore : storeObject targetOid (.cnode cn') st = .ok ((), st'))
-    (hSameDepth : cn'.depth = preCn.depth)
-    (hSameGW : cn'.guardWidth = preCn.guardWidth)
-    (hSameRW : cn'.radixWidth = preCn.radixWidth)
-    (hSameGV : cn'.guardValue = preCn.guardValue) :
-    cspaceDepthConsistent st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = targetOid
-  · rw [hEq] at hObj
-    rw [storeObject_objects_eq st st' targetOid (.cnode cn') hObjInv hStore] at hObj; cases hObj
-    have hPreBound := hDepth targetOid preCn hPreObj
-    constructor
-    · rw [hSameDepth]; exact hPreBound.1
-    · intro hBits
-      have hBitsPre : preCn.bitsConsumed > 0 := by
-        unfold CNode.bitsConsumed at hBits ⊢; rw [hSameGW, hSameRW] at hBits; exact hBits
-      have hWfPre := hPreBound.2 hBitsPre
-      unfold CNode.wellFormed at hWfPre ⊢
-      refine ⟨?_, ?_, ?_⟩
-      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW, hSameDepth]; exact hWfPre.1
-      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW]; exact hWfPre.2.1
-      · unfold CNode.guardBounded at hWfPre ⊢; rw [hSameGW, hSameGV]; exact hWfPre.2.2
-  · rw [storeObject_objects_ne st st' targetOid cnodeId (.cnode cn') hEq hObjInv hStore] at hObj
-    exact hDepth cnodeId cn hObj
-
-/-- WS-H13: Transfer cspaceDepthConsistent through storeObject when inserting a capability
-into a CNode, given the inserted capability satisfies the parent-child depth constraint. -/
-theorem cspaceDepthConsistent_of_storeObject_insertCNode
-    (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn : CNode)
-    (insertSlot : SeLe4n.Slot) (insertCap : Capability)
-    (hDepth : cspaceDepthConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
-    (hStore : storeObject targetOid (.cnode (preCn.insert insertSlot insertCap)) st = .ok ((), st')) :
-    cspaceDepthConsistent st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = targetOid
-  · rw [hEq] at hObj
-    rw [storeObject_objects_eq st st' targetOid _ hObjInv hStore] at hObj; cases hObj
-    simpa only [CNode.wellFormed, CNode.bitsConsumed, CNode.guardBounded, CNode.insert_depth,
-      CNode.insert_guardWidth, CNode.insert_guardValue, CNode.insert_radixWidth]
-      using hDepth targetOid preCn hPreObj
-  · rw [storeObject_objects_ne st st' targetOid cnodeId _ hEq hObjInv hStore] at hObj
-    exact hDepth cnodeId cn hObj
-
-/-- WS-H13: CNode.remove preserves depth/guardWidth/radixWidth and has slot subset. -/
-private theorem CNode.remove_depth_eq (cn : CNode) (slot : SeLe4n.Slot) :
-    (cn.remove slot).depth = cn.depth := rfl
-
-private theorem CNode.remove_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
-    (cn.remove slot).guardWidth = cn.guardWidth := rfl
-
+/-- WS-H13: CNode.remove preserves radixWidth and has slot subset. -/
 private theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
     (cn.remove slot).radixWidth = cn.radixWidth := rfl
 
@@ -1135,13 +1210,7 @@ private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
     show cn.slots.table.get? s = some cap
     exact hLookup
 
-/-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/
-private theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
-    (cn.revokeTargetLocal slot target).depth = cn.depth := rfl
-
-private theorem CNode.revokeTargetLocal_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
-    (cn.revokeTargetLocal slot target).guardWidth = cn.guardWidth := rfl
-
+/-- WS-H13: CNode.revokeTargetLocal preserves radixWidth and has slot subset. -/
 private theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
     (cn.revokeTargetLocal slot target).radixWidth = cn.radixWidth := rfl
 

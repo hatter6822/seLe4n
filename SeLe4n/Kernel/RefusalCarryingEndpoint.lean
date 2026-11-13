@@ -530,8 +530,8 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3)
           sTcb.vspaceRoot sTcb.ipcBuffer
-          sTcb.cspaceRoot (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot := by
+          sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
+          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
   intro P W S4
   obtain ⟨hTake, h2, -⟩ := receiveTake_delivered_of_message st endpointId ep receiver replyId
     core s sTcb mi hE hH hT hG
@@ -679,8 +679,8 @@ theorem receiveCallTakeCapsTransfer_delivered (st : SystemState) (endpointId : S
         performCallTakeCapsDelivered st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot sTcb.ipcBuffer
-          sTcb.cspaceRoot (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot := by
+          sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
+          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
     receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
   have hG' := hG
@@ -818,8 +818,8 @@ theorem receiveTakeCapsTransferLong_delivered (st : SystemState) (endpointId : S
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3)
           sTcb.vspaceRoot sTcb.ipcBuffer
-          sTcb.cspaceRoot (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot := by
+          sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
+          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
   intro P W
   have hTake := receiveTake_inPlace st endpointId ep receiver replyId core s sTcb hE hH hT hG
   have hSnd : receiveRendezvousSender? st endpointId = some s := by
@@ -975,8 +975,8 @@ theorem receiveCallTakeCapsTransferLong_delivered (st : SystemState)
         performCallTakeCapsDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot sTcb.ipcBuffer
-          sTcb.cspaceRoot (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot := by
+          sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
+          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
     receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
   have hG' := hG
@@ -1475,7 +1475,7 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hSend : decoded.syscallId = .send)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
     (hR : SendFrameRouted st tid rf capAddr mi)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
         gate.requiredRight
@@ -1483,7 +1483,7 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hSend, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hSend, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [sendTaintStep_eq st tid decoded (.inl hSend) (wT := st.taintWordsAt tid.toObjId)
     (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -1528,13 +1528,12 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hSend]; decide) st
-  intro tcb rootCn ref hTcb hRoot hRef
+  intro tcb ref hTcb hRef
   have hArm := sendOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hSend hFrame hR hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hSend] at hArm ⊢
   exact hArm
 
@@ -1761,7 +1760,7 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hCall : decoded.syscallId = .call)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
     (hR : CallFrameRouted st tid rf capAddr mi)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     callOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
         gate.requiredRight
@@ -1769,7 +1768,7 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hCall, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hCall, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [sendTaintStep_eq st tid decoded (.inr hCall) (wT := st.taintWordsAt tid.toObjId)
     (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -1814,13 +1813,12 @@ theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hCall]; decide) st
-  intro tcb rootCn ref hTcb hRoot hRef
+  intro tcb ref hTcb hRef
   have hArm := callOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hCall hFrame hR hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hCall] at hArm ⊢
   exact hArm
 
@@ -2004,7 +2002,7 @@ theorem callLongOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     callLongOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
         gate.requiredRight
@@ -2012,7 +2010,7 @@ theorem callLongOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hCall, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hCall, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [sendTaintStep_eq st tid decoded (.inr hCall) (wT := st.taintWordsAt tid.toObjId)
     (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2059,13 +2057,12 @@ theorem dispatchCallLongCheckedR_eq (ctx : LabelingContext)
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hCall]; decide) st
-  intro tcb rootCn ref hTcb hRoot hRef
+  intro tcb ref hTcb hRef
   have hArm := callLongOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hCall hFrame hR hRead hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hCall] at hArm ⊢
   exact hArm
 
@@ -2272,7 +2269,7 @@ transfer reads (`rv`, `rb`, `rroot`); any other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : RefusalCarrying Unit :=
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match st.getTcb? tid with
     | some stcb =>
@@ -2281,7 +2278,7 @@ transfer reads (`rv`, `rb`, `rroot`); any other takes the general arm. -/
         | .reply _ _ =>
             if Architecture.regMessageLength layout len ≤ 4 then
               .ok ((), performReplyCapsDelivered st c server rid layout rf len cap.badgeWord
-                cap.badged executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                cap.badged executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
             else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2307,7 +2304,7 @@ theorem endpointReplyCapsArmR_eq (ctx : LabelingContext)
     (hNoF : ct.faultWords.isFault = false)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyCapsArmR ctx layout rf len extraCaps label tid executingCore cap c server rid
-        ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot st =
+        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2345,7 +2342,7 @@ other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cBinding : Nat) (cFault : Bool)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : RefusalCarrying Unit :=
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then
       match st.getTcb? tid with
@@ -2356,7 +2353,7 @@ other takes the general arm. -/
               .ok ((), performReplyDonatedCapsDelivered st c server rid
                 ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) layout rf len
                 cap.badgeWord cap.badged executingCore stcb.vspaceRoot stcb.ipcBuffer
-                stcb.cspaceRoot (routedExtraCaps stcb.registerContext) rv rb rroot)
+                stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
       | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
@@ -2374,7 +2371,7 @@ theorem endpointReplyDonatedCapsArmR_eq (ctx : LabelingContext)
     (hRO : ct.replyObject = some rid)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyDonatedCapsArmR ctx layout rf len extraCaps label tid executingCore cap c server
-        rid ct.scBindingScCode ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot st =
+        rid ct.scBindingScCode ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2414,7 +2411,7 @@ any other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : RefusalCarrying Unit :=
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     if replyUnheldAdmits ctx layout len tid c rid cFault st then
       match st.getTcb? tid with
@@ -2424,7 +2421,7 @@ any other takes the general arm. -/
           | .reply _ _ =>
               .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
                 (determineTargetCore st c) layout rf len cap.badgeWord cap.badged
-                stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2443,7 +2440,7 @@ theorem endpointReplyUnheldCapsArmR_eq (ctx : LabelingContext)
     (hRO : ct.replyObject = some rid)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyUnheldCapsArmR ctx layout rf len extraCaps label tid executingCore cap c rid
-        ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot st =
+        ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2517,7 +2514,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                                     layout rf len cap.badgeWord cap.badged executingCore)
                                 else endpointReplyCapsArmR ctx layout rf len extraCaps label tid
                                   executingCore cap c server rid ct.vspaceRoot ct.ipcBuffer
-                                  ct.cspaceRoot st
+                                  ct.spaceCells[0] st
                               else
                                 .ok ((), performFaultReplyAnswer st c server rid executingCore
                                   ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
@@ -2534,7 +2531,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                                 ct.faultWords.isFault st
                             else endpointReplyDonatedCapsArmR ctx layout rf len extraCaps label
                               tid executingCore cap c server rid ct.scBindingScCode
-                              ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot st
+                              ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | .blockedOnReply _ none =>
@@ -2550,7 +2547,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                                 executingCore cap c rid ct.faultWords.isFault st
                             else endpointReplyUnheldCapsArmR ctx layout rf len extraCaps label
                               tid executingCore cap c rid ct.faultWords.isFault ct.vspaceRoot
-                              ct.ipcBuffer ct.cspaceRoot st
+                              ct.ipcBuffer ct.spaceCells[0] st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | _ =>
@@ -2763,7 +2760,7 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hReply : decoded.syscallId = .reply)
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     replyOperandArmThenTaintR ctx layout rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore
@@ -2771,7 +2768,7 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hReply, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hReply, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [replyTaintStep_eq st tid decoded hReply (wT := st.taintWordsAt tid.toObjId)
     (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2817,13 +2814,12 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
         decoded.msgInfo.label tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hReply]; decide)
-  intro st tcb rootCn ref hTcb hRoot hRef
+  intro st tcb ref hTcb hRef
   have hArm := replyOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref layout rf hReply hRegs hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hReply] at hArm ⊢
   exact hArm
 
@@ -2910,18 +2906,18 @@ into the receiver's (`performSendCapsDeliveredLong`). -/
                         | some stcb =>
                           .ok ((), performSendCapsDelivered st epId r rt.queueNextCode
                             SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore
-                            stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                            stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
                             (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                            rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                            rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                         | none => endpointSendCapsGeneralR ctx tid executingCore cap st
                       else
                       match st.getTcb? tid with
                       | some stcb =>
                         .ok ((), performSendCapsDeliveredLong st epId r rt.queueNextCode
                           SeLe4n.arm64DefaultLayout rf len tid cap.badgeWord cap.badged executingCore
-                          stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                          stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
                           (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                       | none => endpointSendCapsGeneralR ctx tid executingCore cap st
                     else endpointSendCapsGeneralR ctx tid executingCore cap st
                 | none => endpointSendCapsGeneralR ctx tid executingCore cap st
@@ -3128,18 +3124,18 @@ write. -/
                               | some ctcb =>
                                 .ok ((), performCallCapsDelivered st epId tid r rt.queueNextCode
                                   rid SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
-                                  executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.cspaceRoot
+                                  executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0]
                                   (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                  rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                                  rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                               | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                           else
                             match st.getTcb? tid with
                             | some ctcb =>
                               .ok ((), performCallCapsDeliveredLong st epId tid r rt.queueNextCode
                                 rid SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
-                                executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.cspaceRoot
+                                executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0]
                                 (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                                rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                             | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -3370,7 +3366,7 @@ theorem transferringOperandArmThenTaintR_eq (ctx : LabelingContext)
     (preEpoch : Nat) (preLength : Nat)
     (st : SystemState) (ref : CSpaceAddr)
     (hSid : decoded.syscallId = sid) (hSC : sid = .send ∨ sid = .call)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
@@ -3380,7 +3376,7 @@ theorem transferringOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hSid, syscallInvokeTyped, syscallResolveCap, hRef]
+    hSid, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [sendTaintStep_eq st tid decoded (by rcases hSC with rfl | rfl <;> simp [hSid])
     (wT := st.taintWordsAt tid.toObjId) (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -3423,13 +3419,12 @@ theorem dispatchTransferringCheckedR_eq (ctx : LabelingContext)
   subst hSid
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _
     (by rcases hSC with h | h <;> rw [h] <;> decide) st
-  intro tcb rootCn ref hTcb hRoot hRef
+  intro tcb ref hTcb hRef
   exact transferringOperandArmThenTaintR_eq ctx decoded _ tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rfl hSC hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef) rf capAddr mi
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef) rf capAddr mi
     hFrame hTr
 
 /-! ### The long reply -/
@@ -3510,9 +3505,9 @@ makes, takes the general arm. -/
                                   | some stcb =>
                                       .ok ((), performReplyCapsDeliveredLong st c server rid rf len
                                         tid cap.badgeWord cap.badged executingCore stcb.vspaceRoot
-                                        stcb.ipcBuffer stcb.cspaceRoot
+                                        stcb.ipcBuffer stcb.spaceCells[0]
                                         (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                        ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot)
+                                        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
                                   | none => endpointReplyLongGeneralR ctx rf len extraCaps label
                                       tid executingCore cap st
                               else if replyPopsInPlace st c ct.scBindingScCode server rid then
@@ -3521,9 +3516,9 @@ makes, takes the general arm. -/
                                     .ok ((), performReplyDonatedCapsDeliveredLong st c server rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
                                       rf len tid cap.badgeWord cap.badged executingCore
-                                      stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                                      stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                      ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot)
+                                      ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
                                 | none => endpointReplyLongGeneralR ctx rf len extraCaps label
                                     tid executingCore cap st
                               else endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -3549,9 +3544,9 @@ makes, takes the general arm. -/
                                     .ok ((), performReplyUnheldCapsDeliveredLong st c rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
                                       rf len tid cap.badgeWord cap.badged stcb.vspaceRoot
-                                      stcb.ipcBuffer stcb.cspaceRoot
+                                      stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                      ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot)
+                                      ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
                                 | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
                                     executingCore cap st
                             else endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -3754,7 +3749,7 @@ theorem replyLongOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hRead : ∀ j, j < decoded.msgInfo.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
     (hRf : ∀ stcb, st.getTcb? tid = some stcb → stcb.registerContext = rf)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     replyLongOperandArmThenTaintR ctx rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore
@@ -3762,7 +3757,7 @@ theorem replyLongOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hReply, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hReply, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [replyTaintStep_eq st tid decoded hReply (wT := st.taintWordsAt tid.toObjId)
     (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -3805,13 +3800,12 @@ theorem dispatchReplyLongCheckedR_eq (ctx : LabelingContext)
         decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hReply]; decide) st
-  intro tcb rootCn ref hTcb hRoot hRef
+  intro tcb ref hTcb hRef
   have hArm := replyLongOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr hReply hR hRegs hRead hRf hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hReply] at hArm ⊢
   exact hArm
 
@@ -3836,20 +3830,12 @@ in place (`receiveBlocksInPlace`). -/
        | none => false)
   | none => false
 
-/-- The CSpace root of the calling thread, as the syscall gate reads it. -/
-@[inline] def callerCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId) : SeLe4n.ObjId :=
+/-- The CSpace root capability of the calling thread, as the syscall gate
+reads it: its TCB's first space cell. -/
+@[inline] def callerCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId) : Option Capability :=
   match st.getObject? tid.toObjId with
-  | some (.tcb t) => t.cspaceRoot
-  | _ => tid.toObjId
-
-/-- The depth of the calling thread's CSpace root, as the syscall gate reads it. -/
-@[inline] def callerCspaceDepth (st : SystemState) (tid : SeLe4n.ThreadId) : Nat :=
-  match st.getObject? tid.toObjId with
-  | some (.tcb t) =>
-      match st.getObject? t.cspaceRoot with
-      | some (.cnode cn) => cn.depth
-      | _ => 0
-  | _ => 0
+  | some (.tcb t) => t.spaceCells[0]
+  | _ => none
 
 /-- `resolveRecvReplyId` on the message length and first message register
 alone, with the gate the caller's own CSpace gives
@@ -3859,9 +3845,8 @@ alone, with the gate the caller's own CSpace gives
   if len = 0 then .ok none else
   let gate : SyscallGate :=
     { callerId := tid
-      cspaceRoot := callerCspaceRoot st tid
+      cspaceRootCap := callerCspaceRoot st tid
       capAddr := replyAddr
-      capDepth := callerCspaceDepth st tid
       requiredRight := .write }
   match syscallLookupArgumentCap recvReplyCapNumber gate st with
   | .error e => .error e
@@ -3878,8 +3863,7 @@ alone, with the gate the caller's own CSpace gives
 theorem resolveRecvReplyIdR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (decoded : SyscallDecodeResult) (len : Nat) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
-    (hRoot : gate.cspaceRoot = callerCspaceRoot st tid)
-    (hDepth : gate.capDepth = callerCspaceDepth st tid)
+    (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
     (hLen : decoded.msgInfo.length = len)
     (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr }) :
     resolveRecvReplyIdR st tid len replyAddr = resolveRecvReplyId gate decoded st := by
@@ -3889,9 +3873,9 @@ theorem resolveRecvReplyIdR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   · rw [if_neg h0, hArgs h0]
     have hL : (decoded.msgInfo.length == 0) = false := by simp [hLen, h0]
     simp only [hL, Bool.false_eq_true, ↓reduceIte]
-    rcases gate with ⟨c, r, a, d, rr⟩
-    simp only at hCaller hRoot hDepth
-    subst hCaller hRoot hDepth
+    rcases gate with ⟨c, r, a, rr⟩
+    simp only at hCaller hRoot
+    subst hCaller hRoot
     rfl
 
 /-- The reply capability a receive names, checked as `resolveRecvReplyIdR`
@@ -3918,16 +3902,19 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
 
 /-- `resolveRecvReplyIdR` in continuation form, the reply object as its code
 (`resolveRecvReplyK_eq`): the slot is resolved through
-`resolveCapAddressKUnrolled`, as the operand is, so the entry builds no gate,
+`lookupSlotFromK`, as the operand is, so the entry builds no gate,
 slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. -/
 @[inline] def resolveRecvReplyK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
   if len = 0 then onOk 0 else
-  resolveCapAddressKUnrolled (callerCspaceRoot st tid) (replyAddr)
-    (callerCspaceDepth st tid) st (KernelError.argumentCapRefusal recvReplyCapNumber onErr)
-    (fun cnode slot =>
-      recvReplyCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
-        (KernelError.argumentCapRefusal recvReplyCapNumber onErr) onOk)
+  match callerCspaceRoot st tid with
+  | none => (KernelError.argumentCapRefusal recvReplyCapNumber onErr) (.failedLookup false .invalidRoot)
+  | some root =>
+    lookupSlotFromK root replyAddr st
+      (fun t a b c => (KernelError.argumentCapRefusal recvReplyCapNumber onErr) (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun cnode slot =>
+        recvReplyCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
+          (KernelError.argumentCapRefusal recvReplyCapNumber onErr) onOk)
 
 theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
@@ -3940,10 +3927,13 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
   · simp only [h0, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
   · simp only [h0, ↓reduceIte, syscallLookupArgumentCap, syscallLookupCap, syscallResolveCap,
       KernelError.argumentCapRefusal]
-    rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-    cases resolveCapAddress (callerCspaceRoot st tid) (replyAddr)
-        (callerCspaceDepth st tid) st with
-    | error e => rfl
+    simp only [SyscallGate.lookupSlot]
+    cases callerCspaceRoot st tid with
+    | none => rfl
+    | some root =>
+    simp only [lookupSlotFromK_eq]
+    cases lookupSlotFrom root replyAddr st with
+    | error e => simp only [LookupFault.ofWords_word]
     | ok ref =>
       simp only [recvReplyCapK]
       cases SystemState.lookupSlotCap st ref with
@@ -4082,9 +4072,9 @@ other rendezvous goes through the specification
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 1)
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 2)
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 3)
-                      sTcb.vspaceRoot sTcb.ipcBuffer sTcb.cspaceRoot
+                      sTcb.vspaceRoot sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                   | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
               else if overflowWordsRead st s sTcb (len - 4) then
                 match st.getTcb? tid with
@@ -4096,9 +4086,9 @@ other rendezvous goes through the specification
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 1)
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 2)
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 3)
-                    sTcb.vspaceRoot sTcb.ipcBuffer sTcb.cspaceRoot
+                    sTcb.vspaceRoot sTcb.ipcBuffer sTcb.spaceCells[0]
                     (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                    rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                    rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -4113,16 +4103,16 @@ other rendezvous goes through the specification
                     .ok ((), performCallTakeCapsDelivered st epId s sTcb.queueNextCode tid rid
                       executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext len
                       (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
-                      sTcb.ipcBuffer sTcb.cspaceRoot
+                      sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                   else if overflowWordsRead st s sTcb (len - 4) then
                     .ok ((), performCallTakeCapsDeliveredLong st epId s sTcb.queueNextCode tid rid
                       executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext len
                       (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
-                      sTcb.ipcBuffer sTcb.cspaceRoot
+                      sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
                   else endpointReceiveRendezvousR epId tid replyCode executingCore st
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -4401,7 +4391,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     (hRecv : decoded.syscallId = .receive)
     (len : Nat) (replyAddr : SeLe4n.CPtr)
     (hRid : resolveRecvReplyIdR st tid len replyAddr = resolveRecvReplyId gate decoded st)
-    (hRoot : callerCspaceRoot st tid = gate.cspaceRoot) :
+    (hRoot : callerCspaceRoot st tid = gate.cspaceRootCap) :
     endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
         st := by
@@ -4565,15 +4555,15 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
     (st : SystemState) (ref : CSpaceAddr)
     (hRecv : decoded.syscallId = .receive) (len : Nat) (replyAddr : SeLe4n.CPtr)
     (hRid : resolveRecvReplyIdR st tid len replyAddr = resolveRecvReplyId gate decoded st)
-    (hRoot : callerCspaceRoot st tid = gate.cspaceRoot)
-    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hRoot : callerCspaceRoot st tid = gate.cspaceRootCap)
+    (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     receiveOperandArmThenTaintR ctx tid len replyAddr executingCore gate.requiredRight
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hRecv, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
+    hRecv, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [receiveTaintStep_eq st tid decoded hRecv
     (wS := fun cap => st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap)))
     (hS := fun _ => decode_taintWordsAt st _), hOperand]
@@ -4617,7 +4607,7 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     dispatchReceiveCheckedR ctx decoded.capAddr len replyAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRecv]; decide)
-  intro st tcb rootCn ref hTcb hRoot hRef
+  intro st tcb ref hTcb hRef
   have hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr } := by
     intro hN
     have h := hReplyAddr hN
@@ -4626,16 +4616,13 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     simp only [decodeRecvArgs, requireMsgReg, h0, ↓reduceDIte, hv, bind, Except.bind, pure, Except.pure,
       SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
   have hRid := resolveRecvReplyIdR_eq st tid
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    decoded len replyAddr rfl (by simp only [callerCspaceRoot, hTcb])
-    (by simp only [callerCspaceDepth, hTcb, hRoot]) hLen hArgs
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+    decoded len replyAddr rfl (by simp only [callerCspaceRoot, hTcb]) hLen hArgs
   have hArm := receiveOperandArmThenTaintR_eq ctx decoded tid executingCore
-    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref hRecv len replyAddr hRid (by simp only [callerCspaceRoot, hTcb]) hRef
-    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+    (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hRecv] at hArm ⊢
   exact hArm
 

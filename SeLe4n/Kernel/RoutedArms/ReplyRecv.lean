@@ -37,10 +37,11 @@ the default heartbeats. -/
     (st : SystemState) : SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
         extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
-      st entryReportGeneral entryReportResolved entryReportLookup
+      st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+      entryReportLookup entryReportLookupW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

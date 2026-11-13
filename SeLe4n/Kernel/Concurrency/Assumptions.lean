@@ -82,17 +82,17 @@ AN9-J's runtime model each is preserved by the FFI bracket
 `interrupts::with_interrupts_disabled` plus, for cross-core sites, the
 `SMP_ENABLED = false` runtime flag at v1.0.0. -/
 
-/-- H-05 / AN4-D: resolved-CNode validity across multi-level lookup
-calls in `cspaceLookupMultiLevel`. -/
-def cspaceLookupMultiLevel_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.cspaceLookupMultiLevel
+/-- H-05 / AN4-D: resolved-CNode validity across the multi-level walk of
+`lookupSlot` (seL4's `resolveAddressBits` from the caller's root capability). -/
+def lookupSlot_smpLatent : SmpLatentAssumption :=
+  { identifier        := `SeLe4n.Kernel.lookupSlot
     singleCoreWitness :=
-      "Single-core: no retype between resolveCapAddress and cspaceLookupSlot — \
+      "Single-core: no retype between resolveAddressBits and cspaceLookupSlot — \
        the resolved CNode reference remains valid for the full multi-level walk."
     smpDischarge      :=
       "SMP: AN9-D HAL-bracket atomicity (interrupt-disabled dispatch path) \
        preserves the no-retype invariant across the walk on the calling core."
-    sourceTheorem     := `SeLe4n.Kernel.resolveCapAddress_result_valid_cnode
+    sourceTheorem     := `SeLe4n.Kernel.resolveAddressBits_result_valid_cnode
     auditReference    := "H-05 / AN4-D" }
 
 /-- AK7-F.cascade: CDT post-state composition assumes no concurrent
@@ -199,7 +199,7 @@ def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
 into a single value that downstream tooling (e.g. `audit_testing_framework.sh`)
 can grep / decide on. -/
 def smpLatentInventory : List SmpLatentAssumption :=
-  [ cspaceLookupMultiLevel_smpLatent
+  [ lookupSlot_smpLatent
   , cspaceCopyMoveMutate_smpLatent
   , lifecyclePreRetypeCleanup_smpLatent
   , timerTickReplenishmentPipeline_smpLatent
@@ -223,7 +223,7 @@ theorem smpLatentInventory_identifiers_nonAnonymous :
   simp [smpLatentInventory] at hEntry
   rcases hEntry with h|h|h|h|h|h|h <;>
     subst h <;>
-    simp [cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    simp [lookupSlot_smpLatent, cspaceCopyMoveMutate_smpLatent,
           lifecyclePreRetypeCleanup_smpLatent,
           timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
           architecture_singleCoreOnly_smpLatent,
@@ -242,7 +242,7 @@ theorem smpLatentInventory_identifiers_nodup :
     (smpLatentInventory.map (·.identifier)).Nodup := by
   unfold smpLatentInventory
   simp only [List.map_cons, List.map_nil,
-    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lookupSlot_smpLatent, cspaceCopyMoveMutate_smpLatent,
     lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
@@ -259,7 +259,7 @@ theorem smpLatentInventory_sourceTheorems_nodup :
     (smpLatentInventory.map (·.sourceTheorem)).Nodup := by
   unfold smpLatentInventory
   simp only [List.map_cons, List.map_nil,
-    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lookupSlot_smpLatent, cspaceCopyMoveMutate_smpLatent,
     lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
@@ -318,14 +318,14 @@ structure SmpRetiredAssumption where
 deriving Inhabited
 
 /-- H-05 / AN4-D: resolved-CNode validity across the multi-level walk. -/
-def cspaceLookupMultiLevel_smpRetired : SmpRetiredAssumption :=
-  { identifier     := `SeLe4n.Kernel.cspaceLookupMultiLevel
+def lookupSlot_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.lookupSlot
     status         := .perCoreBracketGated
     retirement     :=
       "Per-core: the no-retype-during-walk invariant holds on the calling \
        core under the AN9-D interrupt-disabled dispatch bracket. Cross-core \
        retirement tracked against SM5 (per-core scheduler)."
-    anchor         := `SeLe4n.Kernel.resolveCapAddress_result_valid_cnode
+    anchor         := `SeLe4n.Kernel.resolveAddressBits_result_valid_cnode
     auditReference := "H-05 / AN4-D" }
 
 /-- AK7-F.cascade: CDT post-state composition for cspaceCopy/Move/Mutate. -/
@@ -402,7 +402,7 @@ def bootFromPlatform_currentCore_is_zero_smpRetired : SmpRetiredAssumption :=
 entry, in the same order, so `smpRetiredInventory_covers_latent` is a clean
 identifier-list equality. -/
 def smpRetiredInventory : List SmpRetiredAssumption :=
-  [ cspaceLookupMultiLevel_smpRetired
+  [ lookupSlot_smpRetired
   , cspaceCopyMoveMutate_smpRetired
   , lifecyclePreRetypeCleanup_smpRetired
   , timerTickReplenishmentPipeline_smpRetired
@@ -425,12 +425,12 @@ theorem smpRetiredInventory_covers_latent :
     smpRetiredInventory.map (·.identifier) = smpLatentInventory.map (·.identifier) := by
   unfold smpRetiredInventory smpLatentInventory
   simp only [List.map_cons, List.map_nil,
-    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lookupSlot_smpRetired, cspaceCopyMoveMutate_smpRetired,
     lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,
     bootFromPlatform_currentCore_is_zero_smpRetired,
-    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lookupSlot_smpLatent, cspaceCopyMoveMutate_smpLatent,
     lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
@@ -444,7 +444,7 @@ theorem smpRetiredInventory_identifiers_nodup :
     (smpRetiredInventory.map (·.identifier)).Nodup := by
   unfold smpRetiredInventory
   simp only [List.map_cons, List.map_nil,
-    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lookupSlot_smpRetired, cspaceCopyMoveMutate_smpRetired,
     lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,
@@ -458,7 +458,7 @@ theorem smpRetiredInventory_anchor_nodup :
     (smpRetiredInventory.map (·.anchor)).Nodup := by
   unfold smpRetiredInventory
   simp only [List.map_cons, List.map_nil,
-    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lookupSlot_smpRetired, cspaceCopyMoveMutate_smpRetired,
     lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,

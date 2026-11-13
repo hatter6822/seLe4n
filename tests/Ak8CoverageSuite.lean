@@ -322,7 +322,7 @@ def test_frozen_cnode_reads_its_slots : IO Bool := do
   let cap : Capability :=
     { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
   let cn : CNode :=
-    CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 5, cap)]
+    CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 5, cap)]
   -- 2^4 = 16; both keys (0, 5) are within range.
   let frozen := SeLe4n.Kernel.RadixTree.freezeCNodeSlots cn
   return frozen.lookup (SeLe4n.Slot.ofNat 5) == some cap &&
@@ -336,7 +336,7 @@ def test_phantom_key_insert_is_dropped : IO Bool := do
   let cap : Capability :=
     { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
   -- 2^2 = 4; key 8 is a phantom (out of radix range).
-  let cn : CNode := CNode.ofList 16 0 0 2 [(SeLe4n.Slot.ofNat 8, cap)]
+  let cn : CNode := CNode.ofList 2 [(SeLe4n.Slot.ofNat 8, cap)]
   return (cn.lookup (SeLe4n.Slot.ofNat 8)).isNone &&
     ((SeLe4n.Kernel.RadixTree.freezeCNodeSlots cn).lookup (SeLe4n.Slot.ofNat 0)).isNone
 

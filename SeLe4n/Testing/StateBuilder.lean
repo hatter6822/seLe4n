@@ -84,7 +84,7 @@ def withIrqHandler
     ({ target := .object oid, rights := AccessRightSet.ofList [.write] } : Capability).withBadge badge
   { builder with
     irqSignalLines := irq :: builder.irqSignalLines
-    objects := (irqNodeId irq.toNat, .cnode (CNode.ofList 0 0 0 0 [(irqNodeSlot, cap)])) ::
+    objects := (irqNodeId irq.toNat, .cnode (CNode.ofList 0 [(irqNodeSlot, cap)])) ::
       builder.objects }
 
 def withLifecycleObjectType
@@ -138,11 +138,39 @@ private def linkReplyWaiters (objects : List (SeLe4n.ObjId × KernelObject))
       | none => st
     | _ => st) st
 
+/-- **seL4's root-capability convention for a fixture**: a thread whose CSpace
+root capability carries no guard (`cnodeGuardSize = 0`, what
+`TCB.spaceCellsOf` writes) and names a CNode the builder holds gets that
+CNode's root guard, a zero guard of `64 - radix` bits (`create_root_cnode`),
+so a one-level root resolves a whole 64-bit address and a capability address
+is its slot number.  A root capability given a guard is kept as it is. -/
+def withRootGuards (objects : List (SeLe4n.ObjId × KernelObject)) :
+    List (SeLe4n.ObjId × KernelObject) :=
+  objects.map fun (oid, obj) =>
+    match obj with
+    | .tcb t =>
+      match t.spaceCells[0] with
+      | some cap =>
+        match cap.target with
+        | .object rootId =>
+          if cap.cnodeGuardSize = 0 then
+            match objects.find? (fun (o, _) => o == rootId) with
+            | some (_, .cnode cn) =>
+              let guarded : Capability := { cap with cnodeGuardSize := (64 - cn.radixWidth).toUInt8 }
+              let cells := t.spaceCells.set 0 (some guarded)
+              (oid, .tcb { t with spaceCells := cells })
+            | _ => (oid, obj)
+          else (oid, obj)
+        | _ => (oid, obj)
+      | none => (oid, obj)
+    | _ => (oid, obj)
+
 /-- Materialize a full `SystemState` from the builder tables.  The boot core's
 run queue is filled by the kernel's own enqueue (`runEnqueueOnCore`), so each
 runnable thread's TCB carries the run-queue links the selector walks (WS-ZA
 ZA4.5), and each reply-blocked thread is linked under its server (ZA4.6). -/
-def build (builder : BootstrapBuilder) : SystemState :=
+def build (builder0 : BootstrapBuilder) : SystemState :=
+  let builder := { builder0 with objects := withRootGuards builder0.objects }
   builder.runnable.foldl (fun st tid =>
       st.runEnqueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId tid
         (lookupThreadPriority builder.objects tid))
@@ -449,7 +477,7 @@ def withReceivePath (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
     let vs : VSpaceRoot :=
       { asid := ⟨vsId.toNat⟩
         mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [(va, (pa, { read := true, write := true }))] }
-    let tcb' := { tcb with ipcBuffer := va, spaceCells := TCB.spaceCellsOf tcb.cspaceRoot vsId }
+    let tcb' := { tcb with ipcBuffer := va, spaceCells := tcb.spaceCells.set 1 (TCB.spaceCellOf vsId TCB.vspaceRootRights) }
     let word (i : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat
       (pa.toNat + 8 * (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord + i))
     let mem := SeLe4n.Kernel.Architecture.writeUInt64
@@ -529,7 +557,34 @@ def withReceiveSlot (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
         else st.storeCNodeWith root (·.insert (SeLe4n.Slot.ofNat pathSlot)
           { target := .object root, rights := AccessRightSet.ofList [.read, .write, .grant] })
       withReceivePath st1 tid vsId (SeLe4n.VAddr.ofNat 0x7f0000)
-        (SeLe4n.PAddr.ofNat (0x1000000 + 0x1000 * (tid.toNat % 4096))) pathSlot index cn.depth
+        (SeLe4n.PAddr.ofNat (0x1000000 + 0x1000 * (tid.toNat % 4096))) pathSlot index cn.radixWidth
+
+/-- A CNode capability naming CNode `oid` with guard `guard` of `guardSize`
+bits: seL4 keeps a CNode's guard in `cap_cnode_cap`. -/
+def cnodeCapOf (oid : SeLe4n.ObjId) (guard : UInt64 := 0) (guardSize : UInt8 := 0) : Capability :=
+  { target := .object oid, rights := AccessRightSet.ofList [.read, .write],
+    cnodeGuard := guard, cnodeGuardSize := guardSize }
+
+/-- seL4's index-and-depth addressing from a CNode capability
+(`lookupSlotForCNodeOp`), then the capability the slot holds. -/
+def pathLookupCap (root : Capability) (cptr : Nat) (depth : Nat) (st : SystemState) :
+    Except KernelError Capability :=
+  match SeLe4n.Kernel.lookupSlotForCNodeOp false root (SeLe4n.CPtr.ofNat cptr) depth st with
+  | .error e => .error e
+  | .ok ref =>
+    match SystemState.lookupSlotCap st ref with
+    | some cap => .ok cap
+    | none => .error (.invalidCapability 0)
+
+/-- The record with its CSpace root slot holding a capability to CNode `c`
+with guard 0 of `guardSize` bits, seL4's root-task convention: a CNode of
+radix `r` takes a `64 - r`-bit guard, so a capability address is the slot
+number and resolves in one level. -/
+def TCB.withGuardedCSpaceRoot (t : TCB) (c : SeLe4n.ObjId) (guardSize : UInt8) : TCB :=
+  let cell := (TCB.spaceCellOf c TCB.cspaceRootRights).map
+    (fun cap => { cap with cnodeGuardSize := guardSize })
+  let cells := t.spaceCells.set 0 cell
+  { t with spaceCells := cells }
 
 end SeLe4n.Testing
 

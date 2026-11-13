@@ -133,10 +133,14 @@ the kept capability naming `e`. -/
     (sv.registrationAt e).sid = ServiceId.ofNat e.toNat := rfl
 
 /-- **A registration is the one its endpoint's record holds**: the record keeps
-every word but the target, and the target is the endpoint. -/
+every word but the target, which is the endpoint, and the CNode guard, which an
+endpoint capability has none of (WS-SX SX2, seL4's `endpoint_cap` holds no
+guard). -/
 theorem registrationAt_ofRegistration {reg : ServiceRegistration} {e : SeLe4n.ObjId}
-    (h : reg.endpointCap.target = .object e) : (ofRegistration reg).registrationAt e = reg := by
-  obtain ⟨⟨_, _, _, _, _⟩, ⟨t, _, _, _, _, _, _, _, _⟩⟩ := reg
+    (h : reg.endpointCap.target = .object e) :
+    (ofRegistration reg).registrationAt e =
+      { reg with endpointCap := reg.endpointCap.withCNodeGuard 0 0 } := by
+  obtain ⟨⟨_, _, _, _, _⟩, ⟨t, _, _, _, _, _, _, _, _, _, _⟩⟩ := reg
   simp only at h; subst h; rfl
 
 end EndpointService

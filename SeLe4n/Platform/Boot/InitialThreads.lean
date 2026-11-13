@@ -70,7 +70,7 @@ def startInitialThread (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := startInitialThreadOnCore_preserves_perObjectMappingsInvariant ist.state tid
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := startInitialThreadOnCore_preserves_bookkeepingAgrees
+  hLifecycleConsistent := startInitialThreadOnCore_preserves_bookkeepingAgreesUnbounded
     ist.state tid ist.hAllTables.objects.1 ist.hLifecycleConsistent
 
 /-- **WS-BP BP7.11** (the derivation, pinned): the boot's start *is* the kernel
@@ -509,6 +509,34 @@ theorem startInitialThreads_capTargetKindBacked (L : List SeLe4n.ThreadId)
       exact startInitialThreadOnCore_capTargetKindBacked i.state tid i.hAllTables.objects.1 hP)
     L ist ist' h hK
 
+/-- A start keeps every capability's CNode geometry (`cnodeCapGeometry`): its
+capabilities are the ones it held, and it writes a thread over a thread, so
+every CNode is where it was. -/
+theorem startInitialThreadOnCore_cnodeCapGeometry (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (h : cnodeCapGeometry st) :
+    cnodeCapGeometry (startInitialThreadOnCore st tid) := by
+  intro oid o slot c hO hc
+  have hS : (startInitialThreadOnCore st tid).slotCapAt ⟨oid, slot⟩ = some c := by
+    rw [SystemState.slotCapAt_of_object hO]; exact hc
+  rw [startInitialThreadOnCore_slotCapAt_of_ne_none st tid hInv ⟨oid, slot⟩
+    (by rw [hS]; exact Option.some_ne_none _)] at hS
+  refine cnodeCapGeometryAt_mono (fun k cn' hC => ⟨cn', ?_, rfl⟩) _ (h.slotCapAt hS)
+  have hO' := (SystemState.getCNode?_eq_some_iff _ _ _).mp hC
+  rcases startInitialThreadOnCore_objects_cases st tid hInv k _ hO' with hB | ⟨_, _, _, hT, _⟩
+  · exact (SystemState.getCNode?_eq_some_iff _ _ _).mpr hB
+  · cases hT
+
+/-- The starts keep every capability's CNode geometry. -/
+theorem startInitialThreads_cnodeCapGeometry (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hK : cnodeCapGeometry ist.state) : cnodeCapGeometry ist'.state :=
+  startInitialThreads_induct (fun i => cnodeCapGeometry i.state)
+    (fun i tid _ hP => by
+      show cnodeCapGeometry (startInitialThread i tid).state
+      rw [startInitialThread_state]
+      exact startInitialThreadOnCore_cnodeCapGeometry i.state tid i.hAllTables.objects.1 hP)
+    L ist ist' h hK
+
 /-- **WS-ZA ZA5.4 part 19**: a start keeps every untyped record: it writes a
 thread over a thread and removes no object. -/
 theorem startInitialThreadOnCore_getUntyped? (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -640,6 +668,48 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     hListed hLive hUnique hUncarved hNamedU
     (installIrqNodes_capTargetKindBacked hFresh (startInitialThreads_capTargetKindBacked _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked cores config base hBase)))
+    (installIrqNodes_cnodeCapGeometry hFresh
+      (startInitialThreads_capabilitiesLive _ _ _ hStart
+        (bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase))
+      (startInitialThreads_cnodeCapGeometry _ _ _ hStart
+        (bootFromPlatformCheckedWithIdleThreadsFor_ok_cnodeCapGeometry cores config base hBase)))
+
+/-- **The started boot keeps the object index within `maxObjects`**: the starts
+and the linking keep the index, and the node install adds one entry per line,
+at most `InterruptLineSet.capacity`, which the idle boot left room for
+(`bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room`). -/
+theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    ist.state.objectIndex.length ≤ maxObjects := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  have hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores := by
+    have := SeLe4n.Kernel.RobinHood.List.length_le_of_nodup_subset hNodup
+      (m := SeLe4n.Kernel.Concurrency.allCores)
+      (fun a _ => SeLe4n.Kernel.Concurrency.mem_allCores a)
+    rwa [SeLe4n.Kernel.Concurrency.allCores_length] at this
+  have hRoom := bootFromPlatformCheckedWithIdleThreadsFor_objectIndex_room cores config base
+    hCores hBase
+  have hS : started.state.objectIndex = base.state.objectIndex :=
+    startInitialThreads_induct (fun i => i.state.objectIndex = base.state.objectIndex)
+      (fun i tid _ hP => by
+        show (startInitialThreadOnCore i.state tid).objectIndex = _
+        rw [startInitialThreadOnCore_frame i.state tid]
+        exact hP)
+      _ _ _ hStart rfl
+  have hI := foldObjects_objectIndex_length_le (irqNodeEntries (irqNodeLineCount config)) started
+  have hN : (irqNodeEntries (irqNodeLineCount config)).length ≤ InterruptLineSet.capacity := by
+    simp only [irqNodeEntries, List.length_map, List.length_range, irqNodeLineCount]
+    exact Nat.min_le_right _ _
+  have hL : (linkBootCapabilities config
+      (installIrqNodes (irqNodeLineCount config) started)).state.objectIndex =
+      (installIrqNodes (irqNodeLineCount config) started).state.objectIndex := by
+    rw [linkBootCapabilities_state, (linkBootSlots_reach _ _).fields]
+  rw [hL]
+  unfold installIrqNodes
+  rw [hS] at hI
+  omega
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state
@@ -652,6 +722,7 @@ theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
     Architecture.proofLayerInvariantBundle ist.state :=
   proofLayerInvariantBundle_of_bootLinkedShape ist
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
+    (bootFromPlatformCheckedStartedFor_objectIndex_length_le cores hNodup config ist h)
 
 /-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
 current or resident** — the first entry's precondition for

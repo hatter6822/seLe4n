@@ -449,7 +449,6 @@ theorem dispatchSyscallChecked_savedRegsKeptOffCore {ctx : LabelingContext}
         hC.residentKept
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
-  split at h <;> try (cases h; done)
   split at h
   · cases h
   rename_i stPost hD

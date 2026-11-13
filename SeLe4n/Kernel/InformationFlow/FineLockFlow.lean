@@ -2225,7 +2225,7 @@ handler.  Without it the resolver would declare a footprint for a syscall the
 dispatch is going to reject, and under contention the bracket would enqueue
 `lockCore` on locks for a call that cannot execute.
 
-*The resolution must not leave the caller's root CNode.*  `resolveCapAddress`
+*The resolution must not leave the caller's root CNode.*  `resolveAddressBits`
 walks a multi-level CSpace, reading each intermediate and leaf CNode on the
 path; the footprint declares a read lock on the **root** only
 (`lockSet_tcbSuspend`'s `cnodeRootObjId`), so a deeper path would have the
@@ -2237,7 +2237,7 @@ name the path in general.  Rejecting is therefore the fail-closed option, and
 it is the one the reviewer's own second alternative names.  A rejected entry
 declares nothing and the caller keeps its coarser serialisation.
 
-`resolveCapAddress` is run for the *guard* only; the capability itself still
+`resolveAddressBits` is run for the *guard* only; the capability itself still
 comes from `syscallLookupCap`, so the target stays the one the live arm reads
 rather than something this module computes for itself. -/
 def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : SystemState) :
@@ -2249,21 +2249,21 @@ def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : 
     | none => none
     | some rootCn =>
       -- Non-recursive **by construction**, not by inspecting the endpoint.
-      -- `resolveCapAddress` consumes `guardWidth + radixWidth` bits per hop and
+      -- `resolveAddressBits` consumes the guard and the radix per hop and
       -- recurses whenever any remain, so a root that consumes them all cannot
       -- descend at all.  Checking the final `ref.cnode` instead would accept a
       -- path that leaves the root and cycles back to it — the lookup would still
       -- have read an unlocked child CNode on the way, and a concurrent writer
       -- could redirect it without touching the declared footprint.
-      if rootCn.depth ≠ rootCn.guardWidth + rootCn.radixWidth then none
+      if rootCapGuardSize tcb + rootCn.radixWidth ≠ 64 then none
       else
-      match resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
+      match lookupSlot tcb decoded.capAddr s with
       | .error _ => none
       | .ok ref =>
         if ref.cnode ≠ tcb.cspaceRoot then none
         else
-        match syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot,
-                                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
+        match syscallLookupCap { callerId := tid, cspaceRootCap := tcb.spaceCells[0],
+                                 capAddr := decoded.capAddr,
                                  requiredRight := syscallRequiredRight decoded.syscallId } s with
         | .error _ => none
         | .ok (cap, _) =>
@@ -2317,7 +2317,7 @@ the one, and the only one, the declared footprint read-locks.
 
 This is the property whose absence let a multi-level CSpace path select the target
 through intermediate CNodes no declared lock covers.  It is stated over
-`resolveCapAddress`'s own output rather than over the guard's syntax, so deleting
+`resolveAddressBits`'s own output rather than over the guard's syntax, so deleting
 the `if` breaks this proof rather than silently widening the resolver again.
 
 A `LockSet` cannot name a whole CSpace path — it is capped at `maxLockSetSize`,
@@ -2331,8 +2331,8 @@ theorem entryCapTarget_single_level (decoded : SyscallDecodeResult)
       -- The root consumes every bit, so the resolution takes exactly one hop:
       -- it cannot descend into a child CNode, and therefore cannot leave and
       -- re-enter the root either.
-      rootCn.depth = rootCn.guardWidth + rootCn.radixWidth ∧
-      resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s = .ok ref ∧
+      rootCapGuardSize tcb + rootCn.radixWidth = 64 ∧
+      lookupSlot tcb decoded.capAddr s = .ok ref ∧
       ref.cnode = tcb.cspaceRoot := by
   unfold entryCapTarget at h
   cases hTcb : s.getTcb? tid with
@@ -2345,9 +2345,9 @@ theorem entryCapTarget_single_level (decoded : SyscallDecodeResult)
     | some rootCn =>
       rw [hCn] at h
       simp only at h
-      by_cases hDepth : rootCn.depth = rootCn.guardWidth + rootCn.radixWidth
+      by_cases hDepth : rootCapGuardSize tcb + rootCn.radixWidth = 64
       · rw [if_neg (by exact fun hne => hne hDepth)] at h
-        cases hRes : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
+        cases hRes : lookupSlot tcb decoded.capAddr s with
         | error e => rw [hRes] at h; exact absurd h (by simp)
         | ok ref =>
           rw [hRes] at h
@@ -2851,7 +2851,7 @@ RR7.41 (the CSpace-walk interior).
 
 **The CSpace-walk interior's entry is deleted at v0.34.90 (WS-RR RR7.41).**
 `Capability.cspaceWalkPath` derives the CNodes a resolution passes through from
-`resolveCapAddress`'s own recursion, `cspaceWalkLockSet` declares a **read** lock
+`resolveAddressBits`'s own recursion, `cspaceWalkLockSet` declares a **read** lock
 on each, and `cspaceWalk_conflicts_with_delete` proves what the root-only
 footprint could not: a `cspaceDelete` whose target lies on the path shares a
 conflicting lock with the resolution, so SM3.E's conflict order separates them.

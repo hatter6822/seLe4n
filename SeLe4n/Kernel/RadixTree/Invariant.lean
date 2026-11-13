@@ -30,8 +30,8 @@ import SeLe4n.Kernel.RadixTree.Core
 11. `insert_erase_cancel` — insert then erase restores original tree
 
 **Field preservation (6):**
-12. `insert_guardWidth` / 13. `insert_guardValue` / 14. `insert_radixWidth`
-15. `erase_guardWidth` / 16. `erase_guardValue` / 17. `erase_radixWidth`
+12. `insert_radixWidth`
+13. `erase_radixWidth`
 
 **Size and fanout (4):**
 18. `size_empty` — empty tree has size 0
@@ -64,8 +64,8 @@ private theorem extractBits_idx_eq (s : SeLe4n.Slot) (radixWidth : Nat) :
 -- ============================================================================
 
 /-- Looking up any slot in an empty CNodeRadix returns `none`. -/
-theorem CNodeRadix.lookup_empty (gw gv rw : Nat) (slot : SeLe4n.Slot) :
-    (CNodeRadix.empty gw gv rw).lookup slot = none := by
+theorem CNodeRadix.lookup_empty (rw : Nat) (slot : SeLe4n.Slot) :
+    (CNodeRadix.empty rw).lookup slot = none := by
   simp [CNodeRadix.lookup, CNodeRadix.empty]
 
 -- ============================================================================
@@ -134,7 +134,7 @@ theorem CNodeRadix.wf_of_mk (tree : CNodeRadix) : tree.WF :=
   tree.hSlotSize
 
 /-- Empty tree is well-formed. -/
-theorem CNodeRadix.empty_wf (gw gv rw : Nat) : (CNodeRadix.empty gw gv rw).WF := by
+theorem CNodeRadix.empty_wf (rw : Nat) : (CNodeRadix.empty rw).WF := by
   simp [CNodeRadix.WF, CNodeRadix.empty, Array.size]
 
 /-- Insert preserves well-formedness. -/
@@ -162,28 +162,12 @@ theorem CNodeRadix.insert_erase_cancel (tree : CNodeRadix) (slot : SeLe4n.Slot)
 -- Q4-C9: insert preserves radix parameters
 -- ============================================================================
 
-/-- Insert does not change guardWidth. -/
-theorem CNodeRadix.insert_guardWidth (tree : CNodeRadix) (slot : SeLe4n.Slot)
-    (cap : Capability) :
-    (tree.insert slot cap).guardWidth = tree.guardWidth := rfl
-
-/-- Insert does not change guardValue. -/
-theorem CNodeRadix.insert_guardValue (tree : CNodeRadix) (slot : SeLe4n.Slot)
-    (cap : Capability) :
-    (tree.insert slot cap).guardValue = tree.guardValue := rfl
 
 /-- Insert does not change radixWidth. -/
 theorem CNodeRadix.insert_radixWidth (tree : CNodeRadix) (slot : SeLe4n.Slot)
     (cap : Capability) :
     (tree.insert slot cap).radixWidth = tree.radixWidth := rfl
 
-/-- Erase does not change guardWidth. -/
-theorem CNodeRadix.erase_guardWidth (tree : CNodeRadix) (slot : SeLe4n.Slot) :
-    (tree.erase slot).guardWidth = tree.guardWidth := rfl
-
-/-- Erase does not change guardValue. -/
-theorem CNodeRadix.erase_guardValue (tree : CNodeRadix) (slot : SeLe4n.Slot) :
-    (tree.erase slot).guardValue = tree.guardValue := rfl
 
 /-- Erase does not change radixWidth. -/
 theorem CNodeRadix.erase_radixWidth (tree : CNodeRadix) (slot : SeLe4n.Slot) :
@@ -202,8 +186,8 @@ private theorem list_foldl_replicate_none_count (n : Nat) :
   | succ n ih => simp [List.replicate_succ, List.foldl_cons]; exact ih
 
 /-- The empty tree has size 0. -/
-theorem CNodeRadix.size_empty (gw gv rw : Nat) :
-    (CNodeRadix.empty gw gv rw).size = 0 := by
+theorem CNodeRadix.size_empty (rw : Nat) :
+    (CNodeRadix.empty rw).size = 0 := by
   simp only [CNodeRadix.size, CNodeRadix.empty]
   rw [← Array.foldl_toList]
   exact list_foldl_replicate_none_count _

@@ -80,13 +80,13 @@ derivation edge from the source.  A source that no longer holds a capability
 inserts nothing, as `checkCapAt` does.  Out of line, on words, so a caller builds
 no slot record; compiled as `threadSlotCopiedImpl`. -/
 @[noinline] def threadSlotCopied (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) : SystemState :=
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) : SystemState :=
   let stD := spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
     { cnode := tid.toObjId, slot := slot }
   match SystemState.lookupSlotCap stD { cnode := srcCNode, slot := srcSlot } with
   | none => stD
   | some cap =>
-    (stD.updateTcb tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))).cdtAddChild
+    (stD.updateTcb tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))).cdtAddChild
       { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy
 
 /-- **The delete `threadSlotCopied` begins with is the slot delete**: on a stored
@@ -129,18 +129,18 @@ theorem threadSlotDeleted_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TC
 
 /-- **What a slot copy is**, by whether the source still holds a capability. -/
 theorem threadSlotCopied_cases (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
     (SystemState.lookupSlotCap (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
         { cnode := tid.toObjId, slot := slot }) { cnode := srcCNode, slot := srcSlot } = none ∧
-      threadSlotCopied st tid slot srcCNode srcSlot rights =
+      threadSlotCopied st tid slot srcCNode srcSlot rights data =
         spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
           { cnode := tid.toObjId, slot := slot }) ∨
     ∃ cap, SystemState.lookupSlotCap (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
         { cnode := tid.toObjId, slot := slot }) { cnode := srcCNode, slot := srcSlot } = some cap ∧
-      threadSlotCopied st tid slot srcCNode srcSlot rights =
+      threadSlotCopied st tid slot srcCNode srcSlot rights data =
         ((spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
           { cnode := tid.toObjId, slot := slot }).updateTcb tid
-            (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))).cdtAddChild
+            (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))).cdtAddChild
           { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy := by
   unfold threadSlotCopied
   dsimp only
@@ -151,19 +151,19 @@ theorem threadSlotCopied_cases (st : SystemState) (tid : SeLe4n.ThreadId) (slot 
 /-- **A slot copy keeps the thread stored** and the object table well formed. -/
 theorem threadSlotCopied_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ((threadSlotCopied st tid slot srcCNode srcSlot rights).getTcb? tid).isSome ∧
-      (threadSlotCopied st tid slot srcCNode srcSlot rights).objects.invExt := by
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    ((threadSlotCopied st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome ∧
+      (threadSlotCopied st tid slot srcCNode srcSlot rights data).objects.invExt := by
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e, hT']; exact ⟨rfl, hI⟩
   · rw [e]
     have hU := SystemState.updateTcb_preserves_objects_invExt _ tid
-      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
+      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
     have hR := SystemState.cdtAddChild_reach
       ((spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
         { cnode := tid.toObjId, slot := slot }).updateTcb tid
-          (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)))
+          (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)))
       { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy
     refine ⟨?_, hR.invExt hU⟩
     rw [(hR.agree hU).getTcb?_isSome tid]
@@ -184,17 +184,19 @@ its source's: the source slot's record, once that slot is cleared, is still its
 own to be written over in place.  Out of line, so its matches are no branch of
 its caller. -/
 @[noinline] def capabilityCellOver (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) : Option Capability :=
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : Option Capability :=
   match target, o with
-  | .object id, some r => some (r.overwriteObject id rights)
-  | .object id, none => some (Capability.ofObject id rights)
-  | _, some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0)
-  | _, none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0)
+  | .object id, some r => some (r.overwriteObject id rights guard guardSize)
+  | .object id, none => some (Capability.ofObject id rights guard guardSize)
+  | _, some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0
+      guard guardSize)
+  | _, none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0
+      guard guardSize)
 
 theorem capabilityCellOver_eq (o : Option Capability) (target : CapTarget)
-    (rights : AccessRightSet) :
-    capabilityCellOver o target rights =
-      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
+    capabilityCellOver o target rights guard guardSize =
+      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold capabilityCellOver
   split
   · rw [Capability.overwriteObject_eq]
@@ -209,17 +211,20 @@ holds it when the capability is written over it (`capabilityCellOver`).  The
 thread is rebuilt once, after those calls, so an unshared thread is rebuilt in
 its own cell.  Equal to the insert (`TCB.spaceCellFilledWith_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilledWith (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) : TCB :=
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8)
+    (a : Array (Option Capability)) : TCB :=
   let i := s.toNat
   let o := spareRecordAt a i
   let a' := a.setIfInBounds i none
-  let c := capabilityCellOver o target rights
+  let c := capabilityCellOver o target rights guard guardSize
   { t with spaceCells := t.spaceCells.setIfInBounds i c, spaceSpare := Squash.mk a' }
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) :
-    t.spaceCellFilledWith s target rights a =
-      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8)
+    (a : Array (Option Capability)) :
+    t.spaceCellFilledWith s target rights guard guardSize a =
+      t.insertSpaceCap s
+        ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold TCB.spaceCellFilledWith TCB.insertSpaceCap
   dsimp only
   rw [capabilityCellOver_eq]
@@ -230,34 +235,37 @@ theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slo
 alone**, over the slot's spare record (`TCB.spaceCellFilledWith`); the insert
 (`TCB.spaceCellFilled_eq`). -/
 @[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilled (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) : TCB :=
-  Quot.lift (fun a => t.spaceCellFilledWith s target rights a)
-    (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights a).trans
-      (TCB.spaceCellFilledWith_eq t s target rights b).symm) t.spaceSpare
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : TCB :=
+  Quot.lift (fun a => t.spaceCellFilledWith s target rights guard guardSize a)
+    (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights guard guardSize a).trans
+      (TCB.spaceCellFilledWith_eq t s target rights guard guardSize b).symm) t.spaceSpare
 
 theorem _root_.SeLe4n.Model.TCB.spaceCellFilled_eq (t : TCB) (s : SeLe4n.Slot)
-    (target : CapTarget) (rights : AccessRightSet) :
-    t.spaceCellFilled s target rights =
-      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+    (target : CapTarget) (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
+    t.spaceCellFilled s target rights guard guardSize =
+      t.insertSpaceCap s
+        ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
   unfold TCB.spaceCellFilled
   induction t.spaceSpare using Quot.ind with
-  | mk a => exact TCB.spaceCellFilledWith_eq t s target rights a
+  | mk a => exact TCB.spaceCellFilledWith_eq t s target rights guard guardSize a
 
 /-- The thread's space slot `slot` written with the capability of `target` and
 `rights` alone, over the slot's spare record (`TCB.spaceCellFilled`).  Out of
 line, on words, so the update is compiled into it. -/
 @[noinline] def threadSpaceCellWritten (st : SystemState) (tid : SeLe4n.ThreadId)
-    (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet) : SystemState :=
-  st.updateTcb tid fun t => t.spaceCellFilled slot target rights
+    (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
+    (guard : UInt64) (guardSize : UInt8) : SystemState :=
+  st.updateTcb tid fun t => t.spaceCellFilled slot target rights guard guardSize
 
 /-- The insert and edge of `threadSlotCopied`, on the deleted state `stD`. -/
 @[noinline] def threadSlotRefilled (stD : SystemState)
     (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) : SystemState :=
+    (rights : AccessRightSet) (data : UInt64) : SystemState :=
   match SystemState.lookupSlotCap stD { cnode := srcCNode, slot := srcSlot } with
   | none => stD
   | some cap =>
-    (threadSpaceCellWritten stD tid slot cap.target (cap.rights.inter rights)).cdtAddChild
+    (threadSpaceCellWritten stD tid slot cap.target (cap.rights.inter rights)
+      (TCB.spaceCopyGuard cap data) (TCB.spaceCopyGuardSize cap data)).cdtAddChild
       { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy
 
 /-- `threadSlotCopied` as compiled: the delete keeps the slot's cell as its
@@ -266,13 +274,13 @@ record (`TCB.spaceCellFilled`), or over the one the carve made for a slot
 never filled: setting a thread's space builds no capability. -/
 @[noinline] def threadSlotCopiedImpl (st : SystemState) (tid : SeLe4n.ThreadId)
     (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) : SystemState :=
+    (rights : AccessRightSet) (data : UInt64) : SystemState :=
   threadSlotRefilled
     (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st) { cnode := tid.toObjId, slot := slot })
-    tid slot srcCNode srcSlot rights
+    tid slot srcCNode srcSlot rights data
 
 @[csimp] theorem threadSlotCopied_eq_impl : @threadSlotCopied = @threadSlotCopiedImpl := by
-  funext st tid slot srcCNode srcSlot rights
+  funext st tid slot srcCNode srcSlot rights data
   unfold threadSlotCopied threadSlotCopiedImpl threadSlotRefilled threadSpaceCellWritten
   simp only [TCB.spaceCellFilled_eq]
   split <;> rfl
@@ -285,10 +293,10 @@ before the delete, as the finalising delete reads them
 not final or named nothing retirable. -/
 @[inline] def threadSlotSet (executingCore : Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) : SystemState :=
+    (rights : AccessRightSet) (data : UInt64) : SystemState :=
   let target := slotRetireTarget st tid.toObjId slot
   retireFinalObject executingCore target (recorderFor st target tid.toObjId slot)
-    (threadSlotCopied st tid slot srcCNode srcSlot rights)
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data)
 
 /-- The CSpace root a `.tcbSetSpace` names at MR0: its argument capability `0`,
 numbered `1` as seL4 numbers a refusal's capability (`invalidCapNumber`). -/
@@ -298,12 +306,26 @@ def setSpaceCSpaceRootCapNumber : UInt64 := 1
 numbered `2`. -/
 def setSpaceVSpaceRootCapNumber : UInt64 := 2
 
-/-- The CSpace-root source check: the slot holds a capability naming a CNode. -/
-@[inline] def cspaceRootSourceAdmitted (st : SystemState) (src : CSpaceAddr) : Bool :=
+/-- **The CSpace root data word a `.tcbSetSpace` names at MR2 is refused for the
+CNode `id`** — seL4's `decodeSetSpace`: a nonzero word goes through
+`updateCapData`, whose CNode case answers a null capability when the guard size
+it gives and the CNode's radix exceed the word (`capDataRefused`), and the null
+capability is then refused as no CNode (`seL4_IllegalOperation`).  A zero word
+is not passed through `updateCapData` and is never refused. -/
+@[inline] def cspaceRootDataRefused (st : SystemState) (id : SeLe4n.ObjId) (data : UInt64) :
+    Bool :=
+  match st.getCNode? id with
+  | some cn => data != 0 && decide (64 < (capDataGuardSize data).toNat + cn.radixWidth)
+  | none => false
+
+/-- The CSpace-root source check: the slot holds a capability naming a CNode,
+and the root data word `data` is not refused for it (`cspaceRootDataRefused`). -/
+@[inline] def cspaceRootSourceAdmitted (st : SystemState) (src : CSpaceAddr) (data : UInt64) :
+    Bool :=
   match SystemState.lookupSlotCap st src with
   | some cap =>
     match cap.target with
-    | .object id => (st.getCNode? id).isSome
+    | .object id => (st.getCNode? id).isSome && !cspaceRootDataRefused st id data
     | _ => false
   | none => false
 
@@ -318,51 +340,57 @@ root. -/
   | none => false
 
 /-- **The writes of a space change**, on the source slots' words: the CSpace
-root slot set from its source, then the VSpace root slot from its, each
-finalising what it held (`threadSlotSet`). -/
+root slot set from its source under the root data word `cnData`, then the VSpace
+root slot from its, each finalising what it held (`threadSlotSet`). -/
 @[inline] def copyThreadSpacesPerform (executingCore : Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (cnCNode : SeLe4n.ObjId) (cnSlot : SeLe4n.Slot) (vrCNode : SeLe4n.ObjId)
-    (vrSlot : SeLe4n.Slot) : SystemState :=
+    (vrSlot : SeLe4n.Slot) (cnData : UInt64) : SystemState :=
   threadSlotSet executingCore
-    (threadSlotSet executingCore st tid TCB.cspaceRootSlot cnCNode cnSlot TCB.cspaceRootRights)
-    tid TCB.vspaceRootSlot vrCNode vrSlot TCB.vspaceRootRights
+    (threadSlotSet executingCore st tid TCB.cspaceRootSlot cnCNode cnSlot TCB.cspaceRootRights
+      cnData)
+    tid TCB.vspaceRootSlot vrCNode vrSlot TCB.vspaceRootRights 0
 
 /-- **Set a suspended thread's CSpace and VSpace root slots from two source
 slots** — seL4's `TCB_SetSpace`.  Refused, committing nothing, when the thread
 is not a stored TCB (`.objectNotFound`), is not suspended (`.illegalState`), or
-either source does not hold a capability naming an object of its kind
-(`.invalidCapability`).  Then each slot is set from its source
-(`threadSlotSet`), the CSpace root first. -/
+either source does not hold a capability naming an object of its kind, or the
+CSpace root data word `cnData` is refused for its CNode (`.invalidCapability`;
+the resolver answers that word first, `.illegalState`).  Then each slot is set
+from its source (`threadSlotSet`), the CSpace root first, its guard from
+`cnData` when that is nonzero (`TCB.spaceCopyOf`). -/
 def copyThreadSpaces (executingCore : Concurrency.CoreId) (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : Except KernelError SystemState :=
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) :
+    Except KernelError SystemState :=
   match st.getTcb? vtid.val with
   | none => .error .objectNotFound
   | some tcb =>
     if tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive then
       .error .illegalState
-    else if !cspaceRootSourceAdmitted st cnSrc then
+    else if !cspaceRootSourceAdmitted st cnSrc cnData then
       .error (.invalidCapability setSpaceCSpaceRootCapNumber)
     else if !vspaceRootSourceAdmitted st vrSrc then
       .error (.invalidCapability setSpaceVSpaceRootCapNumber)
     else .ok (copyThreadSpacesPerform executingCore st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode
-      vrSrc.slot)
+      vrSrc.slot cnData)
 
 /-- **`copyThreadSpaces`'s checks**, read before anything is written: the thread
 is a suspended TCB and each source names an object of its kind.  When they pass
 the operation is its writes (`copyThreadSpaces_of_admitted`). -/
 @[inline] def copyThreadSpacesAdmitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cnSrc vrSrc : CSpaceAddr) : Bool :=
+    (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) : Bool :=
   match st.getTcb? vtid.val with
   | none => false
   | some tcb =>
     !(tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive) &&
-      cspaceRootSourceAdmitted st cnSrc && vspaceRootSourceAdmitted st vrSrc
+      cspaceRootSourceAdmitted st cnSrc cnData && vspaceRootSourceAdmitted st vrSrc
 
 theorem copyThreadSpaces_of_admitted {ec : Concurrency.CoreId} {st : SystemState}
     {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpacesAdmitted st vtid cnSrc vrSrc = true) :
-    copyThreadSpaces ec st vtid cnSrc vrSrc =
-      .ok (copyThreadSpacesPerform ec st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot) := by
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpacesAdmitted st vtid cnSrc vrSrc cnData = true) :
+    copyThreadSpaces ec st vtid cnSrc vrSrc cnData =
+      .ok (copyThreadSpacesPerform ec st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot
+        cnData) := by
   unfold copyThreadSpacesAdmitted at h
   unfold copyThreadSpaces
   cases hT : st.getTcb? vtid.val with
@@ -378,11 +406,13 @@ TCB, each source held a capability naming an object of its kind, and the state
 is the two slot copies. -/
 theorem copyThreadSpaces_ok {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     ∃ tcb, st.getTcb? vtid.val = some tcb ∧ tcb.threadState = .Inactive ∧
       inferThreadState st vtid.val tcb = .Inactive ∧
-      cspaceRootSourceAdmitted st cnSrc = true ∧ vspaceRootSourceAdmitted st vrSrc = true ∧
-      st' = copyThreadSpacesPerform ec st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot := by
+      cspaceRootSourceAdmitted st cnSrc cnData = true ∧ vspaceRootSourceAdmitted st vrSrc = true ∧
+      st' = copyThreadSpacesPerform ec st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot
+        cnData := by
   unfold copyThreadSpaces at h
   cases hT : st.getTcb? vtid.val with
   | none => rw [hT] at h; cases h
@@ -393,7 +423,7 @@ theorem copyThreadSpaces_ok {ec : Concurrency.CoreId} {st st' : SystemState}
     · have hB : (tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive)
           = false := by simp [hS.1, hS.2]
       rw [hB] at h
-      cases hC : cspaceRootSourceAdmitted st cnSrc with
+      cases hC : cspaceRootSourceAdmitted st cnSrc cnData with
       | false => simp [hC] at h
       | true =>
         cases hV : vspaceRootSourceAdmitted st vrSrc with
@@ -415,9 +445,9 @@ whatever its stored flag says — a running, ready or blocked thread's spaces ar
 in use. -/
 theorem copyThreadSpaces_refuses_active (ec : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId)
-    (cnSrc vrSrc : CSpaceAddr) (tcb : TCB) (hT : st.getTcb? vtid.val = some tcb)
+    (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (tcb : TCB) (hT : st.getTcb? vtid.val = some tcb)
     (hS : inferThreadState st vtid.val tcb ≠ .Inactive) :
-    copyThreadSpaces ec st vtid cnSrc vrSrc = .error .illegalState := by
+    copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .error .illegalState := by
   have : (tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive)
       = true := by simp [hS]
   simp [copyThreadSpaces, hT, this]
@@ -448,14 +478,14 @@ links.  A slot lookup reads no link and no thread, so the source is read as in
 the pre-state. -/
 theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
     (∀ k, k ≠ tid.toObjId → SystemState.objectAgreesOffDerivationLinksAt
-        (threadSlotCopied st tid slot srcCNode srcSlot rights) st k) ∧
-    ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights).getTcb? tid = some t' ∧
+        (threadSlotCopied st tid slot srcCNode srcSlot rights data) st k) ∧
+    ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights data).getTcb? tid = some t' ∧
       t'.withoutLinks =
         (match SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } with
           | none => t.removeSpaceCap slot
-          | some cap => (t.removeSpaceCap slot).insertSpaceCap slot (TCB.spaceCopyOf cap rights)
+          | some cap => (t.removeSpaceCap slot).insertSpaceCap slot (TCB.spaceCopyOf cap rights data)
           ).withoutLinks := by
   have hPre : st.objects[tid.toObjId]? = some (.tcb t) :=
     (SystemState.getTcb?_eq_some_iff st tid t).mp hT
@@ -472,17 +502,17 @@ theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : T
         { cnode := tid.toObjId, slot := slot }) st k :=
     fun k h => (hA k).trans (.of_eq (hCne k h))
   obtain ⟨t', hT', hW⟩ := hA.tcb_fwd hC
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨hN, e⟩ | ⟨cap, hCap, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨hN, e⟩ | ⟨cap, hCap, e⟩
   · rw [e, ← hLk, hN]
     exact ⟨hFar, t', (SystemState.getTcb?_eq_some_iff _ tid t').mpr hT', hW⟩
   · rw [e, ← hLk, hCap]
     have hT'' := (SystemState.getTcb?_eq_some_iff _ tid t').mpr hT'
     have hU := SystemState.updateTcb_preserves_objects_invExt _ tid
-      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
+      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
     have hAdd := (SystemState.cdtAddChild_agreeObjects hU { cnode := srcCNode, slot := srcSlot }
       { cnode := tid.toObjId, slot := slot } .copy).1
     have hAtU := SystemState.updateTcb_getTcb?_self _ tid
-      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights)) hI
+      (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data)) hI
     rw [hT''] at hAtU
     obtain ⟨t'', hT3, hW3⟩ := hAdd.tcb_fwd ((SystemState.getTcb?_eq_some_iff _ tid _).mp hAtU)
     refine ⟨fun k h => (hAdd k).trans ((SystemState.objectAgreesOffDerivationLinksAt.of_eq
@@ -496,11 +526,11 @@ theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : T
 theorem threadSlotCopied_slotFilled {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot}
     (hs : slot.toNat < 2) {srcCNode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
-    (rights : AccessRightSet) {cap : Capability}
+    (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
-    ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights).getTcb? tid = some t' ∧
+    ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights data).getTcb? tid = some t' ∧
       (t'.spaceSlotCap slot).isSome = true := by
-  obtain ⟨-, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+  obtain ⟨-, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   refine ⟨t', hT', ?_⟩
   rw [← TCB.spaceSlotCap_withoutLinks, hW, hL]
   dsimp only
@@ -513,13 +543,13 @@ held. -/
 theorem threadSlotCopied_slotCapAt {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot}
     (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (r : SlotRef) :
-    (threadSlotCopied st tid slot srcCNode srcSlot rights).slotCapAt r =
+    (rights : AccessRightSet) (data : UInt64) (r : SlotRef) :
+    (threadSlotCopied st tid slot srcCNode srcSlot rights data).slotCapAt r =
       if r.cnode = tid.toObjId ∧ r.slot = slot then
         (SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot }).map
-          (TCB.spaceCopyOf · rights)
+          (TCB.spaceCopyOf · rights data)
       else st.slotCapAt r := by
-  obtain ⟨hFar, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+  obtain ⟨hFar, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   have hPost := (SystemState.getTcb?_eq_some_iff _ tid t').mp hT'
   have hPre := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
   by_cases hk : r.cnode = tid.toObjId
@@ -558,10 +588,10 @@ theorem lookupSlotCap_of_agreeAt {st st' : SystemState} {r : SlotRef}
 CNode slot, and links. -/
 theorem threadSlotCopied_lookupSlotCap {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (r : SlotRef) :
-    SystemState.lookupSlotCap (threadSlotCopied st tid slot srcCNode srcSlot rights) r =
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) (r : SlotRef) :
+    SystemState.lookupSlotCap (threadSlotCopied st tid slot srcCNode srcSlot rights data) r =
       SystemState.lookupSlotCap st r := by
-  obtain ⟨hFar, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+  obtain ⟨hFar, t', hT', -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
   by_cases h : r.cnode = tid.toObjId
   · unfold SystemState.lookupSlotCap SystemState.lookupCNode
     rw [h, (SystemState.getTcb?_eq_some_iff _ tid t').mp hT',
@@ -576,17 +606,35 @@ theorem cspaceRoot_eq_slotCap (t : TCB) :
 theorem vspaceRoot_eq_slotCap (t : TCB) :
     t.vspaceRoot = TCB.spaceCellObject (t.spaceSlotCap TCB.vspaceRootSlot) := rfl
 
-theorem cspaceRootSourceAdmitted_spec {st : SystemState} {src : CSpaceAddr}
-    (h : cspaceRootSourceAdmitted st src = true) :
+theorem cspaceRootSourceAdmitted_spec {st : SystemState} {src : CSpaceAddr} {data : UInt64}
+    (h : cspaceRootSourceAdmitted st src data = true) :
     ∃ cap id, SystemState.lookupSlotCap st src = some cap ∧ cap.target = .object id ∧
       (st.getCNode? id).isSome := by
   unfold cspaceRootSourceAdmitted at h
   split at h
   · next cap hL =>
     split at h
-    · next id hTg => exact ⟨cap, id, hL, hTg, h⟩
+    · next id hTg => exact ⟨cap, id, hL, hTg, (Bool.and_eq_true _ _).mp h |>.1⟩
     · cases h
   · cases h
+
+/-- **An admitted CSpace root's data word fits beside its CNode's radix**: a
+nonzero word's guard size and the radix fill at most the word, so the root copy
+has seL4's CNode geometry. -/
+theorem cspaceRootSourceAdmitted_dataFits {st : SystemState} {src : CSpaceAddr} {data : UInt64}
+    (h : cspaceRootSourceAdmitted st src data = true) :
+    ∀ cap id cn, SystemState.lookupSlotCap st src = some cap → cap.target = .object id →
+      st.getCNode? id = some cn → data ≠ 0 → (capDataGuardSize data).toNat + cn.radixWidth ≤ 64 := by
+  intro cap id cn hL hT hC h0
+  unfold cspaceRootSourceAdmitted at h
+  rw [hL] at h
+  simp only [hT, hC, Option.isSome_some, Bool.true_and, Bool.not_eq_true'] at h
+  unfold cspaceRootDataRefused at h
+  rw [hC] at h
+  simp only [Bool.and_eq_false_iff, bne_eq_false_iff_eq, decide_eq_false_iff_not] at h
+  rcases h with h | h
+  · exact absurd h h0
+  · omega
 
 theorem vspaceRootSourceAdmitted_spec {st : SystemState} {src : CSpaceAddr}
     (h : vspaceRootSourceAdmitted st src = true) :
@@ -606,8 +654,8 @@ roots, each an object of its kind in the pre-state, and every other field of it
 is what it was (up to the slots' derivation links). -/
 theorem copyThreadSpaces_ok_tcb {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (hObjInv : st.objects.invExt)
-    (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (hObjInv : st.objects.invExt)
+    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
     ∃ tcb cnCap vrCap cnId vrId, st.getTcb? vtid.val = some tcb ∧
       SystemState.lookupSlotCap st cnSrc = some cnCap ∧ cnCap.target = .object cnId ∧
       (st.getCNode? cnId).isSome ∧
@@ -617,34 +665,34 @@ theorem copyThreadSpaces_ok_tcb {ec : Concurrency.CoreId} {st st' : SystemState}
         tcb'.vspaceRoot = vrId ∧
         tcb'.withoutLinks =
           ((((tcb.removeSpaceCap TCB.cspaceRootSlot).insertSpaceCap TCB.cspaceRootSlot
-            (TCB.spaceCopyOf cnCap TCB.cspaceRootRights)).removeSpaceCap TCB.vspaceRootSlot
+            (TCB.spaceCopyOf cnCap TCB.cspaceRootRights cnData)).removeSpaceCap TCB.vspaceRootSlot
             ).insertSpaceCap TCB.vspaceRootSlot
-              (TCB.spaceCopyOf vrCap TCB.vspaceRootRights)).withoutLinks := by
+              (TCB.spaceCopyOf vrCap TCB.vspaceRootRights 0)).withoutLinks := by
   obtain ⟨tcb, hT, -, -, hC, hV, rfl⟩ := copyThreadSpaces_ok h
   obtain ⟨cnCap, cnId, hCL, hCT, hCK⟩ := cspaceRootSourceAdmitted_spec hC
   obtain ⟨vrCap, vrId, hVL, hVT, hVK⟩ := vspaceRootSourceAdmitted_spec hV
   obtain ⟨-, t1, hT1, hW1⟩ := threadSlotCopied_frame hObjInv hT TCB.cspaceRootSlot
-    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
   have hI1 := (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights).2
+    TCB.cspaceRootRights cnData).2
   unfold copyThreadSpacesPerform threadSlotSet
   dsimp only
   generalize hS1 : threadSlotCopied st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights = s1 at hT1 hI1 ⊢
+    TCB.cspaceRootRights cnData = s1 at hT1 hI1 ⊢
   generalize hR1 : retireFinalObject ec (slotRetireTarget st vtid.val.toObjId TCB.cspaceRootSlot)
     (recorderFor st (slotRetireTarget st vtid.val.toObjId TCB.cspaceRootSlot) vtid.val.toObjId
       TCB.cspaceRootSlot) s1 = r1
   have hIr1 : r1.objects.invExt := hR1 ▸ (retireFinalObject_frame ec _ _ s1 hI1).1
   have hS1c : (t1.spaceSlotCap TCB.cspaceRootSlot).isSome = true := by
     obtain ⟨t1', hT1', hF⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
-      (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
+      (by decide) TCB.cspaceRootRights cnData (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
     rw [hS1] at hT1'; rw [hT1] at hT1'; cases hT1'; exact hF
   have hTr1 : r1.getTcb? vtid.val = some t1 := by
     rw [← hR1]; exact retireFinalObject_getTcb?_of_slotCap ec _ _ s1 hI1 hT1 hS1c
   obtain ⟨-, t2, hT2, hW2⟩ := threadSlotCopied_frame hIr1 hTr1 TCB.vspaceRootSlot
-    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights
+    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
   have hI2 := (threadSlotCopied_tcb hIr1 hTr1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
-    TCB.vspaceRootRights).2
+    TCB.vspaceRootRights 0).2
   rw [← hR1, retireFinalObject_lookupSlotCap ec _ _ s1 hI1, ← hS1,
     threadSlotCopied_lookupSlotCap hObjInv hT] at hW2
   have hCL' : SystemState.lookupSlotCap st { cnode := cnSrc.cnode, slot := cnSrc.slot } =
@@ -655,16 +703,16 @@ theorem copyThreadSpaces_ok_tcb {ec : Concurrency.CoreId} {st st' : SystemState}
   rw [hVL'] at hW2
   dsimp only at hW1 hW2
   have hW : t2.withoutLinks = ((((tcb.removeSpaceCap TCB.cspaceRootSlot).insertSpaceCap
-      TCB.cspaceRootSlot (TCB.spaceCopyOf cnCap TCB.cspaceRootRights)).removeSpaceCap
+      TCB.cspaceRootSlot (TCB.spaceCopyOf cnCap TCB.cspaceRootRights cnData)).removeSpaceCap
       TCB.vspaceRootSlot).insertSpaceCap TCB.vspaceRootSlot
-        (TCB.spaceCopyOf vrCap TCB.vspaceRootRights)).withoutLinks := by
+        (TCB.spaceCopyOf vrCap TCB.vspaceRootRights 0)).withoutLinks := by
     rw [hW2]
     show ((t1.withoutLinks).removeSpaceCap _).insertSpaceCap _ _ = _
     rw [hW1]; rfl
   have hSC : ∀ s, t2.spaceSlotCap s = ((((tcb.removeSpaceCap TCB.cspaceRootSlot).insertSpaceCap
-      TCB.cspaceRootSlot (TCB.spaceCopyOf cnCap TCB.cspaceRootRights)).removeSpaceCap
+      TCB.cspaceRootSlot (TCB.spaceCopyOf cnCap TCB.cspaceRootRights cnData)).removeSpaceCap
       TCB.vspaceRootSlot).insertSpaceCap TCB.vspaceRootSlot
-        (TCB.spaceCopyOf vrCap TCB.vspaceRootRights)).spaceSlotCap s := fun s => by
+        (TCB.spaceCopyOf vrCap TCB.vspaceRootRights 0)).spaceSlotCap s := fun s => by
     show t2.withoutLinks.spaceSlotCap s = _
     rw [hW]; rfl
   have hne : TCB.cspaceRootSlot ≠ TCB.vspaceRootSlot := by decide

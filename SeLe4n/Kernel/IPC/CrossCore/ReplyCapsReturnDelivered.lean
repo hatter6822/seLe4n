@@ -199,8 +199,8 @@ theorem replyHeldCaps_eq_delivered (st X : SystemState) (c : SeLe4n.ThreadId)
         (.ok ((), Architecture.stageDeliveredMessage st'' c s.capInfo) :
           Except KernelError (Unit × SystemState))
       | .error e => .error e) =
-      .ok ((), capTransferK X c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
-        ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+      .ok ((), capTransferK X c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count
+        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
         deliverCapsFrame
           (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
           (capStepsApply c.toObjId false ct.vspaceRoot ct.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2
@@ -235,8 +235,8 @@ theorem replyHeldCapsLong_eq_delivered (st X : SystemState) (c replier : SeLe4n.
         (.ok ((), Architecture.stageDeliveredMessage st'' c s.capInfo) :
           Except KernelError (Unit × SystemState))
       | .error e => .error e) =
-      .ok ((), capTransferK X c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
-        ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+      .ok ((), capTransferK X c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count
+        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
         deliverLongCapsFrame
           (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
           (capStepsApply c.toObjId false ct.vspaceRoot ct.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2
@@ -268,8 +268,8 @@ before the reply's writes. -/
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
     (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home)
     server core).1
@@ -308,8 +308,8 @@ theorem replyTransferChecked_donatedCaps_inPlace (ctx : LabelingContext) (st : S
     replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
       .ok ((), performReplyDonatedCapsDelivered st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) layout rf len badgeWord
-        badged core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        badged core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid msg ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -367,8 +367,8 @@ no endpoint, then the caller's frame with the transfer's report. -/
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := SchedContextOps.settleReturnedContext
     (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
@@ -405,8 +405,8 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
     replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
       .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged stcb.vspaceRoot stcb.ipcBuffer
-        stcb.cspaceRoot (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer
-        ct.cspaceRoot) := by
+        stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer
+        ct.spaceCells[0]) := by
   obtain ⟨rp, scId, hRp, hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, -, hPop⟩ :=
     replyUnheldPopsInPlace_pop st c rid msg ct hT hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by

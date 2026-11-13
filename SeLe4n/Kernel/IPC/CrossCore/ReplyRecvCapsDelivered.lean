@@ -201,8 +201,8 @@ reply's writes. -/
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeReplyRendezvousReady st c tid rid
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -296,8 +296,8 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
             Except KernelError (Unit × SystemState))
       | .error e => .error e) =
       .ok ((), performReplyRecvBlockCapsDelivered st c tid rid epId ep.recvTailCode layout rf len
-        badge core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer
-        ct.cspaceRoot) := by
+        badge core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer
+        ct.spaceCells[0]) := by
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
@@ -434,8 +434,8 @@ the transfer's report. -/
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
     (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId home
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -520,7 +520,7 @@ theorem replyRecvOnCore_donated_capsDelivered (st : SystemState) (epId : SeLe4n.
       | .error e => .error e) =
       .ok ((), performReplyRecvDonatedCapsDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId ep.recvTailCode layout rf len badge core stcb.vspaceRoot
-        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
@@ -662,8 +662,8 @@ the transfer's report. -/
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
     (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := SchedContextOps.settleReturnedContext
     (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
@@ -706,7 +706,7 @@ theorem replyRecvOnCore_unheld_capsDelivered (st : SystemState) (epId : SeLe4n.O
       | .error e => .error e) =
       .ok ((), performReplyRecvUnheldCapsDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId ep.recvTailCode layout rf len badge core stcb.vspaceRoot
-        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+        stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
@@ -799,8 +799,8 @@ words copied from the replier's buffer after the transfer. -/
 @[noinline] def performReplyRecvBlockCapsDeliveredLong (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := storeReplyRendezvousReady st c tid rid
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -850,8 +850,8 @@ theorem replyRecvOnCore_blocks_capsDeliveredLong (st : SystemState) (epId : SeLe
             Except KernelError (Unit × SystemState))
       | .error e => .error e) =
       .ok ((), performReplyRecvBlockCapsDeliveredLong st c tid rid epId ep.recvTailCode rf len
-        badge core stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer
-        ct.cspaceRoot) := by
+        badge core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count ct.vspaceRoot ct.ipcBuffer
+        ct.spaceCells[0]) := by
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
