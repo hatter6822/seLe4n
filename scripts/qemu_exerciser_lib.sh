@@ -320,6 +320,7 @@ for driver in drivers:
             "cnode-mint-badged-endpoint-delete", "set-space-root-data",
             "set-space-root-data-refused", "cap-fault-guard-mismatch",
             "cap-fault-guard-mismatch-reply", "cap-fault-donating-delivered",
+            "cap-fault-donating-reply",
             "cap-fault-to-handler-without-reply", "irq-wakes-handler-without-reply",
             "failed-lookup-missing-source", "fp-access", "fp-access-partner", "fp-owner-blocks",
             "fp-owner-wakes-root", "frame-copy-delete", "frame-copy-for-revoke",

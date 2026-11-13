@@ -12920,9 +12920,9 @@ fn fault_entries() -> Option<bool> {
     // A capability fault from a thread running on a scheduling context, to a
     // passive handler waiting with a reply object: the fault's call lends the
     // faulting thread's context to the handler (seL4-MCS `sendFaultIPC`, the
-    // call's `schedContext_donate`), each write in its slot.  The handler then
-    // suspends the faulting thread (the context stays with it, as seL4 returns
-    // no loan on a suspend) and the context is unbound from it.  The timer is
+    // call's `schedContext_donate`), each write in its slot.  The handler's
+    // reply hands the context back and restarts the faulting thread, which is
+    // then suspended and the context unbound from it.  The timer is
     // masked across the sequence, so no tick switches the threads between steps.
     let donating_setup = [
         configure(
@@ -12942,6 +12942,14 @@ fn fault_entries() -> Option<bool> {
         ),
         invocation("fault-donating-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
     ];
+    let donating_reply = partner_step(
+        "cap-fault-donating-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
     let donating_teardown = [
         invocation(
             "fault-donating-suspend",
@@ -12963,6 +12971,7 @@ fn fault_entries() -> Option<bool> {
             || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
             || heap_allocations_trap(&fault_trip(2, "cap-fault-donating-delivered"), which)
                 != Some(true)
+            || heap_allocations_round_trip(&donating_reply, which) != Some(true)
             || !unmeasured_all(&donating_teardown, "the donating fault's teardown failed")
         {
             return Some(false);
