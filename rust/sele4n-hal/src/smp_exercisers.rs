@@ -9864,10 +9864,12 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
 /// first entry drained, so the trail has an epoch for the archived verdict to
 /// read below; the status, an entry's field, its authorization basis (a chunk
 /// past the first among them), the refusal ledger's status, counters and the
-/// refused declassification's slot, and the causality verdicts; then the
+/// refused declassification's slot, and the causality verdicts; four refused
+/// reads (a chunk, an entry and a ledger slot past the last, and an opcode
+/// past the last), each answered in place; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 22] = [
+const AUDIT_SCENARIO: [RoundTrip; 26] = [
     // A drain and a read a word short of their arguments, through the audit
     // capability: refused `TruncatedMessage` once the target and the right
     // are checked, the trail untouched.
