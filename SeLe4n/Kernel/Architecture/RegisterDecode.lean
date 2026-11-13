@@ -41,13 +41,13 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
 -- ============================================================================
 
 /-- Encode a capability pointer as a register value. -/
-@[inline] def encodeCapPtr (c : CPtr) : RegValue := ⟨c.toNat⟩
+@[inline] def encodeCapPtr (c : CPtr) : RegValue := ⟨c.word⟩
 
 /-- Encode a message info structure as a register value. -/
-@[inline] def encodeMsgInfo (mi : MessageInfo) : RegValue := ⟨mi.encode⟩
+@[inline] def encodeMsgInfo (mi : MessageInfo) : RegValue := RegValue.ofNat mi.encode
 
 /-- Encode a syscall identifier as a register value. -/
-@[inline] def encodeSyscallId (s : SyscallId) : RegValue := ⟨s.toNat⟩
+@[inline] def encodeSyscallId (s : SyscallId) : RegValue := RegValue.ofNat s.toNat
 
 
 /-- Extract message register values for IPC message population.
@@ -101,8 +101,9 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
   else .error .invalidMessageInfo
 
 theorem decodeMsgInfoWord_eq (w : UInt64) :
-    decodeMsgInfoWord w = decodeMsgInfo ⟨w.toNat⟩ := by
+    decodeMsgInfoWord w = decodeMsgInfo ⟨w⟩ := by
   unfold decodeMsgInfoWord decodeMsgInfo MessageInfo.decode
+  simp only [RegValue.val_mk]
   have h1 : (w &&& 0x7F).toNat = w.toNat &&& 0x7F := by simp [UInt64.toNat_and]
   have h2 : ((w >>> 7) &&& 3).toNat = (w.toNat >>> 7) &&& 0x3 := by
     simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
@@ -120,14 +121,7 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
 /-- A register's message info, decoded off its word, is its decode. -/
 theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
     decodeMsgInfoWord (readRegWord rf r) = decodeMsgInfo (readReg rf r) := by
-  rw [decodeMsgInfoWord_eq]
-  congr 1
-  cases h : readReg rf r with
-  | mk v =>
-    have := readReg_val_eq_word rf r
-    rw [h] at this
-    simp only at this
-    rw [this]
+  rw [decodeMsgInfoWord_eq, readReg_eq_word]
 
 /-- Decode the syscall number register into a typed syscall identifier.
     Returns `invalidSyscallNumber` if the value is not in the modeled set. -/
@@ -280,7 +274,7 @@ def decodeSyscallArgsFromState
     match (List.range overflowNeeded).mapM (readOverflowWord st tid) with
     | .ok overflowNats =>
       let overflowRegs : Array RegValue :=
-        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+        (overflowNats.map (fun w => (⟨w⟩ : RegValue))).toArray
       pure { base with
                msgRegs       := base.msgRegs ++ overflowRegs,
                inlineCount   := inlineSize,
@@ -317,7 +311,7 @@ def decodeSyscallArgsWith (readOverflow : Nat → Except KernelError UInt64)
     match (List.range overflowNeeded).mapM readOverflow with
     | .ok overflowNats =>
       let overflowRegs : Array RegValue :=
-        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+        (overflowNats.map (fun w => (⟨w⟩ : RegValue))).toArray
       pure { base with
                msgRegs       := base.msgRegs ++ overflowRegs,
                inlineCount   := inlineSize,
@@ -380,7 +374,7 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
     match (List.range overflowNeeded).mapM (readOverflowWord st tid) with
     | .ok overflowNats =>
       let overflowRegs : Array RegValue :=
-        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+        (overflowNats.map (fun w => (⟨w⟩ : RegValue))).toArray
       pure { base with
                msgRegs       := base.msgRegs ++ overflowRegs,
                inlineCount   := inlineSize,
@@ -465,15 +459,14 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
     are inherently 64-bit, so `hBound` is trivially satisfied. -/
 theorem decodeCapPtr_roundtrip (c : CPtr) (hBound : isWord64 c.toNat) :
     decodeCapPtr (encodeCapPtr c) = .ok c := by
-  have h64 : isWord64Dec c.toNat = true := (SeLe4n.isWord64Dec_iff c.toNat).mpr hBound
+  have h64 : isWord64Dec c.word.toNat = true := (SeLe4n.isWord64Dec_iff c.toNat).mpr hBound
   unfold decodeCapPtr encodeCapPtr
-  simp only [h64, if_true, CPtr.ofNat_toNat]
+  simp only [RegValue.val_mk, h64, if_true, CPtr.ofNat_word_toNat]
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem decodeSyscallId_roundtrip (s : SyscallId) :
     decodeSyscallId (encodeSyscallId s) = .ok s := by
-  simp [decodeSyscallId, encodeSyscallId]
-  rw [SyscallId.ofNat_toNat s]
+  cases s <;> rfl
 
 /-- Round-trip: encoding then decoding a MessageInfo recovers the original,
     provided the fields satisfy seL4 message-info bounds.
@@ -484,7 +477,23 @@ theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
     (hLabel : mi.label ≤ MessageInfo.maxLabel := by omega)
     (hUnw : mi.capsUnwrapped ≤ MessageInfo.maxCapsUnwrapped := by omega) :
     decodeMsgInfo (encodeMsgInfo mi) = .ok mi := by
-  simp only [decodeMsgInfo, encodeMsgInfo]
+  have hLt : mi.encode < 2 ^ 64 := by
+    have hL : mi.length < 2 ^ 64 := by
+      simp only [maxMessageRegisters] at hLen; omega
+    have hC : mi.extraCaps <<< 7 < 2 ^ 64 := by
+      simp only [Model.maxExtraCaps] at hCaps; rw [Nat.shiftLeft_eq]; omega
+    have hU : mi.capsUnwrapped <<< 9 < 2 ^ 64 := by
+      simp only [MessageInfo.maxCapsUnwrapped] at hUnw; rw [Nat.shiftLeft_eq]
+      simp only [Nat.shiftLeft_eq, Nat.one_mul] at hUnw; omega
+    have hB : mi.label <<< 12 < 2 ^ 64 := by
+      simp only [MessageInfo.maxLabel] at hLabel; rw [Nat.shiftLeft_eq]
+      simp only [Nat.shiftLeft_eq, Nat.one_mul] at hLabel; omega
+    unfold MessageInfo.encode
+    exact Nat.or_lt_two_pow (Nat.or_lt_two_pow (Nat.or_lt_two_pow hL hC) hU) hB
+  have hW : RegValue.val (encodeMsgInfo mi) = mi.encode := by
+    show (UInt64.ofNat mi.encode).toNat = _
+    rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt hLt]
+  simp only [decodeMsgInfo, hW]
   have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps hLabel hUnw
   simp only [h]
 
@@ -1206,6 +1215,108 @@ kernel entry would build it. -/
     else
       routedLongTail capAddr msgInfo.length layout.msgRegs.size
         (readReg regs layout.syscallNumReg).val
+
+/-- `registerRoutedSyscallOf` on the syscall number `n` (WS-SX SX1.3): the router
+reads the number only through `SyscallId.ofNat?` and its equalities with
+syscall numbers, so every number past them routes alike
+(`registerRoutedSyscallAt_unnumbered`). -/
+@[inline] def registerRoutedSyscallAt (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (n : Nat) : RegisterRoutedSyscall :=
+  let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
+  match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
+  | .error e => .refused e
+  | .ok msgInfo =>
+    haveI := routesShortDecidable msgInfo.length layout.msgRegs.size
+      n
+    if msgInfo.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow n = false then
+      if n = SyscallId.notificationSignal.toNat then
+        .signal capAddr
+      else if n = SyscallId.notificationWait.toNat then
+        .wait capAddr
+      else if n = SyscallId.yield.toNat then
+        .yield
+      else if n = SyscallId.send.toNat then
+        if msgInfo.extraCaps = 0 then .send capAddr msgInfo
+        else .transferring .send capAddr msgInfo
+      else if n = SyscallId.call.toNat then
+        if msgInfo.extraCaps = 0 then .call capAddr msgInfo
+        else .transferring .call capAddr msgInfo
+      else if n = SyscallId.reply.toNat then
+        .reply capAddr msgInfo
+      else if n = SyscallId.receive.toNat then
+        if h0 : 0 < layout.msgRegs.size then
+          .receive capAddr msgInfo.length (CPtr.ofWord (readRegWord regs layout.msgRegs[0]))
+        else .viaDecode
+      else if n = SyscallId.replyRecv.toNat then
+        .replyRecv capAddr msgInfo
+      else
+        routedShortTail capAddr msgInfo.length n
+    else if n = SyscallId.send.toNat then
+      if msgInfo.extraCaps = 0 then .sendLong capAddr msgInfo
+      else .transferring .send capAddr msgInfo
+    else if n = SyscallId.call.toNat then
+      if msgInfo.extraCaps = 0 then .callLong capAddr msgInfo
+      else .transferring .call capAddr msgInfo
+    else if n = SyscallId.reply.toNat then
+      .replyLong capAddr msgInfo
+    else if n = SyscallId.replyRecv.toNat then
+      .replyRecvLong capAddr msgInfo
+    else
+      routedLongTail capAddr msgInfo.length layout.msgRegs.size
+        n
+
+theorem registerRoutedSyscallOf_eq_at (layout : SyscallRegisterLayout) (regs : RegisterFile) :
+    registerRoutedSyscallOf layout regs =
+      registerRoutedSyscallAt layout regs (readReg regs layout.syscallNumReg).val := rfl
+
+/-- Two numbers that name no syscall, nor any number below `SyscallId.encodingBound`,
+route alike. -/
+theorem registerRoutedSyscallAt_unnumbered (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    {n m : Nat} (hn : SyscallId.encodingBound ≤ n) (hm : SyscallId.encodingBound ≤ m) :
+    registerRoutedSyscallAt layout regs n = registerRoutedSyscallAt layout regs m := by
+  have hOf : ∀ k, SyscallId.encodingBound ≤ k → SyscallId.ofNat? k = none := by
+    intro k hk
+    have h := SyscallId.ofNat?_isSome_iff k
+    simp only [show ¬ k < SyscallId.encodingBound from Nat.not_lt.mpr hk, decide_false,
+      Bool.false_and] at h
+    exact Option.not_isSome_iff_eq_none.mp (by simp [h])
+  have hNe : ∀ k j, SyscallId.encodingBound ≤ k → j < SyscallId.encodingBound → (k = j) = False :=
+    fun k j hk hj => eq_false (by omega)
+  have hSid : ∀ (sid : SyscallId), sid.toNat < SyscallId.encodingBound := by
+    intro sid; cases sid <;> decide
+  unfold registerRoutedSyscallAt routedShortTail routedLongTail syscallNumberReadsOverflow
+  simp only [hOf n hn, hOf m hm, hNe n _ hn (hSid _), hNe m _ hm (hSid _)]
+
+/-- WS-SX SX1.3: **the syscall number of a register word**, as the router reads
+it: the word's value below `2 ^ 32`, and `2 ^ 32` — no syscall's number — for a
+word at or above it, so the router builds no `Nat` of a full-width word. -/
+@[inline] def syscallNumberOfWord (w : UInt64) : Nat :=
+  if w < 0x100000000 then w.toNat else 0x100000000
+
+/-- The router as compiled: the syscall number read off the register's word
+(`syscallNumberOfWord`); a word at or above `2 ^ 32` routes as `2 ^ 32` does,
+since neither names a syscall (`registerRoutedSyscallAt_unnumbered`). -/
+@[inline] def registerRoutedSyscallOfWord (layout : SyscallRegisterLayout) (regs : RegisterFile) :
+    RegisterRoutedSyscall :=
+  registerRoutedSyscallAt layout regs (syscallNumberOfWord (readRegWord regs layout.syscallNumReg))
+
+@[csimp] theorem registerRoutedSyscallOf_eq_word :
+    @registerRoutedSyscallOf = @registerRoutedSyscallOfWord := by
+  funext layout regs
+  rw [registerRoutedSyscallOf_eq_at, registerRoutedSyscallOfWord, readReg_val_eq_word]
+  unfold syscallNumberOfWord
+  split
+  · rfl
+  · next h =>
+    apply registerRoutedSyscallAt_unnumbered
+    · have : 0x100000000 ≤ (readRegWord regs layout.syscallNumReg).toNat := by
+        have h' : ¬ (readRegWord regs layout.syscallNumReg).toNat <
+            (0x100000000 : UInt64).toNat := fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
+        simp only [UInt64.reduceToNat] at h'
+        omega
+      unfold SyscallId.encodingBound; omega
+    · decide
 
 /-- The routed syscall a register file names, read straight from the
     registers: `signal`/`wait` only when the decode succeeds as that syscall

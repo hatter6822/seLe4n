@@ -462,9 +462,8 @@ theorem faultOverflowStore_eq (r : SeLe4n.ThreadId) (X : SystemState) (t : TCB) 
     split
     · next pa hPa =>
       rw [hPa, recordPhysicalWrites_cons]
-      have hReg : (regOf (faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7)).val.toUInt64 =
-          faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7 := by
-        simp only [regOf, Nat.toUInt64_eq, UInt64.ofNat_toNat]
+      have hReg : (regOf (faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7)).word =
+          faultOverflowWord k i w0 w1 ip sp lr spsr x4 x5 x6 x7 := rfl
       rw [hReg]
       exact faultOverflowStore_eq r X t k w0 w1 ip sp lr spsr x4 x5 x6 x7 n (i + 1) _
         (fun j => hS j)

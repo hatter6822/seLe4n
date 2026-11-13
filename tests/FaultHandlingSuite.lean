@@ -406,7 +406,7 @@ private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Opti
                 | .storeUserWord a v => if a == pa then some v else none
                 | _ => none)
           { registers := ((#[fr.x2, fr.x3, fr.x4, fr.x5] ++ overflow.toArray).map
-              (fun w => (⟨w.toNat⟩ : SeLe4n.RegValue))).extract 0 info.length
+              (fun w => (⟨w⟩ : SeLe4n.RegValue))).extract 0 info.length
             badge := if fr.x0 == 0 then none else some (SeLe4n.Badge.ofWord fr.x0)
             label := info.label }
       else none

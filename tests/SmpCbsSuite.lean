@@ -481,9 +481,9 @@ private def runCompositeScenarios : IO Unit := do
   assertBool "decodeAffinity 1 = .ok (some core 1)"
     (match decodeAffinity 1 with | .ok (some c) => c.val == 1 | _ => false)
   assertBool "decodeAffinity (unbind marker = numCores) = .ok none"
-    (match decodeAffinity affinityUnbindMarker with | .ok none => true | _ => false)
+    (match decodeAffinity (UInt64.ofNat affinityUnbindMarker) with | .ok none => true | _ => false)
   assertBool "decodeAffinity (out of range) = .error .invalidArgument"
-    (match decodeAffinity (numCores + 5) with | .error (.invalidArgument 0) => true | _ => false)
+    (match decodeAffinity (UInt64.ofNat (numCores + 5)) with | .error (.invalidArgument 0) => true | _ => false)
 
 /-- §3.4 SM5.H.7, WS-ZA ZA6.4: the refill accounting — a charge keeps the
 refill total (the budget is conserved), takes what ran off the head, and keeps

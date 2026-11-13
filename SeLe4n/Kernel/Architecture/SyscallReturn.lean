@@ -752,10 +752,10 @@ staging site, so the synthesis cannot drift between sites.
     SyscallReturnFrame :=
   { x0 := (msg.badge.map Badge.word).getD 0
     x1 := (returnMessageInfo msg capInfo overflow).encode.toUInt64
-    x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
-    x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
-    x4 := ((msg.registers[2]?.map RegValue.val).getD 0).toUInt64
-    x5 := ((msg.registers[3]?.map RegValue.val).getD 0).toUInt64 }
+    x2 := ((msg.registers[0]?.map RegValue.word).getD 0)
+    x3 := ((msg.registers[1]?.map RegValue.word).getD 0)
+    x4 := ((msg.registers[2]?.map RegValue.word).getD 0)
+    x5 := ((msg.registers[3]?.map RegValue.word).getD 0) }
 
 /-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
 success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
@@ -849,12 +849,12 @@ theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high
 the pure core of RA.B.2's `readReturnFrame_writeReturnFrame` round trip. -/
 theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_reads_back
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
-    (rf.stageReturnFrame f).gpr ⟨0⟩ = ⟨f.x0.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨1⟩ = ⟨f.x1.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ :=
+    (rf.stageReturnFrame f).gpr ⟨0⟩ = ⟨f.x0⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨1⟩ = ⟨f.x1⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨2⟩ = ⟨f.x2⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨3⟩ = ⟨f.x3⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨4⟩ = ⟨f.x4⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨5⟩ = ⟨f.x5⟩ :=
   ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Stage a return frame into a TCB's saved register context — the single
@@ -984,12 +984,12 @@ def readReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
     SyscallReturnFrame :=
   match st.getTcb? tid with
   | some tcb =>
-      { x0 := (tcb.registerContext.gpr ⟨0⟩).val.toUInt64
-        x1 := (tcb.registerContext.gpr ⟨1⟩).val.toUInt64
-        x2 := (tcb.registerContext.gpr ⟨2⟩).val.toUInt64
-        x3 := (tcb.registerContext.gpr ⟨3⟩).val.toUInt64
-        x4 := (tcb.registerContext.gpr ⟨4⟩).val.toUInt64
-        x5 := (tcb.registerContext.gpr ⟨5⟩).val.toUInt64 }
+      { x0 := (tcb.registerContext.gpr ⟨0⟩).word
+        x1 := (tcb.registerContext.gpr ⟨1⟩).word
+        x2 := (tcb.registerContext.gpr ⟨2⟩).word
+        x3 := (tcb.registerContext.gpr ⟨3⟩).word
+        x4 := (tcb.registerContext.gpr ⟨4⟩).word
+        x5 := (tcb.registerContext.gpr ⟨5⟩).word }
   | none => .zero
 
 /-- WS-RA RA.B.2: the staging round trip — what `writeReturnFrameToTcb`
@@ -1012,8 +1012,6 @@ theorem readReturnFrame_writeReturnFrame
   have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
-  cases frame
-  simp [UInt64.ofNat_toNat]
 
 /-- **WS-ZA ZA4.7**: the delivery write reads back the same frame. -/
 theorem readReturnFrame_writeDeliveredFrame
@@ -1033,8 +1031,6 @@ theorem readReturnFrame_writeDeliveredFrame
   have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext, h0, h1, h2, h3, h4, h5]
-  cases frame
-  simp [UInt64.ofNat_toNat]
 
 /-- **WS-ZA ZA4.7**: and leaves the thread holding no message. -/
 theorem writeDeliveredFrameToTcb_getTcb?_self
@@ -1119,7 +1115,7 @@ def overflowDeliveryWrites (st : SystemState) (tcb : TCB) :
   | [], _ => []
   | w :: rest, idx =>
       match IpcBufferRead.ipcBufferSlotPAddr? st tcb idx true with
-      | some pa => .storeUserWord pa w.val.toUInt64 :: overflowDeliveryWrites st tcb rest (idx + 1)
+      | some pa => .storeUserWord pa w.word :: overflowDeliveryWrites st tcb rest (idx + 1)
       | none => []
 
 /-- The overflow words a delivery of `msg` to `tcb` writes. -/
@@ -2214,15 +2210,15 @@ read back as the frame — the property a handler emulating a trapped syscall
 relies on when it replies with the emulation's results. -/
 theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_reads_back
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
-    (rf.stageRestartFrame f).gpr ⟨0⟩ = ⟨f.x0.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨1⟩ = ⟨f.x1.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨6⟩ = ⟨f.x6.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨7⟩ = ⟨f.x7.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr.toNat⟩ :=
+    (rf.stageRestartFrame f).gpr ⟨0⟩ = ⟨f.x0⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨1⟩ = ⟨f.x1⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨2⟩ = ⟨f.x2⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨3⟩ = ⟨f.x3⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨4⟩ = ⟨f.x4⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨5⟩ = ⟨f.x5⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨6⟩ = ⟨f.x6⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨7⟩ = ⟨f.x7⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr⟩ :=
   ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- WS-RR RR4.16: registers outside the restart window survive — the

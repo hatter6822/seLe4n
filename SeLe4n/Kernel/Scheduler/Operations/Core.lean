@@ -4052,10 +4052,13 @@ larger value is rejected with `.invalidArgument`.  The validated decode the
 syscall dispatch uses. -/
 def affinityUnbindMarker : Nat := SeLe4n.Kernel.Concurrency.numCores
 
-/-- WS-SM SM5.H.4: the affinity argument decoder (see `affinityUnbindMarker`). -/
-def decodeAffinity (v : Nat) : Except KernelError (Option CoreId) :=
-  if h : v < SeLe4n.Kernel.Concurrency.numCores then .ok (some ⟨v, h⟩)
-  else if v = affinityUnbindMarker then .ok none
+/-- WS-SM SM5.H.4: the affinity argument decoder (see `affinityUnbindMarker`).
+WS-SX SX1.3: it reads the register's word, its range tested on the word
+(`wordLtNat`), so a full-width word is refused without being made a `Nat`. -/
+def decodeAffinity (v : UInt64) : Except KernelError (Option CoreId) :=
+  if h : wordLtNat v SeLe4n.Kernel.Concurrency.numCores then
+    .ok (some ⟨v.toNat, (wordLtNat_iff v _).mp h⟩)
+  else if v = UInt64.ofNat affinityUnbindMarker then .ok none
   else .error (.invalidArgument 0)
 
 /-- **WS-SM SM8.B (PR #861 review round 37): the per-core affinity op.**
@@ -4145,22 +4148,22 @@ theorem nthCoreSome_allCoresSome (v : Nat) (h : v < SeLe4n.Kernel.Concurrency.nu
 /-- WS-ZA ZA5.2: `decodeAffinity` in continuation form: the decoded affinity is
 handed to `k` (the bound core drawn from `allCoresSome`), a refusal to `err`, so
 neither an `Except` nor a `some` is built (`decodeAffinityK_eq`). -/
-@[inline] def decodeAffinityK {α : Type} (v : Nat) (k : Option CoreId → α)
+@[inline] def decodeAffinityK {α : Type} (v : UInt64) (k : Option CoreId → α)
     (err : KernelError → α) : α :=
-  if v < SeLe4n.Kernel.Concurrency.numCores then k (nthCoreSome v allCoresSome)
-  else if v = affinityUnbindMarker then k none
+  if wordLtNat v SeLe4n.Kernel.Concurrency.numCores then k (nthCoreSome v.toNat allCoresSome)
+  else if v = UInt64.ofNat affinityUnbindMarker then k none
   else err (.invalidArgument 0)
 
-theorem decodeAffinityK_eq {α : Type} (v : Nat) (k : Option CoreId → α)
+theorem decodeAffinityK_eq {α : Type} (v : UInt64) (k : Option CoreId → α)
     (err : KernelError → α) :
     decodeAffinityK v k err =
       (match decodeAffinity v with
        | .ok a => k a
        | .error e => err e) := by
   unfold decodeAffinityK decodeAffinity
-  by_cases h : v < SeLe4n.Kernel.Concurrency.numCores
-  · simp only [h, dif_pos, if_pos, nthCoreSome_allCoresSome v h]
-  · simp only [h, dif_neg, if_neg, not_false_eq_true]
+  by_cases h : wordLtNat v SeLe4n.Kernel.Concurrency.numCores = true
+  · simp only [h, dif_pos, if_pos, nthCoreSome_allCoresSome v.toNat ((wordLtNat_iff v _).mp h)]
+  · simp only [h, dif_neg, if_neg, not_false_eq_true, Bool.false_eq_true, ↓reduceIte, ↓reduceDIte]
     split <;> rfl
 
 /-- WS-ZA ZA5.2: the checks `setThreadCpuAffinityWithMigration` makes, asked
