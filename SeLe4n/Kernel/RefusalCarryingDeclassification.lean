@@ -771,31 +771,6 @@ theorem auditedArmSpec_audit_not_trail (ctx : LabelingContext) (sid : SyscallId)
     simp only [auditedArmSpec,
       hA]
 
-/-- **An audit call's general form, its target read first**: a capability that
-does not target the audit trail is refused here, in the state it was handed,
-so the specification's arm (whose decode and gate are records) runs only on an
-audit capability (`auditTargetGeneralR_eq`). -/
-@[inline] def auditTargetGeneralR (ctx : LabelingContext) (sid : SyscallId)
-    (regs : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
-  fun st =>
-    match cap.target with
-    | .auditTrail _ => auditGeneralR ctx sid regs capAddr tid executingCore cap st
-    | _ => .error (.invalidCapability 0, st)
-
-theorem auditTargetGeneralR_eq (ctx : LabelingContext) (sid : SyscallId)
-    (regs : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
-    (hSid : sid = .auditRead ∨ sid = .auditDrain) :
-    auditTargetGeneralR ctx sid regs capAddr tid executingCore cap st =
-      auditGeneralR ctx sid regs capAddr tid executingCore cap st := by
-  unfold auditTargetGeneralR
-  cases hT : cap.target with
-  | auditTrail _ => rfl
-  | _ =>
-    simp only [auditGeneralR, auditedArmSpec_audit_not_trail ctx sid capAddr regs tid
-      executingCore cap st hSid (by intro code; rw [hT]; exact fun h => by cases h)]
-
 /-- **`.auditDrain` behind its operand check**: the idle-object check (the
 target is checked before the right, as the gate checks it), then the admitted form — the drain and the staged
 length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
