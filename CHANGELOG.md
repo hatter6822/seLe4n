@@ -126,6 +126,34 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   6 spare bytes; the guard and its size need 9, and even seL4's packed form (a
   58-bit guard and a 6-bit size in one word) needs 8. No other entry
   allocates.
+- **A fault delivery builds no fault on two more branches.** The handled
+  delivery's fallback rebuilt the fault from its words and re-resolved the
+  handler (`resolveAddressBits`, a `LookupFault`). Two of its branches are
+  reachable from user setups, and both now work in place:
+  - a donating fault call to a passive handler: the faulting thread's
+    SchedContext is lent and its replenishments migrated, then the fault is
+    written into the handler's frame (`performFaultCallDonatingDelivered`,
+    `performFaultCallDonatingDelivered_eq`, through the unchecked
+    `callDispatch_donating_inPlace` that the checked form now wraps);
+  - a handler waiting with no reply object: the specification's call refuses
+    (`linkServerStashedReply`), so the delivery suspends the faulting thread
+    with the fault recorded as words (`callRefusesNoReplyInPlace`,
+    `callOnCore_noReply_refused`).
+
+  New QEMU scenarios: `cap-fault-donating-delivered`,
+  `cap-fault-to-handler-without-reply` and `irq-wakes-handler-without-reply`.
+- **The fault frame asks no readiness.** `deliverFaultFrame` held the fault
+  message on a handler that was not ready (`holdFaultMessageBody`), which
+  built the fault and its message. Every delivery hands it a receiver its
+  rendezvous has just made ready (`storeCallRendezvousReady_ready`,
+  `storeReceiveCallReady_ready`, carried through the priority walk and the
+  donation by `ipcStateHolds`), so `deliverFaultFrame_eq` takes that as a
+  hypothesis and the branch and `holdFaultMessageBody` are gone.
+- **The audited arm's general form reaches no CNode or untyped arm.**
+  `auditedArmSpec` runs `dispatchWithCapChecked`, whose CNode-operation and
+  untyped-reset arms build a lookup fault, but it is called only with the
+  literal `.declassify`, `.auditRead` and `.auditDrain`, so those arms are not
+  reachable from it.
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
