@@ -2044,7 +2044,7 @@ const fn signal(name: &'static str) -> RoundTrip {
     }
 }
 
-/// The notification capability minted, measured once, into the mint slot with a
+/// The notification capability minted, measured, into the mint slot with a
 /// badge that does not fit a scalar `Nat` ([`WIDE_SIGNAL_BADGE`]) for the
 /// round trips one thread makes alone, and deleted before the partner setup
 /// mints the badged endpoint there ([`WIDE_BADGE_SETUP`],
@@ -2058,8 +2058,8 @@ const WIDE_SIGNAL_BADGE: u64 = 1 << 63;
 /// Read and write: a signal needs the write right.
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_MINT_RIGHTS: u64 = 0x3;
-/// The badged notification capability's mint (measured once, before the
-/// round trips one thread makes alone).
+/// The badged notification capability's mint (measured twice, a delete
+/// between, before the round trips one thread makes alone).
 #[cfg(feature = "hw_target")]
 const WIDE_BADGE_SETUP: [RoundTrip; 1] = [mint(
     "mint-wide-badged-notification",
@@ -10720,12 +10720,23 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     if !secondary_core_windows(" (first call)") {
         return Some(false);
     }
-    // The mint of a badge at `2^63` is measured once: its badge is tested as
-    // a word, so the mint builds no heap number (the slot it fills is emptied
-    // only after the round trips below, so it runs once).
-    for step in WIDE_BADGE_SETUP.iter() {
-        if heap_allocations_round_trip(step, "") != Some(true) {
-            return Some(false);
+    // The mint of a badge at `2^63`, measured twice like every round trip:
+    // its badge is tested as a word, so the mint builds no heap number.  The
+    // slot is emptied (unmeasured) between the two runs, and the second mint
+    // stays for the round trips below.
+    for first in [true, false] {
+        if !first {
+            for step in WIDE_BADGE_TEARDOWN.iter() {
+                if !unmeasured(step, "the wide-badge delete failed") {
+                    return Some(false);
+                }
+            }
+        }
+        let which = if first { " (first call)" } else { "" };
+        for step in WIDE_BADGE_SETUP.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
         }
     }
     for trip in ROUND_TRIPS.iter() {
