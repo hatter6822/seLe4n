@@ -12858,7 +12858,7 @@ fn receive_side_faults(
         [FAULT_REPLY_WORD, 0],
         false,
     );
-    for fault in faults.iter() {
+    for (index, fault) in faults.iter().enumerate() {
         let name = fault.trip.name;
         let bound = fault.trip.x7 == WAIT;
         if bound && !unmeasured(&bind_root, "the root task's notification was not bound") {
@@ -12890,10 +12890,19 @@ fn receive_side_faults(
                 );
                 return false;
             }
-            if (fault.info == CAP_FAULT_GUARD_MISMATCH_INFO
-                && !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0]))
-                || heap_allocations_round_trip(&reply, which) != Some(true)
+            if fault.info == CAP_FAULT_GUARD_MISMATCH_INFO
+                && !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0])
             {
+                return false;
+            }
+            // The handler's reply is one scenario, measured after the first
+            // fault and run unmeasured after the others.
+            let replied = if index == 0 {
+                heap_allocations_round_trip(&reply, which) == Some(true)
+            } else {
+                unmeasured(&reply, "the handler's reply did not return")
+            };
+            if !replied {
                 return false;
             }
             let (waited, _, _, resumed) = dispatch_round_trip(handler_waits_again);

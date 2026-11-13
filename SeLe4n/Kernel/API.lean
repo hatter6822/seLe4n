@@ -409,24 +409,30 @@ theorem lookupReplyCap_congr (g g' : SyscallGate) {st : SystemState}
   subst h1 h2 h3
   rfl
 
+/-- Whether the slot `cnode`/`slot` holds a reply capability a receiver may
+use: present, not a reserved object's, carrying `.write`, and a reply
+capability (`lookupReplyCap`'s checks after the slot lookup), as one
+answer, so the continuation form applies its failure continuation once. -/
+def replySlotUsable (st : @& SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : Bool :=
+  match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+  | none => false
+  | some cap =>
+      !SeLe4n.Kernel.capTargetsReservedKernelObject cap && cap.hasRight .write &&
+        match cap.target with
+        | .replyCap _ => true
+        | _ => false
+
 /-- `lookupReplyCap` in continuation form (`lookupReplyCapK_eq`): its lookup
 fault handed on as its four words, so the entry re-checks a receive's reply
 capability without building a result. -/
 @[inline] def lookupReplyCapK {α : Type} (gate : SyscallGate) (st : SystemState)
     (onFail : UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) : α :=
-  let missing : α := onFail ((LookupFault.missingCapability 0).word 0)
-    ((LookupFault.missingCapability 0).word 1) ((LookupFault.missingCapability 0).word 2)
-    ((LookupFault.missingCapability 0).word 3)
   gate.lookupSlotK st onFail (fun cnode slot =>
-    match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-    | none => missing
-    | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then missing
-        else if !cap.hasRight .write then missing
-        else
-          match cap.target with
-          | .replyCap _ => onOk
-          | _ => missing)
+    if replySlotUsable st cnode slot then onOk
+    else
+      onFail ((LookupFault.missingCapability 0).word 0)
+        ((LookupFault.missingCapability 0).word 1) ((LookupFault.missingCapability 0).word 2)
+        ((LookupFault.missingCapability 0).word 3))
 
 theorem lookupReplyCapK_eq {α : Type} (gate : SyscallGate) (st : SystemState)
     (onFail : UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) :
@@ -444,16 +450,19 @@ theorem lookupReplyCapK_eq {α : Type} (gate : SyscallGate) (st : SystemState)
   | error f => rfl
   | ok ref =>
     dsimp only
+    unfold replySlotUsable
     cases SystemState.lookupSlotCap st ref with
     | none => rfl
     | some cap =>
       dsimp only
       by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-      · simp only [hIdle, ↓reduceIte]; rfl
+      · simp only [hIdle, ↓reduceIte, Bool.not_true, Bool.false_and, Bool.false_eq_true]; rfl
       · by_cases hRight : cap.hasRight .write = true
-        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_true]
+        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_false,
+            Bool.true_and]
           cases cap.target <;> rfl
-        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_false]; rfl
+        · simp only [hIdle, hRight, Bool.false_eq_true, ↓reduceIte, Bool.not_false,
+            Bool.true_and, Bool.false_and]; rfl
 
 /-- WS-SM SM9.A.9: **bind the audit syscalls to an audit capability.**
 
