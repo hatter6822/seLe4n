@@ -149,11 +149,24 @@ carries seL4's lookup failure, and Mint and SetSpace apply `updateCapData`.
   `storeReceiveCallReady_ready`, carried through the priority walk and the
   donation by `ipcStateHolds`), so `deliverFaultFrame_eq` takes that as a
   hypothesis and the branch and `holdFaultMessageBody` are gone.
-- **The audited arm's general form reaches no CNode or untyped arm.**
-  `auditedArmSpec` runs `dispatchWithCapChecked`, whose CNode-operation and
-  untyped-reset arms build a lookup fault, but it is called only with the
-  literal `.declassify`, `.auditRead` and `.auditDrain`, so those arms are not
-  reachable from it.
+- **An audited call's general form runs its own arm alone.**
+  `auditedArmSpec` handed the four audited calls (`.declassify`,
+  `.declassifySignal`, `.auditRead`, `.auditDrain`) to the whole
+  `dispatchWithCapChecked`, so the compiled audited path carried a copy of
+  every other syscall's arm, among them the CNode-operation and
+  untyped-reset arms that build a lookup fault. No caller could reach them:
+  each passes one of the four ids. `auditedArmSpec` now matches on the
+  syscall and runs that call's arm; any other id takes a constant refusal.
+  It and `auditGeneralR` are inlined, so at each caller the match folds and
+  each call's general form is its own arm alone.
+  `dispatchWithCapChecked_eq_auditedArmSpec` still makes
+  `dispatchWithCapChecked` the specification.
+- **An audit read's tag word rebuilds no error.** The admitted read of a
+  refusal slot's tags (opcode 14) built the slot's refusal to read its
+  reason's discriminant, so a slot holding a refused lookup allocated its
+  `failedLookup` and `LookupFault`. It now reads the discriminant off the
+  slot's code (`KernelError.discriminantOfCode`,
+  `toDiscriminant_ofPayloadWords`, `refusalTagsSlotCode_eq`).
 - **Readings** (QEMU `virt`, fresh archive, two runs, identical): every
   non-carve entry reads 0, including every new scenario. The pins are:
   - endpoint 6 / 248, notification 6 / 240, reply 10 / 256;
