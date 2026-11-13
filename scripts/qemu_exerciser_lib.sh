@@ -307,7 +307,7 @@ for driver in drivers:
             "declassified-signal", "declassified-signal-bound", "declassified-signal-two-hop",
             "declassified-signal-wakes", "declassified-wait-blocks",
             "declassified-wait-pending",
-            "declassify", "declassify-refused", "declassified-signal-refused-at-receiver",
+            "declassify", "declassify-refused", "declassify-guard-mismatch-refused", "declassified-signal-refused-at-receiver",
             "endpoint-delete", "exhaust-drain-tick",
             "exhaust-tick", "failed-lookup-depth-mismatch", "failed-lookup-guard-mismatch",
             "receive-reply-cap-guard-mismatch", "reply-recv-reply-cap-guard-mismatch",

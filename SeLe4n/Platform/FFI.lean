@@ -2488,6 +2488,27 @@ def refusalReceiverFor (st : SystemState) (tid : SeLe4n.ThreadId)
     refusedSignalReceiverCode st tid (SeLe4n.CPtr.ofWord x0)
   else 0
 
+/-- `refusalReceiverForCode` on the refusal's discriminant: the second-hop
+refusal carries no payload, so its code alone names it. -/
+@[inline] def refusalReceiverForWords (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (d : Nat) (x0 : UInt64) : Nat :=
+  if sid = SyscallId.declassifySignal ∧
+      d = KernelError.declassificationDeniedAtReceiver.toDiscriminant then
+    refusedSignalReceiverCode st tid (SeLe4n.CPtr.ofWord x0)
+  else 0
+
+theorem refusalReceiverForWords_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (ke : KernelError) (x0 : UInt64) :
+    refusalReceiverForWords st tid sid ke.toDiscriminant x0 =
+      refusalReceiverForCode st tid sid ke x0 := by
+  unfold refusalReceiverForWords refusalReceiverForCode
+  have h : (ke.toDiscriminant = KernelError.declassificationDeniedAtReceiver.toDiscriminant) ↔
+      ke = KernelError.declassificationDeniedAtReceiver := by
+    constructor
+    · intro h; cases ke <;> simp_all [KernelError.toDiscriminant]
+    · rintro rfl; rfl
+  simp only [h]
+
 @[simp] theorem ofOptCode_refusalReceiverForCode (st : SystemState) (tid : SeLe4n.ThreadId)
     (sid : SyscallId) (ke : KernelError) (x0 : UInt64) :
     SeLe4n.ThreadId.ofOptCode (refusalReceiverForCode st tid sid ke x0) =
@@ -2576,13 +2597,15 @@ caller's `x0` as a word.  Equal to the specification
           | k + 1 =>
             { st with
               declassificationRefusals :=
-                recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
-                  (SeLe4n.CPtr.ofWord x0) true ⟨k⟩ }
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid
+                  ke.toDiscriminant (ke.payloadWord 0) (ke.payloadWord 1) (ke.payloadWord 2)
+                  (ke.payloadWord 3) (ke.payloadWord 4) (SeLe4n.CPtr.ofWord x0) true ⟨k⟩ }
           | 0 =>
             { st with
               declassificationRefusals :=
-                recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
-                  (SeLe4n.CPtr.ofWord x0) false ⟨0⟩ }
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid
+                  ke.toDiscriminant (ke.payloadWord 0) (ke.payloadWord 1) (ke.payloadWord 2)
+                  (ke.payloadWord 3) (ke.payloadWord 4) (SeLe4n.CPtr.ofWord x0) false ⟨0⟩ }
 
 /-- The refused syscall recorded as words is the specification's record. -/
 @[csimp] theorem recordSyscallRefusal_eq_impl :
@@ -2620,23 +2643,38 @@ the ledger's write, and the decode, in each. -/
       match refusalSeamClass sid with
       | .exempt => st
       | .records =>
-          recordSyscallRefusal ctx executingCore syscallId tid
-            (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) x0 st
+          let domain := embedLegacyLabel (ctx.threadLabelOf tid)
+          -- The second-hop refusal is the payload-free code, so the receiver
+          -- is resolved on the discriminant (`refusalReceiverForWords`).
+          match refusalReceiverForWords st tid sid d x0 with
+          | k + 1 =>
+            { st with
+              declassificationRefusals :=
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid
+                  d w0 w1 w2 w3 w4 (SeLe4n.CPtr.ofWord x0) true ⟨k⟩ }
+          | 0 =>
+            { st with
+              declassificationRefusals :=
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid
+                  d w0 w1 w2 w3 w4 (SeLe4n.CPtr.ofWord x0) false ⟨0⟩ }
 
+/-- **The refused syscall recorded from its words is the specification's
+record** of the error those words are (`KernelError.ofPayloadWords_payloadWord`):
+neither the error nor the record is built. -/
 theorem recordSyscallRefusalW_eq
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (d : Nat) (w0 w1 w2 w3 w4 : UInt64)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (x0 : UInt64) (st : SystemState) :
-    recordSyscallRefusalW ctx executingCore syscallId tid d w0 w1 w2 w3 w4 x0 st =
-      recordSyscallRefusal ctx executingCore syscallId tid
-        (KernelError.ofPayloadWords d w0 w1 w2 w3 w4) x0 st := by
-  unfold recordSyscallRefusalW
+    recordSyscallRefusalW ctx executingCore syscallId tid ke.toDiscriminant (ke.payloadWord 0)
+        (ke.payloadWord 1) (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) x0 st =
+      recordSyscallRefusal ctx executingCore syscallId tid ke x0 st := by
+  rw [recordSyscallRefusal_eq_impl]
+  unfold recordSyscallRefusalW recordSyscallRefusalImpl
   split
-  · next h => unfold recordSyscallRefusal; rw [h]
-  · next sid h =>
-    split
-    · next hc => unfold recordSyscallRefusal; rw [h]; dsimp only; rw [hc]
+  · rfl
+  · split
     · rfl
+    · rw [refusalReceiverForWords_eq]
 
 /-- WS-SM SM9.B.9: an exempt syscall's refusal is not recorded — the ledger is
 a declassification audit, not a general syscall-failure log. -/

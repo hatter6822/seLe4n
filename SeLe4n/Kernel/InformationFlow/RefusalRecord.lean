@@ -80,6 +80,7 @@ import SeLe4n.Prelude
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.InformationFlow.AuditRecord
 import SeLe4n.Model.KernelError
+import SeLe4n.Model.KernelErrorWords
 import SeLe4n.Model.Object.Types
 
 namespace SeLe4n.Kernel
@@ -306,7 +307,16 @@ structure RefusalSlot where
   subject : SeLe4n.ThreadId
   subjectDomain : SecurityDomain
   syscall : SeLe4n.Model.SyscallId
-  reason : SeLe4n.Model.KernelError
+  /-- The refusal's error as its discriminant (`KernelError.toDiscriminant`)
+  and its five payload words (`KernelError.payloadWord`), read back through
+  `reason`: a payload error held as an object field was rebuilt on every
+  recorded refusal, so a refused lookup's record allocated. -/
+  reasonCode : Nat
+  reasonW0 : UInt64
+  reasonW1 : UInt64
+  reasonW2 : UInt64
+  reasonW3 : UInt64
+  reasonW4 : UInt64
   requestedTarget : SeLe4n.CPtr
   /-- Whether the refusal names a receiver (`DeclassificationRefusal.refusedReceiver`). -/
   receiverNamed : Bool
@@ -316,17 +326,26 @@ structure RefusalSlot where
 
 namespace RefusalSlot
 
+/-- The error a slot's words spell (`KernelError.ofPayloadWords`). -/
+@[inline] def reason (s : RefusalSlot) : SeLe4n.Model.KernelError :=
+  SeLe4n.Model.KernelError.ofPayloadWords s.reasonCode s.reasonW0 s.reasonW1 s.reasonW2
+    s.reasonW3 s.reasonW4
+
 /-- A slot no refusal has reached. -/
 def vacant : RefusalSlot :=
   { occupied := false, originatingCore := Concurrency.bootCoreId, subject := ⟨0⟩,
     subjectDomain := SecurityDomain.lowest, syscall := .declassify,
-    reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 0,
-    receiverNamed := false, receiver := ⟨0⟩ }
+    reasonCode := SeLe4n.Model.KernelError.declassificationDenied.toDiscriminant,
+    reasonW0 := 0, reasonW1 := 0, reasonW2 := 0, reasonW3 := 0, reasonW4 := 0,
+    requestedTarget := SeLe4n.CPtr.ofNat 0, receiverNamed := false, receiver := ⟨0⟩ }
 
 /-- The slot holding refusal `r`. -/
 def ofRefusal (r : DeclassificationRefusal) : RefusalSlot :=
   { occupied := true, originatingCore := r.originatingCore, subject := r.subject,
-    subjectDomain := r.subjectDomain, syscall := r.syscall, reason := r.reason,
+    subjectDomain := r.subjectDomain, syscall := r.syscall,
+    reasonCode := r.reason.toDiscriminant, reasonW0 := r.reason.payloadWord 0,
+    reasonW1 := r.reason.payloadWord 1, reasonW2 := r.reason.payloadWord 2,
+    reasonW3 := r.reason.payloadWord 3, reasonW4 := r.reason.payloadWord 4,
     requestedTarget := r.requestedTarget, receiverNamed := r.refusedReceiver.isSome,
     receiver := r.refusedReceiver.getD ⟨0⟩ }
 
@@ -360,6 +379,9 @@ reached. -/
 @[simp] theorem view_ofRefusal (r : DeclassificationRefusal) : (ofRefusal r).view = some r := by
   cases r with
   | mk c s d sid ke t rcv =>
+    have hR : (ofRefusal ⟨c, s, d, sid, ke, t, rcv⟩).reason = ke :=
+      SeLe4n.Model.KernelError.ofPayloadWords_payloadWord ke
+    simp only [view, toRefusal, toRefusalWith, hR]
     cases rcv <;> rfl
 
 @[simp] theorem view_ofView (o : Option DeclassificationRefusal) : (ofView o).view = o := by
@@ -377,19 +399,23 @@ given up its reference (`recordRefusalSlots`): inlined, the test ran while
 the array still held the slot, and every write built a fresh one.  Equal to
 the slot of that refusal (`overwrite_eq`). -/
 @[noinline] def overwrite (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
-    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (ke : SeLe4n.Model.KernelError)
-    (target : SeLe4n.CPtr) (named : Bool) (receiver : SeLe4n.ThreadId) : RefusalSlot :=
+    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (d : Nat)
+    (w0 w1 w2 w3 w4 : UInt64) (target : SeLe4n.CPtr) (named : Bool)
+    (receiver : SeLe4n.ThreadId) : RefusalSlot :=
   { occupied := true, originatingCore := c,
     subject := if s.subject = subject then s.subject else subject,
-    subjectDomain := domain, syscall := sid, reason := ke, requestedTarget := target,
+    subjectDomain := domain, syscall := sid, reasonCode := d, reasonW0 := w0,
+    reasonW1 := w1, reasonW2 := w2, reasonW3 := w3, reasonW4 := w4, requestedTarget := target,
     receiverNamed := named, receiver := receiver }
 
 theorem overwrite_eq (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
-    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (ke : SeLe4n.Model.KernelError)
-    (target : SeLe4n.CPtr) (named : Bool) (receiver : SeLe4n.ThreadId) :
-    s.overwrite c subject domain sid ke target named receiver =
+    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (d : Nat)
+    (w0 w1 w2 w3 w4 : UInt64) (target : SeLe4n.CPtr) (named : Bool)
+    (receiver : SeLe4n.ThreadId) :
+    s.overwrite c subject domain sid d w0 w1 w2 w3 w4 target named receiver =
       { occupied := true, originatingCore := c, subject, subjectDomain := domain,
-        syscall := sid, reason := ke, requestedTarget := target, receiverNamed := named,
+        syscall := sid, reasonCode := d, reasonW0 := w0, reasonW1 := w1, reasonW2 := w2,
+        reasonW3 := w3, reasonW4 := w4, requestedTarget := target, receiverNamed := named,
         receiver } := by
   by_cases h : s.subject = subject <;> simp [overwrite, h]
 
@@ -508,9 +534,9 @@ so the ledger that holds the array is rebuilt after it with no join point
 between, and is written in place too. -/
 @[noinline] def recordRefusalSlots (slots : Array RefusalSlot) (i : Nat) (c : CoreId)
     (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
-    (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
+    (d : Nat) (w0 w1 w2 w3 w4 : UInt64) (target : SeLe4n.CPtr) (named : Bool)
     (receiver : SeLe4n.ThreadId) : Array RefusalSlot :=
-  slots.modify i (·.overwrite c subject domain sid ke target named receiver)
+  slots.modify i (·.overwrite c subject domain sid d w0 w1 w2 w3 w4 target named receiver)
 
 /-- WS-SM SM9.B.2: **record a refusal by rewriting its slot**: the counters,
 the drop test and the version read first, then the selected slot written over
@@ -519,7 +545,7 @@ written without building a record, a slot or an `Option`.  It is
 `recordRefusal` of the refusal of those words (`recordRefusalWords_eq`). -/
 @[noinline] def recordRefusalWords (L : RefusalLedger) (c : CoreId)
     (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
-    (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
+    (d : Nat) (w0 w1 w2 w3 w4 : UInt64) (target : SeLe4n.CPtr) (named : Bool)
     (receiver : SeLe4n.ThreadId) : RefusalLedger :=
   let attempts := saturatingSucc L.attemptCount
   let next := L.nextSlot
@@ -528,19 +554,22 @@ written without building a record, a slot or an `Option`.  It is
     else L.droppedCount
   let version := L.version + 1
   { attemptCount := attempts
-    slots := ⟨recordRefusalSlots L.slots.toArray next.val c subject domain sid ke target named
-        receiver, by simp [recordRefusalSlots]⟩
+    slots := ⟨recordRefusalSlots L.slots.toArray next.val c subject domain sid d w0 w1 w2 w3 w4 target
+        named receiver, by simp [recordRefusalSlots]⟩
     nextSlot := refusalSlotSucc next
     droppedCount := dropped
     version }
 
 /-- WS-SM SM9.B.2: the in-place record is `recordRefusal` of the refusal its
-words spell, the receiver word zero when none is named. -/
+words spell — the error `ke` handed as its discriminant and payload words — the
+receiver word zero when none is named. -/
 theorem recordRefusalWords_eq (L : RefusalLedger) (c : CoreId)
     (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
     (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
     (receiver : SeLe4n.ThreadId) (hNone : named = false → receiver = ⟨0⟩) :
-    recordRefusalWords L c subject domain sid ke target named receiver =
+    recordRefusalWords L c subject domain sid ke.toDiscriminant (ke.payloadWord 0)
+        (ke.payloadWord 1) (ke.payloadWord 2) (ke.payloadWord 3) (ke.payloadWord 4) target
+        named receiver =
       recordRefusal L
         { originatingCore := c, subject, subjectDomain := domain, syscall := sid,
           reason := ke, requestedTarget := target,

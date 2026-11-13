@@ -10287,6 +10287,12 @@ run_check "INVARIANT" rg -n 'declassifying signal ABI: id=33' tests/fixtures/smp
 # theorem pins the two resolutions equal, and the monitor reads the field back
 # through its own opcode pair.
 run_check "INVARIANT" rg -n 'refusedReceiver : Option SeLe4n.ThreadId' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+# A recorded refusal's error is held in its ledger slot as its discriminant and payload words,
+# and the entry's refusal record writes those words without rebuilding the error.
+run_check "INVARIANT" rg -n -U '^  reasonCode : Nat\n  reasonW0 : UInt64\n' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusalW_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '          match refusalReceiverForWords st tid sid d x0 with\n          \| k \+ 1 =>\n            \{ st with\n              declassificationRefusals :=\n                recordRefusalWords st\.declassificationRefusals executingCore tid domain sid\n                  d w0 w1 w2 w3 w4 ' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'KernelError\.ofPayloadWords d w0 w1 w2 w3 w4' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def refusedSignalReceiver\?' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusedSignalReceiver\?_resolves' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def refusalReceiverFor($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -11156,16 +11162,16 @@ run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_sur
 # silently and every consumer would still pass over a range with a hole at the
 # top.  The literal that used to sit at nine sites said `57` in a trace line for
 # a whole cut after RR7.14 widened the range.
-run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Model/KernelErrorWords.lean
 # Discriminants 35 (the former invalidCapPtr) and 37 (the former
 # allocationMisaligned) are retired and decode to none.
-run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37\]$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37\]$' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Model/KernelErrorWords.lean
 run_negative_check "INVARIANT" rg -n '\binvalidCapPtr\b' SeLe4n/Model/KernelError.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_isSome_iff($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
 # (b2) …and the mechanism that makes the negative above mean anything.  The
 # overlay linked `.rs` files whole while `test_lib.sh`'s classifier routed
 # EVERY `rg`/`grep` anchor through it, so 215 Tier-3 anchors over Rust read raw
@@ -11309,7 +11315,7 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_
 run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem donation_perCore_consistent \(st st. : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_size_le \(a : ThreadId\) \(b : ObjId\) \(c : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Model/KernelErrorWords.lean
 # The payoff: read-set disjoint from write-set means the operation cannot
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.

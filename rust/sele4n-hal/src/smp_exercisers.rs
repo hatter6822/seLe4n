@@ -9832,6 +9832,17 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
 /// `KernelError::FlowDenied`'s discriminant.
 #[cfg(feature = "hw_target")]
 const FLOW_DENIED: u64 = 13;
+/// A declassification whose capability address misses the root guard, measured:
+/// a refused lookup whose error carries a payload (a guard mismatch) recorded in
+/// the refusal ledger from its words, so neither the error nor the record is
+/// built on the entry path.  The address is a bare slot number, below the root
+/// guard.
+#[cfg(feature = "hw_target")]
+const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = guard_mismatch_refusal(RoundTrip {
+    name: "declassify-guard-mismatch-refused",
+    cptr: 1,
+    ..DECLASSIFICATION_REFUSAL
+});
 /// **The audit monitor's reads** (WS-ZA ZA5.13, every opcode family at
 /// ZA6.35), through the boot audit capability ([`AUDIT_CAP`]): the trail's
 /// first entry drained, so the trail has an epoch for the archived verdict to
@@ -11025,6 +11036,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
         if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
+            return Some(false);
+        }
+        if heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) != Some(true) {
             return Some(false);
         }
         for step in AUDIT_SCENARIO.iter() {
