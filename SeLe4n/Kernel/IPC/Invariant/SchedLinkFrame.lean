@@ -699,11 +699,17 @@ theorem wakeCancelledWaiter (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.
 
 /-- An endpoint waiter's cancel: the pop, the thread's IPC ended, the wake. -/
 theorem storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
     (hInv : st.objects.invExt) :
-    SchedLinkFrame st (SeLe4n.Kernel.storeEndpointWaiterCancelled st endpointId isReceiveQ t next) := by
-  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+    SchedLinkFrame st
+      (SeLe4n.Kernel.storeEndpointWaiterCancelled st endpointId isReceiveQ t next faulted) := by
   have i1 := FinaliseFrame.storePopHead st endpointId isReceiveQ t next hInv
+  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+  split
+  · unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
+    exact (storePopHead st endpointId isReceiveQ t next hInv).trans
+      (updateTcb _ t faultedEndpointWaiterTcb i1.invExt)
+  unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
   have i2 := i1.trans (FinaliseFrame.updateTcb _ t cancelledEndpointWaiterTcb i1.invExt)
   exact ((storePopHead st endpointId isReceiveQ t next hInv).trans
     (updateTcb _ t cancelledEndpointWaiterTcb i1.invExt)).trans (wakeCancelledWaiter _ t i2.invExt)
@@ -1591,7 +1597,8 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
       (t : SeLe4n.ThreadId) (tcb : TCB), P s →
       s.getEndpoint? endpointId = some ep → (endpointWaitQueue ep isReceiveQ).head = some t →
       s.getTcb? t = some tcb → endpointWaiterCancellable s endpointId t tcb = true →
-      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext))
+      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext
+        tcb.pendingFault.isSome))
     (hNtfn : ∀ (notificationId : SeLe4n.ObjId) (s : SystemState) (n : Notification)
       (t : SeLe4n.ThreadId) (tcb : TCB), P s →
       s.getNotification? notificationId = some n → n.waitHead = some t →
@@ -1615,8 +1622,8 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
   finaliseFinalObject_closed (fun s => P s ∧ s.objects.invExt ∧ schedContextLinkInvariant s)
     (fun e q s ep t tcb h a b c d =>
       ⟨hEp e q s ep t tcb h.1 a b c d,
-        (FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.2.1).invExt,
-        (SchedLinkFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.2.1).preserves h.2.2⟩)
+        (FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext _ h.2.1).invExt,
+        (SchedLinkFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext _ h.2.1).preserves h.2.2⟩)
     (fun n s nt t tcb h a b c hC =>
       have hB := notificationWaiterCancellable_blocked hC
       have F := FinaliseFrame.notificationCancel s t tcb n h.2.1 hB

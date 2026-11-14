@@ -2461,6 +2461,34 @@ private def runCancelledFaultChecks : IO Unit := do
           ((stRet.getTcb? faulter).map (·.registerContext) ==
             (stR.getTcb? faulter).map (·.registerContext)))
 
+/-- seL4's `cancelAllIPC` restarts a waiter only if it carries no fault
+(`restart_thread_if_no_fault`): a thread blocked sending its fault message is
+left `Inactive` with the fault kept, and a waiter with no fault is set to
+restart and made runnable. -/
+private def runCancelAllFaultedWaiterChecks : IO Unit := do
+  IO.println "--- a destroyed endpoint leaves a faulted waiter Inactive with its fault ---"
+  match queuedDeliveryE with
+  | .error e => assertBool s!"queued pipeline: {e}" false
+  | .ok q =>
+      let anyCore (st : SystemState) := [c0, c1, c2, c3].any (dispatchableOn st faulter)
+      assertBool "setup: the faulter waits on the handler endpoint carrying its fault"
+        (ipcStateOf q.afterFault faulter == some (.blockedOnCall epHandler) &&
+          (pendingFaultOf q.afterFault faulter).isSome)
+      let stF := cancelAllIpc epHandler q.afterFault
+      assertBool "the faulted waiter is taken off the endpoint and left Inactive"
+        (ipcStateOf stF faulter == some .ready && threadStateOf stF faulter == some .Inactive &&
+          (stF.getEndpoint? epHandler).map (·.sendQ.head) == some none)
+      assertBool "…keeping the fault that stopped it"
+        (pendingFaultOf stF faulter == pendingFaultOf q.afterFault faulter)
+      assertBool "…and runnable on no core"
+        (!anyCore stF)
+      -- Control: the same waiter with no fault is restarted and made runnable.
+      let stN := q.afterFault.updateTcb faulter fun t => t.setPendingFault none
+      let stNC := cancelAllIpc epHandler stN
+      assertBool "control: a waiter with no fault is set to restart and made runnable"
+        (ipcStateOf stNC faulter == some .ready && threadStateOf stNC faulter == some .Restart &&
+          anyCore stNC)
+
 def runFaultHandlingChecks : IO Unit := do
   IO.println "WS-RR RR4.26 — Fault handling suite (fault IPC, resume, restart, progress)"
   IO.println "===================================="
@@ -2484,6 +2512,7 @@ def runFaultHandlingChecks : IO Unit := do
   runRestartChecks
   runAbandonPlacementChecks
   runCancelledFaultChecks
+  runCancelAllFaultedWaiterChecks
   runReplySeamChecks
   runReplyRecvFaultAnswerChecks
   runFaultDonationChecks

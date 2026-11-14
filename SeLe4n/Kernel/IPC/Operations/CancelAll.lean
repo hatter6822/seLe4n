@@ -112,22 +112,65 @@ is cleared), so it re-issues the system call it was blocked in. -/
 
 /-- **Whether the head `t` of an endpoint's queue may be cancelled**: a cancel
 may wake it, it waits with no timeout budget (a `.ready` thread holding one would
-break `blockedThreadTimeoutConsistent`; no transition gives a waiter one), and
-every write of its pop stays in its slot (`sendWakesInPlace`, under which the
-pop is `storePopHead`, `popHead_inPlace`). -/
+break `blockedThreadTimeoutConsistent`; no transition gives a waiter one), every
+write of its pop stays in its slot (`sendWakesInPlace`, under which the pop is
+`storePopHead`, `popHead_inPlace`), and it is blocked in an IPC (its IPC-state
+codes are not `.ready`'s), as a queue's head is whenever the IPC invariants
+hold: so it is on no run queue and is no idle thread, which the cancel of a
+faulted waiter, leaving it `Inactive`, reads. -/
 @[inline] def endpointWaiterCancellable (st : SystemState) (endpointId : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
   cancelledWaiterWakeable st t tcb && tcb.timeoutBudget.isNone &&
-    sendWakesInPlace st endpointId t tcb.queueNext
+    sendWakesInPlace st endpointId t tcb.queueNext &&
+    !(tcb.ipcStateCode == 0 && tcb.ipcObjectCode == 0)
 
-/-- **Cancel the head `t` of one of an endpoint's queues** (`next` its
-successor): the head popped (`storePopHead`), its IPC ended
-(`cancelledEndpointWaiterTcb`), and the thread woken on its own core.  Out of
-line, so each update is specialised in. -/
-@[noinline] def storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+/-- **What a cancelled endpoint waiter that carries a fault becomes** (WS-SX SX4:
+seL4-MCS `restart_thread_if_no_fault`, whose else branch is
+`setThreadState(thread, ThreadState_Inactive)`): `.ready` in IPC, holding no
+message and no stashed reply, and `Inactive`, with its fault record and its
+saved registers kept.  A later Resume answers the fault as the resume of a
+fault-suspended thread does (`retirePendingFaultForResume`). -/
+@[inline] def faultedEndpointWaiterTcb (t : TCB) : TCB :=
+  { TCB.setIpcState { t with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready with
+      threadState := .Inactive }
+
+@[simp] theorem faultedEndpointWaiterTcb_ipcState (t : TCB) :
+    (faultedEndpointWaiterTcb t).ipcState = .ready := rfl
+
+@[simp] theorem faultedEndpointWaiterTcb_threadState (t : TCB) :
+    (faultedEndpointWaiterTcb t).threadState = .Inactive := rfl
+
+@[simp] theorem faultedEndpointWaiterTcb_pendingFault (t : TCB) :
+    (faultedEndpointWaiterTcb t).pendingFault = t.pendingFault := rfl
+
+@[simp] theorem faultedEndpointWaiterTcb_registerContext (t : TCB) :
+    (faultedEndpointWaiterTcb t).registerContext = t.registerContext := rfl
+
+/-- **Cancel the head `t` of one of an endpoint's queues that carries no fault**
+(`next` its successor): the head popped (`storePopHead`), its IPC ended and the
+thread set to restart (`cancelledEndpointWaiterTcb`), and the thread woken on its
+own core.  Out of line, so each update is specialised in. -/
+@[noinline] def storeEndpointWaiterRestarted (st : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : SystemState :=
   wakeCancelledWaiter
     ((storePopHead st endpointId isReceiveQ t next).updateTcb t cancelledEndpointWaiterTcb) t
+
+/-- **Cancel the head `t` of one of an endpoint's queues that carries a fault**:
+the head popped and the thread left `Inactive` with its fault
+(`faultedEndpointWaiterTcb`), not woken.  Out of line, as the restart is. -/
+@[noinline] def storeEndpointWaiterFaulted (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : SystemState :=
+  (storePopHead st endpointId isReceiveQ t next).updateTcb t faultedEndpointWaiterTcb
+
+/-- **Cancel the head `t` of one of an endpoint's queues** (`next` its
+successor), as seL4-MCS's `removeAndRestartEPQueuedThread`: a waiter with no
+fault restarts and is woken (`storeEndpointWaiterRestarted`), one that carries a
+fault (`faulted`) is left `Inactive` with it (`storeEndpointWaiterFaulted`). -/
+@[inline] def storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool) :
+    SystemState :=
+  if faulted then storeEndpointWaiterFaulted st endpointId isReceiveQ t next
+  else storeEndpointWaiterRestarted st endpointId isReceiveQ t next
 
 /-- **Cancel the waiters of one of an endpoint's queues**, head first, at most
 `fuel` of them; a waiter `endpointWaiterCancellable` refuses ends the walk. -/
@@ -143,7 +186,8 @@ def cancelEndpointQueue (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
         | some tcb =>
           if endpointWaiterCancellable st endpointId t tcb then
             cancelEndpointQueue endpointId isReceiveQ fuel
-              (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext)
+              (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext
+                tcb.pendingFault.isSome)
           else st
         | none => st
       | none => st
@@ -160,20 +204,34 @@ theorem ofOptCode_endpointWaitHeadCode (ep : Endpoint) (isReceiveQ : Bool) :
   unfold endpointWaitHeadCode endpointWaitQueue
   cases isReceiveQ <;> rfl
 
-/-- `storeEndpointWaiterCancelled` behind the successor's link **code**
-(`storePopHeadCode`), so no `some` cell is built for a waiter with a successor
-(`storeEndpointWaiterCancelledCode_eq`).  Out of line, as the spec form is. -/
-@[noinline] def storeEndpointWaiterCancelledCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+/-- `storeEndpointWaiterRestarted` behind the successor's link **code**
+(`storePopHeadCode`), so no `some` cell is built for a waiter with a successor.
+Out of line, as the spec form is. -/
+@[noinline] def storeEndpointWaiterRestartedCode (st : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
   wakeCancelledWaiter
     ((storePopHeadCode st endpointId isReceiveQ t nextCode).updateTcb t cancelledEndpointWaiterTcb) t
 
+/-- `storeEndpointWaiterFaulted` behind the successor's link **code**. -/
+@[noinline] def storeEndpointWaiterFaultedCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  (storePopHeadCode st endpointId isReceiveQ t nextCode).updateTcb t faultedEndpointWaiterTcb
+
+/-- `storeEndpointWaiterCancelled` behind the successor's link **code**
+(`storeEndpointWaiterCancelledCode_eq`). -/
+@[inline] def storeEndpointWaiterCancelledCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) (faulted : Bool) : SystemState :=
+  if faulted then storeEndpointWaiterFaultedCode st endpointId isReceiveQ t nextCode
+  else storeEndpointWaiterRestartedCode st endpointId isReceiveQ t nextCode
+
 theorem storeEndpointWaiterCancelledCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) :
-    storeEndpointWaiterCancelledCode st endpointId isReceiveQ t nextCode =
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) (faulted : Bool) :
+    storeEndpointWaiterCancelledCode st endpointId isReceiveQ t nextCode faulted =
       storeEndpointWaiterCancelled st endpointId isReceiveQ t
-        (SeLe4n.ThreadId.ofOptCode nextCode) := by
+        (SeLe4n.ThreadId.ofOptCode nextCode) faulted := by
   unfold storeEndpointWaiterCancelledCode storeEndpointWaiterCancelled
+    storeEndpointWaiterRestartedCode storeEndpointWaiterRestarted
+    storeEndpointWaiterFaultedCode storeEndpointWaiterFaulted
   rw [storePopHeadCode_eq]
 
 /-- `endpointWaiterCancellable` asked of the waiter's successor **code**
@@ -181,7 +239,8 @@ theorem storeEndpointWaiterCancelledCode_eq (st : SystemState) (endpointId : SeL
 @[inline] def endpointWaiterCancellableCode (st : SystemState) (endpointId : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
   cancelledWaiterWakeable st t tcb && tcb.timeoutBudget.isNone &&
-    sendWakesInPlaceCode st endpointId t tcb.queueNextCode
+    sendWakesInPlaceCode st endpointId t tcb.queueNextCode &&
+    !(tcb.ipcStateCode == 0 && tcb.ipcObjectCode == 0)
 
 theorem endpointWaiterCancellableCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) (tcb : TCB) :
@@ -206,7 +265,8 @@ def cancelEndpointQueueImpl (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
         | some tcb =>
           if endpointWaiterCancellableCode st endpointId ⟨k⟩ tcb then
             cancelEndpointQueueImpl endpointId isReceiveQ fuel
-              (storeEndpointWaiterCancelledCode st endpointId isReceiveQ ⟨k⟩ tcb.queueNextCode)
+              (storeEndpointWaiterCancelledCode st endpointId isReceiveQ ⟨k⟩ tcb.queueNextCode
+                tcb.faultWords.isFault)
           else st
         | none => st
     | none => st
@@ -232,8 +292,8 @@ def cancelEndpointQueueImpl (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
         | none => rfl
         | some tcb =>
           dsimp only
-          rw [endpointWaiterCancellableCode_eq, storeEndpointWaiterCancelledCode_eq,
-            TCB.ofOptCode_queueNextCode, ih]
+          rw [endpointWaiterCancellableCode_eq, ← TCB.pendingFault_isSome,
+            storeEndpointWaiterCancelledCode_eq, TCB.ofOptCode_queueNextCode, ih]
 
 /-- **seL4's `cancelAllIPC`**: every sender, then every receiver. -/
 def cancelAllIpc (endpointId : SeLe4n.ObjId) (st : SystemState) : SystemState :=

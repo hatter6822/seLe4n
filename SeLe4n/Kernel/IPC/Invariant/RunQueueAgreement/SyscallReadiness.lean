@@ -632,6 +632,32 @@ theorem readyEntry_stage {S : SeLe4n.ThreadId → Prop} {st s s' : SystemState}
     SystemState.RunQueueEntryStage st s' ∧ readyKeptStage S st s' :=
   ⟨h.1.trans X.entry, h.2.trans h.1.1 (.of_stage X)⟩
 
+/-- **An endpoint waiter's cancel blocks no thread**: the restart and wake of a
+waiter with no fault, a stage, or the faulted waiter's head pop, a stage, then
+its `.ready` and `Inactive` write, which keeps every ready thread ready. -/
+theorem storeEndpointWaiterCancelled_readyEntry {S : SeLe4n.ThreadId → Prop}
+    {st s : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool} {ep : Endpoint}
+    {t : SeLe4n.ThreadId} {tcb : TCB}
+    (h : SystemState.RunQueueEntryStage st s ∧ readyKeptStage S st s)
+    (hE : s.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : s.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable s endpointId t tcb = true) (faulted : Bool) :
+    SystemState.RunQueueEntryStage st
+        (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext faulted) ∧
+      readyKeptStage S st
+        (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext faulted) := by
+  have hX := storeEndpointWaiterCancelled_runQueueEntryStage s endpointId isReceiveQ ep t tcb
+    hE hH hT hC faulted
+  refine ⟨h.1.trans hX, h.2.trans h.1.1 ?_⟩
+  unfold storeEndpointWaiterCancelled
+  split
+  · have P := storePopHead_runQueueStage_of_cancellable s endpointId isReceiveQ ep t tcb hE hH hT hC
+    unfold storeEndpointWaiterFaulted
+    exact (readyKeptStage.of_stage P).trans P.1
+      (.updateTcb _ t faultedEndpointWaiterTcb (fun x _ => faultedEndpointWaiterTcb_ipcState x))
+  · exact .of_stage (storeEndpointWaiterRestarted_runQueueStage s endpointId isReceiveQ ep t tcb
+      hE hH hT hC)
+
 /-- **A finalisation blocks no thread**: every cancel makes its thread ready or
 keeps it, and every other step is a stage or the suspend's deschedule and
 off-queue `.Inactive` mark, which keeps the IPC state. -/
@@ -641,7 +667,7 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
       readyKeptStage S st (finaliseFinalObject target s) :=
   finaliseFinalObject_closed (fun s => SystemState.RunQueueEntryStage st s ∧ readyKeptStage S st s)
     (fun e q s ep t tcb h hE hH hT hC =>
-      readyEntry_stage h (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC))
+      storeEndpointWaiterCancelled_readyEntry h hE hH hT hC _)
     (fun n s _ t tcb h _ _ hT hC =>
       readyEntry_stage h (notificationWaiterCancel_runQueueStage s n t tcb hT hC))
     (fun n s _ t h _ _ hCode hIn => by

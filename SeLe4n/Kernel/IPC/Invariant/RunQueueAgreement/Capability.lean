@@ -604,12 +604,12 @@ theorem wakeCancelledWaiter_runQueueStage (st : SystemState) (t : SeLe4n.ThreadI
 (`endpointQueuePopHead_runQueueStage`, through `popHead_inPlace`), the waiter's
 TCB rewritten with its run-queue links and its activity kept and its IPC state
 made `.ready`, and the wake of a thread no core runs. -/
-theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
+theorem storeEndpointWaiterRestarted_runQueueStage (st : SystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
     (tcb : TCB) (hE : st.getEndpoint? endpointId = some ep)
     (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
     (hC : endpointWaiterCancellable st endpointId t tcb = true) :
-    RunQueueStage st (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) := by
+    RunQueueStage st (storeEndpointWaiterRestarted st endpointId isReceiveQ t tcb.queueNext) := by
   refine RunQueueStage.of_invExt fun hInv => ?_
   obtain ⟨hW, -, hG⟩ := endpointWaiterCancellable_parts hC
   simp only [cancelledWaiterWakeable, Bool.and_eq_true, decide_eq_true_eq,
@@ -621,7 +621,7 @@ theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
   have hS1 := endpointQueuePopHead_scheduler_eq endpointId isReceiveQ st _ t hPop
   have hI1 :=
     endpointQueuePopHead_preserves_objects_invExt endpointId isReceiveQ st _ t tcb hInv hPop
-  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  unfold storeEndpointWaiterRestarted wakeCancelledWaiter
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hS1 hI1 ⊢
   have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
     ⟨fun _ => TCB.ipcState_setIpcState
@@ -638,6 +638,79 @@ theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
   · exact ⟨cancelledEndpointWaiterTcb (tcbOffQueue tcb),
       by rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb]; rfl,
       (TCB.restartState_ne_inactive_iff _).2 hW.1⟩
+
+/-- **A cancellable waiter's head pop is a stage** (`endpointQueuePopHead_runQueueStage`,
+through `popHead_inPlace`). -/
+theorem storePopHead_runQueueStage_of_cancellable (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
+    (tcb : TCB) (hE : st.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
+    RunQueueStage st (storePopHead st endpointId isReceiveQ t tcb.queueNext) := by
+  obtain ⟨-, -, hG⟩ := endpointWaiterCancellable_parts hC
+  have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
+  exact endpointQueuePopHead_runQueueStage (popHead_inPlace st endpointId isReceiveQ ep t tcb
+    ((SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE) hH'
+    ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG).1
+
+/-- **A faulted endpoint waiter's cancel is a kernel entry's worth of run-queue
+steps**: the head pop, a stage, then the waiter left `Inactive` with its fault.
+It is no stage, since the waiter was active and is not after it; it is the
+deschedule-style write of a thread placed nowhere: the walk asked that no core
+runs it and that it is blocked, so it is on no run queue
+(`currentDequeuedUniqueExcept.queuedRunnable`) and is no idle thread
+(`idleRunnable`). -/
+theorem storeEndpointWaiterFaulted_runQueueEntryStage (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
+    (tcb : TCB) (hE : st.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
+    SystemState.RunQueueEntryStage st (storeEndpointWaiterFaulted st endpointId isReceiveQ t tcb.queueNext) := by
+  obtain ⟨hW, -, hG⟩ := endpointWaiterCancellable_parts hC
+  have hBlk := endpointWaiterCancellable_blocked hC
+  simp only [cancelledWaiterWakeable, Bool.and_eq_true, decide_eq_true_eq,
+    Bool.not_eq_true'] at hW
+  have hEo := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE
+  have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
+  have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
+  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId isReceiveQ ep t tcb hEo hH' hTo hG
+  have hS1 := endpointQueuePopHead_scheduler_eq endpointId isReceiveQ st _ t hPop
+  have P := endpointQueuePopHead_runQueueStage hPop
+  unfold storeEndpointWaiterFaulted
+  generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hS1 P ⊢
+  refine P.entry.trans ⟨SystemState.RunQueueLinkStage.updateTcb s1 t (f := faultedEndpointWaiterTcb)
+    (fun _ _ => rfl), fun hInv _ _ d => ?_⟩
+  have hNotRunnable : ¬ s1.runnable t := fun ⟨x, hx, hr⟩ => by
+    rw [hFr.head_tcb] at hx; cases hx; exact hBlk hr.1
+  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv d (fun c => ?_)
+    (fun c => ?_) ?_ (fun _ _ => rfl) (fun x _ => .inl (faultedEndpointWaiterTcb_ipcState x))
+  · have hR : runningOnSomeCore s1 t = runningOnSomeCore st t := by
+      unfold runningOnSomeCore; rw [hS1]
+    exact currentNowhere_of_runningOnSomeCore_false (hR.trans hW.2) c
+  · cases hq : s1.queuedOn c t
+    · rfl
+    · exact absurd (d.queuedRunnable c t hq) hNotRunnable
+  · cases hI : isIdleThreadId t
+    · rfl
+    · obtain ⟨c, rfl⟩ := (isIdleThreadId_iff t).mp hI
+      exact absurd (d.idleRunnable c) hNotRunnable
+
+/-- **An endpoint waiter's cancel is a kernel entry's worth of run-queue steps**:
+the restart and wake of a waiter with no fault, a stage
+(`storeEndpointWaiterRestarted_runQueueStage`), or the faulted waiter's
+`Inactive` write (`storeEndpointWaiterFaulted_runQueueEntryStage`). -/
+theorem storeEndpointWaiterCancelled_runQueueEntryStage (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
+    (tcb : TCB) (hE : st.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) (faulted : Bool) :
+    SystemState.RunQueueEntryStage st
+      (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext faulted) := by
+  unfold storeEndpointWaiterCancelled
+  split
+  · exact storeEndpointWaiterFaulted_runQueueEntryStage st endpointId isReceiveQ ep t tcb hE hH hT hC
+  · exact (storeEndpointWaiterRestarted_runQueueStage st endpointId isReceiveQ ep t tcb hE hH hT
+      hC).entry
 
 /-- The guarded removal of a thread from an endpoint queue: endpoint stores and
 queue-link writes. -/
@@ -882,7 +955,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
     (fun e q s ep t tcb h hE hH hT hC =>
-      h.trans (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC).entry)
+      h.trans (storeEndpointWaiterCancelled_runQueueEntryStage s e q ep t tcb hE hH hT hC _))
     (fun n s _ t tcb h _ _ hT hC =>
       h.trans (notificationWaiterCancel_runQueueStage s n t tcb hT hC).entry)
     (finaliseUnbindStep_runQueueEntryStage st)

@@ -782,16 +782,23 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) (hE : st.getEndpoint? endpointId = some ep)
     (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
-    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
-    stepCovers e st (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) := by
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) (faulted : Bool) :
+    stepCovers e st
+      (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext faulted) := by
   obtain ⟨-, -, hG⟩ := endpointWaiterCancellable_parts hC
   have hEo := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE
   have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
   have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
   obtain ⟨hPop, -⟩ := popHead_inPlace st endpointId isReceiveQ ep t tcb hEo hH' hTo hG
   have hF1 := endpointQueuePopHead_keyFrame hInv hPop
-  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  unfold storeEndpointWaiterCancelled storeEndpointWaiterFaulted storeEndpointWaiterRestarted
+    wakeCancelledWaiter
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hF1 ⊢
+  -- A faulted waiter's `Inactive` write moves no key input and no scheduler field.
+  split
+  · exact stepCovers_of_keys_sched (keyInputsEq_trans hF1.1
+      (keyInputsEq_updateTcb hF1.2.2 (f := faultedEndpointWaiterTcb) (fun _ => rfl)))
+      (by rw [SystemState.updateTcb_scheduler, hF1.2.1])
   have hI2 := SystemState.updateTcb_preserves_objects_invExt s1 t cancelledEndpointWaiterTcb hF1.2.2
   have hK : keyInputsEq s1 (s1.updateTcb t cancelledEndpointWaiterTcb) :=
     keyInputsEq_updateTcb hF1.2.2 (fun _ => rfl)
@@ -875,8 +882,9 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
   finaliseFinalObject_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
     (fun en q s ep t tcb h hE hH hT hC =>
-      ⟨stepCovers_trans h.1 (storeEndpointWaiterCancelled_stepCovers e s en q ep t tcb h.2 hE hH hT hC),
-        (FinaliseFrame.storeEndpointWaiterCancelled s en q t _ h.2).invExt⟩)
+      ⟨stepCovers_trans h.1 (storeEndpointWaiterCancelled_stepCovers e s en q ep t tcb h.2 hE hH hT
+          hC _),
+        (FinaliseFrame.storeEndpointWaiterCancelled s en q t _ _ h.2).invExt⟩)
     (fun n s _ t tcb h _ _ _ hC =>
       ⟨stepCovers_trans h.1 (notificationWaiterCancel_stepCovers e s t tcb h.2),
         ((FinaliseFrame.notificationCancel s t tcb n h.2

@@ -311,17 +311,22 @@ theorem storePopHead_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (st : Sy
     SystemState.updateTcb_preserves_objects_invExt _ _ _ k2.2⟩
 
 /-- **An endpoint waiter's cancel writes the waiter alone**: the pop writes queue
-links, the waiter's rewrite sets it to restart, and the wake writes
-none. -/
+links; a waiter with no fault is set to restart and woken, the wake writing
+none, and a faulted waiter is left `Inactive` with its registers kept. -/
 theorem storeEndpointWaiterCancelled_savedRegsKeptExcept (st : SystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (t : SeLe4n.ThreadId)
-    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept (· = t) st (storeEndpointWaiterCancelled st endpointId isReceiveQ t next) := by
-  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+    (next : Option SeLe4n.ThreadId) (faulted : Bool) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept (· = t) st
+      (storeEndpointWaiterCancelled st endpointId isReceiveQ t next faulted) := by
   obtain ⟨k1, i1⟩ := storePopHead_savedRegsKeptExcept (W := (· = t)) st endpointId isReceiveQ t next hInv
-  have i2 := SystemState.updateTcb_preserves_objects_invExt _ t cancelledEndpointWaiterTcb i1
-  exact (k1.trans (.updateTcb_written _ t _ i1 rfl)).trans
-    (.of_eq (savedRegs_enqueueRunnableOnCore _ _ t i2))
+  unfold storeEndpointWaiterCancelled
+  split
+  · unfold storeEndpointWaiterFaulted
+    exact k1.trans (.updateTcb _ t _ i1 (fun x => faultedEndpointWaiterTcb_registerContext x))
+  · unfold storeEndpointWaiterRestarted wakeCancelledWaiter
+    have i2 := SystemState.updateTcb_preserves_objects_invExt _ t cancelledEndpointWaiterTcb i1
+    exact (k1.trans (.updateTcb_written _ t _ i1 rfl)).trans
+      (.of_eq (savedRegs_enqueueRunnableOnCore _ _ t i2))
 
 /-- The in-place removal of a thread from an endpoint queue writes queue links
 alone. -/
@@ -694,10 +699,10 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
     ⟨hR, hL.1, .refl s⟩ hL.1.2.1 hL.2).1.2.2
   · intro en q s ep t tcb h hE hH hT hC
     have R := h.1; have L := h.2.1
-    exact step h (readyEntry_stage R (storeEndpointWaiterCancelled_runQueueStage s en q ep t tcb hE hH hT hC))
+    exact step h (storeEndpointWaiterCancelled_readyEntry R hE hH hT hC _)
       (L.of_frame (storeEndpointWaiterCancelled_preserves_ipcInvariantFull s en q ep t tcb L.2.1 L.1
-        hE hH hT hC) (FinaliseFrame.storeEndpointWaiterCancelled s en q t _ L.2.1))
-      (storeEndpointWaiterCancelled_savedRegsKeptExcept s en q t tcb.queueNext L.2.1)
+        hE hH hT hC _) (FinaliseFrame.storeEndpointWaiterCancelled s en q t _ _ L.2.1))
+      (storeEndpointWaiterCancelled_savedRegsKeptExcept s en q t tcb.queueNext _ L.2.1)
       (blocked h hT (endpointWaiter_notReady L.1.queueHeadBlockedConsistent hE hH hT))
   · intro n s _ t tcb h _ _ hT hC
     have R := h.1; have L := h.2.1

@@ -384,10 +384,11 @@ theorem storeEndpointWaiterCancelled_hidden (ctx : LabelingContext) (observer : 
     (tcb : TCB) (hInv : s.objects.invExt) (hFull : ipcInvariantFull s)
     (hX : objectObservable ctx observer x = false) (hW : waitersHidden ctx observer x s)
     (hE : s.getEndpoint? x = some ep) (hH : (endpointWaitQueue ep q).head = some t)
-    (hT : s.getTcb? t = some tcb) (hC : endpointWaiterCancellable s x t tcb = true) :
-    projectState ctx observer (storeEndpointWaiterCancelled s x q t tcb.queueNext) =
+    (hT : s.getTcb? t = some tcb) (hC : endpointWaiterCancellable s x t tcb = true)
+    (faulted : Bool) :
+    projectState ctx observer (storeEndpointWaiterCancelled s x q t tcb.queueNext faulted) =
         projectState ctx observer s ∧
-      waitFrame s (storeEndpointWaiterCancelled s x q t tcb.queueNext) := by
+      waitFrame s (storeEndpointWaiterCancelled s x q t tcb.queueNext faulted) := by
   obtain ⟨-, -, hG⟩ := endpointWaiterCancellable_parts hC
   have hEo := (SystemState.getEndpoint?_eq_some_iff s x ep).mp hE
   have hTo := (SystemState.getTcb?_eq_some_iff s t tcb).mp hT
@@ -414,10 +415,17 @@ theorem storeEndpointWaiterCancelled_hidden (ctx : LabelingContext) (observer : 
   have hW1 : waitFrame s (storePopHead s x q t tcb.queueNext) := fun u tcb' h =>
     Or.inr (endpointQueuePopHead_tcb_ipcState_backward x q s _ t u tcb' hInv hPop h)
   have hI1 := endpointQueuePopHead_preserves_objects_invExt x q s _ t tcb hInv hPop
-  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  unfold storeEndpointWaiterCancelled storeEndpointWaiterFaulted storeEndpointWaiterRestarted
+    wakeCancelledWaiter
   generalize storePopHead s x q t tcb.queueNext = s1 at hPop hFr hP1 hW1 hI1 ⊢
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.head_tcb
+  -- A faulted waiter: the hidden head written `.ready` and `Inactive`, not woken.
+  split
+  · refine ⟨?_, hW1.trans (waitFrame.updateTcb s1 t (f := faultedEndpointWaiterTcb) hI1
+      (fun y => Or.inl (faultedEndpointWaiterTcb_ipcState y)))⟩
+    rw [(hiddenObjectsWrite.updateTcb (ctx := ctx) (observer := observer) s1 t
+      faultedEndpointWaiterTcb hI1 hTh.1).projection, hP1]
   have hS2 := updateTcb_objects_self_of_tcb cancelledEndpointWaiterTcb hI1 hT1
   have hI2 := SystemState.updateTcb_preserves_objects_invExt s1 t cancelledEndpointWaiterTcb hI1
   have hReady : (cancelledEndpointWaiterTcb (tcbOffQueue tcb)).ipcState = .ready :=
@@ -2071,7 +2079,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
     fun q => cancelEndpointQueue_closed P x q (fun s ep t tcb hP hE hH hT hC =>
       have r := hP.1.endpointCancel hE hH hT hC
       have p := storeEndpointWaiterCancelled_hidden ctx observer s x q ep t tcb hP.1.2.1 hP.1.1 hX
-        hP.2.1 hE hH hT hC
+        hP.2.1 hE hH hT hC _
       ⟨r.1, p.2.waitersHidden hP.2.1, p.1.trans hP.2.2⟩)
   have hNt : ∀ (fuel : Nat) (s : SystemState), P s → P (cancelNotificationQueue x fuel s) :=
     cancelNotificationQueue_closed P x (fun s n t tcb hP hN hH hT hC =>

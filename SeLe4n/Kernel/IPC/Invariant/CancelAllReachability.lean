@@ -247,10 +247,13 @@ theorem storeEndpointWaiterCancelled_preserves_reachableParts (st : SystemState)
     (hE : st.getEndpoint? endpointId = some ep)
     (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
     (hC : endpointWaiterCancellable st endpointId t tcb = true)
-    (hN : notificationWaiterConsistent st) (hR : st.replyWaitersConsistent) :
-    notificationWaiterConsistent (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) ∧
-      timeoutBudgetFrame st (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) ∧
-      (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext).replyWaitersConsistent := by
+    (hN : notificationWaiterConsistent st) (hR : st.replyWaitersConsistent) (faulted : Bool) :
+    notificationWaiterConsistent
+        (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext faulted) ∧
+      timeoutBudgetFrame st
+        (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext faulted) ∧
+      (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext
+        faulted).replyWaitersConsistent := by
   obtain ⟨-, -, hG⟩ := endpointWaiterCancellable_parts hC
   have hEo := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE
   have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
@@ -272,10 +275,28 @@ theorem storeEndpointWaiterCancelled_preserves_reachableParts (st : SystemState)
   have hV1 := SystemState.endpointQueuePopHead_replyViews_eq hInv hPop
   have hI1 :=
     endpointQueuePopHead_preserves_objects_invExt endpointId isReceiveQ st _ t tcb hInv hPop
-  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  unfold storeEndpointWaiterCancelled storeEndpointWaiterFaulted storeEndpointWaiterRestarted
+    wakeCancelledWaiter
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hN1 hB1 hV1 hI1 ⊢
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.head_tcb
+  -- A faulted waiter: made `.ready` and `Inactive`, not woken.
+  split
+  · have hS2 := updateTcb_objects_self_of_tcb faultedEndpointWaiterTcb hI1 hT1
+    have hReady := faultedEndpointWaiterTcb_ipcState (tcbOffQueue tcb)
+    refine ⟨notificationWaiterConsistent_of_unblocked_tcb_write hN1 ⟨_, hT1, hNotNtfn⟩
+      ⟨_, hS2, fun oid h => by rw [hReady] at h; cases h⟩
+      (fun t0 t1 h0 h1 => by rw [hT1] at h0; rw [hS2] at h1; cases h0; cases h1; exact ⟨rfl, rfl⟩)
+      (fun x hx => SystemState.updateTcb_objects_ne _ _ _ _ (Ne.symm hx) hI1),
+      hB1.trans (timeoutBudgetFrame_updateTcb s1 t (f := faultedEndpointWaiterTcb) hI1
+        (fun _ => rfl)), ?_⟩
+    refine SystemState.replyWaitersConsistent.of_views ?_ hR
+    rw [replyViews_updateTcb_eq_of s1 t hI1 (fun x hx => by
+      rw [hFr.head_tcb] at hx; cases hx
+      simp only [TCB.replyView, TCB.blockingServer?_eq, hReady]
+      have : (tcbOffQueue tcb).blockingServer? = none := hNoServer
+      simp only [TCB.blockingServer?_eq] at this
+      rw [this]; rfl), hV1]
   -- The cancel: a thread blocked on an endpoint made `.ready`.
   have hS2 := updateTcb_objects_self_of_tcb cancelledEndpointWaiterTcb hI1 hT1
   have hI2 := SystemState.updateTcb_preserves_objects_invExt s1 t cancelledEndpointWaiterTcb hI1
@@ -1769,12 +1790,14 @@ theorem endpointCancel {s : SystemState} {e : SeLe4n.ObjId} {q : Bool} {ep : End
     {t : SeLe4n.ThreadId} {tcb : TCB} (h : finaliseStepInvariant s)
     (hE : s.getEndpoint? e = some ep) (hH : (endpointWaitQueue ep q).head = some t)
     (hT : s.getTcb? t = some tcb) (hC : endpointWaiterCancellable s e t tcb = true) :
-    finaliseStepInvariant (storeEndpointWaiterCancelled s e q t tcb.queueNext) ∧
-      timeoutBudgetFrame s (storeEndpointWaiterCancelled s e q t tcb.queueNext) :=
+    finaliseStepInvariant (storeEndpointWaiterCancelled s e q t tcb.queueNext
+        tcb.pendingFault.isSome) ∧
+      timeoutBudgetFrame s (storeEndpointWaiterCancelled s e q t tcb.queueNext
+        tcb.pendingFault.isSome) :=
   have r := storeEndpointWaiterCancelled_preserves_reachableParts s e q ep t tcb h.2.1 h.1
-    hE hH hT hC h.2.2.1 h.2.2.2.1
-  have F := FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.2.1
-  ⟨⟨storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2.1 h.1 hE hH hT hC,
+    hE hH hT hC h.2.2.1 h.2.2.2.1 _
+  have F := FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext _ h.2.1
+  ⟨⟨storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2.1 h.1 hE hH hT hC _,
     F.invExt, r.1, r.2.2, h.chain_of_frame F, h.loan_of_frame F⟩, r.2.1⟩
 
 /-- A notification waiter's cancel carries it, and frames every budget. -/

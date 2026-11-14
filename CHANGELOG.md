@@ -43,6 +43,20 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   resident, and the census shows that save writes back the context the switch
   restored (`currentFreeOrMatched`). The frozen resume and the test suite's boot
   resume follow the same three arms.
+- **A faulted `cancelAllIPC` waiter stays `Inactive`.** seL4's
+  `restart_thread_if_no_fault` restarts a waiter only if it carries no fault;
+  one blocked sending its fault message is left `Inactive` with the fault kept.
+  The endpoint walk now does the same (`storeEndpointWaiterCancelled` takes
+  `faulted`, dispatching to `storeEndpointWaiterRestarted` or
+  `storeEndpointWaiterFaulted`, which writes `faultedEndpointWaiterTcb`: queue
+  links cleared, `.ready`, `Inactive`, registers and fault kept, no wake). The
+  walk's guard (`endpointWaiterCancellable`) also asks that the head is
+  blocked, as every queue head is, so the `Inactive` write is the
+  deschedule-style frame of a thread on no run queue and not idle
+  (`storeEndpointWaiterCancelled_runQueueEntryStage`,
+  `storeEndpointWaiterCancelled_readyEntry`). `cancelAllSignals` restarts
+  unconditionally in seL4, and a notification waiter carries no fault, so it is
+  unchanged.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it

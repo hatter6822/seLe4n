@@ -4680,6 +4680,13 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveTakesInPlace_eq_impl($|[
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallTakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem cancelEndpointQueue_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem storeEndpointWaiterCancelledCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# seL4's `restart_thread_if_no_fault`: the compiled endpoint walk passes the
+# waiter's fault, asked of its kind code (no decoded record), to the cancel, and
+# a faulted waiter is popped and left `Inactive` with no wake.
+run_check "INVARIANT" rg -n -U '^              \(storeEndpointWaiterCancelledCode st endpointId isReceiveQ ⟨k⟩ tcb\.queueNextCode\n                tcb\.faultWords\.isFault\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '^  \(storePopHeadCode st endpointId isReceiveQ t nextCode\)\.updateTcb t faultedEndpointWaiterTcb$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointWaiterCancelled_readyEntry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointWaiterFaulted_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem storePopHeadCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeSendRendezvousCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 run_check "INVARIANT" rg -n '^                  \(storeSendRendezvousCode st endpointId head ht\.queueNextCode msg\) head$' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean

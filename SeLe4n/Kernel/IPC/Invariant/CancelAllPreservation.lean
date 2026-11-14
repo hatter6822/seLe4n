@@ -142,7 +142,29 @@ theorem endpointWaiterCancellable_parts {st : SystemState} {endpointId : SeLe4n.
     cancelledWaiterWakeable st t tcb = true ∧ tcb.timeoutBudget = none ∧
       sendWakesInPlace st endpointId t tcb.queueNext = true := by
   simp only [endpointWaiterCancellable, Bool.and_eq_true, Option.isNone_iff_eq_none] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2⟩
+
+/-- **A cancellable endpoint waiter is blocked in an IPC.** -/
+theorem endpointWaiterCancellable_blocked {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} {tcb : TCB} (h : endpointWaiterCancellable st endpointId t tcb = true) :
+    tcb.ipcState ≠ .ready := by
+  simp only [endpointWaiterCancellable, Bool.and_eq_true, Bool.not_eq_true',
+    Bool.and_eq_false_iff, beq_eq_false_iff_ne] at h
+  intro hR
+  have hC : tcb.ipcStateCode = 0 ∧ tcb.ipcObjectCode = 0 := by
+    unfold TCB.ipcState at hR
+    revert hR
+    cases tcb.ipcStateCode with
+    | zero => cases tcb.ipcObjectCode <;> simp [ThreadIpcState.ofCodes]
+    | succ n => rcases n with _ | _ | _ | n <;> simp [ThreadIpcState.ofCodes]
+  rcases h.2 with h' | h'
+  · exact h' hC.1
+  · exact h' hC.2
+
+/-- The receive completion with no message, the first of the two stores a
+cancelled waiter's TCB write is read as. -/
+@[reducible] def endedWaiterTcb (x : TCB) : TCB :=
+  TCB.setIpcState { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
 
 /-- **A detached waiter whose IPC is ended closes the bundle**: a thread `t`,
 held at `x`, that heads, ends and follows nothing in any endpoint queue, holds
@@ -153,8 +175,8 @@ which closes the bundle (`storeTcbReceiveComplete_closes_exceptMembership`),
 then the restart, which moves only the saved PC and the thread state
 (`writeReturnFrameToTcb_preserves_ipcInvariantFull`) — that agree key by key
 with the one store the cancel commits. -/
-theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) (x : TCB)
-    (hI1 : s1.objects.invExt) (hNotRes : ¬ t.isReserved)
+theorem cancelledEndpointWaiter_closes (f : TCB → TCB) (s1 : SystemState) (t : SeLe4n.ThreadId)
+    (x : TCB) (hI1 : s1.objects.invExt) (hNotRes : ¬ t.isReserved)
     (hT1 : s1.objects[t.toObjId]? = some (.tcb x)) (hNoBudget : x.timeoutBudget = none)
     (hNotReply : ∀ e r, x.ipcState ≠ .blockedOnReply e r)
     (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint), s1.objects[epId]? = some (.endpoint ep) →
@@ -163,8 +185,19 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
       ep.receiveQ.tail ≠ some t ∧ ep.sendQ.tail ≠ some t)
     (hNoInc : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
       s1.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t)
-    (hEx : ipcInvariantFullExceptMembership s1 t) :
-    ipcInvariantFull (s1.updateTcb t cancelledEndpointWaiterTcb) := by
+    (hEx : ipcInvariantFullExceptMembership s1 t)
+    (hIpc : (f x).ipcState = (endedWaiterTcb x).ipcState := by rfl)
+    (hMsg : (f x).pendingMessage = (endedWaiterTcb x).pendingMessage := by rfl)
+    (hNext : (f x).queueNext = (endedWaiterTcb x).queueNext := by rfl)
+    (hPrev : (f x).queuePrev = (endedWaiterTcb x).queuePrev := by rfl)
+    (hPPrev : (f x).queuePPrev = (endedWaiterTcb x).queuePPrev := by rfl)
+    (hBudget : (f x).timeoutBudget = (endedWaiterTcb x).timeoutBudget := by rfl)
+    (hReply : (f x).replyObject = (endedWaiterTcb x).replyObject := by rfl)
+    (hStash : (f x).pendingReceiveReply = (endedWaiterTcb x).pendingReceiveReply := by rfl)
+    (hBind : (f x).schedContextBinding = (endedWaiterTcb x).schedContextBinding := by rfl)
+    (hSl : ∀ sl, (f x).spaceSlotCap sl = (endedWaiterTcb x).spaceSlotCap sl := by intro _; rfl)
+    (hBnc : (f x).boundNotificationCode = (endedWaiterTcb x).boundNotificationCode := by rfl) :
+    ipcInvariantFull (s1.updateTcb t f) := by
   have hG1 : s1.getTcb? t = some x := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
   have hNotReply1 : ∀ (tcbX : TCB), s1.objects[t.toObjId]? = some (.tcb tcbX) →
       ∀ e r, tcbX.ipcState ≠ .blockedOnReply e r := by
@@ -172,8 +205,7 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
     rw [hT1] at hX; cases hX
     exact hNotReply e r
   -- The two-store reading: the receive completion, then the restart.
-  let rc : TCB := TCB.setIpcState
-    { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
+  let rc : TCB := endedWaiterTcb x
   obtain ⟨sRc, hStoreRc⟩ : ∃ s, storeObject t.toObjId (.tcb rc) s1 = .ok ((), s) := ⟨_, rfl⟩
   have hRc : storeTcbReceiveComplete s1 t none = .ok sRc := by
     unfold storeTcbReceiveComplete modifyTcb
@@ -192,12 +224,13 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
   -- WS-SX SX4: the restart, a second store of fields no conjunct reads — the
   -- saved PC moved back to the restart PC, `.Restart`, and (WS-ZA ZA6.22) the
   -- fault record retired.
-  have hFullClr : ipcInvariantFull (sRc.updateTcb t fun _ => cancelledEndpointWaiterTcb x) := by
+  have hFullClr : ipcInvariantFull (sRc.updateTcb t fun _ => f x) := by
     rw [SystemState.updateTcb_eq_of_some hRcG]
     exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sRc t rc _ hIRc hFullRc
-      hRcAt rfl rfl rfl rfl rfl rfl rfl rfl rfl
-  have hAgree : objectStoreAgrees (sRc.updateTcb t fun _ => cancelledEndpointWaiterTcb x)
-      (s1.updateTcb t cancelledEndpointWaiterTcb) := by
+      hRcAt hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
+      (fun sl _ _ h _ => (hSl sl) ▸ h) hBnc
+  have hAgree : objectStoreAgrees (sRc.updateTcb t fun _ => f x)
+      (s1.updateTcb t f) := by
     intro k
     rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hRcG]
     show (s1.objects.insert t.toObjId _)[k]? = (sRc.objects.insert t.toObjId _)[k]?
@@ -231,8 +264,9 @@ theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull
     (hE : st.getEndpoint? endpointId = some ep)
     (hH : (endpointWaitQueue ep isReceiveQ).head = some t)
     (hT : st.getTcb? t = some tcb)
-    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
-    ipcInvariantFull (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) := by
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) (faulted : Bool) :
+    ipcInvariantFull
+      (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext faulted) := by
   obtain ⟨-, hNoBudget, hG⟩ := endpointWaiterCancellable_parts hC
   have hNotRes : ¬ t.isReserved := by
     simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
@@ -241,7 +275,7 @@ theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull
   have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
   have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
   obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId isReceiveQ ep t tcb hEo hH' hTo hG
-  unfold storeEndpointWaiterCancelled
+  unfold storeEndpointWaiterCancelled storeEndpointWaiterFaulted storeEndpointWaiterRestarted
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr ⊢
   have hI1 : s1.objects.invExt :=
     endpointQueuePopHead_preserves_objects_invExt endpointId isReceiveQ st s1 t tcb hObjInv hPop
@@ -262,10 +296,15 @@ theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull
     cases isReceiveQ
     · exact Or.inr (hQ.2 (by simpa using hH'))
     · exact Or.inl (hQ.1 (by simpa using hH'))
-  have hFull2 := cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget
-    (fun e r hEq => by rcases hBlk with h | h | h <;> rw [show (tcbOffQueue tcb).ipcState =
-      tcb.ipcState from rfl, h] at hEq <;> cases hEq)
-    hNotHead hNotTail hNoInc hEx
+  have hNotReply : ∀ e r, (tcbOffQueue tcb).ipcState ≠ .blockedOnReply e r :=
+    fun e r hEq => by rcases hBlk with h | h | h <;> rw [show (tcbOffQueue tcb).ipcState =
+      tcb.ipcState from rfl, h] at hEq <;> cases hEq
+  -- A faulted waiter: the same receive completion, then `Inactive` with its fault.
+  split
+  · exact cancelledEndpointWaiter_closes faultedEndpointWaiterTcb s1 t (tcbOffQueue tcb) hI1
+      hNotRes hT1 hNoBudget hNotReply hNotHead hNotTail hNoInc hEx
+  have hFull2 := cancelledEndpointWaiter_closes cancelledEndpointWaiterTcb s1 t (tcbOffQueue tcb)
+    hI1 hNotRes hT1 hNoBudget hNotReply hNotHead hNotTail hNoInc hEx
   have hI2 : (s1.updateTcb t cancelledEndpointWaiterTcb).objects.invExt :=
     SystemState.updateTcb_preserves_objects_invExt _ _ _ hI1
   refine enqueueRunnableOnCore_preserves_ipcInvariantFull _ _ t hI2 (fun tcbX hX => ?_) hFull2
@@ -632,7 +671,8 @@ theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull
   obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
   obtain ⟨hNotHead, hNotTail, hNoInc⟩ := endpointQueueRemoveDual_removed_detached_side st s1 e q
     t hObjInv hInv.dualQueueSystemInvariant hRem _ hT1 hSideS hQHB1 hQTB1 hDual1.2.1
-  refine cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget
+  refine cancelledEndpointWaiter_closes cancelledEndpointWaiterTcb s1 t (tcbOffQueue tcb) hI1
+    hNotRes hT1 hNoBudget
     (fun e' r hEq => ?_) hNotHead hNotTail hNoInc hEx
   cases q
   · rcases hSideS.2 rfl with h | h <;> rw [h] at hEq <;> cases hEq
@@ -1077,7 +1117,7 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
   (finaliseFinalObject_closed_linked finaliseLoanBundle
     (fun e q s ep t tcb h hE hH hT hC =>
       h.of_frame (storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2.1 h.1
-        hE hH hT hC) (FinaliseFrame.storeEndpointWaiterCancelled s e q t _ h.2.1))
+        hE hH hT hC _) (FinaliseFrame.storeEndpointWaiterCancelled s e q t _ _ h.2.1))
     (fun n s _ t tcb h _ _ hT hC =>
       have F := FinaliseFrame.notificationCancel s t tcb n h.2.1
         (notificationWaiterCancellable_blocked hC)

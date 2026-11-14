@@ -44,7 +44,8 @@ theorem cancelEndpointQueue_closed (P : SystemState → Prop) (endpointId : SeLe
     (hStep : ∀ (s : SystemState) (ep : Endpoint) (t : SeLe4n.ThreadId) (tcb : TCB), P s →
       s.getEndpoint? endpointId = some ep → (endpointWaitQueue ep isReceiveQ).head = some t →
       s.getTcb? t = some tcb → endpointWaiterCancellable s endpointId t tcb = true →
-      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext)) :
+      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext
+        tcb.pendingFault.isSome)) :
     ∀ (fuel : Nat) (st : SystemState), P st →
       P (cancelEndpointQueue endpointId isReceiveQ fuel st) := by
   intro fuel
@@ -1181,7 +1182,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
       (t : SeLe4n.ThreadId) (tcb : TCB), P s →
       s.getEndpoint? endpointId = some ep → (endpointWaitQueue ep isReceiveQ).head = some t →
       s.getTcb? t = some tcb → endpointWaiterCancellable s endpointId t tcb = true →
-      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext))
+      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext
+        tcb.pendingFault.isSome))
     (hNtfn : ∀ (notificationId : SeLe4n.ObjId) (s : SystemState) (n : Notification)
       (t : SeLe4n.ThreadId) (tcb : TCB), P s →
       s.getNotification? notificationId = some n → n.waitHead = some t →
@@ -1852,15 +1854,21 @@ theorem storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ 
     have h2 := h1.trans (updateTcb _ n tcbAsQueueHead h1.invExt)
     exact h2.trans (updateTcb _ _ _ h2.invExt)
 
-/-- An endpoint waiter's cancel: the pop, the thread's IPC ended, the wake. -/
+/-- An endpoint waiter's cancel: the pop, the thread's IPC ended, the wake of a
+waiter with no fault. -/
 theorem storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
     (hInv : st.objects.invExt) :
-    FinaliseFrame st (SeLe4n.Kernel.storeEndpointWaiterCancelled st endpointId isReceiveQ t next) := by
-  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+    FinaliseFrame st
+      (SeLe4n.Kernel.storeEndpointWaiterCancelled st endpointId isReceiveQ t next faulted) := by
   have h1 := storePopHead st endpointId isReceiveQ t next hInv
-  have h2 := h1.trans (updateTcb _ t cancelledEndpointWaiterTcb h1.invExt)
-  exact h2.trans (wakeCancelledWaiter _ t h2.invExt)
+  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+  split
+  · unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
+    exact h1.trans (updateTcb _ t faultedEndpointWaiterTcb h1.invExt)
+  · unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
+    have h2 := h1.trans (updateTcb _ t cancelledEndpointWaiterTcb h1.invExt)
+    exact h2.trans (wakeCancelledWaiter _ t h2.invExt)
 
 /-- The removal of a waiter from anywhere in an endpoint queue, each write in
 its slot: the endpoint's ends, the neighbours' links and the waiter's. -/
@@ -2483,7 +2491,7 @@ end FinaliseFrameAny
 theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
     FinaliseFrameAny st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (FinaliseFrameAny st)
-    (fun _ _ _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ h.invExt).any)
+    (fun _ _ _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ _ h.invExt).any)
     (fun _ s _ t tcb h _ _ _ hC =>
       have h1 := FinaliseFrame.notificationCancel s t tcb _ h.invExt
         (notificationWaiterCancellable_blocked hC)
@@ -2598,9 +2606,13 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
           rw [markKeyChangeFrom_cdt]; exact (hC (hU s0 holder _)).trans h0)
         s t h)
     target st rfl
-  · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
-    exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
-      ((hU _ _ _).trans (hP _ _ _ _ _)))).trans h
+  · unfold storeEndpointWaiterCancelled
+    split
+    · unfold storeEndpointWaiterFaulted
+      exact (hC ((hU _ _ _).trans (hP _ _ _ _ _))).trans h
+    · unfold storeEndpointWaiterRestarted wakeCancelledWaiter
+      exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
+        ((hU _ _ _).trans (hP _ _ _ _ _)))).trans h
   · have hEq : Lifecycle.Suspend.cancelIpcBlocking s t tcb =
         Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue s t) t := by
       unfold Lifecycle.Suspend.cancelIpcBlocking; rw [notificationWaiterCancellable_blocked hC']

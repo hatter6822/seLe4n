@@ -74,10 +74,17 @@ namespace RecordsStep
 /-- **An endpoint waiter's cancel**: the pop, its fault record retired with its
 IPC, and the wake. -/
 theorem storeEndpointWaiterCancelled (st : SystemState) (e : SeLe4n.ObjId) (q : Bool)
-    (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    RecordsStep st (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t next) := by
-  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+    (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
+    (hInv : st.objects.invExt) :
+    RecordsStep st (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t next faulted) := by
   have F1 := RecordsFrame.storePopHead st e q t next hInv
+  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+  split
+  · -- A faulted waiter is left `Inactive` with its fault, which parks the record.
+    unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
+    exact (of_frame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
+      (fun _ _ => TcbStaysParked.of_parked (.inl rfl)))
+  unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
   have S2 := (of_frame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
     (fun _ _ => TcbStaysParked.of_noFault (TCB.pendingFault_setPendingFault _ none)))
   refine S2.trans (of_frame (RecordsFrame.enqueueRunnableOnCore _ _ t S2.invExt fun x hx => ?_))
@@ -202,7 +209,7 @@ parked.** -/
 theorem finaliseFinalObject (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
     RecordsStep st (SeLe4n.Kernel.finaliseFinalObject target st) :=
   finaliseFinalObject_closed (RecordsStep st)
-    (fun e q s _ t tcb h _ _ _ _ => h.trans (storeEndpointWaiterCancelled s e q t _ h.invExt))
+    (fun e q s _ t tcb h _ _ _ _ => h.trans (storeEndpointWaiterCancelled s e q t _ _ h.invExt))
     (fun n s _ t tcb h _ _ hT hC => h.trans (notificationWaiterCancelled s n t tcb h.invExt hT hC))
     (fun n s _ t h _ _ _ _ => h.trans (of_finaliseFrame
       (FinaliseFrame.storeUnbindNotification s t n h.invExt)
