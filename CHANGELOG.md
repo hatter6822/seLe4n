@@ -32,6 +32,10 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it
   blocked. The dispatch suite pins discriminant 57 as retired.
+- **The restart writes the TCB in place.** `TCB.restoredToRestart` and
+  `cancelledEndpointWaiterTcb` read both scalars (restart PC, restart state)
+  before the clear consumes the record, so the compiled kernel reuses it; read
+  after, the record was shared at the clear and every cancel copied the TCB.
 - **Retired:** `KernelError.ipcCancelled` (discriminant 57 reserved:
   `retiredDiscriminants = [35, 37, 57]`, `ofDiscriminant?_retired_ipcCancelled`;
   Rust `KernelError::IpcCancelled` and `RETIRED`), `cancelledIpcFrame`,
