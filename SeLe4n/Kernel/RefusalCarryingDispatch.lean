@@ -35,6 +35,34 @@ cross-core signal itself answers a refusal with the state it was handed
 before.
 -/
 
+namespace SeLe4n.Model
+
+variable {α : Type}
+
+/-- WS-SX SX4: `k` with the state `report` makes of the state it was handed
+attached to each refusal: `ofKernel` when `report` is the identity
+(`ofKernelReporting_id`).  The receive commits its busy reply's cancel before
+the refusals that follow it, and those report the cancelled state. -/
+def RefusalCarrying.ofKernelReporting (report : SystemState → SystemState) (k : Kernel α) :
+    RefusalCarrying α :=
+  fun st =>
+    match k st with
+    | .error e => .error (e, report st)
+    | .ok r => .ok r
+
+@[simp] theorem RefusalCarrying.ofKernelReporting_id (k : Kernel α) :
+    RefusalCarrying.ofKernelReporting id k = RefusalCarrying.ofKernel k := rfl
+
+/-- At a state `report` leaves as it is, the reporting form is `ofKernel`. -/
+theorem RefusalCarrying.ofKernelReporting_of_fixed {report : SystemState → SystemState}
+    (k : Kernel α) {st : SystemState} (h : report st = st) :
+    RefusalCarrying.ofKernelReporting report k st = RefusalCarrying.ofKernel k st := by
+  unfold RefusalCarrying.ofKernelReporting RefusalCarrying.ofKernel
+  rw [h]
+  rfl
+
+end SeLe4n.Model
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -749,10 +777,93 @@ both straight from the register file and builds no decode record. -/
     | some _ => .error (.illegalState, st)
     | none   => .error (.objectNotFound, st)
 
+/-- **The state a refusal of `dispatchOperandCheckedR` reports**, given the one
+`armReport` names for each capability the operand resolves to: that, once the
+caller is current, a thread and its operand resolves; the state it was handed
+otherwise, since every refusal before the arm writes nothing. -/
+def operandReport (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (armReport : Option Capability → SystemState → SystemState) (st : SystemState) :
+    SystemState :=
+  if st.scheduler.currentOnCore executingCore ≠ some tid then st
+  else
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) =>
+    match lookupSlot tcb capAddr st with
+    | .ok ref => armReport (SystemState.lookupSlotCap st ref) st
+    | .error _ => st
+  | _ => st
+
+/-- An arm reporting the state it was handed leaves the operand's report there. -/
+theorem operandReport_self (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    operandReport capAddr tid executingCore (fun _ s => s) st = st := by
+  unfold operandReport
+  split
+  · rfl
+  · split
+    · split <;> rfl
+    · rfl
+
+/-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, at one state, its
+refusals reporting `operandReport`, given an `arm` that is the specification's
+arm and taint step at that state on every capability the operand resolves to,
+its refusals reporting `armReport` (`hArm`).  An address that does not resolve
+is refused by the gate's resolution, and the arm owns every check after it. -/
+theorem dispatchOperandCheckedR_eq_reporting_at (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (arm : Option Capability → RefusalCarrying Unit)
+    (armReport : Option Capability → SystemState → SystemState)
+    (hNotYield : decoded.syscallId ≠ .yield)
+    (st : SystemState)
+    (hArm : ∀ (tcb : TCB) (ref : CSpaceAddr),
+      st.getObject? tid.toObjId = some (.tcb tcb) →
+      lookupSlot tcb decoded.capAddr st = .ok ref →
+      arm (SystemState.lookupSlotCap st ref) st =
+        RefusalCarrying.ofKernelReporting (armReport (SystemState.lookupSlotCap st ref))
+          (dispatchCheckedArmThenTaint ctx decoded tid executingCore
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+          (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
+          st.declassificationAudit.length st.declassificationTaint) st) :
+    dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
+      RefusalCarrying.ofKernelReporting (operandReport decoded.capAddr tid executingCore armReport)
+        (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  rw [dispatchSyscallChecked_eq_impl]
+  simp only [dispatchOperandCheckedR, RefusalCarrying.ofKernelReporting, dispatchSyscallCheckedImpl,
+    dispatchCheckedArmThenTaintFused_eq, operandReport]
+  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
+      (threadId_isEqSome_iff _ _).2 hCur
+    have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
+    rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
+      if_neg hNot, if_neg hNot, if_neg hNotYield]
+    split
+    · next tcb hTcb =>
+      simp only [hTcb]
+      rw [lookupSlotK_eq]
+      rcases hRef : lookupSlot tcb decoded.capAddr st with
+        f | ref
+      · simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
+          SyscallGate.lookupSlot_mk, hRef, LookupFault.ofWords_word]
+      · have h := hArm tcb ref hTcb hRef
+        simp only [RefusalCarrying.ofKernelReporting] at h
+        exact h
+    · next o hNo hTcb =>
+      simp only [hTcb]
+      cases o <;> first | rfl | exact absurd rfl (hNo _)
+    · next hTcb => simp only [hTcb]
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
+      cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
+      · rfl
+      · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
+    rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur, if_pos hCur]
+
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, at one state, given an
 `arm` that is the specification's arm and taint step at that state on every
-capability the operand resolves to (`hArm`).  An address that does not resolve
-is refused by the gate's resolution, and the arm owns every check after it. -/
+capability the operand resolves to (`hArm`): the reporting form, every arm
+reporting the state it was handed (`dispatchOperandCheckedR_eq_reporting_at`,
+`operandReport_self`). -/
 theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
@@ -769,33 +880,9 @@ theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
           st.declassificationAudit.length st.declassificationTaint) st) :
     dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
-  rw [dispatchSyscallChecked_eq_impl]
-  simp only [dispatchOperandCheckedR, RefusalCarrying.ofKernel, dispatchSyscallCheckedImpl,
-    dispatchCheckedArmThenTaintFused_eq]
-  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
-      (threadId_isEqSome_iff _ _).2 hCur
-    have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
-    rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
-      if_neg hNot, if_neg hNotYield]
-    split
-    · next tcb hTcb =>
-      simp only [hTcb]
-      rw [lookupSlotK_eq]
-      rcases hRef : lookupSlot tcb decoded.capAddr st with
-        f | ref
-      · simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
-          SyscallGate.lookupSlot_mk, hRef, LookupFault.ofWords_word]
-      · have h := hArm tcb ref hTcb hRef
-        simp only [RefusalCarrying.ofKernel] at h
-        exact h
-    · next hTcb => simp only [hTcb]
-    · next hTcb => simp only [hTcb]
-  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
-      cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
-      · rfl
-      · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
-    rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
+  rw [dispatchOperandCheckedR_eq_reporting_at ctx decoded tid executingCore arm (fun _ s => s)
+    hNotYield st (fun tcb ref hT hR => hArm tcb ref hT hR),
+    RefusalCarrying.ofKernelReporting_of_fixed _ (operandReport_self _ _ _ st)]
 
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, given an `arm` that is
 the specification's arm and taint step on every capability the operand resolves

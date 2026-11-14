@@ -577,6 +577,33 @@ theorem stageWokenDeliveryTwice_mappingStage (x : SystemState) (w p : Option SeL
       (Architecture.stageWokenDelivery x w 0) p 0) :=
   (stageWokenDelivery_mappingStage x w 0).trans (stageWokenDelivery_mappingStage _ p 0)
 
+/-- **A reply holder's cancel keeps the mappings recorded**: the suspend's IPC
+cancel, the chain revert and the `Inactive` write. -/
+theorem cancelReplyHolder_mappingStage (st : SystemState) (holder : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) :
+    MappingStage st (cancelReplyHolder st holder executingCore) := by
+  unfold cancelReplyHolder
+  split
+  · exact MappingStage.refl st
+  · rename_i tcb _
+    refine (?_ : MappingStage st _).trans (updateTcb_mappingStage _ _ _)
+    unfold Lifecycle.Suspend.suspendCancelRevert
+    dsimp only
+    split
+    · exact (cancelIpcKeepingContexts_mappingStage _ _ _).trans
+        propagatePipChainCrossCore_mappingStage
+    · exact cancelIpcKeepingContexts_mappingStage _ _ _
+
+/-- A receive's busy-reply cancel keeps the mappings recorded. -/
+theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    MappingStage st (cancelRecvBusyReply ctx tid gate decoded executingCore st) := by
+  unfold cancelRecvBusyReply
+  split
+  · exact MappingStage.refl st
+  · exact cancelReplyHolder_mappingStage _ _ _
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain
 and the declassification included. -/
@@ -620,6 +647,10 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       (MappingStage.of_fst_eq endpointSendCrossCoreDispatchChecked_mappingStage hSend)
       (fun x => stageWokenDelivery_mappingStage x _ _) h
   case none.receive.object epId =>
+    split at h
+    · cases h
+    refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
+    unfold receiveResolvedArm at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ _ hRecv _ stDon hHand

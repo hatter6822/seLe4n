@@ -1117,10 +1117,12 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (hNI : isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-          (Platform.FFI.syscallEntryStateFromAbi ctx executingCore st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.error ke)
-    (hCap : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
-        (Platform.FFI.syscallEntryStateFromAbi ctx executingCore st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
+    (hCap : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (cancelReceiveBusyReply ctx executingCore
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke
         = some fault)
     (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
@@ -1129,7 +1131,8 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap]
     at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
-      (Platform.FFI.syscallEntryStateFromAbi ctx executingCore st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
+      (cancelReceiveBusyReply ctx executingCore
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid fault
       (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
       elr spsr := by
     have := Except.ok.inj hCommit

@@ -104,9 +104,7 @@ before it dispatches, as a value.
 
 Returns the caller, the decoded syscall, and **the state the dispatch runs on** —
 the register-spilled, IPC-buffer-TLB-filled state, not the entry's raw
-pre-state.  Every rejection the prefix can take is a `none` here, and so is a
-receive that cancels its busy reply's holder first (WS-SX SX4), whose entry state
-is then the spilled state (`Platform.FFI.syscallEntryStateFromAbi_of_noBusyReply`); so a plan that
+pre-state.  Every rejection the prefix can take is a `none` here, so a plan that
 resolves is a syscall that will reach `dispatchSyscallChecked`.
 
 The point of naming it is `abiEntryPlan_dispatches` below: a footprint resolved
@@ -122,10 +120,6 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
     | some tid =>
       if isIdleThreadId tid then none else
       let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
-      -- WS-SX SX4: a receive that cancels its busy reply's holder first
-      -- declares no footprint, so it runs under the entry lock alone
-      -- (`syscallDispatchBracket`).
-      if receiveBusyHolderCode ctx executingCore stRegs ≠ 0 then none else
       match lookupThreadRegisterContext tid stRegs with
       | .error _ => none
       | .ok (regs, _) =>
@@ -155,22 +149,29 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = (match dispatchSyscallChecked ctx decoded tid executingCore stFilled with
          | .error ke =>
-             match Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
+             match Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
                  (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+                 (cancelReceiveBusyReply ctx executingCore
+                   (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
                  tid ke with
              | some fault =>
                  .ok (.faulted,
                       Platform.FFI.deliverSyscallCapFault ctx executingCore
-                        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+                        (cancelReceiveBusyReply ctx executingCore
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
                         tid fault
                         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
                           ipcBufferAddr spEl0 x30) elr spsr)
              | none =>
                  .ok (.returns (Architecture.errorFrameFor
-                        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke),
+                        (cancelReceiveBusyReply ctx executingCore
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                        tid ke),
                       Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
                         (Architecture.recordErrorOverflow
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke))
+                          (cancelReceiveBusyReply ctx executingCore
+                            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                          tid ke))
          | .ok ((), st') =>
              .ok (Platform.FFI.syscallReturnOutcome syscallId st' tid, st')) := by
   unfold abiEntryPlan at h
@@ -186,10 +187,6 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
       by_cases hI : isIdleThreadId tid' = true
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
-      by_cases hB : receiveBusyHolderCode ctx executingCore
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) ≠ 0
-      · rw [if_pos hB] at h; exact absurd h (by simp)
-      rw [if_neg hB] at h
       cases hRegs : lookupThreadRegisterContext tid'
           (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
@@ -210,9 +207,6 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
           -- the spill frames the scheduler, so it reads the same caller.
           have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
             syscallId x0 x1 x2 x3 x4 x5
-          simp only [hI, Bool.false_eq_true, if_false,
-            Platform.FFI.syscallEntryStateFromAbi_of_noBusyReply ctx executingCore st tid'
-              syscallId x0 x1 x2 x3 x4 x5 (Decidable.of_not_not hB)]
           simp only [syscallEntryChecked, hCtx, hSched, hCur, hI, hRegs, hDec,
             Bool.false_eq_true, if_false]
           rfl
@@ -250,10 +244,6 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
       by_cases hI : isIdleThreadId tid' = true
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
-      by_cases hB : receiveBusyHolderCode ctx executingCore
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) ≠ 0
-      · rw [if_pos hB] at h; exact absurd h (by simp)
-      rw [if_neg hB] at h
       cases hRegs : lookupThreadRegisterContext tid'
           (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)

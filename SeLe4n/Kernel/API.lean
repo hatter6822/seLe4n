@@ -4825,6 +4825,66 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
   · exact absurd rfl hR
   · rfl
 
+/-- **The checked receive arm once its gate has passed and its busy reply is
+cancelled** (`dispatchWithCapChecked`'s `.receive` arm, WS-SX SX4): the reply
+object resolved, the per-core receive with its capabilities, the rendezvous
+hand-off and the delivery staged. -/
+def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) :
+    Kernel Unit :=
+  fun st =>
+      -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
+      -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
+      match resolveRecvReplyId gate decoded st with
+      | .error e => .error e
+      | .ok replyIdOpt =>
+        -- WS-SM SM6.D (PR #822 review): route through the per-core receive
+        -- transition (the endpoint→receiver flow is already gated above, so the
+        -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
+        -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
+        -- `endpointReceiveDualChecked` when the flow is permitted.
+        -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
+        -- transition (the endpoint→receiver flow is gated above); the dequeued
+        -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
+        -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
+        let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
+        -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
+        -- routing — a send that parked before its receiver arrived delivers
+        -- its capabilities here too, gated on the authority the sender
+        -- recorded on the message.  The endpoint→receiver flow is gated
+        -- above, so the *unchecked* per-core WithCaps receive is correct
+        -- here for the same reason the bare one was.
+        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+        | (st', .ok (dequeued, summary, _sgi)) =>
+            -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
+            -- `maybeDonateSchedContext` step, and the *same* definition.  No
+            -- extra flow gate is owed: the donation writes only
+            -- `schedContextBinding` and `SchedContext.boundThread`, both of
+            -- which `projectKernelObject` erases, so it is invisible to every
+            -- observer (`returnDonatedSchedContext_preserves_projection` makes
+            -- the same argument for the hand-off's other direction); and the
+            -- endpoint→receiver flow this donation follows is gated above.
+            --
+            -- **WS-OD OD3.14**: likewise the priority half, and for the same
+            -- reason no extra gate is owed -- `projectKernelObject` strips
+            -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
+            -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
+            -- exactly as the flow-checked `.call` arm's own walk is bounded
+            -- by `endpointCallLiveWriteSet`.
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            | .error e => .error e
+            | .ok stDon =>
+              -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
+              -- checked twin of the unchecked arm's staging; the endpoint
+              -- flow gate above governs the consumed message).  PR #873
+              -- round 6: `extraCaps` is the summary's INSTALLED count, the
+              -- same honest figure the send and call paths report — it was
+              -- hardcoded to zero while the receive installed nothing.
+              .ok ((), Architecture.stageDeliveredMessage
+                        (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                        summary.capInfo)
+        | (_, .error e) => .error e
+
 /-- T6-I/M-IF-1/U5-A: Policy-checked dispatch — replaces unchecked operations
 with their information-flow-checked equivalents. All cross-domain operations
 (IPC send/receive/call/reply, CSpace mint/copy/move, service register) are
@@ -4925,58 +4985,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- cancelled first (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`), every
           -- check that can refuse the receive asked of the state it was handed;
           -- the cancel is committed and the receive runs on the cancelled state.
-          let st := cancelRecvBusyReply ctx tid gate decoded executingCore st
-          -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
-          -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
-          match resolveRecvReplyId gate decoded st with
-          | .error e => .error e
-          | .ok replyIdOpt =>
-            -- WS-SM SM6.D (PR #822 review): route through the per-core receive
-            -- transition (the endpoint→receiver flow is already gated above, so the
-            -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
-            -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
-            -- `endpointReceiveDualChecked` when the flow is permitted.
-            -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
-            -- transition (the endpoint→receiver flow is gated above); the dequeued
-            -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
-            -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
-            let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-            -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
-            -- routing — a send that parked before its receiver arrived delivers
-            -- its capabilities here too, gated on the authority the sender
-            -- recorded on the message.  The endpoint→receiver flow is gated
-            -- above, so the *unchecked* per-core WithCaps receive is correct
-            -- here for the same reason the bare one was.
-            match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
-            | (st', .ok (dequeued, summary, _sgi)) =>
-                -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
-                -- `maybeDonateSchedContext` step, and the *same* definition.  No
-                -- extra flow gate is owed: the donation writes only
-                -- `schedContextBinding` and `SchedContext.boundThread`, both of
-                -- which `projectKernelObject` erases, so it is invisible to every
-                -- observer (`returnDonatedSchedContext_preserves_projection` makes
-                -- the same argument for the hand-off's other direction); and the
-                -- endpoint→receiver flow this donation follows is gated above.
-                --
-                -- **WS-OD OD3.14**: likewise the priority half, and for the same
-                -- reason no extra gate is owed -- `projectKernelObject` strips
-                -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
-                -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
-                -- exactly as the flow-checked `.call` arm's own walk is bounded
-                -- by `endpointCallLiveWriteSet`.
-                match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
-                | .error e => .error e
-                | .ok stDon =>
-                  -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
-                  -- checked twin of the unchecked arm's staging; the endpoint
-                  -- flow gate above governs the consumed message).  PR #873
-                  -- round 6: `extraCaps` is the summary's INSTALLED count, the
-                  -- same honest figure the send and call paths report — it was
-                  -- hardcoded to zero while the receive installed nothing.
-                  .ok ((), Architecture.stageDeliveredMessage
-                            (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                            summary.capInfo)
-            | (_, .error e) => .error e
+          receiveResolvedArm decoded gate tid epId executingCore
+            (cancelRecvBusyReply ctx tid gate decoded executingCore st)
     | _ => fun _ => .error (.invalidCapability 0)
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
@@ -6540,7 +6550,8 @@ theorem dispatchArm_receive_matches_returnShape
         ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.capInfo,
     ?_, ?_⟩
   · subst hCancel
-    simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply, hDispatch, hDon]
+    simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget, hFlow,
+      hReply, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -7808,7 +7819,7 @@ theorem dispatchWithCapChecked_receive_delegates
                           summary.capInfo))
        | (_, .error e) => .error e) := by
   subst hCancel
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
