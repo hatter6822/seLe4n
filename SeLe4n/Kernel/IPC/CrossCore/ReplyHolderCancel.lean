@@ -48,12 +48,14 @@ open SeLe4n.Model
 torn down as the suspend tears it down (`suspendCancelRevert`:
 `cancelIpcKeepingContexts`, then the boost it lent through the reply reverted)
 and is left `Inactive`; a holder that is not blocked is left as it is, as
-`cancelIPC` leaves a thread in no blocking state.  The blocking question is
-asked of the state's codes (`ipcStateCode`, `ipcObjectCode`), so no state record
-is built for it. -/
+`cancelIPC` leaves a thread in no blocking state.  The holder is resolved as
+every cancel resolves its thread (`lookupTcb`): the reserved id is the model's
+null thread, which seL4's `replyTCB != NULL` test never cancels.  The blocking
+question is asked of the state's codes (`ipcStateCode`, `ipcObjectCode`), so no
+state record is built for it. -/
 def cancelReplyHolder (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : SystemState :=
-  match st.getTcb? holder with
+  match lookupTcb st holder with
   | none => st
   | some tcb =>
     if tcb.ipcStateCode == 0 && tcb.ipcObjectCode == 0 then st
@@ -65,7 +67,7 @@ def cancelReplyHolder (st : SystemState) (holder : SeLe4n.ThreadId)
 theorem cancelReplyHolder_cases (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) :
     cancelReplyHolder st holder executingCore = st ∨
-      ∃ tcb, st.getTcb? holder = some tcb ∧ tcb.ipcState ≠ .ready ∧
+      ∃ tcb, lookupTcb st holder = some tcb ∧ tcb.ipcState ≠ .ready ∧
         cancelReplyHolder st holder executingCore =
           (Lifecycle.Suspend.suspendCancelRevert st holder tcb executingCore).updateTcb holder
             fun t => { t with threadState := .Inactive } := by
