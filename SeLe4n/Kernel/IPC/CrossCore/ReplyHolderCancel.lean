@@ -44,27 +44,50 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **seL4-MCS `cancelIPC` on a reply's holder**: its IPC torn down as the
-suspend tears it down (`suspendCancelRevert`: `cancelIpcKeepingContexts`, then
-the boost it lent through the reply reverted) and the thread left `Inactive`. -/
+/-- **seL4-MCS `cancelIPC` on a reply's holder**: a blocked holder has its IPC
+torn down as the suspend tears it down (`suspendCancelRevert`:
+`cancelIpcKeepingContexts`, then the boost it lent through the reply reverted)
+and is left `Inactive`; a holder that is not blocked is left as it is, as
+`cancelIPC` leaves a thread in no blocking state.  The blocking question is
+asked of the state's codes (`ipcStateCode`, `ipcObjectCode`), so no state record
+is built for it. -/
 def cancelReplyHolder (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : SystemState :=
   match st.getTcb? holder with
   | none => st
   | some tcb =>
-    (Lifecycle.Suspend.suspendCancelRevert st holder tcb executingCore).updateTcb holder
-      fun t => { t with threadState := .Inactive }
+    if tcb.ipcStateCode == 0 && tcb.ipcObjectCode == 0 then st
+    else
+      (Lifecycle.Suspend.suspendCancelRevert st holder tcb executingCore).updateTcb holder
+        fun t => { t with threadState := .Inactive }
+
+/-- The holder's cancel is the identity, or the blocked holder's teardown. -/
+theorem cancelReplyHolder_cases (st : SystemState) (holder : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) :
+    cancelReplyHolder st holder executingCore = st ∨
+      ∃ tcb, st.getTcb? holder = some tcb ∧ tcb.ipcState ≠ .ready ∧
+        cancelReplyHolder st holder executingCore =
+          (Lifecycle.Suspend.suspendCancelRevert st holder tcb executingCore).updateTcb holder
+            fun t => { t with threadState := .Inactive } := by
+  unfold cancelReplyHolder
+  split
+  · exact Or.inl rfl
+  · rename_i tcb hT
+    split
+    · exact Or.inl rfl
+    · rename_i hB
+      refine Or.inr ⟨tcb, hT, fun hR => hB ?_, rfl⟩
+      obtain ⟨h1, h2⟩ := (TCB.ipcState_eq_iff_codes tcb .ready).mp hR
+      simp [h1, h2, ThreadIpcState.objectCode, ThreadIpcState.stateCode]
 
 /-- The holder's cancel writes no core's current slot. -/
 theorem cancelReplyHolder_currentOnCore (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore c : Concurrency.CoreId) :
     (cancelReplyHolder st holder executingCore).scheduler.currentOnCore c =
       st.scheduler.currentOnCore c := by
-  unfold cancelReplyHolder
-  split
-  · rfl
-  · rename_i tcb _
-    rw [SystemState.updateTcb_scheduler]
+  rcases cancelReplyHolder_cases st holder executingCore with h | ⟨tcb, -, -, h⟩
+  · rw [h]
+  · rw [h, SystemState.updateTcb_scheduler]
     have hK : (Lifecycle.Suspend.cancelIpcKeepingContexts st holder tcb).scheduler.currentOnCore c =
         st.scheduler.currentOnCore c := by
       unfold Lifecycle.Suspend.cancelIpcKeepingContexts
@@ -95,11 +118,9 @@ theorem cancelReplyHolder_replenishQueueOnCore (st : SystemState) (holder : SeLe
     (executingCore c : Concurrency.CoreId) :
     (cancelReplyHolder st holder executingCore).scheduler.replenishQueueOnCore c =
       st.scheduler.replenishQueueOnCore c := by
-  unfold cancelReplyHolder
-  split
-  · rfl
-  · rename_i tcb _
-    rw [SystemState.updateTcb_scheduler]
+  rcases cancelReplyHolder_cases st holder executingCore with h | ⟨tcb, -, -, h⟩
+  · rw [h]
+  · rw [h, SystemState.updateTcb_scheduler]
     have hK : (Lifecycle.Suspend.cancelIpcKeepingContexts st holder tcb).scheduler.replenishQueueOnCore c =
         st.scheduler.replenishQueueOnCore c := by
       unfold Lifecycle.Suspend.cancelIpcKeepingContexts

@@ -1464,10 +1464,9 @@ theorem cancelReplyHolder_stepCovers (e : CoreId) (st : SystemState)
     (holder : SeLe4n.ThreadId) (ec : CoreId) (hInv : st.objects.invExt) :
     stepCovers e st (cancelReplyHolder st holder ec) ∧
       (cancelReplyHolder st holder ec).objects.invExt := by
-  unfold cancelReplyHolder
-  split
-  · exact ⟨stepCovers_refl e st, hInv⟩
-  · rename_i tcb _
+  rcases cancelReplyHolder_cases st holder ec with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
+  · rw [h]
     have h1 : stepCovers e st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) ∧
         (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec).objects.invExt := by
       obtain ⟨h1, h1Inv⟩ := cancelIpcKeepingContexts_stepCovers e st holder tcb hInv

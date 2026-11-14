@@ -582,10 +582,9 @@ cancel, the chain revert and the `Inactive` write. -/
 theorem cancelReplyHolder_mappingStage (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) :
     MappingStage st (cancelReplyHolder st holder executingCore) := by
-  unfold cancelReplyHolder
-  split
-  · exact MappingStage.refl st
-  · rename_i tcb _
+  rcases cancelReplyHolder_cases st holder executingCore with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact MappingStage.refl st
+  · rw [h]
     refine (?_ : MappingStage st _).trans (updateTcb_mappingStage _ _ _)
     unfold Lifecycle.Suspend.suspendCancelRevert
     dsimp only

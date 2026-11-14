@@ -170,10 +170,9 @@ chain revert and the `Inactive` write. -/
 theorem cancelReplyHolder_finaliseFrameAny (st : SystemState) (holder : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (hInv : st.objects.invExt) :
     FinaliseFrameAny st (cancelReplyHolder st holder executingCore) := by
-  unfold cancelReplyHolder
-  split
-  · exact .refl hInv
-  · rename_i tcb _
+  rcases cancelReplyHolder_cases st holder executingCore with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact .refl hInv
+  · rw [h]
     have h1 : FinaliseFrameAny st
         (Lifecycle.Suspend.suspendCancelRevert st holder tcb executingCore) := by
       unfold Lifecycle.Suspend.suspendCancelRevert
