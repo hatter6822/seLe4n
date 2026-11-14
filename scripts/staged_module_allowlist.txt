@@ -113,6 +113,7 @@ SeLe4n.Kernel.KernelRecords.Dispatch # infra (WS-ZA ZA6.37: the dispatchers keep
 SeLe4n.Kernel.KernelRecords.Entry # infra (WS-ZA ZA6.37: every committing entry keeps the records)
 SeLe4n.Kernel.KernelRecords.SyscallEntry # infra (WS-ZA ZA6.37: the syscall entry keeps the records, and every committing entry preserves them)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch # infra (WS-ZA ZA4.5: the run-queue link agreement carried through the capability-only, checked and unchecked syscall dispatch; imports the staged dispatcher reschedule-flag arms)
+SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders # infra (WS-SX SX4: the suspend keeps every holder naming its saved context, which the restart's cancelling arm and the run-queue dispatch read; imported by the staged run-queue dispatch)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry # infra (WS-ZA ZA4.5: the run-queue link agreement carried through every committing entry — syscall, tick, reschedule, fault, unknown syscall, FP access, suspend; imports the staged entry reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident # infra (WS-ZA ZA6.8: no core's current or resident thread holds a yield link, carried through every committing entry from boot; imports the staged run-queue entry stages)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.CurrentNotResidentElsewhere # infra (WS-ZA ZA6.10: a core's non-idle current thread is resident on no other core, carried through every committing entry from boot; imports the staged run-queue entry stages)

@@ -128,8 +128,10 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- PR #861 review round 10: the `.send` arm was still boot-pinned through
   -- `endpointSendDualWithCaps`; rerouted, so its live operation is now this one.
   , .policyGated "endpointSendCrossCoreDispatchChecked"
-  -- Round 10, same finding on the resume side.
-  , .capabilityOnly "resumeThreadOnCore"
+  -- Round 10, same finding on the resume side.  WS-SX SX4: the arm runs seL4's
+  -- `restart` (`restartThreadOnCore`), which cancels a blocked target's IPC
+  -- through the suspend before the resume.
+  , .capabilityOnly "restartThreadOnCore"
   -- PR #861 review round 12: the SM7.D/SM7.F architecture wrappers are live
   -- per-core arms too — each is what its `dispatchWithCap_…_delegates` theorem
   -- says the arm reaches, and each does strictly more than the canonical
@@ -262,7 +264,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"
   | .tcbSuspend          => "suspendThreadOnCore"
   | .send                => "endpointSendCrossCoreDispatchChecked"
-  | .tcbResume           => "resumeThreadOnCore"
+  | .tcbResume           => "restartThreadOnCore"
   | .vspaceMap           => "vspaceMapOrRemapFromFrameCap"
   | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
   | .tcbSetPriority      => "setPriorityOnCore"
