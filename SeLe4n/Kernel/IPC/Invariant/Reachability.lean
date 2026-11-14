@@ -787,24 +787,6 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
           hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).2.2.1 hH,
       receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
 
-/-- **The live receive carries the reply-waiter queues**, likewise. -/
-theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (c : CoreId)
-    (st : SystemState) (hReach : ipcReachable st) (tcb : TCB)
-    (hT : st.objects[receiver.toObjId]? = some (.tcb tcb)) (hReady : tcb.ipcState = .ready) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId c
-      st).1.replyWaitersConsistent :=
-  have hI := hReach.ipcInvariantFull
-  endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId receiver
-    replyId c st hReach.objects_invExt hReach.replyWaitersConsistent
-    (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
-    (fun ep s hE hH => ⟨fun h => by
-        subst h
-        exact (readyThread_endpointQueueFresh st _ tcb hI.queueHeadBlockedConsistent
-          hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).1 hH,
-      sendHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
-
 /-- **The live send carries the reply-waiter queues**, likewise. -/
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)

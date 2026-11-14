@@ -174,13 +174,34 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
     rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   dsimp only at h
   split at h
-  · split at h
+  · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
+    -- keeps the records, the endpoint heads and the caller `.ready`.
+    have hInv1 := P1.deletes.2.1.2.1
+    have hIpc1 := P1.deletes.2.1.1
+    have hC : RecordsStage (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        CallerReady (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        hEq | ⟨t', hd, hC', hne, hEq⟩ <;> rw [hEq]
+      · exact ⟨.refl _, hIpc1.queueHeadBlockedConsistent, hR1 e tid hCur1⟩
+      · rw [hCur1] at hC'; cases hC'
+        exact ⟨RecordsStage.cancelReplyHolder _ hd e,
+          cancelReplyHolder_queueHeadBlockedConsistent _ hd e hInv1 (.of_ipcInvariantFull hIpc1),
+          (hR1 e tid hCur1).cancelReplyHolder hInv1 (Ne.symm hne)⟩
+    obtain ⟨hS, hQR, hCR⟩ := hC
+    generalize cancelReceiveBusyReply ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR at h hS hQR hCR
+    split at h
     · cases h
       unfold Platform.FFI.deliverSyscallCapFault
-      exact hW.trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid
-        P1.deletes.1.ipcInvariantFull.queueHeadBlockedConsistent (hR1 e tid hCur1))
+      exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
     · cases h
-      exact hW.trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
+      exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
         ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
           (Architecture.recordErrorOverflow_objects _ _ _))
         (by

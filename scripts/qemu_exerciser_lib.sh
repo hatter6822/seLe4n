@@ -676,6 +676,14 @@ for driver in drivers:
             "unheld-long-recv-server-wakes-root", "unheld-long-recv-suspend-partner",
             "unheld-long-reply-recv", "unheld-long-reply-recv-installs-cap",
             "untyped-retype-queued-sender", "untyped-retype-unheld-long-recv-caps-reply",
+            # A receive through a reply still held by a caller cancels the caller.
+            "untyped-retype-busy-reply-sender", "busy-reply-sender-set-space",
+            "busy-reply-sender-set-priority", "busy-reply-resume-partner",
+            "busy-reply-root-receives", "busy-reply-partner-calls",
+            "busy-reply-resume-sender", "busy-reply-root-waits",
+            "busy-reply-sender-wakes-root", "busy-reply-sender-sends",
+            "receive-busy-reply-cancels-caller", "busy-reply-suspend-sender",
+            "busy-reply-suspend-partner", "busy-reply-sender-delete",
             "untyped-retype-unheld-long-recv-caps-server",
             "untyped-retype-unheld-long-recv-reply", "untyped-retype-unheld-long-recv-server",
             # The lifecycle branches: final deletes of untypeds with live

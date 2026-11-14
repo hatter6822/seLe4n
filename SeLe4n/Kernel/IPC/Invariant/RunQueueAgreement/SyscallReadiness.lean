@@ -30,6 +30,26 @@ open SeLe4n.Kernel.Lifecycle.Suspend
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **A reply holder's cancel blocks no thread** (WS-SX SX4): every other
+thread keeps its IPC state, and the holder was blocked before it. -/
+theorem cancelReplyHolder_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st : SystemState)
+    (holder : SeLe4n.ThreadId) (ec : CoreId) :
+    readyKeptStage S st (cancelReplyHolder st holder ec) := fun hI _ t _ hRA x hx => by
+  by_cases hth : t = holder
+  · subst hth
+    rcases cancelReplyHolder_cases st t ec with e | ⟨tcb, hL, hB, -⟩
+    · rw [e] at hx; exact hRA x hx
+    · exact absurd (hRA tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (lookupTcb_some_objects st t tcb hL))) hB
+  · have e := cancelReplyHolder_ipcStateKeptExcept st holder ec hI t hth
+    rw [hx] at e
+    cases h0 : st.getTcb? t with
+    | none => rw [h0] at e; cases e
+    | some y =>
+      rw [h0] at e
+      have e' : x.ipcState = y.ipcState := Option.some.inj e
+      rw [e']; exact hRA y h0
+
 namespace readyKeptStage
 
 variable {S : SeLe4n.ThreadId → Prop}
@@ -1370,21 +1390,54 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (endpointSendCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ _ P) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
-        P.current P.notIdle P.currentActive) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
-    exact (runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ P.endpointHeads
-        P.current P.notIdle P.currentActive) hRecv).trans E.1
-      (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 P.objInv P.refined hR2 P.dequeued).coherent _) hHand).trans
-        (stageWokenSendCompletion_runQueueStage _ _)).trans
-        (stageDeliveredMessage_runQueueStage _ _ _)))
+    split at h
+    · cases h
+    unfold receiveResolvedArm at h
+    -- WS-SX SX4: the busy reply's holder cancelled first, which blocks no
+    -- thread; the receive then runs from the cancelled state.
+    have hSC : SystemState.RunQueueEntryStage st
+          (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        readyKeptStage (· = tid) st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
+          executingCore = some tid ∧
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+        rw [e]
+      · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, P.endpointHeads, P.current,
+          P.currentActive⟩
+      · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
+          cancelReplyHolder_readyKeptStage st hd executingCore,
+          cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
+            P.toEntryPremises.queueHeadCancelFacts,
+          by rw [cancelReplyHolder_currentOnCore]; exact P.current,
+          cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
+    obtain ⟨hS, hK, hHC, hCurC, hActC⟩ := hSC
+    obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
+    have hDC := hS.2 P.objInv P.refined hRC P.dequeued
+    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
+      at h hS hK hHC hCurC hActC hIC hRC hDC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      have E := runQueueStage_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
+          hCurC P.notIdle hActC) hRecv
+      obtain ⟨_, hR2⟩ := E.1.links hIC hRC
+      exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
+          hCurC P.notIdle hActC) hRecv).trans E.1
+        (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
+            ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+          (stageWokenSendCompletion_runQueueStage _ _)).trans
+          (stageDeliveredMessage_runQueueStage _ _ _))))
+    · cases h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1595,21 +1648,55 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
   dsimp only at h
   split at h
-  · split at h
+  · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
+    -- blocks no thread and keeps the endpoint heads blocked.
+    have hC : SystemState.RunQueueEntryStage
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        readyKeptStage (· = tid)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).scheduler.currentOnCore e
+          = some tid := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
+      · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, E1.queueHeads, hCur1⟩
+      · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e,
+          cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
+          by rw [cancelReplyHolder_currentOnCore]; exact hCur1⟩
+    obtain ⟨hS, hK, hQR, hCurR⟩ := hC
+    obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
+    have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
+    have hKW := readyKeptStage.trans hW.entry.1 (.of_stage hW) hK
+    generalize cancelReceiveBusyReply ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      at h hS hK hKW hQR hIR hRR hDR hCurR
+    have hL := hW.entry.1.trans hS.1
+    split at h
     · cases h
       unfold Platform.FFI.deliverSyscallCapFault
-      have hW2 := writeFaultRegistersToTcb_runQueueStage
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+      have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-      have E2 := E1.of_ipcFrame hW2 (by
+      obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
+      have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
+      have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
         unfold writeFaultRegistersToTcb
-        exact IpcFrame.updateTcb _ _ fun _ => rfl)
-      exact readyKeptStage.trans (hW.trans hW2).entry.1 (.of_stage (hW.trans hW2))
-        (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e E2.endpointHeads
-          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI
-          (E2.dequeued.runnable (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1)).activeAt)
+        exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
+      have hCur2 : (writeFaultRegistersToTcb stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)).scheduler.currentOnCore e
+          = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
+      exact readyKeptStage.trans hL hKW (readyKeptStage.trans hW2.1 (.of_stage hW2)
+        (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e (endpointHeadsWakeable_of hD2 hQ2)
+          hCur2 hNI (hD2.runnable hCur2).activeAt))
     · cases h
-      exact .of_stage (hW.trans (SystemState.RunQueueStage.of_frame
+      exact readyKeptStage.trans hL hKW (.of_stage (SystemState.RunQueueStage.of_frame
         ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
           (Architecture.recordErrorOverflow_objects _ _ _))
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])

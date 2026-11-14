@@ -5,6 +5,7 @@ Released under GPL-3.0-or-later license as described in the file LICENSE.
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.ReplyHolderCancel
 
 /-!
 # Every kernel entry keeps the run-queue link agreement
@@ -32,11 +33,16 @@ theorem notificationHeadsWakeable_of {st : SystemState} (hD : st.currentDequeued
   have hNR : tcb.ipcState ≠ .ready := by rw [hB]; exact fun h => by cases h
   exact ⟨blockedCurrentNowhere_of_currentDequeuedUnique hD w tcb hT' hNR, tcb, hT', hNR⟩
 
+/-- A thread's two endpoint-queue link codes: the previous and the next waiter. -/
+def _root_.SeLe4n.Model.TCB.queueLinks (t : TCB) : Nat × Nat := (t.queuePrevCode, t.queueNextCode)
+
 /-- **A step that changes no thread's IPC blocking**: it keeps every object
 that is no TCB, every thread's IPC state and every core's current slot, and
 the object store's invariant (a register save, a ledger write).  Every thread
 after it was there before with the same scheduling-context binding, too, so the
-current threads' contexts stay where they were (WS-ZA ZA6.4). -/
+current threads' contexts stay where they were (WS-ZA ZA6.4).  Every thread's
+endpoint-queue links stay as they were (WS-SX SX4: what the entry premises'
+queue facts read). -/
 def IpcFrame (st st' : SystemState) : Prop :=
   st.objects.invExt → st'.objects.invExt ∧
     (∀ (k : SeLe4n.ObjId) (o : KernelObject), (∀ t : TCB, o ≠ .tcb t) →
@@ -46,7 +52,8 @@ def IpcFrame (st st' : SystemState) : Prop :=
         t.schedContextBinding = t'.schedContextBinding) ∧
     (∀ (w : SeLe4n.ThreadId) (t : TCB), st.getTcb? w = some t →
       ∃ t', st'.getTcb? w = some t' ∧ t'.ipcState = t.ipcState) ∧
-    (∀ c : Concurrency.CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (∀ c : Concurrency.CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) ∧
+    (∀ w : SeLe4n.ThreadId, (st'.getTcb? w).map TCB.queueLinks = (st.getTcb? w).map TCB.queueLinks)
 
 namespace IpcFrame
 
@@ -54,11 +61,11 @@ variable {st st' st'' : SystemState}
 
 theorem refl (st : SystemState) : IpcFrame st st :=
   fun h => ⟨h, fun _ _ _ h => h, fun _ t' h => ⟨t', h, rfl, rfl⟩, fun _ t h => ⟨t, h, rfl⟩,
-    fun _ => rfl⟩
+    fun _ => rfl, fun _ => rfl⟩
 
 theorem trans (h1 : IpcFrame st st') (h2 : IpcFrame st' st'') : IpcFrame st st'' := fun h =>
-  let ⟨h', a1, b1, c1, d1⟩ := h1 h
-  let ⟨h'', a2, b2, c2, d2⟩ := h2 h'
+  let ⟨h', a1, b1, c1, d1, q1⟩ := h1 h
+  let ⟨h'', a2, b2, c2, d2, q2⟩ := h2 h'
   ⟨h'', fun k o ho hk => a1 k o ho (a2 k o ho hk),
     fun w t'' hw =>
       let ⟨t', ht', e2, f2⟩ := b2 w t'' hw
@@ -68,7 +75,7 @@ theorem trans (h1 : IpcFrame st st') (h2 : IpcFrame st' st'') : IpcFrame st st''
       let ⟨t', ht', e1⟩ := c1 w t hw
       let ⟨t'', ht'', e2⟩ := c2 w t' ht'
       ⟨t'', ht'', e2.trans e1⟩,
-    fun c => (d2 c).trans (d1 c)⟩
+    fun c => (d2 c).trans (d1 c), fun w => (q2 w).trans (q1 w)⟩
 
 /-- A step that keeps the object store and every current slot. -/
 theorem of_frame (hO : st'.objects = st.objects)
@@ -77,12 +84,14 @@ theorem of_frame (hO : st'.objects = st.objects)
   have hT : ∀ w, st'.getTcb? w = st.getTcb? w := fun w => by
     unfold SystemState.getTcb?; rw [hO]
   ⟨by rw [hO]; exact h, fun _ _ _ hk => hO ▸ hk, fun w t' hw => ⟨t', (hT w) ▸ hw, rfl, rfl⟩,
-    fun w t hw => ⟨t, (hT w).symm ▸ hw, rfl⟩, hC⟩
+    fun w t hw => ⟨t, (hT w).symm ▸ hw, rfl⟩, hC, fun w => by rw [hT w]⟩
 
-/-- A write to one TCB that keeps its IPC state and its binding. -/
+/-- A write to one TCB that keeps its IPC state, its binding and its queue
+links. -/
 theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x, (f x).ipcState = x.ipcState)
-    (hb : ∀ x, (f x).schedContextBinding = x.schedContextBinding := by intro _; rfl) :
+    (hb : ∀ x, (f x).schedContextBinding = x.schedContextBinding := by intro _; rfl)
+    (hq : ∀ x, (f x).queueLinks = x.queueLinks := by intro _; rfl) :
     IpcFrame st (st.updateTcb tid f) := fun h =>
   ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ h,
     fun _ _ ho hk => updateTcb_objects_back_nonTcb h ho hk,
@@ -93,9 +102,82 @@ theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
         exact ⟨t, ht, (hf t).symm, (hb t).symm⟩
       · exact ⟨t', hw, rfl, rfl⟩,
     fun _ _ hw => updateTcb_getTcb?_fwd h hf hw,
-    fun _ => by rw [SystemState.updateTcb_scheduler]⟩
+    fun _ => by rw [SystemState.updateTcb_scheduler],
+    fun w => by
+      rw [updateTcb_getTcb?_eq h]
+      split
+      · rw [Option.map_map]; exact Option.map_congr fun x _ => hq x
+      · rfl⟩
 
 end IpcFrame
+
+/-- Two states whose threads read the same queue links: each thread in the
+first stands in the second with the same two links. -/
+theorem queueLinks_carried {A B : SystemState}
+    (hQL : ∀ w : SeLe4n.ThreadId, (A.getTcb? w).map TCB.queueLinks = (B.getTcb? w).map TCB.queueLinks)
+    {w : SeLe4n.ThreadId} {t' : TCB} (h : A.objects[w.toObjId]? = some (.tcb t')) :
+    ∃ t, B.objects[w.toObjId]? = some (.tcb t) ∧ t.queuePrev = t'.queuePrev ∧
+      t.queueNext = t'.queueNext := by
+  have e := hQL w
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h] at e
+  cases h0 : B.getTcb? w with
+  | none => rw [h0] at e; cases e
+  | some t =>
+    rw [h0] at e
+    have e' : t'.queueLinks = t.queueLinks := Option.some.inj e
+    have hp : t'.queuePrevCode = t.queuePrevCode := congrArg Prod.fst e'
+    have hn : t'.queueNextCode = t.queueNextCode := congrArg Prod.snd e'
+    refine ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp h0, ?_, ?_⟩
+    · show SeLe4n.ThreadId.ofOptCode _ = SeLe4n.ThreadId.ofOptCode _; rw [hp]
+    · show SeLe4n.ThreadId.ofOptCode _ = SeLe4n.ThreadId.ofOptCode _; rw [hn]
+
+/-- A `queueNext` path after a step that keeps every thread's links was there
+before. -/
+theorem queueNextPath_carried {A B : SystemState}
+    (hQL : ∀ w : SeLe4n.ThreadId, (A.getTcb? w).map TCB.queueLinks = (B.getTcb? w).map TCB.queueLinks)
+    {a b : SeLe4n.ThreadId} (h : QueueNextPath A a b) : QueueNextPath B a b := by
+  induction h with
+  | single a b t hO hN =>
+    obtain ⟨t0, h0, -, hn⟩ := queueLinks_carried hQL hO
+    exact .single a b t0 h0 (hn.trans hN)
+  | cons a b c t hO hN _ ih =>
+    obtain ⟨t0, h0, -, hn⟩ := queueLinks_carried hQL hO
+    exact .cons a b c t0 h0 (hn.trans hN) ih
+
+/-- **The queue facts a reply holder's cancel reads hold after a step that
+changes no thread's IPC blocking**: it keeps every endpoint, every IPC state
+and every queue link. -/
+theorem QueueHeadCancelFacts.of_ipcFrame {st st' : SystemState} (F : QueueHeadCancelFacts st)
+    (hF : IpcFrame st st') (hInv : st.objects.invExt) : QueueHeadCancelFacts st' := by
+  obtain ⟨_, hNT, hTB, _, _, hQL⟩ := hF hInv
+  have hEp : ∀ (eid : SeLe4n.ObjId) (ep : Endpoint), st'.objects[eid]? = some (.endpoint ep) →
+      st.objects[eid]? = some (.endpoint ep) := fun _ _ hE => hNT _ _ (fun _ h => by cases h) hE
+  have hTI : ∀ (y : SeLe4n.ThreadId) (t' : TCB), st'.objects[y.toObjId]? = some (.tcb t') →
+      ∃ t, st.objects[y.toObjId]? = some (.tcb t) ∧ t.ipcState = t'.ipcState := fun y t' hY =>
+    let ⟨t, ht, hs, _⟩ := hTB y t' ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hY)
+    ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp ht, hs⟩
+  have hQL' : ∀ w : SeLe4n.ThreadId,
+      (st.getTcb? w).map TCB.queueLinks = (st'.getTcb? w).map TCB.queueLinks :=
+    fun w => (hQL w).symm
+  refine ⟨queueHeadBlockedConsistent_of_endpoint_tcb_backward st st' hEp hTI F.heads,
+    endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st' hEp hTI F.tails,
+    ⟨fun a tA' hA b hN => ?_, fun b tB' hB a hP => ?_⟩,
+    fun tid hP => F.acyclic tid (queueNextPath_carried hQL hP),
+    fun a b tA' tB' hA hB hN => ?_⟩
+  · obtain ⟨tA, hA0, -, hn⟩ := queueLinks_carried hQL hA
+    obtain ⟨tB, hB0, hp⟩ := F.links.1 a tA hA0 b (hn.trans hN)
+    obtain ⟨tB', hB', hp', -⟩ := queueLinks_carried hQL' hB0
+    exact ⟨tB', hB', hp'.trans hp⟩
+  · obtain ⟨tB, hB0, hp, -⟩ := queueLinks_carried hQL hB
+    obtain ⟨tA, hA0, hn⟩ := F.links.2 b tB hB0 a (hp.trans hP)
+    obtain ⟨tA', hA', -, hn'⟩ := queueLinks_carried hQL' hA0
+    exact ⟨tA', hA', hn'.trans hn⟩
+  · obtain ⟨tA, hA0, -, hn⟩ := queueLinks_carried hQL hA
+    obtain ⟨tA1, hA1, hsA⟩ := hTI a tA' hA
+    rw [hA0] at hA1; cases hA1
+    obtain ⟨tB, hB0, hsB⟩ := hTI b tB' hB
+    have hT := F.targets a b tA tB hA0 hB0 (hn.trans hN)
+    rw [← hsA, ← hsB]; exact hT
 
 /-- What a kernel entry reads off the state it starts from: the three placement
 properties, the endpoint queues' heads and the notifications' head waiters
@@ -110,6 +192,13 @@ structure EntryPremises (st : SystemState) : Prop where
   ntfnHeads : notificationHeadsWakeable st
   placeable : ∀ c, st.currentContextPlaceableOnCore c
   holders : holdersNameTheirContexts st
+  /-- WS-SX SX4: the endpoint queues' tails blocked, the queue links two-way
+  and acyclic, and each waiter's successor blocked as it is: with the heads,
+  what a busy-reply receive's cancel of the reply's holder reads. -/
+  queueTails : endpointQueueTailBlockedConsistent st
+  queueLinkIntegrity : tcbQueueLinkIntegrity st
+  queueAcyclic : tcbQueueChainAcyclic st
+  queueNextTargets : queueNextTargetBlocked st
 
 /-- What a syscall arm reads besides: the caller is core `c`'s current thread and
 no idle thread (an idle thread runs the kernel's own loop and never traps). -/
@@ -122,14 +211,21 @@ namespace EntryPremises
 
 variable {st st' : SystemState}
 
-/-- The premises from the state's invariants. -/
+/-- The premises from the state's invariants: the endpoint-queue facts are
+conjuncts of `ipcInvariantFull`. -/
 theorem of_invariants (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
+    (hD : st.currentDequeuedUnique) (hIpc : ipcInvariantFull st)
     (hNW : notificationWaiterConsistent st) (hP : ∀ c, st.currentContextPlaceableOnCore c)
     (hB : schedContextBindingConsistent st) :
     EntryPremises st :=
-  ⟨hInv, hR, hD, hQ, notificationHeadsWakeable_of hD hNW, hP,
-    holdersNameTheirContexts_of_schedContextBindingConsistent hB⟩
+  let F := QueueHeadCancelFacts.of_ipcInvariantFull hIpc
+  ⟨hInv, hR, hD, F.heads, notificationHeadsWakeable_of hD hNW, hP,
+    holdersNameTheirContexts_of_schedContextBindingConsistent hB, F.tails, F.links, F.acyclic,
+    F.targets⟩
+
+/-- The queue facts a reply holder's cancel reads. -/
+theorem queueHeadCancelFacts (E : EntryPremises st) : QueueHeadCancelFacts st :=
+  ⟨E.queueHeads, E.queueTails, E.queueLinkIntegrity, E.queueAcyclic, E.queueNextTargets⟩
 
 theorem endpointHeads (E : EntryPremises st) : endpointHeadsWakeable st :=
   endpointHeadsWakeable_of E.dequeued E.queueHeads
@@ -141,7 +237,7 @@ theorem blocked (E : EntryPremises st) : blockedCurrentNowhere st :=
 theorem of_ipcFrame (E : EntryPremises st) (hS : RunQueueStage st st') (hF : IpcFrame st st') :
     EntryPremises st' :=
   let hL := hS.1 E.objInv E.refined
-  let ⟨_, hNT, hTB, hTF, hC⟩ := hF E.objInv
+  let ⟨_, hNT, hTB, hTF, hC, _⟩ := hF E.objInv
   { objInv := hL.1, refined := hL.2
     dequeued := hS.2.1 none E.objInv E.refined hL.2 E.dequeued
     queueHeads := queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
@@ -172,7 +268,11 @@ theorem of_ipcFrame (E : EntryPremises st) (hS : RunQueueStage st st') (hF : Ipc
           ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hs))
       obtain ⟨y, hy, -, hbd⟩ := hTB t x hx
       rw [← hbd]
-      exact E.holders s sc t hS0 hb y hy }
+      exact E.holders s sc t hS0 hb y hy
+    queueTails := (E.queueHeadCancelFacts.of_ipcFrame hF E.objInv).tails
+    queueLinkIntegrity := (E.queueHeadCancelFacts.of_ipcFrame hF E.objInv).links
+    queueAcyclic := (E.queueHeadCancelFacts.of_ipcFrame hF E.objInv).acyclic
+    queueNextTargets := (E.queueHeadCancelFacts.of_ipcFrame hF E.objInv).targets }
 
 /-- The caller's premises: core `c`'s current thread, no idle thread. -/
 theorem arm (E : EntryPremises st) {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
@@ -201,7 +301,7 @@ theorem blocked (P : SyscallArmPremises st c tid) : blockedCurrentNowhere st :=
 theorem of_ipcFrame (P : SyscallArmPremises st c tid) (hS : RunQueueStage st st')
     (hF : IpcFrame st st') : SyscallArmPremises st' c tid :=
   (P.toEntryPremises.of_ipcFrame hS hF).arm
-    (by rw [(hF P.objInv).2.2.2.2 c]; exact P.current) P.notIdle
+    (by rw [(hF P.objInv).2.2.2.2.1 c]; exact P.current) P.notIdle
 
 end SyscallArmPremises
 
@@ -930,19 +1030,49 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
         (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ P) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
-        P.current P.notIdle P.currentActive) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
-    exact E.trans
-      (((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 P.objInv P.refined hR2 P.dequeued).coherent _) hHand).trans
-        (stageWokenSendCompletion_runQueueStage _ _)).trans
-        (stageDeliveredMessage_runQueueStage _ _ _)).entry
+    split at h
+    · cases h
+    unfold receiveResolvedArm at h
+    -- WS-SX SX4: the busy reply's holder is cancelled first; the receive then
+    -- runs from the cancelled state, which keeps every premise it reads.
+    have hSC : SystemState.RunQueueEntryStage st
+          (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
+          executingCore = some tid ∧
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+        rw [e]
+      · exact ⟨(RunQueueStage.refl _).entry, P.endpointHeads, P.current, P.currentActive⟩
+      · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
+          cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
+            P.toEntryPremises.queueHeadCancelFacts,
+          by rw [cancelReplyHolder_currentOnCore]; exact P.current,
+          cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
+    obtain ⟨hS, hHC, hCurC, hActC⟩ := hSC
+    obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
+    have hDC := hS.2 P.objInv P.refined hRC P.dequeued
+    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
+      at h hS hHC hCurC hActC hIC hRC hDC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      have E := runQueueStage_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
+          hCurC P.notIdle hActC) hRecv
+      obtain ⟨_, hR2⟩ := E.1.links hIC hRC
+      exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
+        (((applyReceiveRendezvousHandoff_runQueueStage
+            ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+          (stageWokenSendCompletion_runQueueStage _ _)).trans
+          (stageDeliveredMessage_runQueueStage _ _ _)).entry
+    · cases h
   case none.call.object epId =>
     split at h
     · rename_i hCall

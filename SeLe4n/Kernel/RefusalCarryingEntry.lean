@@ -431,6 +431,23 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
   rw [← receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
   exact hK
 
+/-- `cancelReceiveBusyReply_cases` at the holder: the identity, or the cancel of
+a holder that is not the receiving thread, which the executing core runs. -/
+theorem cancelReceiveBusyReply_cases_holder (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    cancelReceiveBusyReply ctx executingCore st = st ∨
+      ∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore executingCore = some tid ∧
+        holder ≠ tid ∧
+        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st holder executingCore := by
+  rcases cancelReceiveBusyReply_cases_decoded ctx executingCore st with
+    h | ⟨tid, _, decoded, k, hCur, -, -, -, hK, h⟩
+  · exact Or.inl h
+  let gate : SyscallGate :=
+    { callerId := tid, cspaceRootCap := callerCspaceRoot st tid, capAddr := decoded.capAddr,
+      requiredRight := syscallRequiredRight .receive }
+  have hC := hK gate rfl
+  exact Or.inr ⟨tid, ⟨k⟩, hCur, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), h⟩
+
 /-- The entry routed to a receive: `syscallEntryCheckedR_eq`'s receive case. -/
 theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)

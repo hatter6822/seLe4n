@@ -7655,6 +7655,104 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
+        // A receive through a reply object still held by a caller (seL4-MCS
+        // `receiveIPC`: a reply whose `replyTCB` is another thread has that
+        // thread's IPC cancelled first, `cancelIPC` → `reply_remove_tcb`,
+        // which leaves it `Inactive`).  The root task takes the partner's
+        // call, so the reply holds the partner, then a third thread's send
+        // queues on the endpoint while the root task waits; the root task's
+        // receive through the same reply cancels the partner's call and takes
+        // the queued send at once, and returns.  At each switch exactly one
+        // thread is runnable.
+        invocation(
+            "untyped-retype-busy-reply-sender",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "busy-reply-sender-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "busy-reply-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "busy-reply-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "busy-reply-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "busy-reply-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xc0, 0],
+            true,
+        ),
+        invocation(
+            "busy-reply-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "busy-reply-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("busy-reply-sender-wakes-root"),
+        partner_step(
+            "busy-reply-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xc2, 0],
+            true,
+        ),
+        partner_step(
+            "receive-busy-reply-cancels-caller",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        invocation(
+            "busy-reply-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "busy-reply-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "busy-reply-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
         // The call that queues with no receiver waiting, and the receive that
         // takes it: a third thread, holding the image's scheduling context,
         // calls the endpoint while the root task waits on the notification it
