@@ -264,6 +264,94 @@ theorem schedLockSet_suspendThreadOnCore_coversWrites (st st' : SystemState)
     (fun d hd => suspendThreadOnCore_replenishQueueOnCore_ne st st' vtid executingCore sgi d
       hd hStep)
 
+/-- The resume of the retired state is covered by the resume's footprint read
+off the entry state: the retire writes one TCB and no scheduler field. -/
+theorem schedLockSet_resumeThreadOnCore_retired_coversWrites (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.resumeThreadOnCore (retirePendingFaultForResume st vtid.val) vtid
+      executingCore = .ok (st', sgi))
+    (hS : LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]; exact schedFootprintOfCores_contains_objStore_write _ _
+  refine footprintCoversWrites_trans S (st₂ := retirePendingFaultForResume st vtid.val)
+    (footprintCoversWrites_of_scheduler_eq S hTable
+      (retirePendingFaultForResume_scheduler_eq st vtid.val)) ?_
+  rw [← schedLockSet_resumeThreadOnCore_retire st vtid executingCore hObjInv] at hS
+  exact schedLockSet_resumeThreadOnCore_coversWrites _ st' vtid executingCore sgi S
+    (retirePendingFaultForResume_preserves_objects_invExt st vtid.val hObjInv) hStep hS
+
+/-- **WS-SX SX4: `.tcbResume`'s footprint covers its writes** — the restart's
+three arms: the resume of an `Inactive` thread, the suspend's cancel followed by
+the resume, and no write at all. -/
+theorem schedLockSet_restartThreadOnCore_coversWrites (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi))
+    (hS : LockSet.ofList? (schedLockSet_restartThreadOnCore st vtid executingCore) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]; exact schedFootprintOfCores_contains_objStore_write _ _
+  unfold Lifecycle.Suspend.restartThreadOnCore at hStep
+  cases hT : st.getTcb? vtid.val with
+  | none => rw [hT] at hStep; exact absurd hStep (by simp)
+  | some tcb =>
+    rw [hT] at hStep
+    by_cases hI : tcb.threadState = .Inactive
+    · have hN : restartCancelledState? st vtid executingCore = none := by
+        unfold restartCancelledState?; simp [hT, hI]
+      rw [schedLockSet_restartThreadOnCore_of_none hN] at hS
+      simp only [hI, beq_self_eq_true, ↓reduceIte] at hStep
+      exact schedLockSet_resumeThreadOnCore_retired_coversWrites st st' vtid executingCore sgi S
+        hObjInv hStep hS
+    · have hI' : (tcb.threadState == .Inactive) = false := by simpa using hI
+      simp only [hI', Bool.false_eq_true, ↓reduceIte] at hStep
+      by_cases hB : tcb.ipcState = .ready
+      · simp only [hB, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, Except.ok.injEq,
+          Prod.mk.injEq] at hStep
+        rw [← hStep.1]; exact footprintCoversWrites_refl S st
+      · have hB' : (tcb.ipcState != .ready) = true := by simpa using hB
+        simp only [hB', ↓reduceIte] at hStep
+        cases hSus : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore with
+        | error e => rw [hSus] at hStep; exact absurd hStep (by simp)
+        | ok p =>
+          obtain ⟨st1, sgi1⟩ := p
+          rw [hSus] at hStep
+          have hC : restartCancelledState? st vtid executingCore = some st1 := by
+            unfold restartCancelledState?; simp [hT, hI', hB', hSus]
+          have hPairs := LockSet.ofList?_pairs hS
+          unfold schedLockSet_restartThreadOnCore restartThreadOnCoreWriteSet
+            restartThreadOnCoreReplenishCores at hPairs
+          rw [hC] at hPairs
+          obtain ⟨S1, hS1⟩ := schedFootprintOfCores_ofList?_isSome
+            (suspendThreadOnCoreWriteSet st vtid executingCore)
+            (suspendThreadReplenishCores st vtid executingCore)
+          obtain ⟨S2, hS2⟩ := schedFootprintOfCores_ofList?_isSome
+            (resumeThreadOnCoreWriteSet (retirePendingFaultForResume st1 vtid.val) vtid executingCore)
+            (resumeThreadOnCoreReplenishCores (retirePendingFaultForResume st1 vtid.val) vtid)
+          have hInv1 := suspendThreadOnCore_preserves_objects_invExt
+            st st1 vtid executingCore sgi1 hObjInv hSus
+          have c1 : footprintCoversWrites S1 st st1 :=
+            schedLockSet_suspendThreadOnCore_coversWrites st st1 vtid executingCore sgi1 S1 hSus hS1
+          have c2 : footprintCoversWrites S2 st1 st' := by
+            have hR : LockSet.ofList? (schedLockSet_resumeThreadOnCore
+                (retirePendingFaultForResume st1 vtid.val) vtid executingCore) = some S2 := hS2
+            rw [schedLockSet_resumeThreadOnCore_retire st1 vtid executingCore hInv1] at hR
+            exact schedLockSet_resumeThreadOnCore_retired_coversWrites st1 st' vtid executingCore
+              sgi S2 hInv1 hStep hR
+          refine footprintCoversWrites_trans S
+            (footprintCoversWrites_mono S1 S st st1 (fun l hl => ?_) c1)
+            (footprintCoversWrites_mono S2 S st1 st' (fun l hl => ?_) c2)
+          · rw [LockSet.ofList?_pairs hS1] at hl
+            rw [hPairs]
+            exact schedFootprintOfCores_subset (fun c hc => List.mem_append_left _ hc)
+              (fun c hc => List.mem_append_left _ hc) _ hl
+          · rw [LockSet.ofList?_pairs hS2] at hl
+            rw [hPairs]
+            exact schedFootprintOfCores_subset (fun c hc => List.mem_append_right _ hc)
+              (fun c hc => List.mem_append_right _ hc) _ hl
+
 -- ============================================================================
 -- §10  The IPC arms
 -- ============================================================================

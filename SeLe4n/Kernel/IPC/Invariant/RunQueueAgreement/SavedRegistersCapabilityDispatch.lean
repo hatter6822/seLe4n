@@ -110,6 +110,34 @@ theorem preemptCurrentOnCore_savedRegsKeptExcept (st : SystemState) (c : CoreId)
   TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.registerContext
     (preemptCurrentOnCore_getTcb?_ne_current st c incoming t hInv ht)
 
+/-- **A preemption on a matching core writes no saved register**: the bank it
+saves into the outgoing thread is the thread's saved context already. -/
+theorem preemptCurrentOnCore_savedRegs_of_match (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hM : contextMatchesCurrentOnCore st c) (t : SeLe4n.ThreadId) :
+    (preemptCurrentOnCore st c incoming).savedRegs t = st.savedRegs t := by
+  by_cases hC : st.scheduler.currentOnCore c = some t
+  · cases hT : st.getTcb? t with
+    | none =>
+      by_cases hI : (t == incoming) = true
+      · have hId : preemptCurrentOnCore st c incoming = st := by
+          unfold preemptCurrentOnCore; rw [hC]; simp only [hI, if_true]
+        rw [hId]
+      · rw [preemptCurrentOnCore_noop_of_prev_no_tcb st c incoming t hC hI hT]
+    | some tcb =>
+      obtain ⟨tcb', hT', hR⟩ := preemptCurrentOnCore_getTcb?_regContext st c incoming t tcb hInv hT
+      have hBank : st.machine.regsOnCore c = tcb.registerContext := by
+        unfold contextMatchesCurrentOnCore at hM
+        rw [hC] at hM; simp only [hT] at hM
+        exact (SeLe4n.RegisterFile.beq_iff_eq' _ _).mp hM
+      unfold SystemState.savedRegs
+      rw [hT', hT]
+      simp only [Option.map_some, Option.some.injEq]
+      rcases hR with hR | ⟨-, hR⟩
+      · exact hR
+      · exact hR.trans hBank
+  · exact preemptCurrentOnCore_savedRegsKeptExcept st c incoming hInv t hC
+
 /-- The decision with nothing dispatched: an out-of-domain incumbent's
 preemption, or nothing, then the flag cleared. -/
 theorem rescheduleNoCandidateOnCore_savedRegsKeptExcept (st : SystemState) (c : CoreId)
@@ -150,6 +178,164 @@ theorem handleRescheduleSgiOnCore_savedRegsWrittenFree {e : CoreId} {base s s' :
   rw [handleRescheduleSgiOnCore_eq_state] at h
   cases h
   exact .of_kept (handleRescheduleOnCoreState_savedRegsKeptExcept s e hInv) hFree
+
+/-! ### A current thread free at `base`, or matched by the bank
+
+A scheduling point saves the core's bank into its current thread.  That write
+is harmless when the thread is free of every other core at the entry's start
+(`offCoreFree`), and harmless again when the bank already is the thread's saved
+context (`contextMatchesCurrentOnCore`): the save writes back what is there.
+The restart's cancelling arm reaches its second scheduling point (the resume's)
+with a current thread that its first (the suspend's) may have switched in, and
+the switch's restore is exactly what makes that thread's bank match. -/
+
+/-- **Core `e`'s current thread is free at `base`, or the bank is its saved
+context.** -/
+def currentFreeOrMatched (e : CoreId) (base s : SystemState) : Prop :=
+  ∀ t, s.scheduler.currentOnCore e = some t →
+    offCoreFree e base t ∨ contextMatchesCurrentOnCore s e
+
+/-- The match carries across a step that keeps the core's current thread, its
+saved registers and the bank. -/
+theorem contextMatchesCurrentOnCore_of_savedRegs {e : CoreId} {s0 s : SystemState}
+    {t : SeLe4n.ThreadId} (hC : s.scheduler.currentOnCore e = some t)
+    (hC0 : s0.scheduler.currentOnCore e = some t) (hR : s.savedRegs t = s0.savedRegs t)
+    (hB : s.machine.regsOnCore e = s0.machine.regsOnCore e)
+    (hM : contextMatchesCurrentOnCore s0 e) : contextMatchesCurrentOnCore s e := by
+  unfold contextMatchesCurrentOnCore at hM ⊢
+  rw [hC]; rw [hC0] at hM
+  unfold SystemState.savedRegs at hR
+  cases hT : s.getTcb? t with
+  | none => simp only [hT]
+  | some x =>
+    cases hT0 : s0.getTcb? t with
+    | none => rw [hT, hT0] at hR; cases hR
+    | some y =>
+      rw [hT, hT0] at hR
+      simp only [Option.map_some, Option.some.injEq] at hR
+      simp only [hT0] at hM
+      simp only [hT, hB, hR]; exact hM
+
+/-- The property carries across a step that writes only threads free at `base`
+and keeps the core's slot or clears it and keeps the bank. -/
+theorem currentFreeOrMatched.of_frame {e : CoreId} {base s0 s : SystemState}
+    (hK : currentKeptOnCore e s0 s) (hB : s.machine.regsOnCore e = s0.machine.regsOnCore e)
+    (hW : savedRegsWrittenFree e base s0 s) (hQ : currentFreeOrMatched e base s0) :
+    currentFreeOrMatched e base s := fun t ht => by
+  have ht0 := hK t ht
+  rcases hQ t ht0 with hF | hM
+  · exact .inl hF
+  · rcases hW t with hR | hF
+    · exact .inr (contextMatchesCurrentOnCore_of_savedRegs ht ht0 hR hB hM)
+    · exact .inl hF
+
+/-- The decision with nothing dispatched writes no saved register on a matching
+core. -/
+theorem rescheduleNoCandidateOnCore_savedRegsKept_of_match (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hM : contextMatchesCurrentOnCore st c) :
+    savedRegsKeptExcept (fun _ => False) st (rescheduleNoCandidateOnCore st c) := by
+  unfold rescheduleNoCandidateOnCore dropCurrentOnCore
+  split
+  · exact (show savedRegsKeptExcept (fun _ => False) st (preemptCurrentOnCore st c _) from
+      fun t _ => preemptCurrentOnCore_savedRegs_of_match st c _ hInv hM t).trans
+      (.of_objects_eq rfl)
+  · exact .of_objects_eq rfl
+
+/-- **The scheduling point writes no saved register on a matching core**: the
+outgoing thread's save writes back its saved context. -/
+theorem handleRescheduleOnCoreState_savedRegsKept_of_match (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hM : contextMatchesCurrentOnCore st c) :
+    savedRegsKeptExcept (fun _ => False) st (handleRescheduleOnCoreState st c) := by
+  unfold handleRescheduleOnCoreState
+  split
+  · exact rescheduleNoCandidateOnCore_savedRegsKept_of_match st c hInv hM
+  · dsimp only
+    split
+    · split
+      · split
+        · exact ((show savedRegsKeptExcept (fun _ => False) st (preemptCurrentOnCore st c _) from
+            fun t _ => preemptCurrentOnCore_savedRegs_of_match st c _ hInv hM t).trans
+            (.of_runLinks (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ c _))).trans
+            (.of_objects_eq (restoreIncomingContextOnCoreUnlessCurrent_objects _ c _))
+        · exact rescheduleNoCandidateOnCore_savedRegsKept_of_match st c hInv hM
+      · exact rescheduleNoCandidateOnCore_savedRegsKept_of_match st c hInv hM
+    · exact .of_objects_eq rfl
+
+/-- Off the match, the current thread is free at `base`. -/
+theorem currentFreeOrMatched.free_of_not_match {e : CoreId} {base s : SystemState}
+    (hQ : currentFreeOrMatched e base s) (hM : ¬ contextMatchesCurrentOnCore s e) :
+    ∀ t, s.scheduler.currentOnCore e = some t → offCoreFree e base t := fun t ht =>
+  (hQ t ht).resolve_right hM
+
+/-- **The scheduling point writes only threads free at `base`**, given the
+core's current thread is free there or matched by the bank. -/
+theorem handleRescheduleSgiOnCore_savedRegsWrittenFree_of_freeOrMatched {e : CoreId}
+    {base s s' : SystemState} (hInv : s.objects.invExt) (hQ : currentFreeOrMatched e base s)
+    (h : handleRescheduleSgiOnCore s e = .ok s') : savedRegsWrittenFree e base s s' := by
+  by_cases hM : contextMatchesCurrentOnCore s e
+  · rw [handleRescheduleSgiOnCore_eq_state] at h
+    cases h
+    exact .of_kept (handleRescheduleOnCoreState_savedRegsKept_of_match s e hInv hM)
+      (fun _ h => h.elim)
+  · exact handleRescheduleSgiOnCore_savedRegsWrittenFree hInv (hQ.free_of_not_match hM) h
+
+/-- **A switch to a thread not already current makes the bank its saved
+context**: the restore loads the incoming thread's context. -/
+theorem switchToThreadOnCore_contextMatches_of_ne {st st' : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hself : st.scheduler.currentOnCore c ≠ some tid)
+    (h : switchToThreadOnCore st c tid = .ok st') : contextMatchesCurrentOnCore st' c := by
+  have hPre : ∃ tidTcb, st.getTcb? tid = some tidTcb := by
+    cases hTcb : st.getTcb? tid with
+    | none => simp [switchToThreadOnCore, hTcb] at h
+    | some t => exact ⟨t, rfl⟩
+  obtain ⟨tidTcb, hTcb⟩ := hPre
+  obtain ⟨t', hgt, hE⟩ := switchToThreadOnCore_getTcb?_incoming st c tid st' tidTcb hTcb hInv h
+  unfold contextMatchesCurrentOnCore
+  rw [switchToThreadOnCore_sets_current st c tid st' h]
+  simp only [hgt]
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE,
+    switchToThreadOnCore_machine_regsOnCore_self st c tid st' tidTcb hTcb hInv hself h]
+  exact SeLe4n.RegisterFile.beq_self _
+
+/-- **The scheduling point keeps the property**: a matching core stays matched
+(`handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore`); off the
+match, the point keeps the current thread, which is free at `base`, vacates the
+core, or switches in a thread whose context it restores into the bank. -/
+theorem handleRescheduleSgiOnCore_currentFreeOrMatched {e : CoreId} {base s s' : SystemState}
+    (hInv : s.objects.invExt) (hQ : currentFreeOrMatched e base s)
+    (h : handleRescheduleSgiOnCore s e = .ok s') : currentFreeOrMatched e base s' := by
+  by_cases hM : contextMatchesCurrentOnCore s e
+  · exact fun _ _ =>
+      .inr (handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore s e s' hInv hM h)
+  have hF := hQ.free_of_not_match hM
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact fun _ _ => .inr (dropCurrentOnCore_contextMatchesCurrentOnCore s e)
+    · rw [Except.ok.injEq] at h; subst h
+      exact fun t ht => .inl (hF t ht)
+  · split at h
+    · split at h
+      · rename_i sSw hSw
+        rw [Except.ok.injEq] at h; subst h
+        have hC := switchToThreadOnCore_sets_current _ _ _ sSw hSw
+        show currentFreeOrMatched e base sSw
+        intro t ht
+        rw [hC] at ht
+        by_cases hself : s.scheduler.currentOnCore e = some t
+        · exact .inl (hF t hself)
+        · exact .inr (switchToThreadOnCore_contextMatches_of_ne hInv
+            (by rw [Option.some.inj ht]; exact hself) hSw)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact fun _ _ => .inr (dropCurrentOnCore_contextMatchesCurrentOnCore s e)
+        · rw [Except.ok.injEq] at h; subst h
+          exact fun t ht => .inl (hF t ht)
+    · rw [Except.ok.injEq] at h; subst h
+      exact fun t ht => .inl (hF t ht)
 
 /-! ### One slot written -/
 
@@ -599,6 +785,26 @@ theorem SchedPointPrefix.writtenFree {e : CoreId} {base st s st' : SystemState}
     (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t) :
     savedRegsWrittenFree e base st st' :=
   savedRegsWrittenFree_schedPoint (P.writes e) P.inv P.current hFree P.point
+
+/-- **The census of a scheduling arm whose core's current thread is free at
+`base` or matched by the bank.** -/
+theorem SchedPointPrefix.writtenFree_of_freeOrMatched {e : CoreId} {base st s st' : SystemState}
+    (P : SchedPointPrefix e base st s st') (hQ : currentFreeOrMatched e base st) :
+    savedRegsWrittenFree e base st st' := by
+  rcases P.point with rfl | h
+  · exact P.writes e
+  · exact (P.writes e).trans (handleRescheduleSgiOnCore_savedRegsWrittenFree_of_freeOrMatched
+      P.inv (hQ.of_frame P.current P.bank (P.writes e)) h)
+
+/-- A scheduling arm keeps its core's current thread free at `base` or matched
+by the bank. -/
+theorem SchedPointPrefix.currentFreeOrMatched {e : CoreId} {base st s st' : SystemState}
+    (P : SchedPointPrefix e base st s st') (hQ : currentFreeOrMatched e base st) :
+    currentFreeOrMatched e base st' := by
+  rcases P.point with rfl | h
+  · exact hQ.of_frame P.current P.bank (P.writes e)
+  · exact handleRescheduleSgiOnCore_currentFreeOrMatched P.inv
+      (hQ.of_frame P.current P.bank (P.writes e)) h
 
 /-- WS-ZA ZA6.28: **the unbind on the executing core** writes no saved register,
 slot or bank before its scheduling point. -/
@@ -1191,6 +1397,76 @@ theorem suspendThreadOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemSt
   obtain ⟨_, P⟩ := suspendThreadOnCore_schedPointPrefix hInv hB hBN h
   exact P.writtenFree (offCoreFree_of_currentOn hU hN)
 
+/-- Retiring a thread's pending fault writes that thread's saved registers
+alone. -/
+theorem retirePendingFaultForResume_savedRegs_ne {st : SystemState} {tid t : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hNe : t ≠ tid) :
+    (retirePendingFaultForResume st tid).savedRegs t = st.savedRegs t := by
+  unfold retirePendingFaultForResume
+  split
+  · split
+    · split
+      · unfold discardPendingFault; exact savedRegs_updateTcb_ne hInv hNe
+      · unfold applyFaultRestart; exact savedRegs_updateTcb_ne hInv hNe
+    · rfl
+  · rfl
+
+/-- **The restart writes the saved registers of no thread another core holds.**
+On an `Inactive` target it is the resume (`tcbResume_savedRegsKeptOffCore`); on
+a target that is not stopped it writes nothing.  On a target blocked in an IPC
+it is the suspend, the fault retire and the resume, so two scheduling points
+on the executing core: the suspend's may switch in a thread that another core
+holds resident, which the resume's then saves.  That save writes back the
+context the switch restored into the bank, so it changes no saved register
+(`currentFreeOrMatched`); every other write is of a thread free at the entry's
+start, the target among them, since a blocked thread no core runs or holds
+(`offCoreFree_of_blocked`). -/
+theorem tcbRestart_savedRegsKeptOffCore {e : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
+    (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
+    (h : Lifecycle.Suspend.restartThreadOnCore st vtid e = .ok (st', sgi?)) :
+    savedRegsKeptOffCore e st st' := by
+  unfold Lifecycle.Suspend.restartThreadOnCore at h
+  split at h
+  · cases h
+  · rename_i tcb hT
+    split at h
+    · exact tcbResume_savedRegsKeptOffCore hInv hR hD hN h
+    · split at h
+      · rename_i hBlk
+        split at h
+        · cases h
+        · rename_i st1 sgi1 hSus
+          have hS : tcb.ipcState ≠ .ready := by simpa [bne_iff_ne] using hBlk
+          have hVF : offCoreFree e st vtid.val := offCoreFree_of_blocked hB hBN hT hS
+          obtain ⟨_, P⟩ := suspendThreadOnCore_schedPointPrefix hInv hB hBN hSus
+          have C1 := suspendThreadOnCore_stepCovers st st1 vtid e _ hInv hSus
+          have hQ0 : currentFreeOrMatched e st st := fun t ht =>
+            .inl (offCoreFree_of_currentOn hU hN t ht)
+          have W2 : savedRegsWrittenFree e st st1 (retirePendingFaultForResume st1 vtid.val) :=
+            fun t => by
+              by_cases hNe : t = vtid.val
+              · rw [hNe]; exact .inr hVF
+              · exact .inl (retirePendingFaultForResume_savedRegs_ne C1.2 hNe)
+          have hSch := retirePendingFaultForResume_scheduler_eq st1 vtid.val
+          have hMach := retirePendingFaultForResume_machine st1 vtid.val
+          have Q2 : currentFreeOrMatched e st (retirePendingFaultForResume st1 vtid.val) :=
+            (P.currentFreeOrMatched hQ0).of_frame (fun t ht => by rw [hSch] at ht; exact ht)
+              (by rw [hMach]) W2
+          have hInv2 := retirePendingFaultForResume_preserves_objects_invExt st1 vtid.val C1.2
+          obtain ⟨_, P2⟩ := resumeThreadOnCore_schedPointPrefix (base := st) hInv2 h
+          have C3 := (resumeThreadOnCore_stepCovers _ st' vtid e sgi? hInv2 h).1
+          exact ((P.writtenFree_of_freeOrMatched hQ0).trans
+            (W2.trans (P2.writtenFree_of_freeOrMatched Q2))).census
+            (currentKeptOffCore_trans (currentKeptOffCore_trans C1.1.currentKept
+              (currentKeptOffCore_of_eq fun _ _ => by rw [hSch])) C3.currentKept)
+            (residentKeptOffCore_trans (residentKeptOffCore_trans C1.1.residentKept
+              (residentKeptOffCore_of_eq (by rw [hMach]))) C3.residentKept)
+      · cases h
+        exact savedRegsKeptOffCore_refl e st
+
 /-! ### The space change -/
 
 /-- The thread-slot store keeps the scheduler. -/
@@ -1448,7 +1724,8 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)
         | exact hW (suspendThreadOnCore_savedRegsWrittenFree hInv hU hN P.toEntryPremises.blocked
             hBNR hS)
-        | exact tcbResume_savedRegsKeptOffCore hInv P.refined P.dequeued hN hS
+        | exact tcbRestart_savedRegsKeptOffCore hInv P.refined P.dequeued hU hN P.toEntryPremises.blocked
+            hBNR hS
         | exact hW (setPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (setMCPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)

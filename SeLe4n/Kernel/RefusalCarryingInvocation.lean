@@ -264,9 +264,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCore
-                (retirePendingFaultForResume st vtid.val) vtid
-                executingCore with
+            match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
     | _ => .error (.invalidCapability 0)
@@ -588,8 +586,7 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofCheckedThen (Lifecycle.Suspend.resumeAdmitted st vtid.val)
           (fun st => Lifecycle.Suspend.resumePerform
             (retirePendingFaultForResume st vtid.val) vtid.val executingCore)
-          (fun st => Lifecycle.Suspend.resumeThreadOnCore
-            (retirePendingFaultForResume st vtid.val) vtid executingCore)
+          (fun st => Lifecycle.Suspend.restartThreadOnCore st vtid executingCore)
           (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability 0, st)
   | .tcbSetFaultHandler =>
@@ -1139,7 +1136,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore
           (resumeAdmitted_retirePendingFault hA)
-        simp only [dispatchInvocationBy, hT, hS]
+        simp only [dispatchInvocationBy, hT,
+          Lifecycle.Suspend.restartThreadOnCore_of_resumeAdmitted (executingCore := executingCore) hA,
+          hS]
     all_goals rfl
   case tcbSetFaultHandler =>
     cases target

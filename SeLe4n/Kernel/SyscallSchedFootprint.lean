@@ -20,6 +20,7 @@ import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
+import SeLe4n.Kernel.IPC.CrossCore.RestartFootprint
 
 /-!
 # The syscall-level scheduler footprint — one footprint per arm, from the operands
@@ -123,7 +124,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .tcbResume =>
       ops.targetThread.bind fun target =>
         target.toValid?.bind fun vtid =>
-          LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
+          LockSet.ofList? (schedLockSet_restartThreadOnCore st vtid executingCore)
   | .tcbSetPriority | .tcbSetMCPriority =>
       ops.targetThread.bind fun target =>
         LockSet.ofList? (schedLockSet_priorityControlOnCore st target executingCore)
@@ -423,7 +424,7 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
      | some t =>
         cases hV : t.toValid? <;>
           simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
-            schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
+            schedLockSet_restartThreadOnCore, schedFootprintOfCores_keys_nodup])
 
 /-- `.call` needs the endpoint and the payload; its write set re-runs the
 dispatch, which reads both. -/
@@ -495,7 +496,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
   all_goals
     repeat' obtain ⟨_, _, hS⟩ := hS
     rw [LockSet.ofList?_pairs hS]
-    simp only [schedLockSet_suspendThreadOnCore, schedLockSet_resumeThreadOnCore,
+    simp only [schedLockSet_suspendThreadOnCore, schedLockSet_restartThreadOnCore,
       schedLockSet_priorityControlOnCore, schedLockSet_setThreadCpuAffinityOnCore,
       schedLockSet_schedControlConfigure, schedLockSet_schedContextBindOnCore,
       schedLockSet_schedContextUnbindOnCore, schedLockSet_schedContextYieldToOnCore,

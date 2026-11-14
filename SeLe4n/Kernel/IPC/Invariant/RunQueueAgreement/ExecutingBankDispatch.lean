@@ -178,6 +178,26 @@ theorem tcbResume_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadId} {st st' : Sys
     (base := retirePendingFaultForResume st vtid.val) hInv1 h
   exact Q.bankAgree (.refl _) (F.bankAgree hA)
 
+/-- **The restart keeps the agreement**: a stopped thread's resume as above; an
+IPC-blocked thread's suspend keeps it through its prefix and scheduling point,
+and the resume after it as above, from the run-queue invariants the suspend
+keeps; a running thread's restart writes nothing. -/
+theorem tcbRestart_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)} (hne : e ≠ e')
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
+    (hNI : isIdleThreadId vtid.val = false) (hA : bankAgree e c0 st)
+    (h : Lifecycle.Suspend.restartThreadOnCore st vtid e = .ok (st', sgi?)) :
+    bankAgree e c0 st' := by
+  rcases Lifecycle.Suspend.restartThreadOnCore_cases h with
+    hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+  · exact tcbResume_bankAgree hne hInv hR hD hA hRes
+  · obtain ⟨_, P⟩ := suspendThreadOnCore_schedPointPrefix hInv hB hBN hSus
+    have S := suspendThreadOnCore_runQueueEntryStage hNI hSus
+    obtain ⟨hI1, hR1⟩ := S.1.links hInv hR
+    exact tcbResume_bankAgree hne hI1 hR1 (S.2 hInv hR hR1 hD) (P.bankAgree (.refl _) hA) hRes
+  · exact hA
+
 /-- WS-ZA ZA6.28: **every arm `dispatchCapabilityOnly` routes keeps the executing
 core's agreement**: the finalising deletes, the retype and every arm with no
 scheduling point are covered at another core, whose census they keep; the
@@ -283,7 +303,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
               (hRes := by rw [unbindNotification_machine_eq hS])
               (hBank := banksKeptOffCore_of_eq (by rw [unbindNotification_machine_eq hS])))
         | exact hP (suspendThreadOnCore_schedPointPrefix hInv P.toEntryPremises.blocked hBNR hS)
-        | exact tcbResume_bankAgree hne hInv P.refined P.dequeued hA hS
+        | exact tcbRestart_bankAgree hne hInv P.refined P.dequeued P.toEntryPremises.blocked hBNR
+            (validateThreadIdArg_ok_val_not_idle (by assumption)) hA hS
         | exact hP (setPriorityOnCore_schedPointPrefix hInv hS)
         | exact hP (setMCPriorityOnCore_schedPointPrefix hInv hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)

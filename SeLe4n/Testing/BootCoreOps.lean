@@ -56,10 +56,11 @@ def bootSuspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
     Except KernelError SystemState :=
   (suspendThreadOnCore st vtid bootCoreId).map (·.1)
 
-/-- `resumeThreadOnCore` on the boot core; its reschedule SGI is dropped. -/
+/-- `restartThreadOnCore` (seL4's `restart`, the live `.tcbResume`) on the boot
+core; its reschedule SGI is dropped. -/
 def bootResumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
     Except KernelError SystemState :=
-  (resumeThreadOnCore st vtid bootCoreId).map (·.1)
+  (restartThreadOnCore st vtid bootCoreId).map (·.1)
 
 /-- `setPriorityOnCore` on the boot core; its reschedule SGI is dropped. -/
 def bootSetPriority (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)

@@ -28,6 +28,21 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   `resumeThreadReady`), so it re-issues the call it was suspended in. The
   frozen resume (`frozenResumeThread`) sets `Restart` too, as the live one
   does.
+- **Resume is seL4's `restart`.** `.tcbResume` runs `restartThreadOnCore`
+  (`IPC/CrossCore/Restart.lean`), which acts only on a stopped thread
+  (`isStopped`: `Inactive`, or blocked in an IPC). A thread that is neither is
+  left as it is with no error, where the model refused `illegalState`; one
+  blocked in an IPC has the IPC cancelled through the suspend (seL4's
+  `cancelIPC`, which leaves it `Inactive`), then is resumed. The lock set is
+  resolved from the pre-state (`schedLockSet_restartThreadOnCore`: the
+  suspend's members on the cancelling arm, the resume's otherwise), and the
+  run-queue, kernel-record, readiness, mapping, reschedule, containment,
+  bank-agreement and saved-register families cover all three arms. The
+  cancelling arm runs two scheduling points on the executing core; the second
+  saves a thread the first may have switched in, which another core may hold
+  resident, and the census shows that save writes back the context the switch
+  restored (`currentFreeOrMatched`). The frozen resume and the test suite's boot
+  resume follow the same three arms.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it

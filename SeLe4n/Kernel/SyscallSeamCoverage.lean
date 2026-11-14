@@ -344,12 +344,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         · rename_i st₁ sgi hStep
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
           subst hDisp
-          refine footprintCoversWrites_trans S (st₂ := retirePendingFaultForResume st vtid.val)
-            (footprintCoversWrites_of_scheduler_eq S hTable
-              (retirePendingFaultForResume_scheduler_eq st vtid.val)) ?_
-          rw [← schedLockSet_resumeThreadOnCore_retire st vtid e hObjInv] at hSched
-          exact schedLockSet_resumeThreadOnCore_coversWrites _ st₁ vtid e sgi S
-            (retirePendingFaultForResume_preserves_objects_invExt st vtid.val hObjInv) hStep hSched
+          exact schedLockSet_restartThreadOnCore_coversWrites st st₁ vtid e sgi S hObjInv hStep
+            hSched
         · exact absurd hDisp (by simp)
   -- ---- `.tcbSetPriority` / `.tcbSetMCPriority` ----------------------------
   case tcbSetPriority =>

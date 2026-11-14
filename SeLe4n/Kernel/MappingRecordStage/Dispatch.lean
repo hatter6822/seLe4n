@@ -377,16 +377,20 @@ theorem dispatchCapabilityOnly_mappingStage
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact (retirePendingFaultForResume_mappingStage st vtid.val).trans
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              · exact (retirePendingFaultForResume_mappingStage st vtid.val).trans
                   (resumeThreadOnCore_mappingStage hRes)
+              · exact (suspendThreadOnCore_mappingStage hSus).trans
+                  ((retirePendingFaultForResume_mappingStage st1 vtid.val).trans
+                    (resumeThreadOnCore_mappingStage hRes))
+              · exact MappingStage.refl _
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

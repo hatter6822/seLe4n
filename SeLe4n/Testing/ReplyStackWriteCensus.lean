@@ -326,7 +326,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeContext,
       "stores the context `SchedContext.refillUnblockCheck` returns (its head's start and its merged refills); `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeThread,
-      "the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in either")
+      "a blocked thread's suspend through `frozenSuspendThread` (neutral, above), then the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in any")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
       "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------

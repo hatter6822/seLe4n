@@ -3,6 +3,7 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 
 /-!
@@ -526,17 +527,25 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact (retirePendingFaultForResume_runQueueStage st vtid.val).entry.trans
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              · exact (retirePendingFaultForResume_runQueueStage st vtid.val).entry.trans
                   (resumeThreadOnCore_runQueueEntryStage
                     (hH.retirePendingFaultForResume vtid.val hInv) hRes)
+              · exact (suspendThreadOnCore_runQueueEntryStage
+                  (validateThreadIdArg_ok_val_not_idle hVal) hSus).trans
+                  ((retirePendingFaultForResume_runQueueStage st1 vtid.val).entry.trans
+                    (resumeThreadOnCore_runQueueEntryStage
+                      ((suspendThreadOnCore_holdersNameTheirContexts hInv hH hSus).retirePendingFaultForResume
+                        vtid.val (suspendThreadOnCore_preserves_objects_invExt _ _ _ _ _ hInv hSus))
+                      hRes))
+              · exact ⟨SystemState.RunQueueLinkStage.refl _, fun _ _ _ d => d⟩
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -4888,7 +4888,15 @@ run_check "INVARIANT" rg -n '^  exact savedRegsKeptOffCore_trans_stepCovers \(re
 run_check "INVARIANT" rg -n -U '^    \(hN : st\.currentNotResidentElsewhere\) \(h : schedContextConsumedOnCore s e st = \.ok st.\) :\n    savedRegsWrittenFree e st st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(hB : finalisingDeleteBundle st\) \(h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = \.ok st.\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(hBNR : st\.blockedNotResident\) \(hYA : st\.yieldLinksAgree\) \(hYN : st\.yieldLinkedNotResident\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
-run_check "INVARIANT" rg -n '^        \| exact tcbResume_savedRegsKeptOffCore hInv P\.refined P\.dequeued hN hS$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^        \| exact tcbRestart_savedRegsKeptOffCore hInv P\.refined P\.dequeued hU hN P\.toEntryPremises\.blocked\n            hBNR hS$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+# The restart's cancelling arm reaches a second scheduling point whose save may
+# write a thread the first switched in; the census reads it as matched by the
+# bank (`currentFreeOrMatched`), and the census of the scheduling point under
+# that premise writes nothing on the match.
+run_check "INVARIANT" rg -n '^def currentFreeOrMatched \(' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_currentFreeOrMatched($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_savedRegsWrittenFree_of_freeOrMatched($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^theorem tcbRestart_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^        \| exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_negative_check "INVARIANT" rg -n 'capabilityObjectArm' SeLe4n
 # WS-ZA ZA6.26: the census over the IPC and notification arms and the whole
@@ -4953,7 +4961,7 @@ run_check "INVARIANT" rg -n '^def currentSavedRegsKeptOffCore($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^theorem currentSavedRegsKeptOffCore_of_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem contextMatchesCurrentOnCore_offCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem restoreIncomingContextOnCore_current_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
-run_check "INVARIANT" rg -n '^theorem preemptCurrentOnCore_savedRegs_of_match($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem preemptCurrentOnCore_savedRegs_of_match($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_savedRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_savedRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
@@ -6413,8 +6421,9 @@ run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\
 # (3) resuming a thread retires the fault it carries, and the arm runs the
 #     resume on the retired state;
 run_check "INVARIANT" rg -n '^def retirePendingFaultForResume($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'Lifecycle\.Suspend\.resumeThreadOnCore$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'match Lifecycle\.Suspend\.restartThreadOnCore st vtid executingCore with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^      resumeThreadOnCore \(retirePendingFaultForResume st vtid\.val\) vtid executingCore$' SeLe4n/Kernel/IPC/CrossCore/Restart.lean
+run_check "INVARIANT" rg -n '^        resumeThreadOnCore \(retirePendingFaultForResume st1 vtid\.val\) vtid executingCore$' SeLe4n/Kernel/IPC/CrossCore/Restart.lean
 run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 # (4) the unknown-syscall fault has a live producer: the SVC arm routes an
 #     invalid syscall id to the seam instead of publishing an error frame;
@@ -22519,8 +22528,11 @@ run_check "INVARIANT" rg -n '^theorem not_footprintCoversWrites_of_runQueue_move
 run_check "INVARIANT" rg -n '^theorem not_footprintCoversWrites_of_replenish_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # ...and no arm's coverage may be discharged by the no-op lemma, which holds of
 # EVERY footprint: that is the token-preserving weakening this family admits, and
-# it would turn eight measurements into eight tautologies.
-run_negative_check "INVARIANT" rg -F -n 'footprintCoversWrites_refl' SeLe4n/Kernel/SyscallSchedContainment.lean
+# it would turn eight measurements into eight tautologies.  The one use allowed
+# is on a branch the step itself shows to be the identity (the restart of a
+# thread that is not stopped, seL4's `restart` doing nothing): the state is
+# first rewritten by the step's own equation, `hStep.1`, and nothing else.
+run_negative_check "INVARIANT" bash -lc "rg -F -n 'footprintCoversWrites_refl' SeLe4n/Kernel/SyscallSchedContainment.lean | rg -v -F 'rw [← hStep.1]; exact footprintCoversWrites_refl S st'"
 # Production since WS-LS promoted the SM8.B confinement family it consumes into
 # `SeLe4n/Kernel/SlotConfinement/`: the module reaches the image through the
 # seam coverage below, and the staged anchor no longer imports it.

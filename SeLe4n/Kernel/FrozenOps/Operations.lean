@@ -68,7 +68,7 @@ than misleading its next reader.
 |18 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
 |19 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
 |20 | `frozenSuspendThread`        | `suspendThread`            | Lifecycle    |
-|21 | `frozenResumeThread`         | `resumeThread`             | Lifecycle    |
+|21 | `frozenResumeThread`         | `restartThreadOnCore`      | Lifecycle    |
 |22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
 |24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
@@ -1967,14 +1967,36 @@ runs it before; the order is immaterial, because the enqueue touches only
 WS-ZA ZA6.33: **and the context is resumed before either** (`frozenResumeContext`):
 the live resume runs `resumeContext` and then enqueues only a schedulable thread,
 so a thread whose context has no budget now is left out of every bucket, with
-neither a comparison nor an enqueue. -/
+neither a comparison nor an enqueue.
+
+**And it is seL4's `restart`, as the live `.tcbResume` is**
+(`Lifecycle.Suspend.restartThreadOnCore`): a thread that is not stopped is
+left as it is, with no error, and one blocked in an IPC is suspended first, which
+cancels the IPC and leaves it `Inactive`, and then resumed. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
-  fun st =>
-    match frozenLookupTcb st tid with
+  fun st0 =>
+    match frozenLookupTcb st0 tid with
     | none => .error .objectNotFound
-    | some tcb =>
-      if tcb.threadState != .Inactive then .error .illegalState
+    | some tcb0 =>
+      -- seL4's `restart` acts only on a stopped thread (`isStopped`): one that
+      -- is neither `Inactive` nor blocked in an IPC is left as it is.
+      if tcb0.threadState != .Inactive && tcb0.ipcState == .ready then .ok ((), st0)
       else
+      -- A thread blocked in an IPC has the IPC cancelled first, as the live
+      -- restart cancels it through the suspend (`frozenSuspendThread`), which
+      -- leaves it `Inactive`.
+      let stopped : Except KernelError FrozenSystemState :=
+        if tcb0.threadState == .Inactive then .ok st0
+        else
+          match frozenSuspendThread tid st0 with
+          | .ok ((), st1) => .ok st1
+          | .error e => .error e
+      match stopped with
+      | .error e => .error e
+      | .ok st =>
+      match frozenLookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
         -- (1) the shared restore, committed first so (2) reads a state in which
         -- the resumed thread is no longer recorded as blocked on anything.
         match frozenWithObjectStored st tid.toObjId (.tcb tcb.restoredToReady) with

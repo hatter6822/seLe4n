@@ -1050,17 +1050,24 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact (readyKeptStage.of_stage (retirePendingFaultForResume_runQueueStage st vtid.val)).trans
-                  (retirePendingFaultForResume_runQueueStage st vtid.val).1
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              · exact readyKeptStage.trans (retirePendingFaultForResume_runQueueStage st vtid.val).1
+                  (readyKeptStage.of_stage (retirePendingFaultForResume_runQueueStage st vtid.val))
                   (resumeThreadOnCore_readyKeptStage hRes)
+              · exact readyKeptStage.trans
+                  (suspendThreadOnCore_runQueueEntryStage (validateThreadIdArg_ok_val_not_idle hVal) hSus).1
+                  (suspendThreadOnCore_readyKeptStage hSus)
+                  (readyKeptStage.trans (retirePendingFaultForResume_runQueueStage st1 vtid.val).1
+                    (readyKeptStage.of_stage (retirePendingFaultForResume_runQueueStage st1 vtid.val))
+                    (resumeThreadOnCore_readyKeptStage hRes))
+              · exact readyKeptStage.refl _
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

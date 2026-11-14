@@ -120,34 +120,6 @@ theorem contextMatchesCurrentOnCore_offCore {e : CoreId} {pre post : SystemState
 
 /-! ## The settle and the activation -/
 
-/-- **A preemption on a matching core writes no saved register**: the bank it
-saves into the outgoing thread is the thread's saved context already. -/
-theorem preemptCurrentOnCore_savedRegs_of_match (st : SystemState) (c : CoreId)
-    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (hM : contextMatchesCurrentOnCore st c) (t : SeLe4n.ThreadId) :
-    (preemptCurrentOnCore st c incoming).savedRegs t = st.savedRegs t := by
-  by_cases hC : st.scheduler.currentOnCore c = some t
-  · cases hT : st.getTcb? t with
-    | none =>
-      by_cases hI : (t == incoming) = true
-      · have hId : preemptCurrentOnCore st c incoming = st := by
-          unfold preemptCurrentOnCore; rw [hC]; simp only [hI, if_true]
-        rw [hId]
-      · rw [preemptCurrentOnCore_noop_of_prev_no_tcb st c incoming t hC hI hT]
-    | some tcb =>
-      obtain ⟨tcb', hT', hR⟩ := preemptCurrentOnCore_getTcb?_regContext st c incoming t tcb hInv hT
-      have hBank : st.machine.regsOnCore c = tcb.registerContext := by
-        unfold contextMatchesCurrentOnCore at hM
-        rw [hC] at hM; simp only [hT] at hM
-        exact (SeLe4n.RegisterFile.beq_iff_eq' _ _).mp hM
-      unfold SystemState.savedRegs
-      rw [hT', hT]
-      simp only [Option.map_some, Option.some.injEq]
-      rcases hR with hR | ⟨-, hR⟩
-      · exact hR
-      · exact hR.trans hBank
-  · exact preemptCurrentOnCore_savedRegsKeptExcept st c incoming hInv t hC
-
 /-- The reload makes the executing core's bank its current thread's saved
 context, so the core matches. -/
 theorem restoreIncomingContextOnCore_current_contextMatchesCurrentOnCore (st : SystemState)

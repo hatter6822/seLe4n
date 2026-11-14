@@ -55,21 +55,89 @@ structure RecordsArmPremises (st : SystemState) : Prop where
   inactiveQuiescent : ∀ t tcb, st.getTcb? t = some tcb → tcb.threadState = .Inactive →
     threadIpcFieldsQuiescent st t
 
-/-- The retire before a resume keeps the thread's state. -/
+/-- The retire before a resume keeps the thread's state and its IPC state. -/
 theorem retirePendingFaultForResume_threadState {st : SystemState} {t : SeLe4n.ThreadId} {y : TCB}
     (hInv : st.objects.invExt) (hy : (retirePendingFaultForResume st t).getTcb? t = some y) :
-    ∃ x, st.getTcb? t = some x ∧ x.threadState = y.threadState := by
+    ∃ x, st.getTcb? t = some x ∧ x.threadState = y.threadState ∧ x.ipcState = y.ipcState := by
   cases hT : st.getTcb? t with
   | none => simp only [retirePendingFaultForResume, hT] at hy; cases hy
   | some x =>
     refine ⟨x, rfl, ?_⟩
     cases hF : x.pendingFault with
-    | none => simp only [retirePendingFaultForResume, hT, hF] at hy; cases hy; rfl
+    | none => simp only [retirePendingFaultForResume, hT, hF] at hy; cases hy; exact ⟨rfl, rfl⟩
     | some tf =>
       simp only [retirePendingFaultForResume, hT, hF] at hy
       split at hy
-      · rw [discardPendingFault_getTcb?_self st t x hT hInv] at hy; cases hy; rfl
-      · rw [applyFaultRestart_pc st t _ x hT hInv] at hy; cases hy; rfl
+      · rw [discardPendingFault_getTcb?_self st t x hT hInv] at hy; cases hy; exact ⟨rfl, rfl⟩
+      · rw [applyFaultRestart_pc st t _ x hT hInv] at hy; cases hy; exact ⟨rfl, rfl⟩
+
+/-- **A suspend leaves its target ready in IPC**: the IPC cancel restores it, and
+every later step keeps its IPC state — the PIP revert, the deschedule, the
+release removal, the yield-link cancel and the scheduling point keep every
+record view, and the two writes to the target touch other fields. -/
+theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid c = .ok (st', sgi?)) :
+    ∀ x, st'.getTcb? vtid.val = some x → x.ipcState = .ready := by
+  have back : ∀ {a b : SystemState}, RecordsFrame a b →
+      (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
+      ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F h y hy => by
+    obtain ⟨x, hx, hv⟩ := F.getTcb?_view hy
+    rw [← h x hx]; exact (congrArg TcbRecordView.ipc hv).symm
+  simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
+  split at hStep
+  case h_2 => exact absurd hStep (by simp)
+  case h_1 tcb hT =>
+    split at hStep
+    case isTrue => exact absurd hStep (by simp)
+    case isFalse hA =>
+      have hI1 := Lifecycle.Suspend.cancelIpcKeepingContexts_preserves_objects_invExt st
+        vtid.val tcb hInv
+      have R1 : ∀ x, (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).getTcb?
+          vtid.val = some x → x.ipcState = .ready := by
+        have hI0 := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt st tcb hInv
+        have hIp := cutCancelledCallerHead_getTcb?_map st tcb TCB.ipcState
+          (fun _ => rfl) hInv vtid.val
+        rw [hT] at hIp
+        obtain ⟨x0, hx0, hx0I⟩ := Option.map_eq_some_iff.mp hIp
+        have hNR : ¬ vtid.val.isReserved := by
+          rcases vtid with ⟨⟨n⟩, hv⟩
+          simp only [SeLe4n.ThreadId.isReserved, decide_eq_true_eq]
+          intro h; subst h; exact hv rfl
+        intro x hx
+        exact cancelIpcBlocking_victim_ready_of_ipcState _ vtid.val tcb x0 hI0
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx0) hNR hx0I x
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+      have F2 : RecordsFrame (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
+          (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId => (PriorityInheritance.propagatePipChainCrossCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId c).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) := by
+        cases PriorityInheritance.blockingServer st vtid.val with
+        | none => exact RecordsFrame.refl hI1
+        | some serverId => exact RecordsFrame.propagatePipChainCrossCore _ _ _ _ hI1
+      have F3 := F2.trans (RecordsFrame.descheduleAt _ vtid.val (placedCoreOf? st vtid.val)
+        F2.invExt)
+      have F4 := F3.trans (show RecordsFrame _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
+        unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
+        exact RecordsFrame.updateTcb _ _ F3.invExt fun _ => rfl)
+      have R4 := back F4 R1
+      have upd : ∀ {a b : SystemState} {f : TCB → TCB}, RecordsFrame (a.updateTcb vtid.val f) b →
+          a.objects.invExt → (∀ t, (f t).ipcState = t.ipcState) →
+          (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
+          ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F hI hf hR => by
+        refine back F fun y hy => ?_
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI] at hy
+        obtain ⟨x, hx, rfl⟩ := Option.map_eq_some_iff.mp hy
+        rw [hf]; exact hR x hx
+      have hI5 := SystemState.updateTcb_preserves_objects_invExt _ vtid.val
+        (fun t => { t with threadState := .Inactive }) F4.invExt
+      have F6 := (RecordsFrame.releaseRemoveThread _ vtid.val hI5).trans
+        (RecordsFrame.cancelYieldTo _ vtid.val (RecordsFrame.releaseRemoveThread _ vtid.val hI5).invExt)
+      exact upd (F6.trans (RecordsStep.suspendRescheduleOnCore F6.invExt hStep)) F4.invExt
+        (fun _ => rfl) R4
 
 /-- A resume that commits found its target `.Inactive`, so quiescent in IPC. -/
 theorem inactiveQuiescent_of_resume {st : SystemState} {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
@@ -84,7 +152,7 @@ theorem inactiveQuiescent_of_resume {st : SystemState} {vtid : SeLe4n.ValidThrea
     split at h
     · cases h
     · rename_i hIn
-      obtain ⟨x, hx, hS⟩ := retirePendingFaultForResume_threadState hInv hy
+      obtain ⟨x, hx, hS, -⟩ := retirePendingFaultForResume_threadState hInv hy
       exact P.inactiveQuiescent _ x hx (by rw [hS]; simpa using hIn)
   · cases h
 
@@ -376,14 +444,27 @@ theorem dispatchCapabilityOnly_recordsStage
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              rotate_left
+              · exact fun h =>
+                  have hI1 := KernelRecords.objects_invExt
+                    (RecordsStage.suspendThreadOnCore hSus h)
+                  RecordsStage.resumeThreadOnCore
+                    (fun y hy => by
+                      obtain ⟨x, hx, -, hS⟩ := retirePendingFaultForResume_threadState hI1 hy
+                      rw [← hS]
+                      exact suspendThreadOnCore_target_ipcReady
+                        (KernelRecords.objects_invExt h) hSus x hx) hRes
+                    (RecordsStage.retirePendingFaultForResume st1 vtid.val
+                      (RecordsStage.suspendThreadOnCore hSus h))
+              · exact RecordsStage.refl _
               exact fun h => RecordsStage.resumeThreadOnCore
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _
                   (KernelRecords.objects_invExt h)

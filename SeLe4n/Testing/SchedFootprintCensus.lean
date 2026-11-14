@@ -121,7 +121,14 @@ def resolverExemptions : List (Name × String) :=
        restart or abandon (seL4's `doReplyTransfer` fault branch), so the resolver names \
        `schedLockSet_replyRecvTransferOnCore`, the composite's write set at that answer.  \
        `schedLockSet_replyRecvTransferOnCore_of_no_fault` is the relation off the fault \
-       branch, where the two are equal, and the coverage lemmas are stated at this one") ]
+       branch, where the two are equal, and the coverage lemmas are stated at this one")
+  , (``SeLe4n.Kernel.schedLockSet_resumeThreadOnCore,
+      "the footprint of the restart's RESUME step.  `.tcbResume`'s live arm is seL4's \
+       `restart` (`restartThreadOnCore`), which cancels a blocked target's IPC before \
+       resuming it, so the resolver names `schedLockSet_restartThreadOnCore`, the union \
+       of the cancel's members and the resume's.  \
+       `schedLockSet_restartThreadOnCore_of_none` is the relation off the cancelling arm, \
+       where the two are equal, and the restart's coverage proof is stated through this one") ]
 
 /-- Is this a scheduler-domain footprint declaration — a body-bearing constant
 named `schedLockSet_…` whose type ends in `List (LockKey × AccessMode)`?

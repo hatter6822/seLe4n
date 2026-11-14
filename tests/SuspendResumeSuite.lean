@@ -115,14 +115,36 @@ private def sr005_resumeInactive : IO Unit := do
     | _ => throw <| IO.userError "TCB not found after resume"
   | .error e => throw <| IO.userError s!"resume should succeed, got {repr e}"
 
-/-- SR-006: Resume a non-Inactive thread — should fail with illegalState. -/
+/-- SR-006: Resume a thread that is not stopped — seL4's `restart` leaves it as
+it is (`isStopped` is false), with no error. -/
 private def sr006_resumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
   match bootResumeThread st ⟨tid, by decide⟩ with
-  | .ok _ => throw <| IO.userError "should fail for Ready thread"
-  | .error e =>
-    expect "error is illegalState" (e == .illegalState)
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "not-stopped thread keeps its state" (tcb'.threadState == .Ready)
+      expect "not-stopped thread stays ready in IPC" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"restart of a running thread should succeed, got {repr e}"
+
+/-- SR-006b: Resume a thread blocked in an IPC — seL4's `restart` cancels the IPC
+(`cancelIPC`) and restarts the thread. -/
+private def restartOfBlockedSenderCancelsIpc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedSend } (.blockedOnSend epId))
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match bootResumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "blocked thread's IPC is cancelled" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"restart of a blocked thread should succeed, got {repr e}"
 
 /-- SR-007: Resume a non-existent thread — should fail with invalidArgument. -/
 private def sr007_resumeMissing : IO Unit := do
@@ -333,14 +355,35 @@ private def sr019_resumeEndpoint : IO Unit := do
 -- D1-Q7: Additional frozen operation tests
 -- ============================================================================
 
-/-- SR-020: Frozen resume of Ready thread fails with illegalState. -/
+/-- SR-020: Frozen resume of a Ready thread leaves it as it is, as seL4's
+`restart` does. -/
 private def sr020_frozenResumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
   match frozenResumeThread tid fst with
-  | .ok _ => throw <| IO.userError "frozen resume should fail for Ready"
-  | .error e =>
-    expect "frozen error is illegalState" (e == .illegalState)
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb) =>
+      expect "frozen not-stopped thread keeps its state" (tcb.threadState == .Ready)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen restart of a running thread should succeed, got {repr e}"
+
+/-- SR-020b: Frozen resume of a thread blocked in an IPC cancels the IPC and
+restarts the thread. -/
+private def frozenRestartOfBlockedReceiverCancelsIpc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedRecv } (.blockedOnReceive epId))
+  let fst := mkFrozenState [(⟨1⟩, .tcb tcb)]
+  match frozenResumeThread tid fst with
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb') =>
+      expect "frozen blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "frozen blocked thread's IPC is cancelled" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen restart of a blocked thread should succeed, got {repr e}"
 
 /-- SR-021: Frozen suspend-resume roundtrip. -/
 private def sr021_frozenRoundtrip : IO Unit := do
@@ -1513,6 +1556,7 @@ def main : IO Unit := do
   IO.println "--- D1-Q2: resumeThread ---"
   sr005_resumeInactive
   sr006_resumeReady
+  restartOfBlockedSenderCancelsIpc
   sr007_resumeMissing
   sr008_suspendResumeRoundtrip
   IO.println "--- D1-Q3: Frozen Operations ---"
@@ -1532,6 +1576,7 @@ def main : IO Unit := do
   sr019_resumeEndpoint
   IO.println "--- D1-Q7: Additional Frozen Operations ---"
   sr020_frozenResumeReady
+  frozenRestartOfBlockedReceiverCancelsIpc
   sr021_frozenRoundtrip
   IO.println "--- R5.A: cancelDonation split ---"
   sr022_cancelBoundDonationClearsBinding

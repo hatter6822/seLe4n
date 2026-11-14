@@ -1318,6 +1318,27 @@ theorem irqHandlerClear_stepCovers {e ec : CoreId} {line : Nat} {st st' : System
 
 /-! ### The capability-only arms -/
 
+/-- The fault retire then the resume covers. -/
+theorem retiredResume_stepCovers {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {e : CoreId} {sgi : Option (CoreId × SgiKind)} (hInv : st.objects.invExt)
+    (hU : Lifecycle.Suspend.resumeThreadOnCore (retirePendingFaultForResume st vtid.val) vtid e
+      = .ok (st', sgi)) : stepCovers e st st' ∧ st'.objects.invExt :=
+  stepCoversInv_trans ((retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
+      (hRes := by rw [retirePendingFaultForResume_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [retirePendingFaultForResume_machine])))
+    (resumeThreadOnCore_stepCovers _ _ _ _ _ (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU)
+
+/-- WS-SX SX4: **the restart covers** — on each of its three arms. -/
+theorem restartThreadOnCore_stepCovers {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {e : CoreId} {sgi : Option (CoreId × SgiKind)} (hInv : st.objects.invExt)
+    (hU : Lifecycle.Suspend.restartThreadOnCore st vtid e = .ok (st', sgi)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases Lifecycle.Suspend.restartThreadOnCore_cases hU with h | ⟨st1, _, hS, h⟩ | ⟨rfl, _⟩
+  · exact retiredResume_stepCovers hInv h
+  · have h1 := suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hS
+    exact stepCoversInv_trans h1.1 (retiredResume_stepCovers h1.2 h)
+  · exact ⟨stepCovers_refl e _, hInv⟩
+
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
 under the bundle the finalising delete carries (`finalisingDeleteBundle`, from
 which the binding reciprocity follows) and the placement facts — pre-state facts
@@ -1374,10 +1395,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
             (hRes := by rw [unbindNotification_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [unbindNotification_machine_eq hU]))
         | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)
-        | exact stepCoversInv_trans ((retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
-              (hRes := by rw [retirePendingFaultForResume_machine]) (hBank := banksKeptOffCore_of_eq (by rw [retirePendingFaultForResume_machine])))
-            (resumeThreadOnCore_stepCovers _ _ _ _ _
-              (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU)
+        | exact restartThreadOnCore_stepCovers hInv hU
         | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)

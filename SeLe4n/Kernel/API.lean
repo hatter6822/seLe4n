@@ -27,6 +27,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
 -- `.tcbSuspend` arm — the victim is descheduled on its *home* core.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.IPC.CrossCore.Restart
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -135,7 +136,7 @@ completed before implementation.
 | `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetPriority` to `setPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean` (`setPriorityOp` remains its boot-core instance). | Complete |
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetMCPriority` to `setMCPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean`. | Complete |
 | `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM6.E). Wired as `SyscallId.tcbSuspend` to `suspendThreadOnCore` in `Lifecycle/Suspend.lean` (`suspendThread` remains its boot-core form). | Complete |
-| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCore` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `restartThreadOnCore` in `IPC/CrossCore/Restart.lean`, seL4's `restart`: a thread that is not stopped is left as it is, one blocked in an IPC has the IPC cancelled through the suspend, and an `Inactive` one is resumed by `resumeThreadOnCore` (`resumeThread` remains its boot-core form). | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 
@@ -3977,12 +3978,14 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         -- ordinary Call would be answered through the reply seam's fault
         -- branch and rewound to the old fault PC.  A thread carrying no fault
         -- is untouched (`retirePendingFaultForResume_of_no_fault`).
+        --
+        -- WS-SX SX4: the arm is seL4's `restart` (`restartThreadOnCore`): a
+        -- thread blocked in an IPC is stopped too, so its IPC is cancelled and
+        -- it is resumed; a thread that is not stopped is left as it is.
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCore
-                (retirePendingFaultForResume st vtid.val) vtid
-                executingCore with
+            match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -4536,21 +4539,22 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCore_preserves_ipcInvariantFull
-                (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
-                (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
-                (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
-                  (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_noFault st _ hObjInv)
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+              have hQ := hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases_of_ready hQ.ready hRes with
+                hRes | ⟨rfl, _⟩
+              · exact resumeThreadOnCore_preserves_ipcInvariantFull
+                  (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
+                  (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
+                  (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv hQ)
+                  (retirePendingFaultForResume_noFault st _ hObjInv)
+                  (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+              · exact hInv
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7716,9 +7720,7 @@ theorem dispatchWithCapChecked_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+      (match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
   obtain ⟨a, hD⟩ := hDecode
@@ -7968,9 +7970,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCore
-                  (retirePendingFaultForResume st vtid.val) vtid
-                  executingCore with
+          (match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .schedContextUnbind =>
