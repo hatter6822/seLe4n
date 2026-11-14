@@ -3285,6 +3285,17 @@ this state. -/
   cancelReceiveBusyReply ctx executingCore
     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
 
+/-- With no busy reply to cancel, the state the entry is handed is the spill. -/
+theorem syscallEntryStateFromAbi_of_noBusyReply (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (h : receiveBusyHolderCode ctx executingCore
+      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = 0) :
+    syscallEntryStateFromAbi ctx executingCore st tid syscallId x0 x1 x2 x3 x4 x5 =
+      writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 := by
+  unfold syscallEntryStateFromAbi cancelReceiveBusyReply
+  rw [h]
+
 /-- The state the entry is handed has the current slots of the state before it. -/
 theorem syscallEntryStateFromAbi_currentOnCore (ctx : LabelingContext)
     (executingCore c : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
