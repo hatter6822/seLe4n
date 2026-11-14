@@ -330,6 +330,107 @@ def cancelReceiveBusyReply (ctx : LabelingContext) (executingCore : Concurrency.
       | _ => st
     | _ => st
 
+/-- **What the receive's refusal reports is the state handed to it or its busy
+reply's cancel**: `cancelReceiveBusyReply` is the identity, or the routed
+receive's arm cancelled the holder its compiled code names
+(`receiveArmHolderCode`, `recvBusyReplyHolderCode` by `receiveArmHolderCode_eq`). -/
+theorem cancelReceiveBusyReply_cases (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    cancelReceiveBusyReply ctx executingCore st = st ∨
+      ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (capAddr : SeLe4n.CPtr) (len : Nat)
+        (replyAddr : SeLe4n.CPtr) (k : Nat),
+        st.scheduler.currentOnCore executingCore = some tid ∧
+        st.getObject? tid.toObjId = some (.tcb tcb) ∧
+        SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
+          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr len replyAddr ∧
+        receiveArmHolderCode ctx tid len replyAddr (callerCspaceRoot st tid) st = k + 1 ∧
+        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st ⟨k⟩ executingCore := by
+  unfold cancelReceiveBusyReply
+  split
+  · exact Or.inl rfl
+  split
+  · exact Or.inl rfl
+  rename_i tid hCur
+  split
+  · rename_i tcb hObj
+    split
+    · rename_i capAddr len replyAddr hRecv
+      -- the arm's report, through the operand and the receive's checks
+      have hArm : ∀ cap? : Option Capability,
+          receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive)
+              cap? st = st ∨
+            ∃ k, receiveArmHolderCode ctx tid len replyAddr (callerCspaceRoot st tid) st = k + 1 ∧
+              receiveOperandReport ctx tid len replyAddr executingCore
+                (syscallRequiredRight .receive) cap? st = cancelReplyHolder st ⟨k⟩ executingCore := by
+        intro cap?
+        unfold receiveOperandReport
+        split
+        · exact Or.inl rfl
+        rename_i cap
+        split
+        · exact Or.inl rfl
+        split
+        · exact Or.inl rfl
+        split
+        · unfold receiveArmReport
+          split
+          · split
+            · exact Or.inl rfl
+            · unfold cancelReceiveArmBusyReply
+              split
+              · exact Or.inl rfl
+              · rename_i k hK
+                exact Or.inr ⟨k, hK, rfl⟩
+          · exact Or.inl rfl
+        · exact Or.inl rfl
+      unfold operandReport
+      split
+      · exact Or.inl rfl
+      rw [hObj]
+      simp only
+      split
+      · rename_i ref _
+        rcases hArm (SystemState.lookupSlotCap st ref) with h | ⟨k, hK, h⟩
+        · exact Or.inl h
+        · exact Or.inr ⟨tid, tcb, capAddr, len, replyAddr, k, hCur, hObj, hRecv, hK, h⟩
+      · exact Or.inl rfl
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
+/-- `cancelReceiveBusyReply_cases` at the decode: the receive the registers
+route decodes to a receive whose busy-reply holder code, read through any gate
+on the caller's CSpace root, names the cancelled holder. -/
+theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    cancelReceiveBusyReply ctx executingCore st = st ∨
+      ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (k : Nat),
+        st.scheduler.currentOnCore executingCore = some tid ∧
+        st.getObject? tid.toObjId = some (.tcb tcb) ∧
+        SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState st tid
+          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
+        decoded.syscallId = .receive ∧
+        (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
+          recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
+        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st ⟨k⟩ executingCore := by
+  rcases cancelReceiveBusyReply_cases ctx executingCore st with
+    h | ⟨tid, tcb, capAddr, len, replyAddr, k, hCur, hObj, hRecvRegs, hK, h⟩
+  · exact Or.inl h
+  obtain ⟨decoded, hDec, hRecv, -, -, hLen, hReplyAddr⟩ :=
+    SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
+      st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr len replyAddr hRecvRegs
+  have hArgs : len ≠ 0 → SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs decoded
+      = .ok { replyCPtr := replyAddr } := by
+    intro hN
+    have h := hReplyAddr hN
+    rw [Array.getElem?_eq_some_iff] at h
+    obtain ⟨h0, hv⟩ := h
+    simp only [SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs,
+      SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg, h0, ↓reduceDIte, hv, bind,
+      Except.bind, pure, Except.pure, SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
+  refine Or.inr ⟨tid, tcb, decoded, k, hCur, hObj, hDec, hRecv, fun gate hRoot => ?_, h⟩
+  rw [← receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
+  exact hK
+
 /-- The entry routed to a receive: `syscallEntryCheckedR_eq`'s receive case. -/
 theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)

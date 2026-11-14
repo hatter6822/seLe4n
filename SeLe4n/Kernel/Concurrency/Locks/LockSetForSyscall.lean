@@ -17,6 +17,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
 -- binding while the suspend pipeline runs that cancellation on the binding the
 -- teardown leaves.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.IPC.BusyReplyHolder
 /-!
 # WS-SM SM3.C.9 — the syscall → lock-set dispatcher
 
@@ -221,6 +222,17 @@ def SyscallLockOperands.ofReplyTarget (caller : ThreadId) (reply : ReplyId)
     (endpoint : Option ObjId := none) : SyscallLockOperands :=
   { caller := caller, targetObject := endpoint, targetReply := some reply }
 
+/-- **A receive's footprint with its busy reply's holder cancelled** (seL4-MCS
+`receiveIPC`'s `cancelIPC(replyTCB)`): the receive's own footprint and, when the
+reply it names is busy with another thread (`busyReplyHolder?`), the footprint of
+that thread's IPC cancel (`lockSet_cancelIpcBlockingOnCore`, the suspend's
+cancellation root), each resolved from the state the receive is handed. -/
+def lockSet_receiveCancellingHolder (st : SystemState) (receiver : ThreadId)
+    (replyId : Option ReplyId) (receive : LockSet) : LockSet :=
+  match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
+  | none => receive
+  | some holder => receive.union (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder)
+
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
 
@@ -272,8 +284,9 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .receive =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun endpointId =>
-          lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
-            ops.targetReply
+          lockSet_receiveCancellingHolder st ops.caller ops.targetReply
+            (lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
+              ops.targetReply)
   -- `.reply` and `.replyRecv` name their answered caller the way the live arms
   -- do: authority flows from *holding* the reply capability, so the thread
   -- being answered is `reply.caller`, read from the Reply object the capability
@@ -451,8 +464,9 @@ theorem lockSetForSyscall_call_isSome_iff
     lockSetForSyscall .receive ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.map fun endpointId =>
-            lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
-              ops.targetReply := rfl
+            lockSet_receiveCancellingHolder st ops.caller ops.targetReply
+              (lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
+                ops.targetReply) := rfl
 
 /-- **WS-RR RR7.11**: and it declares without a message, because what a receive
 installs comes from the parked sender the endpoint already names.
@@ -803,10 +817,22 @@ theorem lockSetForSyscall_receive_eq
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId) :
     lockSetForSyscall .receive ops st
-      = some (lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
-                ops.targetReply) := by
+      = some (lockSet_receiveCancellingHolder st ops.caller ops.targetReply
+          (lockSet_endpointReceiveOnCore st endpointId ops.caller caller.cspaceRoot
+            ops.targetReply)) := by
   unfold lockSetForSyscall
   rw [hTcb, hEp]; rfl
+
+/-- A write the receive's own footprint declares, its busy reply's cancel
+included declares. -/
+theorem mem_write_lockSet_receiveCancellingHolder (st : SystemState) (receiver : ThreadId)
+    (replyId : Option ReplyId) (receive : LockSet) (l : LockKey)
+    (h : (l, AccessMode.write) ∈ receive.pairs) :
+    (l, AccessMode.write) ∈ (lockSet_receiveCancellingHolder st receiver replyId receive).pairs := by
+  unfold lockSet_receiveCancellingHolder
+  split
+  · exact h
+  · exact LockSet.mem_union_write_of_mem_write _ _ _ h
 
 /-- **WS-RR RR7.11**: `.receive`'s two unconditional writes. -/
 theorem lockSetForSyscall_receive_covers_writes
@@ -819,8 +845,10 @@ theorem lockSetForSyscall_receive_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_caller_tcb_write_mem ..),
-         mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_endpoint_write_mem ..)⟩
+  exact ⟨mem_write_lockSet_receiveCancellingHolder _ _ _ _ _
+           (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_caller_tcb_write_mem ..)),
+         mem_write_lockSet_receiveCancellingHolder _ _ _ _ _
+           (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_endpoint_write_mem ..))⟩
 
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
@@ -838,7 +866,8 @@ theorem lockSetForSyscall_receive_covers_queueNeighbour
     (tcbLock q, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact lockSet_endpointReceiveOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
+  exact mem_write_lockSet_receiveCancellingHolder _ _ _ _ _
+    (lockSet_endpointReceiveOnCore_covers_queueNeighbour _ _ _ _ _ _ hq)
 
 /-- **WS-RR RR7.11**: and the receive-side capability install's two writes — the
 receiver's own CSpace root, and the state-level lock the CDT edge needs.
@@ -857,8 +886,10 @@ theorem lockSetForSyscall_receive_covers_capsWrites
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointReceiveOnCore_covers_capsDestination _ _ _ _ _ hCaps,
-         lockSet_endpointReceiveOnCore_covers_cdt _ _ _ _ _ hCaps⟩
+  exact ⟨mem_write_lockSet_receiveCancellingHolder _ _ _ _ _
+           (lockSet_endpointReceiveOnCore_covers_capsDestination _ _ _ _ _ hCaps),
+         mem_write_lockSet_receiveCancellingHolder _ _ _ _ _
+           (lockSet_endpointReceiveOnCore_covers_cdt _ _ _ _ _ hCaps)⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.reply` declares the reply
 footprint at the thread its capability answers. -/

@@ -1,7 +1,13 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-Copyright (C) 2026 seLe4n contributors
-SPDX-License-Identifier: GPL-3.0-or-later
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
+
+import SeLe4n.Kernel.IPC.BusyReplyHolder
 import SeLe4n.Kernel.IPC.CrossCore.SuspendAdmission
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 
@@ -22,7 +28,7 @@ if (unlikely(replyPtr->replyTCB != NULL && replyPtr->replyTCB != thread)) {
 `BlockedOnReply`, `blockedCancelIPC`'s `reply_unlink` for a receiver that
 stashed it and waits `BlockedOnReceive`) and leaves it `Inactive`.
 
-`busyReplyHolderCode` names that thread; `cancelReplyHolder` is `cancelIPC` on
+`busyReplyHolderCode` (`IPC/BusyReplyHolder.lean`) names that thread; `cancelReplyHolder` is `cancelIPC` on
 it: the suspend's IPC teardown (`suspendCancelRevert` -- `cancelIpcKeepingContexts`,
 the reply arm `reply_remove_tcb`, with the boost the holder lent through the
 reply reverted) and the `Inactive` write.  None of the rest of `suspend` runs (no
@@ -37,22 +43,6 @@ passed on the state it was handed (`dispatchWithCapChecked`'s `.receive` arm).
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-
-/-- **The thread a reply object is busy with, other than `tid`, as its code**
-(`0` for none, `t + 1` for thread `t`) — seL4-MCS's `reply->replyTCB` when it is
-not the receiver: the caller the reply is linked to, or the receiver that
-stashed it and still waits (`Reply.stasherCode`, `replyStashedAt`). -/
-@[inline] def busyReplyHolderCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) : Nat :=
-  match st.getReply? rid with
-  | none => 0
-  | some r =>
-    match r.caller with
-    | some c => if c = tid then 0 else c.val + 1
-    | none =>
-      if st.replyStashedAt rid r then
-        if r.stasherCode = tid.val + 1 then 0 else r.stasherCode
-      else 0
 
 /-- **seL4-MCS `cancelIPC` on a reply's holder**: its IPC torn down as the
 suspend tears it down (`suspendCancelRevert`: `cancelIpcKeepingContexts`, then
@@ -96,6 +86,29 @@ theorem cancelReplyHolder_currentOnCore (st : SystemState) (holder : SeLe4n.Thre
     dsimp only
     split
     · rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]; exact hK
+    · exact hK
+
+/-- The holder's cancel moves no reservation: the IPC cancel writes objects and
+the key hook's flags, the revert re-buckets run queues, the `Inactive` write is
+a TCB's. -/
+theorem cancelReplyHolder_replenishQueueOnCore (st : SystemState) (holder : SeLe4n.ThreadId)
+    (executingCore c : Concurrency.CoreId) :
+    (cancelReplyHolder st holder executingCore).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c := by
+  unfold cancelReplyHolder
+  split
+  · rfl
+  · rename_i tcb _
+    rw [SystemState.updateTcb_scheduler]
+    have hK : (Lifecycle.Suspend.cancelIpcKeepingContexts st holder tcb).scheduler.replenishQueueOnCore c =
+        st.scheduler.replenishQueueOnCore c := by
+      unfold Lifecycle.Suspend.cancelIpcKeepingContexts
+      rw [← Lifecycle.Suspend.cutCancelledCallerHead_replenishQueueOnCore st tcb c,
+        Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+    unfold Lifecycle.Suspend.suspendCancelRevert
+    dsimp only
+    split
+    · rw [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]; exact hK
     · exact hK
 
 end SeLe4n.Kernel

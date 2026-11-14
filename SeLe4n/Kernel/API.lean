@@ -580,6 +580,215 @@ def cancelRecvBusyReply (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
   | 0 => st
   | k + 1 => cancelReplyHolder st ⟨k⟩ executingCore
 
+/-- **The reply object a receive's reply capability names** — the lookup
+`resolveRecvReplyId` and `recvBusyReplyHolderCode` both make, without the
+freeness check: what the receive's lock operands name when its reply is busy, so
+its footprints can name the holder the receive cancels. -/
+def recvReplyLookup? (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) : Option SeLe4n.ReplyId :=
+  if decoded.msgInfo.length == 0 then none else
+  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | .error _ => none
+  | .ok rargs =>
+      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | .error _ => none
+      | .ok (_, rid) => some rid
+
+/-- The holder a receive cancels is the one its named reply is busy with. -/
+theorem recvBusyReplyHolderCode_succ {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {gate : SyscallGate} {decoded : SyscallDecodeResult} {st : SystemState} {k : Nat}
+    (h : recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) :
+    busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = some ⟨k⟩ := by
+  unfold recvBusyReplyHolderCode at h
+  unfold recvReplyLookup?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at h
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; simp at h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; simp at h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h ⊢
+      split at h
+      · simp at h
+      · split at h
+        · simp only [busyReplyHolder?, h]
+        · simp at h
+
+/-- A receive whose named reply is busy with no other thread cancels nothing. -/
+theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {executingCore : Concurrency.CoreId} {st : SystemState}
+    (h : busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none) :
+    cancelRecvBusyReply ctx tid gate decoded executingCore st = st := by
+  unfold cancelRecvBusyReply
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    have hB := recvBusyReplyHolderCode_succ hC
+    rw [h] at hB
+    cases hB
+
+/-- A receive whose reply resolved free names no busy holder... -/
+theorem busyReplyHolder?_of_resolveRecvReplyId_ok {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {st : SystemState} {r : Option SeLe4n.ReplyId}
+    (tid : SeLe4n.ThreadId) (h : resolveRecvReplyId gate decoded st = .ok r) :
+    busyReplyHolder? st tid r = none := by
+  unfold resolveRecvReplyId at h
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp only [h0, ↓reduceIte, Except.ok.injEq] at h; subst h; rfl
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h
+      cases hR : st.getReply? rid with
+      | none => rw [hR] at h; cases h
+      | some rr =>
+        rw [hR] at h
+        simp only at h
+        split at h
+        · rename_i hFree
+          simp only [Except.ok.injEq] at h
+          subst h
+          simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.not_eq_true'] at hFree
+          simp only [busyReplyHolder?, busyReplyHolderCode, hR, hFree.1, hFree.2,
+            Bool.false_eq_true, ↓reduceIte]
+        · cases h
+
+/-- ...and so cancels none. -/
+theorem busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok
+    {gate : SyscallGate} {decoded : SyscallDecodeResult} {st : SystemState}
+    {r : Option SeLe4n.ReplyId} (tid : SeLe4n.ThreadId)
+    (h : resolveRecvReplyId gate decoded st = .ok r) :
+    busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none := by
+  have hN := busyReplyHolder?_of_resolveRecvReplyId_ok tid h
+  -- the named reply is the resolved one
+  unfold resolveRecvReplyId at h
+  unfold recvReplyLookup?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0, busyReplyHolder?]
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h ⊢
+      cases hR : st.getReply? rid with
+      | none => rw [hR] at h; cases h
+      | some rr =>
+        rw [hR] at h
+        simp only at h
+        split at h
+        · simp only [Except.ok.injEq] at h
+          subst h
+          exact hN
+        · cases h
+
+theorem recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {st : SystemState} {r : Option SeLe4n.ReplyId}
+    (h : resolveRecvReplyId gate decoded st = .ok r) :
+    recvBusyReplyHolderCode ctx tid gate decoded st = 0 := by
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    have hB := recvBusyReplyHolderCode_succ hC
+    rw [busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok tid h] at hB
+    cases hB
+
+/-- `lookupReplyCap` reads only CNodes. -/
+theorem lookupReplyCap_congr_getCNode? (gate : SyscallGate) (st₁ st₂ : SystemState)
+    (hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id) :
+    lookupReplyCap gate st₁ = lookupReplyCap gate st₂ := by
+  have hL : ∀ ref, SystemState.lookupSlotCap st₁ ref = SystemState.lookupSlotCap st₂ ref := by
+    intro ref
+    have e := hC ref.cnode
+    simp only [SystemState.getCNode?] at e
+    simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, e]
+  unfold lookupReplyCap syscallLookupCap syscallResolveCap
+  rw [SyscallGate.lookupSlot_congr_getCNode? _ st₁ st₂ hC]
+  generalize SyscallGate.lookupSlot _ st₂ = res
+  cases res with
+  | error f => rfl
+  | ok ref =>
+    simp only [hL ref]
+    generalize SystemState.lookupSlotCap st₂ ref = oc
+    cases oc with
+    | none => rfl
+    | some cap =>
+      by_cases hR : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+      · simp [hR]
+      · by_cases hW : cap.hasRight AccessRight.write = true <;> simp [hR, hW]
+
+/-- The busy-reply holder a receive names reads only the object store. -/
+theorem recvBusyReplyHolderCode_congr_objects (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) {st₁ st₂ : SystemState}
+    (h : st₁.objects = st₂.objects) :
+    recvBusyReplyHolderCode ctx tid gate decoded st₁ =
+      recvBusyReplyHolderCode ctx tid gate decoded st₂ := by
+  have hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id := fun id => by
+    simp only [SystemState.getCNode?, h]
+  have hB : ∀ rid, busyReplyHolderCode st₁ tid rid = busyReplyHolderCode st₂ tid rid := by
+    intro rid
+    simp only [busyReplyHolderCode, SystemState.getReply?, SystemState.replyStashedAt,
+      SystemState.getTcb?, h]
+  unfold recvBusyReplyHolderCode
+  simp only [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC, hB]
+
+/-- A receive whose CNodes a step left alone names the same reply after it: a
+resolution on the later state, when it succeeds, is the reply the earlier
+state's lookup named. -/
+theorem resolveRecvReplyId_eq_of_getCNode? {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {r : Option SeLe4n.ReplyId}
+    (hC : ∀ id, st'.getCNode? id = st.getCNode? id)
+    (hLk : recvReplyLookup? gate decoded st = some rid)
+    (h : resolveRecvReplyId gate decoded st' = .ok r) : r = some rid := by
+  unfold recvReplyLookup? at hLk
+  unfold resolveRecvReplyId at h
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at hLk
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hLk
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h hLk
+    simp only at h hLk
+    rw [lookupReplyCap_congr_getCNode? _ st' st hC] at h
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid'⟩ := p
+      rw [hL] at h hLk
+      simp only [Option.some.injEq] at hLk
+      subst hLk
+      simp only at h
+      split at h
+      · split at h
+        · simp only [Except.ok.injEq] at h; exact h.symm
+        · cases h
+      · cases h
+
 /-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
 (`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
 blocked on `Recv` having supplied a reply object carries the stash so a later `Call`
@@ -1417,6 +1626,27 @@ theorem receiveReplyFault?_of_resolveRecvReplyId_ok (gate : SyscallGate)
       | error lf => rw [hL] at h; cases h
       | ok q => rw [hL] at hF; cases hF
 
+/-- A receive whose reply capability looked up raises no reply fault, whether
+or not the reply it names is free. -/
+theorem receiveReplyFault?_of_recvReplyLookup?_some (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hSid : decoded.syscallId = .receive) (h : recvReplyLookup? gate decoded st = some rid) :
+    receiveReplyFault? gate decoded st = none := by
+  unfold recvReplyLookup? at h
+  unfold receiveReplyFault? receiveReplyAddr?
+  rw [hSid]
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0]
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => simp [hA] at h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => simp [hL] at h
+    | ok q => simp only
+
 /-- A reply-receive whose reply capability resolved raises no reply fault. -/
 theorem receiveReplyFault?_of_resolveReplyRecvReply_ok (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState)
@@ -1493,6 +1723,13 @@ theorem receiveReplyFault?_congr_objects (gate : SyscallGate) (decoded : Syscall
           · simp [h1]
           · by_cases h2 : c.hasRight .write = true <;> simp [h1, h2]
     rw [hL]
+
+/-- The reply capability's fault reads only CNodes. -/
+theorem receiveReplyFault?_congr_getCNode? (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st₁ st₂ : SystemState) (hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id) :
+    receiveReplyFault? gate decoded st₁ = receiveReplyFault? gate decoded st₂ := by
+  unfold receiveReplyFault?
+  simp only [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC]
 
 theorem receiveReplyFaults_none_of_namesReply (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState) (ke : KernelError)

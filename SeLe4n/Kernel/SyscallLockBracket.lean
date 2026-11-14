@@ -470,7 +470,15 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                  payload := some (abiEntryPayload cap) }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
-          | .error _ => none
+          | .error _ =>
+              -- a receive whose reply is busy with another thread cancels that
+              -- thread's IPC first (seL4-MCS `receiveIPC`'s
+              -- `cancelIPC(replyTCB)`, `cancelRecvBusyReply`), so it names the
+              -- reply, and through it the holder its footprints declare
+              let rid? := recvReplyLookup? gate decoded s
+              if (busyReplyHolder? s tid rid?).isSome then
+                some { caller := tid, targetObject := some epId, targetReply := rid? }
+              else none
           | .ok replyId? =>
               some { caller := tid, targetObject := some epId, targetReply := replyId? }
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
@@ -730,9 +738,50 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
           rcases hS with hS | hS <;> rw [hS] at h <;> cases hT : cap.target <;>
             simp only [hT] at h <;> (try (simp at h; done)) <;> split at h <;>
             (try (simp at h; done))
+          · split at h
+            · rename_i hB
+              cases hR : recvReplyLookup? gate decoded s with
+              | none => rw [hR] at hB; simp [busyReplyHolder?] at hB
+              | some rid => exact receiveReplyFault?_of_recvReplyLookup?_some gate decoded s rid hS hR
+            · cases h
           · exact receiveReplyFault?_of_resolveRecvReplyId_ok gate decoded s _ hS (by assumption)
           · exact receiveReplyFault?_of_resolveReplyRecvReply_ok gate decoded s _ hS
               (by assumption)
       · rw [hG] at h; exact absurd h (by simp)
+
+/-- **A receive whose named reply is busy declares the busy operands**: the
+gate's lookup and the receive's type gate passed (the operands exist), the
+reply's resolution refused on the busy reply, so the operands name the reply the
+receive's capability names, through which its footprints name the holder. -/
+theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands) (tcb : TCB)
+    (gate : SyscallGate) (holder : SeLe4n.ThreadId)
+    (hRecv : decoded.syscallId = .receive)
+    (hGate : abiEntryGate decoded tid s = some (tcb, gate))
+    (hB : busyReplyHolder? s tid (recvReplyLookup? gate decoded s) = some holder)
+    (h : abiEntryLockOperands decoded tid s = some ops) :
+    ∃ epId : SeLe4n.ObjId, ops =
+      { caller := tid, targetObject := some epId,
+        targetReply := recvReplyLookup? gate decoded s } := by
+  unfold abiEntryLockOperands at h
+  rw [if_neg (by rw [hRecv]; decide), hGate] at h
+  simp only at h
+  cases hLk : syscallLookupCap gate s with
+  | error e => rw [hLk] at h; exact absurd h (by simp)
+  | ok capPair =>
+    obtain ⟨cap, s'⟩ := capPair
+    rw [hLk] at h
+    simp only at h
+    split at h
+    · exact absurd h (by simp)
+    rw [hRecv] at h
+    cases hT : cap.target <;> simp only [hT] at h <;> (try (simp at h; done))
+    rename_i epId
+    split at h
+    · simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at h
+      exact ⟨epId, h.symm⟩
+    · rename_i hR
+      rw [busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok tid hR] at hB
+      cases hB
 
 end SeLe4n.Kernel

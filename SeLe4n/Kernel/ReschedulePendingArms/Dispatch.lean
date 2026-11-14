@@ -1457,6 +1457,46 @@ theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
   have h1 := stageWokenDelivery_keyFrame x w 0 hx
   exact h1.trans (stageWokenDelivery_keyFrame _ p 0 h1.2.2)
 
+/-- **A reply holder's cancel covers** (seL4-MCS `cancelIPC` on the reply's
+holder): the suspend's IPC cancel, the chain revert and the key-free
+`Inactive` write. -/
+theorem cancelReplyHolder_stepCovers (e : CoreId) (st : SystemState)
+    (holder : SeLe4n.ThreadId) (ec : CoreId) (hInv : st.objects.invExt) :
+    stepCovers e st (cancelReplyHolder st holder ec) ∧
+      (cancelReplyHolder st holder ec).objects.invExt := by
+  unfold cancelReplyHolder
+  split
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  · rename_i tcb _
+    have h1 : stepCovers e st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) ∧
+        (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec).objects.invExt := by
+      obtain ⟨h1, h1Inv⟩ := cancelIpcKeepingContexts_stepCovers e st holder tcb hInv
+      unfold Lifecycle.Suspend.suspendCancelRevert
+      dsimp only
+      split
+      · rename_i srv _
+        have hc := propagatePipChainCrossCore_stepCovers e ec
+          (Lifecycle.Suspend.cancelIpcKeepingContexts st holder tcb).objects.size _ srv h1Inv
+        exact ⟨stepCovers_trans h1 hc.1, hc.2⟩
+      · exact ⟨h1, h1Inv⟩
+    obtain ⟨h1, h1Inv⟩ := h1
+    exact ⟨stepCovers_trans h1 (stepCovers_of_keys_sched
+        (keyInputsEq_updateTcb h1Inv (tid := holder)
+          (f := fun t => { t with threadState := .Inactive }) (fun _ => rfl))
+        (SystemState.updateTcb_scheduler _ _ _)),
+      SystemState.updateTcb_preserves_objects_invExt _ holder _ h1Inv⟩
+
+/-- A receive's busy-reply cancel covers. -/
+theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    stepCovers e st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+      (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt := by
+  unfold cancelRecvBusyReply
+  split
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  · exact cancelReplyHolder_stepCovers e st _ ec hInv
+
 /-- **Every arm `dispatchWithCapChecked` routes covers** on the executing core,
 the capability-only arms it delegates included. -/
 theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1510,18 +1550,30 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     exact stepCovers_clearStash_stage hS hSInv
       (fun x hx => stageWokenDelivery_keyFrame x _ _ hx) h
   case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_stepCovers e hInv) hRecv
-    obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
-    have hS1 := stageWokenSendCompletion_keyFrame stDon
-      ((st.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
-    exact stepCoversInv_trans (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers)
-      hS2.stepCoversInv
+    split at h
+    · cases h
+    unfold receiveResolvedArm at h
+    obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
+    generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
+      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
+      have hS1 := stageWokenSendCompletion_keyFrame stDon
+        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
+      have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
+      exact stepCoversInv_trans
+        (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
+        hS2.stepCoversInv
+    · cases h
   case none.call.object epId =>
     split at h
     · rename_i hCall

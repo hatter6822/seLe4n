@@ -3414,15 +3414,17 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
         = Except.error ke)
     -- PR #887 review round 3: the refusal is not a failed capability lookup
     -- the seam delivers as a fault.  Every declassifying syscall discharges
-    -- this by `syscallCapFaultOf_none_of_no_fault_phase`: `capFaultReceivePhase?`
+    -- this by `syscallCapFaultAt_none_of_no_fault_phase`: `capFaultReceivePhase?`
     -- answers `none` for exactly the syscalls the refusal seam records
     -- (`capFaultReceivePhase?_none_iff_records_or_capabilityFree`), which is the partition this
     -- theorem rests on — a recorded refusal stays in the ledger, and the
     -- capability-fault arm, which blocks the caller instead of framing `ke`,
     -- carries what it carries under the fault-flow policy (`FaultFlow`), not
     -- the ledger's.
-    (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
+    (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
         (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (cancelReceiveBusyReply ctx executingCore
+          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
         tid ke = none) :
     -- (1) the ledger has no capacity refusal, where the trail does
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
@@ -3433,7 +3435,8 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrameFor
-          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx executingCore
+            (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
           tid ke))) ∧
     -- (3) the ledger write is invisible to the projection
     (projectState ctx observer
