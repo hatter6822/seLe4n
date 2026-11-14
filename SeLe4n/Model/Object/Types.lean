@@ -3262,10 +3262,12 @@ A thread already `.Inactive` keeps that state: seL4 queues no `Inactive` thread
 on an endpoint or notification, so no cancel reaches one, and the restore stays a
 write that wakes no suspended thread (`RefillViewsKept.updateTcb`). -/
 @[inline] def TCB.restoredToRestart (t : TCB) : TCB :=
+  -- Both scalars are read before the clear consumes `t`, so the record is
+  -- its only reference there and every write lands in place.
   let p := t.restartPc
+  let s := t.restartState
   let c := t.restoredToReady
-  { c with registerContext := { c.registerContext with pc := p },
-           threadState := t.restartState }
+  { c with registerContext := { c.registerContext with pc := p }, threadState := s }
 
 /-- A restarted thread is `.ready` in IPC, as a restored one is. -/
 @[simp] theorem TCB.restoredToRestart_ipcState (t : TCB) :

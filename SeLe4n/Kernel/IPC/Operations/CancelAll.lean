@@ -100,12 +100,15 @@ no message) and no fault record (WS-ZA ZA6.22: seL4's `cancelIPC` resets
 counter moved to its restart PC (`TCB.restartPc`, read before the fault record
 is cleared), so it re-issues the system call it was blocked in. -/
 @[inline] def cancelledEndpointWaiterTcb (t : TCB) : TCB :=
+  -- Both scalars are read before the clear consumes `t` (in place, as
+  -- `TCB.restoredToRestart`).
   let p := t.restartPc
+  let s := t.restartState
   let c := TCB.setIpcState
       (TCB.setPendingFault { t with
           pendingMessage := none
           pendingReceiveReplyCode := 0 } none) .ready
-  { c with registerContext := { c.registerContext with pc := p }, threadState := t.restartState }
+  { c with registerContext := { c.registerContext with pc := p }, threadState := s }
 
 /-- **Whether the head `t` of an endpoint's queue may be cancelled**: a cancel
 may wake it, it waits with no timeout budget (a `.ready` thread holding one would
