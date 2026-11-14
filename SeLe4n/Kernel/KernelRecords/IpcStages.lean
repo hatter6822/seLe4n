@@ -102,17 +102,24 @@ theorem endpointSendCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId
         st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 
-/-- **The receive keeps the records**, its receiver the running thread. -/
+/-- **The receive keeps the records**, its receiver the running thread.  It
+reads the endpoint heads blocked and nothing else of the IPC bundle: the head
+it wakes is a sender, which neither is the receiver nor waits on a reply. -/
 theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {c : CoreId}
-    {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st receiver) :
+    {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hC : CallerReady st receiver) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
       replyId c st).1 :=
-  RecordsStage.of_step (RecordsStep.endpointReceiveDualWithCapsOnCore hR.objects_invExt
-    hR.ipcInvariantFull.queueHeadBlockedConsistent hC.notParked) fun _ =>
+  RecordsStage.of_step (RecordsStep.endpointReceiveDualWithCapsOnCore hInv hQ hC.notParked)
+    fun hRW =>
     let ⟨tcb, hT, hRd⟩ := hC
-    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _
-      st hR tcb hT hRd
+    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent _ _ _ _ st hInv hRW
+      (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hRd]))
+      (fun ep s hE hH => ⟨fun h => (by
+          subst h
+          rcases (hQ _ ep _ tcb hE hT).2 hH with h | h <;> rw [hRd] at h <;> cases h),
+        sendHead_serverFree hQ hE hH⟩)
 
 /-- **The checked call keeps the records**, its caller the running thread. -/
 theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}

@@ -375,4 +375,175 @@ theorem cancelReplyHolder_queueHeadBlockedConsistent (st : SystemState)
   exact (HeadFrameExcept.updateTcb_self _ holder _ hI2).heads_of_ipcStateFrame
     (ipcStateFrame_updateTcb hI2 fun _ => rfl) hQ2
 
+/-! ### Every other thread keeps its IPC state -/
+
+/-- **A step after which every thread but `v` reads the IPC state it read
+before**, a TCB standing for a TCB in both directions. -/
+def IpcStateKeptExcept (v : SeLe4n.ThreadId) (st st' : SystemState) : Prop :=
+  ∀ y, y ≠ v → (st'.getTcb? y).map TCB.ipcState = (st.getTcb? y).map TCB.ipcState
+
+namespace IpcStateKeptExcept
+
+variable {v : SeLe4n.ThreadId} {st st' st'' : SystemState}
+
+theorem trans (h1 : IpcStateKeptExcept v st st') (h2 : IpcStateKeptExcept v st' st'') :
+    IpcStateKeptExcept v st st'' := fun y hy => (h2 y hy).trans (h1 y hy)
+
+theorem of_all (h : ∀ y, (st'.getTcb? y).map TCB.ipcState = (st.getTcb? y).map TCB.ipcState) :
+    IpcStateKeptExcept v st st' := fun y _ => h y
+
+/-- A write to `v`'s own TCB. -/
+theorem updateTcb_self (st : SystemState) (v : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : IpcStateKeptExcept v st (st.updateTcb v f) := fun y hy => by
+  rw [SystemState.updateTcb_getTcb?_ne st v f hInv y
+    (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
+
+/-- From a TCB-for-TCB correspondence both ways that keeps the IPC state. -/
+theorem of_back_fwd
+    (hB : ∀ (y : SeLe4n.ThreadId) (t' : TCB), st'.objects[y.toObjId]? = some (.tcb t') →
+      ∃ t : TCB, st.objects[y.toObjId]? = some (.tcb t) ∧ t.ipcState = t'.ipcState)
+    (hF : ∀ (y : SeLe4n.ThreadId) (t : TCB), st.objects[y.toObjId]? = some (.tcb t) →
+      ∃ t' : TCB, st'.objects[y.toObjId]? = some (.tcb t')) :
+    IpcStateKeptExcept v st st' := of_all fun y => by
+  cases h' : st'.getTcb? y with
+  | some t' =>
+    obtain ⟨t, ht, he⟩ := hB y t' ((SystemState.getTcb?_eq_some_iff _ _ _).mp h')
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr ht]
+    exact congrArg some he.symm
+  | none =>
+    cases h : st.getTcb? y with
+    | none => rfl
+    | some t =>
+      obtain ⟨t', ht'⟩ := hF y t ((SystemState.getTcb?_eq_some_iff _ _ _).mp h)
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr ht'] at h'
+      cases h'
+
+/-- The priority revert. -/
+theorem propagatePip (v : SeLe4n.ThreadId) (st : SystemState) (s : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
+    IpcStateKeptExcept v st (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 :=
+  of_back_fwd (propagatePipChainCrossCore_ipcStateFrame st s ec fuel hInv) fun y t h => by
+    rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv
+      y.toObjId with e | ⟨pre, post, h1, h2, _⟩
+    · exact ⟨t, by rw [e]; exact h⟩
+    · exact ⟨post, h2⟩
+
+end IpcStateKeptExcept
+
+namespace IpcStateKeptExcept
+
+/-- The exit from a server's reply-waiter queue. -/
+theorem unlinkReplyWaiterOpt (v : SeLe4n.ThreadId) (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) : IpcStateKeptExcept v st (st.unlinkReplyWaiterOpt w s?) := by
+  have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks st w s?
+  refine of_back_fwd (fun y t' h => ?_) (fun y t h => ?_)
+  · have e := hA y.toObjId
+    rw [h] at e
+    cases h0 : st.objects[y.toObjId]? with
+    | none => rw [h0] at e; cases e
+    | some o =>
+      rw [h0] at e
+      obtain ⟨t0, rfl, h2⟩ := KernelObject.withoutReplyLinks_eq_tcb (Option.some.inj e).symm
+      exact ⟨t0, rfl, by simpa [TCB.withoutReplyLinks] using congrArg TCB.ipcState h2⟩
+  · have e := hA y.toObjId
+    rw [h] at e
+    cases h0 : (st.unlinkReplyWaiterOpt w s?).objects[y.toObjId]? with
+    | none => rw [h0] at e; cases e
+    | some o =>
+      rw [h0] at e
+      obtain ⟨t0, rfl, -⟩ := KernelObject.withoutReplyLinks_eq_tcb (Option.some.inj e)
+      exact ⟨t0, rfl⟩
+
+/-- The notification arm. -/
+theorem purgedAndRestored (st : SystemState) (v : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    IpcStateKeptExcept v st (SeLe4n.Kernel.purgedAndRestored st v true) := by
+  have hI := removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
+  unfold SeLe4n.Kernel.purgedAndRestored Lifecycle.Suspend.restoreToReadyStaging
+  refine IpcStateKeptExcept.trans (of_back_fwd (fun y t' h => ?_) (fun y t h => ?_))
+    (updateTcb_self _ v _ hI)
+  · obtain ⟨t0, h0, np, nn, rfl⟩ := removeFromNotificationWaitQueue_tcb_backward st v _ t' hInv h
+    exact ⟨t0, h0, rfl⟩
+  · obtain ⟨t', h', -⟩ := removeFromNotificationWaitQueue_tcb_forward st v _ t hInv h
+    exact ⟨t', h'⟩
+
+end IpcStateKeptExcept
+
+/-- **seL4-MCS `cancelIPC`'s teardown moves no IPC state but the holder's.** -/
+theorem cancelIpcKeepingContexts_ipcStateKeptExcept (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    IpcStateKeptExcept v st (Lifecycle.Suspend.cancelIpcKeepingContexts st v tcb) := by
+  have hCutId : (∀ e r, tcb.ipcState ≠ .blockedOnReply e r) →
+      Lifecycle.Suspend.cutCancelledCallerHead st tcb = st := fun hN => by
+    unfold Lifecycle.Suspend.cutCancelledCallerHead
+    split
+    · rename_i e r h; exact absurd h (hN e r)
+    · rfl
+  have hEp : ∀ e, (tcb.ipcState = .blockedOnSend e ∨ tcb.ipcState = .blockedOnReceive e ∨
+      tcb.ipcState = .blockedOnCall e) →
+      IpcStateKeptExcept v st (Lifecycle.Suspend.cancelIpcKeepingContexts st v tcb) := by
+    intro e hB
+    have hI2 := removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv
+    unfold Lifecycle.Suspend.cancelIpcKeepingContexts
+    rw [hCutId (fun e' r h => by rcases hB with h' | h' | h' <;> rw [h'] at h <;> cases h)]
+    have hEq : Lifecycle.Suspend.cancelIpcBlocking st v tcb =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v e) v := by
+      unfold Lifecycle.Suspend.cancelIpcBlocking
+      rcases hB with h' | h' | h' <;> rw [h']
+    rw [hEq]
+    refine IpcStateKeptExcept.trans (st' := removeFromBlockingEndpoint st v e)
+      (.of_all fun y => ?_) ?_
+    · rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv y]
+      exact spliceOutMidQueueNode_tcbField_frame TCB.ipcState (fun _ _ _ _ _ _ => rfl) st v hInv y
+    · unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+      exact IpcStateKeptExcept.updateTcb_self _ v _ hI2
+  cases hIp : tcb.ipcState with
+  | ready =>
+    unfold Lifecycle.Suspend.cancelIpcKeepingContexts Lifecycle.Suspend.cancelIpcBlocking
+    rw [hCutId (fun e r h => by rw [hIp] at h; cases h), hIp]
+    exact fun _ _ => rfl
+  | blockedOnSend e => exact hEp e (Or.inl hIp)
+  | blockedOnReceive e => exact hEp e (Or.inr (Or.inl hIp))
+  | blockedOnCall e => exact hEp e (Or.inr (Or.inr hIp))
+  | blockedOnNotification n =>
+    unfold Lifecycle.Suspend.cancelIpcKeepingContexts
+    rw [hCutId (fun e r h => by rw [hIp] at h; cases h),
+      cancelIpcBlocking_notification_arm_eq st v tcb n hIp]
+    exact IpcStateKeptExcept.purgedAndRestored st v hInv
+  | blockedOnReply e r =>
+    rw [Lifecycle.Suspend.cancelIpcKeepingContexts_reply_arm st v tcb e r hIp hInv]
+    have hC : Lifecycle.Suspend.cutCancelledCallerHead st tcb =
+        Lifecycle.Suspend.cutThreadHeadFrameKeepingContext st tcb := by
+      unfold Lifecycle.Suspend.cutCancelledCallerHead; rw [hIp]
+    have h1 : IpcStateKeptExcept v st (Lifecycle.Suspend.cutThreadHeadFrameKeepingContext st tcb) := by
+      rw [← hC]
+      exact .of_all fun y => cutCancelledCallerHead_getTcb?_map st tcb TCB.ipcState (fun _ => rfl) hInv y
+    have hI1 : (Lifecycle.Suspend.cutThreadHeadFrameKeepingContext st tcb).objects.invExt := by
+      rw [← hC]; exact Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt st tcb hInv
+    have hI2 := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hI1
+    have hI3 := Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hI2
+    refine (((h1.trans (.of_all fun y => by rw [cutThreadReplyFrameOut_getTcb?_eq _ tcb hI1 y])).trans
+      ?_).trans (.of_all fun y => consumeReplyLink_map_frame TCB.ipcState (fun _ => rfl) _ v tcb hI3 y)).trans
+      (IpcStateKeptExcept.unlinkReplyWaiterOpt v _ v _)
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact IpcStateKeptExcept.updateTcb_self _ v _ hI2
+
+/-- **A reply holder's cancel moves no IPC state but the holder's.** -/
+theorem cancelReplyHolder_ipcStateKeptExcept (st : SystemState) (holder : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (hInv : st.objects.invExt) :
+    IpcStateKeptExcept holder st (cancelReplyHolder st holder ec) := by
+  rcases cancelReplyHolder_cases st holder ec with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact fun _ _ => rfl
+  rw [h]
+  have hK := cancelIpcKeepingContexts_ipcStateKeptExcept st holder tcb hInv
+  have hI1 := Lifecycle.Suspend.cancelIpcKeepingContexts_preserves_objects_invExt st holder tcb hInv
+  have hI2 : (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec).objects.invExt := by
+    unfold Lifecycle.Suspend.suspendCancelRevert; dsimp only; split
+    · exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt _ _ _ _ hI1
+    · exact hI1
+  have hR : IpcStateKeptExcept holder st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) := by
+    unfold Lifecycle.Suspend.suspendCancelRevert; dsimp only; split
+    · exact hK.trans (IpcStateKeptExcept.propagatePip holder _ _ ec _ hI1)
+    · exact hK
+  exact hR.trans (IpcStateKeptExcept.updateTcb_self _ holder _ hI2)
+
 end SeLe4n.Kernel

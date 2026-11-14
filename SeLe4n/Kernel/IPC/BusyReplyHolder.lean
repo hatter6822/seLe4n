@@ -51,4 +51,42 @@ def busyReplyHolder? (st : SystemState) (tid : SeLe4n.ThreadId)
     | 0 => none
     | k + 1 => some ⟨k⟩
 
+/-- A reply's busy code never names the receiver that reads it. -/
+theorem busyReplyHolderCode_ne_self (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : busyReplyHolderCode st tid rid ≠ tid.val + 1 := by
+  unfold busyReplyHolderCode
+  split
+  · omega
+  · split
+    · rename_i c _
+      split
+      · omega
+      · rename_i hne
+        intro h
+        apply hne
+        have e : c.val = tid.val := by omega
+        cases c; cases tid; simp_all
+    · split
+      · split
+        · omega
+        · assumption
+      · omega
+
+/-- The thread a reply is busy with is never the receiver that names it. -/
+theorem busyReplyHolder?_ne {st : SystemState} {tid : SeLe4n.ThreadId}
+    {replyId? : Option SeLe4n.ReplyId} {holder : SeLe4n.ThreadId}
+    (h : busyReplyHolder? st tid replyId? = some holder) : holder ≠ tid := by
+  intro hEq
+  subst hEq
+  unfold busyReplyHolder? at h
+  cases replyId? with
+  | none => cases h
+  | some rid =>
+    simp only at h
+    have hN := busyReplyHolderCode_ne_self st holder rid
+    revert h hN
+    cases busyReplyHolderCode st holder rid with
+    | zero => intro h; cases h
+    | succ k => intro h hN; cases h; exact hN rfl
+
 end SeLe4n.Kernel

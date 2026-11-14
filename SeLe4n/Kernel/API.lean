@@ -635,6 +635,20 @@ theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingCont
     rw [h] at hB
     cases hB
 
+/-- **A receive's busy-reply cancel is the identity, or a holder's cancel** —
+of a holder that is never the receiver itself. -/
+theorem cancelRecvBusyReply_cases (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    cancelRecvBusyReply ctx tid gate decoded executingCore st = st ∨
+      ∃ holder, holder ≠ tid ∧
+        cancelRecvBusyReply ctx tid gate decoded executingCore st =
+          cancelReplyHolder st holder executingCore := by
+  unfold cancelRecvBusyReply
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => exact Or.inl rfl
+  | succ k => exact Or.inr ⟨⟨k⟩, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), rfl⟩
+
 /-- A receive whose reply resolved free names no busy holder... -/
 theorem busyReplyHolder?_of_resolveRecvReplyId_ok {gate : SyscallGate}
     {decoded : SyscallDecodeResult} {st : SystemState} {r : Option SeLe4n.ReplyId}
