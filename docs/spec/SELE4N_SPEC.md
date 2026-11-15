@@ -3266,6 +3266,8 @@ cancelled state and its `replyCapInvalid` refusal cannot fire
 A suspend of a thread already `Inactive` succeeds and writes nothing, as
 seL4's `suspend` (`suspendThreadOnCore_of_inactive`): its IPC is cancelled
 already, and it sits in no run or release queue and names no yield link.
+The compiled `.tcbSuspend` admits such a target, and `suspendPerform` returns
+the state it was handed, so that entry allocates nothing either.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*

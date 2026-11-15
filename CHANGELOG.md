@@ -106,7 +106,12 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   asks an active target, and the restart's cancelling arm reads its `Inactive`
   sub-case as the resume it is. Tests SR-002, SR-011, SD-021 and the
   cancellation suite's Inactive victim now check the no-op success; QEMU step
-  `busy-reply-suspend-partner` is restored.
+  `busy-reply-suspend-partner` is restored. The compiled `.tcbSuspend` admits
+  an `Inactive` target and `suspendPerform` hands the state back
+  (`threadIsInactive`), because the first QEMU run read 2 allocations
+  (16 + 24 bytes) on that step. The non-admitted fallback had built the
+  specification's `.ok (st, none)` and then rebuilt the invocation's result
+  from it. `suspendThreadOnCore_of_admitted` covers the new arm.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it

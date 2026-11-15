@@ -23594,6 +23594,15 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem SchedContext\.refillUnblockChec
 # clause of the notification arm.
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_of_admitted \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "      \| 2 =>\n        st\.objects\.findsInPlace tid\.toObjId &&\n          \(st\.getNotification\? ⟨tcb\.ipcObjectCode⟩\)\.isSome" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+# WS-SX SX4: seL4's `suspend` of an already-`.Inactive` thread writes nothing,
+# and the specification returns the state it was handed.  RELATION: the
+# admission takes that thread, and the admitted suspend hands the state back
+# before its first read-for-write, so the compiled path never builds the
+# specification's result to rebuild the invocation's (the QEMU per-syscall heap
+# gate's `busy-reply-suspend-partner` step reads that path).  Mutation: drop the
+# `.Inactive` disjunct from the admission, and that step allocates.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def suspendAdmitted [^\n]*\n  match st\.getTcb\? tid with\n  \| some tcb =>\n    tcb\.threadState == \.Inactive \|\|\n" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*\n    SystemState :=\n  let tid := vtid\.val\n  if threadIsInactive st tid then st else\n" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
 # The faulted resume is admitted only when its slot is found in place, which is
 # what lets the fault's retirement read back without the store invariant.
 run_check "INVARIANT" rg -n '\(!tcb\.faultWords\.isFault \|\| st\.objects\.findsInPlace tid\.toObjId\)' SeLe4n/Kernel/Lifecycle/Suspend.lean

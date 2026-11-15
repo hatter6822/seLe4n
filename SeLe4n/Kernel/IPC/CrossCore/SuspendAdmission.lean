@@ -80,12 +80,22 @@ def suspendTeardownState (st : SystemState) (tid : SeLe4n.ThreadId)
     | _ => suspendCancelRevert st tid tcb executingCore
   | none => st
 
+/-- Whether `tid` names a thread whose state is `.Inactive`. -/
+@[inline] def threadIsInactive (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t => t.threadState == .Inactive
+  | none => false
+
 /-- **The checks `.tcbSuspend` makes, asked before any write** (seL4's
 `decodeTCBInvocation` then `suspend`, which never fails): the target is a
-thread not already `.Inactive`, and, when it is blocked on a notification, its
-slot is found in place and the notification is one the store holds, so the
-cancel's writes land in place and are the specification's
-(`cancelIpcBlocking_notification_inPlace`).  Every other arm is admitted: once
+thread, and, when it is not already `.Inactive` and is blocked on a
+notification, its slot is found in place and the notification is one the store
+holds, so the cancel's writes land in place and are the specification's
+(`cancelIpcBlocking_notification_inPlace`).  An `.Inactive` thread is admitted:
+seL4's `suspend` of one writes nothing the invariants let differ, and the
+specification returns the state it was handed, so the admitted path hands that
+state back (`suspendPerform`) rather than building the specification's result
+and rebuilding the invocation's from it.  Every other arm is admitted: once
 these checks pass the specification commits (`suspendThreadOnCore_total`), so
 its state is the writes alone.
 
@@ -95,7 +105,7 @@ the suspend's state is `suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
 @[inline] def suspendAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? tid with
   | some tcb =>
-    !(tcb.threadState == .Inactive) &&
+    tcb.threadState == .Inactive ||
       match tcb.ipcStateCode with
       | 2 =>
         st.objects.findsInPlace tid.toObjId &&
@@ -109,10 +119,13 @@ anything is written; then the IPC teardown (`suspendTeardownState`), the
 thread's removal from where the state places it, its pending state cleared,
 `.Inactive`, its context off the release queues (`releaseRemoveThread`, seL4's
 `tcbReleaseRemove`), its yield link cancelled and the local scheduling point.
-The state is handed to the writes alone. -/
+The state is handed to the writes alone.  An already-`.Inactive` thread's
+suspend is the state it was handed, as the specification's is
+(`suspendThreadOnCore_of_inactive`). -/
 def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) :
     SystemState :=
   let tid := vtid.val
+  if threadIsInactive st tid then st else
   let placed := placedCoreOf? st tid
   let runningCore? := runningCoreOf? st tid
   let curCode := st.scheduler.currentCode.get executingCore
@@ -139,8 +152,21 @@ theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidT
   cases hT : st.getTcb? vtid.val with
   | none => simp [hT] at h
   | some tcb =>
-    simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨hI, hArm⟩ := h
+    cases hI : (tcb.threadState == .Inactive) with
+    | true =>
+      -- An `.Inactive` thread: both sides are the state handed in.
+      have hIn : tcb.threadState = .Inactive := by simpa using hI
+      have hTI : threadIsInactive st vtid.val = true := by
+        simp only [threadIsInactive, hT, hI]
+      refine ⟨none, ?_⟩
+      rw [suspendThreadOnCore_of_inactive st vtid executingCore tcb hT hIn]
+      unfold suspendPerform
+      simp only [hTI, ↓reduceIte]
+    | false =>
+    have hTI : threadIsInactive st vtid.val = false := by
+      simp only [threadIsInactive, hT, hI]
+    simp only [hT, hI, Bool.false_or] at h
+    have hArm := h
     have hBS : PriorityInheritance.blockingServer st vtid.val = tcb.blockingServer? := by
       unfold PriorityInheritance.blockingServer; rw [hT]; rfl
     -- The teardown is the specification's cancel, then its revert.
@@ -180,12 +206,12 @@ theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidT
     cases hS : tcb.blockingServer? with
     | none =>
       rw [hS] at hMid
-      simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
+      simp only [hT, hI, hTI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
         currentDeboostedFrom_eq_code st]
       exact suspendRescheduleOnCore_eq_state _ _ _ _ _
     | some s =>
       rw [hS] at hMid
-      simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
+      simp only [hT, hI, hTI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
         currentDeboostedFrom_eq_code st]
       exact suspendRescheduleOnCore_eq_state _ _ _ _ _
 
