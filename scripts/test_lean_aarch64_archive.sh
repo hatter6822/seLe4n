@@ -109,7 +109,7 @@ echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), the four-PE bring-up, the Tier-4 exercisers, and the initialization refusal probe"
+echo "[6/6] The Lean-linked kernel booted on four PEs (the Raspberry Pi 5 image on rpi5_machine raspi5b at EL2, the virt image on QEMU virt at EL1 and EL2), the four-PE bring-up, the Tier-4 exercisers, and the initialization refusal probe"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh" --lean-kernel

@@ -423,8 +423,10 @@ lake env lean --run tests/NegativeStateSuite.lean
 `scripts/test_qemu*.sh` cover SMP bring-up, IPC, scheduler, timer, SGI
 round-trip, TLB shootdown, deadlock and kprintln stress.
 `scripts/test_hw_full.sh` and `docs/HARDWARE_TESTING.md` cover the RPi5 path.
-`scripts/test_qemu.sh` is live: with no argument it boots the HAL-only image on
-QEMU's `virt` at EL1 and at EL2, and with `--lean-kernel` (which needs the
+`scripts/test_qemu.sh` is live: with no argument it boots the HAL-only
+Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 (WS-RB), then the
+HAL-only `virt` image on QEMU's `virt` at EL1 and at EL2, and with
+`--lean-kernel` (which needs the
 archive `scripts/test_lean_aarch64_archive.sh` builds, and which that lane runs
 as its step [6/6]) it boots the Lean-linked image on four PEs to every core's
 first idle dispatch, under `-icount shift=0,sleep=off` — without it, one
@@ -434,9 +436,13 @@ PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
 the Lean-linked one, on four PEs at EL1 and EL2, and requires every secondary's
 per-core init in order and every banner as a whole line; the same lane runs both
 modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
-shared by the two scripts, and the `virt` images build under `rust/target/qemu-virt*`
-so the Raspberry Pi 5 image in `rust/target/<target>/release` is never
-overwritten.  A console line is one lock acquisition, and a PE prints nothing
+shared by the two scripts (`qemu_select_board rpi5|virt`), and the images build
+under `rust/target/qemu-rpi5*` and `rust/target/qemu-virt*` so the Raspberry Pi 5
+image in `rust/target/<target>/release` is never overwritten.  `raspi5b` is an
+out-of-tree QEMU: `scripts/setup_rpi5_machine.sh` builds hatter6822/rpi5_machine
+at the commit it pins, once, into `.lake/rpi5-machine/<commit>/` (about fifteen
+minutes on four cores; it needs QEMU's build dependencies: ninja, python3-venv,
+GLib, pixman, libfdt), or `QEMU_RPI5_BIN` names a build.  A console line is one lock acquisition, and a PE prints nothing
 before its own MMU is on.  The other QEMU scripts and the board need artefacts
 BP8.4 and BP8.5 produced and the board boot, BP8.6, produces.
 

@@ -15,19 +15,21 @@
 # 5. Syscall dispatch (SVC instruction handling)
 #
 # Prerequisites:
-#   - qemu-system-aarch64 installed (QEMU >= 8.0)
+#   - rpi5_machine's `raspi5b` (WS-RB RB1): `scripts/setup_rpi5_machine.sh`
+#     builds it at its pin on first use, or QEMU_RPI5_BIN names one
+#   - qemu-system-aarch64 installed (QEMU >= 8.0), for the `virt` lane
 #   - Rust toolchain with aarch64-unknown-none-softfloat target
-#   - cargo build --release --target aarch64-unknown-none-softfloat
-#     --features kernel_image,board_qemu_virt --bin sele4n-kernel completes
-#     (WS-BP BP8.1: the image built for QEMU's `virt` machine -- QEMU models no
-#     BCM2712, so the Raspberry Pi 5 image meets no device under it; the Rust
-#     half boots on its own, and KERNEL_BIN may name another image instead)
+#
+# Each board's image is built here: the Raspberry Pi 5 image itself (no board
+# feature) booted on `raspi5b` at EL2, then the `virt` image
+# (`board_qemu_virt`, WS-BP BP8.1) on QEMU's `virt` at EL1 and at EL2.
 #
 # Usage:
-#   ./scripts/test_qemu.sh              # Build the virt image; boot it at EL1 and at EL2
-#   ./scripts/test_qemu.sh --lean-kernel  # Build the Lean-linked virt image; boot it on
-#                                         # four PEs to every core's first idle dispatch
-#   KERNEL_BIN=… QEMU_MACHINE=… ./scripts/test_qemu.sh   # Boot a named image on a named machine
+#   ./scripts/test_qemu.sh              # Boot the HAL-only image on raspi5b, then on virt
+#   ./scripts/test_qemu.sh --lean-kernel  # The Lean-linked images, on four PEs to
+#                                         # every core's first idle dispatch
+#   QEMU_BOARD=… KERNEL_BIN=… QEMU_MACHINE=… ./scripts/test_qemu.sh
+#                                       # Boot a named image on a named machine
 #   QEMU_TIMEOUT=30 ./scripts/test_qemu.sh  # Custom per-boot timeout (seconds)
 #
 # CI Integration:
@@ -74,21 +76,7 @@ fi
 QEMU_MACHINE="${QEMU_MACHINE:-}"
 
 log_section "META" "=== AG9-A: QEMU Integration Testing ==="
-qemu_require_tools
 qemu_temp_file QEMU_LOG qemu_boot
-
-# ── Build the kernel image ────────────────────────────────────────────────
-qemu_build_image "${LEAN_KERNEL}"
-
-# ── WS-BP BP8.1: QEMU's `virt`, at both entry levels ───────────────────────
-# QEMU models no BCM2712, so the lane boots the image built for `virt`
-# (`board_qemu_virt`, rust/sele4n-hal/src/board.rs): `virt`'s device map and
-# RAM base, the same kernel otherwise.  It runs twice — at QEMU's default EL1
-# entry, and with `virtualization=on`, where QEMU enters at EL2 as the
-# Raspberry Pi firmware does, so the drop to EL1 and the SMC conduit execute
-# before the board is the first thing to run them.  An image named by
-# KERNEL_BIN runs on the machine named by QEMU_MACHINE instead, once.
-qemu_cut_image
 
 FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
 if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
@@ -249,33 +237,81 @@ if ! (cd "$(dirname "${FIXTURE}")" && sha256sum -c "$(basename "${FIXTURE}").sha
     finalize_report
 fi
 
-# WS-BP BP8.1: the Lean board check is driven against a checked-in `virt`
-# device tree; this QEMU is asked for its own and the two must agree, so the
-# fixture cannot drift from the machine the image boots on.
-if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_virt_dtb_fixture.py" --check; then
-    record_failure "TRACE" "tests/fixtures/qemu_virt_dtb.hex could not be confirmed as this QEMU's virt device tree (scripts/qemu_virt_dtb_fixture.py names the reason above)"
-    finalize_report
-fi
+# board_dtb_fixture BOARD FIXTURE: the Lean board check is driven against a
+# checked-in device tree of the machine BOARD boots on
+# (`tests/Ak9PlatformSuite.lean`); this emulator is asked for its own and the
+# two must agree, so the fixture cannot drift from the machine the image boots
+# on.
+board_dtb_fixture() {
+    local board="$1" fixture="$2"
+    if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_dtb_fixture.py" "${board}" --check; then
+        record_failure "TRACE" "tests/fixtures/${fixture} could not be confirmed as this emulator's ${board} device tree (scripts/qemu_dtb_fixture.py names the reason above)"
+        finalize_report
+    fi
+}
 
+# boot_board BOARD: boot the selected kind of image (HAL-only, or Lean-linked
+# under --lean-kernel) built for BOARD, on BOARD's machine.
+#
+# WS-RB RB1: `rpi5` is the Raspberry Pi 5 image -- the board the kernel ships
+# for, built with no board feature -- on rpi5_machine's `raspi5b`, once, at the
+# EL2 entry with PSCI over SMC that the Pi 5's firmware gives it.  `virt` is the
+# second lane (WS-BP BP8.1): the `board_qemu_virt` image on QEMU's `virt`, at
+# QEMU's default EL1 entry (HVC conduit) and with `virtualization=on` (EL2,
+# SMC), so the EL1 entry path keeps running somewhere.
+boot_board() {
+    local board="$1" banner
+    qemu_select_board "${board}"
+    qemu_require_tools
+    qemu_build_image "${LEAN_KERNEL}"
+    qemu_cut_image
+    local per_core=()
+    if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+        # Every core's first idle dispatch, and every secondary's IRQ readiness,
+        # which the boot core's Phase 7 counts; the fixture orders the boot core's.
+        per_core=(
+            "[smp] core 1: IRQ-serviceable" "[smp] core 2: IRQ-serviceable" "[smp] core 3: IRQ-serviceable"
+            "[sched] core 0: first idle dispatch" "[sched] core 1: first idle dispatch"
+            "[sched] core 2: first idle dispatch" "[sched] core 3: first idle dispatch"
+        )
+    fi
+    case "${board}" in
+        rpi5)
+            banner="booting on Raspberry Pi 5 (BCM2712)"
+            # The Raspberry Pi 5 board check is driven against the checked-in
+            # `raspi5b` device tree as `virt`'s is against its own.
+            board_dtb_fixture rpi5 rpi5_machine_dtb.hex
+            boot_once "${LEAN_LABEL}Raspberry Pi 5, raspi5b, EL2 entry" "${QEMU_BOARD_MACHINE}" \
+                "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${per_core[@]}"
+            ;;
+        virt)
+            banner="booting on QEMU virt"
+            # The Lean board check is driven against a checked-in `virt` device
+            # tree; this QEMU is asked for its own and the two must agree, so
+            # the fixture cannot drift from the machine the image boots on.
+            board_dtb_fixture virt qemu_virt_dtb.hex
+            boot_once "${LEAN_LABEL}virt, EL1 entry" "virt,gic-version=2" \
+                "${banner}" "Entered at EL1, running at EL1" "PSCI conduit: Hvc" "${per_core[@]}"
+            boot_once "${LEAN_LABEL}virt, EL2 entry" "virt,gic-version=2,virtualization=on" \
+                "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${per_core[@]}"
+            ;;
+    esac
+}
+
+LEAN_LABEL=""
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    LEAN_LABEL="Lean kernel, "
+fi
 if [[ -n "${QEMU_MACHINE}" ]]; then
+    # An image named by KERNEL_BIN, on the machine named by QEMU_MACHINE, once,
+    # for the board QEMU_BOARD names.
+    qemu_require_tools
+    qemu_build_image "${LEAN_KERNEL}"
+    qemu_cut_image
     boot_once "the image on ${QEMU_MACHINE}" "${QEMU_MACHINE}"
-elif [[ "${LEAN_KERNEL}" -eq 1 ]]; then
-    # Every core's first idle dispatch, and every secondary's IRQ readiness,
-    # which the boot core's Phase 7 counts; the fixture orders the boot core's.
-    LEAN_PER_CORE=(
-        "[smp] core 1: IRQ-serviceable" "[smp] core 2: IRQ-serviceable" "[smp] core 3: IRQ-serviceable"
-        "[sched] core 0: first idle dispatch" "[sched] core 1: first idle dispatch"
-        "[sched] core 2: first idle dispatch" "[sched] core 3: first idle dispatch"
-    )
-    boot_once "Lean kernel, virt, EL1 entry" "virt,gic-version=2" \
-        "Entered at EL1, running at EL1" "PSCI conduit: Hvc" "${LEAN_PER_CORE[@]}"
-    boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on" \
-        "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${LEAN_PER_CORE[@]}"
 else
-    boot_once "virt, EL1 entry" "virt,gic-version=2" \
-        "booting on QEMU virt" "Entered at EL1, running at EL1" "PSCI conduit: Hvc"
-    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \
-        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"
+    boot_board rpi5
+    boot_board virt
 fi
 
 # ── Summary ────────────────────────────────────────────────────────────────
