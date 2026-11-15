@@ -12,6 +12,7 @@ import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.Builder
+import SeLe4n.Testing.BootCoreOps
 
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Kernel.Concurrency (bootCoreId)
@@ -3253,6 +3254,326 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
       (liveWithTaint .notificationSignal diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationSignalBound diffNotifId badge) ist.state))
 
+/-! ## The frozen suspend's cancel, against the live suspend's (WS-SX SX4)
+
+`frozenSuspendThread` cancels a blocked thread's IPC, and `frozenResumeThread`
+reaches that cancel for every blocked thread it restarts.  Each scenario below
+blocks a thread in one arm (an endpoint queue's head, middle or tail; a
+notification wait queue; a reply), runs the frozen suspend or resume beside the
+live one (`bootSuspendThread`, `bootResumeThread`) on the same state, and then
+uses the queue the thread left, so a queue still naming it fails here. -/
+
+/-- A sender parked on `diffEpId`'s send queue, its message in its frame. -/
+private def cancelQueuedSender (n : Nat) (prev next : Option SeLe4n.ThreadId)
+    (pprev : Option QueuePPrev) (word : UInt64) : TCB :=
+  let msg : IpcMessage := { registers := #[⟨word⟩], badge := none }
+  TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb n with
+    threadState := .BlockedSend
+    queuePrevCode := SeLe4n.ThreadId.optCode prev,
+    queuePPrevCode := QueuePPrev.optCode pprev,
+    queueNextCode := SeLe4n.ThreadId.optCode next } msg) (.blockedOnSend diffEpId)
+
+private def cancelSenderC : SeLe4n.ThreadId := ⟨66⟩
+private def cancelReceiver : SeLe4n.ThreadId := ⟨67⟩
+
+/-- Three senders queued `diffA → diffB → cancelSenderC` on `diffEpId`, and a
+ready receiver. -/
+private def cancelThreeSenders : IntermediateState :=
+  let ep : Endpoint := Endpoint.ofQueues { head := some diffA, tail := some cancelSenderC } {}
+  let a := cancelQueuedSender 62 none (some diffB) (some .endpointHead) 1
+  let b := cancelQueuedSender 63 (some diffA) (some cancelSenderC) (some (.tcbNext diffA)) 2
+  let c := cancelQueuedSender 66 (some diffB) none (some (.tcbNext diffB)) 3
+  diffAddTcb (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId ep) a) b) c)
+    { diffTcb 67 with threadState := .Ready }
+
+/-- The live suspend and resume as the frozen ones answer, `Unit` beside the state. -/
+private def liveSuspendRun (ist : IntermediateState) (tid : SeLe4n.ValidThreadId) :
+    Except KernelError (Unit × SystemState) :=
+  (SeLe4n.Testing.bootSuspendThread ist.state tid).map (fun s => ((), s))
+
+private def liveResumeRun (ist : IntermediateState) (tid : SeLe4n.ValidThreadId) :
+    Except KernelError (Unit × SystemState) :=
+  (SeLe4n.Testing.bootResumeThread ist.state tid).map (fun s => ((), s))
+
+/-- **The object stores agree**, both directions, as `frozenStateAgrees`
+compares them.  A resume is compared on its objects alone: the live restart runs
+a scheduling point and dispatches (`currentOnCore` names the thread it picks,
+which leaves the run queue), while the frozen resume leaves selection to
+`frozenSchedule`, so the two schedulers part by design at that one step.  The
+suspend, which dispatches nothing here, is compared whole. -/
+private def frozenObjectsAgree (fr : Except KernelError (Unit × FrozenSystemState))
+    (lr : Except KernelError (Unit × SystemState)) : Bool :=
+  match fr, lr with
+  | .ok ((), fs), .ok ((), ls) =>
+    ls.objects.toList.all (fun kv =>
+      match fs.getObject? kv.1, ls.getObject? kv.1 with
+      | some f, some l => frozenObjectAgrees f l
+      | none, none => true
+      | _, _ => false)
+    && fs.objects.indexMap.toList.all (fun kv =>
+      match fs.getObject? kv.1, ls.getObject? kv.1 with
+      | some f, some l => frozenObjectAgrees f l
+      | none, none => true
+      | _, _ => false)
+  | .error e, .error e' => e == e'
+  | _, _ => false
+
+/-- The sender a frozen receive dequeues, if it completes. -/
+private def frozenReceivedSender (st : FrozenSystemState) : Option SeLe4n.ThreadId :=
+  match frozenEndpointReceive diffEpId cancelReceiver none st with
+  | .ok (s, _) => some s
+  | .error _ => none
+
+/-- Whether any end of `diffEpId`'s queues, or any queued sender's link, names `t`. -/
+private def frozenEndpointNames (st : FrozenSystemState) (t : SeLe4n.ThreadId) : Bool :=
+  match st.getEndpoint? diffEpId with
+  | some ep =>
+    ep.sendQ.head == some t || ep.sendQ.tail == some t ||
+      ep.receiveQ.head == some t || ep.receiveQ.tail == some t ||
+      [diffA, diffB, cancelSenderC].any (fun s =>
+        match st.getTcb? s with
+        | some x => x.queuePrev == some t || x.queueNext == some t
+        | none => false)
+  | none => true
+
+/-- FO-060 (WS-SX SX4): **a frozen resume of a queued sender, at each position
+of the queue**: the resume agrees with the live restart, no queue end or
+neighbour link names the restarted thread, and a receive then dequeues the next
+sender in order (the head's successor for the head; the head for the middle and
+the tail).  Before the cancel was mirrored the restarted head stayed named by
+the endpoint, and the receive refused `.endpointStateMismatch`. -/
+private def frozenResumeOfQueuedSenderLeavesQueue : IO Unit := do
+  let ist := cancelThreeSenders
+  for (label, tid, vtid, next) in
+      [("head", diffA, (⟨diffA, by decide⟩ : SeLe4n.ValidThreadId), diffB),
+       ("middle", diffB, ⟨diffB, by decide⟩, diffA),
+       ("tail", cancelSenderC, ⟨cancelSenderC, by decide⟩, diffA)] do
+    match frozenResumeThread tid (freeze ist) with
+    | .error e => throw <| IO.userError s!"FO-060 {label}: frozen resume refused {repr e}"
+    | .ok ((), fs) =>
+      expect s!"FO-060 {label}: the frozen resume's objects agree with the live restart's"
+        (frozenObjectsAgree (.ok ((), fs)) (liveResumeRun ist vtid))
+      expect s!"FO-060 {label}: no queue end or link names the restarted thread"
+        (!frozenEndpointNames fs tid)
+      expect s!"FO-060 {label}: a receive dequeues the next sender"
+        (frozenReceivedSender fs == some next)
+
+/-- FO-061 (WS-SX SX4): **a frozen suspend leaves the endpoint queue well
+formed**: at each position the suspend agrees with the live suspend, nothing
+names the suspended thread, and the two senders left are received in order. -/
+private def frozenSuspendOfQueuedSenderLeavesQueue : IO Unit := do
+  let ist := cancelThreeSenders
+  for (label, tid, vtid, first, second) in
+      [("head", diffA, (⟨diffA, by decide⟩ : SeLe4n.ValidThreadId), diffB, cancelSenderC),
+       ("middle", diffB, ⟨diffB, by decide⟩, diffA, cancelSenderC),
+       ("tail", cancelSenderC, ⟨cancelSenderC, by decide⟩, diffA, diffB)] do
+    match frozenSuspendThread tid (freeze ist) with
+    | .error e => throw <| IO.userError s!"FO-061 {label}: frozen suspend refused {repr e}"
+    | .ok ((), fs) =>
+      expect s!"FO-061 {label}: the frozen suspend agrees with the live suspend"
+        (frozenRunAgrees unitResultAgrees (.ok ((), fs)) (liveSuspendRun ist vtid))
+      expect s!"FO-061 {label}: no queue end or link names the suspended thread"
+        (!frozenEndpointNames fs tid)
+      match frozenEndpointReceive diffEpId cancelReceiver none fs with
+      | .error e => throw <| IO.userError s!"FO-061 {label}: first receive refused {repr e}"
+      | .ok (s1, fs1) =>
+        expect s!"FO-061 {label}: the first receive dequeues {repr first}" (s1 == first)
+        -- The receiver blocked on nothing and is ready again, so it receives
+        -- once more.
+        expect s!"FO-061 {label}: and the second dequeues {repr second}"
+          (frozenReceivedSender fs1 == some second)
+
+/-- Two waiters queued `diffA → diffB` on `diffNotifId`, and a ready signaller. -/
+private def cancelTwoWaiters : IntermediateState :=
+  let ntfn : Notification :=
+    { state := .waiting, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      waitHeadCode := SeLe4n.ThreadId.optCode (some diffA),
+      waitTailCode := SeLe4n.ThreadId.optCode (some diffB) }
+  let a := TCB.setIpcState { diffTcb 62 with
+    threadState := .BlockedNotif
+    ntfnNextCode := SeLe4n.ThreadId.optCode (some diffB) } (.blockedOnNotification diffNotifId)
+  let b := TCB.setIpcState { diffTcb 63 with
+    threadState := .BlockedNotif
+    ntfnPrevCode := SeLe4n.ThreadId.optCode (some diffA) } (.blockedOnNotification diffNotifId)
+  diffAddTcb (diffAddTcb (diffAddTcb
+    (Builder.createObject (mkEmptyIntermediateState ()) diffNotifId (.notification ntfn)
+      (fun _ h => nomatch h) (fun _ h => nomatch h)) a) b)
+    { diffTcb 67 with threadState := .Ready }
+
+/-- FO-062 (WS-SX SX4): **a frozen resume of a notification waiter**, at the
+head and at the tail: the resume agrees with the live restart, the queue no
+longer names the restarted thread, and a signal wakes the waiter left. -/
+private def frozenResumeOfNotificationWaiterLeavesQueue : IO Unit := do
+  let ist := cancelTwoWaiters
+  for (label, tid, vtid, left) in
+      [("head", diffA, (⟨diffA, by decide⟩ : SeLe4n.ValidThreadId), diffB),
+       ("tail", diffB, ⟨diffB, by decide⟩, diffA)] do
+    expect s!"FO-062 {label}: the frozen suspend agrees with the live suspend"
+      (frozenRunAgrees unitResultAgrees (frozenSuspendThread tid (freeze ist))
+        (liveSuspendRun ist vtid))
+    match frozenResumeThread tid (freeze ist) with
+    | .error e => throw <| IO.userError s!"FO-062 {label}: frozen resume refused {repr e}"
+    | .ok ((), fs) =>
+      expect s!"FO-062 {label}: the frozen resume's objects agree with the live restart's"
+        (frozenObjectsAgree (.ok ((), fs)) (liveResumeRun ist vtid))
+      expect s!"FO-062 {label}: the queue's ends name only the waiter left"
+        (match fs.getNotification? diffNotifId with
+         | some n => n.waitHead == some left && n.waitTail == some left
+         | none => false)
+      match frozenNotificationSignal diffNotifId cancelReceiver (SeLe4n.Badge.ofNatMasked 5) fs with
+      | .error e => throw <| IO.userError s!"FO-062 {label}: signal refused {repr e}"
+      | .ok ((), fs1) =>
+        expect s!"FO-062 {label}: the signal wakes the waiter left"
+          ((fs1.getTcb? left).any (·.ipcState == .ready))
+        expect s!"FO-062 {label}: and leaves the notification with no waiter"
+          ((fs1.getNotification? diffNotifId).any (·.waitHead == none))
+
+private def cancelReplyId : SeLe4n.ReplyId := ⟨70⟩
+
+/-- A caller (`diffA`) blocked on its reply from `diffB`, linked to the reply
+`cancelReplyId` and the only waiter in `diffB`'s reply-waiter queue. -/
+private def cancelReplyBlockedCaller : IntermediateState :=
+  let caller := TCB.setIpcState { diffTcb 62 with
+    threadState := .BlockedReply
+    replyObjectCode := SeLe4n.ReplyId.optCode (some cancelReplyId) }
+    (.blockedOnReply diffEpId (some diffB))
+  let server := { diffTcb 63 with
+    threadState := .Ready
+    replyWaitersHeadCode := SeLe4n.ThreadId.optCode (some diffA), replyWaitersCount := 1 }
+  let reply : SeLe4n.Kernel.Reply :=
+    { replyId := cancelReplyId, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
+  diffAddTcb (diffAddTcb
+    (Builder.createObject (mkEmptyIntermediateState ()) cancelReplyId.toObjId (.reply reply)
+      (fun _ h => nomatch h) (fun _ h => nomatch h)) caller) server
+
+/-- FO-063 (WS-SX SX4): **a frozen suspend and a frozen resume of a
+reply-blocked caller**: each agrees with the live one, the reply names no caller,
+the caller holds no reply object, and the server's reply-waiter queue is empty. -/
+private def frozenCancelOfReplyBlockedCallerConsumesLink : IO Unit := do
+  let ist := cancelReplyBlockedCaller
+  let vtid : SeLe4n.ValidThreadId := ⟨diffA, by decide⟩
+  for (label, fr, lr, whole) in
+      [("suspend", frozenSuspendThread diffA (freeze ist), liveSuspendRun ist vtid, true),
+       ("resume", frozenResumeThread diffA (freeze ist), liveResumeRun ist vtid, false)] do
+    match fr with
+    | .error e => throw <| IO.userError s!"FO-063 {label}: frozen {label} refused {repr e}"
+    | .ok ((), fs) =>
+      expect s!"FO-063 {label}: the frozen {label} agrees with the live one"
+        (if whole then frozenRunAgrees unitResultAgrees (.ok ((), fs)) lr
+         else frozenObjectsAgree (.ok ((), fs)) lr)
+      expect s!"FO-063 {label}: the reply names no caller"
+        ((fs.getReply? cancelReplyId).any (·.caller == none))
+      expect s!"FO-063 {label}: the caller holds no reply object"
+        ((fs.getTcb? diffA).any (·.replyObject == none))
+      expect s!"FO-063 {label}: the server's reply-waiter queue is empty"
+        ((fs.getTcb? diffB).any (fun t => t.replyWaitersHead == none && t.replyWaitersCount == 0))
+
+
+private def cancelDonatedScId : SeLe4n.SchedContextId := ⟨71⟩
+
+/-- The reply-blocked caller of `cancelReplyBlockedCaller`, at priority 50,
+having donated its context `cancelDonatedScId` to the passive server, whose
+frame heads that context's reply stack (the live depth-1 `Call` shape) and whose
+boost is the caller's priority. -/
+private def cancelDonatingCaller : IntermediateState :=
+  let caller := TCB.setIpcState { diffTcb 62 with
+    priority := ⟨50⟩
+    threadState := .BlockedReply
+    replyObjectCode := SeLe4n.ReplyId.optCode (some cancelReplyId) }
+    (.blockedOnReply diffEpId (some diffB))
+  let donated := SeLe4n.Kernel.SchedContextBinding.donated cancelDonatedScId diffA
+  let server := { diffTcb 63 with
+    threadState := .Ready
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode donated
+    scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode donated
+    pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩)
+    replyWaitersHeadCode := SeLe4n.ThreadId.optCode (some diffA), replyWaitersCount := 1 }
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := cancelDonatedScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffB), scReply := some cancelReplyId }
+  let reply : SeLe4n.Kernel.Reply :=
+    { replyId := cancelReplyId, callerCode := SeLe4n.ThreadId.optCode (some diffA),
+      next := some (.head cancelDonatedScId) }
+  diffAddTcb (diffAddTcb
+    (Builder.createObject
+      (Builder.createObject (mkEmptyIntermediateState ()) cancelReplyId.toObjId (.reply reply)
+        (fun _ h => nomatch h) (fun _ h => nomatch h))
+      cancelDonatedScId.toObjId (.schedContext sc) (fun _ h => nomatch h) (fun _ h => nomatch h))
+    caller) server
+
+/-- FO-064 (WS-SX SX4): **a frozen cancel of a caller whose frame heads a
+donated context** (seL4-MCS `reply_remove_tcb`'s head branch): each of the frozen
+suspend and resume agrees with the live one; the frame is cut off the context,
+which stays with the server and is now its own; and the server's inherited
+boost is reverted. -/
+private def frozenCancelOfDonatingCallerKeepsContext : IO Unit := do
+  let ist := cancelDonatingCaller
+  let vtid : SeLe4n.ValidThreadId := ⟨diffA, by decide⟩
+  for (label, fr, lr, whole) in
+      [("suspend", frozenSuspendThread diffA (freeze ist), liveSuspendRun ist vtid, true),
+       ("resume", frozenResumeThread diffA (freeze ist), liveResumeRun ist vtid, false)] do
+    match fr with
+    | .error e => throw <| IO.userError s!"FO-064 {label}: frozen {label} refused {repr e}"
+    | .ok ((), fs) =>
+      expect s!"FO-064 {label}: the frozen {label} agrees with the live one"
+        (if whole then frozenRunAgrees unitResultAgrees (.ok ((), fs)) lr
+         else frozenObjectsAgree (.ok ((), fs)) lr)
+      expect s!"FO-064 {label}: the context heads no reply stack"
+        ((fs.getSchedContext? cancelDonatedScId).any (fun c =>
+          c.scReply == none && c.boundThread == some diffB))
+      expect s!"FO-064 {label}: and the server holds it as its own"
+        ((fs.getTcb? diffB).any (·.schedContextBinding == .bound cancelDonatedScId))
+      expect s!"FO-064 {label}: the server's inherited boost is reverted"
+        ((fs.getTcb? diffB).any (·.pipBoost == none))
+
+/-- FO-066 (WS-SX SX4): **a cancel does not refuse**: a sender blocked on an
+endpoint the store does not hold is suspended on both surfaces, and the two
+agree whole.  The live endpoint arm (`removeFromBlockingEndpoint`) is total; the
+first frozen mirror spelled it through the fallible `frozenQueueRemove`, which
+refused `.objectNotFound` here, and the suspend-resume suite's frozen restart of
+a blocked receiver failed on it. -/
+private def frozenSuspendOfSenderOnAbsentEndpointAgrees : IO Unit := do
+  let ist := diffAddTcb (mkEmptyIntermediateState ())
+    (cancelQueuedSender 62 none none none 1)
+  let vtid : SeLe4n.ValidThreadId := ⟨diffA, by decide⟩
+  expect "FO-066 control: the endpoint the sender waits on is not in the store"
+    ((freeze ist).getEndpoint? diffEpId).isNone
+  expect "FO-066: the frozen suspend succeeds and agrees with the live one"
+    (frozenRunAgrees unitResultAgrees (frozenSuspendThread diffA (freeze ist))
+      (liveSuspendRun ist vtid))
+
+/-- FO-065 (WS-SX SX4): **a frozen suspend of a thread not blocked in IPC
+agrees with the live suspend, whole state**: a runnable thread leaves the run
+queue, and an `Inactive` thread is left as it was (seL4's `suspend` of an
+inactive thread changes nothing). -/
+private def frozenSuspendOfRunnableThreadAgrees : IO Unit := do
+  let ist := diffAddTcb (mkEmptyIntermediateState ()) { diffTcb 67 with threadState := .Ready }
+  let vtid : SeLe4n.ValidThreadId := ⟨cancelReceiver, by decide⟩
+  expect "FO-065 control: the runnable thread is on a run queue"
+    (SeLe4n.Kernel.runnableOnSomeCore ist.state cancelReceiver)
+  expect "FO-065: the frozen suspend of a runnable thread agrees with the live one"
+    (frozenRunAgrees unitResultAgrees (frozenSuspendThread cancelReceiver (freeze ist))
+      (liveSuspendRun ist vtid))
+
+/-- FO-065, second half: the `Inactive` suspend, its own scenario so each branch
+of the registry runs exactly the comparison it claims. -/
+private def frozenSuspendOfInactiveThreadAgrees : IO Unit := do
+  let vtid : SeLe4n.ValidThreadId := ⟨cancelReceiver, by decide⟩
+  -- Built without `diffAddTcb`, which queues every `.ready` IPC state: an
+  -- `Inactive` thread is on no run queue.
+  let inactive := Builder.createObject (mkEmptyIntermediateState ()) cancelReceiver.toObjId
+    (.tcb (diffTcb 67)) (fun _ h => nomatch h) (fun _ h => nomatch h)
+  expect "FO-065 control: the Inactive thread is on no run queue"
+    (!SeLe4n.Kernel.runnableOnSomeCore inactive.state cancelReceiver)
+  expect "FO-065: the frozen suspend of an Inactive thread agrees with the live one"
+    (frozenRunAgrees unitResultAgrees (frozenSuspendThread cancelReceiver (freeze inactive))
+      (liveSuspendRun inactive vtid))
+  expect "FO-065: ...and changes no object"
+    (frozenObjectsAgree (frozenSuspendThread cancelReceiver (freeze inactive))
+      (.ok ((), inactive.state)))
+
 /-- **The registry the runner executes**, paired with the **branch** each
 scenario covers.
 
@@ -3282,7 +3603,14 @@ private def differentialScenarios :
     (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
     (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
     (.endpointCallParks,                differentialEndpointCallAgrees),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees) ]
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees),
+    (.threadSuspendCancelsBlocking,     frozenSuspendOfQueuedSenderLeavesQueue),
+    (.threadSuspendCancelsBlocking,     frozenResumeOfNotificationWaiterLeavesQueue),
+    (.threadSuspendCancelsBlocking,     frozenCancelOfReplyBlockedCallerConsumesLink),
+    (.threadSuspendCancelsBlocking,     frozenCancelOfDonatingCallerKeepsContext),
+    (.threadSuspendCancelsBlocking,     frozenSuspendOfSenderOnAbsentEndpointAgrees),
+    (.threadSuspendRunnable,            frozenSuspendOfRunnableThreadAgrees),
+    (.threadSuspendInactive,            frozenSuspendOfInactiveThreadAgrees) ]
 
 /-- FO-045 (WS-ZA ZA6.34): **a frame heading a context no thread holds is popped,
 on both surfaces.**
@@ -3470,6 +3798,7 @@ private def frozenAgreementComparesDerivationLinks : IO Unit := do
         (ist.state.setSlotLinkWords diffCnId (SeLe4n.Slot.ofNat 1) .parent
           (diffCnId.toNat + 1) 1)))
 
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -3538,6 +3867,9 @@ def main : IO Unit := do
   differentialSchedContextConfigureDomainOnlyKeepsOrder
   differentialSchedContextConfigureResumesBound
   differentialComparisonHasBite
+  -- The resume is compared on objects only, so it is not a registered claim;
+  -- the suspend scenarios run from `differentialScenarios` above.
+  frozenResumeOfQueuedSenderLeavesQueue
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner
   -- invocations: a number nothing computed, beside lists that compute

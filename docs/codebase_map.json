@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-restart-state",
-      "commit_sha": "49dab88bcc01067835e7a1b56d7c3d303ceb3883",
-      "tree_sha": "d5b6d80914b04c84869225f27acf870da333c7fa",
-      "committed_at_utc": "2026-11-15T19:15:53+00:00"
+      "commit_sha": "958917839bda6f9c79aa5f7c09c8e19b7463c65c",
+      "tree_sha": "3801f6e26f71b507492fedf1ad8cc0fdb737047e",
+      "committed_at_utc": "2026-11-15T19:33:13+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2449c3732c0c7525b710606b59ba029785bd97b2158e0740b760c6077d52d496"
+    "source_digest": "88d7c15cb14230fd021136aeae7b7ec36f485728f351addaa8154168bcaa4d09"
   },
   "summary": {
     "module_count": 705,
-    "declaration_count": 36824
+    "declaration_count": 36854
   },
   "readme_sync": {
     "version": "0.37.28",
     "lean_toolchain": "v4.28.0",
     "production_files": 635,
-    "production_loc": 636483,
+    "production_loc": 636725,
     "test_files": 70,
-    "test_loc": 89913,
+    "test_loc": 90246,
     "proved_theorem_lemma_decls": 24381,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -90650,7 +90650,7 @@
           "kind": "def",
           "name": "FrozenOpBranch.all",
           "full_name": "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
-          "line": 342,
+          "line": 350,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90659,7 +90659,7 @@
           "kind": "def",
           "name": "FrozenOpBranch.syscall",
           "full_name": "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.syscall",
-          "line": 351,
+          "line": 360,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch",
             "SeLe4n.Model.SyscallId"
@@ -90669,7 +90669,7 @@
           "kind": "def",
           "name": "frozenBranchDifferentiallyChecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked",
-          "line": 368,
+          "line": 380,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90678,7 +90678,7 @@
           "kind": "def",
           "name": "frozenBranchLiveLeg",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchLiveLeg",
-          "line": 400,
+          "line": 415,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90687,7 +90687,7 @@
           "kind": "theorem",
           "name": "frozenBranchLiveLeg_named_iff_differentiallyChecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchLiveLeg_named_iff_differentiallyChecked",
-          "line": 417,
+          "line": 435,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked",
@@ -90698,7 +90698,7 @@
           "kind": "def",
           "name": "frozenBranchUncheckedReason",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchUncheckedReason",
-          "line": 424,
+          "line": 442,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90707,7 +90707,7 @@
           "kind": "def",
           "name": "frozenBranchOperationChecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked",
-          "line": 493,
+          "line": 511,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90716,7 +90716,7 @@
           "kind": "def",
           "name": "frozenBranchOperationUncheckedReason",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationUncheckedReason",
-          "line": 505,
+          "line": 523,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90725,7 +90725,7 @@
           "kind": "theorem",
           "name": "frozenBranch_operation_checked_or_reasoned",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranch_operation_checked_or_reasoned",
-          "line": 528,
+          "line": 550,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked",
@@ -90736,7 +90736,7 @@
           "kind": "theorem",
           "name": "frozenBranchOperationUncheckedReason_only_when_unchecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationUncheckedReason_only_when_unchecked",
-          "line": 536,
+          "line": 558,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked",
@@ -90747,7 +90747,7 @@
           "kind": "def",
           "name": "frozenBranchLiveOperation",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchLiveOperation",
-          "line": 556,
+          "line": 578,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90756,7 +90756,7 @@
           "kind": "theorem",
           "name": "frozenBranchLiveOperation_named_iff_operationChecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchLiveOperation_named_iff_operationChecked",
-          "line": 565,
+          "line": 587,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchLiveOperation",
@@ -90767,7 +90767,7 @@
           "kind": "def",
           "name": "frozenBranchOperationFrontier",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationFrontier",
-          "line": 584,
+          "line": 606,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch"
           ]
@@ -90776,7 +90776,7 @@
           "kind": "theorem",
           "name": "frozenBranchOperationFrontier_only_when_checked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationFrontier_only_when_checked",
-          "line": 593,
+          "line": 615,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked",
@@ -90787,7 +90787,7 @@
           "kind": "theorem",
           "name": "frozenBranchOperationChecked_implies_leg_checked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked_implies_leg_checked",
-          "line": 601,
+          "line": 623,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked",
@@ -90798,7 +90798,7 @@
           "kind": "theorem",
           "name": "frozenBranch_checked_or_reasoned",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranch_checked_or_reasoned",
-          "line": 610,
+          "line": 632,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked",
@@ -90809,7 +90809,7 @@
           "kind": "theorem",
           "name": "frozenBranchUncheckedReason_only_when_unchecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenBranchUncheckedReason_only_when_unchecked",
-          "line": 618,
+          "line": 640,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked",
@@ -90820,7 +90820,7 @@
           "kind": "def",
           "name": "frozenOpDifferentiallyChecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked",
-          "line": 630,
+          "line": 652,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.syscall",
@@ -90832,7 +90832,7 @@
           "kind": "def",
           "name": "frozenOpUncheckedReason",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpUncheckedReason",
-          "line": 640,
+          "line": 662,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -90841,7 +90841,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_obliges_differential_check",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_obliges_differential_check",
-          "line": 679,
+          "line": 697,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked",
@@ -90853,7 +90853,7 @@
           "kind": "theorem",
           "name": "frozenOpDifferentiallyChecked_implies_covered",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked_implies_covered",
-          "line": 689,
+          "line": 707,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked",
@@ -90864,7 +90864,7 @@
           "kind": "theorem",
           "name": "frozenOpUncheckedReason_only_when_unchecked",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpUncheckedReason_only_when_unchecked",
-          "line": 697,
+          "line": 715,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked",
             "SeLe4n.Kernel.FrozenOps.frozenOpUncheckedReason",
@@ -90875,7 +90875,7 @@
           "kind": "theorem",
           "name": "frozenOpUncheckedReason_only_when_covered",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpUncheckedReason_only_when_covered",
-          "line": 708,
+          "line": 726,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Kernel.FrozenOps.frozenOpUncheckedReason",
@@ -92244,7 +92244,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Operations",
       "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
-      "declaration_count": 46,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "def",
@@ -92864,18 +92864,148 @@
         },
         {
           "kind": "def",
+          "name": "frozenMapTcbAt",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+          "line": 1847,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenRewriteObject",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenUnlinkReplyWaiter",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenUnlinkReplyWaiter",
+          "line": 1857,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getTcb?",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenRemoveFromNotificationWaitQueue",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenRemoveFromNotificationWaitQueue",
+          "line": 1877,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+            "SeLe4n.Kernel.FrozenOps.frozenRewriteObject",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getNotification?",
+            "SeLe4n.Model.FrozenSystemState.getTcb?",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.Notification.waitHead",
+            "SeLe4n.Model.Notification.waitTail",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenCutHeadFrameKeepingContext",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenCutHeadFrameKeepingContext",
+          "line": 1918,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+            "SeLe4n.Kernel.FrozenOps.frozenReplyFrameHeadContext?",
+            "SeLe4n.Kernel.FrozenOps.frozenRewriteObject",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getReply?",
+            "SeLe4n.Model.FrozenSystemState.getSchedContext?",
+            "SeLe4n.Model.FrozenSystemState.getTcb?",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ReplyId.toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenConsumeCallerReplyLink",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenConsumeCallerReplyLink",
+          "line": 1946,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+            "SeLe4n.Kernel.FrozenOps.frozenRewriteObject",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getReply?",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenCutThreadReplyFrameOut",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenCutThreadReplyFrameOut",
+          "line": 1956,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOutOrSelf",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.replyObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenRemoveFromBlockingEndpoint",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenRemoveFromBlockingEndpoint",
+          "line": 1970,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
+            "SeLe4n.Kernel.FrozenOps.frozenMapTcbAt",
+            "SeLe4n.Kernel.FrozenOps.frozenRewriteObject",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getEndpoint?",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.queueRemoveBoundary",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenCancelIpcBlocking",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenCancelIpcBlocking",
+          "line": 2015,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenConsumeCallerReplyLink",
+            "SeLe4n.Kernel.FrozenOps.frozenCutHeadFrameKeepingContext",
+            "SeLe4n.Kernel.FrozenOps.frozenCutThreadReplyFrameOut",
+            "SeLe4n.Kernel.FrozenOps.frozenRemoveFromBlockingEndpoint",
+            "SeLe4n.Kernel.FrozenOps.frozenRemoveFromNotificationWaitQueue",
+            "SeLe4n.Kernel.FrozenOps.frozenUnlinkReplyWaiter",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.blockingServer?",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenSuspendThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
-          "line": 1870,
+          "line": 2069,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
+            "SeLe4n.Kernel.FrozenOps.frozenCancelIpcBlocking",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
             "SeLe4n.Kernel.FrozenOps.frozenRemoveRunnable",
+            "SeLe4n.Kernel.FrozenOps.frozenRevertPriorityInheritance",
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Model.FrozenSystemState",
             "SeLe4n.Model.FrozenSystemState.getObject?",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.blockingServer?",
             "SeLe4n.Model.TCB.ipcState",
             "SeLe4n.Model.TCB.restoredToRestart",
             "SeLe4n.Model.TCB.setIpcState",
@@ -92887,7 +93017,7 @@
           "kind": "def",
           "name": "frozenResumeContext",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenResumeContext",
-          "line": 1920,
+          "line": 2132,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.SchedContextBinding.scId?",
@@ -92903,7 +93033,7 @@
           "kind": "def",
           "name": "frozenResumeThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
-          "line": 1995,
+          "line": 2208,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenComputeMaxWaiterPriority",
@@ -92925,7 +93055,7 @@
           "kind": "def",
           "name": "frozenWriteBasePriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority",
-          "line": 2089,
+          "line": 2302,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed",
@@ -92944,7 +93074,7 @@
           "kind": "def",
           "name": "frozenSetPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetPriority",
-          "line": 2113,
+          "line": 2326,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92957,7 +93087,7 @@
           "kind": "def",
           "name": "frozenSetMCPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetMCPriority",
-          "line": 2132,
+          "line": 2345,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92972,7 +93102,7 @@
           "kind": "def",
           "name": "frozenSetIPCBuffer",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetIPCBuffer",
-          "line": 2171,
+          "line": 2384,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92990,7 +93120,7 @@
           "kind": "def",
           "name": "frozenOpCoverage",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
-          "line": 2222,
+          "line": 2435,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -92999,7 +93129,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_count",
-          "line": 2301,
+          "line": 2514,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId.all"
@@ -93009,7 +93139,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_exhaustive",
-          "line": 2306,
+          "line": 2519,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId"
@@ -520500,7 +520630,7 @@
           "kind": "def",
           "name": "halfStepResolves",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
-          "line": 979,
+          "line": 990,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline"
           ]
@@ -520509,14 +520639,14 @@
           "kind": "def",
           "name": "halfStepResolves.go",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves.go",
-          "line": 982,
+          "line": 993,
           "called": []
         },
         {
           "kind": "def",
           "name": "disciplineViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.disciplineViolations",
-          "line": 995,
+          "line": 1006,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
@@ -520528,14 +520658,14 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reconciliationViolations",
-          "line": 1035,
+          "line": 1046,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume",
-          "line": 1067,
+          "line": 1078,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.SystemState.consumeCallerReply",
@@ -520548,7 +520678,7 @@
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite",
-          "line": 1078,
+          "line": 1089,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -520561,7 +520691,7 @@
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite",
-          "line": 1097,
+          "line": 1108,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -520575,7 +520705,7 @@
           "kind": "def",
           "name": "censusWitnessSplitHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitHelper",
-          "line": 1107,
+          "line": 1118,
           "called": [
             "SeLe4n.Kernel.Reply"
           ],
@@ -520585,7 +520715,7 @@
           "kind": "def",
           "name": "censusWitnessSplitWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter",
-          "line": 1114,
+          "line": 1125,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -520599,7 +520729,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper",
-          "line": 1127,
+          "line": 1138,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.KernelObject",
@@ -520612,7 +520742,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter",
-          "line": 1131,
+          "line": 1142,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.ReplyId",
@@ -520625,7 +520755,7 @@
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed",
-          "line": 1143,
+          "line": 1154,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -520638,7 +520768,7 @@
           "kind": "def",
           "name": "eq_1",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_1",
-          "line": 1158,
+          "line": 1169,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -520651,7 +520781,7 @@
           "kind": "def",
           "name": "censusWitnessNoWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessNoWrite",
-          "line": 1165,
+          "line": 1176,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -530799,13 +530929,13 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 112,
+      "declaration_count": 134,
       "declarations": [
         {
           "kind": "def",
           "name": "expect",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.expect",
-          "line": 24,
+          "line": 25,
           "called": [],
           "private": true
         },
@@ -530813,7 +530943,7 @@
           "kind": "def",
           "name": "bucketOnCore",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.bucketOnCore",
-          "line": 34,
+          "line": 35,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LinkedQueue.walk",
@@ -530831,14 +530961,14 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 40,
+          "line": 41,
           "called": []
         },
         {
           "kind": "def",
           "name": "emptyFrozenState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.emptyFrozenState",
-          "line": 46,
+          "line": 47,
           "called": [
             "SeLe4n.Model.FrozenSystemState",
             "SeLe4n.Testing.emptyFrozenSystemState"
@@ -530849,7 +530979,7 @@
           "kind": "def",
           "name": "mkTcb",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.mkTcb",
-          "line": 50,
+          "line": 51,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.spaceCellsOf",
@@ -530861,7 +530991,7 @@
           "kind": "def",
           "name": "mkFrozenState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.mkFrozenState",
-          "line": 55,
+          "line": 56,
           "called": [
             "SeLe4n.Model.FrozenKernelObject",
             "SeLe4n.Model.FrozenSystemState",
@@ -530874,7 +531004,7 @@
           "kind": "def",
           "name": "fo001_lookupExisting",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo001_lookupExisting",
-          "line": 64,
+          "line": 65,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenLookupObject",
             "SeLe4n.Testing.FrozenOpsSuite.expect",
@@ -530887,7 +531017,7 @@
           "kind": "def",
           "name": "fo002_lookupMissing",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo002_lookupMissing",
-          "line": 71,
+          "line": 72,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenLookupObject",
             "SeLe4n.Testing.FrozenOpsSuite.expect",
@@ -530899,7 +531029,7 @@
           "kind": "def",
           "name": "fo003_storeObject",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo003_storeObject",
-          "line": 78,
+          "line": 79,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenStoreObject",
             "SeLe4n.Testing.FrozenOpsSuite.expect",
@@ -530912,7 +531042,7 @@
           "kind": "def",
           "name": "fo004_endpointReply",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004_endpointReply",
-          "line": 99,
+          "line": 100,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -530930,7 +531060,7 @@
           "kind": "def",
           "name": "fo004b_endpointReplyConsumesLink",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004b_endpointReplyConsumesLink",
-          "line": 111,
+          "line": 112,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -530955,7 +531085,7 @@
           "kind": "def",
           "name": "fo004c_replyToStackHeadPopsDonation",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004c_replyToStackHeadPopsDonation",
-          "line": 145,
+          "line": 146,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReplyWithDonationReturn",
@@ -530985,7 +531115,7 @@
           "kind": "def",
           "name": "fo004e_replyDeschedulesTheServer",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004e_replyDeschedulesTheServer",
-          "line": 197,
+          "line": 198,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReplyWithDonationReturn",
@@ -531020,7 +531150,7 @@
           "kind": "def",
           "name": "fo004f_replyRevertsPriorityInheritance",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004f_replyRevertsPriorityInheritance",
-          "line": 247,
+          "line": 248,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReplyWithDonationReturn",
@@ -531049,7 +531179,7 @@
           "kind": "def",
           "name": "frozenReplyAnswersAnUnrecordedCaller",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenReplyAnswersAnUnrecordedCaller",
-          "line": 293,
+          "line": 294,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -531074,7 +531204,7 @@
           "kind": "def",
           "name": "fo004d_replyOffStackNeedsNoPop",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo004d_replyOffStackNeedsNoPop",
-          "line": 329,
+          "line": 330,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -531098,7 +531228,7 @@
           "kind": "def",
           "name": "fo005_replyDelegatedReplier",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo005_replyDelegatedReplier",
-          "line": 355,
+          "line": 356,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -531121,7 +531251,7 @@
           "kind": "def",
           "name": "fo005b_replyWrongPresentedCap",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo005b_replyWrongPresentedCap",
-          "line": 379,
+          "line": 380,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -531142,7 +531272,7 @@
           "kind": "def",
           "name": "fo006_timerTickIdle",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo006_timerTickIdle",
-          "line": 396,
+          "line": 397,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenTimerTick",
             "SeLe4n.Model.FrozenSystemState",
@@ -531155,7 +531285,7 @@
           "kind": "def",
           "name": "frozenBudgetTickPlacesExhaustedContext",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenBudgetTickPlacesExhaustedContext",
-          "line": 410,
+          "line": 411,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.FrozenOps.frozenReleaseCountOn",
@@ -531183,7 +531313,7 @@
           "kind": "def",
           "name": "fo007_cspaceLookup",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo007_cspaceLookup",
-          "line": 449,
+          "line": 450,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenCspaceLookup",
@@ -531201,7 +531331,7 @@
           "kind": "def",
           "name": "fo008_cspaceLookupMissing",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo008_cspaceLookupMissing",
-          "line": 465,
+          "line": 466,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenCspaceLookup",
@@ -531216,7 +531346,7 @@
           "kind": "def",
           "name": "fo009_vspaceLookup",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo009_vspaceLookup",
-          "line": 478,
+          "line": 479,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.FrozenOps.frozenVspaceLookup",
@@ -531240,7 +531370,7 @@
           "kind": "def",
           "name": "fo010_vspaceLookupMissing",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo010_vspaceLookupMissing",
-          "line": 492,
+          "line": 493,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenVspaceLookup",
             "SeLe4n.Testing.FrozenOpsSuite.emptyFrozenState",
@@ -531253,7 +531383,7 @@
           "kind": "def",
           "name": "fo011_serviceLookup",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo011_serviceLookup",
-          "line": 503,
+          "line": 504,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenLookupServiceByCap",
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -531277,7 +531407,7 @@
           "kind": "def",
           "name": "fo012_serviceLookupMissing",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo012_serviceLookupMissing",
-          "line": 523,
+          "line": 524,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenLookupServiceByCap",
             "SeLe4n.Testing.FrozenOpsSuite.emptyFrozenState",
@@ -531289,7 +531419,7 @@
           "kind": "def",
           "name": "fo013_cspaceDelete",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo013_cspaceDelete",
-          "line": 534,
+          "line": 535,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenCspaceDelete",
@@ -531308,7 +531438,7 @@
           "kind": "def",
           "name": "fo013b_cspaceDeleteRefusesMappedFrameCap",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo013b_cspaceDeleteRefusesMappedFrameCap",
-          "line": 553,
+          "line": 554,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenCspaceDelete",
@@ -531329,7 +531459,7 @@
           "kind": "def",
           "name": "fo013c_cspaceDeleteRefusesInstalledTableCap",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo013c_cspaceDeleteRefusesInstalledTableCap",
-          "line": 577,
+          "line": 578,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenCspaceDelete",
             "SeLe4n.Kernel.RadixTree.CNodeRadix.empty",
@@ -531357,7 +531487,7 @@
           "kind": "def",
           "name": "fo014_notificationSignal",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo014_notificationSignal",
-          "line": 612,
+          "line": 613,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -531374,7 +531504,7 @@
           "kind": "def",
           "name": "fo015_notificationWait",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo015_notificationWait",
-          "line": 627,
+          "line": 628,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenNotificationWait",
@@ -531389,7 +531519,7 @@
           "kind": "def",
           "name": "fo016_sendEnqueuesSender",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo016_sendEnqueuesSender",
-          "line": 641,
+          "line": 642,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -531409,7 +531539,7 @@
           "kind": "def",
           "name": "fo017_receiveEnqueuesReceiver",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo017_receiveEnqueuesReceiver",
-          "line": 663,
+          "line": 664,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -531427,7 +531557,7 @@
           "kind": "def",
           "name": "fo018_callEnqueuesCaller",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo018_callEnqueuesCaller",
-          "line": 683,
+          "line": 684,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointCall",
@@ -531447,7 +531577,7 @@
           "kind": "def",
           "name": "fo019_frozenSchedule",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo019_frozenSchedule",
-          "line": 705,
+          "line": 706,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSchedule",
             "SeLe4n.Kernel.RobinHood.RHTable.empty",
@@ -531467,7 +531597,7 @@
           "kind": "def",
           "name": "fo020_frozenCspaceMint",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo020_frozenCspaceMint",
-          "line": 738,
+          "line": 739,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.CPtr.ofNat",
@@ -531494,7 +531624,7 @@
           "kind": "def",
           "name": "fo021_popThenPushRegression",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fo021_popThenPushRegression",
-          "line": 768,
+          "line": 769,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
@@ -531513,7 +531643,7 @@
           "kind": "def",
           "name": "frozenProvenanceFollowsContent",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenProvenanceFollowsContent",
-          "line": 815,
+          "line": 816,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -531539,7 +531669,7 @@
           "kind": "def",
           "name": "frozenDeliveryIsHonest",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenDeliveryIsHonest",
-          "line": 865,
+          "line": 866,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -531570,7 +531700,7 @@
           "kind": "def",
           "name": "frozenParkedSenderMessageFromFrame",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenParkedSenderMessageFromFrame",
-          "line": 951,
+          "line": 952,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -531590,7 +531720,7 @@
           "kind": "def",
           "name": "frozenBoundNotificationDelivery",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenBoundNotificationDelivery",
-          "line": 984,
+          "line": 985,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -531620,7 +531750,7 @@
           "kind": "def",
           "name": "diffTcb",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
-          "line": 1048,
+          "line": 1049,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.spaceCellsOf",
@@ -531632,7 +531762,7 @@
           "kind": "def",
           "name": "diffEpId",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
-          "line": 1051,
+          "line": 1052,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -531642,7 +531772,7 @@
           "kind": "def",
           "name": "diffNotifId",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffNotifId",
-          "line": 1052,
+          "line": 1053,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -531652,7 +531782,7 @@
           "kind": "def",
           "name": "diffA",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffA",
-          "line": 1053,
+          "line": 1054,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -531662,7 +531792,7 @@
           "kind": "def",
           "name": "diffB",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffB",
-          "line": 1054,
+          "line": 1055,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -531672,7 +531802,7 @@
           "kind": "def",
           "name": "diffCnId",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffCnId",
-          "line": 1055,
+          "line": 1056,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -531682,7 +531812,7 @@
           "kind": "def",
           "name": "diffDelegate",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffDelegate",
-          "line": 1061,
+          "line": 1062,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -531692,7 +531822,7 @@
           "kind": "def",
           "name": "diffStaleOrigin",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffStaleOrigin",
-          "line": 1064,
+          "line": 1065,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -531702,7 +531832,7 @@
           "kind": "def",
           "name": "diffAddCSpace",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddCSpace",
-          "line": 1073,
+          "line": 1074,
           "called": [
             "SeLe4n.Model.Builder.createObject",
             "SeLe4n.Model.CNode.ofList",
@@ -531718,7 +531848,7 @@
           "kind": "def",
           "name": "diffObjCap",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffObjCap",
-          "line": 1081,
+          "line": 1082,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.Capability",
@@ -531730,7 +531860,7 @@
           "kind": "def",
           "name": "diffAddTcb",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
-          "line": 1098,
+          "line": 1099,
           "called": [
             "SeLe4n.Model.Builder.createObject",
             "SeLe4n.Model.Builder.markRunnable",
@@ -531745,7 +531875,7 @@
           "kind": "def",
           "name": "diffAddEndpoint",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddEndpoint",
-          "line": 1108,
+          "line": 1109,
           "called": [
             "SeLe4n.Model.Builder.createObject",
             "SeLe4n.Model.Endpoint",
@@ -531758,7 +531888,7 @@
           "kind": "def",
           "name": "diffAddNotification",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddNotification",
-          "line": 1112,
+          "line": 1113,
           "called": [
             "SeLe4n.Model.Builder.createObject",
             "SeLe4n.Model.IntermediateState",
@@ -531771,7 +531901,7 @@
           "kind": "def",
           "name": "diffAddReply",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddReply",
-          "line": 1116,
+          "line": 1117,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.Builder.createObject",
@@ -531785,7 +531915,7 @@
           "kind": "def",
           "name": "diffAddSchedContext",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffAddSchedContext",
-          "line": 1120,
+          "line": 1121,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Model.Builder.createObject",
@@ -531799,7 +531929,7 @@
           "kind": "def",
           "name": "liveSchedContextBindState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveSchedContextBindState",
-          "line": 1132,
+          "line": 1133,
           "called": [
             "SeLe4n.Kernel.SchedContextOps.schedContextBind",
             "SeLe4n.Model.SystemState",
@@ -531812,7 +531942,7 @@
           "kind": "def",
           "name": "liveSchedContextUnbindState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveSchedContextUnbindState",
-          "line": 1140,
+          "line": 1141,
           "called": [
             "SeLe4n.Kernel.SchedContextOps.schedContextUnbind",
             "SeLe4n.Model.SystemState",
@@ -531826,7 +531956,7 @@
           "kind": "def",
           "name": "originOf",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.originOf",
-          "line": 1149,
+          "line": 1150,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getSchedContext?",
@@ -531839,7 +531969,7 @@
           "kind": "def",
           "name": "frozenOriginOf",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenOriginOf",
-          "line": 1153,
+          "line": 1154,
           "called": [
             "SeLe4n.Model.FrozenSystemState",
             "SeLe4n.Model.FrozenSystemState.getSchedContext?",
@@ -531852,7 +531982,7 @@
           "kind": "def",
           "name": "diffScId",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffScId",
-          "line": 1161,
+          "line": 1162,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -531863,7 +531993,7 @@
           "kind": "def",
           "name": "diffDonatedSc",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffDonatedSc",
-          "line": 1163,
+          "line": 1164,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.ReplyId",
@@ -531877,7 +532007,7 @@
           "kind": "def",
           "name": "diffOwnScId",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffOwnScId",
-          "line": 1173,
+          "line": 1174,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -531888,7 +532018,7 @@
           "kind": "def",
           "name": "diffCallerOwnSc",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffCallerOwnSc",
-          "line": 1175,
+          "line": 1176,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Testing.FrozenOpsSuite.diffA",
@@ -531901,7 +532031,7 @@
           "kind": "def",
           "name": "diffDecoded",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.diffDecoded",
-          "line": 1196,
+          "line": 1197,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat",
@@ -531914,7 +532044,7 @@
           "kind": "def",
           "name": "liveWithTaint",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveWithTaint",
-          "line": 1202,
+          "line": 1203,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.applySyscallTaint",
@@ -531931,7 +532061,7 @@
           "kind": "def",
           "name": "liveReplySpine",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveReplySpine",
-          "line": 1225,
+          "line": 1226,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.endpointReplyCrossCoreDispatch",
@@ -531946,7 +532076,7 @@
           "kind": "def",
           "name": "liveReplyLeg",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveReplyLeg",
-          "line": 1240,
+          "line": 1241,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -531961,7 +532091,7 @@
           "kind": "def",
           "name": "differentialNotificationSignalAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialNotificationSignalAgrees",
-          "line": 1249,
+          "line": 1250,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -531998,7 +532128,7 @@
           "kind": "def",
           "name": "differentialNotificationWaitAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialNotificationWaitAgrees",
-          "line": 1272,
+          "line": 1273,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.CPtr.ofNat",
@@ -532025,7 +532155,7 @@
           "kind": "def",
           "name": "differentialEndpointSendAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointSendAgrees",
-          "line": 1292,
+          "line": 1293,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.CPtr.ofNat",
@@ -532053,7 +532183,7 @@
           "kind": "def",
           "name": "differentialNotificationWaitParksAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialNotificationWaitParksAgrees",
-          "line": 1326,
+          "line": 1327,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.CPtr.ofNat",
@@ -532081,7 +532211,7 @@
           "kind": "def",
           "name": "differentialNotificationWaitParksBoundAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialNotificationWaitParksBoundAgrees",
-          "line": 1350,
+          "line": 1351,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.CPtr.ofNat",
@@ -532109,7 +532239,7 @@
           "kind": "def",
           "name": "differentialNotificationWaitConsumesBoundAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialNotificationWaitConsumesBoundAgrees",
-          "line": 1372,
+          "line": 1373,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.CPtr.ofNat",
@@ -532137,7 +532267,7 @@
           "kind": "def",
           "name": "differentialEndpointReceiveAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReceiveAgrees",
-          "line": 1391,
+          "line": 1392,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
@@ -532169,7 +532299,7 @@
           "kind": "def",
           "name": "differentialEndpointCallAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointCallAgrees",
-          "line": 1410,
+          "line": 1411,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointCall",
@@ -532196,7 +532326,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyAgrees",
-          "line": 1432,
+          "line": 1433,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReply",
@@ -532229,7 +532359,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyOperationAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyOperationAgrees",
-          "line": 1511,
+          "line": 1512,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReplyWithDonationReturn",
@@ -532264,7 +532394,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyDonationAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyDonationAgrees",
-          "line": 1610,
+          "line": 1611,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReplyWithDonationReturn",
@@ -532308,7 +532438,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyMiddleFrameSevers",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyMiddleFrameSevers",
-          "line": 1777,
+          "line": 1778,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOut",
@@ -532351,7 +532481,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyRedirectsToOrigin",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyRedirectsToOrigin",
-          "line": 1929,
+          "line": 1930,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.CPtr.ofNat",
@@ -532406,7 +532536,7 @@
           "kind": "def",
           "name": "differentialReceiveFromBlockedCallerAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialReceiveFromBlockedCallerAgrees",
-          "line": 2096,
+          "line": 2097,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
@@ -532440,7 +532570,7 @@
           "kind": "def",
           "name": "differentialTaintedSignalAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialTaintedSignalAgrees",
-          "line": 2128,
+          "line": 2129,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -532484,7 +532614,7 @@
           "kind": "def",
           "name": "differentialRefusalsAgree",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialRefusalsAgree",
-          "line": 2163,
+          "line": 2164,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenNotificationWait",
@@ -532505,7 +532635,7 @@
           "kind": "def",
           "name": "isNoneOnlyFrozenRemovalGuard",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.isNoneOnlyFrozenRemovalGuard",
-          "line": 2178,
+          "line": 2179,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.queuePPrev"
@@ -532516,7 +532646,7 @@
           "kind": "def",
           "name": "refusesIllegalState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.refusesIllegalState",
-          "line": 2184,
+          "line": 2185,
           "called": [
             "SeLe4n.Model.KernelError"
           ],
@@ -532526,7 +532656,7 @@
           "kind": "def",
           "name": "refusesQueueEmpty",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.refusesQueueEmpty",
-          "line": 2191,
+          "line": 2192,
           "called": [
             "SeLe4n.Model.KernelError"
           ],
@@ -532536,7 +532666,7 @@
           "kind": "def",
           "name": "differentialRemovalGuardRefusalsAgree",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialRemovalGuardRefusalsAgree",
-          "line": 2221,
+          "line": 2222,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenQueueRemove",
             "SeLe4n.Kernel.endpointQueueRemoveDual",
@@ -532570,7 +532700,7 @@
           "kind": "def",
           "name": "differentialRemovalRefusalSetAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialRemovalRefusalSetAgrees",
-          "line": 2287,
+          "line": 2288,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenQueueRemove",
             "SeLe4n.Kernel.endpointQueueRemoveDual",
@@ -532604,7 +532734,7 @@
           "kind": "def",
           "name": "rawFrozenNeighbourRead",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.rawFrozenNeighbourRead",
-          "line": 2361,
+          "line": 2362,
           "called": [
             "SeLe4n.Model.FrozenSystemState",
             "SeLe4n.Model.FrozenSystemState.getTcb?",
@@ -532617,7 +532747,7 @@
           "kind": "def",
           "name": "refusesObjectNotFound",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.refusesObjectNotFound",
-          "line": 2367,
+          "line": 2368,
           "called": [
             "SeLe4n.Model.KernelError"
           ],
@@ -532627,7 +532757,7 @@
           "kind": "def",
           "name": "frozenLinksOf",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenLinksOf",
-          "line": 2375,
+          "line": 2376,
           "called": [
             "SeLe4n.Model.FrozenSystemState",
             "SeLe4n.Model.FrozenSystemState.getTcb?",
@@ -532640,7 +532770,7 @@
           "kind": "def",
           "name": "liveLinksOf",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveLinksOf",
-          "line": 2379,
+          "line": 2380,
           "called": [
             "SeLe4n.Model.QueuePPrev",
             "SeLe4n.Model.SystemState",
@@ -532653,7 +532783,7 @@
           "kind": "def",
           "name": "differentialQueueNeighbourResolutionAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialQueueNeighbourResolutionAgrees",
-          "line": 2425,
+          "line": 2426,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -532705,7 +532835,7 @@
           "kind": "def",
           "name": "differentialSchedContextBindClearsOrigin",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextBindClearsOrigin",
-          "line": 2562,
+          "line": 2563,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient?",
@@ -532740,7 +532870,7 @@
           "kind": "def",
           "name": "differentialSchedContextUnbindClearsOrigin",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextUnbindClearsOrigin",
-          "line": 2645,
+          "line": 2646,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind",
             "SeLe4n.Kernel.SchedContext",
@@ -532768,7 +532898,7 @@
           "kind": "def",
           "name": "differentialSchedContextBindPlacesParked",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextBindPlacesParked",
-          "line": 2690,
+          "line": 2691,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread",
             "SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere",
@@ -532805,7 +532935,7 @@
           "kind": "def",
           "name": "differentialSchedContextBindRefusalsAgree",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextBindRefusalsAgree",
-          "line": 2806,
+          "line": 2807,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack",
             "SeLe4n.Kernel.FrozenOps.frozenSchedContextBind",
@@ -532842,7 +532972,7 @@
           "kind": "def",
           "name": "liveSchedContextConfigureState",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveSchedContextConfigureState",
-          "line": 2893,
+          "line": 2894,
           "called": [
             "SeLe4n.Kernel.SchedContextOps.schedContextConfigure",
             "SeLe4n.Model.SystemState",
@@ -532856,7 +532986,7 @@
           "kind": "def",
           "name": "fusedGateConfigurePropagate",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.fusedGateConfigurePropagate",
-          "line": 2907,
+          "line": 2908,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
             "SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed",
@@ -532874,7 +533004,7 @@
           "kind": "def",
           "name": "differentialSchedContextConfigureDomainOnlyKeepsOrder",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextConfigureDomainOnlyKeepsOrder",
-          "line": 2950,
+          "line": 2951,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure",
@@ -532906,7 +533036,7 @@
           "kind": "def",
           "name": "differentialSchedContextConfigureResumesBound",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextConfigureResumesBound",
-          "line": 3033,
+          "line": 3034,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.FrozenOps.frozenChooseThread",
@@ -532945,7 +533075,7 @@
           "kind": "def",
           "name": "differentialSendFromAbsentSenderAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSendFromAbsentSenderAgrees",
-          "line": 3160,
+          "line": 3161,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -532978,7 +533108,7 @@
           "kind": "def",
           "name": "differentialSendRendezvousDeliversAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSendRendezvousDeliversAgrees",
-          "line": 3198,
+          "line": 3199,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -533014,7 +533144,7 @@
           "kind": "def",
           "name": "differentialWakeAtUnqueuedPriorityAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialWakeAtUnqueuedPriorityAgrees",
-          "line": 3235,
+          "line": 3236,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -533049,9 +533179,418 @@
         },
         {
           "kind": "def",
+          "name": "cancelQueuedSender",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelQueuedSender",
+          "line": 3267,
+          "called": [
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.QueuePPrev",
+            "SeLe4n.Model.QueuePPrev.optCode",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.Testing.tcbWithSenderFrame",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelSenderC",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelSenderC",
+          "line": 3276,
+          "called": [
+            "SeLe4n.ThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelReceiver",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+          "line": 3277,
+          "called": [
+            "SeLe4n.ThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelThreeSenders",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelThreeSenders",
+          "line": 3281,
+          "called": [
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.ofQueues",
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelQueuedSender",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelSenderC",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddEndpoint",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "liveSuspendRun",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+          "line": 3291,
+          "called": [
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Testing.bootSuspendThread",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "liveResumeRun",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.liveResumeRun",
+          "line": 3295,
+          "called": [
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Testing.bootResumeThread",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenObjectsAgree",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+          "line": 3305,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenObjectAgrees",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenReceivedSender",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenReceivedSender",
+          "line": 3323,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.ThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenEndpointNames",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenEndpointNames",
+          "line": 3329,
+          "called": [
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.Model.FrozenSystemState.getEndpoint?",
+            "SeLe4n.Model.FrozenSystemState.getTcb?",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelSenderC",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.ThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenResumeOfQueuedSenderLeavesQueue",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenResumeOfQueuedSenderLeavesQueue",
+          "line": 3346,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelSenderC",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelThreeSenders",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenEndpointNames",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenReceivedSender",
+            "SeLe4n.Testing.FrozenOpsSuite.liveResumeRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenSuspendOfQueuedSenderLeavesQueue",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfQueuedSenderLeavesQueue",
+          "line": 3365,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenEndpointReceive",
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelSenderC",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelThreeSenders",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenEndpointNames",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenReceivedSender",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelTwoWaiters",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelTwoWaiters",
+          "line": 3388,
+          "called": [
+            "SeLe4n.Badge.zero",
+            "SeLe4n.Model.Builder.createObject",
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffNotifId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.ThreadId.optCode"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenResumeOfNotificationWaiterLeavesQueue",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenResumeOfNotificationWaiterLeavesQueue",
+          "line": 3407,
+          "called": [
+            "SeLe4n.Badge.ofNatMasked",
+            "SeLe4n.Kernel.FrozenOps.frozenNotificationSignal",
+            "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelTwoWaiters",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffNotifId",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+            "SeLe4n.Testing.FrozenOpsSuite.liveResumeRun",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelReplyId",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelReplyId",
+          "line": 3432,
+          "called": [
+            "SeLe4n.ReplyId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelReplyBlockedCaller",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelReplyBlockedCaller",
+          "line": 3436,
+          "called": [
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Model.Builder.createObject",
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.ReplyId.optCode",
+            "SeLe4n.ReplyId.toObjId",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReplyId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.ThreadId.optCode"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenCancelOfReplyBlockedCallerConsumesLink",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenCancelOfReplyBlockedCallerConsumesLink",
+          "line": 3453,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReplyBlockedCaller",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReplyId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+            "SeLe4n.Testing.FrozenOpsSuite.liveResumeRun",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelDonatedScId",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelDonatedScId",
+          "line": 3473,
+          "called": [
+            "SeLe4n.SchedContextId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "cancelDonatingCaller",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.cancelDonatingCaller",
+          "line": 3479,
+          "called": [
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Kernel.SchedContextBinding",
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode",
+            "SeLe4n.Kernel.SchedContextBinding.scCode",
+            "SeLe4n.Model.Builder.createObject",
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Priority.optCode",
+            "SeLe4n.ReplyId.optCode",
+            "SeLe4n.ReplyId.toObjId",
+            "SeLe4n.SchedContextId.toObjId",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelDonatedScId",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReplyId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.ThreadId.optCode"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenCancelOfDonatingCallerKeepsContext",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenCancelOfDonatingCallerKeepsContext",
+          "line": 3511,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelDonatedScId",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelDonatingCaller",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffB",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+            "SeLe4n.Testing.FrozenOpsSuite.liveResumeRun",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenSuspendOfSenderOnAbsentEndpointAgrees",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfSenderOnAbsentEndpointAgrees",
+          "line": 3537,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelQueuedSender",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffEpId",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenSuspendOfRunnableThreadAgrees",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfRunnableThreadAgrees",
+          "line": 3551,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Kernel.runnableOnSomeCore",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenSuspendOfInactiveThreadAgrees",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfInactiveThreadAgrees",
+          "line": 3562,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenRunAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Kernel.FrozenOps.unitResultAgrees",
+            "SeLe4n.Kernel.runnableOnSomeCore",
+            "SeLe4n.Model.Builder.createObject",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Testing.FrozenOpsSuite.cancelReceiver",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenObjectsAgree",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSuspendRun",
+            "SeLe4n.ThreadId.toObjId",
+            "SeLe4n.ValidThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "differentialScenarios",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialScenarios",
-          "line": 3271,
+          "line": 3592,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch",
             "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointCallAgrees",
@@ -533066,7 +533605,14 @@
             "SeLe4n.Testing.FrozenOpsSuite.differentialReceiveFromBlockedCallerAgrees",
             "SeLe4n.Testing.FrozenOpsSuite.differentialSendFromAbsentSenderAgrees",
             "SeLe4n.Testing.FrozenOpsSuite.differentialSendRendezvousDeliversAgrees",
-            "SeLe4n.Testing.FrozenOpsSuite.differentialWakeAtUnqueuedPriorityAgrees"
+            "SeLe4n.Testing.FrozenOpsSuite.differentialWakeAtUnqueuedPriorityAgrees",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenCancelOfDonatingCallerKeepsContext",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenCancelOfReplyBlockedCallerConsumesLink",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenResumeOfNotificationWaiterLeavesQueue",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfInactiveThreadAgrees",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfQueuedSenderLeavesQueue",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfRunnableThreadAgrees",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenSuspendOfSenderOnAbsentEndpointAgrees"
           ],
           "private": true
         },
@@ -533074,7 +533620,7 @@
           "kind": "def",
           "name": "differentialEndpointReplyPopsUnheldHead",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyPopsUnheldHead",
-          "line": 3298,
+          "line": 3626,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.CPtr.ofNat",
@@ -533122,7 +533668,7 @@
           "kind": "def",
           "name": "operationDifferentialScenarios",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.operationDifferentialScenarios",
-          "line": 3396,
+          "line": 3724,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch",
             "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyDonationAgrees",
@@ -533137,7 +533683,7 @@
           "kind": "def",
           "name": "differentialRegistryMatchesClaim",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialRegistryMatchesClaim",
-          "line": 3407,
+          "line": 3735,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.syscall",
@@ -533155,7 +533701,7 @@
           "kind": "def",
           "name": "differentialComparisonHasBite",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialComparisonHasBite",
-          "line": 3441,
+          "line": 3769,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -533187,7 +533733,7 @@
           "kind": "def",
           "name": "frozenAgreementComparesDerivationLinks",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenAgreementComparesDerivationLinks",
-          "line": 3459,
+          "line": 3787,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenStateAgrees",
             "SeLe4n.Model.SlotRef",
@@ -533207,7 +533753,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 3476,
+          "line": 3805,
           "called": [
             "SeLe4n.Testing.FrozenOpsSuite.differentialComparisonHasBite",
             "SeLe4n.Testing.FrozenOpsSuite.differentialQueueNeighbourResolutionAgrees",
@@ -533259,6 +533805,7 @@
             "SeLe4n.Testing.FrozenOpsSuite.frozenParkedSenderMessageFromFrame",
             "SeLe4n.Testing.FrozenOpsSuite.frozenProvenanceFollowsContent",
             "SeLe4n.Testing.FrozenOpsSuite.frozenReplyAnswersAnUnrecordedCaller",
+            "SeLe4n.Testing.FrozenOpsSuite.frozenResumeOfQueuedSenderLeavesQueue",
             "SeLe4n.Testing.FrozenOpsSuite.operationDifferentialScenarios"
           ]
         }
@@ -578258,7 +578805,7 @@
           "kind": "def",
           "name": "retiredFrozenResumeClear",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.retiredFrozenResumeClear",
-          "line": 777,
+          "line": 778,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.setIpcState"
@@ -578269,7 +578816,7 @@
           "kind": "def",
           "name": "retiredFrozenPreempts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.retiredFrozenPreempts",
-          "line": 781,
+          "line": 782,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Priority"
@@ -578280,7 +578827,7 @@
           "kind": "def",
           "name": "liveFrozenPreempts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.liveFrozenPreempts",
-          "line": 786,
+          "line": 787,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.boostedPriority",
@@ -578292,7 +578839,7 @@
           "kind": "def",
           "name": "sr032_frozenResumeClearsEveryRestoredField",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr032_frozenResumeClearsEveryRestoredField",
-          "line": 792,
+          "line": 793,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.Model.TCB",
@@ -578316,7 +578863,7 @@
           "kind": "def",
           "name": "sr033_frozenResumeRecomputesPipBoost",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr033_frozenResumeRecomputesPipBoost",
-          "line": 825,
+          "line": 826,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.ObjId",
@@ -578333,7 +578880,7 @@
           "kind": "def",
           "name": "sr034_frozenResumePreemptsOnEffectivePriority",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr034_frozenResumePreemptsOnEffectivePriority",
-          "line": 860,
+          "line": 861,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.ObjId",
@@ -578351,7 +578898,7 @@
           "kind": "def",
           "name": "sr035_resumeFootprintNamesHomeAndExecutingCores",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr035_resumeFootprintNamesHomeAndExecutingCores",
-          "line": 916,
+          "line": 917,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -578379,7 +578926,7 @@
           "kind": "def",
           "name": "sr036_suspendCancelsYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr036_suspendCancelsYieldTo",
-          "line": 953,
+          "line": 954,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.ObjId",
@@ -578397,7 +578944,7 @@
           "kind": "def",
           "name": "sr037_frozenSuspendCancelsYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr037_frozenSuspendCancelsYieldTo",
-          "line": 972,
+          "line": 973,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
             "SeLe4n.Kernel.SchedContext",
@@ -578414,7 +578961,7 @@
           "kind": "def",
           "name": "yieldLinkedState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedState",
-          "line": 990,
+          "line": 991,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Model.SystemState",
@@ -578428,7 +578975,7 @@
           "kind": "def",
           "name": "sr038_contextFinaliseCompletesYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr038_contextFinaliseCompletesYield",
-          "line": 1001,
+          "line": 1002,
           "called": [
             "SeLe4n.Kernel.consumedInfoWord",
             "SeLe4n.Kernel.finaliseSchedContext",
@@ -578442,7 +578989,7 @@
           "kind": "def",
           "name": "sr039_threadFinaliseCancelsYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr039_threadFinaliseCancelsYield",
-          "line": 1016,
+          "line": 1017,
           "called": [
             "SeLe4n.Kernel.finaliseThread",
             "SeLe4n.ObjId",
@@ -578455,7 +579002,7 @@
           "kind": "def",
           "name": "sr040_liveFrozenSuspendAgree",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr040_liveFrozenSuspendAgree",
-          "line": 1030,
+          "line": 1031,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
             "SeLe4n.Kernel.SchedContext",
@@ -578477,7 +579024,7 @@
           "kind": "def",
           "name": "yieldLinkedCurrentState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedCurrentState",
-          "line": 1073,
+          "line": 1074,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Model.SystemState",
@@ -578492,7 +579039,7 @@
           "kind": "def",
           "name": "sr041_activationCompletesCurrentYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr041_activationCompletesCurrentYield",
-          "line": 1086,
+          "line": 1087,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadOnCore",
@@ -578507,7 +579054,7 @@
           "kind": "def",
           "name": "sr042_activationWithoutPendingYieldIsIdentity",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr042_activationWithoutPendingYieldIsIdentity",
-          "line": 1107,
+          "line": 1108,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadAt",
@@ -578522,7 +579069,7 @@
           "kind": "def",
           "name": "yieldLinkedRemoteState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedRemoteState",
-          "line": 1129,
+          "line": 1130,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.setRegsOnCore",
@@ -578538,7 +579085,7 @@
           "kind": "def",
           "name": "sr043_remoteYielderCompletesOnItsCore",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr043_remoteYielderCompletesOnItsCore",
-          "line": 1146,
+          "line": 1147,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578557,7 +579104,7 @@
           "kind": "def",
           "name": "yieldLinkedNotResidentB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedNotResidentB",
-          "line": 1188,
+          "line": 1189,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.MachineState.residentOnCore",
@@ -578572,7 +579119,7 @@
           "kind": "def",
           "name": "sr045_consumedInvocationReadsAndResets",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr045_consumedInvocationReadsAndResets",
-          "line": 1203,
+          "line": 1204,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.consumedInfoWord",
@@ -578589,7 +579136,7 @@
           "kind": "def",
           "name": "sr044_entryTailKeepsEveryCoreUnlinked",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr044_entryTailKeepsEveryCoreUnlinked",
-          "line": 1230,
+          "line": 1231,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578606,7 +579153,7 @@
           "kind": "def",
           "name": "currentNotResidentElsewhereB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.currentNotResidentElsewhereB",
-          "line": 1250,
+          "line": 1251,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.isIdleThreadId",
@@ -578620,7 +579167,7 @@
           "kind": "def",
           "name": "residentMigrantState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.residentMigrantState",
-          "line": 1264,
+          "line": 1265,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578641,7 +579188,7 @@
           "kind": "def",
           "name": "entryTail",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.entryTail",
-          "line": 1275,
+          "line": 1276,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore",
@@ -578654,7 +579201,7 @@
           "kind": "def",
           "name": "rescheduleEntryState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.rescheduleEntryState",
-          "line": 1279,
+          "line": 1280,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.perCoreRescheduleStep",
@@ -578667,7 +579214,7 @@
           "kind": "def",
           "name": "timerEntryState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.timerEntryState",
-          "line": 1284,
+          "line": 1285,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.perCoreTimerTickStep",
@@ -578680,7 +579227,7 @@
           "kind": "def",
           "name": "sr046_migrantRunsOnlyOnceSaved",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr046_migrantRunsOnlyOnceSaved",
-          "line": 1294,
+          "line": 1295,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578697,7 +579244,7 @@
           "kind": "def",
           "name": "sr047_releaseWakesTheDeferringCore",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr047_releaseWakesTheDeferringCore",
-          "line": 1324,
+          "line": 1325,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578713,7 +579260,7 @@
           "kind": "def",
           "name": "holdsOnlyCurrentOnB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.holdsOnlyCurrentOnB",
-          "line": 1342,
+          "line": 1343,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -578726,7 +579273,7 @@
           "kind": "def",
           "name": "sr048_stallWaitsForTheRemoteSave",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr048_stallWaitsForTheRemoteSave",
-          "line": 1354,
+          "line": 1355,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
@@ -578746,7 +579293,7 @@
           "kind": "def",
           "name": "yieldToContext",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToContext",
-          "line": 1400,
+          "line": 1401,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.SchedContextId.ofNat"
@@ -578757,7 +579304,7 @@
           "kind": "def",
           "name": "yieldToState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToState",
-          "line": 1408,
+          "line": 1409,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -578779,7 +579326,7 @@
           "kind": "def",
           "name": "yieldToOn",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToOn",
-          "line": 1426,
+          "line": 1427,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContextOps.schedContextYieldToOnCore",
@@ -578793,7 +579340,7 @@
           "kind": "def",
           "name": "isIllegalState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.isIllegalState",
-          "line": 1430,
+          "line": 1431,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState"
@@ -578804,7 +579351,7 @@
           "kind": "def",
           "name": "sr049_yieldToLinksAndRunsTarget",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr049_yieldToLinksAndRunsTarget",
-          "line": 1438,
+          "line": 1439,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.ObjId",
@@ -578818,7 +579365,7 @@
           "kind": "def",
           "name": "sr050_yieldToCompletedByActivation",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr050_yieldToCompletedByActivation",
-          "line": 1457,
+          "line": 1458,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadOnCore",
@@ -578835,7 +579382,7 @@
           "kind": "def",
           "name": "sr051_yieldToCompletedByNextYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr051_yieldToCompletedByNextYieldTo",
-          "line": 1477,
+          "line": 1478,
           "called": [
             "SeLe4n.Kernel.consumedInfoWord",
             "SeLe4n.ObjId",
@@ -578849,7 +579396,7 @@
           "kind": "def",
           "name": "sr052_yieldToCompletedByDelete",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr052_yieldToCompletedByDelete",
-          "line": 1493,
+          "line": 1494,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContext",
             "SeLe4n.ObjId",
@@ -578863,7 +579410,7 @@
           "kind": "def",
           "name": "sr053_yieldToRefusals",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr053_yieldToRefusals",
-          "line": 1508,
+          "line": 1509,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578877,7 +579424,7 @@
           "kind": "def",
           "name": "sr054_yieldToReturnsNow",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr054_yieldToReturnsNow",
-          "line": 1525,
+          "line": 1526,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.consumedInfoWord",
@@ -578892,7 +579439,7 @@
           "kind": "def",
           "name": "exhaustedBoundParts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.exhaustedBoundParts",
-          "line": 1549,
+          "line": 1550,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -578910,7 +579457,7 @@
           "kind": "def",
           "name": "sr055_exhaustedContextRoundTrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr055_exhaustedContextRoundTrip",
-          "line": 1566,
+          "line": 1567,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.SchedContextId",
@@ -578928,7 +579475,7 @@
           "kind": "def",
           "name": "sr056_frozenExhaustedContextRoundTrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr056_frozenExhaustedContextRoundTrip",
-          "line": 1591,
+          "line": 1592,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere",
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
@@ -578944,7 +579491,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1608,
+          "line": 1609,
           "called": [
             "SeLe4n.Testing.SuspendResumeSuite.frozenRestartOfBlockedReceiverCancelsIpc",
             "SeLe4n.Testing.SuspendResumeSuite.frozenRestartOfBlockedThreadResumesAtSvc",

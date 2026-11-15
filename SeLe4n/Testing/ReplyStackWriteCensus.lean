@@ -846,6 +846,17 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
   , (`SeLe4n.Kernel.FrozenOps.frozenSeverUnheldSchedContext,
       .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
+    -- WS-SX SX4: the frozen suspend's cancel of a reply-blocked thread, each
+    -- step the frozen form of the live suspend's (`cancelIpcKeepingContexts`):
+    -- the head frame cut off the context it heads, the thread's frame cut out
+    -- of its stack, and the caller's reply link consumed.  `FO-063` and
+    -- `FO-064` run each against the live suspend, whole state.
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutHeadFrameKeepingContext,
+      .mirrors `SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutThreadReplyFrameOut,
+      .mirrors `SeLe4n.Kernel.cutThreadReplyFrameOut)
+  , (`SeLe4n.Kernel.FrozenOps.frozenConsumeCallerReplyLink,
+      .mirrors `SeLe4n.Model.SystemState.consumeCallerReplyLink)
     -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation

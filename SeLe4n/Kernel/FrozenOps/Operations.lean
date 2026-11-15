@@ -67,7 +67,7 @@ than misleading its next reader.
 |17 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
 |18 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
 |19 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
-|20 | `frozenSuspendThread`        | `suspendThread`            | Lifecycle    |
+|20 | `frozenSuspendThread`        | `suspendThreadOnCore`      | Lifecycle    |
 |21 | `frozenResumeThread`         | `restartThreadOnCore`      | Lifecycle    |
 |22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
@@ -1842,6 +1842,194 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
 
+/-- A TCB field write at `t` that writes nothing when `t` names no TCB, as the
+live `SystemState.updateTcb` and `mapTcbInPlace` write nothing there. -/
+def frozenMapTcbAt (st : FrozenSystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
+    FrozenSystemState :=
+  match st.getTcb? t with
+  | some tcb => frozenRewriteObject st t.toObjId (.tcb (g tcb))
+  | none => st
+
+/-- WS-SX SX4: **`w` leaves server `s`'s reply-waiter queue** — the frozen
+mirror of `SystemState.unlinkReplyWaiter`, write for write: the predecessor and
+successor link past `w`, `s`'s head moves past it when it headed the queue,
+`s`'s count drops, and `w` keeps no links. -/
+def frozenUnlinkReplyWaiter (st : FrozenSystemState) (w s : SeLe4n.ThreadId) :
+    FrozenSystemState :=
+  let pv := match st.getTcb? w with | some t => t.replyWaiterPrevCode | none => 0
+  let nx := match st.getTcb? w with | some t => t.replyWaiterNextCode | none => 0
+  let st1 := match SeLe4n.ThreadId.ofOptCode pv with
+    | some p => frozenMapTcbAt st p fun x => { x with replyWaiterNextCode := nx }
+    | none => st
+  let st2 := match SeLe4n.ThreadId.ofOptCode nx with
+    | some n => frozenMapTcbAt st1 n fun x => { x with replyWaiterPrevCode := pv }
+    | none => st1
+  let st3 := frozenMapTcbAt st2 s fun x => { x with
+    replyWaitersHeadCode := if pv = 0 then nx else x.replyWaitersHeadCode,
+    replyWaitersCount := x.replyWaitersCount - 1 }
+  frozenMapTcbAt st3 w fun x => { x with replyWaiterPrevCode := 0, replyWaiterNextCode := 0 }
+
+/-- WS-SX SX4: **a thread leaves the notification wait queue it is blocked on** —
+the frozen mirror of `removeFromNotificationWaitQueue`, write for write: the
+notification's head and tail move past it (and a `.waiting` notification left
+with no waiter goes `.idle`), it keeps no queue links, and its neighbours link
+past it. -/
+def frozenRemoveFromNotificationWaitQueue (st : FrozenSystemState) (tid : SeLe4n.ThreadId) :
+    FrozenSystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+    match tcb.ipcState with
+    | .blockedOnNotification oid =>
+      match st.getNotification? oid with
+      | some notif =>
+        let prev := tcb.ntfnPrev
+        let next := tcb.ntfnNext
+        let isHead := notif.waitHead = some tid
+        let head' := if isHead then next else notif.waitHead
+        let tail' := if next.isSome then notif.waitTail
+          else if isHead then none else prev
+        let notif' : Notification := { notif with
+          waitHeadCode := SeLe4n.ThreadId.optCode head'
+          waitTailCode := SeLe4n.ThreadId.optCode tail'
+          state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state }
+        let st1 := frozenRewriteObject st oid (.notification notif')
+        let st2 := frozenMapTcbAt st1 tid fun t => { t with
+          ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+          ntfnNextCode := SeLe4n.ThreadId.optCode none }
+        let prev' := if isHead then none else prev
+        let st3 := match prev' with
+          | some p => frozenMapTcbAt st2 p fun t => { t with
+              ntfnNextCode := SeLe4n.ThreadId.optCode next }
+          | none => st2
+        match next with
+        | some n => frozenMapTcbAt st3 n fun t => { t with
+            ntfnPrevCode := SeLe4n.ThreadId.optCode prev' }
+        | none => st3
+      | none => st
+    | _ => st
+  | none => st
+
+/-- WS-SX SX4: **a cancelled caller's frame cut off the context it heads, the
+context staying with its holder** — the frozen mirror of
+`cutHeadFrameKeepingContext` (seL4-MCS `reply_remove_tcb`'s head branch): the
+frame's upward link cleared, the context's head and origin cleared, and a holder
+holding the context on loan made its owner.  (The live cut also raises the
+holder's reschedule-pending flags, which the frozen surface does not keep.) -/
+def frozenCutHeadFrameKeepingContext (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    FrozenSystemState :=
+  match frozenReplyFrameHeadContext? st rid with
+  | none => st
+  | some scId =>
+    match st.getReply? rid with
+    | none => st
+    | some r =>
+      let st1 := frozenRewriteObject st rid.toObjId (.reply { r with next := none })
+      let st2 := match st1.getSchedContext? scId with
+        | some sc => frozenRewriteObject st1 scId.toObjId
+            (.schedContext { sc with scReply := none, donationOrigin := none })
+        | none => st1
+      match (st2.getSchedContext? scId).bind (·.boundThread) with
+      | none => st2
+      | some holder =>
+        match st2.getTcb? holder with
+        | none => st2
+        | some ht =>
+          match ht.schedContextBinding with
+          | .donated s _ =>
+            if s = scId then frozenMapTcbAt st2 holder fun t => { t with scBindingOwnerCode := 0 }
+            else st2
+          | _ => st2
+
+/-- WS-SX SX4: **the caller's reply link consumed** — the frozen mirror of
+`SystemState.consumeCallerReplyLink`: the reply's consumed record
+(`Reply.consumed`), and the caller holding no reply object. -/
+def frozenConsumeCallerReplyLink (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : FrozenSystemState :=
+  let st1 := match st.getReply? rid with
+    | some r => frozenRewriteObject st rid.toObjId (.reply r.consumed)
+    | none => st
+  frozenMapTcbAt st1 caller fun t => { t with replyObjectCode := 0 }
+
+/-- WS-SX SX4: **the cancelled thread's reply frame cut out of its stack** — the
+frozen mirror of `cutThreadReplyFrameOut`: the removal under the thread's own
+`replyObject`, and nothing for a thread holding none. -/
+def frozenCutThreadReplyFrameOut (st : FrozenSystemState) (tcb : TCB) : FrozenSystemState :=
+  match tcb.replyObject with
+  | none => st
+  | some rid => frozenCutReplyFrameOutOrSelf st rid
+
+/-- WS-SX SX4: **a cancelled thread leaves the endpoint queue it waits on** — the
+frozen mirror of `removeFromBlockingEndpoint`, and total as it is.  First the
+interior splice (`spliceOutMidQueueNode`): the predecessor skips the thread
+(`queueUnlinkPredecessor`) and the successor inherits its back links
+(`queueUnlinkSuccessor`), the successor read after the predecessor's patch.
+Then, when an end of either queue names the thread, both queues' boundaries
+move past it (`removeThreadFromQueue`, through the shared `queueRemoveBoundary`).
+A missing endpoint leaves the splice alone, as on the live path: a cancel does
+not refuse. -/
+def frozenRemoveFromBlockingEndpoint (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : FrozenSystemState :=
+  let stSpliced := match frozenLookupTcb st tid with
+    | none => st
+    | some tcb =>
+      let s1 := match tcb.queuePrev with
+        | some p => frozenMapTcbAt st p (queueUnlinkPredecessor tcb)
+        | none => st
+      match tcb.queueNext with
+      | some n => frozenMapTcbAt s1 n (queueUnlinkSuccessor tcb)
+      | none => s1
+  let boundary (q : IntrusiveQueue) : IntrusiveQueue :=
+    match frozenLookupTcb stSpliced tid with
+    | some tcb => queueRemoveBoundary q tid tcb
+    | none => { head := if q.head = some tid then none else q.head,
+                tail := if q.tail = some tid then none else q.tail }
+  match stSpliced.getEndpoint? epId with
+  | some ep =>
+    if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+        || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+      frozenRewriteObject stSpliced epId
+        (.endpoint ((ep.withSendQ (boundary ep.sendQ)).withReceiveQ (boundary ep.receiveQ)))
+    else stSpliced
+  | none => stSpliced
+
+/-- WS-SX SX4: **seL4-MCS's `cancelIPC`, as the suspend runs it, on the frozen
+store** — the mirror of `cancelIpcKeepingContexts`, arm for arm, for every
+object other than the cancelled thread's own record, which the suspend then
+writes through the live record step (`TCB.restoredToRestart`).
+
+* **Endpoint** (send, call, receive): the thread leaves the endpoint queue its
+  state names (`frozenRemoveFromBlockingEndpoint`, the frozen
+  `removeFromBlockingEndpoint`).
+* **Notification**: it leaves the notification's wait queue
+  (`frozenRemoveFromNotificationWaitQueue`).
+* **Reply**: its frame is cut off the context it heads, which stays with its
+  holder (`frozenCutHeadFrameKeepingContext`); then, as
+  `cancelIpcKeepingContexts_reply_arm` states the live arm, there is no donation
+  left to return, so the frame is cut out of its stack
+  (`frozenCutThreadReplyFrameOut`), the reply link is consumed
+  (`frozenConsumeCallerReplyLink`) and the caller leaves its server's
+  reply-waiter queue (`frozenUnlinkReplyWaiter`).
+
+Total, as the live cancel is: every arm writes what it can and none refuses, so
+a suspend never fails on the state of the queue its thread waited on. -/
+def frozenCancelIpcBlocking (st : FrozenSystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    FrozenSystemState :=
+  match tcb.ipcState with
+  | .ready => st
+  | .blockedOnSend ep | .blockedOnCall ep | .blockedOnReceive ep =>
+    frozenRemoveFromBlockingEndpoint st tid ep
+  | .blockedOnNotification _ => frozenRemoveFromNotificationWaitQueue st tid
+  | .blockedOnReply _ _ =>
+    let st1 := match tcb.replyObject with
+      | some rid => frozenCutThreadReplyFrameOut (frozenCutHeadFrameKeepingContext st rid) tcb
+      | none => st
+    let st2 := match tcb.replyObject with
+      | some rid => frozenConsumeCallerReplyLink st1 tid rid
+      | none => st1
+    match tcb.blockingServer? with
+    | some s => frozenUnlinkReplyWaiter st2 tid s
+    | none => st2
+
 /-- D1: Frozen thread suspend — transition a thread to Inactive (a thread
 already Inactive is left as it is). Mirrors `suspendThread` in frozen state.
 
@@ -1866,7 +2054,18 @@ WS-SX SX4: **a blocked thread's cancel is the live one's record step**
 retired, and its saved program counter is moved to its restart PC, so the
 suspended thread is `Inactive` at the `SVC` it was blocked in, and the frozen
 resume (`frozenResumeThread`, which suspends a blocked thread first) restarts it
-there, as the live `restartThreadOnCore` does. -/
+there, as the live `restartThreadOnCore` does.
+
+WS-SX SX4 (PR #1084 review): **and the blocking itself is cancelled, in every
+arm**, before that record step (`frozenCancelIpcBlocking`, the mirror of the
+live `cancelIpcKeepingContexts`): the thread is spliced out of its endpoint
+queue at any position, out of its notification's wait queue, and, blocked on a
+reply, cut off a donated context's reply stack, its reply link consumed and its
+server's reply-waiter entry unlinked, after which the server's inherited boost
+is reverted (`frozenRevertPriorityInheritance`).  Clearing the TCB's own fields
+alone left the endpoint naming a thread that no longer waited.  Each arm, and
+the runnable and `Inactive` suspends, is compared whole against
+`suspendThreadOnCore` by `FrozenOpsSuite`'s registered `.tcbSuspend` branches. -/
 def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1876,13 +2075,19 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
       -- written, as the live `suspendThreadOnCore` and seL4's `suspend` leave it.
       if tcb.threadState == .Inactive then .ok ((), st)
       else
-        -- WS-SX SX4: a thread blocked in an IPC has it cancelled as the live
-        -- suspend's `cancelIpcBlocking` cancels it, through the same record
-        -- step (`TCB.restoredToRestart`): its saved program counter moves to
-        -- its restart PC (the `SVC`, or its fault's restart PC, read before
-        -- the fault record is cleared), so a later resume re-issues the call.
-        -- A thread not blocked keeps its program counter, as on the live path.
-        let base := if tcb.ipcState != .ready then tcb.restoredToRestart else tcb
+        -- WS-SX SX4: the IPC cancelled as the live suspend cancels it
+        -- (`frozenCancelIpcBlocking`, the mirror of `cancelIpcKeepingContexts`),
+        -- so no endpoint, notification or reply-waiter queue names the thread
+        -- afterwards and its reply link is consumed.
+        let stC := frozenCancelIpcBlocking st tid tcb
+        -- Then its own record, read again (the cancel cleared its links and
+        -- its reply object), through the live record step
+        -- (`TCB.restoredToRestart`): its saved program counter moves to its
+        -- restart PC (the `SVC`, or its fault's restart PC, read before the
+        -- fault record is cleared), so a later resume re-issues the call.  A
+        -- thread not blocked keeps its program counter, as on the live path.
+        let cur := (frozenLookupTcb stC tid).getD tcb
+        let base := if tcb.ipcState != .ready then cur.restoredToRestart else cur
         let tcb' := (TCB.setIpcState { base with
           threadState := .Inactive
           pendingMessage := none
@@ -1891,22 +2096,29 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           queueNextCode := 0
           queuePPrevCode := 0
           yieldToCode := 0 } .ready)
+        match frozenWithObjectStored stC tid.toObjId (.tcb tcb') with
+        | .error e => .error e
+        | .ok stR =>
+        -- The server a reply-blocked thread waited on has its inheritance
+        -- reverted, as the live suspend's `suspendCancelRevert` reverts it
+        -- (`frozenRevertPriorityInheritance`, the counterpart the frozen reply
+        -- uses for the same live step).
+        let stP := match tcb.blockingServer? with
+          | some s => frozenRevertPriorityInheritance stR s
+          | none => stR
         let cleared : Except KernelError FrozenSystemState :=
           match tcb.yieldToCode with
-          | 0 => .ok st
+          | 0 => .ok stP
           | k + 1 =>
             let scId : SeLe4n.SchedContextId := ⟨k⟩
-            match st.getObject? scId.toObjId with
+            match stP.getObject? scId.toObjId with
             | some (.schedContext sc) =>
-              frozenWithObjectStored st scId.toObjId
+              frozenWithObjectStored stP scId.toObjId
                 (.schedContext { sc with yieldFromCode := 0 })
-            | _ => .ok st
+            | _ => .ok stP
         match cleared with
         | .error e => .error e
-        | .ok st1 =>
-          match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
-          | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
-          | .error e => .error e
+        | .ok st1 => .ok ((), frozenRemoveRunnable st1 tid)
 
 /-- WS-ZA ZA6.33: **the frozen mirror of the resume's context step**
 (`Lifecycle.Suspend.resumeContext`, seL4-MCS's `refill_unblock_check` then
@@ -1971,8 +2183,9 @@ surface read* — one function over, which is why they are one cut with it.
    exists to get ahead of, and an unboosted resumed thread preempted a boosted
    current one.  No fixture could see it (none of the three frozen resume
    scenarios set `current` at all, so the branch was unexecuted) and no
-   differential could reach it (`.tcbResume` is outside `FrozenOpBranch.all`,
-   which covers the IPC syscalls).
+   differential could reach it (`.tcbResume` has no `FrozenOpBranch`: its
+   scenarios compare objects only, since the live restart dispatches at its
+   scheduling point and this resume leaves selection to `frozenSchedule`).
 
 Clearing `current` **is** the frozen spelling of the live re-enqueue-then-
 schedule: dispatch here is `current := some tid` with the thread left in its
