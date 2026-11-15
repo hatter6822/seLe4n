@@ -329,6 +329,15 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
     ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
+/-- The state a refusal of the checked entry reports
+(`cancelReceiveBusyReply`) keeps the mappings recorded: the state itself, or
+its busy reply's holder cancelled. -/
+theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
+    (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
+  rcases cancelReceiveBusyReply_cases ctx e st with h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+  · rw [h]; exact MappingStage.refl _
+  · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
+
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
 register write, which keeps the premises), then the checked entry, a
 capability-fault delivery, or a refusal record. -/
@@ -352,12 +361,17 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact P.updateTcb _ _
+  -- the refusal's reported state: the spill, or its busy reply's holder
+  -- cancelled on it
+  have hC : MappingStage st (cancelReceiveBusyReply ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) :=
+    hW.trans (cancelReceiveBusyReply_mappingStage ctx e _)
   dsimp only at h
   split at h
   · split at h
     · cases h
       unfold Platform.FFI.deliverSyscallCapFault
-      exact (hW.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
+      exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
         (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
     · cases h
       have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
@@ -365,7 +379,7 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
         MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
           (by unfold Architecture.recordErrorOverflow; split <;>
                 exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
-      exact (hW.trans (hOv _ _ _)).trans (MappingStage.of_objects_eq
+      exact (hC.trans (hOv _ _ _)).trans (MappingStage.of_objects_eq
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
         (by unfold Platform.FFI.recordSyscallRefusal; split
             · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩

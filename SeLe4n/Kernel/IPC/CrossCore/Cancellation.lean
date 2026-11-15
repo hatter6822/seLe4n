@@ -4153,8 +4153,9 @@ The single-core G1–G7 pipeline generalised across cores:
     server).  A priority raise triggers nothing (the running choice can only
     outrank strictly more).
 
-Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target and
-`illegalState` for an already-`.Inactive` one, both decided before any write.
+Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target,
+decided before any write; an already-`.Inactive` thread is suspended with
+nothing written and no SGI, as seL4's `suspend` leaves it.
 No later step refuses (`suspendThreadOnCore_total`): seL4's `suspend` never
 fails. -/
 def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
@@ -4166,7 +4167,9 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
   -- `resumeThreadOnCore`'s reader discipline, mirrored).
   match st.getTcb? tid with
   | some tcb =>
-    if tcb.threadState == .Inactive then .error .illegalState
+    -- WS-SX SX4: seL4's `suspend` of a thread already `Inactive` succeeds
+    -- and changes nothing (see `suspendThread`).
+    if tcb.threadState == .Inactive then .ok (st, none)
     else
       -- G4-precapture (WS-RR RR8.6): the core the state PLACES the victim on,
       -- queued or current — resolved on the pre-state, where
@@ -4415,13 +4418,13 @@ theorem suspendThreadOnCore_rejects_absent (st : SystemState)
     suspendThreadOnCore st vtid ec = .error (.invalidArgument 0) := by
   simp only [suspendThreadOnCore, hGet]
 
-/-- WS-SM SM6.E: an already-`.Inactive` victim is rejected with
-`illegalState`, exactly as `suspendThread`. -/
-theorem suspendThreadOnCore_rejects_inactive (st : SystemState)
+/-- WS-SX SX4: an already-`.Inactive` victim is suspended with nothing written
+and no SGI, exactly as `suspendThread` and seL4's `suspend` leave it. -/
+theorem suspendThreadOnCore_of_inactive (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TCB)
     (hGet : st.getTcb? vtid.val = some tcb)
     (hInactive : tcb.threadState = .Inactive) :
-    suspendThreadOnCore st vtid ec = .error .illegalState := by
+    suspendThreadOnCore st vtid ec = .ok (st, none) := by
   simp only [suspendThreadOnCore, hGet, hInactive, beq_self_eq_true, if_true]
 
 /-- WS-SM SM6.E (SGI discipline): every SGI the per-core suspend surfaces is
@@ -4460,18 +4463,19 @@ theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
   simp only [suspendThreadOnCore] at h
   split at h
   · split at h
-    · cases h
+    · cases h; rfl
     · exact suspendRescheduleOnCore_local_no_sgi _ _ _ _ _ _ _ hLocal h
   · cases h
 
-/-- WS-ZA ZA6.33: **the suspend is total**: a thread that is held and not
-already `.Inactive` is suspended, with no refusal after the checks, as seL4's
-`suspend` never fails. -/
+/-- WS-ZA ZA6.33: **the suspend is total**: a thread that is held is
+suspended, with no refusal after the checks, as seL4's `suspend` never fails
+(WS-SX SX4: one already `.Inactive` included, with nothing written). -/
 theorem suspendThreadOnCore_total (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (ec : CoreId) (tcb : TCB) (hGet : st.getTcb? vtid.val = some tcb)
-    (hActive : tcb.threadState ≠ .Inactive) :
+    (ec : CoreId) (tcb : TCB) (hGet : st.getTcb? vtid.val = some tcb) :
     ∃ st' sgi, suspendThreadOnCore st vtid ec = .ok (st', sgi) := by
-  have hb : (tcb.threadState == .Inactive) = false := by simpa using hActive
+  by_cases hI : (tcb.threadState == .Inactive) = true
+  · exact ⟨st, none, by simp only [suspendThreadOnCore, hGet, hI, ↓reduceIte]⟩
+  have hb : (tcb.threadState == .Inactive) = false := by simpa using hI
   simp only [suspendThreadOnCore, hGet, hb, Bool.false_eq_true, ↓reduceIte]
   obtain ⟨sgi, h⟩ := suspendRescheduleOnCore_eq_state _ _ _ _ _
   exact ⟨_, sgi, h⟩
@@ -4879,7 +4883,7 @@ theorem suspendThreadOnCore_ipcInvariantStage
     case h_2 => cases hStep
     case h_1 tcb hTcb =>
       split at hStep
-      case isTrue => cases hStep
+      case isTrue => cases hStep; exact IpcInvariantStage.refl st
       case isFalse =>
         -- Stages 1-2: the IPC teardown, then the cross-core PIP revert.
         refine IpcInvariantStage.trans (st' := ?_) ?_ ?_

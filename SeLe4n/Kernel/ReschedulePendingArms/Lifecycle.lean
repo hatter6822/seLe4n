@@ -314,7 +314,7 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
   split at hStep
   · rename_i tcb hT
     split at hStep
-    · contradiction
+    · cases hStep; exact ⟨stepCovers_refl _ _, hInv⟩
     obtain ⟨h1, h1Inv⟩ := cancelIpcKeepingContexts_stepCovers e st vtid.val tcb hInv
     cases hB : PriorityInheritance.blockingServer st vtid.val
     case' none =>

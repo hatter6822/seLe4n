@@ -332,12 +332,12 @@ theorem keyInputsEq_of_slots {pre post : SystemState}
 
 /-- The restore clears IPC fields and stages a frame: no key field. -/
 theorem restoreToReadyStaging_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    keyInputsEq st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+    (restart : Bool) (hInv : st.objects.invExt) :
+    keyInputsEq st (Lifecycle.Suspend.restoreToReadyStaging st tid restart) := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact keyInputsEq_updateTcb hInv (fun t => by
-    cases frame <;> simp [tcbKeyFields, TCB.withReturnFrame])
-    (fun t => by cases frame <;> simp [TCB.withReturnFrame])
+    cases restart <;> simp [tcbKeyFields, TCB.restoredToRestart])
+    (fun t => by cases restart <;> simp [TCB.restoredToRestart])
 
 /-- The endpoint-queue removal rewrites queue links only. -/
 theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
@@ -493,7 +493,7 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
     have h1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st tid tcb hInv
     have h2 := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb h1
-    have h3 := Lifecycle.Suspend.restoreToReadyStaging_invExt _ tid (some Architecture.cancelledIpcFrame) h2
+    have h3 := Lifecycle.Suspend.restoreToReadyStaging_invExt _ tid true h2
     refine stepCovers_trans (returnDonationToCancelledCaller_stepCovers e st tid tcb hInv)
       (stepCovers_trans (stepCovers_of_keys_sched (cutThreadReplyFrameOut_keyInputsEq _ tcb h1)
         (cutThreadReplyFrameOut_scheduler_eq _ tcb))

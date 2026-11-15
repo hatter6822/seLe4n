@@ -16,13 +16,14 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 /-!
 # WS-BP BP7.5 — an unblocked thread resumes reading the error it was staged
 
-WS-RR RR7.14 stages an error frame into the saved context of a thread taken out
-of a blocking IPC: `.ipcTimeout` when its budget expired
-(`abortPendingIpcOnEndpoint`, which `timeoutThread` runs), `.ipcCancelled` when
-the operation was destroyed under it (`restoreToReadyCancelled`, every blocked
-arm of `cancelIpcBlocking`).  What was not stated is that the frame is what the
-thread *reads*: a staged frame is only an answer if the context restore hands
-it back.
+WS-RR RR7.14 stages the `.ipcTimeout` frame into the saved context of a thread
+whose budget expired under a blocking IPC (`abortPendingIpcOnEndpoint`, which
+`timeoutThread` runs); a thread whose operation was destroyed under it restarts
+the system call instead (WS-SX SX4: `restoreToReadyCancelled`, every blocked arm
+of `cancelIpcBlocking`, moves its saved program counter to its restart PC).
+What was not stated is that the context is what the thread *resumes with*: a
+staged frame or a restart PC is only an answer if the context restore hands it
+back.
 
 The restore resumes a core from the committed state
 (`Architecture.restoreTargetOnCore`), and a thread becomes a core's current
@@ -30,10 +31,10 @@ thread only by a switch.  So delivery is one relation:
 **a switch to a thread resumes it with the return frame its TCB holds**
 (`switchToThreadOnCore_delivers_readReturnFrame`).  The switch writes exactly
 one TCB — the *outgoing* thread's context save — so the incoming thread's
-context crosses it unchanged.  The two unblock paths each state what that frame
-is (`restoreToReadyCancelled_readReturnFrame`,
-`abortPendingIpcOnEndpoint_readReturnFrame`), and the two corollaries compose
-them.
+context crosses it unchanged (`switchToThreadOnCore_delivers_context`).  The
+timeout path states its frame (`abortPendingIpcOnEndpoint_readReturnFrame`) and
+the cancellation its restart PC (`restoreToReadyCancelled_restarts`), and the two
+corollaries compose them.
 
 What is deliberately not claimed: that nothing between the unblock and the
 switch rewrites the frame.  An unblocked thread is `.ready` and on no IPC queue,
@@ -101,24 +102,45 @@ theorem switchToThreadOnCore_delivers_readReturnFrame (st : SystemState) (c : Co
   rw [restoreTargetOnCore_deliveredFrame st' c tid t' hCur hIdle h']
   simp only [readReturnFrame, h', hTcb, TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]
 
-/-- **The cancellation half**: a thread `cancelIpcBlocking` restored, once
-switched to, resumes reading `.ipcCancelled`. -/
-theorem restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame
+/-- **A switch resumes the incoming thread with the context its TCB holds**:
+the restore target's register file, program counter included, is the
+incoming thread's saved context. -/
+theorem switchToThreadOnCore_delivers_context (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hInv : st.objects.invExt) (hTcb : st.getTcb? tid = some tcb)
+    (hNe : st.scheduler.currentOnCore c ≠ some tid)
+    (hIdle : isIdleThreadId tid = false)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    (restoreTargetOnCore st' c).context = tcb.registerContext := by
+  have hSame := switchToThreadOnCore_getTcb?_ne_current st c tid tid st' hInv hNe h
+  rw [hTcb] at hSame
+  obtain ⟨t', h', hE⟩ := TCB.exists_of_map_withoutRunLinks_eq hSame
+  have hCur := switchToThreadOnCore_sets_current st c tid st' h
+  rw [restoreTargetOnCore_user st' c tid t' hCur hIdle h']
+  exact TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE
+
+/-- **WS-SX SX4 — the cancellation half**: a thread `cancelIpcBlocking`
+restored, once switched to, resumes at its restart PC — the `SVC` it was
+blocked in — with its own request registers, so it re-issues the system call,
+as seL4's `Restart` thread does. -/
+theorem restoreToReadyCancelled_then_switch_resumes_at_restartPc
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
     (hInv : st.objects.invExt) (hTcb : st.getTcb? tid = some tcb)
     (hNe : (restoreToReadyCancelled st tid).scheduler.currentOnCore c ≠ some tid)
     (hIdle : isIdleThreadId tid = false)
     (h : switchToThreadOnCore (restoreToReadyCancelled st tid) c tid = .ok st') :
-    (restoreTargetOnCore st' c).deliveredFrame? = some cancelledIpcFrame := by
+    (restoreTargetOnCore st' c).context.pc = tcb.restartPc ∧
+      (restoreTargetOnCore st' c).deliveredFrame? = some (readReturnFrame st tid) := by
   have hInv' : (restoreToReadyCancelled st tid).objects.invExt :=
     restoreToReadyCancelled_invExt st tid hInv
-  obtain ⟨tcb', hTcb'⟩ : ∃ t, (restoreToReadyCancelled st tid).getTcb? tid = some t := by
-    rw [restoreToReadyCancelled_tcb st tid hInv]
-    unfold restoreToReady restoreToReadyStaging
-    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hTcb]
-    exact ⟨_, rfl⟩
-  rw [switchToThreadOnCore_delivers_readReturnFrame _ c tid tcb' st' hInv' hTcb' hNe hIdle h,
-    restoreToReadyCancelled_readReturnFrame st tid tcb hTcb hInv]
+  have hT' : (restoreToReadyCancelled st tid).getTcb? tid = some tcb.restoredToRestart := by
+    rw [restoreToReadyCancelled_tcb st tid hInv, hTcb]; rfl
+  refine ⟨?_, ?_⟩
+  · rw [switchToThreadOnCore_delivers_context _ c tid _ st' hInv' hT' hNe hIdle h]
+    rfl
+  · rw [switchToThreadOnCore_delivers_readReturnFrame _ c tid _ st' hInv' hT' hNe hIdle h]
+    simp only [readReturnFrame, hT', hTcb]
+    rfl
 
 /-- A thread whose TCB holds a frame-staged record reads back exactly that
 frame — the round trip `readReturnFrame_writeReturnFrame` states for the

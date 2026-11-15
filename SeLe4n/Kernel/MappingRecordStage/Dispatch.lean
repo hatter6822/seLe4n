@@ -377,16 +377,20 @@ theorem dispatchCapabilityOnly_mappingStage
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact (retirePendingFaultForResume_mappingStage st vtid.val).trans
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              · exact (retirePendingFaultForResume_mappingStage st vtid.val).trans
                   (resumeThreadOnCore_mappingStage hRes)
+              · exact (suspendThreadOnCore_mappingStage hSus).trans
+                  ((retirePendingFaultForResume_mappingStage st1 vtid.val).trans
+                    (resumeThreadOnCore_mappingStage hRes))
+              · exact MappingStage.refl _
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -573,6 +577,32 @@ theorem stageWokenDeliveryTwice_mappingStage (x : SystemState) (w p : Option SeL
       (Architecture.stageWokenDelivery x w 0) p 0) :=
   (stageWokenDelivery_mappingStage x w 0).trans (stageWokenDelivery_mappingStage _ p 0)
 
+/-- **A reply holder's cancel keeps the mappings recorded**: the suspend's IPC
+cancel, the chain revert and the `Inactive` write. -/
+theorem cancelReplyHolder_mappingStage (st : SystemState) (holder : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) :
+    MappingStage st (cancelReplyHolder st holder executingCore) := by
+  rcases cancelReplyHolder_cases st holder executingCore with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact MappingStage.refl st
+  · rw [h]
+    refine (?_ : MappingStage st _).trans (updateTcb_mappingStage _ _ _)
+    unfold Lifecycle.Suspend.suspendCancelRevert
+    dsimp only
+    split
+    · exact (cancelIpcKeepingContexts_mappingStage _ _ _).trans
+        propagatePipChainCrossCore_mappingStage
+    · exact cancelIpcKeepingContexts_mappingStage _ _ _
+
+/-- A receive's busy-reply cancel keeps the mappings recorded. -/
+theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    MappingStage st (cancelRecvBusyReply ctx tid gate decoded executingCore st) := by
+  unfold cancelRecvBusyReply
+  split
+  · exact MappingStage.refl st
+  · exact cancelReplyHolder_mappingStage _ _ _
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain
 and the declassification included. -/
@@ -616,6 +646,10 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       (MappingStage.of_fst_eq endpointSendCrossCoreDispatchChecked_mappingStage hSend)
       (fun x => stageWokenDelivery_mappingStage x _ _) h
   case none.receive.object epId =>
+    split at h
+    · cases h
+    refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
+    unfold receiveResolvedArm at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ _ hRecv _ stDon hHand

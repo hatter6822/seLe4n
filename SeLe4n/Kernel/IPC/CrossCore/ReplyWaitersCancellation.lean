@@ -78,8 +78,8 @@ theorem removeFromNotificationWaitQueue_replyViews_eq (st : SystemState) (tid : 
 /-- **The restore readies the thread**, whatever frame it stages: it clears the
 thread's server and nothing else a view reads. -/
 theorem restoreToReadyStaging_replyViews (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
-    (restoreToReadyStaging st tid frame).replyViews =
+    (restart : Bool) (hInv : st.objects.invExt) :
+    (restoreToReadyStaging st tid restart).replyViews =
       ReplyViews.setServer st.replyViews tid none := by
   unfold restoreToReadyStaging SystemState.updateTcb
   split
@@ -92,8 +92,8 @@ theorem restoreToReadyStaging_replyViews (st : SystemState) (tid : SeLe4n.Thread
     · rename_i hx; subst hx
       rw [replyViews_of_tcb hO]
       simp only [objReplyView_tcb, Option.map_some]
-      cases frame <;>
-      simp only [TCB.replyView, TCB.restoredToReady, TCB.withReturnFrame, TCB.blockingServer?,
+      cases restart <;>
+      simp only [Bool.false_eq_true, ↓reduceIte, TCB.replyView, TCB.restoredToReady, TCB.restoredToRestart, TCB.blockingServer?,
         TCB.ipcState_mk, TCB.ofCodes_ipcCodes, TCB.ipcState_setIpcState, ThreadIpcState.ofCodes_codes]
     · rfl
   · rename_i hN

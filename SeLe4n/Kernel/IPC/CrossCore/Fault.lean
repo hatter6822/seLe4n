@@ -586,16 +586,16 @@ resets `tcbFault`.  So a fault-blocked thread whose fault IPC is destroyed
 leaves the cancellation unfaulted, and the reply seam never answers its later
 ordinary Call through the fault branch (`replyTransferOnCore_of_no_fault`). -/
 theorem threadHasPendingFault_restoreToReadyStaging (st : SystemState)
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (tid : SeLe4n.ThreadId) (restart : Bool)
     (hInv : st.objects.invExt) :
-    threadHasPendingFault (Lifecycle.Suspend.restoreToReadyStaging st tid frame) tid = false := by
+    threadHasPendingFault (Lifecycle.Suspend.restoreToReadyStaging st tid restart) tid = false := by
   rw [threadHasPendingFault_eq_false_iff]
   intro tcb h
   unfold Lifecycle.Suspend.restoreToReadyStaging at h
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv] at h
   cases hT : st.getTcb? tid with
   | none => rw [hT] at h; cases h
-  | some t => rw [hT] at h; cases h; cases frame <;> rfl
+  | some t => rw [hT] at h; cases h; cases restart <;> rfl
 
 /-- WS-ZA ZA6.22: **a thread carrying a fault record is fault-blocked or
 `.Inactive`.**  A fault is recorded on the faulting thread as its fault IPC
@@ -636,14 +636,14 @@ theorem threadHasPendingFault_eq_false_of_faultRecordParked {st : SystemState}
 restored thread leaves it with no fault record, and no other thread is
 written. -/
 theorem faultRecordParked_restoreToReadyStaging {st : SystemState}
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (tid : SeLe4n.ThreadId) (restart : Bool)
     (hInv : st.objects.invExt) (h : st.faultRecordParked) :
-    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).faultRecordParked := by
+    (Lifecycle.Suspend.restoreToReadyStaging st tid restart).faultRecordParked := by
   intro t tcb hT hF
   by_cases hEq : t = tid
   · subst hEq
     have hNo := (threadHasPendingFault_eq_false_iff _ _).mp
-      (threadHasPendingFault_restoreToReadyStaging st t frame hInv) tcb hT
+      (threadHasPendingFault_restoreToReadyStaging st t restart hInv) tcb hT
     rw [hNo] at hF; cases hF
   · unfold Lifecycle.Suspend.restoreToReadyStaging at hT
     rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv t

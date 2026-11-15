@@ -1019,7 +1019,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.shootdownCatchUpPerCore
   , `SeLe4n.Kernel.Architecture.shootdownRound
   , `SeLe4n.Kernel.Architecture.shootdownRoundPerCore
-  , `SeLe4n.Kernel.Architecture.stageCancelledIpcFrame
   -- WS-LS LS2.4: the two-state return-frame staging, kept as the statement
   -- `syscallDispatchCrossCoreStep_drains_physicalWrites` is written against;
   -- the seam runs `stageCallerReturnFor` over the caller it captured.  Its
@@ -1390,6 +1389,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `registerRoutedSyscall_viaDecode` and compiles nothing, so only proofs
   -- and the suites' refusal checks run it.
   , `SeLe4n.Model.RefusalCarrying.ofKernel
+  -- Its reporting twin, whose refusal reports the state the receive's busy
+  -- reply cancel committed (`endpointReceiveCheckedArmR`,
+  -- `dispatchOperandCheckedR`): a specification form the compiled arms are
+  -- proven equal to, run by proofs and the suites alone, as `ofKernel` is.
+  , `SeLe4n.Model.RefusalCarrying.ofKernelReporting
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked

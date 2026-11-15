@@ -4992,8 +4992,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- `receiveIPC`), so this arm reaches the same donation primitive `.call` does;
   -- and `.objStore` covers that donation's `scThreadIndex` write as well as the
   -- CDT maps.
+  -- **WS-SX SX4**: `.notification` — a receive whose reply is busy with another
+  -- thread cancels that thread's IPC first (seL4-MCS `receiveIPC`'s
+  -- `cancelIPC(replyTCB)`), and the cancel's footprint is the suspend's
+  -- cancellation root, which names the notification a waiter leaves.
   | .receive =>
-      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]
   -- WS-RR RR7.7: `.objStore` for the same reason it joins `.send` — a Call
   -- that carries capabilities writes the CDT maps.
   | .call =>

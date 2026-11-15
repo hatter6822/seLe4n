@@ -178,6 +178,26 @@ theorem tcbResume_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadId} {st st' : Sys
     (base := retirePendingFaultForResume st vtid.val) hInv1 h
   exact Q.bankAgree (.refl _) (F.bankAgree hA)
 
+/-- **The restart keeps the agreement**: a stopped thread's resume as above; an
+IPC-blocked thread's suspend keeps it through its prefix and scheduling point,
+and the resume after it as above, from the run-queue invariants the suspend
+keeps; a running thread's restart writes nothing. -/
+theorem tcbRestart_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)} (hne : e ≠ e')
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
+    (hNI : isIdleThreadId vtid.val = false) (hA : bankAgree e c0 st)
+    (h : Lifecycle.Suspend.restartThreadOnCore st vtid e = .ok (st', sgi?)) :
+    bankAgree e c0 st' := by
+  rcases Lifecycle.Suspend.restartThreadOnCore_cases h with
+    hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+  · exact tcbResume_bankAgree hne hInv hR hD hA hRes
+  · obtain ⟨_, P⟩ := suspendThreadOnCore_schedPointPrefix hInv hB hBN hSus
+    have S := suspendThreadOnCore_runQueueEntryStage hNI hSus
+    obtain ⟨hI1, hR1⟩ := S.1.links hInv hR
+    exact tcbResume_bankAgree hne hI1 hR1 (S.2 hInv hR hR1 hD) (P.bankAgree (.refl _) hA) hRes
+  · exact hA
+
 /-- WS-ZA ZA6.28: **every arm `dispatchCapabilityOnly` routes keeps the executing
 core's agreement**: the finalising deletes, the retype and every arm with no
 scheduling point are covered at another core, whose census they keep; the
@@ -283,7 +303,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
               (hRes := by rw [unbindNotification_machine_eq hS])
               (hBank := banksKeptOffCore_of_eq (by rw [unbindNotification_machine_eq hS])))
         | exact hP (suspendThreadOnCore_schedPointPrefix hInv P.toEntryPremises.blocked hBNR hS)
-        | exact tcbResume_bankAgree hne hInv P.refined P.dequeued hA hS
+        | exact tcbRestart_bankAgree hne hInv P.refined P.dequeued P.toEntryPremises.blocked hBNR
+            (validateThreadIdArg_ok_val_not_idle (by assumption)) hA hS
         | exact hP (setPriorityOnCore_schedPointPrefix hInv hS)
         | exact hP (setMCPriorityOnCore_schedPointPrefix hInv hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)
@@ -370,18 +391,46 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     cases h
     exact (hW hCv (sendArm_savedRegsWrittenFree _ P hRT hBNR hSend hClr)).bankAgree hA
   case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_stepCovers e' hInv) hRecv
-    obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
-    have hS1 := stageWokenSendCompletion_keyFrame stDon
-      ((st.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-    obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') P hRT hBNR hRecv hHand
-    exact ((hW (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers) w1).trans
-      (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
+    split at h
+    · cases h
+    unfold receiveResolvedArm at h
+    -- WS-SX SX4: the busy reply's holder cancelled first; it writes only the
+    -- holder, blocked and so free of every other core.
+    have hSC : stepCovers e' st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+        savedRegsWrittenFree e' st st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt ∧
+        ∀ w, ((cancelRecvBusyReply ctx tid gate decoded ec st).getEndpoint? epId).bind
+          (·.sendQ.head) = some w → offCoreFree e' st w := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded ec st with x | ⟨hd, -, x⟩ <;> rw [x]
+      · exact ⟨stepCovers_refl e' st, .refl _, hInv,
+          fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h⟩
+      · exact ⟨(cancelReplyHolder_stepCovers e' st hd ec hInv).1,
+          cancelReplyHolder_savedRegsWrittenFree hInv P.blocked hBNR,
+          cancelReplyHolder_objects_invExt st hd ec hInv,
+          fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
+            P.toEntryPremises.queueHeadCancelFacts h⟩
+    obtain ⟨c0, w0, hIC, hHC⟩ := hSC
+    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
+      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
+      have hS1 := stageWokenSendCompletion_keyFrame stDon
+        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
+      obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
+        hIC hHC hRecv hHand
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans (stepCovers_trans hV hD)
+        hS1.stepCovers)) (w0.trans w1)).trans
+        (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
+    · cases h
   case none.call.object epId =>
     split at h
     · rename_i hCall

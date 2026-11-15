@@ -20,6 +20,7 @@ import SeLe4n.Kernel.KernelRecords.LifecycleWaiters
 import SeLe4n.Kernel.KernelRecords.IpcStages
 import SeLe4n.Kernel.KernelRecords.IpcReplyRecv
 import SeLe4n.Kernel.KernelRecords.Timer
+import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelHeads
 
 /-! # The dispatchers keep the records
 
@@ -55,21 +56,130 @@ structure RecordsArmPremises (st : SystemState) : Prop where
   inactiveQuiescent : ∀ t tcb, st.getTcb? t = some tcb → tcb.threadState = .Inactive →
     threadIpcFieldsQuiescent st t
 
-/-- The retire before a resume keeps the thread's state. -/
+/-- **A reply holder's cancel keeps the records** (WS-SX SX4): the suspend's IPC
+cancel and its revert, as the suspend runs them, then the `Inactive` write,
+which leaves the holder parked. -/
+theorem RecordsStage.cancelReplyHolder (st : SystemState) (holder : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) : RecordsStage st (SeLe4n.Kernel.cancelReplyHolder st holder ec) := fun h => by
+  have hI := KernelRecords.objects_invExt h
+  rcases cancelReplyHolder_cases st holder ec with e | ⟨tcb, hL, -, e⟩
+  · rw [e]; exact h
+  rw [e]
+  have hT : st.getTcb? holder = some tcb :=
+    (SystemState.getTcb?_eq_some_iff _ _ _).mpr (lookupTcb_some_objects st holder tcb hL)
+  have S1 := RecordsStep.cancelIpcKeepingContexts st holder tcb hI
+  have W1 := cancelIpcKeepingContexts_waitersStage st holder tcb hT
+  have S2 : RecordsStep st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) ∧
+      WaitersStage st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) := by
+    unfold Lifecycle.Suspend.suspendCancelRevert; dsimp only; split
+    · exact ⟨S1.trans (RecordsStep.of_frame
+          (RecordsFrame.propagatePipChainCrossCore _ _ _ _ S1.invExt)),
+        W1.trans (WaitersStage.of_frame fun hI' => RecordsFrame.propagatePipChainCrossCore _ _ _ _ hI')⟩
+    · exact ⟨S1, W1⟩
+  have S3 := S2.1.trans (RecordsStep.updateTcb _ holder S2.1.invExt
+    (f := fun t => { t with threadState := .Inactive })
+    fun _ _ => TcbStaysParked.of_parked (.inl rfl))
+  have W3 := S2.2.trans (WaitersStage.updateTcb _ holder (f := fun t => { t with threadState := .Inactive })
+    fun _ => rfl)
+  exact RecordsStage.of_step S3 (fun hC => (W3 hI hC).2) h
+
+/-- A reply holder's cancel leaves every other thread `.ready` in IPC. -/
+theorem CallerReady.cancelReplyHolder {st : SystemState} {tid holder : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} (hInv : st.objects.invExt) (hNe : tid ≠ holder)
+    (h : CallerReady st tid) : CallerReady (SeLe4n.Kernel.cancelReplyHolder st holder ec) tid := by
+  obtain ⟨t, hT, hR⟩ := h
+  have e := cancelReplyHolder_ipcStateKeptExcept st holder ec hInv tid hNe
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT] at e
+  cases h' : (SeLe4n.Kernel.cancelReplyHolder st holder ec).getTcb? tid with
+  | none => rw [h'] at e; cases e
+  | some t' =>
+    rw [h'] at e
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mp h', (Option.some.inj e).trans hR⟩
+
+/-- The retire before a resume keeps the thread's state and its IPC state. -/
 theorem retirePendingFaultForResume_threadState {st : SystemState} {t : SeLe4n.ThreadId} {y : TCB}
     (hInv : st.objects.invExt) (hy : (retirePendingFaultForResume st t).getTcb? t = some y) :
-    ∃ x, st.getTcb? t = some x ∧ x.threadState = y.threadState := by
+    ∃ x, st.getTcb? t = some x ∧ x.threadState = y.threadState ∧ x.ipcState = y.ipcState := by
   cases hT : st.getTcb? t with
   | none => simp only [retirePendingFaultForResume, hT] at hy; cases hy
   | some x =>
     refine ⟨x, rfl, ?_⟩
     cases hF : x.pendingFault with
-    | none => simp only [retirePendingFaultForResume, hT, hF] at hy; cases hy; rfl
+    | none => simp only [retirePendingFaultForResume, hT, hF] at hy; cases hy; exact ⟨rfl, rfl⟩
     | some tf =>
       simp only [retirePendingFaultForResume, hT, hF] at hy
       split at hy
-      · rw [discardPendingFault_getTcb?_self st t x hT hInv] at hy; cases hy; rfl
-      · rw [applyFaultRestart_pc st t _ x hT hInv] at hy; cases hy; rfl
+      · rw [discardPendingFault_getTcb?_self st t x hT hInv] at hy; cases hy; exact ⟨rfl, rfl⟩
+      · rw [applyFaultRestart_pc st t _ x hT hInv] at hy; cases hy; exact ⟨rfl, rfl⟩
+
+/-- **A suspend leaves its target ready in IPC**: the IPC cancel restores it, and
+every later step keeps its IPC state — the PIP revert, the deschedule, the
+release removal, the yield-link cancel and the scheduling point keep every
+record view, and the two writes to the target touch other fields. -/
+theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (hActive : ∀ t, st.getTcb? vtid.val = some t → t.threadState ≠ .Inactive)
+    (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid c = .ok (st', sgi?)) :
+    ∀ x, st'.getTcb? vtid.val = some x → x.ipcState = .ready := by
+  have back : ∀ {a b : SystemState}, RecordsFrame a b →
+      (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
+      ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F h y hy => by
+    obtain ⟨x, hx, hv⟩ := F.getTcb?_view hy
+    rw [← h x hx]; exact (congrArg TcbRecordView.ipc hv).symm
+  simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
+  split at hStep
+  case h_2 => exact absurd hStep (by simp)
+  case h_1 tcb hT =>
+    split at hStep
+    case isTrue hA => exact absurd (by simpa using hA) (hActive tcb hT)
+    case isFalse hA =>
+      have hI1 := Lifecycle.Suspend.cancelIpcKeepingContexts_preserves_objects_invExt st
+        vtid.val tcb hInv
+      have R1 : ∀ x, (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).getTcb?
+          vtid.val = some x → x.ipcState = .ready := by
+        have hI0 := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt st tcb hInv
+        have hIp := cutCancelledCallerHead_getTcb?_map st tcb TCB.ipcState
+          (fun _ => rfl) hInv vtid.val
+        rw [hT] at hIp
+        obtain ⟨x0, hx0, hx0I⟩ := Option.map_eq_some_iff.mp hIp
+        have hNR : ¬ vtid.val.isReserved := by
+          rcases vtid with ⟨⟨n⟩, hv⟩
+          simp only [SeLe4n.ThreadId.isReserved, decide_eq_true_eq]
+          intro h; subst h; exact hv rfl
+        intro x hx
+        exact cancelIpcBlocking_victim_ready_of_ipcState _ vtid.val tcb x0 hI0
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx0) hNR hx0I x
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+      have F2 : RecordsFrame (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
+          (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId => (PriorityInheritance.propagatePipChainCrossCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId c).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) := by
+        cases PriorityInheritance.blockingServer st vtid.val with
+        | none => exact RecordsFrame.refl hI1
+        | some serverId => exact RecordsFrame.propagatePipChainCrossCore _ _ _ _ hI1
+      have F3 := F2.trans (RecordsFrame.descheduleAt _ vtid.val (placedCoreOf? st vtid.val)
+        F2.invExt)
+      have F4 := F3.trans (show RecordsFrame _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
+        unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
+        exact RecordsFrame.updateTcb _ _ F3.invExt fun _ => rfl)
+      have R4 := back F4 R1
+      have upd : ∀ {a b : SystemState} {f : TCB → TCB}, RecordsFrame (a.updateTcb vtid.val f) b →
+          a.objects.invExt → (∀ t, (f t).ipcState = t.ipcState) →
+          (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
+          ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F hI hf hR => by
+        refine back F fun y hy => ?_
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI] at hy
+        obtain ⟨x, hx, rfl⟩ := Option.map_eq_some_iff.mp hy
+        rw [hf]; exact hR x hx
+      have hI5 := SystemState.updateTcb_preserves_objects_invExt _ vtid.val
+        (fun t => { t with threadState := .Inactive }) F4.invExt
+      have F6 := (RecordsFrame.releaseRemoveThread _ vtid.val hI5).trans
+        (RecordsFrame.cancelYieldTo _ vtid.val (RecordsFrame.releaseRemoveThread _ vtid.val hI5).invExt)
+      exact upd (F6.trans (RecordsStep.suspendRescheduleOnCore F6.invExt hStep)) F4.invExt
+        (fun _ => rfl) R4
 
 /-- A resume that commits found its target `.Inactive`, so quiescent in IPC. -/
 theorem inactiveQuiescent_of_resume {st : SystemState} {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
@@ -84,7 +194,7 @@ theorem inactiveQuiescent_of_resume {st : SystemState} {vtid : SeLe4n.ValidThrea
     split at h
     · cases h
     · rename_i hIn
-      obtain ⟨x, hx, hS⟩ := retirePendingFaultForResume_threadState hInv hy
+      obtain ⟨x, hx, hS, -⟩ := retirePendingFaultForResume_threadState hInv hy
       exact P.inactiveQuiescent _ x hx (by rw [hS]; simpa using hIn)
   · cases h
 
@@ -376,14 +486,48 @@ theorem dispatchCapabilityOnly_recordsStage
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
+                hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+              rotate_left
+              · intro h
+                by_cases hAct : ∀ t, st.getTcb? vtid.val = some t → t.threadState ≠ .Inactive
+                · have hI1 := KernelRecords.objects_invExt
+                    (RecordsStage.suspendThreadOnCore hSus h)
+                  exact RecordsStage.resumeThreadOnCore
+                    (fun y hy => by
+                      obtain ⟨x, hx, -, hS⟩ := retirePendingFaultForResume_threadState hI1 hy
+                      rw [← hS]
+                      exact suspendThreadOnCore_target_ipcReady
+                        (KernelRecords.objects_invExt h) hAct hSus x hx) hRes
+                    (RecordsStage.retirePendingFaultForResume st1 vtid.val
+                      (RecordsStage.suspendThreadOnCore hSus h))
+                · -- An `Inactive` target's suspend writes nothing, so the resume
+                  -- runs on the state the restart was handed.
+                  obtain ⟨t, ht, hti⟩ : ∃ t, st.getTcb? vtid.val = some t ∧
+                      t.threadState = .Inactive := by
+                    cases hT0 : st.getTcb? vtid.val with
+                    | none => exact absurd (fun t ht => by rw [hT0] at ht; cases ht) hAct
+                    | some t =>
+                      refine ⟨t, rfl, Classical.byContradiction fun hne => hAct ?_⟩
+                      intro t' ht'
+                      rw [hT0] at ht'
+                      cases ht'
+                      exact hne
+                  rw [Lifecycle.Suspend.suspendThreadOnCore_of_inactive st vtid executingCore t ht hti]
+                    at hSus
+                  cases hSus
+                  exact RecordsStage.resumeThreadOnCore
+                    (threadIpcFieldsQuiescent_retirePendingFaultForResume st _
+                      (KernelRecords.objects_invExt h)
+                      (inactiveQuiescent_of_resume P (KernelRecords.objects_invExt h) hRes)).ready hRes
+                    (RecordsStage.retirePendingFaultForResume st vtid.val h)
+              · exact RecordsStage.refl _
               exact fun h => RecordsStage.resumeThreadOnCore
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _
                   (KernelRecords.objects_invExt h)
@@ -635,15 +779,40 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
         hSend)
       (fun x => stageWokenDelivery_recordsStage x _ _) h
   case none.receive.object epId =>
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    exact (RecordsStage.of_fst_eq (RecordsStage.endpointReceiveDualWithCapsOnCore P.deletes.1 hCaller)
-      hRecv).trans
-      (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI))
+    split at h
+    · cases h
+    unfold receiveResolvedArm at h
+    have hInv := P.deletes.2.1.2.1
+    have hIpc := P.deletes.2.1.1
+    have hSC : RecordsStage st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st).objects.invExt ∧
+        queueHeadBlockedConsistent (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+        CallerReady (cancelRecvBusyReply ctx tid gate decoded executingCore st) tid := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+        rw [e]
+      · exact ⟨.refl _, hInv, hIpc.queueHeadBlockedConsistent, hCaller⟩
+      · exact ⟨RecordsStage.cancelReplyHolder st hd executingCore,
+          cancelReplyHolder_objects_invExt st hd executingCore hInv,
+          cancelReplyHolder_queueHeadBlockedConsistent st hd executingCore hInv
+            (.of_ipcInvariantFull hIpc),
+          hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
+    obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
+    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      exact hS.trans ((RecordsStage.of_fst_eq
+        (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
+        (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
+          (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
+          (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
+    · cases h
   case none.call.object epId =>
     split at h
     · rename_i hCall

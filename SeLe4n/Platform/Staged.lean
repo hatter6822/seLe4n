@@ -612,6 +612,10 @@ import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 -- cross-core call/reply invariant surfaces it composes.
 import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
+-- WS-SX SX4: a busy reply's holder cancel keeps `ipcInvariantFull` and leaves
+-- the reply free, so the receive's reply resolution refuses nothing after the
+-- cancel it commits first.  Staged with the run-queue readiness facts it reads.
+import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelBundle
 -- WS-RR RR3.13/RR3.14: the pre-state side of the de-threaded IPC bundle family
 -- -- `ipcReachable` (the state-shaped preconditions, with the boot state proved
 -- to satisfy them so the bundle is inhabited rather than vacuous) plus the
