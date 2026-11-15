@@ -16,6 +16,12 @@
 # the pin that already finished is reused; any other directory under
 # `.lake/rpi5-machine/` is another pin's and is left alone.
 #
+# WS-RB RB4: beside the emulator it installs what boots an SD card as a Pi 5
+# boots one: rpi5_machine's `rpi5-boot` and the `dtmerge` it runs, and, from
+# rpi5_machine's own pinned firmware builder (`scripts/firmware`), TF-A's
+# `rpi5` BL31 (`firmware/bl31.bin`) and the Raspberry Pi 5 device tree a
+# release of the Raspberry Pi firmware ships (`firmware/bcm2712-rpi-5-b.dtb`).
+#
 #   ./scripts/setup_rpi5_machine.sh            # build if need be; print the path
 #   ./scripts/setup_rpi5_machine.sh --print    # print the path a build would have
 #
@@ -23,12 +29,14 @@
 # PR reports was taken on the machine that PR names.
 #
 # Build dependencies (Debian/Ubuntu): build-essential ninja-build python3-venv
-# libglib2.0-dev libpixman-1-dev libfdt-dev pkg-config git.
+# libglib2.0-dev libpixman-1-dev libfdt-dev pkg-config git, and for the
+# firmware gcc-aarch64-linux-gnu curl.  Booting a card: mtools
+# device-tree-compiler.
 
 set -euo pipefail
 
 RPI5_MACHINE_REPO="https://github.com/hatter6822/rpi5_machine"
-RPI5_MACHINE_COMMIT="1d46342eecfc1be3f4ba172a83ecd73e54837811"
+RPI5_MACHINE_COMMIT="88494fd6a941d504f85a4256ebd4076dcace9b99"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -71,6 +79,11 @@ fi
 log "building (make setup build; about fifteen minutes on four cores, once per pin)"
 make -C "${SOURCE_DIR}" setup >&2
 make -C "${SOURCE_DIR}" -j"$(nproc)" build >&2
+
+log "building TF-A's rpi5 BL31 and fetching the Pi 5's device tree (scripts/firmware)"
+"${SOURCE_DIR}/scripts/firmware" "${MACHINE_ROOT}/firmware" bl31.bin bcm2712-rpi-5-b.dtb >&2
+cp "${SOURCE_DIR}/scripts/rpi5-boot" "${MACHINE_ROOT}/rpi5-boot"
+cp "${SOURCE_DIR}/build/dtmerge" "${MACHINE_ROOT}/dtmerge"
 
 cp "${SOURCE_DIR}/build/qemu-system-aarch64" "${MACHINE_BIN}.partial"
 strip "${MACHINE_BIN}.partial" 2>/dev/null || true

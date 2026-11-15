@@ -1,3 +1,33 @@
+## v0.37.28 — the Raspberry Pi 5 boot files boot as the firmware boots them
+
+WS-RB RB4 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
+
+- **rpi5_machine moves to the firmware's layout.** The pin
+  (`scripts/setup_rpi5_machine.sh`) moves to rpi5_machine's PR #7: without an
+  armstub `raspi5b` loads the kernel, initrd and device tree where the Pi 5's
+  firmware does and enters the kernel from a stub at address 0 standing in for
+  the firmware's own BL31 (QEMU's PSCI over SMC stays). `kernel-address`,
+  `dtb-address` and `dtb-end` take `config.txt`'s `kernel_address`,
+  `device_tree_address` and `device_tree_end`, and `rpi5-boot` passes them
+  with or without an armstub.
+- **Every `raspi5b` lane boots the packaged boot files.** `qemu_cut_image`
+  packages `kernel8.img` and `config.txt` from the image
+  (`scripts/rpi5_boot_files.py package`, which checks them against the ELF)
+  and boots `kernel8.img` with the machine options its `config.txt` gives
+  (`rpi5_boot_files.py machine-options`, self-tested), so the bring-up, the
+  exercisers, the refusal probe and the boot lane all boot where the firmware
+  would put the kernel and the device tree.
+- **The SD card, through `rpi5-boot` and TF-A.** `test_qemu.sh` boots the same
+  files from an SD card (`rpi5_boot_files.py card`: an MBR, the FAT boot
+  partition, `kernel8.img`, `config.txt` and the device tree the Raspberry Pi
+  firmware release ships) with `rpi5-boot`, once through the firmware's own
+  BL31 and once through TF-A's `rpi5` BL31 (`armstub=bl31.bin`, the card's one
+  line beyond the boot files), whose banner the boot must print; HAL-only and
+  Lean-linked alike. The setup installs `rpi5-boot`, `dtmerge`, TF-A's BL31
+  and the device tree beside the emulator (rpi5_machine's `scripts/firmware`,
+  which now builds only the outputs named); the Raspberry Pi 5 lanes need
+  mtools, and CI installs it with the Linux cross compiler TF-A builds with.
+
 ## v0.37.27 — the Tier-4 exercisers boot `raspi5b` first
 
 WS-RB RB3 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
