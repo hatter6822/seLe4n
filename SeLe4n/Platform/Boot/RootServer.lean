@@ -270,12 +270,6 @@ theorem createEntries_frame {α : Type} (proj : SystemState → α)
   | nil => rfl
   | cons e rest ih => exact (ih _).trans (hStep _ _ _ _ _)
 
-theorem RootServerReservation.objId_injective (r : RootServerReservation) {i j : Nat}
-    (h : r.objId i = r.objId j) : i = j := by
-  have := congrArg SeLe4n.ObjId.toNat h
-  simp only [RootServerReservation.objId, SeLe4n.ObjId.ofNat, SeLe4n.ObjId.toNat] at this
-  omega
-
 /-- The installable check, read clause by clause. -/
 theorem rootServerInstallable_spec {st : SystemState} {r : RootServerReservation} {t : TCB}
     {cn : CNode} {vs : VSpaceRoot} (h : rootServerInstallable st r t cn vs = true) :
@@ -842,12 +836,6 @@ theorem installRootServer_slotCapAt_cases (config : PlatformConfig) (ist : Inter
 -- ============================================================================
 -- §5  The shape the stage leaves
 -- ============================================================================
-
-theorem RootServerReservation.cnodeSlot_injective (r : RootServerReservation) {i j : Nat}
-    (h : r.cnodeSlot i = r.cnodeSlot j) : i = j := by
-  have : (r.cnodeSlot i).toNat = (r.cnodeSlot j).toNat := congrArg SeLe4n.Slot.toNat h
-  change r.frameSlot.toNat + i = r.frameSlot.toNat + j at this
-  omega
 
 /-- **What the stage does, read off the store**: nothing, or — over a thread,
     CNode and address space the state can take the reservation in — every key

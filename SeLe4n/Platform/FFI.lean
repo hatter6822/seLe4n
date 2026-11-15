@@ -432,7 +432,7 @@ opaque ffiExtendBootRamMap (base size : UInt64) : BaseIO Unit
 /-- **WS-UC UC5**: put the RAM `[coveredBase, coveredBase + coveredSize)` under
     the HAL's region map, the map kept at `mapBase`: one byte per 512-byte
     granule, in RAM the boot map already covers and no untyped covers
-    (`Platform.untypedExtentOf`, `Platform.regionMapBaseOf`).  The HAL checks
+    (`Platform.untypedExtentsOf`, `Platform.regionMapBaseOf`).  The HAL checks
     the reservation: whole pages, inside the mapped RAM, clear of the covered
     RAM and of every earlier reservation and covered range.  A reservation it
     refuses **halts the system**, as an extension it cannot map does.  Called
@@ -1383,14 +1383,20 @@ count (`bindPlatformConfig_declaredCoreCount`).
 for the reason it names the root: which threads run first is a property of the
 deployment the binding states, not of a caller's configuration, and deriving it
 from the labeling makes the witnesses the guard is decided on the threads that
-run (`bindPlatformConfig_initialThreads`). -/
+run (`bindPlatformConfig_initialThreads`).
+
+**WS-SX SX5.1**: and the root server's reservation
+(`PlatformBinding.rootServerFor` of the caller's account), for the same reason:
+which pages, ids and slots the root task's IPC buffer is built from is the
+deployment's, cut from the RAM the binding maps for that account. -/
 def bindPlatformConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : PlatformConfig :=
   { config with
     machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform)
     initialThreads := PlatformBinding.initialThreads (platform := platform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := platform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := platform)
+    rootServer := PlatformBinding.rootServerFor (platform := platform) config.machineConfig }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1656,12 +1662,14 @@ that every RAM address of it outside the kernel's extent is in some extension;
 `rpi5BootRamExtensions_admissible` that each is one the HAL accepts.
 
 **WS-UC UC5**: each extension's top is then reserved for the region map
-(`ffiReserveRegionMap`).  Its untyped covers the rest (`untypedExtentOf`), so
-the map lies in mapped RAM that no capability names. -/
+(`ffiReserveRegionMap`).  Its untyped covers the rest (`untypedExtentsOf`: the
+last extension's untyped stops below the root server's reservation too, WS-SX
+SX5.1), so the map lies in mapped RAM that no capability names, and the map
+describes exactly the RAM the untypeds cover. -/
 def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
-  extensions.forM fun e => do
+  (extensions.zip (untypedExtentsOf extensions)).forM fun (e, u) => do
     ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
-    ffiReserveRegionMap (UInt64.ofNat e.1) (UInt64.ofNat (untypedExtentOf e).2)
+    ffiReserveRegionMap (UInt64.ofNat u.1) (UInt64.ofNat u.2)
       (UInt64.ofNat (regionMapBaseOf e))
 
 /-- **WS-RR RR7.27**: the DTB-driven hardware boot, with its failure handled.

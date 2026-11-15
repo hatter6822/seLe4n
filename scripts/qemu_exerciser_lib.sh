@@ -391,6 +391,10 @@ for driver in drivers:
             "reply-cap-mint-over-copy", "reply-cap-over-copy-delete", "reply-delete",
             "reply-queued-fault", "reply-recv", "reply-to-badged-call", "reschedule-sgi",
             "resume-carved-tcb", "resume-shared-tcb", "root-ipc-buffer-back", "root-set-ipc-buffer",
+            # WS-SX SX5: the first syscall reads the boot-built IPC buffer, and
+            # the boot's frame capability unmaps and remaps it.
+            "root-ipc-buffer-at-boot", "root-ipc-buffer-cap", "root-ipc-buffer-cap-unmap",
+            "root-ipc-buffer-cap-remap",
             "sched-context-bind", "sched-context-configure", "sched-context-consumed",
             "sched-context-consumed-reset", "sched-context-rebind", "sched-context-unbind",
             "sched-context-unbind-suspended", "sched-context-unbind-waiting",

@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Service.Interface
 -- definition into the Platform namespace.
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Platform.Boot.RegionMapReservation
 
 /-!
 # Platform Binding Contract (H3 preparation)
@@ -118,6 +119,15 @@ class PlatformBinding (platform : Type) where
       a deployment's services can register only against these.  Empty by
       default. -/
   serviceInterfaces : List SeLe4n.Model.InterfaceSpec := []
+  /-- **WS-SX SX5.1 (D13, D14)**: the root server's reservation on a board
+      account (`PlatformConfig.rootServer`, which `bindPlatformConfig` sets
+      from this): the pages, object ids and root CNode slots from which the
+      boot builds the root task's IPC buffer, as seL4's boot builds its initial
+      thread's (`create_ipcbuf_frame_cap`).  A function of the account because
+      the pages are cut from the RAM the boot maps for it
+      (`rootServerReservationOf`).  `none` by default: a binding without one
+      boots no root server. -/
+  rootServerFor : SeLe4n.MachineConfig → Option RootServerReservation := fun _ => none
   /-- **WS-SM SM0.G**: number of cores the platform exposes.
 
       Multi-core (SMP) coordination in WS-SM SM1..SM10

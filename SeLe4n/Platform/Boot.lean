@@ -92,66 +92,6 @@ structure ObjectEntry where
     naming. -/
 abbrev BootVSpaceRootEntry := SeLe4n.Platform.BootVSpaceRootEntry
 
-/-- **WS-SX SX5.1 (decisions D13, D14): the root server's reservation** — what
-    the boot needs to build the root task's IPC buffer, as seL4's boot builds its
-    initial thread's (`create_rootserver_objects`, `create_ipcbuf_frame_cap`,
-    `create_initial_thread`).
-
-    Four pages of RAM from `base`: the buffer frame first, then the tables of
-    levels 1, 2 and 3 that complete the walk to it from the root task's
-    top-level table, each at the page after the one before.  They are cut from
-    the last RAM extension the boot maps, directly below its region map
-    (`Platform.rootServerBaseOf`), and that extension's untyped stops below them
-    (`Platform.untypedExtentsOf`), so no untyped covers them: the
-    `rootServerPlaced` conjunct of `PlatformConfig.wellFormed` refuses a
-    reservation that is not in one RAM region, clear of every untyped, of the
-    kernel's reserved extent and devices, and of every region map.
-
-    The boot gives the four objects the ids from `firstObjId` up and their
-    capabilities the root CNode slots from `frameSlot` up: the frame's, mapped
-    (seL4's `seL4_CapInitThreadIPCBuffer`), then the three tables'.  It derives
-    the frame's capability into the thread's buffer slot (`TCB.ipcBufferSlot`,
-    seL4's `tcbBuffer`) and sets its buffer address (`tcbIPCBuffer`) to
-    `bufferVAddr`. -/
-structure RootServerReservation where
-  /-- The root task: seL4's initial thread, the one thread given a buffer. -/
-  thread : SeLe4n.ThreadId
-  /-- The reservation's first byte, page aligned. -/
-  base : SeLe4n.PAddr
-  /-- The root task's IPC buffer address, page aligned in its user window. -/
-  bufferVAddr : SeLe4n.VAddr
-  /-- The first of the four object ids: the frame's, then the three tables'. -/
-  firstObjId : SeLe4n.ObjId
-  /-- The first of the four root CNode slots: the frame's, then the three
-      tables'. -/
-  frameSlot : SeLe4n.Slot
-  /-- The RAM extensions the boot maps, whose region maps the reservation lies
-      clear of. -/
-  ramExtensions : List (Nat × Nat)
-
-namespace RootServerReservation
-
-/-- Page `i` of the reservation: the frame's at 0, the level-`i` table's at
-    `i` for `i` from 1 to 3. -/
-def pageAddr (r : RootServerReservation) (i : Nat) : SeLe4n.PAddr :=
-  SeLe4n.PAddr.ofNat (r.base.toNat + i * SeLe4n.pageBytes)
-
-/-- Object `i` of the reservation: the frame at 0, the level-`i` table at `i`. -/
-def objId (r : RootServerReservation) (i : Nat) : SeLe4n.ObjId :=
-  SeLe4n.ObjId.ofNat (r.firstObjId.toNat + i)
-
-/-- The root CNode slot of object `i`'s capability. -/
-def cnodeSlot (r : RootServerReservation) (i : Nat) : SeLe4n.Slot :=
-  SeLe4n.Slot.ofNat (r.frameSlot.toNat + i)
-
-/-- The reservation's four pages are distinct. -/
-theorem pageAddr_injective (r : RootServerReservation) {i j : Nat}
-    (h : (r.pageAddr i).toNat = (r.pageAddr j).toNat) : i = j := by
-  simp only [pageAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat, SeLe4n.pageBytes] at h
-  omega
-
-end RootServerReservation
-
 /-- Q3-C: Platform boot configuration — IRQ table and initial objects.
 
 This is the minimal configuration needed to construct a valid
@@ -1861,14 +1801,17 @@ def rootServerMemoryPlaced (config : PlatformConfig) (r : RootServerReservation)
     D14): the reservation names a configured thread whose buffer slot is empty,
     whose CSpace root is a configured CNode with the reservation's four slots
     in range and empty, and whose VSpace root is a configured address space
-    that owns its top-level table page. -/
+    that owns its top-level table page.  The slots are read from the CNode's
+    slot array (`CNode.lookupCells`, which is `CNode.lookup`:
+    `CNode.lookup_eq_lookupCells`), so a deployment's placement is decided by
+    evaluation. -/
 def rootServerTaskPlaced (config : PlatformConfig) (r : RootServerReservation) : Bool :=
   match config.configuredObject? r.thread.toObjId with
   | some (.tcb t) =>
     t.spaceCells[2].isNone &&
       (match config.configuredObject? t.cspaceRoot with
        | some (.cnode cn) => (List.range rootServerPages).all fun i =>
-           decide ((r.cnodeSlot i).toNat < cn.cells.size) && (cn.lookup (r.cnodeSlot i)).isNone
+           decide ((r.cnodeSlot i).toNat < cn.cells.size) && (cn.lookupCells (r.cnodeSlot i)).isNone
        | _ => false) &&
       (match config.configuredObject? t.vspaceRoot with
        | some (.vspaceRoot vs) => vs.tableBase.isSome
@@ -4417,13 +4360,14 @@ def ObjectEntry.withoutUntypedExtent (e : ObjectEntry) : ObjectEntry where
   hMappings := fun vs h => e.hMappings vs (objectWithoutUntypedExtent_eq_vspaceRoot h)
 
 /-- **WS-BP BP7.10**: a configuration with every untyped's extent and the
-memory map forgotten.
+memory map forgotten (and, WS-SX SX5.1, the root server's pages).
 
 What it is for: every gate of the checked boot but two reads a configuration
 only through this projection — the object ids, kinds and non-extent fields,
-the IRQ table, the boot root, the PE count and the address width.  The two
-that read what it forgets are the untyped placement (`untypedPlacementRespected`)
-and the machine configuration's own well-formedness.  So a deployment whose
+the IRQ table, the boot root, the PE count and the address width.  The three
+that read what it forgets are the untyped placement (`untypedPlacementRespected`),
+the root server's memory placement (`rootServerMemoryPlaced`) and the machine
+configuration's own well-formedness.  So a deployment whose
 untyped extents and memory map are read off a board's account passes every
 other gate on every account exactly when it passes them on one — which is how
 the RPi5 deployment's gates, decided by evaluation on the five RAM variants,
@@ -4432,7 +4376,8 @@ hold at every first-gigabyte top the firmware may report (WS-BP BP7.10,
 def PlatformConfig.withoutExtents (c : PlatformConfig) : PlatformConfig :=
   { c with
     initialObjects := c.initialObjects.map ObjectEntry.withoutUntypedExtent
-    machineConfig := { c.machineConfig with memoryMap := [] } }
+    machineConfig := { c.machineConfig with memoryMap := [] }
+    rootServer := c.rootServer.map RootServerReservation.withoutMemory }
 
 @[simp] theorem ObjectEntry.withoutUntypedExtent_id (e : ObjectEntry) :
     e.withoutUntypedExtent.id = e.id := rfl
@@ -4611,15 +4556,88 @@ theorem physicalAddressWidth_withoutExtents (c : PlatformConfig) :
     c.withoutExtents.machineConfig.physicalAddressWidth = c.machineConfig.physicalAddressWidth :=
   rfl
 
+theorem configuredObject?_withoutExtents (c : PlatformConfig) (id : SeLe4n.ObjId) :
+    c.withoutExtents.configuredObject? id =
+      (c.configuredObject? id).map objectWithoutUntypedExtent := by
+  unfold PlatformConfig.configuredObject? PlatformConfig.withoutExtents
+  simp only [List.find?_map, Option.map_map]
+  rfl
+
+theorem rootServerTaskPlaced_withoutExtents (c : PlatformConfig) (r : RootServerReservation) :
+    rootServerTaskPlaced c.withoutExtents r.withoutMemory = rootServerTaskPlaced c r := by
+  unfold rootServerTaskPlaced
+  rw [configuredObject?_withoutExtents]
+  change (match (c.configuredObject? r.thread.toObjId).map objectWithoutUntypedExtent with
+    | some (.tcb t) => _ | _ => _) = _
+  rcases c.configuredObject? r.thread.toObjId with _ | o
+  · rfl
+  · cases o with
+    | tcb t =>
+      simp only [Option.map, objectWithoutUntypedExtent]
+      rw [configuredObject?_withoutExtents, configuredObject?_withoutExtents]
+      congr 1
+      congr 1
+      · rcases c.configuredObject? t.cspaceRoot with _ | o
+        · rfl
+        · cases o <;> rfl
+      · rcases c.configuredObject? t.vspaceRoot with _ | o
+        · rfl
+        · cases o <;> rfl
+    | _ => rfl
+
+theorem rootServerIdsFresh_withoutExtents (c : PlatformConfig) (r : RootServerReservation) :
+    rootServerIdsFresh c.withoutExtents r.withoutMemory = rootServerIdsFresh c r := by
+  unfold rootServerIdsFresh PlatformConfig.withoutExtents
+  simp only [List.all_map]
+  rfl
+
+/-- **WS-SX SX5.1**: the root server's placement transfers along the projection,
+    given its memory placement — its thread, ids and buffer address are read
+    only through it. -/
+theorem rootServerPlaced_of_withoutExtents (c c' : PlatformConfig)
+    (hEq : c.withoutExtents = c'.withoutExtents) (hWf : rootServerPlaced c' = true)
+    (hMem : c.rootServer.all (rootServerMemoryPlaced c) = true) :
+    rootServerPlaced c = true := by
+  have hR := congrArg PlatformConfig.rootServer hEq
+  simp only [PlatformConfig.withoutExtents] at hR
+  unfold rootServerPlaced at hWf ⊢
+  cases hc : c.rootServer with
+  | none => rfl
+  | some r =>
+    cases hc' : c'.rootServer with
+    | none => rw [hc, hc'] at hR; cases hR
+    | some r' =>
+      rw [hc, hc'] at hR
+      have hrr : r.withoutMemory = r'.withoutMemory := Option.some.inj hR
+      rw [hc'] at hWf
+      rw [hc] at hMem
+      simp only [Option.all_some] at hMem
+      simp only [Bool.and_eq_true] at hWf ⊢
+      obtain ⟨⟨⟨_, hT⟩, hI⟩, hV⟩ := hWf
+      refine ⟨⟨⟨hMem, ?_⟩, ?_⟩, ?_⟩
+      · rw [← rootServerTaskPlaced_withoutExtents, hEq, hrr, rootServerTaskPlaced_withoutExtents]
+        exact hT
+      · rw [← rootServerIdsFresh_withoutExtents, hEq, hrr, rootServerIdsFresh_withoutExtents]
+        exact hI
+      · have : rootServerVAddrPlaced r = rootServerVAddrPlaced r.withoutMemory := rfl
+        rw [this, hrr]
+        exact hV
+
 /-- **WS-BP BP7.10**: well-formedness transfers along the projection, given the
     two conjuncts it forgets — so a configuration agreeing with a well-formed
     one on everything but its extents is well-formed exactly when its own
-    untypeds and (WS-SX SX5.1) its root server, which lies in that RAM, are
-    placed. -/
+    untypeds and (WS-SX SX5.1) its root server's pages, which lie in that RAM,
+    are placed. -/
 theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
     (hEq : c.withoutExtents = c'.withoutExtents) (hWf : c'.wellFormed = true)
-    (hPlace : untypedPlacementRespected c = true) (hRoot : rootServerPlaced c = true) :
+    (hPlace : untypedPlacementRespected c = true)
+    (hRootMem : c.rootServer.all (rootServerMemoryPlaced c) = true) :
     c.wellFormed = true := by
+  have hRoot : rootServerPlaced c = true :=
+    rootServerPlaced_of_withoutExtents c c' hEq (by
+      unfold PlatformConfig.wellFormed at hWf
+      simp only [Bool.and_eq_true] at hWf
+      exact hWf.2) hRootMem
   have h7 := bootRootTablesPlaced_withoutExtents c
   rw [hEq, bootRootTablesPlaced_withoutExtents] at h7
   have h2 := objectIdsUnique_withoutExtents c

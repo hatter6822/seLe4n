@@ -101,28 +101,33 @@ def qemuVirtInitialVSpace (asid : SeLe4n.ASID) (page : Nat) : VSpaceRoot :=
     tableBase := some (qemuVirtBootTablePage page) }
 
 /-- The root task's untyped — the one extension the boot maps, below the
-    region map's reservation at its top (WS-UC UC5, `untypedSizeOf`). -/
+    region map's reservation at its top (WS-UC UC5) and the root server's
+    reservation below that (WS-SX SX5.1): its part of `untypedExtentsOf`. -/
 def qemuVirtRootTaskUntyped : UntypedObject :=
   rpi5InitialUntyped qemuVirtKernelReservedEnd
-    (untypedSizeOf (qemuVirtRamTop - qemuVirtKernelReservedEnd))
+    (untypedSizeOf (qemuVirtRamTop - qemuVirtKernelReservedEnd) - rootServerReserveBytes)
 
 /-- The untyped's region is exactly the untyped part of the extension the boot
-    maps (`untypedExtentOf`). -/
+    maps (`untypedExtentsOf`). -/
 theorem qemuVirtRootTaskUntyped_region :
     [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)] =
-      qemuVirtBootRamExtensions.map untypedExtentOf := by
-  unfold qemuVirtBootRamExtensions untypedExtentOf
+      untypedExtentsOf qemuVirtBootRamExtensions := by
+  unfold qemuVirtBootRamExtensions untypedExtentsOf untypedExtentBelowRootServerOf
   rfl
 
-/-- **WS-UC UC5**: the extension holds its reservation, and the untyped ends
-    where the region map begins: `[0x5000_0000, 0x7FE8_0000)` for the
-    untyped, `[0x7FE8_0000, 0x8000_0000)` (1.5 MiB, 384 pages) for the map. -/
+/-- **WS-UC UC5, WS-SX SX5.1**: the extension holds the region map and the root
+    server's reservation, and the three tile it: `[0x5000_0000, 0x7FE7_C000)`
+    for the untyped, `[0x7FE7_C000, 0x7FE8_0000)` (four pages) for the root
+    server, `[0x7FE8_0000, 0x8000_0000)` (1.5 MiB, 384 pages) for the map. -/
 theorem qemuVirtRegionMap_layout :
-    qemuVirtBootRamExtensions.all regionMapFits = true ∧
+    qemuVirtBootRamExtensions.all rootServerFits = true ∧
       qemuVirtBootRamExtensions.map regionMapBaseOf = [0x7FE8_0000] ∧
       qemuVirtBootRamExtensions.map (fun e => regionMapReserveBytes e.2) = [0x18_0000] ∧
+      qemuVirtBootRamExtensions.map rootServerBaseOf = [0x7FE7_C000] ∧
       qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize =
-        0x7FE8_0000 := by
+        0x7FE7_C000 ∧
+      (qemuVirtRootServerAt qemuVirtRootServerFrameSlot).map (·.base.toNat) =
+        some 0x7FE7_C000 := by
   decide
 
 /-- The root CNode's 59-bit guard: its top bit set, so the root task's
@@ -267,7 +272,8 @@ def qemuVirtBoundPlatformConfig : PlatformConfig :=
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtPlatform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtPlatform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtPlatform)
+    rootServer := qemuVirtRootServerAt qemuVirtRootServerFrameSlot }
 
 /-- Binding any account yields the one bound configuration. -/
 theorem bindPlatformConfig_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :

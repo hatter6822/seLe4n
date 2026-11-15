@@ -166,6 +166,28 @@ theorem rpi5LowerWitnessIndex_ne_bootVSpaceRoot :
     rpi5LowerWitnessIndex ≠ rpi5BootVSpaceRootObjId.toNat := by
   decide
 
+/-- **WS-SX SX5.1**: the root task's IPC buffer address — the first page of the
+    512 GiB window under level-0 index 2 of its address space, as on `virt`.
+    The root task's address space maps nothing else at boot. -/
+def rpi5RootTaskIpcBufferVAddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat (2 <<< 39)
+
+/-- **WS-SX SX5.1**: the first of the root server's four object ids, above the
+    root task's untypeds (`6` and `7`, one per extension, at most two) and
+    below the untrusted domain's boundary. -/
+def rpi5RootServerFirstObjId : SeLe4n.ObjId := ⟨8⟩
+
+/-- **WS-SX SX5.1**: the root CNode slot of the root task's IPC buffer frame,
+    the three tables' after it: slots 7 to 10, between the untypeds' (5 and 6)
+    and the interrupt control (11). -/
+def rpi5RootServerFrameSlot : Nat := 7
+
+/-- **WS-SX SX5.1 (D13, D14)**: the root server's reservation on a board
+    bound to `v`: four pages cut from the last extension the boot maps,
+    directly below its region map (`rootServerReservationOf`). -/
+def rpi5RootServerAt (v : BCM2712Config) : Option SeLe4n.Platform.RootServerReservation :=
+  SeLe4n.Platform.rootServerReservationOf (rpi5BootRamExtensions v) ⟨rpi5LowerWitnessIndex⟩
+    rpi5RootTaskIpcBufferVAddr rpi5RootServerFirstObjId (SeLe4n.Slot.ofNat rpi5RootServerFrameSlot)
+
 /-- The Raspberry Pi 5 platform binding instance.
 
     **WS-RC R3 (DEEP-BOOT-01)**: `bootVSpaceRoot` is now populated with
@@ -202,6 +224,9 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   -- PE count is this binding's on all of them by definition.
   bindMachineConfig := rpi5BoundMachineConfig
   bindMachineConfig_declaredCoreCount := fun _ => rfl
+  -- WS-SX SX5.1: the root server's pages, cut from the RAM the boot maps for
+  -- the variant the account selects.
+  rootServerFor := fun board => rpi5RootServerAt (rpi5VariantFor board)
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the production labeling — two mutually isolated domains

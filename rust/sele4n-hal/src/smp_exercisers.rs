@@ -1791,8 +1791,9 @@ const fn cap_address(slot: u64) -> u64 {
     ROOT_CNODE_GUARD | slot
 }
 
-/// **The root task's IPC buffer**, which the boot maps and sets
-/// (`qemuVirtExerciserRootIpcBufferVAddr`, seL4's initial-thread IPC buffer):
+/// **The root task's IPC buffer**, which the boot builds, maps and sets
+/// (`qemuVirtRootTaskIpcBufferVAddr`, `Boot.installRootServer`, seL4's
+/// initial-thread IPC buffer):
 /// the first page under level-0 index 2 of the root task's address space,
 /// beside the scenarios' window ([`FRAME_VADDR`], index 1).  A scenario that
 /// points the root task's buffer elsewhere points it back here when it is
@@ -2077,6 +2078,72 @@ const WIDE_BADGE_TEARDOWN: [RoundTrip; 1] = [invocation(
     CNODE_CAP,
     [MINT_SLOT, 0, 0, 0],
 )];
+
+/// **WS-SX SX5**: the root CNode slot of the root task's IPC buffer frame
+/// capability, which the boot installs mapped (`Boot.installRootServer`,
+/// `qemuVirtExerciserRootServerFrameSlot`, seL4's
+/// `seL4_CapInitThreadIPCBuffer`); the three tables' follow it, so the boot's
+/// own slots end at 35.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_FRAME_SLOT: u64 = 32;
+/// Its capability address.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_FRAME_CAP: u64 = cap_address(ROOT_IPC_BUFFER_FRAME_SLOT);
+/// The badge the first syscall reads from the boot-built buffer.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_AT_BOOT_BADGE: u64 = 0xB007;
+/// The badge read from the buffer once its frame is unmapped and remapped.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_REMAPPED_BADGE: u64 = 0xCAB;
+
+/// **`root-ipc-buffer-at-boot`** (WS-SX SX5): the root task's first syscall, a
+/// mint whose badge is its fifth word, read from the IPC buffer the boot built
+/// and mapped at [`ROOT_IPC_BUFFER`] (seL4's initial thread finds its buffer
+/// mapped, `create_ipcbuf_frame_cap`).  No scenario has touched the buffer
+/// before it.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_AT_BOOT: RoundTrip = mint(
+    "root-ipc-buffer-at-boot",
+    NOTIFICATION_SLOT,
+    MINT_SLOT,
+    NOTIFICATION_MINT_RIGHTS,
+    ROOT_IPC_BUFFER_AT_BOOT_BADGE,
+    ROOT_IPC_BUFFER,
+);
+
+/// **`root-ipc-buffer-cap`** (WS-SX SX5): the boot's frame capability is a
+/// real one.  The buffer is unmapped through the root task's address space and
+/// mapped again through the frame capability the boot put in
+/// [`ROOT_IPC_BUFFER_FRAME_SLOT`], with the buffer's own permissions, and a
+/// mint then reads its badge from the remapped buffer.
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER_CAP: [RoundTrip; 3] = [
+    invocation(
+        "root-ipc-buffer-cap-unmap",
+        VSPACE_UNMAP,
+        VSPACE_CAP,
+        [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
+    ),
+    invocation(
+        "root-ipc-buffer-cap-remap",
+        VSPACE_MAP,
+        VSPACE_CAP,
+        [
+            ROOT_ASID,
+            ROOT_IPC_BUFFER,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            FRAME_PERMS,
+        ],
+    ),
+    mint(
+        "root-ipc-buffer-cap",
+        NOTIFICATION_SLOT,
+        MINT_SLOT,
+        NOTIFICATION_MINT_RIGHTS,
+        ROOT_IPC_BUFFER_REMAPPED_BADGE,
+        ROOT_IPC_BUFFER,
+    ),
+];
 
 /// The round trips one thread makes alone (WS-ZA ZA4.1): the signal, a signal
 /// whose capability's badge does not fit a scalar `Nat` (`≥ 2^63`), a wait
@@ -2545,7 +2612,7 @@ const EMPTY_DEST_SLOT: u64 = 49;
 
 /// The root slots of the multi-level walk: the root CNode's capability minted
 /// with a 52-bit guard, minted with none, and the walk's copy.  None is filled
-/// at boot (the boot's own slots end at 36) and each is emptied again.
+/// at boot (the boot's own slots end at 35) and each is emptied again.
 #[cfg(feature = "hw_target")]
 const GUARDED_CNODE_SLOT: u64 = 50;
 #[cfg(feature = "hw_target")]
@@ -11233,6 +11300,82 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
     ok
 }
 
+/// Whether the mint just made into [`MINT_SLOT`] carries `badge`: a signal
+/// through it and a wait on the notification, both unmeasured, the wait's
+/// badge (`x0`) compared, and the minted capability deleted again.
+#[cfg(feature = "hw_target")]
+fn minted_badge_delivered(name: &str, badge: u64) -> bool {
+    let signalled = RoundTrip {
+        cptr: cap_address(MINT_SLOT),
+        ..signal("root-ipc-buffer-badge-signal")
+    };
+    if !unmeasured(&signalled, "the minted capability's signal failed") {
+        return false;
+    }
+    let wait = RoundTrip {
+        name: "root-ipc-buffer-badge-wait",
+        syscall: WAIT,
+        cptr: NOTIFICATION_CAP,
+        msg_len: 1,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: None,
+    };
+    let delivered = match dispatch_round_trip(&wait).0 {
+        Dispatched::Returned(regs) if regs[0] == badge => true,
+        Dispatched::Returned(regs) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the minted badge is {:#x}, \
+                 not the {badge:#x} written in the IPC buffer",
+                regs[0]
+            );
+            false
+        }
+        _ => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the wait for the minted badge failed"
+            );
+            false
+        }
+    };
+    delivered
+        && WIDE_BADGE_TEARDOWN
+            .iter()
+            .all(|step| unmeasured(step, "the minted capability's delete failed"))
+}
+
+/// **WS-SX SX5**: the root task's IPC buffer as the boot built it.  The first
+/// syscall reads its fifth word from the buffer ([`ROOT_IPC_BUFFER_AT_BOOT`]),
+/// then the buffer is unmapped and remapped through the boot's frame
+/// capability and read again ([`ROOT_IPC_BUFFER_CAP`]); each run twice and
+/// measured like every round trip, and each mint's badge checked as delivered.
+#[cfg(feature = "hw_target")]
+fn root_ipc_buffer_scenarios() -> bool {
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if heap_allocations_round_trip(&ROOT_IPC_BUFFER_AT_BOOT, which) != Some(true)
+            || !minted_badge_delivered(ROOT_IPC_BUFFER_AT_BOOT.name, ROOT_IPC_BUFFER_AT_BOOT_BADGE)
+        {
+            return false;
+        }
+    }
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        for step in ROOT_IPC_BUFFER_CAP.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return false;
+            }
+        }
+        if !minted_badge_delivered("root-ipc-buffer-cap", ROOT_IPC_BUFFER_REMAPPED_BADGE) {
+            return false;
+        }
+    }
+    true
+}
+
 /// **WS-CV CV0.1, WS-ZA ZA4.1**: the heap allocations of syscall round trips
 /// through the Lean kernel, on the boot core.  For each round trip the driver
 /// publishes a frame carrying the syscall as the in-flight frame, classifies
@@ -11261,6 +11404,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         );
     }
     if !secondary_core_windows(" (first call)") {
+        return Some(false);
+    }
+    if !root_ipc_buffer_scenarios() {
         return Some(false);
     }
     // The mint of a badge at `2^63`, measured twice like every round trip:

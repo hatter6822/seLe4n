@@ -1333,6 +1333,25 @@ theorem regionMapFits_of_accepted (e : Nat × Nat)
   unfold SeLe4n.pageBytes
   omega
 
+/-- **WS-SX SX5.1**: an extension the HAL accepts also holds the root server's
+    four pages below its region map and a nonempty untyped below them. -/
+theorem rootServerFits_of_accepted (e : Nat × Nat)
+    (h : rpi5BootRamExtensionAccepted e = true) : rootServerFits e = true := by
+  unfold rpi5BootRamExtensionAccepted at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨⟨hPos, hBase⟩, hEnd⟩, _⟩, _⟩, _⟩ := h
+  unfold rootServerFits regionMapReserveBytes regionMapGranuleBytes rootServerReserveBytes
+    rootServerPages SeLe4n.pageBytes
+  exact decide_eq_true (by omega)
+
+/-- **WS-SX SX5.1**: every extension of every admissible configuration holds the
+    root server's reservation. -/
+theorem rpi5BootRamExtensions_rootServerFit (v : BCM2712Config) (hv : v.Admissible) :
+    (rpi5BootRamExtensions v).all rootServerFits = true := by
+  have h := rpi5BootRamExtensions_admissible v hv
+  simp only [List.all_eq_true] at h ⊢
+  exact fun e he => rootServerFits_of_accepted e (h e he)
+
 /-- **WS-UC UC5**: every extension of every admissible configuration holds the
     region map's reservation, so the boot never hands the HAL a truncated
     untyped or a reservation that does not fit. -/
