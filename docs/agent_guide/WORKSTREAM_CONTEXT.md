@@ -4,7 +4,7 @@
 > assume.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md` mirror) so the
 > auto-loaded agent guidance stays small; only relative link targets were
 > rewritten.  The sections for **closed** workstreams (WS-RA, WS-OD, WS-RM,
-> WS-HP, WS-LC, WS-ZA) are archived verbatim in
+> WS-HP, WS-LC, WS-ZA, WS-RB) are archived verbatim in
 > [`docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`](../dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md).
 > Workstream status is canonical in
 > [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md); per-version detail is in
@@ -125,27 +125,6 @@ entry and child record must stay buildable from the carve's scalars in one
 window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
-
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28; RB4 v0.37.29)
-
-The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
-which models the Pi 5, with `virt` kept as the second lane (owner decision
-2026-11-15). RB1 boots the Raspberry Pi 5 image itself on `raspi5b`, HAL-only
-and Lean-linked; RB2 moves the four-PE bring-up and the refusal probe, RB3 the
-Tier-4 exercisers (a Pi 5 exerciser deployment beside the `virt` one), RB4
-boots the packaged `kernel8.img` and `config.txt` through `rpi5-boot` and TF-A,
-RB5 closes. Plan: [`RPI5_MACHINE_BOOT_PLAN.md`](../planning/RPI5_MACHINE_BOOT_PLAN.md).
-**Standing constraints for new code:** a board-dependent constant the HAL reads
-is a `BoardMap` field (`rust/sele4n-hal/src/board.rs`), never a literal in the
-module that uses it (RB1 found the secondaries' MPIDRs as `virt`'s literals);
-a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
-first, and a gate that boots both boards takes them from `qemu_gate_boards`;
-exerciser deployment code is board-generic
-(`SeLe4n/Platform/Exerciser/Deployment.lean`) and an exerciser pin reads the
-same count on both machines; a `raspi5b` lane boots the packaged
-`kernel8.img` at its `config.txt` addresses (`qemu_cut_image`), never a raw
-cut at QEMU's default address; rpi5_machine moves only by editing the pin in
-`scripts/setup_rpi5_machine.sh`, in its own PR.
 
 ### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27)
 
@@ -380,6 +359,7 @@ in the same change.
 | WS-HP | [`DONATION_POP_TRIGGER_PLAN.md`](../dev_history/planning/DONATION_POP_TRIGGER_PLAN.md) | v0.35.54 |
 | WS-ZA | [`ZERO_ALLOCATION_SYSCALL_PLAN.md`](../dev_history/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md); its decisions are `WS-ZA D1`–`D5` | v0.37.0 |
 | WS-ZA ZA5.4 parts 11–41 | [`UNTYPED_RESET_PLAN.md`](../dev_history/planning/UNTYPED_RESET_PLAN.md); part *n* is the plan's row *n* (`WS-ZA ZA5.4 part 24`) | v0.37.0 |
+| WS-RB | [`RPI5_MACHINE_BOOT_PLAN.md`](../dev_history/planning/RPI5_MACHINE_BOOT_PLAN.md) | v0.37.30 |
 
 WS-SM's open phase, SM10, keeps its plan under `docs/planning/` (see
 **Plans** above).  WS-RC's other phases are in the live
@@ -2192,6 +2172,18 @@ Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](../../docs/planning/SMP_BOOT_PATH_
 These are *current facts about the tree*, not history — they change what new
 code may assume:
 
+- **Every QEMU lane boots `raspi5b` first (WS-RB, closed `v0.37.30`).**  A
+  board-dependent constant the HAL reads is a `BoardMap` field
+  (`rust/sele4n-hal/src/board.rs`), never a literal in the module that uses it;
+  a QEMU lane selects its board with `qemu_select_board` (`rpi5` by default)
+  and a gate that boots both boards takes them from `qemu_gate_boards`, which
+  checks both emulators before either boots; exerciser deployment code is
+  board-generic (`SeLe4n/Platform/Exerciser/Deployment.lean`) and an exerciser
+  pin reads the same count on both machines; a `raspi5b` lane boots the
+  packaged `kernel8.img` at its `config.txt` addresses (`qemu_cut_image`),
+  never a raw cut at QEMU's default address; a lane that boots `raspi5b` builds
+  rpi5_machine with `scripts/setup_rpi5_machine.sh`, and rpi5_machine moves
+  only by editing that script's pin, in its own PR.
 - **No kernel entry allocates (WS-ZA, closed `v0.37.0`).**  New code on the syscall path
   follows the WS-ZA plan's rules D1–D5 (the plan is archived; see the `WS-ZA` row
   of *Archived plans by ID*).

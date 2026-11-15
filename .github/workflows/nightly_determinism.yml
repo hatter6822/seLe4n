@@ -99,6 +99,33 @@ jobs:
           fi
           qemu-system-aarch64 --version
 
+      # WS-RB RB5: every Tier-4 boot runs on rpi5_machine's `raspi5b` first,
+      # then on `virt`, and a gate needs both boards' emulators before either
+      # boots (`qemu_gate_boards`).  `scripts/setup_rpi5_machine.sh` builds
+      # the machine at the commit it pins, with `rpi5-boot`, TF-A's BL31 and
+      # the firmware's device tree beside it, as the archive lane does; the
+      # build is cached under that script's hash, so it runs once per pin.
+      - name: Install rpi5_machine's build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build python3-venv libglib2.0-dev libpixman-1-dev libfdt-dev pkg-config \
+            gcc-aarch64-linux-gnu mtools device-tree-compiler
+
+      - name: Restore the rpi5_machine build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lake/rpi5-machine
+          key: ${{ runner.os }}-${{ runner.arch }}-rpi5-machine-${{ hashFiles('scripts/setup_rpi5_machine.sh') }}
+
+      - name: Build rpi5_machine's raspi5b at its pin
+        run: |
+          machine=$(./scripts/setup_rpi5_machine.sh | tail -n 1)
+          "${machine}" --version
+          # Only the pinned build is kept in the cache.
+          find .lake/rpi5-machine -mindepth 1 -maxdepth 1 ! -name "$(basename "$(dirname "${machine}")")" -exec rm -rf {} +
+          rm -rf "$(dirname "${machine}")/src"
+
       # The Lean-linked half of every tier-4 gate (`--lean-kernel`) links the
       # cross archive `libsele4n.a`, and refuses one whose build record names
       # a different working tree (`build_lean_aarch64_archive.py
@@ -125,7 +152,7 @@ jobs:
       # Tier 4 reports NOT RUN (exit 77) when its acceptance gates cannot
       # execute, and that status propagates to here.  Since WS-BP BP8.4 the
       # bring-up, the PE-withheld boot and the in-image exercisers run on
-      # the `virt` image and pass (the per-core counter check, BP8.5, on the
+      # both images, on `raspi5b` and then `virt` (WS-RB), and pass (the per-core counter check, BP8.5, on the
       # Lean-linked one alone); the eight gates that drive kernel
       # transitions from user space still skip, for want of a user program
       # that SM10's root task owes and which no amount of CI configuration

@@ -377,7 +377,7 @@ where `RegValue` stays (D1).
   request that fits a small class to `alloc_small`, which already counts it,
   so counting in both would double every forwarded allocation and the
   "at most two" acceptance of §1.1 would misread); the counter is read **on the kernel runtime, in the
-  Tier 4 QEMU `virt` lane**, in the `per_core_stats` exerciser pattern
+  Tier 4 QEMU lanes** (`raspi5b`, then `virt`, since WS-RB), in the `per_core_stats` exerciser pattern
   (`rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`):
   a `heap_allocations_per_syscall` exerciser reads the counter on the boot
   core, drives one syscall round trip through the Lean kernel, reads it again

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.29` (`lakefile.toml`) |
+| **Package version** | `0.37.30` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 637,264 across 638 Lean files |
 | **Test LoC** | 90,246 across 70 Lean test suites |
@@ -1017,7 +1017,8 @@ memory had the board been accepted.
 
 ### 6.2.18 The kernel under QEMU (WS-BP BP8.1–BP8.2, v0.36.24–v0.36.27)
 
-QEMU models no BCM2712, so the first run is on QEMU's `virt`: the HAL takes its
+Upstream QEMU models no BCM2712, so the first run was on QEMU's `virt` (since
+WS-RB every boot runs first on rpi5_machine's `raspi5b`, which does, §6.2.18a): the HAL takes its
 board-dependent constants from `src/board.rs` (`board_qemu_virt`, slice 1) and
 the Lean kernel has a `virt` binding with its own boot entry
 `lean_kernel_main_qemu_virt` (slice 2).  Since v0.36.26
@@ -1071,7 +1072,8 @@ Two console rules came out of its first run:
   `uart::tests::a_printed_line_takes_the_console_lock_once` counts the lock's
   tickets per line.
 
-**The Tier-4 gates execute on the `virt` test image (BP8.4, v0.36.28).**  The
+**The Tier-4 gates execute on the test images (BP8.4, v0.36.28; on
+`raspi5b` first since WS-RB, §6.2.18a).**  The
 four Tier-4 gates that need no user program are in-image drivers
 (`rust/sele4n-hal/src/smp_exercisers.rs`, feature `smp_exercisers`) that the
 boot core runs after every declared PE serves the kernel and before it hands
@@ -1091,7 +1093,7 @@ L1 table's last entry (`mmu::install_exerciser_window`), so it translates
 under every thread's `TTBR0` and survives the idle restore; the exerciser
 feature builds a test image in a target directory of its own and never reaches
 a release image, which the cross-target gate refuses.  The PE-withheld gate
-(`scripts/test_qemu_smp_minimal.sh`) boots two PEs where the Lean kernel
+(`scripts/test_qemu_smp_minimal.sh`) boots two PEs, on both machines, where the Lean kernel
 declares four and holds the HAL-only image to booting and the Lean-linked one
 to refusing before the boot core dispatches.  `scripts/qemu_exerciser_lib.sh`
 is the shared boot and checker, holding each driver's banners as relations
@@ -1118,6 +1120,38 @@ relation from the printed words — verdict `1`, the containment of the words it
 was decided on, a tick and an IRQ on every serving core, every word inside its
 bracket, the four SGI counts distinct — rather than trusting the driver's
 verdict.  The verdict on a core is pure and host-tested.
+
+### 6.2.18a The kernel on the emulated Raspberry Pi 5 (WS-RB, v0.37.25–v0.37.30)
+
+Every QEMU boot runs first on rpi5_machine's `raspi5b`
+(github.com/hatter6822/rpi5_machine), an out-of-tree QEMU machine that models
+the BCM2712, booting the Raspberry Pi 5 image the kernel ships for (no board
+feature), and then on QEMU's `virt`, kept as the second lane.
+`scripts/setup_rpi5_machine.sh` builds the machine at the commit it pins, with
+its `rpi5-boot`, TF-A's `rpi5` BL31 and the firmware release's Pi 5 device
+tree beside it; `scripts/qemu_boot_lib.sh` selects a board
+(`qemu_select_board rpi5|virt`, `rpi5` by default) and a gate that boots both
+checks both emulators before either runs (`qemu_gate_boards`), so a missing
+second emulator cannot turn the first board's failure into a skip.
+
+- **Boot** (RB1, RB4): the packaged `kernel8.img`, placed with the device tree
+  at the addresses its `config.txt` names, enters at EL2 with PSCI over SMC on
+  four PEs to every core's first idle dispatch; `scripts/test_qemu.sh` also
+  boots the same files from an SD card through `rpi5-boot`, through the
+  firmware's BL31 and through TF-A's.  The secondaries' MPIDRs are the
+  BCM2712's (`BoardMap::secondary_mpidrs`, Aff1 `0x100`–`0x300`).
+- **Bring-up and refusal** (RB2): the four-PE bring-up and the Lean-linked
+  image's refusal of an unusable boot run on both machines; the PE-withheld
+  boot (`-smp 2`, RB5) does too, `raspi5b` marking the absent cores' CPU nodes
+  `fail`.
+- **Exercisers** (RB3): one board-generic exerciser deployment
+  (`SeLe4n/Platform/Exerciser/Deployment.lean`) applied to each board, and the
+  Pi 5 exerciser image with its own entry `lean_kernel_main_rpi5_exerciser`;
+  every pin, the heap gate's included, reads the same exact count on both
+  machines.  The interrupt scenarios' unwired lines are board data
+  (`BoardMap::unwired_spis`: 318/319 on the BCM2712, 250/251 on `virt`).
+- **Lanes** (RB5): the archive lane on every PR and the nightly both build the
+  machine at its pin and run every Tier-4 gate on it first.
 
 ### 6.2.19 A Raspberry Pi 5's RAM begins at the image origin (v0.36.36)
 
