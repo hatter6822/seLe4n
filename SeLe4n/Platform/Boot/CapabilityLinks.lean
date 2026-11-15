@@ -289,11 +289,11 @@ def rootServerSlotRefs (config : PlatformConfig) (st : SystemState) : List SlotR
   match config.rootServer with
   | none => []
   | some r =>
-    match st.objects[r.thread.toObjId]? with
-    | some (.tcb t) =>
+    match st.getTcb? r.thread with
+    | some t =>
       (List.range rootServerPages).map (fun i => ⟨t.cspaceRoot, r.cnodeSlot i⟩) ++
         [⟨r.thread.toObjId, TCB.ipcBufferSlot⟩]
-    | _ => []
+    | none => []
 
 /-- **The order the boot links its capabilities in**: the configured slots
 with the root server's between the CNodes' and the threads'. -/

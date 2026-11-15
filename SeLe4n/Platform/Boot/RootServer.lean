@@ -130,7 +130,7 @@ def rootServerInstallable (st : SystemState) (r : RootServerReservation) (t : TC
   t.spaceCells[2].isNone &&
     (List.range rootServerPages).all (fun i =>
       decide ((r.cnodeSlot i).toNat < cn.cells.size) && (cn.lookup (r.cnodeSlot i)).isNone &&
-        (st.objects[r.objId i]?).isNone) &&
+        (st.getObject? (r.objId i)).isNone) &&
     vs.tableBase.isSome && vs.tables.isEmpty && (vs.mappings[r.bufferVAddr]?).isNone &&
     decide (t.cspaceRoot ≠ r.thread.toObjId) && decide (t.vspaceRoot ≠ r.thread.toObjId) &&
     decide (t.cspaceRoot ≠ t.vspaceRoot) &&
@@ -203,20 +203,21 @@ def drainBootPhysicalWrites (ist : IntermediateState) : IntermediateState where
     can take it (`rootServerInstallable`), and record the writes it owes. -/
 def installRootServerAt (r : RootServerReservation) (ist : IntermediateState) :
     IntermediateState :=
-  match ist.state.objects[r.thread.toObjId]? with
-  | some (.tcb t) =>
-    match ist.state.objects[t.cspaceRoot]? with
-    | some (.cnode cn) =>
-      match hV : ist.state.objects[t.vspaceRoot]? with
-      | some (.vspaceRoot vs) =>
+  match ist.state.getTcb? r.thread with
+  | some t =>
+    match ist.state.getCNode? t.cspaceRoot with
+    | some cn =>
+      match hV : ist.state.getVSpaceRoot? t.vspaceRoot with
+      | some vs =>
         if rootServerInstallable ist.state r t cn vs then
           let built := createEntries
-            (rootServerEntries r r.thread.toObjId t cn vs (ist.hPerObjectMappings _ vs hV)) ist
+            (rootServerEntries r r.thread.toObjId t cn vs
+              (ist.hPerObjectMappings _ vs ((SystemState.getVSpaceRoot?_eq_some_iff _ _ _).1 hV))) ist
           recordBootPhysicalWrites built (rootServerWrites built.state r (rootServerVSpace r vs))
         else ist
-      | _ => ist
-    | _ => ist
-  | _ => ist
+      | none => ist
+    | none => ist
+  | none => ist
 
 /-- **WS-SX SX5.3: the boot's root-server stage** — the configuration's
     reservation installed (`installRootServerAt`), or nothing without one. -/
@@ -478,7 +479,11 @@ theorem installRootServerAt_cases (r : RootServerReservation) (ist : Intermediat
       split
       · next vs hV =>
         split
-        · next hI => exact .inr ⟨t, cn, vs, ist.hPerObjectMappings _ vs hV, hT, hC, hV, hI, rfl⟩
+        · next hI =>
+          have hV' := (SystemState.getVSpaceRoot?_eq_some_iff _ _ _).1 hV
+          exact .inr ⟨t, cn, vs, ist.hPerObjectMappings _ vs hV',
+            (SystemState.getTcb?_eq_some_iff _ _ _).1 hT,
+            (SystemState.getCNode?_eq_some_iff _ _ _).1 hC, hV', hI, rfl⟩
         · exact .inl rfl
       · exact .inl rfl
     · exact .inl rfl
@@ -776,8 +781,8 @@ theorem installRootServer_slotCapAt_cases (config : PlatformConfig) (ist : Inter
             [⟨r.thread.toObjId, TCB.ipcBufferSlot⟩] := by
         unfold rootServerSlotRefs
         rw [hr]
-        simp only [recordBootPhysicalWrites_objects, hO, rootServerObjects_thread hT hC hV hI,
-          rootServerThread_cspaceRoot]
+        simp only [SystemState.getTcb?, recordBootPhysicalWrites_objects, hO,
+          rootServerObjects_thread hT hC hV hI, rootServerThread_cspaceRoot]
       rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind, recordBootPhysicalWrites_objects,
         hO, hRefs]
       obtain ⟨hF, hCT, hVT, hVC⟩ := rootServer_ids_ne hT hC hV hI
