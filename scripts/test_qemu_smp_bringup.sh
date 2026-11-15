@@ -170,19 +170,23 @@ PY
 # EL2 entry with PSCI over SMC its firmware gives it -- the board whose
 # secondaries number themselves in Aff1, which `virt` cannot show (RB1 found
 # the HAL starting `virt`'s PEs on the Pi 5) -- then the `virt` image, the
-# second lane, at EL1 and EL2.
-qemu_select_board rpi5
-qemu_require_tools
-qemu_build_image "${LEAN_KERNEL}"
-qemu_cut_image
-bringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry" "${QEMU_BOARD_MACHINE}"
-
-qemu_select_board virt
-qemu_require_tools
-qemu_build_image "${LEAN_KERNEL}"
-qemu_cut_image
-bringup_once "four PEs, virt, EL1 entry" "virt,gic-version=2"
-bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"
+# second lane, at EL1 and EL2.  A HAL-only image named by KERNEL_BIN boots on
+# its own board alone (`qemu_gate_boards`).
+qemu_gate_boards "${LEAN_KERNEL}"
+for board in "${QEMU_GATE_BOARDS[@]}"; do
+    qemu_select_board "${board}"
+    qemu_build_image "${LEAN_KERNEL}"
+    qemu_cut_image
+    case "${board}" in
+        rpi5)
+            bringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry" "${QEMU_BOARD_MACHINE}"
+            ;;
+        virt)
+            bringup_once "four PEs, virt, EL1 entry" "virt,gic-version=2"
+            bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"
+            ;;
+    esac
+done
 
 if [[ "${BRINGUP_PASS}" = true ]]; then
     log_section "META" "PASS: four-PE bring-up"

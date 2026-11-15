@@ -61,7 +61,6 @@ PASS=true
 # `virtualization=on`).
 probe_board() {
 qemu_select_board "$1"
-qemu_require_tools
 qemu_build_image 1 0 1
 qemu_cut_image
 for case in "${CASES[@]}"; do
@@ -128,8 +127,11 @@ PY
 done
 }
 
-probe_board rpi5
-probe_board virt
+# Both boards' tools first (`qemu_gate_boards`), then `raspi5b`, then `virt`.
+qemu_gate_boards 1
+for board in "${QEMU_GATE_BOARDS[@]}"; do
+    probe_board "${board}"
+done
 
 if [[ "${PASS}" = true ]]; then
     log_section "META" "PASS: a refused Lean initialization halts the system"

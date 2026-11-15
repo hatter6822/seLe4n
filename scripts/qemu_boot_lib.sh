@@ -28,7 +28,8 @@
 #   QEMU_CPU      the PE model            (default cortex-a76)
 #   QEMU_MEMORY   the RAM size            (default 1G)
 #   REQUIRE_QEMU  1: an absent QEMU fails rather than skips
-#   KERNEL_BIN    a pre-built HAL-only image to boot instead of building one
+#   KERNEL_BIN    a pre-built HAL-only image to boot instead of building one,
+#                 on the board QEMU_BOARD names alone (`qemu_gate_boards`)
 
 QEMU_VIRT_BIN="${QEMU_BIN:-qemu-system-aarch64}"
 QEMU_RPI5_BIN="${QEMU_RPI5_BIN:-}"
@@ -38,6 +39,7 @@ REQUIRE_QEMU="${REQUIRE_QEMU:-0}"
 RUST_DIR="${REPO_ROOT}/rust"
 RUST_TARGET="aarch64-unknown-none-softfloat"
 KERNEL_BIN_NAMED="${KERNEL_BIN:-}"
+QEMU_BOARD_NAMED="${QEMU_BOARD:-}"
 
 # qemu_select_board BOARD: build for and boot on BOARD (`rpi5` or `virt`).
 # Sets the emulator (QEMU_BIN), the machine the image's board is
@@ -125,6 +127,8 @@ qemu_require_tools() {
     if [[ "${QEMU_BOARD}" == "rpi5" && -z "${QEMU_BIN}" ]]; then
         log_section "META" "Resolving rpi5_machine's raspi5b (scripts/setup_rpi5_machine.sh)"
         QEMU_BIN=$("${REPO_ROOT}/scripts/setup_rpi5_machine.sh" | tail -n 1) || QEMU_BIN="rpi5_machine (scripts/setup_rpi5_machine.sh failed)"
+        # Kept, so selecting the board again boots the machine resolved here.
+        QEMU_RPI5_BIN="${QEMU_BIN}"
     fi
     if ! command -v "${QEMU_BIN}" &>/dev/null; then
         if [[ "${REQUIRE_QEMU}" -eq 1 ]]; then
@@ -154,6 +158,27 @@ qemu_require_tools() {
             exit "${SELE4N_SKIP_EXIT:-77}"
         }
     fi
+}
+
+# qemu_gate_boards LEAN: the boards a gate that boots both boards boots, in
+# order, into QEMU_GATE_BOARDS -- `rpi5` (rpi5_machine's `raspi5b`) then `virt`
+# (WS-RB) -- with every board's tools required before any board runs, so a
+# board that cannot run (exit 77 without REQUIRE_QEMU=1) is found before a
+# failure is recorded on another, never after it, where its skip would hide
+# that failure.  A HAL-only image the caller named (KERNEL_BIN, LEAN 0) is one
+# board's image, since the board is chosen at build time (`src/board.rs`), so
+# it is booted on the board QEMU_BOARD names (`virt` when unnamed), alone.
+qemu_gate_boards() {
+    local lean="$1" board
+    if [[ -n "${KERNEL_BIN_NAMED}" && "${lean}" -ne 1 ]]; then
+        QEMU_GATE_BOARDS=("${QEMU_BOARD_NAMED:-virt}")
+    else
+        QEMU_GATE_BOARDS=(rpi5 virt)
+    fi
+    for board in "${QEMU_GATE_BOARDS[@]}"; do
+        qemu_select_board "${board}"
+        qemu_require_tools
+    done
 }
 
 # qemu_build_image LEAN [EXERCISERS] [PROBE]: build the selected board's image -- the

@@ -9369,7 +9369,12 @@ run_check "INVARIANT" rg -n -U '^    features=\$\(qemu_image_features "kernel_im
 run_check "INVARIANT" rg -n -U '^        rpi5\)\n            QEMU_BOARD_FEATURES=""\n            QEMU_BOARD_MACHINE="raspi5b"$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^        virt\)\n            QEMU_BOARD_FEATURES="board_qemu_virt"$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^    HAL_TARGET_DIR="\$\{RUST_DIR\}/target/qemu-\$\{QEMU_BOARD\}"$' scripts/qemu_boot_lib.sh
-run_check "INVARIANT" rg -n -U '^    boot_board rpi5\n    boot_board virt$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^    qemu_gate_boards "\$\{LEAN_KERNEL\}"\n    for board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n        boot_board "\$\{board\}"\n    done$' scripts/test_qemu.sh
+# Every board's tools before any board runs, so a later board's skip cannot
+# hide an earlier board's recorded failure; a named HAL-only image boots on its
+# own board alone.
+run_check "INVARIANT" rg -n -U '^        QEMU_GATE_BOARDS=\("\$\{QEMU_BOARD_NAMED:-virt\}"\)\n    else\n        QEMU_GATE_BOARDS=\(rpi5 virt\)\n    fi\n    for board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n        qemu_select_board "\$\{board\}"\n        qemu_require_tools\n    done$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^    if \[\[ -n "\$\{KERNEL_BIN_NAMED\}" && "\$\{lean\}" -ne 1 \]\]; then$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --bin sele4n-kernel \\\n                --target-dir "\$\{target_dir\}"\) ' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^            boot_once "\$\{LEAN_LABEL\}virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"$' scripts/test_qemu.sh
@@ -9777,8 +9782,10 @@ run_check "INVARIANT" rg -n -F -- 'if lines[-1] != refusal:' scripts/test_qemu_l
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${QEMU_BOARD_MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
 # WS-RB RB2: the probe and the bring-up gate boot `raspi5b` first, then `virt`.
-run_check "INVARIANT" rg -n -U '^probe_board rpi5\nprobe_board virt$' scripts/test_qemu_lean_init_refusal.sh
-run_check "INVARIANT" rg -n -U '^qemu_select_board rpi5\nqemu_require_tools\nqemu_build_image "\$\{LEAN_KERNEL\}"\nqemu_cut_image\nbringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry"' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -U '^qemu_gate_boards 1\nfor board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n    probe_board "\$\{board\}"\ndone$' scripts/test_qemu_lean_init_refusal.sh
+# The board each run selects is the board whose machine it boots: the Pi 5 arm
+# passes the selected board's machine (`raspi5b`, `qemu_select_board`).
+run_check "INVARIANT" rg -n -U '^qemu_gate_boards "\$\{LEAN_KERNEL\}"\nfor board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n    qemu_select_board "\$\{board\}"\n    qemu_build_image "\$\{LEAN_KERNEL\}"\n    qemu_cut_image\n    case "\$\{board\}" in\n        rpi5\)\n            bringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry" "\$\{QEMU_BOARD_MACHINE\}"\n            ;;$' scripts/test_qemu_smp_bringup.sh
 #
 # WS-BP BP2.5 and BP4.2: the Lean-linked boot reports a heap census on each
 # side of the install and a line at the release, and the boot lane holds the
