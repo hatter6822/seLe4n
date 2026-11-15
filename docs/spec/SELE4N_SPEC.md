@@ -3246,6 +3246,17 @@ suspend took out of a system call re-issues it once resumed.  A thread already
 `Inactive` stays so under the restart (`TCB.restoredToRestart`); no cancel
 reaches one.
 
+A receive whose reply object is busy cancels the thread it is busy with, as
+seL4-MCS `receiveIPC` runs `cancelIPC(replyTCB)`: the caller the reply is
+linked to, or another receiver that stashed it and still waits
+(`busyReplyHolder?`), when the receiver flows to that thread.  The receive arm
+runs the cancel in place after its checks (`cancelRecvBusyReply`,
+`cancelReplyHolder`: the suspend's cancel and priority revert, then
+`Inactive`), with no scheduling point, and the cancel commits: a refusal after
+it reports the cancelled state (`cancelReceiveBusyReply`).  The receive's lock
+footprints name the cancel's writes (`lockSet_receiveCancellingHolder`,
+`schedLockSet_receiveCancellingHolderOnCore`).
+
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*
 back into the faulting thread's registers (`error_frame_regs(VM_FAULT)`,
