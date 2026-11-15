@@ -1,3 +1,7 @@
+## v0.37.28 — the boot builds the root task's IPC buffer
+
+WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). Entry in progress.
+
 ## v0.37.27 — a cancelled IPC restarts its system call
 
 WS-SX SX4 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A thread taken out of a
