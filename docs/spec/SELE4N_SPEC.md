@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.38.0` (`lakefile.toml`) |
+| **Package version** | `0.37.30` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 637,264 across 638 Lean files |
 | **Test LoC** | 90,246 across 70 Lean test suites |
@@ -1121,7 +1121,7 @@ was decided on, a tick and an IRQ on every serving core, every word inside its
 bracket, the four SGI counts distinct — rather than trusting the driver's
 verdict.  The verdict on a core is pure and host-tested.
 
-### 6.2.18a The kernel on the emulated Raspberry Pi 5 (WS-RB, v0.37.25–v0.38.0)
+### 6.2.18a The kernel on the emulated Raspberry Pi 5 (WS-RB, v0.37.25–v0.37.30)
 
 Every QEMU boot runs first on rpi5_machine's `raspi5b`
 (github.com/hatter6822/rpi5_machine), an out-of-tree QEMU machine that models

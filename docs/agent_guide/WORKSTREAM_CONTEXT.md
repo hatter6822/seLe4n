@@ -359,7 +359,7 @@ in the same change.
 | WS-HP | [`DONATION_POP_TRIGGER_PLAN.md`](../dev_history/planning/DONATION_POP_TRIGGER_PLAN.md) | v0.35.54 |
 | WS-ZA | [`ZERO_ALLOCATION_SYSCALL_PLAN.md`](../dev_history/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md); its decisions are `WS-ZA D1`–`D5` | v0.37.0 |
 | WS-ZA ZA5.4 parts 11–41 | [`UNTYPED_RESET_PLAN.md`](../dev_history/planning/UNTYPED_RESET_PLAN.md); part *n* is the plan's row *n* (`WS-ZA ZA5.4 part 24`) | v0.37.0 |
-| WS-RB | [`RPI5_MACHINE_BOOT_PLAN.md`](../dev_history/planning/RPI5_MACHINE_BOOT_PLAN.md) | v0.38.0 |
+| WS-RB | [`RPI5_MACHINE_BOOT_PLAN.md`](../dev_history/planning/RPI5_MACHINE_BOOT_PLAN.md) | v0.37.30 |
 
 WS-SM's open phase, SM10, keeps its plan under `docs/planning/` (see
 **Plans** above).  WS-RC's other phases are in the live
@@ -2172,7 +2172,7 @@ Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](../../docs/planning/SMP_BOOT_PATH_
 These are *current facts about the tree*, not history — they change what new
 code may assume:
 
-- **Every QEMU lane boots `raspi5b` first (WS-RB, closed `v0.38.0`).**  A
+- **Every QEMU lane boots `raspi5b` first (WS-RB, closed `v0.37.30`).**  A
   board-dependent constant the HAL reads is a `BoardMap` field
   (`rust/sele4n-hal/src/board.rs`), never a literal in the module that uses it;
   a QEMU lane selects its board with `qemu_select_board` (`rpi5` by default)

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "rpi5-closure",
-      "commit_sha": "cbc160a1884de963a0b08862cdaec5440f86d068",
-      "tree_sha": "e4d580ace09c2a3a0c01446dc7d9e1613661631c",
-      "committed_at_utc": "2026-11-15T22:57:57+00:00"
+      "commit_sha": "10af4d7a776fc72f9bf2fa881032d8cc0a06d022",
+      "tree_sha": "f66cccfad8555fb8072e29adbb711da2ceb21372",
+      "committed_at_utc": "2026-11-15T23:12:19+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 36919
   },
   "readme_sync": {
-    "version": "0.38.0",
+    "version": "0.37.30",
     "lean_toolchain": "v4.28.0",
     "production_files": 638,
     "production_loc": 637264,

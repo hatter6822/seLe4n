@@ -3453,7 +3453,7 @@ byte into model memory (a zeroing over zero memory is free only because of that)
 one bound thread (`SchedContext.boundThread`); there is no per-context thread
 index.
 
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — CLOSED (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28; RB4 v0.37.29; RB5 closed it at v0.38.0)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — CLOSED (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28; RB4 v0.37.29; RB5 closed it at v0.37.30)
 
 The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
 which models the Pi 5, with `virt` kept as the second lane (owner decision

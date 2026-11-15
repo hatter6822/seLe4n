@@ -1,8 +1,9 @@
-## v0.38.0 — WS-RB closes: every QEMU lane boots the emulated Raspberry Pi 5 first
+## v0.37.30 — WS-RB closes: every QEMU lane boots the emulated Raspberry Pi 5 first
 
 WS-RB RB5, the closure (the plan is archived; `WS-RB` in
 `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Archived plans by ID*).  The
-minor version moves with the workstream's close.
+close bumps only the patch: the next minor bump follows WS-SX's close, which
+also has work in this minor line.
 
 - **`raspi5b` is the default board.** `scripts/qemu_boot_lib.sh` selects
   `rpi5` when `QEMU_BOARD` names none, and a HAL-only image named by
