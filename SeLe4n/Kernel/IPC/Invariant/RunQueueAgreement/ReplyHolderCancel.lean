@@ -95,15 +95,36 @@ theorem cancelReplyHolder_runQueueEntryStage (st : SystemState) (holder : SeLe4n
     (fun c => (hNP c).2) (fun c => (hNP c).1) (notIdle_of_blocked hD hT hB) (fun _ _ => rfl)
     (fun x hx => Or.inl (suspendCancelRevert_holder_ready st holder tcb ec hI hL x hx))
 
+/-- **A thread blocked after a reply holder's cancel was blocked before it**:
+the holder itself was, and every other thread keeps its IPC state. -/
+theorem cancelReplyHolder_blockedIfTcb_back {st : SystemState} {holder r : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} (hInv : st.objects.invExt)
+    (hB : blockedIfTcb (cancelReplyHolder st holder ec) r) : blockedIfTcb st r := by
+  intro t ht
+  by_cases hrv : r = holder
+  · rcases cancelReplyHolder_cases st holder ec with e | ⟨tcb, hL, hNR, -⟩
+    · rw [e] at hB; exact hB t ht
+    · rw [hrv] at ht
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (lookupTcb_some_objects st holder tcb hL)]
+        at ht
+      cases ht; exact hNR
+  · have e := cancelReplyHolder_ipcStateKeptExcept st holder ec hInv r hrv
+    rw [ht] at e
+    cases h' : (cancelReplyHolder st holder ec).getTcb? r with
+    | none => rw [h'] at e; cases e
+    | some t' =>
+      rw [h'] at e
+      have e' : t'.ipcState = t.ipcState := Option.some.inj e
+      rw [← e']; exact hB t' h'
+
 /-- **A reply holder's cancel keeps every endpoint head wakeable**: each head
 after it is blocked (`cancelReplyHolder_queueHeadBlockedConsistent`), and was
-blocked before it — the holder itself was, and every other thread keeps its IPC
-state — so no core ran it, and the cancel writes no current slot. -/
+blocked before it (`cancelReplyHolder_blockedIfTcb_back`), so no core ran it,
+and the cancel writes no current slot. -/
 theorem cancelReplyHolder_endpointHeadsWakeable {st : SystemState} {holder : SeLe4n.ThreadId}
     {ec : Concurrency.CoreId} (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
     (F : QueueHeadCancelFacts st) : endpointHeadsWakeable (cancelReplyHolder st holder ec) := by
   have hQ := cancelReplyHolder_queueHeadBlockedConsistent st holder ec hInv F
-  have hK := cancelReplyHolder_ipcStateKeptExcept st holder ec hInv
   intro epId ep hE r hr
   have hB : blockedIfTcb (cancelReplyHolder st holder ec) r := fun tcb hT => by
     have hEo := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE
@@ -113,24 +134,7 @@ theorem cancelReplyHolder_endpointHeadsWakeable {st : SystemState} {holder : SeL
     · rcases (hQ epId ep r tcb hEo hTo).2 hr with h | h <;> rw [h] <;> exact fun h => by cases h
   refine ⟨fun c hc => ?_, hB⟩
   rw [cancelReplyHolder_currentOnCore] at hc
-  have hB0 : blockedIfTcb st r := by
-    intro t ht
-    by_cases hrv : r = holder
-    · rcases cancelReplyHolder_cases st holder ec with e | ⟨tcb, hL, hNR, -⟩
-      · rw [e] at hB; exact hB t ht
-      · rw [hrv] at ht
-        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (lookupTcb_some_objects st holder tcb hL)]
-          at ht
-        cases ht; exact hNR
-    · have e := hK r hrv
-      rw [ht] at e
-      cases h' : (cancelReplyHolder st holder ec).getTcb? r with
-      | none => rw [h'] at e; cases e
-      | some t' =>
-        rw [h'] at e
-        have e' : t'.ipcState = t.ipcState := Option.some.inj e
-        rw [← e']; exact hB t' h'
-  exact currentNowhere_of_blockedIfTcb hD hB0 c hc
+  exact currentNowhere_of_blockedIfTcb hD (cancelReplyHolder_blockedIfTcb_back hInv hB) c hc
 
 /-- **A reply holder's cancel keeps every other thread active**: the teardown
 and revert suspend no thread, and the `Inactive` write is the holder's. -/
