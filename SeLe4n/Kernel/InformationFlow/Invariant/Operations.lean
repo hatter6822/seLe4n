@@ -5729,7 +5729,7 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
 
 /-- **Setting a hidden thread's space is invisible when what it retires is
 hidden**: each of its two slot sets is (`threadSlotSet_preserves_projection`),
-given that the objects the thread's two space slots name, and every untyped
+given that the objects the thread's CSpace and VSpace slots name, and every untyped
 recording one, are hidden.  The VSpace slot's set reads the state after the
 CSpace slot's, which holds the same VSpace slot and records no new child. -/
 theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer : IfObserver)

@@ -965,8 +965,8 @@ def carvedTcbSpareCells : Array (Option Capability) :=
 for `seL4_TCBObject`: inactive, at priority 0 with maximum controlled priority 0,
 in the creating core's current domain (`ksCurDomain`) and with the creating
 core as its affinity (`getCurrentCPUIndex`), no fault handler, no bound
-notification, no scheduling context, and both space slots empty
-(`tcbCTable` and `tcbVTable` hold null capabilities).  Its identity is the id it
+notification, no scheduling context, and all three space slots empty
+(`tcbCTable`, `tcbVTable` and `tcbBuffer` hold null capabilities).  Its identity is the id it
 is stored at. -/
 def carvedTcb (childId : SeLe4n.ObjId) (domain : SeLe4n.DomainId)
     (core : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=

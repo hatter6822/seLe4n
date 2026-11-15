@@ -3047,7 +3047,7 @@ alone.
 **WS-ZA ZA4.5**: `runCoreCode = 0` — a fresh thread's run-queue fields name no
 core, so storing it keeps every run queue in agreement with the threads' links.
 
-A fresh thread's two space slots hold no capability (`spaceSlotCaps = []`), as a
+A fresh thread's three space slots hold no capability (`spaceSlotCaps = []`), as a
 fresh CNode's slots hold none: the badge clause reads both.
 
 A fresh Reply records no caller and no stasher (`stasherCode = 0`), so a carved

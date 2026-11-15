@@ -357,7 +357,7 @@ theorem fields {st st' : SystemState} (h : linksOnlyWrite st st') :
 end linksOnlyWrite
 
 /-- **A slot of a live object**: a slot inside a live CNode's slot array, or
-one of a live thread's two space slots — a slot whose links can be written. -/
+one of a live thread's three space slots — a slot whose links can be written. -/
 def slotInObject (st : SystemState) (r : SlotRef) : Prop :=
   ∃ o, st.objects[r.cnode]? = some o ∧ o.hasSlot r.slot
 

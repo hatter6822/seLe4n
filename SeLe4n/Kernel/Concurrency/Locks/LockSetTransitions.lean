@@ -4685,7 +4685,7 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1 (`v0.36.11`): `lockSet` for `tcbSetSpace`.**
 
-`copyThreadSpaces` writes the target TCB's two space slots (covered by
+`copyThreadSpaces` writes the target TCB's CSpace and VSpace slots (covered by
 `tcbLock targetTcbTid .write`) after `resolveSetSpace` has read, through the
 **caller's** CSpace root, the two slots MR0 and MR1 name, and after the
 operation has read the CNode and the VSpace root their capabilities name to

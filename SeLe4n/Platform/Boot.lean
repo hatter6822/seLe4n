@@ -1551,7 +1551,7 @@ def bootRootTablesBootError : String :=
     "(WS-BP BP7.1)"
 
 /-- WS-ZA ZA5.4 part 13: the capabilities a boot object holds — a CNode's slot
-    cells and a thread's two space slots.  No other object holds one. -/
+    cells and a thread's three space slots.  No other object holds one. -/
 def bootEntryCapabilities (e : ObjectEntry) : List Capability :=
   match e.obj with
   | .cnode cn => cn.cells.toList.filterMap id
@@ -2392,9 +2392,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        decide (tcb.yieldToCode = 0) &&
        tcb.pendingFault.isNone) := rfl
 
-/-- What a boot thread's two space slots hold: every capability carries a valid
+/-- What a boot thread's three space slots hold: every capability carries a valid
     badge, none is a reply capability and none records a mapping, as
-    `bootSafeCnodeCheck` asks of a CNode's slots.  The third is what the
+    `bootSafeCnodeCheck` asks of a CNode's slots.  The last clause is what the
     mapping-record invariant reads of a thread's slots
     (`SystemState.threadSlotsRecordNoMapping`). -/
 def bootSpaceSlotCapsSafe (tcb : TCB) : Prop :=
@@ -8720,7 +8720,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed
 
 /-- WS-ZA ZA5.4 part 36: **a capability a boot-safe object holds is at free
 index 0** (`bootSafeCapCheck`'s last clause), in a CNode's slots and in a
-thread's two space slots alike. -/
+thread's three space slots alike. -/
 theorem bootSafeObjectCheck_slotCap_freeIndex {obj : KernelObject}
     (h : bootSafeObjectCheck obj = true) {s : SeLe4n.Slot} {c : Capability}
     (hs : obj.slotCap s = some c) : c.freeIndex = 0 := by

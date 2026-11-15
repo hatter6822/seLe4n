@@ -19,9 +19,15 @@ reserves its boot-time kernel structures.  The map takes the top of each RAM
 extension the boot maps, and the extension's untyped covers the rest.  So no
 untyped covers the map, and no capability can ever retype or map it.
 
-This module is the one owner of the layout.  The untyped lists of both
-deployments are built from `untypedExtentOf`, and the boot hands the HAL
-`untypedExtentOf` and `regionMapBaseOf` of each extension
+The last extension also holds the root server's four pages directly below its
+map (WS-SX SX5.1, `rootServerBaseOf`): the frame the boot builds the root
+task's IPC buffer in and its three page tables, as seL4's boot carves its
+rootserver objects before handing the rest of memory out as untypeds.  That
+extension's untyped stops below them (`untypedExtentBelowRootServerOf`).
+
+This module is the one owner of the layout.  The untyped lists of every
+deployment are built from `untypedExtentsOf`, and the boot hands the HAL those
+parts and `regionMapBaseOf` of each extension
 (`Platform.FFI.extendBootRamMap`), whose reservation the HAL then checks.
 -/
 

@@ -267,7 +267,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- the authority is the TCB capability's write right plus the caller's own
   -- capabilities to the two roots (`resolveSetSpace`: `.grant`+`.write` on the
   -- CNode, `.write` on the VSpace root), and the write touches one suspended
-  -- TCB's two space slots and the derivation links of those slots, their
+  -- TCB's CSpace and VSpace slots and the derivation links of those slots, their
   -- sources and neighbours — no data crosses a label boundary.  WS-ZA ZA5.4
   -- part 26: named at the transition the live arm calls, which deletes an old
   -- CSpace root that is the last capability to a populated CNode through the

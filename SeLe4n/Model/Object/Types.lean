@@ -2080,7 +2080,7 @@ structure TCB where
       `0`, so an id reused after a thread is destroyed is the origin of no
       context, whatever a context still records.  -/
   originScCode : Nat := 0
-  /-- WS-ZA ZA5.4 part 26: **the records the two space slots keep while
+  /-- WS-ZA ZA5.4 part 26: **the records the three space slots keep while
       empty**, as a CNode's slots keep theirs (`CNode.spare`): entry `i` is
       the capability cell slot `i` last held, or the one the carve made with
       the thread (seL4's TCB CTEs, which exist from the retype), so the next
@@ -2578,7 +2578,7 @@ stand for, so a record update writing a binding's codes reads back that binding
     (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
 
-/-- The roots of a constructed TCB are the objects its two space slots name, so a
+/-- The roots of a constructed TCB are the objects its first two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
 @[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
     (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).cspaceRoot = TCB.spaceCellObject f4[0] := rfl

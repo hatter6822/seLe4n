@@ -36,9 +36,10 @@ initial thread, its CSpace and its own address space (BP3.2):
 |---|---|---|
 | root task TCB (the lower separation witness) | `2` | boot (`lowTrusted`) |
 | root task CNode | `3` | boot |
-| root task VSpace (ASID 1, empty) | `4` | boot |
+| root task VSpace (ASID 1; the boot maps the IPC buffer in it) | `4` | boot |
 | interrupt notification (every SPI signals it) | `5` | boot |
-| untypeds over the board's RAM outside the kernel's extent, one per BP4.6 extension: the first gigabyte's `[256 MiB, lowRamTop)` as the firmware reports it, then — on every board larger than 1 GiB — the DRAM above the gigabyte (the BCM2712's DRAM is contiguous from 0) | `6`, … | boot |
+| untypeds over the board's RAM outside the kernel's extent, one per BP4.6 extension: the first gigabyte's `[256 MiB, lowRamTop)` as the firmware reports it, then — on every board larger than 1 GiB — the DRAM above the gigabyte (the BCM2712's DRAM is contiguous from 0); each stops below its region map, the last below the root server's pages too | `6`, … | boot |
+| root server (WS-SX SX5.1): the root task's IPC-buffer frame and its three page tables, built by the boot in the four pages below the last region map; the mapped frame capability at root CNode slot `7`, a derived copy in the TCB's buffer slot | `8`–`11` | boot |
 | untrusted initial TCB (the upper separation witness) | `0x10_0000` | untrusted (`highUntrusted`) |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, empty) | `0x10_0002` | untrusted |

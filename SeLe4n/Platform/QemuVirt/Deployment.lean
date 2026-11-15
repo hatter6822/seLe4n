@@ -16,7 +16,8 @@ import SeLe4n.Platform.RPi5.Deployment
 The Raspberry Pi 5 deployment's object layout (`RPi5/Deployment.lean`), on this
 board's RAM and table pool: two domains as the confined labeling declares them,
 each with one initial thread, its CSpace and its own empty address space, and
-the root task holding one untyped over all the RAM outside the kernel's extent.
+the root task holding one untyped over all the RAM outside the kernel's extent
+but the root server's four pages and the region map at its top.
 
 | Object | Id | Domain |
 |---|---|---|
@@ -24,11 +25,12 @@ the root task holding one untyped over all the RAM outside the kernel's extent.
 | root task CNode | `3` | boot |
 | root task VSpace (ASID 1, pool page 0) | `4` | boot |
 | interrupt notification (the root task binds handlers to it) | `5` | boot |
-| untyped over `[0x5000_0000, 0x8000_0000)` | `6` | boot |
+| untyped over `[0x5000_0000, 0x7FE7_C000)`, below the root server's pages and the region map | `6` | boot |
 | exerciser partner TCB (`.Inactive` until resumed) | `7` | boot |
 | exerciser endpoint | `8` | boot |
 | exerciser reply object | `9` | boot |
 | exerciser scheduling context (unconfigured, unbound) | `10` | boot |
+| root server (WS-SX SX5.1): the root task's IPC-buffer frame at `0x7FE7_C000` and its three page tables, built by the boot; the mapped frame capability at root CNode slot `10`, a derived copy in the TCB's buffer slot | `11`–`14` | boot |
 | untrusted initial TCB (the upper witness, pinned to core 1) | `0x10_0000` | untrusted |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, pool page 1) | `0x10_0002` | untrusted |
