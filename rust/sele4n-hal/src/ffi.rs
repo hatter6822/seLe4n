@@ -642,7 +642,10 @@ pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_r
 /// ([`crate::region::register_reserved_map`]), as seL4 reserves its boot-time
 /// kernel structures: `[covered_base, covered_base + covered_size)` is the
 /// part of the extension its untyped covers, and the map takes the pages from
-/// `map_base`, the untyped's end, up to the extension's end.  The layout is
+/// `map_base` up to the extension's end.  On every extension but the last,
+/// `map_base` is the untyped's end; on the last, the root server's four pages
+/// lie between them (`Platform.untypedExtentsOf`, WS-SX SX5.1), which no
+/// untyped covers and the map does not describe.  The layout is
 /// the verified boot's (`Platform.Boot.RegionMapReservation`); this checks it
 /// rather than trusting it.
 ///
