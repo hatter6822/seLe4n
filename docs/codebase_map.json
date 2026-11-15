@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-restart-state",
-      "commit_sha": "1222380853b79d34f0262488595959a0c13c6dc9",
-      "tree_sha": "9a3e4e7754c2bdfa1bd08f0868fe6fbfe668c3bd",
-      "committed_at_utc": "2026-11-15T16:24:29+00:00"
+      "commit_sha": "d306c3a3fff6902832d4ba6e754c67be5547ab18",
+      "tree_sha": "f555ac5294b6c79a97cfc5d61dfbff42bc8359b1",
+      "committed_at_utc": "2026-11-15T16:31:54+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d848e20a8e5faa9d711c5409527924f74caac652bd4c4c7bc510d16208198249"
+    "source_digest": "8c46edbac57b968e665a6b696160d16505aa9ecc9736a246abc147729e1cc595"
   },
   "summary": {
     "module_count": 705,
-    "declaration_count": 36820
+    "declaration_count": 36823
   },
   "readme_sync": {
     "version": "0.37.25",
     "lean_toolchain": "v4.28.0",
     "production_files": 635,
-    "production_loc": 636465,
+    "production_loc": 636482,
     "test_files": 70,
-    "test_loc": 89828,
+    "test_loc": 89881,
     "proved_theorem_lemma_decls": 24381,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -92866,7 +92866,7 @@
           "kind": "def",
           "name": "frozenSuspendThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
-          "line": 1862,
+          "line": 1870,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92876,6 +92876,8 @@
             "SeLe4n.Model.FrozenSystemState.getObject?",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.restoredToRestart",
             "SeLe4n.Model.TCB.setIpcState",
             "SeLe4n.SchedContextId",
             "SeLe4n.ThreadId"
@@ -92885,7 +92887,7 @@
           "kind": "def",
           "name": "frozenResumeContext",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenResumeContext",
-          "line": 1905,
+          "line": 1920,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.SchedContextBinding.scId?",
@@ -92901,7 +92903,7 @@
           "kind": "def",
           "name": "frozenResumeThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
-          "line": 1978,
+          "line": 1995,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenComputeMaxWaiterPriority",
@@ -92923,7 +92925,7 @@
           "kind": "def",
           "name": "frozenWriteBasePriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority",
-          "line": 2072,
+          "line": 2089,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed",
@@ -92942,7 +92944,7 @@
           "kind": "def",
           "name": "frozenSetPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetPriority",
-          "line": 2096,
+          "line": 2113,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92955,7 +92957,7 @@
           "kind": "def",
           "name": "frozenSetMCPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetMCPriority",
-          "line": 2115,
+          "line": 2132,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92970,7 +92972,7 @@
           "kind": "def",
           "name": "frozenSetIPCBuffer",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetIPCBuffer",
-          "line": 2154,
+          "line": 2171,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -92988,7 +92990,7 @@
           "kind": "def",
           "name": "frozenOpCoverage",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
-          "line": 2205,
+          "line": 2222,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -92997,7 +92999,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_count",
-          "line": 2284,
+          "line": 2301,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId.all"
@@ -93007,7 +93009,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_exhaustive",
-          "line": 2289,
+          "line": 2306,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId"
@@ -577511,7 +577513,7 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 85,
+      "declaration_count": 88,
       "declarations": [
         {
           "kind": "def",
@@ -577937,9 +577939,54 @@
         },
         {
           "kind": "def",
+          "name": "blockedReceiverAtSvc",
+          "full_name": "SeLe4n.Testing.SuspendResumeSuite.blockedReceiverAtSvc",
+          "line": 398,
+          "called": [
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Testing.SuspendResumeSuite.mkTcb"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenRestartOfBlockedThreadResumesAtSvc",
+          "full_name": "SeLe4n.Testing.SuspendResumeSuite.frozenRestartOfBlockedThreadResumesAtSvc",
+          "line": 408,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
+            "SeLe4n.Testing.SuspendResumeSuite.blockedReceiverAtSvc",
+            "SeLe4n.Testing.SuspendResumeSuite.expect",
+            "SeLe4n.Testing.SuspendResumeSuite.mkFrozenState",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "frozenSuspendPcAgreesWithLive",
+          "full_name": "SeLe4n.Testing.SuspendResumeSuite.frozenSuspendPcAgreesWithLive",
+          "line": 424,
+          "called": [
+            "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
+            "SeLe4n.Testing.SuspendResumeSuite.blockedReceiverAtSvc",
+            "SeLe4n.Testing.SuspendResumeSuite.expect",
+            "SeLe4n.Testing.SuspendResumeSuite.mkFrozenState",
+            "SeLe4n.Testing.SuspendResumeSuite.mkState",
+            "SeLe4n.Testing.SuspendResumeSuite.mkTcb",
+            "SeLe4n.Testing.bootSuspendThread",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "sr021_frozenRoundtrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr021_frozenRoundtrip",
-          "line": 397,
+          "line": 448,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
@@ -577955,7 +578002,7 @@
           "kind": "def",
           "name": "sr022_cancelBoundDonationClearsBinding",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr022_cancelBoundDonationClearsBinding",
-          "line": 416,
+          "line": 467,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation",
             "SeLe4n.Kernel.SchedContext",
@@ -577976,7 +578023,7 @@
           "kind": "def",
           "name": "sr023_cancelBoundDonationRejectsDonated",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr023_cancelBoundDonationRejectsDonated",
-          "line": 442,
+          "line": 493,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -577995,7 +578042,7 @@
           "kind": "def",
           "name": "sr024_cancelDonatedDonationRejectsBound",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr024_cancelDonatedDonationRejectsBound",
-          "line": 456,
+          "line": 507,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -578013,7 +578060,7 @@
           "kind": "def",
           "name": "sr025_cancelDonationUnboundIdentity",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr025_cancelDonationUnboundIdentity",
-          "line": 468,
+          "line": 519,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578028,7 +578075,7 @@
           "kind": "def",
           "name": "sr026_resumePipBoostRecomputedNoWaiters",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr026_resumePipBoostRecomputedNoWaiters",
-          "line": 486,
+          "line": 537,
           "called": [
             "SeLe4n.Priority.optCode",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578044,7 +578091,7 @@
           "kind": "def",
           "name": "sr027_suspendResumePipReroundtrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr027_suspendResumePipReroundtrip",
-          "line": 507,
+          "line": 558,
           "called": [
             "SeLe4n.Priority.optCode",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578061,7 +578108,7 @@
           "kind": "def",
           "name": "sr027b_resumeRecomputesPipBoostWithWaiters",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr027b_resumeRecomputesPipBoostWithWaiters",
-          "line": 531,
+          "line": 582,
           "called": [
             "SeLe4n.ObjId",
             "SeLe4n.Priority.optCode",
@@ -578078,7 +578125,7 @@
           "kind": "def",
           "name": "sr027c_resumeThreadPreservesBlockingAcyclic",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr027c_resumeThreadPreservesBlockingAcyclic",
-          "line": 569,
+          "line": 620,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.blockingChain",
             "SeLe4n.Kernel.PriorityInheritance.chainContains",
@@ -578097,7 +578144,7 @@
           "kind": "def",
           "name": "sr027d_resumeThreadPipBoostMatchesGraph",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr027d_resumeThreadPipBoostMatchesGraph",
-          "line": 604,
+          "line": 655,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority",
             "SeLe4n.ObjId",
@@ -578115,7 +578162,7 @@
           "kind": "def",
           "name": "sr028_restoreToReadyClearsIpcFields",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr028_restoreToReadyClearsIpcFields",
-          "line": 630,
+          "line": 681,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady",
             "SeLe4n.Model.TCB",
@@ -578138,7 +578185,7 @@
           "kind": "def",
           "name": "sr029_restoreToReadyAbsentIdentity",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr029_restoreToReadyAbsentIdentity",
-          "line": 653,
+          "line": 704,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578153,7 +578200,7 @@
           "kind": "def",
           "name": "sr030_resumeHigherPriorityReenqueuesCaller",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr030_resumeHigherPriorityReenqueuesCaller",
-          "line": 670,
+          "line": 721,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Model.SchedulerState.currentOnCore",
@@ -578175,7 +578222,7 @@
           "kind": "def",
           "name": "sr031_resumeLowerPriorityKeepsCurrent",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr031_resumeLowerPriorityKeepsCurrent",
-          "line": 694,
+          "line": 745,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Model.SchedulerState.currentOnCore",
@@ -578197,7 +578244,7 @@
           "kind": "def",
           "name": "retiredFrozenResumeClear",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.retiredFrozenResumeClear",
-          "line": 726,
+          "line": 777,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.setIpcState"
@@ -578208,7 +578255,7 @@
           "kind": "def",
           "name": "retiredFrozenPreempts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.retiredFrozenPreempts",
-          "line": 730,
+          "line": 781,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Priority"
@@ -578219,7 +578266,7 @@
           "kind": "def",
           "name": "liveFrozenPreempts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.liveFrozenPreempts",
-          "line": 735,
+          "line": 786,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.boostedPriority",
@@ -578231,7 +578278,7 @@
           "kind": "def",
           "name": "sr032_frozenResumeClearsEveryRestoredField",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr032_frozenResumeClearsEveryRestoredField",
-          "line": 741,
+          "line": 792,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.Model.TCB",
@@ -578255,7 +578302,7 @@
           "kind": "def",
           "name": "sr033_frozenResumeRecomputesPipBoost",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr033_frozenResumeRecomputesPipBoost",
-          "line": 774,
+          "line": 825,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.ObjId",
@@ -578272,7 +578319,7 @@
           "kind": "def",
           "name": "sr034_frozenResumePreemptsOnEffectivePriority",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr034_frozenResumePreemptsOnEffectivePriority",
-          "line": 809,
+          "line": 860,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
             "SeLe4n.ObjId",
@@ -578290,7 +578337,7 @@
           "kind": "def",
           "name": "sr035_resumeFootprintNamesHomeAndExecutingCores",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr035_resumeFootprintNamesHomeAndExecutingCores",
-          "line": 865,
+          "line": 916,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -578318,7 +578365,7 @@
           "kind": "def",
           "name": "sr036_suspendCancelsYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr036_suspendCancelsYieldTo",
-          "line": 902,
+          "line": 953,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.ObjId",
@@ -578336,7 +578383,7 @@
           "kind": "def",
           "name": "sr037_frozenSuspendCancelsYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr037_frozenSuspendCancelsYieldTo",
-          "line": 921,
+          "line": 972,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
             "SeLe4n.Kernel.SchedContext",
@@ -578353,7 +578400,7 @@
           "kind": "def",
           "name": "yieldLinkedState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedState",
-          "line": 939,
+          "line": 990,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Model.SystemState",
@@ -578367,7 +578414,7 @@
           "kind": "def",
           "name": "sr038_contextFinaliseCompletesYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr038_contextFinaliseCompletesYield",
-          "line": 950,
+          "line": 1001,
           "called": [
             "SeLe4n.Kernel.consumedInfoWord",
             "SeLe4n.Kernel.finaliseSchedContext",
@@ -578381,7 +578428,7 @@
           "kind": "def",
           "name": "sr039_threadFinaliseCancelsYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr039_threadFinaliseCancelsYield",
-          "line": 965,
+          "line": 1016,
           "called": [
             "SeLe4n.Kernel.finaliseThread",
             "SeLe4n.ObjId",
@@ -578394,7 +578441,7 @@
           "kind": "def",
           "name": "sr040_liveFrozenSuspendAgree",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr040_liveFrozenSuspendAgree",
-          "line": 979,
+          "line": 1030,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
             "SeLe4n.Kernel.SchedContext",
@@ -578416,7 +578463,7 @@
           "kind": "def",
           "name": "yieldLinkedCurrentState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedCurrentState",
-          "line": 1022,
+          "line": 1073,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Model.SystemState",
@@ -578431,7 +578478,7 @@
           "kind": "def",
           "name": "sr041_activationCompletesCurrentYield",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr041_activationCompletesCurrentYield",
-          "line": 1035,
+          "line": 1086,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadOnCore",
@@ -578446,7 +578493,7 @@
           "kind": "def",
           "name": "sr042_activationWithoutPendingYieldIsIdentity",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr042_activationWithoutPendingYieldIsIdentity",
-          "line": 1056,
+          "line": 1107,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadAt",
@@ -578461,7 +578508,7 @@
           "kind": "def",
           "name": "yieldLinkedRemoteState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedRemoteState",
-          "line": 1078,
+          "line": 1129,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.setRegsOnCore",
@@ -578477,7 +578524,7 @@
           "kind": "def",
           "name": "sr043_remoteYielderCompletesOnItsCore",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr043_remoteYielderCompletesOnItsCore",
-          "line": 1095,
+          "line": 1146,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578496,7 +578543,7 @@
           "kind": "def",
           "name": "yieldLinkedNotResidentB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldLinkedNotResidentB",
-          "line": 1137,
+          "line": 1188,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.MachineState.residentOnCore",
@@ -578511,7 +578558,7 @@
           "kind": "def",
           "name": "sr045_consumedInvocationReadsAndResets",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr045_consumedInvocationReadsAndResets",
-          "line": 1152,
+          "line": 1203,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.consumedInfoWord",
@@ -578528,7 +578575,7 @@
           "kind": "def",
           "name": "sr044_entryTailKeepsEveryCoreUnlinked",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr044_entryTailKeepsEveryCoreUnlinked",
-          "line": 1179,
+          "line": 1230,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578545,7 +578592,7 @@
           "kind": "def",
           "name": "currentNotResidentElsewhereB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.currentNotResidentElsewhereB",
-          "line": 1199,
+          "line": 1250,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.isIdleThreadId",
@@ -578559,7 +578606,7 @@
           "kind": "def",
           "name": "residentMigrantState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.residentMigrantState",
-          "line": 1213,
+          "line": 1264,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578580,7 +578627,7 @@
           "kind": "def",
           "name": "entryTail",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.entryTail",
-          "line": 1224,
+          "line": 1275,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore",
@@ -578593,7 +578640,7 @@
           "kind": "def",
           "name": "rescheduleEntryState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.rescheduleEntryState",
-          "line": 1228,
+          "line": 1279,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.perCoreRescheduleStep",
@@ -578606,7 +578653,7 @@
           "kind": "def",
           "name": "timerEntryState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.timerEntryState",
-          "line": 1233,
+          "line": 1284,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.perCoreTimerTickStep",
@@ -578619,7 +578666,7 @@
           "kind": "def",
           "name": "sr046_migrantRunsOnlyOnceSaved",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr046_migrantRunsOnlyOnceSaved",
-          "line": 1243,
+          "line": 1294,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578636,7 +578683,7 @@
           "kind": "def",
           "name": "sr047_releaseWakesTheDeferringCore",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr047_releaseWakesTheDeferringCore",
-          "line": 1273,
+          "line": 1324,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -578652,7 +578699,7 @@
           "kind": "def",
           "name": "holdsOnlyCurrentOnB",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.holdsOnlyCurrentOnB",
-          "line": 1291,
+          "line": 1342,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -578665,7 +578712,7 @@
           "kind": "def",
           "name": "sr048_stallWaitsForTheRemoteSave",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr048_stallWaitsForTheRemoteSave",
-          "line": 1303,
+          "line": 1354,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
@@ -578685,7 +578732,7 @@
           "kind": "def",
           "name": "yieldToContext",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToContext",
-          "line": 1349,
+          "line": 1400,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.SchedContextId.ofNat"
@@ -578696,7 +578743,7 @@
           "kind": "def",
           "name": "yieldToState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToState",
-          "line": 1357,
+          "line": 1408,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -578718,7 +578765,7 @@
           "kind": "def",
           "name": "yieldToOn",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.yieldToOn",
-          "line": 1375,
+          "line": 1426,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContextOps.schedContextYieldToOnCore",
@@ -578732,7 +578779,7 @@
           "kind": "def",
           "name": "isIllegalState",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.isIllegalState",
-          "line": 1379,
+          "line": 1430,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState"
@@ -578743,7 +578790,7 @@
           "kind": "def",
           "name": "sr049_yieldToLinksAndRunsTarget",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr049_yieldToLinksAndRunsTarget",
-          "line": 1387,
+          "line": 1438,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.ObjId",
@@ -578757,7 +578804,7 @@
           "kind": "def",
           "name": "sr050_yieldToCompletedByActivation",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr050_yieldToCompletedByActivation",
-          "line": 1406,
+          "line": 1457,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.activateThreadOnCore",
@@ -578774,7 +578821,7 @@
           "kind": "def",
           "name": "sr051_yieldToCompletedByNextYieldTo",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr051_yieldToCompletedByNextYieldTo",
-          "line": 1426,
+          "line": 1477,
           "called": [
             "SeLe4n.Kernel.consumedInfoWord",
             "SeLe4n.ObjId",
@@ -578788,7 +578835,7 @@
           "kind": "def",
           "name": "sr052_yieldToCompletedByDelete",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr052_yieldToCompletedByDelete",
-          "line": 1442,
+          "line": 1493,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContext",
             "SeLe4n.ObjId",
@@ -578802,7 +578849,7 @@
           "kind": "def",
           "name": "sr053_yieldToRefusals",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr053_yieldToRefusals",
-          "line": 1457,
+          "line": 1508,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Testing.SuspendResumeSuite.expect",
@@ -578816,7 +578863,7 @@
           "kind": "def",
           "name": "sr054_yieldToReturnsNow",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr054_yieldToReturnsNow",
-          "line": 1474,
+          "line": 1525,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.consumedInfoWord",
@@ -578831,7 +578878,7 @@
           "kind": "def",
           "name": "exhaustedBoundParts",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.exhaustedBoundParts",
-          "line": 1498,
+          "line": 1549,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -578849,7 +578896,7 @@
           "kind": "def",
           "name": "sr055_exhaustedContextRoundTrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr055_exhaustedContextRoundTrip",
-          "line": 1515,
+          "line": 1566,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.SchedContextId",
@@ -578867,7 +578914,7 @@
           "kind": "def",
           "name": "sr056_frozenExhaustedContextRoundTrip",
           "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr056_frozenExhaustedContextRoundTrip",
-          "line": 1540,
+          "line": 1591,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere",
             "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
@@ -578883,9 +578930,11 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1557,
+          "line": 1608,
           "called": [
             "SeLe4n.Testing.SuspendResumeSuite.frozenRestartOfBlockedReceiverCancelsIpc",
+            "SeLe4n.Testing.SuspendResumeSuite.frozenRestartOfBlockedThreadResumesAtSvc",
+            "SeLe4n.Testing.SuspendResumeSuite.frozenSuspendPcAgreesWithLive",
             "SeLe4n.Testing.SuspendResumeSuite.restartOfBlockedSenderCancelsIpc",
             "SeLe4n.Testing.SuspendResumeSuite.sr001_suspendReady",
             "SeLe4n.Testing.SuspendResumeSuite.sr002_suspendInactive",

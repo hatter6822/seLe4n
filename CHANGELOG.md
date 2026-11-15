@@ -112,6 +112,25 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   (16 + 24 bytes) on that step. The non-admitted fallback had built the
   specification's `.ok (st, none)` and then rebuilt the invocation's result
   from it. `suspendThreadOnCore_of_admitted` covers the new arm.
+- **The frozen restart resumes a blocked thread at its `SVC`** (review fix).
+  `frozenResumeThread` cancels a blocked thread through `frozenSuspendThread`,
+  but the frozen suspend kept the saved program counter, so the restarted
+  thread ran past its cancelled syscall. The frozen suspend now cancels a
+  blocked thread through the live record step (`TCB.restoredToRestart`).
+  That moves the PC to its restart PC, retires the fault record and clears
+  the stashed reply, so the frozen suspend leaves a blocked thread `Inactive`
+  at its restart PC, as the live suspend does. A thread that is not blocked
+  keeps its PC on both paths. This was the only site in the class: every live
+  cancel already goes through `restoredToRestart` or
+  `cancelledEndpointWaiterTcb`, and the live resumes set `.Restart` on a
+  thread whose cancel already rewound it. New tests:
+  - SR-020c: a frozen resume of a blocked thread resumes at its `SVC`. It
+    fails on the unfixed code.
+  - SR-020d: the frozen and live suspends agree on the PC, for a blocked
+    thread and for a ready one.
+
+  The frozen suspend and resume are in the archive, but the linker drops
+  them from the kernel image, so no compiled path changed.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it

@@ -1858,7 +1858,15 @@ suspend ends as seL4-MCS's `suspend` ends, with the thread's yield cancelled
 forgets its yielder and the thread its context.  WS-ZA ZA6.33: **no reservation
 ends**: a context bound to the thread stays bound and one it holds on loan stays
 with it, as seL4-MCS's `suspend` keeps `tcbSchedContext`; the frozen surface
-keeps no release queue, so `tcbReleaseRemove` has nothing to write here. -/
+keeps no release queue, so `tcbReleaseRemove` has nothing to write here.
+
+WS-SX SX4: **a blocked thread's cancel is the live one's record step**
+(`TCB.restoredToRestart`, which the live `cancelIpcBlocking` reaches through
+`restoreToReadyCancelled`).  Its IPC fields are cleared, its fault record is
+retired, and its saved program counter is moved to its restart PC, so the
+suspended thread is `Inactive` at the `SVC` it was blocked in, and the frozen
+resume (`frozenResumeThread`, which suspends a blocked thread first) restarts it
+there, as the live `restartThreadOnCore` does. -/
 def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1868,7 +1876,14 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
       -- written, as the live `suspendThreadOnCore` and seL4's `suspend` leave it.
       if tcb.threadState == .Inactive then .ok ((), st)
       else
-        let tcb' := (TCB.setIpcState { tcb with
+        -- WS-SX SX4: a thread blocked in an IPC has it cancelled as the live
+        -- suspend's `cancelIpcBlocking` cancels it, through the same record
+        -- step (`TCB.restoredToRestart`): its saved program counter moves to
+        -- its restart PC (the `SVC`, or its fault's restart PC, read before
+        -- the fault record is cleared), so a later resume re-issues the call.
+        -- A thread not blocked keeps its program counter, as on the live path.
+        let base := if tcb.ipcState != .ready then tcb.restoredToRestart else tcb
+        let tcb' := (TCB.setIpcState { base with
           threadState := .Inactive
           pendingMessage := none
           timeoutBudget := none
@@ -1974,7 +1989,9 @@ neither a comparison nor an enqueue.
 **And it is seL4's `restart`, as the live `.tcbResume` is**
 (`Lifecycle.Suspend.restartThreadOnCore`): a thread that is not stopped is
 left as it is, with no error, and one blocked in an IPC is suspended first, which
-cancels the IPC and leaves it `Inactive`, and then resumed. -/
+cancels the IPC and leaves it `Inactive` with its saved program counter at its
+restart PC (`TCB.restoredToRestart`, as on the live path), and then resumed, so
+it runs at the `SVC` it was blocked in and re-issues the call. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st0 =>
     match frozenLookupTcb st0 tid with

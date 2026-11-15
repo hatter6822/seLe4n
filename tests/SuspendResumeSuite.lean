@@ -393,6 +393,57 @@ private def frozenRestartOfBlockedReceiverCancelsIpc : IO Unit := do
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen restart of a blocked thread should succeed, got {repr e}"
 
+/-- A thread blocked on a receive at endpoint 10, its saved program counter
+four bytes past the `SVC` it trapped on (`0x1000`), as `lel_syscall` leaves it. -/
+private def blockedReceiverAtSvc : TCB :=
+  let t := mkTcb 1 .Ready
+  TCB.setIpcState { t with
+    threadState := .BlockedRecv
+    registerContext := { t.registerContext with pc := 0x1004 } } (.blockedOnReceive ⟨10⟩)
+
+/-- SR-020c (WS-SX SX4, seL4's `restart`): **a frozen resume of a blocked thread
+resumes it at its `SVC`**: the cancel through the suspend moves its saved
+program counter to its restart PC (`TCB.restartPc`), so it re-issues the call,
+as the live `restartThreadOnCore` does. -/
+private def frozenRestartOfBlockedThreadResumesAtSvc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let tcb := blockedReceiverAtSvc
+  expect "SR-020c the fixture's restart PC is its SVC" (tcb.restartPc == 0x1000)
+  match frozenResumeThread tid (mkFrozenState [(⟨1⟩, .tcb tcb)]) with
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb') =>
+      expect "SR-020c the frozen blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "SR-020c and resumes at its SVC" (tcb'.registerContext.pc == 0x1000)
+    | _ => throw <| IO.userError "SR-020c frozen TCB not found"
+  | .error e => throw <| IO.userError s!"SR-020c frozen restart should succeed, got {repr e}"
+
+/-- SR-020d (WS-SX SX4, seL4's `suspend`): **the frozen suspend's program
+counter is the live suspend's**: a blocked thread is left `Inactive` at its
+restart PC on both, and a thread not blocked keeps its program counter on both. -/
+private def frozenSuspendPcAgreesWithLive : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let ready := let t := mkTcb 1 .Ready
+    { t with registerContext := { t.registerContext with pc := 0x2004 } }
+  for (label, tcb, pc) in [("blocked", blockedReceiverAtSvc, (0x1000 : UInt64)),
+                           ("ready", ready, 0x2004)] do
+    let frozenPc? : Option UInt64 :=
+      match frozenSuspendThread tid (mkFrozenState [(⟨1⟩, .tcb tcb)]) with
+      | .ok ((), fst') =>
+        match fst'.objects.get? tid.toObjId with
+        | some (.tcb t') => if t'.threadState == .Inactive then some t'.registerContext.pc else none
+        | _ => none
+      | .error _ => none
+    let livePc? : Option UInt64 :=
+      match bootSuspendThread (mkState [(⟨1⟩, .tcb tcb)]) ⟨tid, by decide⟩ with
+      | .ok st' =>
+        match st'.objects[tid.toObjId]? with
+        | some (.tcb t') => if t'.threadState == .Inactive then some t'.registerContext.pc else none
+        | _ => none
+      | .error _ => none
+    expect s!"SR-020d {label}: the frozen suspend leaves it Inactive at {pc}" (frozenPc? == some pc)
+    expect s!"SR-020d {label}: as the live suspend does" (livePc? == some pc)
+
 /-- SR-021: Frozen suspend-resume roundtrip. -/
 private def sr021_frozenRoundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
@@ -1585,6 +1636,8 @@ def main : IO Unit := do
   IO.println "--- D1-Q7: Additional Frozen Operations ---"
   sr020_frozenResumeReady
   frozenRestartOfBlockedReceiverCancelsIpc
+  frozenRestartOfBlockedThreadResumesAtSvc
+  frozenSuspendPcAgreesWithLive
   sr021_frozenRoundtrip
   IO.println "--- R5.A: cancelDonation split ---"
   sr022_cancelBoundDonationClearsBinding
