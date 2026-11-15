@@ -5711,7 +5711,12 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
       sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
       sc.yieldFromCode = 0) ∧
   (∀ r, obj = .reply r →
-    r.caller = none ∧ r.prev = none ∧ r.next = none)
+    r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
+  -- WS-SX SX5.3: the root task's IPC buffer frame and the tables on its walk,
+  -- which the boot builds (`installRootServer`): each a whole page, the frame
+  -- of RAM.
+  (∀ f, obj = .frame f → f.wellFormed ∧ f.isDevice = false) ∧
+  (∀ p, obj = .pageTable p → p.wellFormed)
 
 /-- The shape reads no derivation link: two objects that agree off their links
     have it together. -/
@@ -5724,12 +5729,14 @@ theorem bootObjectShapeOffLinks_of_withoutLinks {o o' : KernelObject}
     | (cases hw; exact h)
     | (rename_i cn cn'
        refine ⟨fun _ e => (by cases e), fun _ e => (by cases e), fun x e => ?_, fun _ e => (by cases e),
-         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e)⟩
+         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e),
+         fun _ e => (by cases e), fun _ e => (by cases e)⟩
        cases e
        exact (CNode.proj_eq_of_withoutLinks_eq bootCNodeShape hw).mpr (h.2.2.1 cn rfl))
     | (rename_i t t'
        refine ⟨fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e), fun x e => ?_,
-         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e)⟩
+         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e),
+         fun _ e => (by cases e), fun _ e => (by cases e)⟩
        cases e
        exact (TCB.proj_eq_of_withoutLinks_eq bootTcbShape hw).mpr (h.2.2.2.1 t rfl))
 
@@ -5777,7 +5784,8 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
     fun vs hEq =>
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
         (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
-    h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩,
+    h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+    fun f e => absurd e (h.2.2.2.2.2.2.2.2.1 f), fun p e => absurd e (h.2.2.2.2.2.2.2.2.2 p)⟩,
    fun cn hEq => (h.2.2.1 cn hEq).2.2.2.2,
    fun tcb hEq => (h.2.2.2.1 tcb hEq).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2⟩
 
@@ -5787,7 +5795,7 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
 theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
     (h : SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) :
     bootObjectShape (.vspaceRoot vs) := by
-  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
   exact SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot_mappingsSafe h
 
 /-- **WS-BP BP3.5**: the stored idle TCB has the boot shape — it is
@@ -5795,7 +5803,7 @@ theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
     every clean-state field the TCB arm reads is a default. -/
 theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
-  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
   · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
       (bootSpaceSlotsSafe_of_check rfl rfl).1, rfl, rfl⟩
   · rfl
@@ -6102,7 +6110,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hBindings : notificationBindingReciprocal ist.state)
     (hRel : ist.state.releaseQueueRefined)
     (hRefill : ist.state.refillsSound)
-    (hCount : ist.state.objectIndex.length ≤ maxObjects) :
+    (hCount : ist.state.objectIndex.length ≤ maxObjects)
+    (hMappings : ist.state.liveMappingsRecorded) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape, hKinds, hGeom⟩ := hTree
@@ -6259,7 +6268,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.2.1] at hRep; cases hRep
-      · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
+      · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2.1 r rfl
         rw [hR.1] at hCaller; cases hCaller
       · -- WS-SM SM6.D (#7.4): replyCallerLinkage third clause (vacuous — boot TCBs
         -- have ipcState = .ready, never .blockedOnReply, so no caller needs a reply).
@@ -6357,9 +6366,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       exact ((hBS oid _ hObj).2.2.2.2.1 root rfl).1 v p perms hMap |>.2.2
     · -- every boot root's table carries the table invariant and has room
       intro oid root hObj
-      obtain ⟨hLt, hCap, hVac⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
-      exact ⟨⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩,
-        SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ hVac⟩
+      obtain ⟨hLt, hCap, hEpochs⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
+      exact ⟨⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩, hEpochs⟩
   -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 10 predicates)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -6548,15 +6556,10 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     rw [hAudit]
     exact SeLe4n.Model.default_auditLogBounded
   -- 17. runQueueRefined: the caller's hypothesis.
-  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 parts 37 and 39): every boot root's
-  -- epoch table is vacant (`VSpaceRootTableRoom`), so no mapping was made by a
-  -- capability, and every boot thread's space slots passed `bootSafeCapCheck`,
-  -- which refuses a mapping record (`bootSpaceSlotCapsSafe`).
-  have hMappings : ist.state.liveMappingsRecorded :=
-    SystemState.liveMappingsRecorded_of_epochsVacant
-      (fun rid root hObj => ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2)
-      fun tid t s cap hObj hc =>
-        ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.2 s cap hc
+  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 parts 37 and 39; WS-SX SX5.3): the
+  -- caller's hypothesis — every mapping a boot root carries under an epoch (the
+  -- root task's IPC buffer, which the boot maps) is recorded on the root CNode's
+  -- frame capability, and no thread's space slot records one.
   -- 19. releaseQueueRefined (WS-ZA ZA6.3): the caller's hypothesis.
   -- 20. refillsSound (WS-ZA ZA6.4): the caller's hypothesis.
   -- 21. yieldLinksAgree (WS-ZA ZA6.6): no boot thread yields to a context and
@@ -7611,6 +7614,43 @@ theorem bootFromPlatformChecked_ok_bootObjectShape (config : PlatformConfig)
         ((SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck_iff _).mp hRootSafe)
     · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
       exact hBase oid obj hObj
+
+/-- **WS-SX SX5.3**: every address space the checked boot installs has a
+    vacant mapping-epoch table — a configured root maps nothing
+    (`bootSafeUserVSpaceRoot`) and the binding's root carries no epoch
+    (`VSpaceRootTableRoom`) — so no mapping it holds was made by a capability
+    (`SystemState.liveMappingsRecorded_of_epochsVacant`).  The boot shape asks
+    only a well-formed epoch table, which the root-server stage's root, mapping
+    the IPC buffer under epoch 0, has too. -/
+theorem bootFromPlatformChecked_ok_epochsVacant (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ∀ (oid : SeLe4n.ObjId) (vs : VSpaceRoot),
+      ist.state.objects[oid]? = some (.vspaceRoot vs) → vs.mappingEpochs.vacant = true := by
+  obtain ⟨_, hSafeChk, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  obtain ⟨_, hRootSafe⟩ := bootFromPlatformChecked_ok_vspaceGates config ist h
+  have hBase : ∀ (oid : SeLe4n.ObjId) (vs : VSpaceRoot),
+      (bootFromPlatform config).state.objects[oid]? = some (.vspaceRoot vs) →
+        vs.mappingEpochs.vacant = true := by
+    intro oid vs hObj
+    have hSafe := bootFromPlatform_objects_bootSafe config (fun e hMem =>
+      bootSafeObjectCheck_sound _ (List.all_eq_true.mp hSafeChk e hMem)) oid _ hObj
+    exact (hSafe.2.2.2.2.1 vs rfl).2.2.2.2.2
+  intro oid vs hObj
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, hSome, rfl⟩
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    exact hBase oid vs hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj
+      unfold bootVSpaceRootSafe at hRootSafe
+      rw [hSome] at hRootSafe
+      obtain ⟨_, _, _, _, _, hRoom⟩ :=
+        (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck_iff _).mp hRootSafe
+      exact hRoom.2.2
+    · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
+      exact hBase oid vs hObj
 
 /-- **WS-BP BP3.5**: a boot install keeps the ASID table consistent with the
     roots when the key it writes holds nothing and — for a root — no root
@@ -8725,7 +8765,10 @@ def bootStartShape (ist : IntermediateState) : Prop :=
       runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId ∧
-  notificationBindingReciprocal ist.state
+  notificationBindingReciprocal ist.state ∧
+  -- WS-SX SX5.3: every mapping made under an epoch — the root task's IPC
+  -- buffer — recorded on a capability, and no thread slot recording one.
+  ist.state.liveMappingsRecorded
 
 /-- **WS-ZA ZA5.4**: **what the linked boot leaves** — `bootStartShape` with
     the objects read off their derivation links and the empty tree replaced by
@@ -8743,7 +8786,8 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId ∧
   bootDerivationTreeSound ist.state ∧
-  notificationBindingReciprocal ist.state
+  notificationBindingReciprocal ist.state ∧
+  ist.state.liveMappingsRecorded
 
 /-- **WS-BP BP7.11**: **the proof-layer bundle of any state of linked boot
     shape.**  The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s
@@ -8753,7 +8797,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (h : bootLinkedShape ist) (hCount : ist.state.objectIndex.length ≤ maxObjects) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
-    hTree, hBindings⟩ := h
+    hTree, hBindings, hMaps⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -8819,7 +8863,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (fun oid sc hO => ⟨((hShape _ _ hO).2.2.2.2.2.1 sc rfl).1,
       ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.1⟩)
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun hBindings hRel hRefill hCount
+    ?_ ?_ hRun hBindings hRel hRefill hCount hMaps
   · have hE : ist.state.scheduler.replenishQueueOnCore bootCoreId = ReplenishQueue.empty := by
       rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).2.2.1
     simp only [replenishQueueValid, hE]
@@ -8869,7 +8913,8 @@ theorem emptyBoot_bootLinkedShape :
     ⟨fun a _ h => (by rw [emptyBoot_asidTable_none] at h; cases h),
      fun oid _ h => (by rw [hO] at h; cases h)⟩,
     fun o₁ _ _ _ h => (by rw [hO] at h; cases h),
-    ⟨_, _, _, rfl⟩, ?_, ⟨?_, fun tid hMem => ?_⟩, ?_, fun k => ?_⟩
+    ⟨_, _, _, rfl⟩, ?_, ⟨?_, fun tid hMem => ?_⟩, ?_, fun k => ?_,
+    fun _ _ _ _ _ _ h => (by rw [hO] at h; cases h), fun _ _ _ _ h => (by rw [hO] at h; cases h)⟩
   · intro c
     refine SystemState.runQueueRefinedOnCore_of_empty (default_state_perCoreInitialized c).2.1
       (PerCoreVector.replicate_get _ _ c) (fun t => ?_)
@@ -9001,7 +9046,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
       foldl_storeIdleThread_runQueueRefined cores base
         (bootFromPlatformChecked_ok_runQueueRefined config base hChecked) (fun c _ c' => ?_),
       ⟨?_, ?_⟩, foldl_storeIdleThread_notificationBindingReciprocal cores base hFresh
-        (bootFromPlatformChecked_ok_notificationBindingReciprocal config base hChecked)⟩
+        (bootFromPlatformChecked_ok_notificationBindingReciprocal config base hChecked), ?_⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with
@@ -9033,5 +9078,17 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
       intro tid hMem
       rw [hQ] at hMem
       exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty tid)
+    · -- WS-SX SX5.3: no root carries an epoch, and no thread slot a record.
+      refine SystemState.liveMappingsRecorded_of_epochsVacant (fun rid root hR => ?_)
+        (fun tid t sl cap hT hc => ?_)
+      · rcases foldl_storeIdleThread_objects_cases cores base rid _ hR with hB | ⟨c, _, hEq⟩
+        · exact bootFromPlatformChecked_ok_epochsVacant config base hChecked rid root hB
+        · cases hEq
+      · rcases foldl_storeIdleThread_objects_cases cores base tid _ hT with hB | ⟨c, _, hEq⟩
+        · exact ((bootFromPlatformChecked_ok_bootObjectShape config base hChecked tid _ hB).1.2.2.2.1
+            t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.2 sl cap hc
+        · cases hEq
+          exact ((readyIdleThread_bootObjectShape c).1.2.2.2.1 _ rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.2
+            sl cap hc
 
 end SeLe4n.Platform.Boot

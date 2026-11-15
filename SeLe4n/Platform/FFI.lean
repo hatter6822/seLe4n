@@ -1175,6 +1175,33 @@ witnesses are not installed threads of the boot state. -/
 def uninstalledSeparationWitnessBootError : String :=
   "boot: the labeling's declared separation witnesses are not installed threads of the boot state (PR #889 review round 3)"
 
+/-- **WS-BP BP7.2: perform one physical write a committed transition
+    recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
+    the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
+    invalidates every translation tagged with the ASID `addr`, tag 3 stores the
+    user word `value` at `addr` in a thread's RAM frame — WS-BP BP7.8).
+
+    Rust: `ffi::mmu_apply_physical_write` in `sele4n-hal/src/ffi.rs`, which
+    validates the operands against the pages the kernel may write for a thread
+    (`user_translation::decode_physical_write`) and halts the system on a
+    refusal. -/
+@[extern "mmu_apply_physical_write"]
+opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
+
+/-- The `k` ledger entries of `b` from entry `i`, each handed to the HAL. -/
+def applyLedgerFrom (b : ByteArray) : Nat → Nat → BaseIO Unit
+  | _, 0 => pure ()
+  | i, k + 1 => do
+    let e := Architecture.ledgerEntryAt b i
+    ffiApplyPhysicalWrite e.1 e.2.1 e.2.2
+    applyLedgerFrom b (i + 1) k
+
+/-- **WS-ZA ZA5.4: the seam's writes, read off the ledger's buffer** — each
+entry's three words handed to the HAL in record order, with no list built;
+`performPhysicalWrites` of the ledger's list (`completePhysicalWrites_eq`). -/
+def completePhysicalWrites (owed : Architecture.PhysicalWriteLedger) : BaseIO Unit :=
+  applyLedgerFrom owed.bytes 0 owed.count
+
 /-- PR #889 review round 3: the boot wrapper over a **declared core list** and a
 labeling — the shared body of `bootAndInitialiseFromPlatform` (every model
 core) and `bootAndInitialisePlatform` (the binding's cores).
@@ -1187,7 +1214,15 @@ declared separation witnesses are not installed threads of the boot state
 guard decides that the labeling separates two admissible *ids*; only the boot
 state can say whether those ids are threads the deployment creates, and a
 partition that separates no running thread is exactly the vacuous deployment
-the guard exists to refuse. -/
+the guard exists to refuse.
+
+WS-SX SX5.3 (D15): an accepted boot owes physical writes — the root task's IPC
+buffer page and its three tables zeroed and their descriptors stored
+(`installRootServer`, seL4's `create_rootserver_objects` and
+`create_ipcbuf_frame_cap`).  The entry performs them (`completePhysicalWrites`)
+and installs the state with its ledger drained (`clearPhysicalWrites`), so the
+root task's first instruction finds its buffer mapped and the first syscall's
+commit starts from an empty ledger. -/
 def bootAndInitialiseFromPlatformOn
     (cores : List SeLe4n.Kernel.Concurrency.CoreId)
     (config : PlatformConfig)
@@ -1200,7 +1235,8 @@ def bootAndInitialiseFromPlatformOn
     | Except.error e => pure (Except.error e)
     | Except.ok ist =>
       if declaredWitnessesInstalled ist.state ctx then
-        let st := ist.state
+        completePhysicalWrites ist.state.drainedPhysicalWrites
+        let st := Architecture.clearPhysicalWrites ist.state
         initialiseKernelState st
         initialiseKernelLabelingContext ctx
         pure (Except.ok st)
@@ -1384,7 +1420,7 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
+  rw [linkBootCapabilities_machine, installRootServer_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
 
@@ -1400,7 +1436,7 @@ theorem bootAndInitialisePlatform_checked_interruptLineCount (platform : Type)
     ist.state.machine.interruptLineCount =
       (bindPlatformConfig platform config).machineConfig.interruptLineCount := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
+  rw [linkBootCapabilities_machine, installRootServer_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_interruptLineCount _ _ _ hBase]
 
 /-- **WS-ZA ZA5.5**: the bound configuration installs the binding's service
@@ -1514,6 +1550,16 @@ def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
   match ← bootAndInitialiseRPi5 config with
   | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
+
+/-- **A boot that commits and returns `.ok` never halts**: the halting boot is
+    its commit.  Stated over the commit's three steps as variables, so a
+    deployment instantiates it without the kernel evaluating its boot state. -/
+theorem bootAndInitialiseRPi5OrHalt_of_ok {config : PlatformConfig} {a b c : BaseIO Unit}
+    {z : SystemState} (h : bootAndInitialiseRPi5 config = (do a; b; c; pure (Except.ok z))) :
+    bootAndInitialiseRPi5OrHalt config = (do a; b; c) := by
+  unfold bootAndInitialiseRPi5OrHalt
+  rw [h]
+  rfl
 
 -- ============================================================================
 -- WS-RR RR7.27 — the DTB-driven hardware boot
@@ -1860,9 +1906,10 @@ theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBin
         | Except.error e => pure (Except.error e)
         | Except.ok ist =>
             if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
-              initialiseKernelState ist.state
+              completePhysicalWrites ist.state.drainedPhysicalWrites
+              initialiseKernelState (Architecture.clearPhysicalWrites ist.state)
               initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
-              pure (Except.ok ist.state)
+              pure (Except.ok (Architecture.clearPhysicalWrites ist.state))
             else
               pure (Except.error uninstalledSeparationWitnessBootError)) := by
   unfold bootAndInitialisePlatform bootAndInitialiseFromPlatformOn
@@ -4123,18 +4170,6 @@ def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
   ffiIcMaintenance op.toOpTag op.toPaddr op.toSize
 
-/-- **WS-BP BP7.2: perform one physical write a committed transition
-    recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
-    the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
-    invalidates every translation tagged with the ASID `addr`, tag 3 stores the
-    user word `value` at `addr` in a thread's RAM frame — WS-BP BP7.8).
-
-    Rust: `ffi::mmu_apply_physical_write` in `sele4n-hal/src/ffi.rs`, which
-    validates the operands against the pages the kernel may write for a thread
-    (`user_translation::decode_physical_write`) and halts the system on a
-    refusal. -/
-@[extern "mmu_apply_physical_write"]
-opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-ZA ZA5.2: the executing core's entry-word buffer** — a persistent
     `ByteArray` outside the heap that this core's syscall entry reads the
@@ -4219,14 +4254,6 @@ theorem performPhysicalWrites_cons (w : Architecture.PhysicalWrite)
     performPhysicalWrites (w :: rest) =
       (do physicalWriteApply w; performPhysicalWrites rest) := rfl
 
-/-- The `k` ledger entries of `b` from entry `i`, each handed to the HAL. -/
-def applyLedgerFrom (b : ByteArray) : Nat → Nat → BaseIO Unit
-  | _, 0 => pure ()
-  | i, k + 1 => do
-    let e := Architecture.ledgerEntryAt b i
-    ffiApplyPhysicalWrite e.1 e.2.1 e.2.2
-    applyLedgerFrom b (i + 1) k
-
 theorem applyLedgerFrom_eq (b : ByteArray) :
     ∀ (i k : Nat), applyLedgerFrom b i k =
       (Architecture.decodeLedgerFrom b i k).forM fun e => ffiApplyPhysicalWrite e.1 e.2.1 e.2.2
@@ -4234,12 +4261,6 @@ theorem applyLedgerFrom_eq (b : ByteArray) :
   | i, k + 1 => by
     rw [applyLedgerFrom, applyLedgerFrom_eq b (i + 1) k]
     rfl
-
-/-- **WS-ZA ZA5.4: the seam's writes, read off the ledger's buffer** — each
-entry's three words handed to the HAL in record order, with no list built;
-`performPhysicalWrites` of the ledger's list (`completePhysicalWrites_eq`). -/
-def completePhysicalWrites (owed : Architecture.PhysicalWriteLedger) : BaseIO Unit :=
-  applyLedgerFrom owed.bytes 0 owed.count
 
 theorem completePhysicalWrites_eq (owed : Architecture.PhysicalWriteLedger) :
     completePhysicalWrites owed = performPhysicalWrites owed.toList := by

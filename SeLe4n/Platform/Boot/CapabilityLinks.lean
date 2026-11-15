@@ -15,9 +15,9 @@ import SeLe4n.Platform.Boot
 seL4's `create_initial_thread` derives the initial thread's CSpace and VSpace
 capabilities from the root CNode's, so every boot capability lies in one
 derivation tree in MDB order.  This module is that stage.  It walks the
-configuration's capability slots in boot order (`bootCapabilitySlots`: every
-configured CNode's occupied slots, then every configured thread's two space
-slots) and links each slot that holds a capability (`bootLinkSlot`): the first
+configuration's capability slots in boot order (`bootLinkOrder`: every
+configured CNode's occupied slots, then (WS-SX SX5.3) the slots the root-server
+stage filled, then every configured thread's three space slots) and links each slot that holds a capability (`bootLinkSlot`): the first
 slot naming an object (`Capability.namedObject`, seL4's `sameObjectAs`) joins
 the end of the root chain, and a later slot naming the same object becomes that
 root's first child, a copy of it.  The slots naming one object are therefore one
@@ -266,16 +266,56 @@ theorem bootLinkSlots_reach {st₀ : SystemState} :
   | r :: rs, _, h => bootLinkSlots_reach rs (bootLinkSlot_reach h r)
 
 /-- **The boot's capability slots, in boot order**: every configured CNode's
-occupied slots, then every configured thread's two space slots, its CSpace and
-VSpace roots.  A CNode slot comes first, so a thread's space capability that
-names what a CNode slot names is derived from it. -/
-def bootCapabilitySlots (objs : List ObjectEntry) : List SlotRef :=
+occupied slots, then the `extra` slots the boot itself filled (the root
+server's, `rootServerSlotRefs`), then every configured thread's three space
+slots, its CSpace and VSpace roots and its buffer.  A CNode slot comes first, so
+a thread's space capability that names what a CNode slot names is derived from
+it — the root task's buffer capability from the root CNode's frame capability,
+as seL4's `create_initial_thread` derives `tcbBuffer` from
+`seL4_CapInitThreadIPCBuffer`. -/
+def bootCapabilitySlots (objs : List ObjectEntry) (extra : List SlotRef := []) : List SlotRef :=
   objs.flatMap (fun e => match e.obj with
     | .cnode cn => cn.occupiedSlots.map fun p => ⟨e.id, p.1⟩
-    | _ => []) ++
+    | _ => []) ++ extra ++
   objs.flatMap (fun e => match e.obj with
     | .tcb _ => [⟨e.id, SeLe4n.Slot.ofNat 0⟩, ⟨e.id, SeLe4n.Slot.ofNat 1⟩, ⟨e.id, SeLe4n.Slot.ofNat 2⟩]
     | _ => [])
+
+/-- **WS-SX SX5.3: the slots the root-server stage fills** (`installRootServer`):
+the root CNode's four reservation slots, the mapped frame's first, and the root
+task's buffer slot — read off the state the stage leaves, whose root task names
+the CNode. -/
+def rootServerSlotRefs (config : PlatformConfig) (st : SystemState) : List SlotRef :=
+  match config.rootServer with
+  | none => []
+  | some r =>
+    match st.objects[r.thread.toObjId]? with
+    | some (.tcb t) =>
+      (List.range rootServerPages).map (fun i => ⟨t.cspaceRoot, r.cnodeSlot i⟩) ++
+        [⟨r.thread.toObjId, TCB.ipcBufferSlot⟩]
+    | _ => []
+
+/-- **The order the boot links its capabilities in**: the configured slots
+with the root server's between the CNodes' and the threads'. -/
+def bootLinkOrder (config : PlatformConfig) (st : SystemState) : List SlotRef :=
+  bootCapabilitySlots config.initialObjects (rootServerSlotRefs config st)
+
+/-- A slot of the configured list is a slot of the list with any extra. -/
+theorem mem_bootCapabilitySlots_extra {objs : List ObjectEntry} {r : SlotRef}
+    (h : r ∈ bootCapabilitySlots objs) (extra : List SlotRef) :
+    r ∈ bootCapabilitySlots objs extra := by
+  unfold bootCapabilitySlots at h ⊢
+  simp only [List.append_nil, List.mem_append] at h ⊢
+  rcases h with h | h
+  · exact .inl (.inl h)
+  · exact .inr h
+
+/-- An extra slot is a slot of the list. -/
+theorem mem_bootCapabilitySlots_of_extra {objs : List ObjectEntry} {extra : List SlotRef}
+    {r : SlotRef} (h : r ∈ extra) : r ∈ bootCapabilitySlots objs extra := by
+  unfold bootCapabilitySlots
+  simp only [List.mem_append]
+  exact .inl (.inr h)
 
 /-- **Every slot holding a capability is listed** in `rs`: the linking of `rs`
 then leaves no capability outside the tree. -/
@@ -287,7 +327,7 @@ slot. -/
 theorem mem_bootCapabilitySlots {objs : List ObjectEntry} {e : ObjectEntry} (he : e ∈ objs)
     {s : SeLe4n.Slot} (hs : e.obj.slotCap s ≠ none) : ⟨e.id, s⟩ ∈ bootCapabilitySlots objs := by
   unfold bootCapabilitySlots
-  rw [List.mem_append, List.mem_flatMap, List.mem_flatMap]
+  rw [List.append_nil, List.mem_append, List.mem_flatMap, List.mem_flatMap]
   cases ho : e.obj with
   | cnode cn =>
     rw [ho] at hs
@@ -383,7 +423,7 @@ capabilities (`bootCapabilitySlots`) into the derivation tree, its four
 structural witnesses carried through the link writes. -/
 def linkBootCapabilities (config : PlatformConfig) (ist : IntermediateState) :
     IntermediateState where
-  state := linkBootSlots ist.state (bootCapabilitySlots config.initialObjects)
+  state := linkBootSlots ist.state (bootLinkOrder config ist.state)
   hAllTables := (linkBootSlots_reach _ _).allTablesInvExtK ist.hAllTables
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := linkReach_perObjectMappingsInvariant (linkBootSlots_reach _ _) ist.hAllTables.objects.1
@@ -394,7 +434,7 @@ def linkBootCapabilities (config : PlatformConfig) (ist : IntermediateState) :
 
 theorem linkBootCapabilities_state (config : PlatformConfig) (ist : IntermediateState) :
     (linkBootCapabilities config ist).state =
-      linkBootSlots ist.state (bootCapabilitySlots config.initialObjects) := rfl
+      linkBootSlots ist.state (bootLinkOrder config ist.state) := rfl
 
 
 
@@ -447,7 +487,7 @@ theorem linkBootCapabilities_machine (config : PlatformConfig) (ist : Intermedia
     are all the linking writes besides the tree. -/
 theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : IntermediateState)
     (h : bootStartShape ist)
-    (hListed : bootSlotsListed (bootCapabilitySlots config.initialObjects) ist.state)
+    (hListed : bootSlotsListed (bootLinkOrder config ist.state) ist.state)
     (hLive : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o)
     (hUnique : ∀ u r r', SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u →
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u → r = r')
@@ -457,15 +497,15 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     (hKinds : capTargetKindBacked ist.state) (hGeom : cnodeCapGeometry ist.state) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
-    hBindings⟩ := h
+    hBindings, hMaps⟩ := h
   have hInv₀ := ist.hAllTables.objects.1
   have hE : ist.state.cdt = CapDerivationTree.empty := hCdt
   have hL₀ := cdtLinksAgree_of_bootEmpty hCdt fun oid obj hO => (hShape oid obj hO).2
   have hStart := BootLinks.Sound.start hE hL₀
-  have hDone := (BootLinks.Sound.foldl_done hInv₀ (bootCapabilitySlots config.initialObjects)
+  have hDone := (BootLinks.Sound.foldl_done hInv₀ (bootLinkOrder config ist.state)
     hStart).2
   obtain ⟨-, hL, hM, hD, hW, -, -, hEd, -, -, P, hP, hC⟩ :=
-    BootLinks.Sound.foldl hInv₀ (bootCapabilitySlots config.initialObjects) hStart
+    BootLinks.Sound.foldl hInv₀ (bootLinkOrder config ist.state) hStart
   have hA := linkBootCapabilities_agree config ist
   have hUt : (linkBootCapabilities config ist).state.getUntyped? = ist.state.getUntyped? :=
     hA.getUntyped?
@@ -500,7 +540,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩, capTargetKindBacked_of_agree hA hKinds,
       cnodeCapGeometry_of_agree hA hGeom⟩,
-    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings⟩
+    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings,
+    SystemState.liveMappingsRecorded.of_linkReach (linkBootSlots_reach _ _) hInv₀ hMaps⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with

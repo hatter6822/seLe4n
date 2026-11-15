@@ -69,6 +69,15 @@ def bootAndInitialiseQemuVirtOrHalt (config : PlatformConfig) : BaseIO Unit := d
   | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
 
+/-- **A boot that commits and returns `.ok` never halts**: the halting boot is
+    its commit (`Platform.FFI.bootAndInitialiseRPi5OrHalt_of_ok`). -/
+theorem bootAndInitialiseQemuVirtOrHalt_of_ok {config : PlatformConfig} {a b c : BaseIO Unit}
+    {z : SeLe4n.Model.SystemState} (h : bootAndInitialiseQemuVirt config = (do a; b; c; pure (Except.ok z))) :
+    bootAndInitialiseQemuVirtOrHalt config = (do a; b; c) := by
+  unfold bootAndInitialiseQemuVirtOrHalt
+  rw [h]
+  rfl
+
 /-- **The `virt` hardware boot's only correct call** — what
     `lean_kernel_main_qemu_virt` (`QemuVirt.kernelMain`) is, and what
     `SeLe4n/Testing/BootEntryContract.lean` holds that entry to.  An accepted

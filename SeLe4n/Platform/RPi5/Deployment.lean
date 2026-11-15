@@ -741,10 +741,12 @@ def rpi5DeploymentStartedStateAt (v : BCM2712Config) : IntermediateState :=
     are its labeling's two separation witnesses — with the configuration's
     capabilities then linked into the derivation tree (WS-ZA ZA5.4,
     `linkBootCapabilities`), after the board's interrupt nodes are installed
-    (WS-ZA ZA6.32, `installIrqNodes`). -/
+    (WS-ZA ZA6.32, `installIrqNodes`) and the root task's IPC buffer built
+    (WS-SX SX5.3, `installRootServer`). -/
 def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
   linkBootCapabilities (rpi5BoundPlatformConfigAt v)
-    (installIrqNodes (irqNodeLineCount (rpi5BoundPlatformConfigAt v)) (rpi5DeploymentStartedStateAt v))
+    (installRootServer (rpi5BoundPlatformConfigAt v)
+      (installIrqNodes (irqNodeLineCount (rpi5BoundPlatformConfigAt v)) (rpi5DeploymentStartedStateAt v)))
 
 /-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds on
     every variant, and this is what it returns. -/
@@ -875,6 +877,7 @@ theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
     declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
       (PlatformBinding.labeling (platform := RPi5Platform)) = true :=
   (linkBootCapabilities_declaredWitnessesInstalled _ _ _).trans <|
+  (installRootServer_declaredWitnessesInstalled _ _ _).trans <|
   (installIrqNodes_declaredWitnessesInstalled (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) _).trans <|
   startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     (rpi5Deployment_startInitialThreads v hv) _
@@ -908,9 +911,11 @@ theorem rpi5DeploymentBootStateAt_initialThreadsStarted (v : BCM2712Config)
 theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseRPi5 (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
+        completePhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))
-        pure (Except.ok (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state)) := by
+        pure (Except.ok
+          (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state)) := by
   have hv := rpi5VariantFor_admissible board
   rw [bootAndInitialiseRPi5_eq, bootAndInitialisePlatform_eq_checked_boot]
   show (match bootFromPlatformCheckedStartedFor _
@@ -918,6 +923,7 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_rpi5PlatformConfigFor, rpi5BoundPlatformConfigAt_boot _ hv]
   simp only [rpi5DeploymentBootStateAt_witnessesInstalled _ hv, ↓reduceIte]
+  rfl
 
 /-- **WS-BP BP3 acceptance**: ...so the halting boot the entry reaches
     (`bootAndInitialiseRPi5OrHalt`) installs the deployment and never reaches
@@ -925,23 +931,23 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
 theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseRPi5OrHalt (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
+        completePhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))) := by
-  unfold bootAndInitialiseRPi5OrHalt
-  rw [bootAndInitialiseRPi5_rpi5PlatformConfigFor]
-  -- `BaseIO` carries no `LawfulMonad` instance to rewrite with, and needs
-  -- none: its bind reduces, so the two programs are the same term.
-  rfl
+  exact bootAndInitialiseRPi5OrHalt_of_ok (bootAndInitialiseRPi5_rpi5PlatformConfigFor board)
 
 /-- **WS-BP BP3.5**: the state the hardware boot installs for this deployment
     satisfies the proof-layer invariant bundle, and its freeze the frozen one —
-    `bootToRuntime_invariantBridge_started` at the binding's declared cores — on
-    every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs
+    `bootToRuntime_invariantBridge_installed` at the binding's declared cores — on
+    every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs,
+    its physical-write ledger drained (WS-SX SX5.3, D15)
     (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`), not of a model of it. -/
 theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v.Admissible) :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle (rpi5DeploymentBootStateAt v).state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze (rpi5DeploymentBootStateAt v)) :=
-  bootToRuntime_invariantBridge_started _ PlatformBinding.declaredCores_nodup _ _
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (drainBootPhysicalWrites (rpi5DeploymentBootStateAt v)).state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen
+      (SeLe4n.Model.freeze (drainBootPhysicalWrites (rpi5DeploymentBootStateAt v))) :=
+  bootToRuntime_invariantBridge_installed _ PlatformBinding.declaredCores_nodup _ _
     (rpi5BoundPlatformConfigAt_boot v hv)
 
 -- ============================================================================
@@ -1051,6 +1057,8 @@ theorem rpi5DeploymentBootStateAt_untypedInstalled (v : BCM2712Config)
     (hu : u ∈ rpi5RootTaskUntypeds v) :
     (rpi5DeploymentBootStateAt v).state.objects[u.1]? = some (.untyped u.2) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  (fun h => installRootServer_objects_of_some h (fun _ e => by cases e) (fun _ e => by cases e)
+    (fun _ e => by cases e)) <|
   installIrqNodes_objects_of_some (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) <|
   startInitialThreads_objects_of_nonTcb _ _ _
     (rpi5Deployment_startInitialThreads v hv) _ _ (fun _ h => by cases h)
