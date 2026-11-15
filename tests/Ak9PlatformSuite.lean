@@ -2669,7 +2669,7 @@ def bootMap_the_qemu_virt_map_is_the_shared_table : IO Unit :=
 open SeLe4n.Platform.QemuVirt in
 /-- **WS-BP BP8.1**: the `virt` board check on the device tree **QEMU itself**
 hands the kernel (`tests/fixtures/qemu_virt_dtb.hex`, rendered from QEMU's own
-dump by `scripts/qemu_virt_dtb_fixture.py`).
+dump by `scripts/qemu_dtb_fixture.py virt`).
 
 Four facts, each with the control that makes it a statement about the board
 rather than about the blob: the `virt` bridge accepts QEMU's tree and yields
@@ -2703,6 +2703,37 @@ def qemuVirt_board_check_on_qemus_own_device_tree : IO Unit := do
   | .error (.unparseableBlob _) =>
       IO.println "  PASS: the virt bridge refuses an empty blob as unparseable"
   | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.initialObjects.length))}"
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-PM PM1**: the Raspberry Pi 5 board check on the device tree
+**rpi5_machine's `raspi5b`** hands the kernel (`tests/fixtures/rpi5_machine_dtb.hex`,
+rendered from the emulator's own dump by `scripts/qemu_dtb_fixture.py rpi5`), the
+machine the boot lane runs the Raspberry Pi 5 image on with 1 GiB of RAM.
+
+Three facts: the hardware entry's pure half (`kernelEntryBoot?`: the RPi5
+bridge, then the checked boot on the binding's cores) accepts the tree; the
+variant it binds is the 1 GiB board, with the first gigabyte's top the one the
+tree reports below the VideoCore's 4 MiB (`0x3FC0_0000`, as a Pi 5's firmware
+reports it); and the `virt` bridge refuses the same tree as a foreign board. -/
+def rpi5_board_check_on_rpi5_machines_device_tree : IO Unit := do
+  IO.println "--- WS-PM PM1 Raspberry Pi 5 board check on rpi5_machine's device tree ---"
+  let text ← IO.FS.readFile "tests/fixtures/rpi5_machine_dtb.hex"
+  let blob ← match parseCorpusHex text with
+    | .ok b => pure b
+    | .error e => throw <| IO.userError s!"rpi5_machine_dtb.hex: {e}"
+  match kernelEntryBoot? blob with
+  | none => throw <| IO.userError "the RPi5 entry refused rpi5_machine's device tree"
+  | some (config, _) =>
+      let variant := rpi5VariantFor config.machineConfig
+      unless variant.ramSize == 1 * 1024 * 1024 * 1024 do
+        throw <| IO.userError s!"the RPi5 entry bound the {variant.ramSize}-byte variant, not 1 GiB"
+      unless rpi5LowRamTopFor config.machineConfig == 0x3FC0_0000 do
+        throw <| IO.userError s!"the first gigabyte's top is {rpi5LowRamTopFor config.machineConfig}, not 0x3FC00000"
+      IO.println "  PASS: the RPi5 entry accepts raspi5b's tree and boots its 1 GiB variant"
+  match qemuVirtPlatformConfigFromDtb blob [] none with
+  | .error .boardDoesNotMatchBinding =>
+      IO.println "  PASS: the virt bridge refuses raspi5b's tree as a foreign board"
+  | other => throw <| IO.userError s!"the virt bridge on raspi5b's tree: {reprStr (other.map (·.initialObjects.length))}"
 
 open SeLe4n.Platform.QemuVirt in
 /-- **WS-BP BP8.1**: the `virt` deployment boots — its two address spaces own
@@ -2856,6 +2887,7 @@ def main : IO Unit := do
   boot_refuses_unstartable_initial_threads
   bootMap_the_qemu_virt_map_is_the_shared_table
   qemuVirt_board_check_on_qemus_own_device_tree
+  rpi5_board_check_on_rpi5_machines_device_tree
   qemuVirt_deployment_boots
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

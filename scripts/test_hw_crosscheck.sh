@@ -8,11 +8,12 @@
 # AG9-B: Hardware Constant Cross-Check Validation Script
 #
 # Validates BCM2712 hardware constants from Board.lean against actual
-# RPi5 hardware. Designed to run on a physical Raspberry Pi 5 board
-# or in QEMU with appropriate emulation.
+# RPi5 hardware. Designed to run under Linux on a physical Raspberry Pi 5
+# board, or on rpi5_machine's `raspi5b` (the emulated Pi 5 that
+# `scripts/setup_rpi5_machine.sh` builds, which boots Raspberry Pi OS).
 #
 # Prerequisites:
-#   - Physical RPi5 or QEMU with raspi4b machine
+#   - Physical RPi5, or Linux on rpi5_machine's raspi5b
 #   - devmem2 or busybox devmem for MMIO access (optional)
 #   - Root access for system register reads
 #
