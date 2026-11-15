@@ -122,6 +122,13 @@ def resolverExemptions : List (Name × String) :=
        `schedLockSet_replyRecvTransferOnCore`, the composite's write set at that answer.  \
        `schedLockSet_replyRecvTransferOnCore_of_no_fault` is the relation off the fault \
        branch, where the two are equal, and the coverage lemmas are stated at this one")
+  , (``SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore,
+      "the footprint of the receive with no busy reply.  `.receive`'s live arm is \
+       seL4-MCS `receiveIPC`, which cancels a busy reply's holder before it receives \
+       (`cancelRecvBusyReply`), so the resolver names \
+       `schedLockSet_receiveCancellingHolderOnCore`, whose segments with no busy reply \
+       are this footprint's by definition; the receive's coverage lemmas are stated at \
+       this one and consumed there")
   , (``SeLe4n.Kernel.schedLockSet_resumeThreadOnCore,
       "the footprint of the restart's RESUME step.  `.tcbResume`'s live arm is seL4's \
        `restart` (`restartThreadOnCore`), which cancels a blocked target's IPC before \

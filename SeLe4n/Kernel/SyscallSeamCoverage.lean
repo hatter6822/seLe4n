@@ -621,33 +621,67 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   case receive =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
     rename_i epId
-    split at hOps
-    · exact absurd hOps (by simp)
-    · rename_i replyId? hRR
-      injection hOps with hOps
-      subst hOps
-      simp only [schedLockSetForSyscall, Option.bind_some] at hSched
-      rw [hT] at hDisp
-      simp only at hDisp
+    rw [hT] at hDisp
+    simp only at hDisp
+    split at hDisp
+    · exact absurd hDisp (by simp)
+    unfold receiveResolvedArm at hDisp
+    generalize hC : cancelRecvBusyReply ctx tid gate decoded e st = stC at hDisp
+    simp only at hDisp
+    split at hDisp
+    · exact absurd hDisp (by simp)
+    rename_i replyId? hR
+    split at hDisp
+    · rename_i st₁ dequeued summary sgi hLeg
       split at hDisp
       · exact absurd hDisp (by simp)
-      · rw [hRR] at hDisp
-        simp only at hDisp
-        split at hDisp
-        · rename_i st₁ dequeued summary sgi hLeg
-          split at hDisp
-          · exact absurd hDisp (by simp)
-          · rename_i stDon hHand
-            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
-            subst hDisp
-            subst hGateEq
-            refine footprintCoversWrites_trans S (st₂ := stDon) ?_
-              (footprintCoversWrites_of_scheduler_eq S hTable
-                (by rw [Architecture.stageDeliveredMessage_scheduler_eq,
-                  Architecture.stageWokenSendCompletion_scheduler_eq]))
-            exact schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e st st₁ stDon dequeued summary sgi S hObjInv hHeads hSched hLeg
-              hHand
-        · exact absurd hDisp (by simp)
+      rename_i stDon hHand
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+      subst hDisp
+      refine footprintCoversWrites_trans S (st₂ := stDon) ?_
+        (footprintCoversWrites_of_scheduler_eq S hTable
+          (by rw [Architecture.stageDeliveredMessage_scheduler_eq,
+            Architecture.stageWokenSendCompletion_scheduler_eq]))
+      unfold cancelRecvBusyReply at hC
+      cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
+      | zero =>
+        -- nothing to cancel: the receive's own footprint, read at `st`
+        rw [hCode] at hC
+        simp only at hC
+        subst hC
+        rw [hR] at hOps
+        injection hOps with hOps
+        subst hOps
+        simp only [schedLockSetForSyscall, Option.bind_some,
+          schedLockSet_receiveCancellingHolderOnCore,
+          busyReplyHolder?_of_resolveRecvReplyId_ok tid hR] at hSched
+        exact schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e st st₁ stDon
+          dequeued summary sgi S hObjInv hHeads hSched hLeg hHand
+      | succ k =>
+        -- the holder `⟨k⟩` is cancelled first; the operands name its reply
+        rw [hCode] at hC
+        simp only at hC
+        subst hC
+        have hB := recvBusyReplyHolderCode_succ hCode
+        split at hOps
+        · obtain ⟨rid, hRid⟩ : ∃ rid, recvReplyLookup? gate decoded st = some rid := by
+            cases hL : recvReplyLookup? gate decoded st with
+            | none => rw [hL] at hB; exact absurd hB (by simp [busyReplyHolder?])
+            | some rid => exact ⟨rid, rfl⟩
+          simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hOps
+          subst hOps
+          have hReply := resolveRecvReplyId_eq_of_getCNode?
+            (cancelReplyHolder_getCNode? st ⟨k⟩ e hObjInv) hRid hR
+          subst hReply
+          rw [hRid] at hB
+          simp only [schedLockSetForSyscall, Option.bind_some,
+            schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
+          exact schedLockSet_receiveCancellingHolder_coversWrites epId tid (some rid) e ⟨k⟩ st
+            st₁ stDon dequeued summary sgi S hObjInv (LockSet.ofList?_pairs hSched) hLeg hHand
+        · rename_i hR0
+          exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
+            (by rw [hCode]; simp)
+    · exact absurd hDisp (by simp)
   -- ---- `.reply` -----------------------------------------------------------
   case reply =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
@@ -765,6 +799,70 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
 -- §3  The ABI syscall seam
 -- ============================================================================
 
+/-- A write that keeps every object's type and TCB slots keeps each thread's
+CSpace root, which the reply capability's fault reads. -/
+theorem finaliseWriteAny_callerCspaceRoot {st st' : SystemState}
+    (h : finaliseWriteAny st st') (tid : SeLe4n.ThreadId) :
+    callerCspaceRoot st' tid = callerCspaceRoot st tid := by
+  unfold callerCspaceRoot
+  simp only [SystemState.getObject?_eq_getElem]
+  rcases h tid.toObjId with e | ⟨pre, post, hp, hq, hT, hS, -⟩
+  · rw [e]
+  · rw [hp, hq]
+    cases pre <;> cases post <;>
+      simp_all [KernelObject.objectType, KernelObject.tcbSlots]
+
+/-- **The refusal's reported state is inside the declared footprint**: either
+the spill itself, or the spill with the busy reply's holder cancelled, and then
+the operands are the busy receive's, whose footprint is every core's run queue
+and moves no reservation the cancel does not keep. -/
+theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult)
+    (stRegs stFilled : SystemState) (ops : Concurrency.SyscallLockOperands) (S U : LockSet)
+    (hRegsObjInv : stRegs.objects.invExt)
+    (hCur : stRegs.scheduler.currentOnCore e = some tid)
+    (hTcbRegs : stRegs.getObject? tid.toObjId = some (.tcb tcb))
+    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState stRegs tid
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded)
+    (hFillObj : stFilled.objects = stRegs.objects)
+    (hCode : ∀ gate, recvBusyReplyHolderCode ctx tid gate decoded stFilled
+      = recvBusyReplyHolderCode ctx tid gate decoded stRegs)
+    (hOps : abiEntryLockOperands decoded tid stFilled = some ops)
+    (hSched : schedLockSetForSyscall decoded.syscallId ops e stFilled = some S)
+    (hU : unifiedLockSetForSyscall decoded.syscallId ops e stFilled = some U) :
+    footprintCoversWrites U stRegs (cancelReceiveBusyReply ctx e stRegs) := by
+  rcases cancelReceiveBusyReply_cases_decoded ctx e stRegs with
+    h | ⟨tid', tcb', decoded', k, hCur', hObj', hDec', hRecv', hCode', h⟩
+  · rw [h]; exact footprintCoversWrites_refl U stRegs
+  rw [h]
+  rw [hCur] at hCur'
+  cases hCur'
+  rw [hTcbRegs] at hObj'
+  cases hObj'
+  rw [hDec] at hDec'
+  cases hDec'
+  obtain ⟨tcbF, gate, cap, hGate, -, -, -⟩ :=
+    abiEntryLockOperands_gate_lookup decoded tid stFilled ops (by rw [hRecv']; decide) hOps
+  obtain ⟨hTcbF, -, -, hGateEq⟩ := abiEntryGate_components decoded tid stFilled tcbF gate hGate
+  have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
+  have hTcbRegs' : stRegs.objects[tid.toObjId]? = some (.tcb tcb) := hTcbRegs
+  rw [hFillObj, hTcbRegs'] at hTcbF'
+  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
+  subst hTcbF'
+  have hCodeF : recvBusyReplyHolderCode ctx tid gate decoded stFilled = k + 1 := by
+    rw [hCode]
+    exact hCode' gate (by rw [hGateEq]; simp only [callerCspaceRoot, hTcbRegs])
+  have hB := recvBusyReplyHolderCode_succ hCodeF
+  obtain ⟨epId, hOpsEq⟩ :=
+    abiEntryLockOperands_receive_busy decoded tid stFilled ops _ gate ⟨k⟩ hRecv' hGate hB hOps
+  refine unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU ?_
+  subst hOpsEq
+  rw [hRecv'] at hSched
+  simp only [schedLockSetForSyscall, Option.bind_some,
+    schedLockSet_receiveCancellingHolderOnCore, hB] at hSched
+  exact footprintCoversWrites_of_allCores S _ stRegs _ (LockSet.ofList?_pairs hSched)
+    (fun d _ => cancelReplyHolder_replenishQueueOnCore stRegs ⟨k⟩ e d)
+
 /-- **The live ABI syscall step is covered by the unified footprint it declares.**
 
 The seam's pre-state invariant is the object-store invariant with the
@@ -803,7 +901,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     mem_unifiedLockSetForSyscall_objStore _ _ _ _ _ hU
   have hRunE : (LockKey.runQueue e, AccessMode.write) ∈ U.pairs :=
     mem_unifiedLockSetForSyscall_executingCore _ _ _ _ _ hU
-  obtain ⟨_, tcb, hTcbRegs, hDec, hFilled⟩ :=
+  obtain ⟨hCur, tcb, hTcbRegs, hDec, hFilled⟩ :=
     abiEntryPlan_components ctx e syscallId x0 x1 x2 x3 x4 x5 st tid decoded stFilled hPlan
   obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb
     (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) e tid
@@ -844,20 +942,39 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   | error ke =>
     rw [hDisp] at hD
     simp only at hD
-    have hNoFault : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
+    -- the state the refusal reports: the spill, or the spill with its busy
+    -- reply's holder cancelled, which keeps every CNode and CSpace root
+    have hFrameR : callerCspaceRoot (cancelReceiveBusyReply ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid
+        = callerCspaceRoot (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          tid ∧
+        ∀ id, (cancelReceiveBusyReply ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).getCNode? id
+          = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getCNode? id := by
+      rcases cancelReceiveBusyReply_cases ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+      · rw [h]; exact ⟨rfl, fun _ => rfl⟩
+      · rw [h]
+        exact ⟨finaliseWriteAny_callerCspaceRoot
+            (cancelReplyHolder_finaliseFrameAny _ ⟨k⟩ e hRegsObjInv).write tid,
+          cancelReplyHolder_getCNode? _ ⟨k⟩ e hRegsObjInv⟩
+    have hNoFault : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (cancelReceiveBusyReply ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke
           = none := by
+      have hTcbRegs' :
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects[tid.toObjId]?
+            = some (.tcb tcb) := hTcbRegs
       -- WS-ZA ZA4.3: a yield has no capability-fault phase.
       by_cases hY : decoded.syscallId = .yield
-      · exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _
-          tid ke tcb decoded hTcbRegs hDec (by rw [hY]; rfl)
+      · exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ _
+          tid ke tcb decoded hTcbRegs' hDec (by rw [hY]; rfl)
       obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv, hReplyF⟩ :=
         abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
       obtain ⟨hTcbF, -, -, hGateEq⟩ :=
         abiEntryGate_components decoded tid stFilled tcbF gate hGate
-      have hTcbRegs' :
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects[tid.toObjId]?
-            = some (.tcb tcb) := hTcbRegs
       have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
       rw [hFillObj, hTcbRegs'] at hTcbF'
       simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
@@ -867,8 +984,8 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       subst hGateEq
       cases hPhase : Platform.FFI.capFaultReceivePhase? decoded.syscallId with
       | none =>
-        exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ tid
-          ke tcb decoded hTcbRegs' hDec hPhase
+        exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ _
+          tid ke tcb decoded hTcbRegs' hDec hPhase
       | some inRecv =>
         have hRecv' : receiveGateRefuses decoded.syscallId tid
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) cap = false := by
@@ -876,17 +993,28 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           unfold receiveGateRefuses receiveBoundRefuses notificationBoundElsewhere
             syscallTargetAccepted objectKindIs
           simp only [SystemState.getObject?, SystemState.getNotification?, hFillObj]
-        exact Platform.FFI.syscallCapFaultOf_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ tid ke
-          tcb decoded inRecv hTcbRegs' hDec hPhase
+        have hRoot : callerCspaceRoot
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+              = tcb.spaceCells[0] := by
+          simp only [callerCspaceRoot, hTcbRegs]
+        exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ _ tid
+          ke tcb decoded inRecv hTcbRegs' hDec hPhase
           (by simp [syscallOperandLookup, hResolve, hRecv'])
-          (by rw [← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]; exact hReplyF)
+          (by
+            rw [hFrameR.1, hRoot, receiveReplyFault?_congr_getCNode? _ decoded _ _ hFrameR.2,
+              ← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]
+            exact hReplyF)
     rw [hNoFault] at hD
     simp only at hD
     rw [syscallDispatchCrossCoreStep_of_ok hD]
     dsimp only
+    have hCancel := cancelReceiveBusyReply_coversWrites ctx e tid tcb decoded _ stFilled ops S U
+      hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs hDec hFillObj
+      (fun gate => recvBusyReplyHolderCode_congr_objects ctx tid gate decoded hFillObj) hOps hSched hU
     refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
       (footprintCoversWrites_trans U
-        (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch)
+        (footprintCoversWrites_trans U
+          (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch) hCancel)
         (footprintCoversWrites_of_scheduler_eq U hTable
           (Architecture.recordErrorOverflow_scheduler _ tid ke)))
       (footprintCoversWrites_of_scheduler_eq U hTable

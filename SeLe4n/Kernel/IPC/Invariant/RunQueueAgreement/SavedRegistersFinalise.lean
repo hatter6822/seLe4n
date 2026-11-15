@@ -187,6 +187,12 @@ theorem of_kept {W : SeLe4n.ThreadId → Prop} {pre post : SystemState}
   · exact .inr (hW t hw)
   · exact .inl (h t hw)
 
+/-- A thread free at `base` is free at `base'`, so the step's frame moves. -/
+theorem rebase {base' pre post : SystemState}
+    (hB : ∀ t, offCoreFree e base t → offCoreFree e base' t)
+    (h : savedRegsWrittenFree e base pre post) : savedRegsWrittenFree e base' pre post :=
+  fun t => (h t).imp id (hB t)
+
 /-- **The census**: a thread another core holds after the step was held there
 at `base`, so it is no thread the step wrote. -/
 theorem census {pre post : SystemState} (h : savedRegsWrittenFree e base pre post)

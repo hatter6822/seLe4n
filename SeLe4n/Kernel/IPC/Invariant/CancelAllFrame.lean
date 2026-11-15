@@ -2397,10 +2397,10 @@ theorem cutUnstack {s s1 : SystemState} {scId : SeLe4n.SchedContextId}
         (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
           (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl, RobinHood.RHTable.capacity_le_insert _ _ _, Nat.le_refl _⟩⟩
 
-/-- The thread-side cut, as the closure asks it: the unstack, then a holder's
-owner code cleared (a write that lends nothing), then the key hook. -/
-theorem cutStep (st : SystemState) : FinaliseCutStep (FinaliseFrameAny st) := by
-  intro s _ _ _ t h _ _ _ _
+/-- The thread-side cut (seL4-MCS `reply_remove_tcb`): the unstack, then a
+holder's owner code cleared (a write that lends nothing), then the key hook. -/
+theorem cutCancelledCallerHead {st s : SystemState} (t : TCB) (h : FinaliseFrameAny st s) :
+    FinaliseFrameAny st (Lifecycle.Suspend.cutCancelledCallerHead s t) := by
   refine Lifecycle.Suspend.cutCancelledCallerHead_closed (FinaliseFrameAny st) ?_ ?_ s t h
   · intro s0 s1 _ r _ h0 _ hR hS
     exact h0.trans (cutUnstack h0.invExt hR hS)
@@ -2408,6 +2408,10 @@ theorem cutStep (st : SystemState) : FinaliseCutStep (FinaliseFrameAny st) := by
     have f1 := FinaliseFrame.updateTcb s0 holder (fun t => { t with scBindingOwnerCode := 0 })
       h0.invExt (hL := fun x => ⟨rfl, fun s o e => absurd e (TCB.ownerCleared_not_donated x s o)⟩)
     exact h0.trans (f1.trans (FinaliseFrame.markKeyChangeFrom _ _ _ f1.invExt)).any
+
+/-- The thread-side cut, as the closure asks it. -/
+theorem cutStep (st : SystemState) : FinaliseCutStep (FinaliseFrameAny st) :=
+  fun _ _ _ _ t h _ _ _ _ => cutCancelledCallerHead t h
 
 /-- The unstack step, as the closure asks it. -/
 theorem unstackStep (st : SystemState) : FinaliseUnstackStep (FinaliseFrameAny st) := by

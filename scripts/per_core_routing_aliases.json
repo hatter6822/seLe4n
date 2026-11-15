@@ -16,6 +16,8 @@
   "endpointReplyCrossCoreDispatchChecked": "replyTransferOnCoreChecked",
   "endpointReplyCrossCoreDispatchChecked#alt": "replyTransferOnCore",
   "endpointSendCrossCoreDispatchChecked#alt": "endpointSendDualWithCapsOnCore",
+  "_receive_arm_note": "The checked `.receive` arm cancels its busy reply's holder (`cancelRecvBusyReply`) and then runs the receive through `receiveResolvedArm`, which calls `endpointReceiveDualWithCapsOnCore`; the walk starts from that helper so the cancel and the receive are both reached.",
+  "endpointReceiveDualWithCapsOnCore#alt": "receiveResolvedArm",
   "registerServiceChecked#alt": "registerService",
   "lookupServiceChecked": "serviceQueryStaged",
   "lookupServiceChecked#alt": "lookupServiceByRecordedRegistration",

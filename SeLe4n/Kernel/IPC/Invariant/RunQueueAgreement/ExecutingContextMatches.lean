@@ -63,19 +63,58 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     := by rw [hEq]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
   dsimp only at h
   split at h
-  · split at h
+  · -- WS-SX SX4: a receive's refusal hands back its busy reply's cancel, which
+    -- writes the holder alone, never the executing core's current thread, and
+    -- no bank of this core.
+    have hS : SystemState.RunQueueStage st
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
+    have E1 := E.of_ipcFrame hS (by rw [hEq]; exact IpcFrame.updateTcb _ _ fun _ => rfl)
+    have hBNR1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+        ).blockedNotResident := by
+      rw [hEq]; exact blockedNotResident_updateTcb hInv (fun _ => rfl) hBNR
+    have hC0 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+        ).scheduler.currentOnCore e = some tid := by
+      rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
+    have hSC : contextMatchesCurrentOnCore (cancelReceiveBusyReply ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) e ∧
+        stepCovers (otherCore e)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          ).objects.invExt := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
+      · exact ⟨hSp, stepCovers_refl _ _, iW⟩
+      · obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
+        refine ⟨contextMatchesCurrentOnCore_of_savedRegs
+          (by rw [cancelReplyHolder_currentOnCore]; exact hC0) hC0 ?_
+          (c1.banksKept e (ne_otherCore e)) hSp, c1, i1⟩
+        rcases cancelReplyHolder_savedRegsWrittenFree (e := otherCore e) (holder := hd) (ec := e)
+          iW (blockedCurrentNowhere_of_currentDequeuedUnique E1.dequeued) hBNR1 tid with x | x
+        · exact x
+        · exact absurd hC0 (x e (ne_otherCore e)).1
+    obtain ⟨hMR, cR, iR⟩ := hSC
+    have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
+    have cW := stepCovers_trans (e := otherCore e) hW.stepCovers cR
+    clear hS E1 hBNR1 hC0 cR hW
+    generalize cancelReceiveBusyReply ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      at h hMR cW iR
+    split at h
     · rename_i fault _
       cases h
       refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
-      have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
       have hF := writeFaultRegistersToTcb_keyFrame _ tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hW.2.2
-      have hO := stepCovers_trans (stepCovers_trans (e := otherCore e) hW.stepCovers
+        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) iR
+      have hO := stepCovers_trans (stepCovers_trans (e := otherCore e) cW
         hF.stepCovers) (faultDeliverOnCoreChecked_stepCovers (otherCore e) (lctx := ctx)
           (tid := tid) (f := fault) (c := e) (ctx := Architecture.faultContextOfThread
-            (writeFaultRegistersToTcb (Platform.FFI.writeFfiRegistersToTcb st tid syscallId
-              x0 x1 x2 x3 x4 x5) tid (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
-                ipcBufferAddr spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
+            (writeFaultRegistersToTcb stR tid (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3
+              x4 x5 ipcBufferAddr spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
       unfold Platform.FFI.deliverSyscallCapFault
       dsimp only
       generalize hX : (faultDeliverOnCoreChecked _ _ _ _ _ _).1 = X at hO ⊢
@@ -94,7 +133,7 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
         (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine])
         ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))).mpr hSp
+          (Architecture.recordErrorOverflow_objects _ _ _))).mpr hMR
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB

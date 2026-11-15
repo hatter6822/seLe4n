@@ -2270,7 +2270,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLeve
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donatedSc($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donationIndex($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # `.receive` reaches the donation primitive, so `.schedContext` joins its kinds.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # ...and the size bound is restated at the NEW arity.  A bound left at the old
 # one still elaborates (the trailing argument would take a default) while
 # saying nothing about the shape the live arm declares -- the silent-unbounding
@@ -4921,12 +4921,12 @@ run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queu
 run_check "INVARIANT" rg -n '^    offCoreFree_of_signalWaiter P\.dequeued P\.ntfnHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^      offCoreFree_of_current P\.current \(currentsUnique_of_dequeuedUnique P\.dequeued\) hN\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
-run_check "INVARIANT" rg -n '^    fun _ h => offCoreFree_of_sendHead P\.dequeued P\.queueHeads hRT hBNR h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^      · exact ⟨\.refl _, hInv, fun _ h => offCoreFree_of_sendHead P\.dequeued P\.queueHeads hRT hBNR h⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      e ▸ offCoreFree_of_notReady hD hRT hBNR hB\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^            \(endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^        \(sendHead_backward \(fun o ep hx => hB0 o ep \(hB1 o ep hx\)\) ht\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^    exact hW \(sendArm_savedRegsWrittenFree _ P hRT hBNR hSend hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^    exact hW \(receiveArm_savedRegsWrittenFree _ P hRT hBNR hN hRecv hHand\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(w0\.trans \(receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P hRT hBNR hCall\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    exact hW \(replyTransferOnCoreChecked_savedRegsWrittenFree P\.dequeued hRT hBNR hInv h\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -4935,7 +4935,7 @@ run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrit
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact offCoreFree_of_receiveHead E\.dequeued E\.queueHeads hRT hBNR ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^          hBase _ \(offCoreFree_of_receiveHead E1\.dequeued E1\.queueHeads hRT1 hBNR1 ht\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 # WS-ZA ZA6.27: the syscall's number and arguments are read from the frame the
 # entry saves.  The entry admits only a frame taken from EL0 whose x7 is a u32,
@@ -10061,7 +10061,7 @@ run_negative_check "INVARIANT" rg -n '\|\s*_\s*=>' SeLe4n/Kernel/InformationFlow
 
 # SM9.B.9: the write itself, and the three security theorems.
 run_check "INVARIANT" rg -n '^def recordSyscallRefusal($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U 'recordSyscallRefusal ctx executingCore syscallId tid ke x0\n\s*\(Architecture\.recordErrorOverflow stRegs tid ke\)' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U 'recordSyscallRefusal ctx executingCore syscallId tid ke x0\n\s*\(Architecture\.recordErrorOverflow stR tid ke\)' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -11010,7 +11010,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n
 # reaches the same primitive `.call` does.  Anchored on the `.receive` arm
 # itself rather than on the bare list, which said only that SOME arm carried
 # those kinds.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # NEGATIVE: no superseded constant can come back.  `maxLockSetSize` was 8 before
 # RR7.11, 9 before WS-OD OD3.5, 11 before WS-OD OD3.7, 13 before OD3.13, 14

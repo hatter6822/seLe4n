@@ -57,6 +57,29 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   `storeEndpointWaiterCancelled_readyEntry`). `cancelAllSignals` restarts
   unconditionally in seL4, and a notification waiter carries no fault, so it is
   unchanged.
+- **A receive on a busy reply cancels its holder** (seL4-MCS `receiveIPC`'s
+  `cancelIPC(replyTCB)`, `endpoint.c:152`), where the model refused
+  `replyCapInvalid`. When the reply the receive presents is linked to another
+  caller or stashed by another waiting receiver (`busyReplyHolder?`), and the
+  receiver flows to that thread, the receive arm cancels the holder in place
+  after its checks (`cancelRecvBusyReply`, `cancelReplyHolder`: the suspend's
+  cancel and priority revert, then `Inactive`; no scheduling point, as
+  `receiveIPC` runs none). The cancel commits as seL4's does: a refusal after
+  it hands back the cancelled state (`cancelReceiveBusyReply`), so compiled =
+  specification stays unconditional. The lock operands name the reply
+  (`recvReplyLookup?`); the object footprint adds the cancel's
+  (`lockSet_receiveCancellingHolder`, bounded at thirty members) and the
+  scheduler footprint names every core's run queue on the busy arm
+  (`schedLockSet_receiveCancellingHolderOnCore`). The run-queue, kernel-record,
+  readiness, mapping, step-cover, saved-register, executing-bank,
+  context-match and declassification families compose across the cancel; the
+  run-queue entry premises carry the queue facts the cancel's endpoint arm
+  reads (`EntryPremises.queueTails`, `queueLinkIntegrity`, `queueAcyclic`,
+  `queueNextTargets`), each discharged from the `ipcInvariantFull` its callers
+  already hold. The staged dispatch payoff stays scoped at a receive whose
+  reply is not busy (`recvReplyNotBusy`), as the suspend arm's is at a quiescent
+  target. Scenario `receive-busy-reply-cancels-caller`; dispatch-suite checks
+  `sd053b_busy_reply_*`.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it
