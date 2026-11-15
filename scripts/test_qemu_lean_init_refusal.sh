@@ -10,10 +10,11 @@
 #
 # BP2.4's refusal path — an `IO` error, a malformed result, a second run — was
 # host-tested and had never executed on a PE.  This gate builds the
-# Lean-linked `virt` image with the refusal probe (`lean_init_refusal_probe`,
+# Lean-linked image with the refusal probe (`lean_init_refusal_probe`,
 # `rust/sele4n-hal/src/lean_entry.rs`'s `refusal_probe`), a TEST image no board
-# boots, and boots it on four PEs at the board's EL2 entry once per mode named
-# on the kernel command line.  Every mode drives the same report-and-halt code
+# boots, and boots it on four PEs at EL2 once per mode named on the kernel
+# command line: for the Raspberry Pi 5 on rpi5_machine's `raspi5b` (WS-RB RB2),
+# then for QEMU's `virt`, the second lane.  Every mode drives the same report-and-halt code
 # a real refusal runs (`lean_entry::initialise_or_halt`).
 #
 # The claim is that the boot HALTS rather than continues, so each run is a
@@ -38,17 +39,13 @@ cd "${REPO_ROOT}"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/qemu_boot_lib.sh"
 
-log_section "META" "=== WS-BP BP2.4: a refused Lean initialization halts the system (QEMU virt, four PEs) ==="
+log_section "META" "=== WS-BP BP2.4: a refused Lean initialization halts the system (raspi5b and virt, four PEs) ==="
 
-qemu_require_tools
-qemu_build_image 1 0 1
-qemu_cut_image
 qemu_temp_file PROBE_LOG qemu_init_probe
 
 # The window each run is given.  A boot reaches Phase 5 in about two seconds
 # under `-icount`, so the rest of the window is silence the halt must keep.
 WINDOW="${QEMU_PROBE_WINDOW:-20}"
-MACHINE="virt,gic-version=2,virtualization=on"
 
 # mode | the refusal line that must end the log
 CASES=(
@@ -59,16 +56,24 @@ CASES=(
 )
 
 PASS=true
+# probe_board BOARD: build the probe image for BOARD and run every case on
+# BOARD's machine at EL2 (`raspi5b`'s only entry; `virt` with
+# `virtualization=on`).
+probe_board() {
+qemu_select_board "$1"
+qemu_require_tools
+qemu_build_image 1 0 1
+qemu_cut_image
 for case in "${CASES[@]}"; do
     mode="${case%%|*}"
     refusal="${case#*|}"
-    label="refusal probe, mode '${mode:-none}', EL2 entry, four PEs"
+    label="refusal probe, ${QEMU_BOARD_LABEL}, mode '${mode:-none}', EL2 entry, four PEs"
     append=()
     if [[ -n "${mode}" ]]; then
         append=(-append "lean_init_probe=${mode}")
     fi
     log_section "TRACE" "RUN: ${label} — ${WINDOW}s window"
-    qemu_run "${label}" "${PROBE_LOG}" "${MACHINE}" 4 "${WINDOW}" "" 0 \
+    qemu_run "${label}" "${PROBE_LOG}" "${QEMU_BOARD_MACHINE}" 4 "${WINDOW}" "" 0 \
         -icount "shift=0,sleep=off" "${append[@]}" || PASS=false
     verdict=$(python3 - "${PROBE_LOG}" "${mode}" "${refusal}" <<'PY'
 import re
@@ -121,6 +126,10 @@ PY
         log_section "TRACE" "PASS: ${label}: refused, and nothing ran after the refusal ($(wc -l < "${PROBE_LOG}") lines)"
     fi
 done
+}
+
+probe_board rpi5
+probe_board virt
 
 if [[ "${PASS}" = true ]]; then
     log_section "META" "PASS: a refused Lean initialization halts the system"
