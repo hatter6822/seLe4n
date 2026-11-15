@@ -138,7 +138,7 @@ What each tier is for:
 | 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? — and, through `test_lean_boundary_layout.sh`, does the compiled Lean place every word of the boundary contexts where the HAL reads it? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
 | 3 | `test_tier3_invariant_surface.sh` | Do the named theorems, invariants and code shapes still exist? |
-| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance under QEMU — the bring-up and the in-image exercisers execute on both images, on rpi5_machine's `raspi5b` and then on `virt` (WS-BP BP8.4, WS-RB RB2–RB3), the PE-withheld boot on `virt`, the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
+| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance under QEMU — the bring-up and the in-image exercisers execute on both images, on rpi5_machine's `raspi5b` and then on `virt` (WS-BP BP8.4, WS-RB RB2–RB3), and so does the PE-withheld boot (RB5), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
 The Tier-5 oracle **drives** both real reader-writer locks — a
@@ -440,16 +440,18 @@ PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
 (WS-BP BP8.2) is live too: it boots the HAL-only image, and with `--lean-kernel`
 the Lean-linked one, on four PEs, the Raspberry Pi 5 image on `raspi5b` at EL2
 first and the `virt` image at EL1 and EL2 after it (WS-RB RB2; so do
-`scripts/test_qemu_lean_init_refusal.sh` and, since RB3,
+`scripts/test_qemu_lean_init_refusal.sh`, since RB3
 `scripts/test_qemu_smp_exercisers.sh`, whose pins read the same count on both
-machines), and requires every secondary's
+machines, and since RB5 `scripts/test_qemu_smp_minimal.sh`, the PE-withheld
+boot on two PEs), and requires every secondary's
 per-core init in order and every banner as a whole line; the same lane runs both
 modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
-shared by the two scripts (`qemu_select_board rpi5|virt`; a gate that boots
+shared by the two scripts (`qemu_select_board rpi5|virt`, `rpi5` when
+`QEMU_BOARD` names none; a gate that boots
 both boards calls `qemu_gate_boards`, which checks every board's emulator before
 any board runs, so a missing second emulator cannot turn the first board's
 failure into a skip, and boots a HAL-only image named by `KERNEL_BIN` on its own
-board alone), and the images build
+board alone, `rpi5` unless `QEMU_BOARD` names `virt`), and the images build
 under `rust/target/qemu-rpi5*` and `rust/target/qemu-virt*` so the Raspberry Pi 5
 image in `rust/target/<target>/release` is never overwritten.  On `raspi5b` every
 lane boots the packaged `kernel8.img` at the addresses its `config.txt` gives the
@@ -460,7 +462,8 @@ minutes on four cores; it needs QEMU's build dependencies: ninja, python3-venv,
 GLib, pixman, libfdt), with `rpi5-boot`, `dtmerge`, TF-A's `rpi5` BL31 and the
 Raspberry Pi firmware's Pi 5 device tree beside it (gcc-aarch64-linux-gnu and
 curl), or `QEMU_RPI5_BIN` names a build; the SD-card boots need mtools and
-device-tree-compiler.  A console line is one lock acquisition, and a PE prints nothing
+device-tree-compiler.  The archive lane and the nightly both build it at its pin
+and cache it under the setup script's hash.  A console line is one lock acquisition, and a PE prints nothing
 before its own MMU is on.  The other QEMU scripts and the board need artefacts
 BP8.4 and BP8.5 produced and the board boot, BP8.6, produces.
 

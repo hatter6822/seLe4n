@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.37.29): 637,264 lines of production Lean across 638 files, 90,246 lines across 70 Lean test suites,
+Current state (as of v0.38.0): 637,264 lines of production Lean across 638 files, 90,246 lines across 70 Lean test suites,
 24,402 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 
@@ -162,9 +162,14 @@ lock operations unconditionally, in cycles under a stated per-critical-section
 ceiling, and in hardware ticks only where a board's counter frequency is
 named.
 
-**The kernel does not boot yet.** Producing a bootable image is SM10.1's work;
-until it lands, every runtime seam behind the per-core readiness gate is wired
-and dormant. What the project does and does not claim is enumerated in
+**The kernel boots under emulation, not yet on a board.** Since WS-RB
+(v0.37.25–v0.38.0) every QEMU boot runs first on rpi5_machine's `raspi5b`,
+which models the BCM2712: the Raspberry Pi 5 image the kernel ships for boots
+from the firmware's boot files, also from an SD card through the firmware's
+and TF-A's BL31, on four PEs to every core's first idle dispatch, and the
+Tier-4 exercisers and the heap gate run there before `virt`.  The board boot
+is BP8.6's, and a user program is SM10's root task.  What the project does and
+does not claim is enumerated in
 [`CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md), including a table of
 what is *not* claimed and who owns each gap.
 

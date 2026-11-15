@@ -1,8 +1,8 @@
 # WS-RB — Boot the kernel on the emulated Raspberry Pi 5
 
 > **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
-> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`;
-> RB3 at `v0.37.28`; RB4 at `v0.37.29`.
+> **Status**: **CLOSED** at `v0.38.0` (RB5) — registered at `v0.37.25` with
+> RB1; RB2 at `v0.37.26`; RB3 at `v0.37.28`; RB4 at `v0.37.29`.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
 > **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
@@ -141,6 +141,15 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
   `README.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`,
   `docs/agent_guide/WORKSTREAM_CONTEXT.md`; this plan archived. Every
   not-yet-started plan is refreshed against the tree. Minor version bump.
+- *Landed (`v0.38.0`), wider than the row:* `qemu_boot_lib.sh` selects `rpi5`
+  when no board is named (a named HAL-only `KERNEL_BIN` too), and the
+  PE-withheld boot, the last gate on `virt` alone, boots both boards on two PEs
+  (`raspi5b` marks the absent cores' CPU nodes `fail`).  The nightly had
+  installed only the distribution's QEMU, so its first run with RB2 would have
+  found no `raspi5b` and skipped every gate; it now builds rpi5_machine at its
+  pin as the archive lane does.  The plan refresh rewrote the QEMU-lane
+  sentences of the not-yet-started plans to name `raspi5b` first; their own
+  rows are refreshed again after the audit, as the roadmap orders.
 
 ## 4. Estimate
 

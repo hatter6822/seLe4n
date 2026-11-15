@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "rpi5-sdcard",
-      "commit_sha": "ee9371aeaaab31c55999d03d28954ada7aad7fb6",
-      "tree_sha": "1811c835144c86498ad4bb8221e9118c4eb16222",
-      "committed_at_utc": "2026-11-15T20:40:06+00:00"
+      "branch": "rpi5-closure",
+      "commit_sha": "cbc160a1884de963a0b08862cdaec5440f86d068",
+      "tree_sha": "e4d580ace09c2a3a0c01446dc7d9e1613661631c",
+      "committed_at_utc": "2026-11-15T22:57:57+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 36919
   },
   "readme_sync": {
-    "version": "0.37.29",
+    "version": "0.38.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 638,
     "production_loc": 637264,

@@ -3452,3 +3452,24 @@ writes model memory as a cache: a caller's overflow words are read through
 byte into model memory (a zeroing over zero memory is free only because of that).  A scheduling context names its
 one bound thread (`SchedContext.boundThread`); there is no per-context thread
 index.
+
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — CLOSED (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28; RB4 v0.37.29; RB5 closed it at v0.38.0)
+
+The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
+which models the Pi 5, with `virt` kept as the second lane (owner decision
+2026-11-15). RB1 boots the Raspberry Pi 5 image itself on `raspi5b`, HAL-only
+and Lean-linked; RB2 moves the four-PE bring-up and the refusal probe, RB3 the
+Tier-4 exercisers (a Pi 5 exerciser deployment beside the `virt` one), RB4
+boots the packaged `kernel8.img` and `config.txt` through `rpi5-boot` and TF-A,
+RB5 closes. Plan: [`RPI5_MACHINE_BOOT_PLAN.md`](RPI5_MACHINE_BOOT_PLAN.md).
+**Standing constraints for new code:** a board-dependent constant the HAL reads
+is a `BoardMap` field (`rust/sele4n-hal/src/board.rs`), never a literal in the
+module that uses it (RB1 found the secondaries' MPIDRs as `virt`'s literals);
+a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
+first, and a gate that boots both boards takes them from `qemu_gate_boards`;
+exerciser deployment code is board-generic
+(`SeLe4n/Platform/Exerciser/Deployment.lean`) and an exerciser pin reads the
+same count on both machines; a `raspi5b` lane boots the packaged
+`kernel8.img` at its `config.txt` addresses (`qemu_cut_image`), never a raw
+cut at QEMU's default address; rpi5_machine moves only by editing the pin in
+`scripts/setup_rpi5_machine.sh`, in its own PR.
