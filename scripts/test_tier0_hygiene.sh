@@ -185,7 +185,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 # against is a checked-in fixture normalised from a QEMU dump (per-run seeds
 # and uninitialised padding zeroed).  The normaliser is self-tested here; the
 # comparison against a live dump runs in the QEMU lane, which has QEMU.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_dtb_fixture.py" --self-test
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10

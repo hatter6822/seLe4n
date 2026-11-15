@@ -247,7 +247,8 @@ pub fn report_heap_census(stage: &str) {
 }
 
 /// **The initialization refusal probe** (v0.36.31, feature
-/// `lean_init_refusal_probe`): a `virt` TEST image, never a board image, that
+/// `lean_init_refusal_probe`): a TEST image, never a release image, built for
+/// the Raspberry Pi 5 (booted on rpi5_machine's `raspi5b`) and for `virt`, that
 /// drives the refusal path on the target so WS-BP BP2.4's acceptance box is
 /// decided by a run rather than by host tests.  `scripts/test_qemu_lean_init_refusal.sh`
 /// boots it once per mode, named on the kernel command line

@@ -47,7 +47,7 @@
 //! - `SMP_ENABLED` — runtime SMP-enable flag (`false` at module load
 //!   as a fail-safe; Phase 5 overwrites it with the parsed cmdline
 //!   value, whose default is `true` since v0.32.142)
-//! - `SECONDARY_MPIDR_TABLE` — BCM2712 secondary-core MPIDR inventory
+//! - `SECONDARY_MPIDR_TABLE` — the board's secondary-PE MPIDR affinities
 //! - `MAX_SECONDARY_CORES` — number of secondaries (3 on RPi5)
 //! - `bring_up_secondaries` — primary-core entry point that issues
 //!   the CPU_ON loop
@@ -220,19 +220,13 @@ pub static CORE_IRQ_READY: [AtomicBool; 4] = [
 /// `bring_up_secondaries` and read by tests / diagnostics.
 pub static SECONDARY_CORES_ONLINE: AtomicU32 = AtomicU32::new(0);
 
-/// AN9-J: BCM2712 secondary-core MPIDR table.  Each entry is a 64-bit
-/// MPIDR_EL1 value where (Aff2, Aff1, Aff0) identify a specific
-/// Cortex-A76 in the dual-cluster topology.
-///
-/// Cortex-A76 in BCM2712 is a single-cluster 4-core configuration
-/// (per-Pi 5 schematic), so cluster Aff is 0 for all four cores and
-/// Aff0 selects the core within the cluster.  Secondaries are
-/// `Aff0=1`, `Aff0=2`, `Aff0=3`.
-pub const SECONDARY_MPIDR_TABLE: [u64; MAX_SECONDARY_CORES] = [
-    0x0000_0001, // Aff0 = 1
-    0x0000_0002, // Aff0 = 2
-    0x0000_0003, // Aff0 = 3
-];
+/// AN9-J: the secondary PEs' `MPIDR_EL1` affinities, in the order the boot
+/// starts them — the board's (`board::BoardMap::secondary_mpidrs`).  Each is
+/// PSCI `CPU_ON`'s `target_cpu`; the context id passed beside it, not the
+/// affinity, is the core's logical index.  On the Raspberry Pi 5 the
+/// Cortex-A76 numbers its cores in Aff1 (`0x100`, `0x200`, `0x300`), on QEMU's
+/// `virt` in Aff0 (`1`, `2`, `3`).
+pub const SECONDARY_MPIDR_TABLE: [u64; MAX_SECONDARY_CORES] = crate::board::BOARD.secondary_mpidrs;
 
 // ============================================================================
 // WS-SM SM1.B (closes SMP-M4) — Per-CPU data block + TPIDR_EL1 accessors
@@ -1251,13 +1245,11 @@ mod tests {
     }
 
     #[test]
-    fn secondary_mpidr_table_matches_bcm2712_topology() {
-        // BCM2712 has 4 Cortex-A76 cores in a single cluster.  Three
-        // secondaries with Aff0 = 1..=3.
+    fn secondary_mpidr_table_is_the_boards() {
         assert_eq!(SECONDARY_MPIDR_TABLE.len(), MAX_SECONDARY_CORES);
-        assert_eq!(SECONDARY_MPIDR_TABLE[0], 0x0001);
-        assert_eq!(SECONDARY_MPIDR_TABLE[1], 0x0002);
-        assert_eq!(SECONDARY_MPIDR_TABLE[2], 0x0003);
+        assert_eq!(SECONDARY_MPIDR_TABLE, crate::board::BOARD.secondary_mpidrs);
+        #[cfg(not(feature = "board_qemu_virt"))]
+        assert_eq!(SECONDARY_MPIDR_TABLE, [0x100, 0x200, 0x300]);
     }
 
     #[test]

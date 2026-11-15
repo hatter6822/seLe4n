@@ -7,9 +7,9 @@
 #
 # WS-SM SM1.H.1 / WS-BP BP8.2 — the four-PE bring-up gate.
 #
-# Boots the kernel image built for QEMU's `virt` machine on four PEs, at EL1
-# and again at EL2 (`virtualization=on`, the firmware's entry level on the
-# Raspberry Pi 5), and requires the whole bring-up trace
+# Boots the Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 (WS-RB
+# RB2), then the image built for QEMU's `virt` machine at EL1 and again at EL2
+# (`virtualization=on`), each on four PEs, and requires the whole bring-up trace
 # `tests/fixtures/qemu_smp_bringup_expected.txt` names: every secondary core's
 # per-core init in order, the boot core's Phase 6 count of three secondaries,
 # and — with `--lean-kernel` — the Phase 7 topology check and every core's
@@ -30,7 +30,7 @@
 # took the lock twice per line (both fixed in the cut that made this gate run).
 #
 # Usage:
-#   ./scripts/test_qemu_smp_bringup.sh                 # HAL-only virt image
+#   ./scripts/test_qemu_smp_bringup.sh                 # the HAL-only images
 #   ./scripts/test_qemu_smp_bringup.sh --lean-kernel   # the Lean-linked image
 #
 # Exit codes:
@@ -57,7 +57,7 @@ cd "${REPO_ROOT}"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/qemu_boot_lib.sh"
 
-log_section "META" "=== WS-BP BP8.2: four-PE bring-up under QEMU virt ==="
+log_section "META" "=== WS-BP BP8.2: four-PE bring-up under rpi5_machine raspi5b and QEMU virt ==="
 
 FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_smp_bringup_expected.txt"
 if [[ ! -f "${FIXTURE}" ]]; then
@@ -71,9 +71,6 @@ if ! (cd "$(dirname "${FIXTURE}")" && sha256sum -c "$(basename "${FIXTURE}").sha
     finalize_report
 fi
 
-qemu_require_tools
-qemu_build_image "${LEAN_KERNEL}"
-qemu_cut_image
 qemu_temp_file BRINGUP_LOG qemu_bringup
 
 # The HAL-only image stops being interesting once the third secondary is ready;
@@ -169,8 +166,27 @@ PY
     fi
 }
 
-bringup_once "four PEs, virt, EL1 entry" "virt,gic-version=2"
-bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"
+# WS-RB RB2: the Raspberry Pi 5 image on rpi5_machine's `raspi5b` first, at the
+# EL2 entry with PSCI over SMC its firmware gives it -- the board whose
+# secondaries number themselves in Aff1, which `virt` cannot show (RB1 found
+# the HAL starting `virt`'s PEs on the Pi 5) -- then the `virt` image, the
+# second lane, at EL1 and EL2.  A HAL-only image named by KERNEL_BIN boots on
+# its own board alone (`qemu_gate_boards`).
+qemu_gate_boards "${LEAN_KERNEL}"
+for board in "${QEMU_GATE_BOARDS[@]}"; do
+    qemu_select_board "${board}"
+    qemu_build_image "${LEAN_KERNEL}"
+    qemu_cut_image
+    case "${board}" in
+        rpi5)
+            bringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry" "${QEMU_BOARD_MACHINE}"
+            ;;
+        virt)
+            bringup_once "four PEs, virt, EL1 entry" "virt,gic-version=2"
+            bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"
+            ;;
+    esac
+done
 
 if [[ "${BRINGUP_PASS}" = true ]]; then
     log_section "META" "PASS: four-PE bring-up"

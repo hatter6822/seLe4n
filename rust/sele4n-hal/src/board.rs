@@ -53,6 +53,14 @@ pub struct BoardMap {
     /// programs exactly these.  The Lean binding states the same count
     /// (`tests/fixtures/boot_map.expected`'s `gicIntIds` line).
     pub gic_intid_count: u32,
+    /// The `MPIDR_EL1` affinity of each secondary PE, in the order the boot
+    /// starts them (`smp::SECONDARY_MPIDR_TABLE`): PSCI `CPU_ON`'s
+    /// `target_cpu`, which is the affinity fields alone (Aff3 in bits
+    /// [39:32], Aff2..Aff0 in [23:0]; PSCI v1.1 §5.1.4), and the `reg` of the
+    /// board device tree's `/cpus/cpu@…` node for that PE.  The boot PE is
+    /// the one whose affinity is zero (`boot.S`'s `MPIDR_CORE_ID_MASK` test),
+    /// so no entry is zero.
+    pub secondary_mpidrs: [u64; crate::smp::MAX_SECONDARY_CORES],
 }
 
 /// The Raspberry Pi 5 (BCM2712): DRAM contiguous from 0, UART10 and the
@@ -64,6 +72,10 @@ pub struct BoardMap {
 /// The GIC-400 carries 288 SPIs (320 INTIDs): `bcm2712.dtsi` wires devices
 /// up to `GIC_SPI 276` (UARTA), rounded up to whole banks (Board.lean
 /// `gicSpiCount`).
+/// The four Cortex-A76 PEs number themselves in **Aff1**: the A76 sets
+/// `MPIDR_EL1.MT`, so Aff0 is the thread within a core (always 0) and Aff1 the
+/// core (`bcm2712.dtsi`'s `cpu@0` .. `cpu@300`, `reg = <0x0>` .. `<0x300>`), and
+/// the secondaries are `0x100`, `0x200` and `0x300`.
 pub const RPI5: BoardMap = BoardMap {
     name: "Raspberry Pi 5 (BCM2712)",
     ram_base: 0x0,
@@ -75,6 +87,7 @@ pub const RPI5: BoardMap = BoardMap {
     gicd_base: 0x10_7FFF_9000,
     gicc_base: 0x10_7FFF_A000,
     gic_intid_count: 320,
+    secondary_mpidrs: [0x100, 0x200, 0x300],
 };
 
 /// QEMU's `virt` machine (`hw/arm/virt.c`, `base_memmap`): RAM from
@@ -84,7 +97,9 @@ pub const RPI5: BoardMap = BoardMap {
 /// `[0x0800_0000, 0x0A00_0000)` holding both, whole 2 MiB blocks in the
 /// gigabyte below RAM.  The reserved extent is the same 256 MiB the RPi5
 /// reserves, at the base of `virt`'s RAM.  QEMU's `NUM_IRQS` is 256, so the
-/// GICv2 carries 288 INTIDs (`num-irq = NUM_IRQS + 32`).
+/// GICv2 carries 288 INTIDs (`num-irq = NUM_IRQS + 32`).  `virt` numbers its
+/// PEs in Aff0 (`cpu@0` .. `cpu@3`, `reg = <0x0>` .. `<0x3>`, the CPUs of one
+/// cluster with `MPIDR_EL1.MT` clear), so the secondaries are 1, 2 and 3.
 pub const QEMU_VIRT: BoardMap = BoardMap {
     name: "QEMU virt (GICv2, PL011)",
     ram_base: 0x4000_0000,
@@ -96,6 +111,7 @@ pub const QEMU_VIRT: BoardMap = BoardMap {
     gicd_base: 0x0800_0000,
     gicc_base: 0x0801_0000,
     gic_intid_count: 288,
+    secondary_mpidrs: [0x1, 0x2, 0x3],
 };
 
 /// The board this image is built for.
@@ -137,6 +153,31 @@ const fn well_formed(b: &BoardMap) -> bool {
         && b.gic_intid_count > 32
         && b.gic_intid_count.is_multiple_of(32)
         && b.gic_intid_count <= crate::gic::MAX_SUPPORTED_INTID
+        && secondary_mpidrs_well_formed(&b.secondary_mpidrs)
+}
+
+/// The `MPIDR_EL1` affinity bits a PSCI `target_cpu` carries: Aff3 [39:32]
+/// and Aff2..Aff0 [23:0].
+const MPIDR_AFFINITY_BITS: u64 = 0xFF_00FF_FFFF;
+
+/// Every secondary names a PE by its affinity alone, none is the boot PE (the
+/// zero affinity), and no two name the same PE.
+const fn secondary_mpidrs_well_formed(m: &[u64; crate::smp::MAX_SECONDARY_CORES]) -> bool {
+    let mut i = 0;
+    while i < m.len() {
+        if m[i] == 0 || m[i] & !MPIDR_AFFINITY_BITS != 0 {
+            return false;
+        }
+        let mut j = i + 1;
+        while j < m.len() {
+            if m[i] == m[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
 }
 
 const _: () = assert!(well_formed(&RPI5));
@@ -189,5 +230,29 @@ mod tests {
         }
         assert!(well_formed(&RPI5));
         assert!(well_formed(&QEMU_VIRT));
+    }
+
+    #[test]
+    fn the_raspberry_pi_5_numbers_its_cores_in_aff1() {
+        // `bcm2712.dtsi`: `cpu@100`, `cpu@200`, `cpu@300` — the Cortex-A76 sets
+        // `MPIDR_EL1.MT`, so the core is Aff1.  Aff0 numbering (`virt`'s) names
+        // PEs the BCM2712 does not have, and PSCI refuses every `CPU_ON`.
+        assert_eq!(RPI5.secondary_mpidrs, [0x100, 0x200, 0x300]);
+        assert_eq!(QEMU_VIRT.secondary_mpidrs, [0x1, 0x2, 0x3]);
+    }
+
+    #[test]
+    fn a_secondary_naming_the_boot_pe_a_repeated_pe_or_a_non_affinity_bit_is_refused() {
+        for bad in [
+            [0x0, 0x200, 0x300],
+            [0x100, 0x100, 0x300],
+            [0x100, 0x200, 0x8100_0300],
+        ] {
+            let board = BoardMap {
+                secondary_mpidrs: bad,
+                ..RPI5
+            };
+            assert!(!well_formed(&board), "{bad:x?} admitted");
+        }
     }
 }
