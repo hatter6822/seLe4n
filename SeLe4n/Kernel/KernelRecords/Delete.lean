@@ -67,7 +67,10 @@ theorem retireIrqNode_physicalAddressWidth (st : SystemState) (x : SeLe4n.ObjId)
     (retireIrqNode st x).machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
   unfold retireIrqNode Architecture.setIrqLineSignal Architecture.setInterruptLineMask
     Architecture.recordPhysicalWrites
-  simp only [MachineState.setIrqLineMask]
+  have hW : ∀ (ms : MachineState) (n : Nat) (b : Bool),
+      (ms.setIrqLineMask n b).physicalAddressWidth = ms.physicalAddressWidth :=
+    fun _ _ _ => rfl
+  simp only [hW]
 
 /-- **The retire keeps every fault record parked and the machine's width.** -/
 theorem retireFinalisedObject_faults (ec : CoreId) (target recorder : Nat) (st : SystemState)

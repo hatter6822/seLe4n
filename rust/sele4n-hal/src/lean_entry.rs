@@ -5,7 +5,7 @@
 //! constants, runs its `initialize` blocks and calls the initializers of
 //! everything the module imports.  The library root's initializer,
 //! `initialize_seLe4n_SeLe4n`, therefore initializes the whole kernel.  The
-//! QEMU `virt` exerciser image calls its own library root's initializer
+//! exerciser images (either board) call their own library root's initializer
 //! instead, which imports `SeLe4n` and so runs the kernel's first.
 //! Upstream's `lean_initialize_runtime_module` and
 //! `lean_io_mark_end_initialization` are not called: they set up per-thread
@@ -191,31 +191,29 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
         /// `builtin = 1` because this is the image the kernel boots, not a
         /// plugin loaded into a running environment.  It returns an `IO` result
         /// whose one reference the caller owns.
-        #[cfg(not(all(feature = "board_qemu_virt", feature = "smp_exercisers")))]
+        #[cfg(not(feature = "smp_exercisers"))]
         fn initialize_seLe4n_SeLe4n(builtin: u8) -> lean_runtime::LeanIoResult;
         /// # Safety
         ///
-        /// WS-ZA ZA5.13: the initializer of the exerciser's own library root,
-        /// `SeLe4n.Platform.QemuVirt.Exerciser`, on the QEMU `virt` exerciser
-        /// image, under the same contract.  That module imports `SeLe4n`, so
-        /// its initializer runs the kernel's first and then the exerciser's.
-        /// It is a symbol of `libsele4n_exerciser.a`, which only this image
-        /// links; the shipped images do not carry it.
-        #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
-        fn initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(
-            builtin: u8,
-        ) -> lean_runtime::LeanIoResult;
+        /// WS-ZA ZA5.13, WS-RB RB3: the initializer of the exerciser's own
+        /// library root, `SeLe4n.Platform.Exerciser`, on an exerciser image
+        /// (either board), under the same contract.  That module imports
+        /// `SeLe4n`, so its initializer runs the kernel's first and then the
+        /// exerciser's.  It is a symbol of `libsele4n_exerciser.a`, which only
+        /// an exerciser image links; the shipped images do not carry it.
+        #[cfg(feature = "smp_exercisers")]
+        fn initialize_seLe4n_SeLe4n_Platform_Exerciser(builtin: u8) -> lean_runtime::LeanIoResult;
     }
     let initializer = || {
         // SAFETY: called once, on the primary, before any Lean code runs;
         // `initialise_with`'s guard refuses a second call before it gets here,
         // and nothing else in the image calls this symbol.
-        #[cfg(not(all(feature = "board_qemu_virt", feature = "smp_exercisers")))]
+        #[cfg(not(feature = "smp_exercisers"))]
         let result = unsafe { initialize_seLe4n_SeLe4n(1) };
         // SAFETY: as above — the exerciser image's library root, under the
         // same contract.
-        #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
-        let result = unsafe { initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(1) };
+        #[cfg(feature = "smp_exercisers")]
+        let result = unsafe { initialize_seLe4n_SeLe4n_Platform_Exerciser(1) };
         result.into_obj()
     };
     // SAFETY: the initializer returns an `IO` result whose one reference is
@@ -418,8 +416,18 @@ pub fn enter_lean_kernel(
         /// on the boot core, after the library initializer, before any other
         /// Lean upcall on any PE and before any secondary is released.  `dtb`
         /// must be a live `ByteArray` whose one reference the callee takes.
-        #[cfg(not(feature = "board_qemu_virt"))]
+        #[cfg(not(any(feature = "board_qemu_virt", feature = "smp_exercisers")))]
         fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
+        /// # Safety
+        ///
+        /// WS-RB RB3: `lean_kernel_main` on the Raspberry Pi 5 test image that
+        /// carries the in-image drivers (`SeLe4n.Platform.RPi5.exerciserKernelMain`),
+        /// under the same contract.  It boots the exerciser's deployment and
+        /// labeling, which authorizes two downgrades and configures an audit
+        /// monitor so the allocation exerciser can measure the declassification
+        /// and audit calls; the shipped image keeps the deny-all labeling.
+        #[cfg(all(not(feature = "board_qemu_virt"), feature = "smp_exercisers"))]
+        fn lean_kernel_main_rpi5_exerciser(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
         /// # Safety
         ///
         /// WS-BP BP8.1: `lean_kernel_main` on the QEMU `virt` board
@@ -434,8 +442,8 @@ pub fn enter_lean_kernel(
         /// WS-ZA ZA5.13: `lean_kernel_main_qemu_virt` on the QEMU `virt` test
         /// image that carries the in-image drivers
         /// (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`), under the same
-        /// contract.  It boots the exerciser's labeling, which authorizes one
-        /// downgrade and configures an audit monitor so the allocation
+        /// contract.  It boots the exerciser's labeling, which authorizes two
+        /// downgrades and configures an audit monitor so the allocation
         /// exerciser can measure the declassification and audit calls; the
         /// shipped `virt` image keeps the deny-all labeling.
         #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
@@ -460,9 +468,13 @@ pub fn enter_lean_kernel(
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
     // reference is handed over.  WS-BP BP8.1: the entry is the board's — both
     // board entries are in the kernel's archive, and the image calls the one
-    // its board names; the exerciser's is only in the exerciser image's.
-    #[cfg(not(feature = "board_qemu_virt"))]
+    // its board names; the exerciser's are only in the exerciser image's.
+    #[cfg(not(any(feature = "board_qemu_virt", feature = "smp_exercisers")))]
     let res = unsafe { lean_kernel_main(dtb) };
+    // SAFETY: as above — the Raspberry Pi 5 exerciser image's entry under the
+    // same contract (WS-RB RB3).
+    #[cfg(all(not(feature = "board_qemu_virt"), feature = "smp_exercisers"))]
+    let res = unsafe { lean_kernel_main_rpi5_exerciser(dtb) };
     // SAFETY: as above — the `virt` board's entry under the same contract.
     #[cfg(all(feature = "board_qemu_virt", not(feature = "smp_exercisers")))]
     let res = unsafe { lean_kernel_main_qemu_virt(dtb) };

@@ -19,11 +19,11 @@ import Lean.Compiler.ImplementedByAttr
 -- — the two halves disagreeing in the one direction neither can catch.
 import SeLe4n
 import SeLe4n.Platform.Staged
--- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`),
+-- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nExerciser`),
 -- outside `SeLe4n.lean`'s closure so the shipped images do not carry it; its
--- boot entry is a symbol of the exerciser image's archive, so it is in this
+-- boot entries are symbols of the exerciser images' archive, so they are in this
 -- environment beside the production ones.
-import SeLe4n.Platform.QemuVirt.Exerciser
+import SeLe4n.Platform.Exerciser
 
 /-!
 # The hardware boot entry's contract, decided by the elaborator
@@ -111,6 +111,17 @@ def qemuVirtExerciserBootEntrySymbol : Name := `lean_kernel_main_qemu_virt_exerc
 def qemuVirtExerciserApprovedBootCall : Name :=
   `SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt
 
+/-- **WS-RB RB3**: the symbol the Raspberry Pi 5 allocation exerciser's image
+exports — `rust/sele4n-hal/src/lean_entry.rs` calls it instead of
+`lean_kernel_main` on a Raspberry Pi 5 image built with `smp_exercisers`. -/
+def rpi5ExerciserBootEntrySymbol : Name := `lean_kernel_main_rpi5_exerciser
+
+/-- **WS-RB RB3**: the one boot call the Raspberry Pi 5 exerciser's entry may
+make — the RPi5 device-tree boot at the exerciser's binding, its failure
+handled. -/
+def rpi5ExerciserApprovedBootCall : Name :=
+  `SeLe4n.Platform.RPi5.bootAndInitialiseRPi5ExerciserFromDtbOrHalt
+
 /-- **WS-BP BP8.1**: a hardware boot entry — the symbol the HAL calls and the
 one boot call the declaration exporting it may make.  A table rather than two
 constants, because the question is one question asked of each board: an entry
@@ -133,10 +144,14 @@ def qemuVirtBootEntry : BootEntrySpec := ⟨qemuVirtBootEntrySymbol, qemuVirtApp
 def qemuVirtExerciserBootEntry : BootEntrySpec :=
   ⟨qemuVirtExerciserBootEntrySymbol, qemuVirtExerciserApprovedBootCall⟩
 
-/-- Every hardware boot entry the library exports: one per board, and the
-`virt` exerciser image's. -/
+/-- **WS-RB RB3**: the Raspberry Pi 5 allocation exerciser's entry. -/
+def rpi5ExerciserBootEntry : BootEntrySpec :=
+  ⟨rpi5ExerciserBootEntrySymbol, rpi5ExerciserApprovedBootCall⟩
+
+/-- Every hardware boot entry the library exports: one per board, and each
+board's exerciser image's. -/
 def bootEntries : List BootEntrySpec :=
-  [rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry]
+  [rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry, rpi5ExerciserBootEntry]
 
 /-- The value of `n`, or `none` for a declaration that has none (an axiom, a
 constructor).
@@ -521,6 +536,12 @@ image cannot boot the exerciser's labeling. -/
 private def bootEntryWitnessQemuVirtExerciserCompliant (dtb : ByteArray) : BaseIO Unit :=
   Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb [] none
 
+/-- **WS-RB RB3**: the Raspberry Pi 5 exerciser entry's required shape —
+accepted under that entry and **refused** under the shipped RPi5 one and under
+the `virt` exerciser's, so no image boots another's deployment or labeling. -/
+private def bootEntryWitnessRPi5ExerciserCompliant (dtb : ByteArray) : BaseIO Unit :=
+  Platform.RPi5.bootAndInitialiseRPi5ExerciserFromDtbOrHalt dtb (fun _ => []) none
+
 /-! PR #904 review (`v0.36.41`): the configuration arguments' compiled closure.
 `bootEntryWitnessEffectfulTable` has the type of data and the compiled code of
 an effect — an `@[implemented_by]` whose implementation parks every PE — so the
@@ -578,7 +599,8 @@ run_cmd Command.liftTermElabM do
                   ``bootEntryWitnessAliasHaltedFirst, ``bootEntryWitnessSequenced,
                   ``bootEntryWitnessLetBoundHalt, ``bootEntryWitnessFixedBlob,
                   ``bootEntryWitnessEditedBlob, ``bootEntryWitnessRetiredCall,
-                  ``bootEntryWitnessQemuVirtCompliant, ``bootEntryWitnessEffectfulConfig] do
+                  ``bootEntryWitnessQemuVirtCompliant, ``bootEntryWitnessEffectfulConfig,
+                  ``bootEntryWitnessRPi5ExerciserCompliant] do
     if (← bootEntryContractViolations rpi5BootEntry witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- WS-BP BP8.1: the `virt` entry — its own shape accepted, and the RPi5
@@ -599,10 +621,20 @@ run_cmd Command.liftTermElabM do
       ``bootEntryWitnessQemuVirtExerciserCompliant).isEmpty do
     throwError "boot-entry contract: the compliant exerciser witness was refused"
   for witness in [``bootEntryWitnessQemuVirtCompliant, ``bootEntryWitnessCompliant,
-                  ``bootEntryWitnessSideInstall] do
+                  ``bootEntryWitnessSideInstall, ``bootEntryWitnessRPi5ExerciserCompliant] do
     if (← bootEntryContractViolations qemuVirtExerciserBootEntry witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted \
         under the exerciser's entry"
+  -- WS-RB RB3: the Raspberry Pi 5 exerciser's entry, the same way: its own
+  -- shape accepted; the shipped RPi5 shape and the `virt` exerciser's refused.
+  unless (← bootEntryContractViolations rpi5ExerciserBootEntry
+      ``bootEntryWitnessRPi5ExerciserCompliant).isEmpty do
+    throwError "boot-entry contract: the compliant Raspberry Pi 5 exerciser witness was refused"
+  for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessQemuVirtExerciserCompliant,
+                  ``bootEntryWitnessSideInstall] do
+    if (← bootEntryContractViolations rpi5ExerciserBootEntry witness).isEmpty then
+      throwError "boot-entry contract: the deviating witness `{witness}` was accepted \
+        under the Raspberry Pi 5 exerciser's entry"
   -- The contract itself, once per board.
   for spec in bootEntries do
     match bootEntryDeclarations env spec.symbol with

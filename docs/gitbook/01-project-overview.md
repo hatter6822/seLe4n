@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.37.27): 636,725 lines of production Lean across 635 files, 90,246 lines across 70 Lean test suites,
-24,381 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.37.29): 637,264 lines of production Lean across 638 files, 90,246 lines across 70 Lean test suites,
+24,402 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -119,7 +119,7 @@ board has outside the kernel's reserved extent, once the verified parse has
 chosen the variant, and seals the boot map before any secondary is released,
 and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
 RAM outside the kernel's reserved extent is left unowned.  Since WS-SX SX5
-(`v0.37.28`) the boot also builds the root task's IPC buffer, as seL4's boot
+(`v0.37.30`) the boot also builds the root task's IPC buffer, as seL4's boot
 does, in four pages it reserves below the last region map
 ([spec §6.2.20](../spec/SELE4N_SPEC.md)).  **BP5.1** makes the
 kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under

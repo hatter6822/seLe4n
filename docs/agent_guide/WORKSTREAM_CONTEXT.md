@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28; RB4 v0.37.29)
 
 The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
 which models the Pi 5, with `virt` kept as the second lane (owner decision
@@ -139,10 +139,15 @@ RB5 closes. Plan: [`RPI5_MACHINE_BOOT_PLAN.md`](../planning/RPI5_MACHINE_BOOT_PL
 is a `BoardMap` field (`rust/sele4n-hal/src/board.rs`), never a literal in the
 module that uses it (RB1 found the secondaries' MPIDRs as `virt`'s literals);
 a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
-first; rpi5_machine moves only by editing the pin in
+first, and a gate that boots both boards takes them from `qemu_gate_boards`;
+exerciser deployment code is board-generic
+(`SeLe4n/Platform/Exerciser/Deployment.lean`) and an exerciser pin reads the
+same count on both machines; a `raspi5b` lane boots the packaged
+`kernel8.img` at its `config.txt` addresses (`qemu_cut_image`), never a raw
+cut at QEMU's default address; rpi5_machine moves only by editing the pin in
 `scripts/setup_rpi5_machine.sh`, in its own PR.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.28)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.30)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -209,7 +214,7 @@ blocked system call and means it to re-issue the call writes it through
 `TCB.restoredToRestart` (the restart PC is written when the thread leaves its
 blocked state, never at activation); no new code returns an error to a
 cancelled thread.
-SX5 (`v0.37.28`) made the boot build the root task's IPC buffer, as seL4's
+SX5 (`v0.37.30`) made the boot build the root task's IPC buffer, as seL4's
 `create_ipcbuf_frame_cap` does: the binding reserves four pages below the last
 boot RAM extension's region map (`PlatformBinding.rootServerFor`,
 `rootServerPlaced` the sixteenth `wellFormed` conjunct), the last untyped stops

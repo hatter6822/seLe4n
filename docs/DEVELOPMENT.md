@@ -138,7 +138,7 @@ What each tier is for:
 | 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? — and, through `test_lean_boundary_layout.sh`, does the compiled Lean place every word of the boundary contexts where the HAL reads it? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
 | 3 | `test_tier3_invariant_surface.sh` | Do the named theorems, invariants and code shapes still exist? |
-| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance on the QEMU `virt` image — the bring-up, the PE-withheld boot and the in-image exercisers execute on both images (WS-BP BP8.4), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
+| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance under QEMU — the bring-up and the in-image exercisers execute on both images, on rpi5_machine's `raspi5b` and then on `virt` (WS-BP BP8.4, WS-RB RB2–RB3), the PE-withheld boot on `virt`, the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
 The Tier-5 oracle **drives** both real reader-writer locks — a
@@ -227,9 +227,12 @@ a symbol no provider accounts for, or when the HAL's object code for the target
 does not define a symbol the archive attributes to it; `libsele4n.unresolved`
 lists what the archive needs, by provider.  The same run builds
 `libsele4n_exerciser.a` beside it from the allocation exerciser's own library
-(`SeLe4nQemuVirtExerciser`, outside `SeLe4n.lean`'s closure), which only the
-QEMU `virt` exerciser image links; Lean code only that image needs belongs in
-that library, never in the kernel's root.
+(`SeLe4nExerciser`, rooted at `SeLe4n/Platform/Exerciser.lean`, outside
+`SeLe4n.lean`'s closure), which only the exerciser images link (the Raspberry
+Pi 5 one and the `virt` one, WS-RB RB3); Lean code only those images need
+belongs in that library, never in the kernel's root.  Both boards' deployments
+are one board-generic module (`SeLe4n/Platform/Exerciser/Deployment.lean`)
+applied to each board's table pool and RAM extensions, so they cannot diverge.
 
 **The Lean heap** (WS-BP BP2.1) is `rust/sele4n-hal/src/lean_heap.rs` over
 `link.ld`'s `.lean_heap` section: one arena, sized by `LEAN_HEAP_SIZE`, serving
@@ -424,7 +427,9 @@ lake env lean --run tests/NegativeStateSuite.lean
 round-trip, TLB shootdown, deadlock and kprintln stress.
 `scripts/test_hw_full.sh` and `docs/HARDWARE_TESTING.md` cover the RPi5 path.
 `scripts/test_qemu.sh` is live: with no argument it boots the HAL-only
-Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 (WS-RB), then the
+Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 (WS-RB), then the same
+boot files from an SD card through rpi5_machine's `rpi5-boot`, once through the
+firmware's own BL31 and once through TF-A's (RB4), then the
 HAL-only `virt` image on QEMU's `virt` at EL1 and at EL2, and with
 `--lean-kernel` (which needs the
 archive `scripts/test_lean_aarch64_archive.sh` builds, and which that lane runs
@@ -434,17 +439,28 @@ emulated Lean tick outlasts the 1 ms tick period on multi-threaded TCG and four
 PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
 (WS-BP BP8.2) is live too: it boots the HAL-only image, and with `--lean-kernel`
 the Lean-linked one, on four PEs, the Raspberry Pi 5 image on `raspi5b` at EL2
-first and the `virt` image at EL1 and EL2 after it (WS-RB RB2; so is
-`scripts/test_qemu_lean_init_refusal.sh`), and requires every secondary's
+first and the `virt` image at EL1 and EL2 after it (WS-RB RB2; so do
+`scripts/test_qemu_lean_init_refusal.sh` and, since RB3,
+`scripts/test_qemu_smp_exercisers.sh`, whose pins read the same count on both
+machines), and requires every secondary's
 per-core init in order and every banner as a whole line; the same lane runs both
 modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
-shared by the two scripts (`qemu_select_board rpi5|virt`), and the images build
+shared by the two scripts (`qemu_select_board rpi5|virt`; a gate that boots
+both boards calls `qemu_gate_boards`, which checks every board's emulator before
+any board runs, so a missing second emulator cannot turn the first board's
+failure into a skip, and boots a HAL-only image named by `KERNEL_BIN` on its own
+board alone), and the images build
 under `rust/target/qemu-rpi5*` and `rust/target/qemu-virt*` so the Raspberry Pi 5
-image in `rust/target/<target>/release` is never overwritten.  `raspi5b` is an
+image in `rust/target/<target>/release` is never overwritten.  On `raspi5b` every
+lane boots the packaged `kernel8.img` at the addresses its `config.txt` gives the
+firmware (`scripts/rpi5_boot_files.py package`, then `machine-options`).  `raspi5b` is an
 out-of-tree QEMU: `scripts/setup_rpi5_machine.sh` builds hatter6822/rpi5_machine
 at the commit it pins, once, into `.lake/rpi5-machine/<commit>/` (about fifteen
 minutes on four cores; it needs QEMU's build dependencies: ninja, python3-venv,
-GLib, pixman, libfdt), or `QEMU_RPI5_BIN` names a build.  A console line is one lock acquisition, and a PE prints nothing
+GLib, pixman, libfdt), with `rpi5-boot`, `dtmerge`, TF-A's `rpi5` BL31 and the
+Raspberry Pi firmware's Pi 5 device tree beside it (gcc-aarch64-linux-gnu and
+curl), or `QEMU_RPI5_BIN` names a build; the SD-card boots need mtools and
+device-tree-compiler.  A console line is one lock acquisition, and a PE prints nothing
 before its own MMU is on.  The other QEMU scripts and the board need artefacts
 BP8.4 and BP8.5 produced and the board boot, BP8.6, produces.
 

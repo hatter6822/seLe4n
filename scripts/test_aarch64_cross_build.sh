@@ -280,6 +280,16 @@ cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 echo "      ✓ the QEMU virt test image (the Tier-4 exercisers) lints clean, links and is FP/SIMD-free"
+# WS-RB RB3: and the Raspberry Pi 5 TEST image the exerciser gates boot first,
+# on rpi5_machine's `raspi5b` -- the shipped board with the in-image drivers --
+# the same way.  It links to the same path, so it comes last.
+cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${CROSS_FEATURES},${IMAGE_FEATURES},${EXERCISER_FEATURE}" --lib --bins -- -D warnings
+cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${IMAGE_FEATURES},${EXERCISER_FEATURE}" --bin "${IMAGE_BIN}"
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
+echo "      ✓ the Raspberry Pi 5 test image (the Tier-4 exercisers) lints clean, links and is FP/SIMD-free"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

@@ -7,74 +7,24 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- The whole kernel, not only the `virt` boot: the exerciser image calls this
--- module's initializer in place of the library root's
--- (`rust/sele4n-hal/src/lean_entry.rs`), so it must initialize everything the
--- root does.
-import SeLe4n
+import SeLe4n.Platform.Exerciser.Deployment
 
 /-!
 # QEMU `virt` — the allocation exerciser's boot (WS-ZA ZA5.13)
 
-The QEMU test image that carries the in-image drivers (`smp_exercisers`)
-measures the heap allocations of every syscall round trip
-(`rust/sele4n-hal/src/smp_exercisers.rs`).  Four of them — the declassification,
-the declassified signal, the audit read and the audit drain — are refused by
-the shipped labeling before they do anything: its declassification policy
-denies every downgrade and it configures no audit monitor
-(`qemuVirt_shippedLabeling_denies`).  A refusal measures nothing, so the test
-image boots this deployment instead: the shipped one with three differences,
-each the least the four calls need, a fourth for the interrupt entry's
-scenarios (WS-ZA ZA6.32), and a fifth for the declassified signal's second hop
-(WS-ZA ZA6.35), and nothing else.
-
-* **The labeling** (`qemuVirtExerciserDeploymentLabeling`): the same partition
-  at the same boundary with the same witnesses, its lower half labeled
-  `kernelTrusted` rather than `lowTrusted`.  The audit monitor's clearance
-  must be a top of the lattice (`validatedAuditMonitorClearance`), and a monitor
-  must dominate it, so the boot domain's threads must be at the top; the upper
-  half stays `highUntrusted`, so the two halves still carry different labels
-  (the boot guard's `verifiesDeclaredSeparation`).  Information may now flow up
-  into the boot domain, which the shipped confinement forbids — this image is a
-  test image, and the shipped image keeps the confinement.
-* **Two downgrades** (`qemuVirtExerciserDeclassificationPolicy`): from the boot
-  domain to the upper one, the one pair the base lattice refuses that a boot
-  thread can reach, and from the upper one to the low band below, so a
-  declassified signal can owe two records (WS-ZA ZA6.35).
-* **A low band** (`qemuVirtExerciserInLowBand`, WS-ZA ZA6.35): the ids from
-  `qemuVirtExerciserLowBandBase`, which no boot object holds, labeled
-  `lowTrusted`, entity and endpoint alike.  The exerciser carves a thread and
-  an endpoint there, so a declassified signal's second hop can be a downgrade
-  the policy permits (the upper domain into the band) or one it refuses (the
-  boot domain into the band), which no boot thread's label can be.
-* **The audit monitor**: the clearance is the top, so the boot domain's threads
-  qualify, and the root task holds the boot audit capability in slot 10
-  (`qemuVirtExerciserAuditSlot`, the exerciser's copy slot), which the
-  exerciser deletes before the invocation scenarios copy into it.
-* **Interrupt handlers at run time** (WS-ZA ZA6.32): the boot binds no line,
-  as seL4's does not.  The exerciser issues the handler capabilities of two
-  shared peripheral interrupts the `virt` board wires to nothing
-  (250 and 251, `IRQ_BOUND_LINE` / `IRQ_UNBOUND_LINE` in the HAL) from the root
-  task's IRQControl capability (`seL4_IRQControl_Get`) into slots 24 and 25,
-  and binds the first to the interrupt notification
-  (`seL4_IRQHandler_SetNotification`), so the interrupt entry's bound and
-  unbound branches each have a line the exerciser raises at the distributor.
+The exerciser's deployment (`SeLe4n/Platform/Exerciser/Deployment.lean`) on
+`virt`'s memory: its boot table pool and the one extension its boot maps
+(`qemuVirtBootRamExtensions`), at the `virt` binding with the exerciser's
+labeling.  Since WS-RB RB3 the exerciser boots the Raspberry Pi 5 image on
+rpi5_machine's `raspi5b` first (`SeLe4n/Platform/RPi5/Exerciser.lean`); this
+is the second lane.
 
 The shipped `virt` entry (`QemuVirt.kernelMain`, `lean_kernel_main_qemu_virt`)
 is untouched: it boots `QemuVirtPlatform`, whose labeling is the confined
 production context (`qemuVirt_deploymentLabeling`), and
 `SeLe4n/Testing/BootEntryContract.lean` holds it to that call and refuses this
 image's call under it.  The HAL calls this entry only on an image built with
-both `board_qemu_virt` and `smp_exercisers` (`rust/sele4n-hal/src/lean_entry.rs`),
-and the Raspberry Pi 5 image never carries `smp_exercisers`.
-
-**Not in the shipped images.**  This module is its own library
-(`SeLe4nQemuVirtExerciser` in `lakefile.toml`), outside `SeLe4n.lean`'s import
-closure, so the kernel's archive (`libsele4n.a`) holds none of it.  The archive
-builder compiles it into a second archive (`libsele4n_exerciser.a`) with its own
-link roots, and only the exerciser image links them (`rust/sele4n-hal/build.rs`)
-and runs its initializer.  `scripts/check_kernel_image.py --excludes` refuses
-a shipped image that defines any symbol of that archive.
+both `board_qemu_virt` and `smp_exercisers` (`rust/sele4n-hal/src/lean_entry.rs`).
 -/
 
 namespace SeLe4n.Platform.QemuVirt
@@ -86,129 +36,26 @@ open SeLe4n.Platform.FFI
 /-- The allocation exerciser's `virt` deployment. -/
 structure QemuVirtExerciserPlatform where
 
-/-- The exerciser's two authorized downgrades: from the boot domain
-    (`kernelTrusted`, domain 3) to the upper one (`highUntrusted`, domain 2),
-    and from the upper one to the low band (`lowTrusted`, domain 1). -/
-def qemuVirtExerciserDeclassificationPolicy : SeLe4n.Kernel.DeclassificationPolicy :=
-  { canDeclassify := fun src dst =>
-      (src.id == (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted).id &&
-        dst.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id) ||
-      (src.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id &&
-        dst.id == (SeLe4n.Kernel.embedLegacyLabel .lowTrusted).id) }
-
-/-- The first id of the exerciser's low band: below the upper domain's base and
-    above every boot object, so the band holds only what the exerciser carves
-    there. -/
-def qemuVirtExerciserLowBandBase : Nat := 0x8_0000
-
-/-- The number of ids in the exerciser's low band. -/
-def qemuVirtExerciserLowBandSize : Nat := 0x100
-
-/-- Whether an entity index is in the exerciser's low band. -/
-def qemuVirtExerciserInLowBand (index : Nat) : Bool :=
-  qemuVirtExerciserLowBandBase ≤ index && index < qemuVirtExerciserLowBandBase + qemuVirtExerciserLowBandSize
-
-/-- The exerciser's entity labels: the shipped partition, its lower half at the
-    top of the lattice, and the low band at `lowTrusted`. -/
-def qemuVirtExerciserEntityLabel (index : Nat) : SeLe4n.Kernel.SecurityLabel :=
-  if qemuVirtExerciserInLowBand index then .lowTrusted
-  else SeLe4n.Kernel.indexPartitionedLabel qemuVirtUpperDomainBase .kernelTrusted .highUntrusted index
-
-/-- The exerciser's labeling: the shipped partition at the shipped boundary and
-    witnesses, its lower half at the top of the lattice, a low band, two
-    downgrades and the top as the audit monitor's clearance.  An endpoint's flow
-    label is its entity label, so the two agree everywhere. -/
-def qemuVirtExerciserDeploymentLabeling : SeLe4n.Kernel.DeploymentLabeling :=
-  { SeLe4n.Kernel.indexPartitionedDeploymentLabeling qemuVirtUpperDomainBase
-      qemuVirtLowerWitnessIndex .kernelTrusted .highUntrusted (by decide)
-      qemuVirtLowerWitnessIndex_admissible qemuVirtLowerWitnessIndex_below_boundary with
-    entityLabelOf := qemuVirtExerciserEntityLabel
-    endpointLabelOf := fun oid => qemuVirtExerciserEntityLabel oid.toNat
-    hSeparated := by decide
-    hEndpointObjectCoherence := fun _ => SeLe4n.Kernel.securityFlowsTo_refl _
-    declassificationPolicy := qemuVirtExerciserDeclassificationPolicy
-    auditMonitorClearance := some (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted) }
-
-/-- **WS-SX SX5.1**: the root CNode slot of the root task's IPC buffer frame in
-    the exerciser, the three tables' in the slots after it: past the 32 slots
-    the shipped root CNode has, which the exerciser's scenarios fill (the
-    shipped deployment's slot, seL4's `seL4_CapInitThreadIPCBuffer`, is the
-    exerciser's copy slot). -/
-def qemuVirtExerciserRootServerFrameSlot : Nat := 32
-
 /-- The exerciser's binding: the `virt` binding with the exerciser's labeling
-    and its root server's frame slot. -/
+    and its root server (`Exerciser.rootServer`, WS-SX SX5.1) over the one
+    extension the boot maps. -/
 instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPlatform :=
   { (qemuVirtPlatformBinding : PlatformBinding QemuVirtPlatform) with
     name := "QEMU virt allocation exerciser (GICv2 / Cortex-A76 / ARM64)"
-    deploymentLabeling := qemuVirtExerciserDeploymentLabeling
-    rootServerFor := fun _ => qemuVirtRootServerAt qemuVirtExerciserRootServerFrameSlot
+    deploymentLabeling := Exerciser.deploymentLabeling
+    rootServerFor := fun _ => Exerciser.rootServer qemuVirtBootRamExtensions
     witnessesOffBootVSpaceRoot := by decide }
 
-/-- The root task's CNode slot holding the exerciser's boot audit capability:
-    the exerciser's copy slot, which no scenario fills before the audit
-    scenarios end, and whose next use is a copy rather than a carve. -/
-def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
+/-- The exerciser's labeling partitions at the shipped boundary with the
+    shipped lower witness, so its objects sit in the domains the shipped
+    deployment's do. -/
+theorem qemuVirtExerciser_boundary :
+    Exerciser.upperDomainBase = qemuVirtUpperDomainBase ∧
+    Exerciser.lowerWitnessIndex = qemuVirtLowerWitnessIndex := ⟨rfl, rfl⟩
 
-/-- The exerciser's root CNode geometry: one level resolving a whole 64-bit
-    CPtr, a 58-bit guard over 64 slots.  The guard's value is the shipped
-    root's shifted by one, so a slot's capability address is `2^63 + n`, as in
-    the shipped geometry (`qemuVirtRootCNodeOf`), and the 32 slots past the
-    shipped ones hold what the boot gives the root task (its IPC buffer's
-    frame and tables, `qemuVirtExerciserRootServerFrameSlot`) and what the
-    scenarios carve. -/
-def qemuVirtExerciserRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
-  CNode.ofList 6 slots
-
-/-- The exerciser's root guard: the shipped guard shifted by one, its top bit
-    set, so a slot's capability address is `2^63 + n`. -/
-def qemuVirtExerciserRootTaskCNodeGuard : UInt64 := 2 ^ 57
-
-/-- The exerciser's root guard width: 58 bits above the 6-bit radix, so one
-    level resolves a whole 64-bit CPtr.  Carried by the capabilities naming the
-    root CNode (each root thread's CSpace root and the CNode's own slot 2), as
-    seL4 keeps a CNode's guard in `cap_cnode_cap`. -/
-def qemuVirtExerciserRootTaskCNodeGuardSize : UInt8 := 58
-
-/-- The shipped root CNode's capabilities with the root's own (slot 2) carrying
-    the exerciser's guard. -/
-def qemuVirtExerciserRootCNodeSlots : List (SeLe4n.Slot × Capability) :=
-  qemuVirtRootTaskCNodeSlots.set 1
-    (SeLe4n.Slot.ofNat 2, SeLe4n.Platform.RPi5.rpi5InitialCap qemuVirtRootTaskCNodeId
-      [.read, .write, .grant, .grantReply]
-      qemuVirtExerciserRootTaskCNodeGuard qemuVirtExerciserRootTaskCNodeGuardSize)
-
-/-- The exerciser's root CNode: the shipped root CNode's capabilities and the
-    audit trail's, with read and write (`Capability.auditTrailManage`), in
-    `qemuVirtExerciserAuditSlot`. -/
-def qemuVirtExerciserRootTaskCNode : CNode :=
-  qemuVirtExerciserRootCNodeOf
-    (qemuVirtExerciserRootCNodeSlots ++
-      [ (qemuVirtExerciserAuditSlot, Capability.auditTrailManage) ])
-
-/-- A configured thread entry for the exerciser's initial objects. -/
-private def exerciserTcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=
-  { id := id, obj := .tcb tcb
-    hSlots := fun _ h => nomatch h
-    hMappings := fun _ h => nomatch h }
-
-set_option maxRecDepth 8192 in
-/-- The exerciser's initial objects: the shipped deployment's, its root CNode
-    (the second entry) replaced by the exerciser's and the two root threads
-    (the first and sixth) given CSpace roots carrying the exerciser's guard. -/
+/-- The exerciser's initial objects on `virt`'s memory. -/
 def qemuVirtExerciserInitialObjects : List ObjectEntry :=
-  ((qemuVirtInitialObjects.set 0
-    (exerciserTcbEntry qemuVirtRootTaskTcbId
-      (SeLe4n.Platform.RPi5.rpi5InitialThread qemuVirtRootTaskTcbId qemuVirtRootTaskCNodeId
-        qemuVirtRootTaskVSpaceId qemuVirtExerciserRootTaskCNodeGuard
-        qemuVirtExerciserRootTaskCNodeGuardSize))).set 5
-    (exerciserTcbEntry qemuVirtPartnerTcbId
-      (SeLe4n.Platform.RPi5.rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId
-        qemuVirtRootTaskVSpaceId qemuVirtExerciserRootTaskCNodeGuard
-        qemuVirtExerciserRootTaskCNodeGuardSize))).set 1
-    { id := qemuVirtRootTaskCNodeId, obj := .cnode qemuVirtExerciserRootTaskCNode
-      hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
-      hMappings := fun _ h => nomatch h }
+  Exerciser.initialObjects qemuVirtBootTablePage qemuVirtBootRamExtensions
 
 /-- The configuration the exerciser's boot checks, whatever the account. -/
 def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
@@ -217,29 +64,16 @@ def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtExerciserPlatform)
     initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtExerciserPlatform)
-    rootServer := qemuVirtRootServerAt qemuVirtExerciserRootServerFrameSlot }
+    rootServer := Exerciser.rootServer qemuVirtBootRamExtensions }
 
 -- ============================================================================
 -- The boot, and the entry
 -- ============================================================================
 
-/-- The checked platform boot at the exerciser's binding. -/
-def bootAndInitialiseQemuVirtExerciser (config : PlatformConfig) :
-    BaseIO (Except String SeLe4n.Model.SystemState) :=
-  bootAndInitialisePlatform QemuVirtExerciserPlatform (some completePhysicalWrites) config
-
-/-- The exerciser's boot with its failure handled: a refused boot halts every
-    PE.  The boot itself builds the root task's IPC buffer (WS-SX SX5.3,
-    `Boot.installRootServer`), so the root task's first syscall finds it
-    mapped, as seL4's initial thread does. -/
-def bootAndInitialiseQemuVirtExerciserOrHalt (config : PlatformConfig) : BaseIO Unit := do
-  match ← bootAndInitialiseQemuVirtExerciser config with
-  | .ok _ => pure ()
-  | .error _ => ffiFatalHaltAll
-
 /-- **The exerciser image's only correct boot call** — the `virt` device-tree
     boot (`qemuVirtPlatformConfigFromDtb`, the shipped entry's own check of the
-    board) at the exerciser's binding, its failure handled.  What
+    board) at the exerciser's binding, its failure handled
+    (`Exerciser.bootAndInitialiseOrHalt`).  What
     `lean_kernel_main_qemu_virt_exerciser` is, and what
     `SeLe4n/Testing/BootEntryContract.lean` holds that entry to. -/
 def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
@@ -249,7 +83,7 @@ def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
   | .error _ => ffiFatalHaltAll
   | .ok config => do
       extendBootRamMap qemuVirtBootRamExtensions
-      bootAndInitialiseQemuVirtExerciserOrHalt config
+      Exerciser.bootAndInitialiseOrHalt QemuVirtExerciserPlatform config
 
 /-- The exerciser image's boot entry: `lean_kernel_main_qemu_virt_exerciser`,
     which `rust/sele4n-hal/src/lean_entry.rs` calls in place of
@@ -275,28 +109,12 @@ theorem qemuVirt_shippedLabeling_denies :
         (PlatformBinding.labeling (platform := QemuVirtPlatform)) = none :=
   ⟨fun _ _ => rfl, rfl, rfl⟩
 
-/-- The exerciser's policy authorizes exactly two pairs: the boot domain to the
-    upper one, and the upper one to the low band. -/
-theorem qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff
-    (src dst : SeLe4n.Kernel.SecurityDomain) :
-    qemuVirtExerciserDeclassificationPolicy.canDeclassify src dst = true ↔
-      (src = SeLe4n.Kernel.embedLegacyLabel .kernelTrusted ∧
-        dst = SeLe4n.Kernel.embedLegacyLabel .highUntrusted) ∨
-      (src = SeLe4n.Kernel.embedLegacyLabel .highUntrusted ∧
-        dst = SeLe4n.Kernel.embedLegacyLabel .lowTrusted) := by
-  obtain ⟨s⟩ := src
-  obtain ⟨d⟩ := dst
-  simp [qemuVirtExerciserDeclassificationPolicy, SeLe4n.Kernel.embedLegacyLabel,
-    SeLe4n.Kernel.SecurityLabel.kernelTrusted, SeLe4n.Kernel.SecurityLabel.highUntrusted,
-    SeLe4n.Kernel.SecurityLabel.lowTrusted]
-
-/-- The exerciser's monitor clearance validates — it is the top — so its audit
-    calls are not refused for want of a monitor. -/
+/-- The exerciser's monitor clearance validates on `virt`. -/
 theorem qemuVirtExerciser_validatedAuditMonitorClearance :
     SeLe4n.Kernel.validatedAuditMonitorClearance
         (PlatformBinding.labeling (platform := QemuVirtExerciserPlatform)) =
-      some (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted) := by
-  decide
+      some (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted) :=
+  Exerciser.validatedAuditMonitorClearance_eq
 
 /-- The exerciser's labeling declares the shipped witnesses, so its boot starts
     the shipped initial threads. -/
@@ -316,6 +134,20 @@ theorem qemuVirtExerciser_bound_interruptLineCount (board : SeLe4n.MachineConfig
     (PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform)
       board).interruptLineCount = qemuVirtGicSpiCount + 32 := rfl
 
+/-- **WS-SX SX5.1**: on `virt` the root task's untyped runs from the kernel's
+    extent's end to the root server's four pages, which end at the region map's
+    base (`qemuVirtRegionMap_layout`); the frame's capability is at slot 32,
+    the objects from id 11, the buffer at `2 <<< 39`. -/
+theorem qemuVirtExerciserRootServer_layout :
+    (Exerciser.rootServer qemuVirtBootRamExtensions).map
+        (fun r => (r.base.toNat, r.frameSlot.toNat, r.firstObjId.toNat, r.bufferVAddr.toNat)) =
+      some (0x7FE7_C000, 32, 11, 2 <<< 39) ∧
+    (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionBase.toNat =
+      qemuVirtRootTaskUntyped.regionBase.toNat ∧
+    (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionBase.toNat +
+        (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionSize = 0x7FE7_C000 := by
+  decide
+
 -- ============================================================================
 -- Every gate of the exerciser's checked boot, decided
 -- ============================================================================
@@ -327,8 +159,7 @@ theorem qemuVirtExerciserBoundPlatformConfig_wellFormed :
   rw [objectIdsUnique_eq_transparent]
   decide
 
--- WS-ZA ZA6.4: the root CNode's cells: the shipped deployment's and the audit
--- trail's, in a 64-slot geometry.
+-- WS-ZA ZA6.4: the root CNode's cells, in a 64-slot geometry.
 set_option maxRecDepth 8192 in
 theorem qemuVirtExerciserBoundPlatformConfig_bootSafe :
     qemuVirtExerciserBoundPlatformConfig.initialObjects.all
@@ -368,17 +199,5 @@ theorem qemuVirtExerciserBoundPlatformConfig_checked :
     qemuVirtExerciserBoundPlatformConfig_rootDistinct
     qemuVirtExerciserBoundPlatformConfig_rootNonSentinel
     qemuVirtExerciserBoundPlatformConfig_rootSafe qemuVirtBootVSpaceRootEntry rfl
-
-/-- **WS-SX SX5.1**: the exerciser's root server is the shipped one with its
-    frame capability past the shipped slots: the same four pages directly above
-    the root task's untyped (`qemuVirtRegionMap_layout`), the same object ids
-    and buffer address, and the frame at slot 32. -/
-theorem qemuVirtExerciserRootServer_layout :
-    qemuVirtExerciserBoundPlatformConfig.rootServer.map
-        (fun r => (r.base.toNat, r.frameSlot.toNat, r.firstObjId.toNat, r.bufferVAddr.toNat)) =
-      some (0x7FE7_C000, 32, 11, 2 <<< 39) ∧
-    qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize =
-      0x7FE7_C000 := by
-  decide
 
 end SeLe4n.Platform.QemuVirt

@@ -481,11 +481,16 @@ jobs:
       # `virt` image on the distribution's QEMU.
       # `scripts/setup_rpi5_machine.sh` builds it at the commit it pins; the
       # build is cached under that script's hash, so it runs once per pin.
+      # WS-RB RB4: the Raspberry Pi 5 boots also run from an SD card through
+      # rpi5_machine's `rpi5-boot` (mtools, and libfdt and fdtput for the tree)
+      # and through TF-A's BL31, which the setup builds with the Linux cross
+      # compiler.
       - name: Install QEMU and rpi5_machine's build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-arm \
-            ninja-build python3-venv libglib2.0-dev libpixman-1-dev libfdt-dev pkg-config
+            ninja-build python3-venv libglib2.0-dev libpixman-1-dev libfdt-dev pkg-config \
+            gcc-aarch64-linux-gnu mtools device-tree-compiler
           qemu-system-aarch64 --version
 
       - name: Restore the rpi5_machine build

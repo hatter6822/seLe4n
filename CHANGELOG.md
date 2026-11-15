@@ -1,9 +1,9 @@
-## v0.37.28 — the boot builds the root task's IPC buffer
+## v0.37.30 — the boot builds the root task's IPC buffer
 
 WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D13–D15). The boot now
 gives the root task an IPC buffer before it runs, as seL4's boot does
 (`create_ipcbuf_frame_cap`, `tcbBuffer`, `create_it_pt_cap`). Before, no
-thread had a buffer at boot, and the QEMU exerciser built its own: from an
+thread had a buffer at boot, and the exerciser built its own: from an
 untyped carved out of the root task's RAM, retyped and mapped by boot-time
 invocations.
 
@@ -11,9 +11,11 @@ invocations.
   binding (`PlatformBinding.rootServerFor`, bound by `bindPlatformConfig`):
   four pages directly below the last boot RAM extension's region map
   (`rootServerBaseOf`, `rootServerReservationOf`). Page 0 is the buffer's
-  frame, pages 1–3 its tables. `virt` and the exerciser reserve
-  `[0x7FE7_C000, 0x7FE8_0000)`, and every RPi5 variant the four pages below its
-  top region map.
+  frame, pages 1–3 its tables. `virt` and its exerciser reserve
+  `[0x7FE7_C000, 0x7FE8_0000)`, and every RPi5 variant, shipped or exerciser,
+  the four pages below its top region map. The board-generic exerciser
+  deployment supplies its own (`Exerciser.rootServer`: objects 11–14, root
+  CNode slots 32–35), which both boards' exerciser bindings return.
   - `rootServerPlaced` is the sixteenth `wellFormed` conjunct, with its own
     diagnostic. It checks the memory (one `.ram` region, clear of every
     untyped, the kernel's reserved extent, every driven device and every region
@@ -55,10 +57,14 @@ invocations.
   undrained state no entry installs, is deleted. The HAL counts the writes it
   performs before the boot map is sealed and prints the count after the
   install. `qemu_lean_boot_expected.txt` pins eight (`BOOT_WRITES`).
-- **The exerciser's workaround is deleted (SX5.4).**
-  `qemuVirtExerciserRootInvoke`, `…RootIpcBufferInvocations`,
-  `…GiveRootIpcBuffer(OrHalt)`, the IPC-buffer untyped with its pages, slots
-  and tile theorem.
+- **The exerciser's workaround is deleted (SX5.4).** From the board-generic
+  exerciser deployment (`SeLe4n/Platform/Exerciser/Deployment.lean`):
+  `rootInvoke`, `rootInvocation`, `rootCapAddress`,
+  `rootIpcBufferInvocations`, `giveRootIpcBuffer(OrHalt)`, the IPC-buffer
+  untyped with its pages and slots, `firstExtension` and the tile theorems.
+  The root task's untyped is the first extension's part from
+  `untypedExtentsOf`, and `rootTaskUntyped_below_rootServer` states that on a
+  one-extension board it ends at the reservation.
 - **Tests.**
   - `tests/Ak9PlatformSuite.lean` checks the boot-built buffer on `virt`, the
     exerciser and all seven RPi5 configurations: `ipcBuffer`, the buffer slot,
@@ -71,16 +77,98 @@ invocations.
     `root-ipc-buffer-cap` (an Unmap through the frame capability, a remap, then
     the same overflow read). Its pinned set gains them and their unmap and
     remap steps.
+  - The `tcb/0` carve pin moves from 19 / 2056 to 19 / 2136: the same cells,
+    two of them larger. Read from the generated C, the carve copies the
+    thread's `spaceLinks` (`lean_mk_array(24, 0)`, eight words for each of
+    three slots), 216 bytes where it was 152, and its `spaceCells`, whose
+    closed term grows by `lean_array_push` on shared arrays to capacity 8
+    (88 bytes) where two slots grew it to 6 (72 bytes).
   - The host entry refuses a boot that owes writes, and installs nothing.
 - **Fixed along the way.**
   - `rootServerTaskPlaced` read the CNode through `CNode.lookup`, which is
     noncomputable, so `wellFormed` could not be decided. It reads
     `CNode.lookupCells` now.
   - Docstrings that counted a thread's two space slots now count three.
+  - The one-overflow-word arm's compiled form (`overflowOneOperandKW`) filled
+    a TLB miss through the specification's `tlbFillIpcBufferOnCore`, which
+    builds its walk plan as a list: four cells on the first overflow read of
+    a buffer page the core did not cache. It now fills in place
+    (`tlbFillIpcBufferInOnCore`, as the long arm does; joined by
+    `tlbFillIpcBufferInOnCore_eq`), writing over one of the core's spare
+    entries. The boot-built buffer exposed it: the root task's first syscall
+    is the first read of a page no kernel map put in core 0's TLB.
   - The `virt` deployment's object table gave its untyped as reaching
     `0x8000_0000`, through the region map. It now stops at the root server.
   - The spec's RPi5 deployment table still listed the two fixed
     first-gigabyte untypeds that BP7.10 retired.
+
+## v0.37.29 — the Raspberry Pi 5 boot files boot as the firmware boots them
+
+WS-RB RB4 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
+
+- **rpi5_machine moves to the firmware's layout.** The pin
+  (`scripts/setup_rpi5_machine.sh`) moves to rpi5_machine's PR #7: without an
+  armstub `raspi5b` loads the kernel, initrd and device tree where the Pi 5's
+  firmware does and enters the kernel from a stub at address 0 standing in for
+  the firmware's own BL31 (QEMU's PSCI over SMC stays). `kernel-address`,
+  `dtb-address` and `dtb-end` take `config.txt`'s `kernel_address`,
+  `device_tree_address` and `device_tree_end`, and `rpi5-boot` passes them
+  with or without an armstub.
+- **Every `raspi5b` lane boots the packaged boot files.** `qemu_cut_image`
+  packages `kernel8.img` and `config.txt` from the image
+  (`scripts/rpi5_boot_files.py package`, which checks them against the ELF)
+  and boots `kernel8.img` with the machine options its `config.txt` gives
+  (`rpi5_boot_files.py machine-options`, self-tested), so the bring-up, the
+  exercisers, the refusal probe and the boot lane all boot where the firmware
+  would put the kernel and the device tree.
+- **The SD card, through `rpi5-boot` and TF-A.** `test_qemu.sh` boots the same
+  files from an SD card (`rpi5_boot_files.py card`: an MBR, the FAT boot
+  partition, `kernel8.img`, `config.txt` and the device tree the Raspberry Pi
+  firmware release ships) with `rpi5-boot`, once through the firmware's own
+  BL31 and once through TF-A's `rpi5` BL31 (`armstub=bl31.bin`, the card's one
+  line beyond the boot files), whose banner the boot must print; HAL-only and
+  Lean-linked alike. The setup installs `rpi5-boot`, `dtmerge`, TF-A's BL31
+  and the device tree beside the emulator (rpi5_machine's `scripts/firmware`,
+  which now builds only the outputs named); the Raspberry Pi 5 lanes need
+  mtools, and CI installs it with the Linux cross compiler TF-A builds with.
+
+## v0.37.28 — the Tier-4 exercisers boot `raspi5b` first
+
+WS-RB RB3 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
+
+- **One exerciser deployment, two boards.** The allocation exerciser's Lean
+  half is one board-generic module (`SeLe4n/Platform/Exerciser/Deployment.lean`:
+  labeling, ids, the root CNode, untypeds tiling each board's RAM, the root
+  task's IPC buffer) applied to each board's table pool and RAM extensions.
+  `SeLe4n/Platform/QemuVirt/Exerciser.lean` is now that module at `virt`
+  (proved `rfl`-equal to the objects it replaced) and
+  `SeLe4n/Platform/RPi5/Exerciser.lean` is the Pi 5's, with its own boot
+  entry `lean_kernel_main_rpi5_exerciser` through the RPi5 device-tree check.
+  The library is `SeLe4nExerciser` (root `SeLe4n.Platform.Exerciser`), still
+  outside the kernel's closure; the boot-entry contract and the export census
+  hold the new entry.
+- **The Pi 5 exerciser image.** `smp_exercisers` builds on either board: the
+  HAL's initializer and entry are chosen by the board and the feature, and the
+  cross-target gate holds every *released* image free of test features rather
+  than tying the feature to `virt`. The interrupt scenarios' two unwired lines
+  are `BoardMap::unwired_spis` (318/319 on the BCM2712, whose 250/251 are
+  PCIe; 250/251 on `virt`), checked by `well_formed`.
+- **Both machines, the same pins.** `scripts/qemu_exerciser_lib.sh` boots
+  `raspi5b`, then `virt`, both emulators checked first (`qemu_gate_boards`).
+  Every reading is the same exact count on both.
+- **Found by the first `raspi5b` run, fixed here.**
+  - `MachineState.setIrqLineMask` and `InterruptLineSet.setWord` chose each
+    mask word inside the record update; the compiler split the update per
+    word, and the fifth word's split (lines 256–319) rebuilt the record. Every
+    interrupt entry, acknowledge and handler issue on such a line allocated a
+    304-byte cell (and the issue a 24-byte tree cell). `virt`'s lines are
+    below 256, so no gate saw it. The choice is now out of line
+    (`irqMaskWordAt`, `irqMaskWordPast`, scalar in and out); the readings are
+    0. The old cell was freed each time, so the heap did not grow.
+  - The declassification scenario's refused lookup (length 5, the fifth word
+    in the caller's IPC buffer) assumed the root task was the caller, but a
+    tick can hand core 0 to the runnable partner, which has no buffer. It now
+    runs with the partner suspended, where only the root task can run.
 
 ## v0.37.27 — a cancelled IPC restarts its system call
 

@@ -37,11 +37,14 @@ and then *checked against* it:
 
     rpi5_boot_files.py package <sele4n-kernel ELF> <out dir>   # write, then check
     rpi5_boot_files.py check <sele4n-kernel ELF> <out dir>     # check only
+    rpi5_boot_files.py machine-options <out dir>   # rpi5_machine's -M options
+    rpi5_boot_files.py card <out dir> <firmware dir> <card> [--tf-a]
     rpi5_boot_files.py --self-test
 """
 
 from __future__ import annotations
 
+import os
 import struct
 import subprocess
 import sys
@@ -66,6 +69,15 @@ FDT_ALIGNMENT = 8
 # Every key `config.txt` may set, and nothing else.
 CONFIG_KEYS = ("arm_64bit", "kernel", "kernel_address", "device_tree_address",
                "device_tree_end")
+
+
+# rpi5_machine's `raspi5b` places what the firmware loads by the machine
+# properties named for the keys `config.txt` sets (its `scripts/rpi5-boot`
+# passes the same ones), so a lane that boots `kernel8.img` without a card
+# boots it where the firmware would.
+MACHINE_PROPERTIES = (("kernel_address", "kernel-address"),
+                      ("device_tree_address", "dtb-address"),
+                      ("device_tree_end", "dtb-end"))
 
 
 class GateFailure(Exception):
@@ -220,6 +232,60 @@ def package(elf: Path, out: Path) -> str:
     return check(elf, out)
 
 
+def machine_options(config_text: str) -> str:
+    """`raspi5b`'s options for the addresses @config_text sets."""
+    values = parse_config(config_text)
+    return ",".join(f"{prop}={_address(values, key):#x}"
+                    for key, prop in MACHINE_PROPERTIES)
+
+
+# WS-RB RB4: an SD card laid out as a Pi 5 reads one -- an MBR whose first
+# partition is the FAT boot partition -- holding the boot files and the device
+# tree the Raspberry Pi firmware ships, which the firmware loads beside them.
+CARD_SIZE = 64 << 20
+CARD_SECTOR = 512
+BOOT_START = 2048
+BOOT_SECTORS = (48 << 20) // CARD_SECTOR
+PI5_TREE = "bcm2712-rpi-5-b.dtb"
+TF_A_ARMSTUB = "bl31.bin"
+
+
+def card(out: Path, firmware: Path, path: Path, tf_a: bool) -> None:
+    """Write the SD card @path from the boot files in @out and the Raspberry
+    Pi firmware's files in @firmware.  With @tf_a the card's `config.txt` also
+    names TF-A's `rpi5` BL31 as the armstub: a Pi 5's firmware always enters
+    the kernel through a BL31, its own unless `armstub=` names one, and this
+    one is that BL31 built from TF-A's sources.  The packaged `config.txt`
+    names no armstub, so that line is the card's, not the boot files'."""
+    config = (out / CONFIG_NAME).read_text()
+    parse_config(config)
+    if tf_a:
+        config += f"armstub={TF_A_ARMSTUB}\n"
+    mbr = bytearray(CARD_SECTOR)
+    # One partition: active 0, type 0x0c (FAT32, LBA), CHS fields unused.
+    mbr[446:462] = struct.pack("<B3sB3sII", 0, bytes(3), 0x0C, bytes(3),
+                               BOOT_START, BOOT_SECTORS)
+    mbr[510:512] = b"\x55\xaa"
+    with open(path, "wb") as handle:
+        handle.truncate(CARD_SIZE)
+        handle.write(mbr)
+    partition = f"{path}@@{BOOT_START * CARD_SECTOR}"
+    env = {**os.environ, "MTOOLS_SKIP_CHECK": "1"}
+    staged = path.with_name(path.name + ".config.txt")
+    staged.write_text(config)
+    try:
+        subprocess.run(["mformat", "-i", partition, "-F", "-T", str(BOOT_SECTORS),
+                        "-h", "64", "-s", "32", "::"], check=True, env=env)
+        files = [str(out / KERNEL_NAME), str(firmware / PI5_TREE)]
+        if tf_a:
+            files.append(str(firmware / TF_A_ARMSTUB))
+        subprocess.run(["mcopy", "-i", partition, *files, "::"], check=True, env=env)
+        subprocess.run(["mcopy", "-i", partition, str(staged), f"::/{CONFIG_NAME}"],
+                       check=True, env=env)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def self_test() -> int:
     """Each case keeps both files present and well-formed and breaks one
     relation, so a check reduced to "the files exist" fails the case it owns."""
@@ -305,7 +371,15 @@ def self_test() -> int:
         print("  FAIL a section past the loaded extent was laid out", file=sys.stderr)
     except GateFailure:
         pass
-    total = len(cases) + 1
+    # The machine is handed each address config.txt gives the firmware, under
+    # the property rpi5_machine names for its key, and nothing else.
+    options = machine_options(config(kernel_address="0x80000",
+                                     device_tree_address="0x4f6b000",
+                                     device_tree_end="0x516b000"))
+    if options != "kernel-address=0x80000,dtb-address=0x4f6b000,dtb-end=0x516b000":
+        failures += 1
+        print(f"  FAIL the machine options read {options!r}", file=sys.stderr)
+    total = len(cases) + 2
     print(f"rpi5_boot_files self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -313,6 +387,20 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--self-test"]:
         return self_test()
+    if len(argv) in (5, 6) and argv[1] == "card" and argv[5:] in ([], ["--tf-a"]):
+        try:
+            card(Path(argv[2]), Path(argv[3]), Path(argv[4]), argv[5:] == ["--tf-a"])
+        except (GateFailure, OSError, subprocess.CalledProcessError) as e:
+            print(f"rpi5_boot_files: FAIL — {e}", file=sys.stderr)
+            return 1
+        return 0
+    if len(argv) == 3 and argv[1] == "machine-options":
+        try:
+            print(machine_options((Path(argv[2]) / CONFIG_NAME).read_text()))
+        except (GateFailure, OSError) as e:
+            print(f"rpi5_boot_files: FAIL — {e}", file=sys.stderr)
+            return 1
+        return 0
     if len(argv) != 4 or argv[1] not in ("package", "check"):
         print(__doc__.rsplit("\n\n", 1)[-1].strip(), file=sys.stderr)
         return 2

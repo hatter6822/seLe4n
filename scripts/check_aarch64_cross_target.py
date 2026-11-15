@@ -149,11 +149,11 @@ QEMU_REQUIRED = "REQUIRE_QEMU=1"
 BRINGUP_SCRIPT = "scripts/test_qemu_smp_bringup.sh"
 # WS-BP BP8.4: the Tier-4 in-image exercisers, run on both `virt` images.
 EXERCISERS_SCRIPT = "scripts/test_qemu_smp_exercisers.sh"
-# The feature that builds the exerciser drivers into a `virt` TEST image, and
-# the board selector.  An image carrying the drivers is a test image and never
-# the Raspberry Pi 5's, so an image build naming the feature without the board
-# selector -- in either lane -- is refused, as is the archive lane's release
-# image build naming it at all.
+# The feature that builds the exerciser drivers into a TEST image (since WS-RB
+# RB3 on either board: the Pi 5's booted on rpi5_machine's `raspi5b`, and
+# `virt`'s), and the board selector.  An image carrying the drivers is a test
+# image, so the archive lane's release image build, the image CI uploads for
+# the board, is refused if it names the feature at all.
 EXERCISER_FEATURE = "smp_exercisers"
 VIRT_FEATURE = "board_qemu_virt"
 # v0.36.31: the Lean initialization refusal probe -- a TEST image (`virt`'s, and
@@ -161,7 +161,7 @@ VIRT_FEATURE = "board_qemu_virt"
 # library initialization refuses in the mode its command line names, so WS-BP
 # BP2.4's refusal executes on the target -- and the gate that boots it.  Like
 # the exercisers it is a test image's feature, fenced the same way: no board
-# image and no release image may carry it.
+# release image may carry it.
 PROBE_FEATURE = "lean_init_refusal_probe"
 PROBE_SCRIPT = "scripts/test_qemu_lean_init_refusal.sh"
 TEST_IMAGE_FEATURES = (EXERCISER_FEATURE, PROBE_FEATURE)
@@ -885,26 +885,24 @@ def check_gate_script(root: str) -> list[str]:
     # the library builds alone.
     images = [argv for argv in targeted if IMAGE_BIN in option_values(argv, "bin")]
     targeted = [argv for argv in targeted if argv not in images]
+    # WS-RB RB3: the shipped Raspberry Pi 5 image is the release build that
+    # names neither the `virt` board selector nor a test image's feature.  The
+    # Tier-4 drivers and the refusal probe build test images on both boards
+    # since RB2/RB3, so a build carrying either is never the one this
+    # requirement is about, and a lane whose only Pi 5 release build carries
+    # one builds no shipped image at all.
+    def image_features(argv: list[str]) -> set[str]:
+        return {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
+
     released_images = [
         argv
         for argv in images
         if ("--release" in argv or "release" in option_values(argv, "profile"))
         and IMAGE_FEATURE in option_values(argv, "features")
         and "--all-features" not in argv
+        and VIRT_FEATURE not in image_features(argv)
+        and not image_features(argv) & set(TEST_IMAGE_FEATURES)
     ]
-    # WS-BP BP8.4: the Tier-4 in-image drivers build a `virt` TEST image.  An
-    # image build naming the feature without the board selector is a board
-    # image carrying test drivers, which no release may.
-    for argv in images:
-        features = {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
-        for test_feature in TEST_IMAGE_FEATURES:
-            if test_feature in features and VIRT_FEATURE not in features:
-                problems.append(
-                    f"{GATE_SCRIPT}: the image build `{' '.join(argv)}` names "
-                    f"`{test_feature}` without `{VIRT_FEATURE}`: a test image's feature "
-                    f"belongs to the `virt` test image the QEMU gates boot, never to the "
-                    f"Raspberry Pi 5 image."
-                )
     if not released_images:
         problems.append(
             f"{GATE_SCRIPT}: no cross `cargo build --release --target "
@@ -1438,7 +1436,7 @@ def check_lean_archive_lane(root: str) -> list[str]:
                     problems.append(
                         f"{LEAN_ARCHIVE_LANE}: the release image build `{command}` names "
                         f"`{test_feature}`, a test image's feature. It belongs to the "
-                        f"`virt` test image the QEMU gates build for themselves, never "
+                        f"test images the QEMU gates build for themselves, never "
                         f"to the image this lane links and CI uploads for the board."
                     )
             if operator in ERREXIT_EXEMPTING_OPERATORS:
@@ -2129,7 +2127,7 @@ GOOD_LEAN_LANE = f"""#!/usr/bin/env bash
 set -euo pipefail
 CROSS_TARGET="{CROSS_TARGET}"
 ARCHIVE_DIR="${{PROJECT_ROOT}}/.lake/build/${{CROSS_TARGET}}"
-lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
+lake build SeLe4n:static SeLe4nExerciser:static
 python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split('/')[-1]}"
 python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
 cargo build --release --target {CROSS_TARGET} -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}

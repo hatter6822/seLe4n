@@ -28,7 +28,7 @@ tier1_targets=(@seLe4n)
 
 # The host static archives: the kernel-entry export check reads them, and the
 # boundary layout test links them with the test-only probes' library.
-tier1_targets+=(SeLe4n:static SeLe4nQemuVirtExerciser:static SeLe4nBoundaryProbes:static)
+tier1_targets+=(SeLe4n:static SeLe4nExerciser:static SeLe4nBoundaryProbes:static)
 
 # AN7-D.7 (PLT-M07): force the seven staged platform-binding modules into
 # the build graph.  Without this, regressions in modules not reached from

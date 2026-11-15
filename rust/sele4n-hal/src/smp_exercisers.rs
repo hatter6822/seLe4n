@@ -1494,9 +1494,9 @@ fn per_core_stats() -> Option<bool> {
 
 /// One syscall the driver issues as whichever thread is current on core 0: the
 /// root task, or the partner thread the deployment configures beside it
-/// (`Platform/QemuVirt/Deployment.lean`, `qemuVirtPartnerTcbId`).  The capability
+/// (`Platform/Exerciser/Deployment.lean`, `partnerTcbId`).  The capability
 /// addresses name slots of the root task's CNode, which the partner shares
-/// (`qemuVirtRootTaskCNode`), through its guard ([`cap_address`]).
+/// (`rootTaskCNode`), through its guard ([`cap_address`]).
 #[cfg(feature = "hw_target")]
 struct RoundTrip {
     /// The name its printed lines carry.
@@ -1777,7 +1777,7 @@ const AUDIT_DRAIN: u64 = 32;
 const DECLASSIFY_SIGNAL: u64 = 33;
 
 /// The root CNode's guard bit (the top bit of its 58-bit guard over a 64-slot
-/// radix, `qemuVirtExerciserRootCNodeOf`): a slot's capability address is the
+/// radix, `Exerciser.rootTaskCNode`): a slot's capability address is the
 /// slot with bit 63 set, so
 /// every address the round trips resolve is a word `≥ 2^63`, read without a
 /// heap number at the decode and at every guard and slot extraction of the
@@ -1792,8 +1792,8 @@ const fn cap_address(slot: u64) -> u64 {
 }
 
 /// **The root task's IPC buffer**, which the boot builds, maps and sets
-/// (`qemuVirtRootTaskIpcBufferVAddr`, `Boot.installRootServer`, seL4's
-/// initial-thread IPC buffer):
+/// (`Exerciser.rootIpcBufferVAddr`, `Exerciser.rootServer`,
+/// `Boot.installRootServer`, seL4's initial-thread IPC buffer):
 /// the first page under level-0 index 2 of the root task's address space,
 /// beside the scenarios' window ([`FRAME_VADDR`], index 1).  A scenario that
 /// points the root task's buffer elsewhere points it back here when it is
@@ -1905,19 +1905,19 @@ const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_SLOT: u64 = 0;
 /// The slot of core 0's scheduling-control capability
-/// (`qemuVirtSchedControlSlot`, WS-ZA ZA6.4): the authority every configure
+/// (`Exerciser.schedControlSlotBase`, WS-ZA ZA6.4): the authority every configure
 /// round trip invokes, the context it configures named at MR0.
 #[cfg(feature = "hw_target")]
 const SCHED_CONTROL_SLOT: u64 = 16;
 /// The slot of the exerciser image's boot audit capability
-/// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
+/// (`Exerciser.auditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
 /// the declassification scenario ends.  Its next use is the invocation
 /// scenarios' copy, which writes the copied capability's target over the
 /// slot's record and its target cell.
 #[cfg(feature = "hw_target")]
 const AUDIT_SLOT: u64 = COPY_SLOT;
 /// The slot of the root task's interrupt-control capability
-/// (`qemuVirtIrqControlSlot`, WS-ZA ZA6.32): the authority every handler the
+/// (`Exerciser.irqControlSlot`, WS-ZA ZA6.32): the authority every handler the
 /// exerciser holds is issued from (`seL4_IRQControl_Get`).
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_SLOT: u64 = 20;
@@ -2081,7 +2081,7 @@ const WIDE_BADGE_TEARDOWN: [RoundTrip; 1] = [invocation(
 
 /// **WS-SX SX5**: the root CNode slot of the root task's IPC buffer frame
 /// capability, which the boot installs mapped (`Boot.installRootServer`,
-/// `qemuVirtExerciserRootServerFrameSlot`, seL4's
+/// `Exerciser.rootServerFrameSlot`, seL4's
 /// `seL4_CapInitThreadIPCBuffer`); the three tables' follow it, so the boot's
 /// own slots end at 35.
 #[cfg(feature = "hw_target")]
@@ -2773,7 +2773,7 @@ const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> Round
     }
 }
 
-/// The interface the `virt` binding installs at boot
+/// The interface the exerciser's binding installs at boot on either board
 /// (`qemuVirtExerciserInterface`, `Platform/QemuVirt/Contract.lean`): id 1,
 /// one method, four-word requests and responses.
 #[cfg(feature = "hw_target")]
@@ -9896,7 +9896,7 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// the reply object into its free slot, and the badged endpoint capability
 /// minted from the endpoint's.
 /// **WS-ZA ZA5.13: the declassification scenario**, run on the exerciser
-/// image's labeling (`SeLe4n.Platform.QemuVirt.Exerciser`): its boot domain is
+/// image's labeling (`SeLe4n.Platform.Exerciser.deploymentLabeling`): its boot domain is
 /// the top of the lattice and its downgrades are from there to the upper
 /// domain and from the upper domain to the low band (WS-ZA ZA6.35, used by
 /// [`bound_declassified_signals`]).  A notification is carved at an upper id
@@ -10002,9 +10002,11 @@ const FLOW_DENIED: u64 = 13;
 /// a refused lookup whose error carries a payload (a guard mismatch) recorded in
 /// the refusal ledger from its words, so neither the error nor the record is
 /// built on the entry path.  The address is a bare slot number, below the root
-/// guard.  The fifth word (`GuardFound`'s size) goes to the root task's IPC
-/// buffer, so the length is 5; the buffer is not at `FRAME_VADDR` in this
-/// phase, so the word itself is not probed.
+/// guard.  The fifth word (`GuardFound`'s size) goes to the caller's IPC
+/// buffer, and only the root task has one here, so the length is 5 only with
+/// the root task as the caller: the driver runs it with the partner suspended,
+/// where no tick can hand core 0 to another thread.  The buffer is not at
+/// `FRAME_VADDR` in this phase, so the word itself is not probed.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
     name: "declassify-guard-mismatch-refused",
@@ -10452,7 +10454,7 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
     ),
 ];
 /// The id the declassification scenario carves its notification at: past the
-/// exerciser labeling's boundary (`qemuVirtUpperDomainBase`, `0x10_0000`), so
+/// exerciser labeling's boundary (`Exerciser.upperDomainBase`, `0x10_0000`), so
 /// the notification is in the upper domain.
 #[cfg(feature = "hw_target")]
 const UPPER_NOTIFICATION_ID: u64 = 0x10_0010;
@@ -10716,7 +10718,7 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
 
 /// **WS-ZA ZA6.35: a declassified signal's bound delivery, its two-hop
 /// downgrade and its refused second hop**, on the exerciser labeling's low
-/// band (`qemuVirtExerciserInLowBand`): a thread carved at [`LOW_THREAD_ID`],
+/// band (`Exerciser.inLowBand`): a thread carved at [`LOW_THREAD_ID`],
 /// given the root task's spaces and priority, and an endpoint carved at
 /// [`LOW_ENDPOINT_ID`], both in the lower trusted domain, beside a
 /// notification in the boot domain (in the move slot) bound to the root task
@@ -11503,9 +11505,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
             return Some(false);
         }
-        if heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) != Some(true) {
-            return Some(false);
-        }
         for step in AUDIT_SCENARIO.iter() {
             if heap_allocations_round_trip(step, which) != Some(true) {
                 return Some(false);
@@ -11531,11 +11530,14 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
     // downgrade and its refused second hop, the partner suspended and the
     // timer masked across each run; then the boot audit capability deleted so
-    // its slot is the copy's again.
+    // its slot is the copy's again.  Each run opens with the refused lookup,
+    // which needs the root task as its caller: with the partner suspended the
+    // root task is the only thread core 0 can run, whatever a tick did before.
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         let saved = crate::interrupts::disable_interrupts();
-        let ok = bound_declassified_signals(which);
+        let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) == Some(true)
+            && bound_declassified_signals(which);
         crate::interrupts::restore_interrupts(saved);
         if !ok {
             return Some(false);
@@ -11907,11 +11909,13 @@ fn heap_refused_retype(which: &str) -> bool {
 
 /// **WS-ZA ZA6.32**: the shared peripheral interrupts the exerciser raises —
 /// one with a handler bound to it (its handler is the interrupt notification
-/// in [`NOTIFICATION_SLOT`]) and one with none.  `virt` wires neither to a device.
+/// in [`NOTIFICATION_SLOT`]) and one with none.  WS-RB RB3: the board's two
+/// unwired lines (`BoardMap::unwired_spis`), INTIDs 318 and 319 on the
+/// Raspberry Pi 5 and 250 and 251 on `virt`, so no device raises either.
 #[cfg(feature = "hw_target")]
-const IRQ_BOUND_LINE: u32 = 250;
+const IRQ_BOUND_LINE: u32 = crate::board::BOARD.unwired_spis[0];
 #[cfg(feature = "hw_target")]
-const IRQ_UNBOUND_LINE: u32 = 251;
+const IRQ_UNBOUND_LINE: u32 = crate::board::BOARD.unwired_spis[1];
 /// The INTID the interrupt entry's spurious branch is entered with: the GIC's
 /// "no interrupt pending" acknowledge, which no handler capability names.
 #[cfg(feature = "hw_target")]
@@ -14141,8 +14145,9 @@ fn dispatch_round_trip_at(
         }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x})",
-                regs[1] >> 12
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x}, length {})",
+                regs[1] >> 12,
+                regs[1] & 0x7f
             );
             Dispatched::Failed
         }
