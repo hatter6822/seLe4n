@@ -11289,8 +11289,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         let saved = crate::interrupts::disable_interrupts();
-        let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which)
-            == Some(true)
+        let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) == Some(true)
             && bound_declassified_signals(which);
         crate::interrupts::restore_interrupts(saved);
         if !ok {
