@@ -435,7 +435,7 @@ jobs:
     # kernel in it -- `libsele4n.a` and the roots script the builder writes,
     # under `--gc-sections` -- and checks and disassembles that image.
     #
-    # WS-BP BP8.1 / WS-PM PM1: and last, it boots the Lean-linked Raspberry Pi
+    # WS-BP BP8.1 / WS-RB RB1: and last, it boots the Lean-linked Raspberry Pi
     # 5 image on rpi5_machine's `raspi5b` at EL2, and the `virt` image under
     # QEMU's `virt` at EL1 and EL2, each on four PEs to every core's first idle
     # dispatch.
@@ -476,7 +476,7 @@ jobs:
       # (`scripts/test_qemu.sh --lean-kernel`), and runs
       # it with `REQUIRE_QEMU=1`, so an absent emulator fails the job rather
       # than skipping the one run of the kernel a PR gets.
-      # WS-PM PM1: it boots the Raspberry Pi 5 image itself on rpi5_machine's
+      # WS-RB RB1: it boots the Raspberry Pi 5 image itself on rpi5_machine's
       # `raspi5b`, the out-of-tree QEMU that models the board, and then the
       # `virt` image on the distribution's QEMU.
       # `scripts/setup_rpi5_machine.sh` builds it at the commit it pins; the

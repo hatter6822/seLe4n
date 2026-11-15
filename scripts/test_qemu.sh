@@ -15,7 +15,7 @@
 # 5. Syscall dispatch (SVC instruction handling)
 #
 # Prerequisites:
-#   - rpi5_machine's `raspi5b` (WS-PM PM1): `scripts/setup_rpi5_machine.sh`
+#   - rpi5_machine's `raspi5b` (WS-RB RB1): `scripts/setup_rpi5_machine.sh`
 #     builds it at its pin on first use, or QEMU_RPI5_BIN names one
 #   - qemu-system-aarch64 installed (QEMU >= 8.0), for the `virt` lane
 #   - Rust toolchain with aarch64-unknown-none-softfloat target
@@ -243,8 +243,9 @@ fi
 # two must agree, so the fixture cannot drift from the machine the image boots
 # on.
 board_dtb_fixture() {
-    if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_dtb_fixture.py" "$1" --check; then
-        record_failure "TRACE" "tests/fixtures/$2 could not be confirmed as this emulator's $1 device tree (scripts/qemu_dtb_fixture.py names the reason above)"
+    local board="$1" fixture="$2"
+    if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_dtb_fixture.py" "${board}" --check; then
+        record_failure "TRACE" "tests/fixtures/${fixture} could not be confirmed as this emulator's ${board} device tree (scripts/qemu_dtb_fixture.py names the reason above)"
         finalize_report
     fi
 }
@@ -252,7 +253,7 @@ board_dtb_fixture() {
 # boot_board BOARD: boot the selected kind of image (HAL-only, or Lean-linked
 # under --lean-kernel) built for BOARD, on BOARD's machine.
 #
-# WS-PM PM1: `rpi5` is the Raspberry Pi 5 image -- the board the kernel ships
+# WS-RB RB1: `rpi5` is the Raspberry Pi 5 image -- the board the kernel ships
 # for, built with no board feature -- on rpi5_machine's `raspi5b`, once, at the
 # EL2 entry with PSCI over SMC that the Pi 5's firmware gives it.  `virt` is the
 # second lane (WS-BP BP8.1): the `board_qemu_virt` image on QEMU's `virt`, at

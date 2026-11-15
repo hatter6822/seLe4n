@@ -7,7 +7,7 @@
 #
 # WS-BP BP8.2: the one way this tree builds a kernel image for an emulated
 # board, cuts the raw image QEMU boots, and runs it -- the Raspberry Pi 5 image
-# on rpi5_machine's `raspi5b` (WS-PM) or the `virt` image on QEMU's `virt`.
+# on rpi5_machine's `raspi5b` (WS-RB) or the `virt` image on QEMU's `virt`.
 #
 # `scripts/test_qemu.sh` (the boot lane), `scripts/test_qemu_smp_bringup.sh`
 # (the four-PE bring-up gate) and, through `scripts/qemu_exerciser_lib.sh`, every
@@ -19,7 +19,7 @@
 #
 # Configuration (environment, all optional):
 #   QEMU_BOARD    the board the image is built for and booted on: `rpi5`, the
-#                 Raspberry Pi 5 image on rpi5_machine's `raspi5b` (WS-PM), or
+#                 Raspberry Pi 5 image on rpi5_machine's `raspi5b` (WS-RB), or
 #                 `virt`, the `board_qemu_virt` image on QEMU's `virt`
 #                 (default virt; a caller may also `qemu_select_board`)
 #   QEMU_BIN      the emulator for `virt`  (default qemu-system-aarch64)
@@ -120,7 +120,7 @@ qemu_temp_file() {
 # SELE4N_SKIP_EXIT (77) -- a gate that cannot run certifies nothing -- unless
 # REQUIRE_QEMU=1, which makes an absent QEMU a failure.
 qemu_require_tools() {
-    # WS-PM PM1: the Raspberry Pi 5 machine is built from the pinned
+    # WS-RB RB1: the Raspberry Pi 5 machine is built from the pinned
     # rpi5_machine, once per pin; a build that cannot run is an absent QEMU.
     if [[ "${QEMU_BOARD}" == "rpi5" && -z "${QEMU_BIN}" ]]; then
         log_section "META" "Resolving rpi5_machine's raspi5b (scripts/setup_rpi5_machine.sh)"

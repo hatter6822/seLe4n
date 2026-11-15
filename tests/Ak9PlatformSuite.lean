@@ -2705,7 +2705,7 @@ def qemuVirt_board_check_on_qemus_own_device_tree : IO Unit := do
   | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.initialObjects.length))}"
 
 open SeLe4n.Platform.QemuVirt in
-/-- **WS-PM PM1**: the Raspberry Pi 5 board check on the device tree
+/-- **WS-RB RB1**: the Raspberry Pi 5 board check on the device tree
 **rpi5_machine's `raspi5b`** hands the kernel (`tests/fixtures/rpi5_machine_dtb.hex`,
 rendered from the emulator's own dump by `scripts/qemu_dtb_fixture.py rpi5`), the
 machine the boot lane runs the Raspberry Pi 5 image on with 1 GiB of RAM.
@@ -2716,7 +2716,7 @@ variant it binds is the 1 GiB board, with the first gigabyte's top the one the
 tree reports below the VideoCore's 4 MiB (`0x3FC0_0000`, as a Pi 5's firmware
 reports it); and the `virt` bridge refuses the same tree as a foreign board. -/
 def rpi5_board_check_on_rpi5_machines_device_tree : IO Unit := do
-  IO.println "--- WS-PM PM1 Raspberry Pi 5 board check on rpi5_machine's device tree ---"
+  IO.println "--- WS-RB RB1 Raspberry Pi 5 board check on rpi5_machine's device tree ---"
   let text ← IO.FS.readFile "tests/fixtures/rpi5_machine_dtb.hex"
   let blob ← match parseCorpusHex text with
     | .ok b => pure b

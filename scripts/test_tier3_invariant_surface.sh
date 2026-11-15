@@ -9360,14 +9360,20 @@ run_check "INVARIANT" rg -n '^            if function != IMAGE_HEADER_FUNCTION o
 # A uniprocessor GIC reads its targets as zero: the self-check reads TYPER.
 run_check "INVARIANT" rg -n '^    let expected = self_check_expected\(read_distributor_register\(base, gicd::TYPER\)\);$' rust/sele4n-hal/src/gic.rs
 run_negative_check "INVARIANT" rg -n 'if actual != SELF_CHECK_EXPECTED' rust/sele4n-hal/src/gic.rs
-# The QEMU lane is live: the `virt` image, booted at EL1 and at EL2, the
-# fixture's fragments in order, and the fixture's companion verified.
+# The QEMU lane is live: the Raspberry Pi 5 image on rpi5_machine's `raspi5b`
+# (WS-RB RB1), then the `virt` image booted at EL1 and at EL2, the fixture's
+# fragments in order, and the fixture's companion verified.
 # WS-BP BP8.2: the build is `scripts/qemu_boot_lib.sh`'s, into a target
-# directory of its own, and the lane sources that library.
-run_check "INVARIANT" rg -n -U '^    features="kernel_image,board_qemu_virt"\n    target_dir="\$\{HAL_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
+# directory of its own named by the board, and the lane sources that library.
+run_check "INVARIANT" rg -n -U '^    features=\$\(qemu_image_features "kernel_image"\)\n    target_dir="\$\{HAL_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^        rpi5\)\n            QEMU_BOARD_FEATURES=""\n            QEMU_BOARD_MACHINE="raspi5b"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^        virt\)\n            QEMU_BOARD_FEATURES="board_qemu_virt"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^    HAL_TARGET_DIR="\$\{RUST_DIR\}/target/qemu-\$\{QEMU_BOARD\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^    boot_board rpi5\n    boot_board virt$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --bin sele4n-kernel \\\n                --target-dir "\$\{target_dir\}"\) ' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
-run_check "INVARIANT" rg -n -U '^    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^            boot_once "\$\{LEAN_LABEL\}virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^            boot_once "\$\{LEAN_LABEL\}Raspberry Pi 5, raspi5b, EL2 entry" "\$\{QEMU_BOARD_MACHINE\}" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"$' scripts/test_qemu.sh
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""' scripts/test_qemu.sh
 # shellcheck disable=SC2016
@@ -9435,7 +9441,8 @@ run_check "INVARIANT" rg -n -F -- 'include_str!("../../../tests/fixtures/boot_ma
 run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features board_qemu_virt' scripts/test_rust.sh
 run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings' scripts/test_rust.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
-run_check "INVARIANT" rg -n -F -- 'qemu_dtb_fixture.py" "$1" --check' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'qemu_dtb_fixture.py" "${board}" --check' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'board_dtb_fixture virt qemu_virt_dtb.hex' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'board_dtb_fixture rpi5 rpi5_machine_dtb.hex' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")' scripts/check_kernel_entry_exports.py
@@ -9475,7 +9482,7 @@ run_check "INVARIANT" rg -n -F -- 'TOPOLOGY         | [boot] Phase 7: all 4 decl
 # QEMU, in a CI job that installs it.
 run_check "INVARIANT" rg -n -U '^        features="hw_target,\$\{features\}"\n        target_dir="\$\{LEAN_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift=0,sleep=off"\)\n    UNTIL_FRAGMENT="first idle dispatch"\n    UNTIL_COUNT=4$' scripts/test_qemu.sh
-run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'LEAN_LABEL="Lean kernel, "' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
 run_check "INVARIANT" rg -n -F -- 'sudo apt-get install -y --no-install-recommends qemu-system-arm' .github/workflows/lean_action_ci.yml
 # That install omits `ipxe-qemu` (a Recommends), whose `efi-virtio.rom` backs

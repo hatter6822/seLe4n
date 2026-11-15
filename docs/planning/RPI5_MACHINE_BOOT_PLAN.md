@@ -1,10 +1,10 @@
-# WS-PM — Boot the kernel on the emulated Raspberry Pi 5
+# WS-RB — Boot the kernel on the emulated Raspberry Pi 5
 
-> **Workstream**: WS-PM (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
-> **Status**: **ACTIVE** — registered at `v0.37.26` with PM1.
+> **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
+> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
-> **Rows**: PM1–PM5, numbered in the order they are implemented, one PR each.
+> **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. No two rows run in parallel.
 > **Owner decision** (Adam, 2026-11-15): move CI, the exercisers and the local
 > scripts onto [rpi5_machine](https://github.com/hatter6822/rpi5_machine);
@@ -61,7 +61,7 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
 
 ## 3. Rows
 
-### PM1 — The Raspberry Pi 5 image boots on `raspi5b`
+### RB1 — The Raspberry Pi 5 image boots on `raspi5b`
 
 - The secondaries' MPIDRs become a field of `BoardMap`
   (`secondary_mpidrs`): `0x100`/`0x200`/`0x300` on the Pi 5, `1`/`2`/`3` on
@@ -77,14 +77,14 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
   `0x3FC0_0000`) and the `virt` bridge to refusing it.
 - CI's archive lane builds the pinned machine, cached by the script's hash.
 
-### PM2 — The four-PE bring-up and the refusal probe on `raspi5b`
+### RB2 — The four-PE bring-up and the refusal probe on `raspi5b`
 
 - `scripts/test_qemu_smp_bringup.sh` boots the Pi 5 image on `raspi5b`
   (HAL-only and Lean-linked), then `virt` as the second lane.
 - `scripts/test_qemu_lean_init_refusal.sh` builds the probe for the Pi 5 and
   runs it on `raspi5b`, then on `virt`.
 
-### PM3 — The Tier-4 exercisers on `raspi5b`
+### RB3 — The Tier-4 exercisers on `raspi5b`
 
 - The exerciser image builds for the Pi 5: `smp_exercisers` without
   `board_qemu_virt`. The interrupt scenarios' two lines become board data
@@ -99,7 +99,7 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
   reads its exact count on both machines: the kernel is the same, so a count
   that differs between boards is a finding, not a second pin.
 
-### PM4 — Boot the packaged boot files as the firmware does
+### RB4 — Boot the packaged boot files as the firmware does
 
 - rpi5_machine (its own PR there): `scripts/rpi5-boot` honours
   `kernel_address` and `device_tree_address`/`device_tree_end` without an
@@ -110,7 +110,7 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
 - A second run boots the same card through TF-A's `rpi5` BL31 as the
   armstub (`secure=on`, `-bios`), the Pi 5's own boot chain.
 
-### PM5 — Closure
+### RB5 — Closure
 
 - The nightly lane and every local QEMU script default to `raspi5b`.
 - Documentation sweep against the final tree: `docs/spec/SELE4N_SPEC.md`,
@@ -121,5 +121,5 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
 
 ## 4. Estimate
 
-PM1 one session. PM2 one. PM3 three to four (the Lean deployment and its
-proofs are the bulk). PM4 two, one of them in rpi5_machine. PM5 one.
+RB1 one session. RB2 one. RB3 three to four (the Lean deployment and its
+proofs are the bulk). RB4 two, one of them in rpi5_machine. RB5 one.

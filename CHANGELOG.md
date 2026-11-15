@@ -1,3 +1,39 @@
+## v0.37.25 — the Raspberry Pi 5 image boots on rpi5_machine's `raspi5b`
+
+WS-RB RB1 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`, registered here). The
+QEMU lanes booted only the `board_qemu_virt` image, because upstream QEMU has
+no BCM2712. hatter6822/rpi5_machine models the Raspberry Pi 5 (`-M raspi5b`),
+so the boot lane now runs the image the kernel ships for, and `virt` stays as
+the second lane.
+
+- **Board bug fixed: the secondaries' MPIDRs.** `SECONDARY_MPIDR_TABLE` named
+  MPIDR `0x1`, `0x2`, `0x3`, which is `virt`'s numbering. The BCM2712's
+  Cortex-A76 sets `MPIDR_EL1.MT` and numbers its cores in Aff1
+  (`bcm2712.dtsi`'s `cpu@100` .. `cpu@300`). On `raspi5b` PSCI refused every
+  `CPU_ON`, and on a Pi 5 the Lean-linked kernel would have halted at its
+  Phase 7 topology refusal. The table is now a `BoardMap` field
+  (`secondary_mpidrs`: `0x100`/`0x200`/`0x300` on the Pi 5, `1`/`2`/`3` on
+  `virt`), and `well_formed` refuses a zero, repeated or non-affinity entry.
+- **The machine is pinned.** `scripts/setup_rpi5_machine.sh` builds
+  rpi5_machine at a pinned commit, once per pin, into
+  `.lake/rpi5-machine/<commit>/`. CI's archive lane builds it with its
+  dependencies and caches it under the script's hash.
+- **The boot lane.** `scripts/qemu_boot_lib.sh` gains `qemu_select_board
+  rpi5|virt` (board feature, emulator, machine and target directories).
+  `scripts/test_qemu.sh` boots the Raspberry Pi 5 image on `raspi5b` at EL2,
+  then the `virt` image at EL1 and EL2, HAL-only and Lean-linked. The Lean
+  boot fixture's banner fragment no longer names a board; each run checks its
+  board's banner.
+- **The board check on the machine's own tree.** `scripts/qemu_dtb_fixture.py`
+  (renamed from `qemu_virt_dtb_fixture.py`, now taking the board) renders
+  `tests/fixtures/rpi5_machine_dtb.hex` from `raspi5b`'s dump, the lane checks
+  it against a fresh dump, and `tests/Ak9PlatformSuite.lean`
+  (`rpi5_board_check_on_rpi5_machines_device_tree`) holds the RPi5 entry to
+  accepting it (the 1 GiB variant, first gigabyte to `0x3FC0_0000`) and the
+  `virt` bridge to refusing it.
+- `scripts/test_hw_crosscheck.sh`'s prerequisites named `raspi4b`; they name
+  `raspi5b` now.
+
 ## v0.37.24 — receive-side refusals are capability faults
 
 WS-SX SX3 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A receive's refusals now

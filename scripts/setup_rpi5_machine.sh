@@ -5,7 +5,7 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-PM PM1: the emulated Raspberry Pi 5 the boot lanes run the board image on.
+# WS-RB RB1: the emulated Raspberry Pi 5 the boot lanes run the board image on.
 #
 # QEMU ships no BCM2712 machine.  hatter6822/rpi5_machine is an out-of-tree
 # QEMU whose `raspi5b` machine models the Raspberry Pi 5 Model B: four

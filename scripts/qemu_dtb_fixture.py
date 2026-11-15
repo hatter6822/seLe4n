@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Render an emulated board's own device tree as an annotated-hex fixture:
 QEMU `virt`'s as `tests/fixtures/qemu_virt_dtb.hex` (WS-BP BP8.1), and
-rpi5_machine `raspi5b`'s as `tests/fixtures/rpi5_machine_dtb.hex` (WS-PM PM1).
+rpi5_machine `raspi5b`'s as `tests/fixtures/rpi5_machine_dtb.hex` (WS-RB RB1).
 
 Each fixture is the emulator's blob, not a hand-written one: the board checks
 (`SeLe4n.Platform.QemuVirt.qemuVirtPlatformConfigFromDtb`,
