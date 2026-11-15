@@ -5858,7 +5858,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
       rw [hLk] at hStep
       dsimp only [] at hStep
       split at hStep
-      · cases hStep
+      · cases hStep; exact hInv
       · have hReady := hQ.ready tcb hLk
         have hC : Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb = st := by
           rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply _ _ _

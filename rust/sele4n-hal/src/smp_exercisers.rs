@@ -7663,9 +7663,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // queues on the endpoint while the root task waits; the root task's
         // receive through the same reply cancels the partner's call and takes
         // the queued send at once, and returns.  At each switch exactly one
-        // thread is runnable.  The cancel leaves the partner `Inactive`, as
-        // the suspend that ends the queued-sender sequence does, so none
-        // follows here.
+        // thread is runnable.
         invocation(
             "untyped-retype-busy-reply-sender",
             UNTYPED_RETYPE,
@@ -7741,6 +7739,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             "busy-reply-suspend-sender",
             TCB_SUSPEND,
             CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        // The receive's cancel left the partner `Inactive`; its suspend
+        // succeeds and writes nothing, as seL4's `suspend` of an `Inactive`
+        // thread.
+        invocation(
+            "busy-reply-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
             [0; 4],
         ),
         invocation(

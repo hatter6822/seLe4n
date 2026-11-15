@@ -900,9 +900,10 @@ private def runDonationChecks : IO Unit := do
 -- which the pre-SM10 audit's blocker 2 did not name.
 
 /-- `stDonBase`'s threads with an explicit live `threadState`. `mkTcb` leaves the
-field at its `.Inactive` default, which `suspendThreadOnCore` rejects outright
-(`illegalState`) — so the suspend-arm fixture has to say the threads are running,
-which is the state the live dispatch entry suspends from. -/
+field at its `.Inactive` default, which `suspendThreadOnCore` leaves as it is
+(seL4's `suspend` of an `Inactive` thread writes nothing) — so the suspend-arm
+fixture has to say the threads are running, which is the state the live
+dispatch entry suspends from. -/
 private def donClientTcbRunning : TCB :=
   { mkTcb 841 60 none with
       scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0

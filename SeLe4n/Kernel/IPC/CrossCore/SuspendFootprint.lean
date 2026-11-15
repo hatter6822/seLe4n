@@ -171,8 +171,9 @@ def schedLockSet_suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThre
   schedFootprintOfCores (suspendThreadOnCoreWriteSet st vtid executingCore)
     (suspendThreadReplenishCores st vtid executingCore)
 
-/-- `v0.35.170`: an already-`.Inactive` victim is refused, so the footprint is
-the object-store write lock and nothing else. -/
+/-- `v0.35.170`: an already-`.Inactive` victim is suspended with nothing
+written (WS-SX SX4, as seL4's `suspend`), so the footprint is the object-store
+write lock and nothing else. -/
 theorem schedLockSet_suspendThreadOnCore_of_inactive (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? vtid.val = some tcb)
@@ -308,7 +309,7 @@ theorem suspendThreadOnCore_replenishQueueOnCore_ne (st st' : SystemState)
     rw [hTcb] at h hne
     simp only at h hne
     by_cases hInact : (tcb.threadState == .Inactive) = true
-    · rw [if_pos hInact] at h; exact absurd h (by simp)
+    · rw [if_pos hInact] at h; cases h; rfl
     · rw [if_neg hInact] at h hne
       have hG2b : ∀ s : SystemState,
           (match PriorityInheritance.blockingServer st vtid.val with

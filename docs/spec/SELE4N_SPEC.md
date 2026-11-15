@@ -3255,7 +3255,17 @@ runs the cancel in place after its checks (`cancelRecvBusyReply`,
 `Inactive`), with no scheduling point, and the cancel commits: a refusal after
 it reports the cancelled state (`cancelReceiveBusyReply`).  The receive's lock
 footprints name the cancel's writes (`lockSet_receiveCancellingHolder`,
-`schedLockSet_receiveCancellingHolderOnCore`).
+`schedLockSet_receiveCancellingHolderOnCore`).  The cancel keeps
+`ipcInvariantFull` (`cancelReplyHolder_preserves_ipcInvariantFull`, given the
+teardown's queue-connectivity premises at the holder), and under the same
+premises it leaves the reply with no caller and no live stash
+(`cancelReplyHolder_frees_reply`), so the receive's reply resolves on the
+cancelled state and its `replyCapInvalid` refusal cannot fire
+(`resolveRecvReplyId_cancelRecvBusyReply`).
+
+A suspend of a thread already `Inactive` succeeds and writes nothing, as
+seL4's `suspend` (`suspendThreadOnCore_of_inactive`): its IPC is cancelled
+already, and it sits in no run or release queue and names no yield link.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*

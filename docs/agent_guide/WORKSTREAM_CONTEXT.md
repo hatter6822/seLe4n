@@ -184,8 +184,10 @@ the refusal's form alone.
 SX4 (`v0.37.25`) made a cancelled IPC restart its system call: the cancelled
 thread is `ThreadState.Restart` with its saved PC at its restart PC
 (`TCB.restartPc`, seL4's `getRestartPC`), and Resume sets `Restart`;
-`ipcCancelled` is retired (57 reserved). The receive whose reply object is not
-free still refuses; its `cancelIPC(replyTCB)` stays open in the SX4.1 row.
+`ipcCancelled` is retired (57 reserved). A receive on a busy reply cancels its
+holder (seL4-MCS `cancelIPC(replyTCB)`, `cancelRecvBusyReply`), the cancel keeps
+`ipcInvariantFull` and frees the reply, and a suspend of a thread already
+`Inactive` succeeds with nothing written.
 **Standing constraints for new code:** a path that takes a thread out of a
 blocked system call and means it to re-issue the call writes it through
 `TCB.restoredToRestart` (the restart PC is written when the thread leaves its

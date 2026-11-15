@@ -120,6 +120,7 @@ theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
+    (hActive : ∀ t, st.getTcb? vtid.val = some t → t.threadState ≠ .Inactive)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid c = .ok (st', sgi?)) :
     ∀ x, st'.getTcb? vtid.val = some x → x.ipcState = .ready := by
   have back : ∀ {a b : SystemState}, RecordsFrame a b →
@@ -132,7 +133,7 @@ theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue hA => exact absurd (by simpa using hA) (hActive tcb hT)
     case isFalse hA =>
       have hI1 := Lifecycle.Suspend.cancelIpcKeepingContexts_preserves_objects_invExt st
         vtid.val tcb hInv
@@ -494,17 +495,38 @@ theorem dispatchCapabilityOnly_recordsStage
               rcases Lifecycle.Suspend.restartThreadOnCore_cases hRes with
                 hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
               rotate_left
-              · exact fun h =>
-                  have hI1 := KernelRecords.objects_invExt
+              · intro h
+                by_cases hAct : ∀ t, st.getTcb? vtid.val = some t → t.threadState ≠ .Inactive
+                · have hI1 := KernelRecords.objects_invExt
                     (RecordsStage.suspendThreadOnCore hSus h)
-                  RecordsStage.resumeThreadOnCore
+                  exact RecordsStage.resumeThreadOnCore
                     (fun y hy => by
                       obtain ⟨x, hx, -, hS⟩ := retirePendingFaultForResume_threadState hI1 hy
                       rw [← hS]
                       exact suspendThreadOnCore_target_ipcReady
-                        (KernelRecords.objects_invExt h) hSus x hx) hRes
+                        (KernelRecords.objects_invExt h) hAct hSus x hx) hRes
                     (RecordsStage.retirePendingFaultForResume st1 vtid.val
                       (RecordsStage.suspendThreadOnCore hSus h))
+                · -- An `Inactive` target's suspend writes nothing, so the resume
+                  -- runs on the state the restart was handed.
+                  obtain ⟨t, ht, hti⟩ : ∃ t, st.getTcb? vtid.val = some t ∧
+                      t.threadState = .Inactive := by
+                    cases hT0 : st.getTcb? vtid.val with
+                    | none => exact absurd (fun t ht => by rw [hT0] at ht; cases ht) hAct
+                    | some t =>
+                      refine ⟨t, rfl, Classical.byContradiction fun hne => hAct ?_⟩
+                      intro t' ht'
+                      rw [hT0] at ht'
+                      cases ht'
+                      exact hne
+                  rw [Lifecycle.Suspend.suspendThreadOnCore_of_inactive st vtid executingCore t ht hti]
+                    at hSus
+                  cases hSus
+                  exact RecordsStage.resumeThreadOnCore
+                    (threadIpcFieldsQuiescent_retirePendingFaultForResume st _
+                      (KernelRecords.objects_invExt h)
+                      (inactiveQuiescent_of_resume P (KernelRecords.objects_invExt h) hRes)).ready hRes
+                    (RecordsStage.retirePendingFaultForResume st vtid.val h)
               · exact RecordsStage.refl _
               exact fun h => RecordsStage.resumeThreadOnCore
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _

@@ -1842,8 +1842,8 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
 
-/-- D1: Frozen thread suspend — transition a thread from any non-Inactive state
-to Inactive. Mirrors `suspendThread` in frozen state.
+/-- D1: Frozen thread suspend — transition a thread to Inactive (a thread
+already Inactive is left as it is). Mirrors `suspendThread` in frozen state.
 
 PR #873 round 15: the thread also **leaves the run queue**.  This used to say
 run-queue manipulation was skipped because the membership set is fixed — true of
@@ -1864,7 +1864,9 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     match frozenLookupTcb st tid with
     | none => .error .objectNotFound
     | some tcb =>
-      if tcb.threadState == .Inactive then .error .illegalState
+      -- WS-SX SX4: an already-`Inactive` thread is suspended with nothing
+      -- written, as the live `suspendThreadOnCore` and seL4's `suspend` leave it.
+      if tcb.threadState == .Inactive then .ok ((), st)
       else
         let tcb' := (TCB.setIpcState { tcb with
           threadState := .Inactive

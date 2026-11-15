@@ -2469,8 +2469,7 @@ def currentDeboostedFrom (post : SystemState) (ec : CoreId)
 /-- D1-G: Suspend a thread — the complete suspension sequence, seL4-MCS's
 `suspend`.
 
-Validates the target thread exists and is not already Inactive, then runs
-seL4's steps: the IPC cancel (`cancelIpcKeepingContexts`, `cancelIPC`), run
+Validates the target thread exists, then runs seL4's steps: the IPC cancel (`cancelIpcKeepingContexts`, `cancelIPC`), run
 queue removal (`tcbSchedDequeue`), pending state clearing, thread state
 transition to Inactive, the context it runs on off the release queue
 (`releaseRemoveThread`, `tcbReleaseRemove`), and the cancel of its yield link
@@ -2479,8 +2478,10 @@ a context bound to the thread stays bound, and one it holds on loan stays with
 it, as seL4's `suspend` keeps `tcbSchedContext`.  If the suspended thread was
 the current thread, triggers a reschedule.
 
-Returns `invalidArgument` if the target is not a TCB, `invalidState` if
-the thread is already Inactive.
+Returns `invalidArgument` if the target is not a TCB.  A thread already
+Inactive is suspended as seL4 suspends it: its IPC is cancelled already, it
+sits in no run or release queue and names no yield link, so nothing is
+written and the suspend succeeds.
 
 **WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `tid` parameter has type `ValidThreadId`. The Lean type system forbids
@@ -2495,7 +2496,10 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
   -- G1: TCB lookup + state validation
   match st.getTcb? tid with
   | some tcb =>
-    if tcb.threadState == .Inactive then .error .illegalState
+    -- WS-SX SX4: seL4's `suspend` of a thread already `Inactive` succeeds
+    -- and changes nothing: its IPC is cancelled already, it sits in no run or
+    -- release queue and names no yield link.
+    if tcb.threadState == .Inactive then .ok st
     else
       -- G7-precapture (WS-SM SM6.E fix): whether the victim is the boot
       -- core's current thread must be read BEFORE G4's `removeRunnableValid`

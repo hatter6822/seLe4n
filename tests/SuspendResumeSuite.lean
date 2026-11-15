@@ -62,14 +62,19 @@ private def sr001_suspendReady : IO Unit := do
     | _ => throw <| IO.userError "TCB not found after suspend"
   | .error e => throw <| IO.userError s!"suspend should succeed, got {repr e}"
 
-/-- SR-002: Suspend an already Inactive thread — should fail with illegalState. -/
+/-- SR-002: Suspend an already Inactive thread — succeeds and changes nothing,
+as seL4's `suspend` leaves a thread already `Inactive`. -/
 private def sr002_suspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
   match bootSuspendThread st ⟨tid, by decide⟩ with
-  | .ok _ => throw <| IO.userError "should fail for Inactive thread"
-  | .error e =>
-    expect "error is illegalState" (e == .illegalState)
+  | .ok st' =>
+    expect "suspend of an Inactive thread writes no object"
+      (st'.objects[tid.toObjId]? == st.objects[tid.toObjId]?)
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb) => expect "thread stays Inactive" (tcb.threadState == .Inactive)
+    | _ => throw <| IO.userError "TCB not found after suspend"
+  | .error e => throw <| IO.userError s!"suspend of an Inactive thread should succeed, got {repr e}"
 
 /-- SR-003: Suspend a non-existent thread — should fail with invalidArgument. -/
 private def sr003_suspendMissing : IO Unit := do
@@ -206,14 +211,17 @@ private def sr010_frozenResume : IO Unit := do
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen resume should succeed, got {repr e}"
 
-/-- SR-011: Frozen suspend of Inactive thread fails. -/
+/-- SR-011: Frozen suspend of an Inactive thread succeeds and leaves the state
+as it was, as the live suspend does. -/
 private def sr011_frozenSuspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
   match frozenSuspendThread tid fst with
-  | .ok _ => throw <| IO.userError "frozen suspend should fail for Inactive"
-  | .error e =>
-    expect "frozen error is illegalState" (e == .illegalState)
+  | .ok ((), fst') =>
+    match frozenLookupTcb fst' tid with
+    | some tcb => expect "frozen thread stays Inactive" (tcb.threadState == .Inactive)
+    | none => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen suspend of Inactive should succeed, got {repr e}"
 
 -- ============================================================================
 -- D1-Q4: IPC blocked state tests

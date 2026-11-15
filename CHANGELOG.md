@@ -76,10 +76,37 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   run-queue entry premises carry the queue facts the cancel's endpoint arm
   reads (`EntryPremises.queueTails`, `queueLinkIntegrity`, `queueAcyclic`,
   `queueNextTargets`), each discharged from the `ipcInvariantFull` its callers
-  already hold. The staged dispatch payoff stays scoped at a receive whose
-  reply is not busy (`recvReplyNotBusy`), as the suspend arm's is at a quiescent
-  target. Scenario `receive-busy-reply-cancels-caller`; dispatch-suite checks
-  `sd053b_busy_reply_*`.
+  already hold. Scenario `receive-busy-reply-cancels-caller`; dispatch-suite
+  checks `sd053b_busy_reply_*`.
+- **The cancel keeps the IPC bundle, and after it the receive refuses
+  nothing** (`IPC/Invariant/ReplyHolderCancelBundle.lean`, staged).
+  `cutCancelledCallerHead_preserves_ipcInvariantFull` carries the bundle across
+  the head cut; `cancelReplyHolder_preserves_ipcInvariantFull` composes it with
+  the teardown, the priority revert and the `Inactive` write, taking the
+  teardown's queue-connectivity premises at the holder as a hypothesis
+  (`replyHolderCancelPremises`), as
+  `cancelIpcBlockingOnCore_preserves_ipcInvariantFull` does.
+  `cancelReplyHolder_frees_reply` shows that, under those premises, the reply
+  has no caller and no live stash once its holder is cancelled, so
+  `resolveRecvReplyId_cancelRecvBusyReply` resolves the receive's reply on the
+  cancelled state: the `replyCapInvalid` refusal the cancel commits before
+  cannot fire. The frame behind it is now generic:
+  `TcbReadingKeptExcept`/`TcbReadingCancelBlind` (`IpcStateKeptExcept` is its
+  IPC-state instance) and `consumeReplyLink_getTcb?_ne`. The staged dispatch
+  payoff keeps `recvReplyNotBusy`: its receive-stage fields (`recvStage`,
+  `callerShape`, the timeout-budget fact) describe the handed state, and a
+  busy reply's receive runs on the cancelled one.
+- **Suspend of an already-`Inactive` thread succeeds and writes nothing**, as
+  seL4's `suspend` (`invokeTCB_Suspend`), where the model refused
+  `illegalState` (`suspendThread`, `suspendThreadOnCore`,
+  `frozenSuspendThread`). `suspendThreadOnCore_of_inactive` replaces
+  `_rejects_inactive`; `suspendThreadOnCore_total` no longer asks that the
+  thread be active. The suspend's stage, footprint, confinement, record and
+  bundle theorems cover the identity arm; `suspendThreadOnCore_target_ipcReady`
+  asks an active target, and the restart's cancelling arm reads its `Inactive`
+  sub-case as the resume it is. Tests SR-002, SR-011, SD-021 and the
+  cancellation suite's Inactive victim now check the no-op success; QEMU step
+  `busy-reply-suspend-partner` is restored.
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it
@@ -106,11 +133,6 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
   own arguments and its re-issued send faults on the emptied slot) and
   `suspend-resume-restarts` (a blocked sender suspended and resumed; it
   resumes at its `SVC` and its re-issued send reaches the waiting receiver).
-- **Left open in the SX4.1 row:** a receive whose reply object is not free
-  still refuses `replyCapInvalid`; seL4-MCS cancels the IPC of the thread the
-  reply names (`cancelIPC(replyTCB)`). That cancel writes another thread from
-  inside the receive, so it needs that thread's objects in the receive's lock
-  set and a flow from the receiver to it.
 
 ## v0.37.24 — receive-side refusals are capability faults
 

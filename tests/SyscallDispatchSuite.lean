@@ -347,15 +347,21 @@ private def sd020_suspendThreadInner_ready : IO Unit := do
   | _ => failLine "sd020_tcb_missing" "TCB missing after suspend"
 
 /-- SD-021: `suspendThreadInner` on an already-Inactive thread
-    returns the `IllegalState` discriminant (2). -/
+    returns 0 and leaves the thread Inactive, as seL4's `suspend` does. -/
 private def sd021_suspendThreadInner_inactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨4⟩
   let st := mkState [(⟨4⟩, .tcb (mkTcb 4 .Inactive))] (some tid)
   initialiseKernelState st
   let result ← suspendThreadInner 4
-  expect "sd021_returns_illegalState"
-    (result == KernelError.toUInt32 .illegalState)
-    s!"suspendThreadInner of an Inactive thread must return IllegalState (2), got {result}"
+  expect "sd021_returns_zero" (result == 0)
+    s!"suspendThreadInner of an Inactive thread must return 0, got {result}"
+  let st' ← getKernelState
+  match st'.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      expect "sd021b_thread_inactive"
+        (tcb.threadState == .Inactive)
+        "TCB must stay Inactive after suspendThreadInner"
+  | _ => failLine "sd021_tcb_missing" "TCB missing after suspend"
 
 /-- SD-022: `suspendThreadInner` on a non-existent thread returns
     the `InvalidArgument` discriminant (39). -/

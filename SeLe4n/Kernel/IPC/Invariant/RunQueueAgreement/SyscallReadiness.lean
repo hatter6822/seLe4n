@@ -578,7 +578,7 @@ theorem suspendThreadOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st st
   case h_1 tcb hT =>
     have hS1 := cancelIpcKeepingContexts_runQueueStage st vtid.val tcb
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact readyKeptStage.refl st
     case isFalse hA =>
       have hS12 : SystemState.RunQueueStage (cancelIpcKeepingContexts st vtid.val tcb)
           (match PriorityInheritance.blockingServer st vtid.val with

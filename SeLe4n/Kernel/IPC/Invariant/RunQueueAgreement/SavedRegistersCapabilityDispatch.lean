@@ -1299,6 +1299,7 @@ theorem suspendThreadOnCore_schedPointPrefix {e : CoreId} {st st' : SystemState}
   · rename_i tcb hT
     split at h
     · cases h
+      exact ⟨st, .of_kept (fun _ _ => rfl) (fun _ h => h) rfl hInv (.inl rfl)⟩
     have hW1 := fun e' => cancelIpcKeepingContexts_savedRegsWrittenFree (e := e') hInv hB hBN hT
     have hK1 : currentKeptOnCore e st (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) :=
       .of_stepCovers fun e' => (cancelIpcKeepingContexts_stepCovers e' st vtid.val tcb hInv).1

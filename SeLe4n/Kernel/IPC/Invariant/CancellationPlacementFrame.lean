@@ -357,6 +357,24 @@ theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
         (SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep x.toObjId t0 hk
           ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)), rfl⟩
 
+/-- The reply-link teardown writes no thread's TCB but its own: every other
+thread reads the TCB it read before, its reply link included. -/
+theorem consumeReplyLink_getTcb?_ne (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) (hx : x ≠ tid) :
+    (Lifecycle.Suspend.consumeReplyLink st tid tcb).getTcb? x = st.getTcb? x := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases hR : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    have hStep := SystemState.consumeCallerReply_eq_link st tid rid
+    have hk : x.toObjId ≠ tid.toObjId := fun e => hx (SeLe4n.ThreadId.toObjId_injective _ _ e)
+    have e := SystemState.map_tcbField_eq_of_refines id (x := x)
+      (fun t0 hT0 => ⟨t0, (SystemState.getTcb?_eq_some_iff _ x t0).mpr
+        (SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep x.toObjId t0 hk
+          ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)), rfl⟩)
+      (fun t' hT' => consumeCallerReply_getTcb?_backward hInv hStep x t' hT')
+    simpa using e
+
 /-- **WS-ZA ZA4.6**: the reply arm's prefix — reclaim, splice, restore and the
 reply-link teardown — leaves every thread's placement and reply-waiter links
 alone; only the final unlink writes reply-waiter links. -/

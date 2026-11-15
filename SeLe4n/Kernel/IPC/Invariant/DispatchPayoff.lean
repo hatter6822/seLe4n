@@ -588,10 +588,13 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           executingCore st).1 hid)
   /-- **WS-SX SX4**: the reply the receive names is busy with no other thread,
       so the arm cancels nothing (`cancelRecvBusyReply` is the state it is
-      handed).  The same scope as the suspend arm's quiescent target
-      (`threadIpcFieldsQuiescent`): this tier does not carry `ipcInvariantFull`
-      across the teardown of a blocked thread's IPC, which is what the busy
-      reply's cancel (`cancelReplyHolder`) is. -/
+      handed).  The cancel itself keeps the bundle
+      (`cancelReplyHolder_preserves_ipcInvariantFull`) and leaves the reply
+      free (`resolveRecvReplyId_cancelRecvBusyReply`), but every receive-stage
+      field of this pack (`recvStage`, `callerShape`, and `reachable`'s
+      timeout-budget fact) is a fact of the state the dispatch is handed, and
+      a busy reply's receive runs on the cancelled state; this field keeps the
+      arm on the states those facts describe. -/
   recvReplyNotBusy : decoded.syscallId = .receive →
     busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none
 

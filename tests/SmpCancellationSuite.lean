@@ -212,7 +212,7 @@ open SeLe4n.Testing
 #check @cancelBoundDonationOnCore_replenishments_purged
 #check @Lifecycle.Suspend.suspendThreadOnCore
 #check @Lifecycle.Suspend.suspendThreadOnCore_rejects_absent
-#check @Lifecycle.Suspend.suspendThreadOnCore_rejects_inactive
+#check @Lifecycle.Suspend.suspendThreadOnCore_of_inactive
 #check @Lifecycle.Suspend.suspendThreadOnCore_sgi_remote_reschedule
 #check @Lifecycle.Suspend.suspendThreadOnCore_local_no_sgi
 
@@ -1357,16 +1357,22 @@ private def runPerCoreSuspendChecks : IO Unit := do
           assertBool "local suspend dispatches the queued successor inline"
             (decide (st'.scheduler.currentOnCore core1 = some runnerTid))
       | .error _ => assertBool "local suspend succeeds" false
-      -- (c) rejection: an already-.Inactive victim.
+      -- (c) an already-.Inactive victim: suspended with nothing written and
+      -- no SGI, as seL4's `suspend` leaves it.
       let stInactive :=
         (BootstrapBuilder.empty
           |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
               threadState := .Inactive })
           |>.build)
-      assertBool "suspending an .Inactive victim is rejected with illegalState"
+      assertBool "suspending an .Inactive victim succeeds and changes nothing"
         (match suspendThreadOnCore stInactive vtid bootCoreId with
-         | .error .illegalState => true
-         | _ => false)
+         | .ok (st', sgi) =>
+           decide (sgi = none) &&
+             (match st'.getTcb? victimTid with
+              | some t => decide (t.threadState = .Inactive)
+              | none => false) &&
+             decide (st'.scheduler.currentOnCore core1 = stInactive.scheduler.currentOnCore core1)
+         | .error _ => false)
       -- (e) single-core inertness: a boot-homed victim suspended on boot.
       match suspendThreadOnCore stRunningBoot vtid bootCoreId with
       | .ok (st', sgi) =>

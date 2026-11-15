@@ -362,7 +362,7 @@ theorem suspendThreadOnCore_holdersNameTheirContexts {st st' : SystemState}
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact hH
     case isFalse hA =>
       have hI0 := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt st tcb hInv
       have S1 : (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.invExt ∧

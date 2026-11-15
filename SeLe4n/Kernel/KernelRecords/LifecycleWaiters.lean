@@ -82,7 +82,7 @@ theorem suspendThreadOnCore_waitersStage {st st' : SystemState} {vtid : SeLe4n.V
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact fun hI hC => ⟨hI, hC⟩
     case isFalse hA =>
       have S1 := cancelIpcKeepingContexts_waitersStage st vtid.val tcb hT
       have S2 : WaitersStage st

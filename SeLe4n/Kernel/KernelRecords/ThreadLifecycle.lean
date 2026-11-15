@@ -123,7 +123,7 @@ theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact RecordsStep.refl hInv
     case isFalse hA =>
       have S1 := cancelIpcKeepingContexts st vtid.val tcb hInv
       have S2 : RecordsStep st

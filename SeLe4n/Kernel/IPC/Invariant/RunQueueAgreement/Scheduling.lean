@@ -752,7 +752,7 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
   case h_1 tcb hT =>
     have hS1 := cancelIpcKeepingContexts_runQueueStage st vtid.val tcb
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact (RunQueueStage.refl _).entry
     case isFalse hA =>
       have hS12 : RunQueueStage (cancelIpcKeepingContexts st vtid.val tcb)
           (match PriorityInheritance.blockingServer st vtid.val with
