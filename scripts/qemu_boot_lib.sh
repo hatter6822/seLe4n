@@ -5,8 +5,9 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-BP BP8.2: the one way this tree builds a kernel image for QEMU's `virt`
-# machine, cuts the raw image QEMU boots, and runs it.
+# WS-BP BP8.2: the one way this tree builds a kernel image for an emulated
+# board, cuts the raw image QEMU boots, and runs it -- the Raspberry Pi 5 image
+# on rpi5_machine's `raspi5b` (WS-RB) or the `virt` image on QEMU's `virt`.
 #
 # `scripts/test_qemu.sh` (the boot lane), `scripts/test_qemu_smp_bringup.sh`
 # (the four-PE bring-up gate) and, through `scripts/qemu_exerciser_lib.sh`, every
@@ -17,29 +18,84 @@
 # and `finalize_report`.
 #
 # Configuration (environment, all optional):
-#   QEMU_BIN      the emulator            (default qemu-system-aarch64)
+#   QEMU_BOARD    the board the image is built for and booted on: `rpi5`, the
+#                 Raspberry Pi 5 image on rpi5_machine's `raspi5b` (WS-RB), or
+#                 `virt`, the `board_qemu_virt` image on QEMU's `virt`
+#                 (default virt; a caller may also `qemu_select_board`)
+#   QEMU_BIN      the emulator for `virt`  (default qemu-system-aarch64)
+#   QEMU_RPI5_BIN the emulator for `rpi5`  (default: the one
+#                 `scripts/setup_rpi5_machine.sh` builds at its pin)
 #   QEMU_CPU      the PE model            (default cortex-a76)
 #   QEMU_MEMORY   the RAM size            (default 1G)
 #   REQUIRE_QEMU  1: an absent QEMU fails rather than skips
-#   KERNEL_BIN    a pre-built HAL-only image to boot instead of building one
+#   KERNEL_BIN    a pre-built HAL-only image to boot instead of building one,
+#                 on the board QEMU_BOARD names alone (`qemu_gate_boards`)
 
-QEMU_BIN="${QEMU_BIN:-qemu-system-aarch64}"
+QEMU_VIRT_BIN="${QEMU_BIN:-qemu-system-aarch64}"
+QEMU_RPI5_BIN="${QEMU_RPI5_BIN:-}"
 QEMU_CPU="${QEMU_CPU:-cortex-a76}"
 QEMU_MEMORY="${QEMU_MEMORY:-1G}"
 REQUIRE_QEMU="${REQUIRE_QEMU:-0}"
 RUST_DIR="${REPO_ROOT}/rust"
 RUST_TARGET="aarch64-unknown-none-softfloat"
+KERNEL_BIN_NAMED="${KERNEL_BIN:-}"
+QEMU_BOARD_NAMED="${QEMU_BOARD:-}"
+
+# qemu_select_board BOARD: build for and boot on BOARD (`rpi5` or `virt`).
+# Sets the emulator (QEMU_BIN), the machine the image's board is
+# (QEMU_BOARD_MACHINE), the cargo board feature (QEMU_BOARD_FEATURES, empty for
+# the Raspberry Pi 5, the HAL's default board) and the target directories.
+#
 # WS-BP BP5.1: the bare-metal image is the `sele4n-kernel` binary behind the
 # `kernel_image` feature; `sele4n-hal` itself is a library and builds no file
-# QEMU could boot.  WS-BP BP8.1: built for `virt` (`board_qemu_virt`).
-# Both `virt` images build into target directories of their own: the archive
-# lane uploads `target/<target>/release/sele4n-kernel` as the Raspberry Pi 5
-# image, and it runs both bring-up modes after packaging it, so a `virt` build
-# there would be uploaded in the board image's place.
-HAL_TARGET_DIR="${RUST_DIR}/target/qemu-virt"
-KERNEL_BIN_DEFAULT="${HAL_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
-KERNEL_BIN="${KERNEL_BIN:-${KERNEL_BIN_DEFAULT}}"
-LEAN_TARGET_DIR="${RUST_DIR}/target/qemu-virt-lean"
+# QEMU could boot.  Every image here builds into a target directory of its own,
+# named by its board: the archive lane uploads
+# `target/<target>/release/sele4n-kernel` as the Raspberry Pi 5 image, and it
+# runs these lanes after packaging it, so an image built there would be
+# uploaded in the board image's place.
+#
+# `rpi5` boots the Raspberry Pi 5 image itself -- the board the kernel ships
+# for, built with no board feature -- on rpi5_machine's `raspi5b`, which enters
+# at EL2 with PSCI over SMC as the Pi 5's firmware does.  `virt` boots the
+# `board_qemu_virt` image (WS-BP BP8.1), whose device map and RAM base are
+# QEMU `virt`'s.
+# shellcheck disable=SC2034  # QEMU_BOARD_MACHINE and LEAN_TARGET_DIR are the callers'
+qemu_select_board() {
+    QEMU_BOARD="$1"
+    case "${QEMU_BOARD}" in
+        rpi5)
+            QEMU_BOARD_FEATURES=""
+            QEMU_BOARD_MACHINE="raspi5b"
+            QEMU_BOARD_LABEL="rpi5_machine raspi5b"
+            QEMU_BIN="${QEMU_RPI5_BIN}"
+            ;;
+        virt)
+            QEMU_BOARD_FEATURES="board_qemu_virt"
+            QEMU_BOARD_MACHINE="virt,gic-version=2,virtualization=on"
+            QEMU_BOARD_LABEL="QEMU virt"
+            QEMU_BIN="${QEMU_VIRT_BIN}"
+            ;;
+        *)
+            echo "qemu_boot_lib.sh: unknown board: ${QEMU_BOARD} (rpi5 or virt)" >&2
+            exit 2
+            ;;
+    esac
+    HAL_TARGET_DIR="${RUST_DIR}/target/qemu-${QEMU_BOARD}"
+    KERNEL_BIN_DEFAULT="${HAL_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
+    KERNEL_BIN="${KERNEL_BIN_NAMED:-${KERNEL_BIN_DEFAULT}}"
+    LEAN_TARGET_DIR="${RUST_DIR}/target/qemu-${QEMU_BOARD}-lean"
+}
+
+# qemu_image_features BASE: BASE and the selected board's feature.
+qemu_image_features() {
+    if [[ -n "${QEMU_BOARD_FEATURES}" ]]; then
+        echo "$1,${QEMU_BOARD_FEATURES}"
+    else
+        echo "$1"
+    fi
+}
+
+qemu_select_board "${QEMU_BOARD:-virt}"
 LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
 # WS-ZA ZA5.13: the allocation exerciser's archive, which the same builder
 # writes.  Only the exerciser image links it; every other Lean-linked image is
@@ -66,12 +122,23 @@ qemu_temp_file() {
 # SELE4N_SKIP_EXIT (77) -- a gate that cannot run certifies nothing -- unless
 # REQUIRE_QEMU=1, which makes an absent QEMU a failure.
 qemu_require_tools() {
+    # WS-RB RB1: the Raspberry Pi 5 machine is built from the pinned
+    # rpi5_machine, once per pin; a build that cannot run is an absent QEMU.
+    if [[ "${QEMU_BOARD}" == "rpi5" && -z "${QEMU_BIN}" ]]; then
+        log_section "META" "Resolving rpi5_machine's raspi5b (scripts/setup_rpi5_machine.sh)"
+        QEMU_BIN=$("${REPO_ROOT}/scripts/setup_rpi5_machine.sh" | tail -n 1) || QEMU_BIN="rpi5_machine (scripts/setup_rpi5_machine.sh failed)"
+        # Kept, so selecting the board again boots the machine resolved here.
+        QEMU_RPI5_BIN="${QEMU_BIN}"
+    fi
     if ! command -v "${QEMU_BIN}" &>/dev/null; then
         if [[ "${REQUIRE_QEMU}" -eq 1 ]]; then
             record_failure "META" "QEMU not found: ${QEMU_BIN} (REQUIRE_QEMU=1)"
             finalize_report
         fi
         log_section "META" "SKIP: ${QEMU_BIN} not found — QEMU tests skipped"
+        if [[ "${QEMU_BOARD}" == "rpi5" ]]; then
+            log_section "META" "       Build:   ./scripts/setup_rpi5_machine.sh (needs QEMU's build dependencies)"
+        fi
         log_section "META" "       Install: apt install qemu-system-arm  (Debian/Ubuntu)"
         log_section "META" "       Install: brew install qemu            (macOS)"
         if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
@@ -93,7 +160,28 @@ qemu_require_tools() {
     fi
 }
 
-# qemu_build_image LEAN [EXERCISERS] [PROBE]: build the `virt` image -- the
+# qemu_gate_boards LEAN: the boards a gate that boots both boards boots, in
+# order, into QEMU_GATE_BOARDS -- `rpi5` (rpi5_machine's `raspi5b`) then `virt`
+# (WS-RB) -- with every board's tools required before any board runs, so a
+# board that cannot run (exit 77 without REQUIRE_QEMU=1) is found before a
+# failure is recorded on another, never after it, where its skip would hide
+# that failure.  A HAL-only image the caller named (KERNEL_BIN, LEAN 0) is one
+# board's image, since the board is chosen at build time (`src/board.rs`), so
+# it is booted on the board QEMU_BOARD names (`virt` when unnamed), alone.
+qemu_gate_boards() {
+    local lean="$1" board
+    if [[ -n "${KERNEL_BIN_NAMED}" && "${lean}" -ne 1 ]]; then
+        QEMU_GATE_BOARDS=("${QEMU_BOARD_NAMED:-virt}")
+    else
+        QEMU_GATE_BOARDS=(rpi5 virt)
+    fi
+    for board in "${QEMU_GATE_BOARDS[@]}"; do
+        qemu_select_board "${board}"
+        qemu_require_tools
+    done
+}
+
+# qemu_build_image LEAN [EXERCISERS] [PROBE]: build the selected board's image -- the
 # Lean-linked one when LEAN is 1, else the HAL alone; with the Tier-4 in-image
 # exercisers (`smp_exercisers`, WS-BP BP8.4) when EXERCISERS is 1; with the Lean
 # initialization refusal probe (`lean_init_refusal_probe`, v0.36.31) when PROBE
@@ -101,9 +189,10 @@ qemu_require_tools() {
 # the caller named is booted as it is.
 #
 # Each of the four images builds into a target directory of its own (the
-# reason above), and each is named by the features that build it:
-#   HAL-only            kernel_image,board_qemu_virt
-#   Lean-linked         hw_target,kernel_image,board_qemu_virt
+# reason above), and each is named by the features that build it, the board's
+# feature (`qemu_select_board`; none for the Raspberry Pi 5) beside them:
+#   HAL-only            kernel_image
+#   Lean-linked         hw_target,kernel_image
 #   + the exercisers    ...,smp_exercisers
 #   + the refusal probe ...,lean_init_refusal_probe
 # `qemu_require_tools` has verified cargo and the cross target, so a build
@@ -113,7 +202,7 @@ PROBE_FEATURE="lean_init_refusal_probe"
 qemu_build_image() {
     local lean="$1" exercisers="${2:-0}" probe="${3:-0}" build_log features target_dir label
     qemu_temp_file build_log qemu_build
-    features="kernel_image,board_qemu_virt"
+    features=$(qemu_image_features "kernel_image")
     target_dir="${HAL_TARGET_DIR}"
     label="HAL-only"
     if [[ "${lean}" -eq 1 ]]; then
@@ -157,22 +246,22 @@ qemu_build_image() {
             record_failure "BUILD" "--lean-kernel refuses a stale ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
             finalize_report
         fi
-        log_section "BUILD" "Building the ${label} kernel image for QEMU virt (${features})..."
+        log_section "BUILD" "Building the ${label} kernel image for ${QEMU_BOARD_LABEL} (${features})..."
         if ! (cd "${RUST_DIR}" && cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
                 --features "${features}" --bin sele4n-kernel \
                 --target-dir "${target_dir}") 2>"${build_log}"; then
             tail -20 "${build_log}"
-            record_failure "BUILD" "the ${label} virt image did not build"
+            record_failure "BUILD" "the ${label} ${QEMU_BOARD} image did not build"
             finalize_report
         fi
-        # WS-ZA ZA5.13: a Lean-linked image without the exercisers is the
-        # shipped `virt` kernel, so it must carry nothing of the exerciser's
+        # WS-ZA ZA5.13: a Lean-linked image without the exercisers is a
+        # shipped kernel, so it must carry nothing of the exerciser's
         # archive: not its boot entry, its labeling or its declassification
         # policy.  The image's own symbol table decides it.
         if [[ "${lean}" -eq 1 && "${exercisers}" -ne 1 ]] \
             && ! python3 "${REPO_ROOT}/scripts/check_kernel_image.py" --exclusion-only \
                 --excludes "${LEAN_EXERCISER_ARCHIVE}" "${KERNEL_BIN}"; then
-            record_failure "BUILD" "the ${label} virt image defines symbols of ${LEAN_EXERCISER_ARCHIVE}, which only the exerciser image links"
+            record_failure "BUILD" "the ${label} ${QEMU_BOARD} image defines symbols of ${LEAN_EXERCISER_ARCHIVE}, which only the exerciser image links"
             finalize_report
         fi
     elif [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
@@ -185,7 +274,7 @@ qemu_build_image() {
             # the tree's, and a gate that reports it NOT RUN reads a broken image as
             # an absent emulator.
             tail -20 "${build_log}"
-            record_failure "BUILD" "the HAL-only virt image did not build"
+            record_failure "BUILD" "the HAL-only ${QEMU_BOARD} image did not build"
             finalize_report
         fi
     else
@@ -221,7 +310,7 @@ qemu_cut_image() {
 # (`efi-virtio.rom`) ships in `ipxe-qemu`, a Recommends of `qemu-system-arm` that
 # CI's `--no-install-recommends` install omits, and QEMU refuses to start when
 # the ROM is missing.  The kernel drives no NIC, and `-nic none` leaves the
-# device tree byte-identical (`scripts/qemu_virt_dtb_fixture.py` asks the same).
+# device tree byte-identical (`scripts/qemu_dtb_fixture.py` asks the same).
 qemu_run() {
     local label="$1" log="$2" machine="$3" smp="$4" deadline="$5" until="$6" count="$7"
     shift 7

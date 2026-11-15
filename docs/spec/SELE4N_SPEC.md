@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.25` (`lakefile.toml`) |
+| **Package version** | `0.37.27` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 636,482 across 635 Lean files |
-| **Test LoC** | 89,881 across 70 Lean test suites |
+| **Production LoC** | 636,483 across 635 Lean files |
+| **Test LoC** | 89,913 across 70 Lean test suites |
 | **Proved declarations** | 24,381 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -3220,7 +3220,7 @@ the walk stops (`resolveAddressBitsWalk`) and answers that one level with the
 caller's continuations (`resolveAddressBitsLevel`), so a refused lookup of an
 invoked or an argument capability builds no result on the heap.
 
-**WS-RR RR7.14 (v0.34.67), restated by WS-SX SX4 (v0.37.25) — what a forcibly
+**WS-RR RR7.14 (v0.34.67), restated by WS-SX SX4 (v0.37.27) — what a forcibly
 unblocked thread resumes with.**  A thread taken out of a blocking IPC has no
 value to receive.  A timed-out thread (`timeoutThread`) is staged
 `Architecture.timeoutFrame` (`.ipcTimeout`).  A cancelled one is set to restart,

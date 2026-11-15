@@ -10,9 +10,10 @@
 # rust_boot_main): the banner, the entry level and the PSCI conduit it
 # selects, the early per-core pointer, translation on, the vectors, the
 # interrupt controller, the timer, IRQs unmasked, secondary bring-up, the
-# handoff summary.  The lane runs it on QEMU's `virt` at both entry levels
-# (WS-BP BP8.1), so no fragment names a board; the entry-level lines are the
-# lane's own per-run checks.
+# handoff summary.  The lane runs it for the Raspberry Pi 5 on rpi5_machine's
+# `raspi5b` (WS-RB RB1) and on QEMU's `virt` at both entry levels (WS-BP
+# BP8.1), so no fragment names a board; the banner and entry-level lines are
+# the lane's own per-run checks.
 #
 # Format: CHECK_NAME | expected_fragment
 

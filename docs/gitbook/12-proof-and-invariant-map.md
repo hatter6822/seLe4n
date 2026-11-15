@@ -863,7 +863,7 @@ platform rather than with the lock.
 > fixture, so two total functions cannot disagree silently.
 
 > **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`;
-> WS-SX SX4, `v0.37.25`).  `timeoutThread` stages `Architecture.timeoutFrame`
+> WS-SX SX4, `v0.37.27`).  `timeoutThread` stages `Architecture.timeoutFrame`
 > (`.ipcTimeout`).  A cancelled IPC restarts, as seL4's does: the thread is set
 > `ThreadState.Restart` and its saved PC moved back to its `SVC`
 > (`TCB.restartPc`), so it re-issues the call.  The former `.ipcCancelled` is

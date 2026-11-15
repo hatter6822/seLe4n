@@ -126,7 +126,23 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.25)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26)
+
+The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
+which models the Pi 5, with `virt` kept as the second lane (owner decision
+2026-11-15). RB1 boots the Raspberry Pi 5 image itself on `raspi5b`, HAL-only
+and Lean-linked; RB2 moves the four-PE bring-up and the refusal probe, RB3 the
+Tier-4 exercisers (a Pi 5 exerciser deployment beside the `virt` one), RB4
+boots the packaged `kernel8.img` and `config.txt` through `rpi5-boot` and TF-A,
+RB5 closes. Plan: [`RPI5_MACHINE_BOOT_PLAN.md`](../planning/RPI5_MACHINE_BOOT_PLAN.md).
+**Standing constraints for new code:** a board-dependent constant the HAL reads
+is a `BoardMap` field (`rust/sele4n-hal/src/board.rs`), never a literal in the
+module that uses it (RB1 found the secondaries' MPIDRs as `virt`'s literals);
+a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
+first; rpi5_machine moves only by editing the pin in
+`scripts/setup_rpi5_machine.sh`, in its own PR.
+
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -181,7 +197,7 @@ arm's reply capability is resolved only through `lookupReplyCap` (its K form
 `lookupReplyCapK`); whether a refusal is the reply capability's fault is decided
 by re-running that lookup (`receiveReplyFaults`, `replyLookupRefusal`), never by
 the refusal's form alone.
-SX4 (`v0.37.25`) made a cancelled IPC restart its system call: the cancelled
+SX4 (`v0.37.27`) made a cancelled IPC restart its system call: the cancelled
 thread is `ThreadState.Restart` with its saved PC at its restart PC
 (`TCB.restartPc`, seL4's `getRestartPC`), and Resume sets `Restart`;
 `ipcCancelled` is retired (57 reserved). A receive on a busy reply cancels its
@@ -1968,7 +1984,7 @@ HAL is held to its own binding by running both**: the Lean suite writes
 (step 7), since `--all-features` selects `virt`.  A HAL test that names a
 board's address is a board's test: it reads `board::BOARD`, or it carries a
 twin for the other board.  QEMU's own device tree is a fixture
-(`tests/fixtures/qemu_virt_dtb.hex`, `scripts/qemu_virt_dtb_fixture.py`) that
+(`tests/fixtures/qemu_virt_dtb.hex`, `scripts/qemu_dtb_fixture.py virt`) that
 both bridges are run on.
 
 **The Lean kernel runs, on every PR** (`v0.36.26`, BP8.1 slice 3).

@@ -156,7 +156,8 @@ EXERCISERS_SCRIPT = "scripts/test_qemu_smp_exercisers.sh"
 # image build naming it at all.
 EXERCISER_FEATURE = "smp_exercisers"
 VIRT_FEATURE = "board_qemu_virt"
-# v0.36.31: the Lean initialization refusal probe -- a `virt` TEST image whose
+# v0.36.31: the Lean initialization refusal probe -- a TEST image (`virt`'s, and
+# since WS-RB RB2 also a Pi 5 one booted on rpi5_machine's `raspi5b`) whose
 # library initialization refuses in the mode its command line names, so WS-BP
 # BP2.4's refusal executes on the target -- and the gate that boots it.  Like
 # the exercisers it is a test image's feature, fenced the same way: no board

@@ -185,8 +185,9 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   bootVSpaceRoot := some rpi5BootVSpaceRootEntry
   -- WS-SM SM0.G: BCM2712 is a single-cluster quad-core Cortex-A76
   -- SoC.  All four cores share the inner-shareable domain.  Boot
-  -- proceeds on Aff0 = 0 (the cluster's core-0); secondaries are
-  -- Aff0 = 1, 2, 3 (see `rust/sele4n-hal/src/smp.rs::SECONDARY_MPIDR_TABLE`).
+  -- proceeds on the PE whose affinity is zero; the Cortex-A76 sets
+  -- `MPIDR_EL1.MT`, so the secondaries are Aff1 = 1, 2, 3, MPIDR 0x100,
+  -- 0x200, 0x300 (`rust/sele4n-hal/src/board.rs`'s `RPI5.secondary_mpidrs`).
   coreCount := 4
   coreCountPos := by decide
   -- PR #889 review round 5: the model is exactly this wide

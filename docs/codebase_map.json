@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-restart-state",
-      "commit_sha": "d306c3a3fff6902832d4ba6e754c67be5547ab18",
-      "tree_sha": "f555ac5294b6c79a97cfc5d61dfbff42bc8359b1",
-      "committed_at_utc": "2026-11-15T16:31:54+00:00"
+      "commit_sha": "49dab88bcc01067835e7a1b56d7c3d303ceb3883",
+      "tree_sha": "d5b6d80914b04c84869225f27acf870da333c7fa",
+      "committed_at_utc": "2026-11-15T19:15:53+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8c46edbac57b968e665a6b696160d16505aa9ecc9736a246abc147729e1cc595"
+    "source_digest": "2449c3732c0c7525b710606b59ba029785bd97b2158e0740b760c6077d52d496"
   },
   "summary": {
     "module_count": 705,
-    "declaration_count": 36823
+    "declaration_count": 36824
   },
   "readme_sync": {
-    "version": "0.37.25",
+    "version": "0.37.27",
     "lean_toolchain": "v4.28.0",
     "production_files": 635,
-    "production_loc": 636482,
+    "production_loc": 636483,
     "test_files": 70,
-    "test_loc": 89881,
+    "test_loc": 89913,
     "proved_theorem_lemma_decls": 24381,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -508033,7 +508033,7 @@
           "kind": "theorem",
           "name": "rpi5_bindMachineConfig",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_bindMachineConfig",
-          "line": 224,
+          "line": 225,
           "called": [
             "SeLe4n.Platform.PlatformBinding",
             "SeLe4n.Platform.RPi5.RPi5Platform"
@@ -508043,7 +508043,7 @@
           "kind": "theorem",
           "name": "rpi5_deploymentLabeling",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_deploymentLabeling",
-          "line": 233,
+          "line": 234,
           "called": [
             "SeLe4n.Kernel.confinedLabelingContext",
             "SeLe4n.Platform.PlatformBinding.labeling",
@@ -508058,7 +508058,7 @@
           "kind": "theorem",
           "name": "rpi5_deploymentLabeling_separatedThreads",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_separatedThreads",
-          "line": 244,
+          "line": 245,
           "called": [
             "SeLe4n.Platform.PlatformBinding.labeling",
             "SeLe4n.Platform.RPi5.RPi5Platform",
@@ -508070,7 +508070,7 @@
           "kind": "theorem",
           "name": "rpi5_deploymentLabeling_boot_entities_lowTrusted",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_boot_entities_lowTrusted",
-          "line": 252,
+          "line": 253,
           "called": [
             "SeLe4n.Kernel.SecurityLabel.lowTrusted",
             "SeLe4n.Kernel.confinedLabelingContext",
@@ -508089,7 +508089,7 @@
           "kind": "theorem",
           "name": "rpi5_deploymentLabeling_idle_lowTrusted",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_idle_lowTrusted",
-          "line": 263,
+          "line": 264,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -508111,7 +508111,7 @@
           "kind": "theorem",
           "name": "numCores_eq_rpi5_coreCount",
           "full_name": "SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount",
-          "line": 287,
+          "line": 288,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Platform.PlatformBinding",
@@ -508122,7 +508122,7 @@
           "kind": "theorem",
           "name": "rpi5_cores_eq_allCores",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores",
-          "line": 295,
+          "line": 296,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Platform.PlatformBinding.declaredCores",
@@ -508135,7 +508135,7 @@
           "kind": "theorem",
           "name": "bootCoreId_val_eq_rpi5",
           "full_name": "SeLe4n.Platform.RPi5.bootCoreId_val_eq_rpi5",
-          "line": 304,
+          "line": 305,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Platform.PlatformBinding",
@@ -508146,7 +508146,7 @@
           "kind": "theorem",
           "name": "rpi5_sharingDomain",
           "full_name": "SeLe4n.Platform.RPi5.rpi5_sharingDomain",
-          "line": 314,
+          "line": 315,
           "called": [
             "SeLe4n.Kernel.Concurrency.SharingDomain",
             "SeLe4n.Platform.PlatformBinding",
@@ -522258,7 +522258,7 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 165,
+      "declaration_count": 166,
       "declarations": [
         {
           "kind": "def",
@@ -524524,9 +524524,22 @@
         },
         {
           "kind": "def",
+          "name": "rpi5_board_check_on_rpi5_machines_device_tree",
+          "full_name": "SeLe4n.Testing.Ak9PlatformSuite.rpi5_board_check_on_rpi5_machines_device_tree",
+          "line": 2718,
+          "called": [
+            "SeLe4n.Platform.QemuVirt.qemuVirtPlatformConfigFromDtb",
+            "SeLe4n.Platform.RPi5.rpi5LowRamTopFor",
+            "SeLe4n.Platform.RPi5.rpi5VariantFor",
+            "SeLe4n.Testing.Ak9PlatformSuite.kernelEntryBoot?",
+            "SeLe4n.Testing.Ak9PlatformSuite.parseCorpusHex"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "qemuVirt_deployment_boots",
           "full_name": "SeLe4n.Testing.Ak9PlatformSuite.qemuVirt_deployment_boots",
-          "line": 2711,
+          "line": 2742,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -524559,7 +524572,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 2764,
+          "line": 2795,
           "called": [
             "SeLe4n.Testing.Ak9PlatformSuite.ak9a_01_mmioRead32_rejects_unaligned",
             "SeLe4n.Testing.Ak9PlatformSuite.ak9a_02_mmioRead64_rejects_unaligned",
@@ -524647,6 +524660,7 @@
             "SeLe4n.Testing.Ak9PlatformSuite.review8_mmio_windows_require_the_right_devices",
             "SeLe4n.Testing.Ak9PlatformSuite.review9_parser_conformance_and_reservations",
             "SeLe4n.Testing.Ak9PlatformSuite.review9_runtime_contract_follows_the_installed_map",
+            "SeLe4n.Testing.Ak9PlatformSuite.rpi5_board_check_on_rpi5_machines_device_tree",
             "SeLe4n.Testing.Ak9PlatformSuite.uartWindowIsTheDeviceTreesRegisterBlock"
           ]
         }

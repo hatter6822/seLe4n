@@ -1,10 +1,12 @@
-# Expected QEMU boot sequence of the Lean-linked `virt` image (WS-BP BP8.1)
+# Expected QEMU boot sequence of a Lean-linked image (WS-BP BP8.1, WS-RB RB1)
 #
 # `scripts/test_qemu.sh --lean-kernel` boots the image built with
-# `hw_target,kernel_image,board_qemu_virt` -- the HAL and the Lean kernel it
-# links (`lean_kernel_main_qemu_virt`) -- on four PEs, once at QEMU's EL1 entry
-# and once at EL2, and requires these fragments IN THIS ORDER: each on a line
-# after the previous fragment's line.  Every fragment is mandatory.
+# `hw_target,kernel_image` -- the HAL and the Lean kernel it links -- for the
+# Raspberry Pi 5 (`lean_kernel_main`) on rpi5_machine's `raspi5b` at EL2, and
+# for QEMU's `virt` (`board_qemu_virt`, `lean_kernel_main_qemu_virt`) at EL1 and
+# at EL2, each on four PEs, and requires these fragments IN THIS ORDER: each on
+# a line after the previous fragment's line.  Every fragment is mandatory.  No
+# fragment names a board; the board's banner is the lane's own per-run check.
 #
 # Only the boot core's lines are ordered here, because the secondaries run
 # concurrently and interleave with it; the lane checks each secondary's
@@ -27,7 +29,7 @@
 #
 # Format: CHECK_NAME | expected_fragment
 
-BOOT_BANNER      | booting on QEMU virt
+BOOT_BANNER      | booting on
 ENTRY_LEVEL      | [boot] Entered at EL
 PSCI_CONDUIT     | [boot] PSCI conduit:
 TPIDR_SET        | TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA
