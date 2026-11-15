@@ -9775,7 +9775,10 @@ run_check "INVARIANT" rg -n '^TEST_IMAGE_FEATURES = \(EXERCISER_FEATURE, PROBE_F
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_lean_init_refusal\.sh"$' scripts/test_lean_aarch64_archive.sh
 run_check "INVARIANT" rg -n -F -- 'if lines[-1] != refusal:' scripts/test_qemu_lean_init_refusal.sh
 # shellcheck disable=SC2016
-run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${QEMU_BOARD_MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
+# WS-RB RB2: the probe and the bring-up gate boot `raspi5b` first, then `virt`.
+run_check "INVARIANT" rg -n -U '^probe_board rpi5\nprobe_board virt$' scripts/test_qemu_lean_init_refusal.sh
+run_check "INVARIANT" rg -n -U '^qemu_select_board rpi5\nqemu_require_tools\nqemu_build_image "\$\{LEAN_KERNEL\}"\nqemu_cut_image\nbringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry"' scripts/test_qemu_smp_bringup.sh
 #
 # WS-BP BP2.5 and BP4.2: the Lean-linked boot reports a heap census on each
 # side of the install and a line at the release, and the boot lane holds the
