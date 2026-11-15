@@ -1,6 +1,6 @@
 ## v0.37.26 — the four-PE bring-up and the refusal probe boot `raspi5b` first
 
-WS-RB RB2 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`). Stacked on RB1.
+WS-RB RB2 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
 
 - **The bring-up gate.** `scripts/test_qemu_smp_bringup.sh` boots the
   Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 first, HAL-only and
