@@ -2093,7 +2093,7 @@ theorem slotLinkWords_zero_of_not_slotInObject {st : SystemState} {o : SeLe4n.Ob
         have := Nat.mul_le_mul_left slotLinkWords (Nat.le_of_not_lt hs); omega
       | tcb t =>
         show t.spaceLinks.toArray.size ≤ _
-        have hs' : 2 ≤ s.toNat := Nat.le_of_not_lt hs
+        have hs' : 3 ≤ s.toNat := Nat.le_of_not_lt hs
         rw [Vector.size_toArray]; unfold CNode.linkBase slotLinkWords; omega
       | _ => exact Nat.zero_le _
     simp only [Array.getD_eq_getD_getElem?,

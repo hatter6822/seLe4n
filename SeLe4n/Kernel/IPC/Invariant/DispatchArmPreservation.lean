@@ -5222,7 +5222,7 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
 holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 2)
+    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 3)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
     ((threadSlotSet ec st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome := by

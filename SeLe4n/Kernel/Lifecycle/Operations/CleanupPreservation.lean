@@ -1884,16 +1884,18 @@ theorem spliceOccupiedSlot_shape (st : SystemState) (ref : SlotRef) :
   · exact ⟨_, spliceDeletedCdtNode_reach st ref⟩
   · exact ⟨st.cdt, .refl _⟩
 
-/-- **Splice both of a thread's space slots out of the derivation tree**
+/-- **Splice all three of a thread's space slots out of the derivation tree**
 (`spliceOccupiedSlot`, the delete's own tree step on a slot that holds a
 capability), as `detachCNodeSlots` does a CNode's: run on a thread being
-destroyed, so no edge outlives its CSpace and VSpace root slots (seL4's
-`tcbCTable` and `tcbVTable`) and each slot's children are derived from its
-parent instead. -/
+destroyed, so no edge outlives its CSpace and VSpace root slots and its
+IPC-buffer slot (seL4's `tcbCTable`, `tcbVTable` and `tcbBuffer`) and each
+slot's children are derived from its parent instead. -/
 def detachTcbSlots (st : SystemState) (tcbId : SeLe4n.ObjId) : SystemState :=
   spliceOccupiedSlot
-    (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
-    { cnode := tcbId, slot := TCB.vspaceRootSlot }
+    (spliceOccupiedSlot
+      (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
+      { cnode := tcbId, slot := TCB.vspaceRootSlot })
+    { cnode := tcbId, slot := TCB.ipcBufferSlot }
 
 /-- **`detachTcbSlots` writes the tree and link words alone**: every other
 field is the pre-state's. -/
@@ -1904,7 +1906,12 @@ theorem detachTcbSlots_shape (st : SystemState) (tcbId : SeLe4n.ObjId) :
   obtain ⟨c₂, h₂⟩ := spliceOccupiedSlot_shape
     (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
     { cnode := tcbId, slot := TCB.vspaceRootSlot }
-  exact ⟨c₂, (h₁.with_cdt c₂).trans h₂⟩
+  obtain ⟨c₃, h₃⟩ := spliceOccupiedSlot_shape
+    (spliceOccupiedSlot
+      (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
+      { cnode := tcbId, slot := TCB.vspaceRootSlot })
+    { cnode := tcbId, slot := TCB.ipcBufferSlot }
+  exact ⟨c₃, ((h₁.with_cdt c₂).trans h₂ |>.with_cdt c₃).trans h₃⟩
 
 /-- `detachTcbSlots` keeps every object up to derivation links, and the store
 invariant. -/
@@ -1947,7 +1954,7 @@ theorem detachTcbSlots_tlbShootdown_eq (st : SystemState) (tcbId : SeLe4n.ObjId)
     - If the current object is a TCB: refuse a running thread, end its
       reservation the way the suspend's G3 does (`cancelDonationArmOnCore`,
       since `v0.35.164`), then clean up scheduler + IPC references and splice
-      its two space slots out of the derivation tree (`detachTcbSlots`).
+      its three space slots out of the derivation tree (`detachTcbSlots`).
     - An endpoint is not swept: no registration names one whose back-links
       the retire found clear (`SystemState.tableBackLinksClear.namedByNone`).
     - If the current object is a CNode: refuse when a slot still records a
@@ -2006,7 +2013,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   -- is read off the record the caller looked up before any write).  The
   -- reference sweep is the suspend's dequeue and IPC cancel, which `suspend`
   -- ends with the thread's own `schedContext_cancelYieldTo` (`cancelYieldTo`).
-  -- A thread's two space slots then leave the derivation tree as a deleted
+  -- A thread's three space slots then leave the derivation tree as a deleted
   -- slot does (`detachTcbSlots`), as a CNode's slots do below.
   let st := match currentObj with
     | .tcb tcb => detachTcbSlots (cancelYieldTo

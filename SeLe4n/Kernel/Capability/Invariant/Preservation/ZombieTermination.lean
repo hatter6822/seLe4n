@@ -243,9 +243,10 @@ theorem zombieNextSlot_spec (o : KernelObject) (skip : Nat) :
     · exact .inr ⟨k, hk, (cnode_slotCap_ne_none_iff cn k).2 hO, hne⟩
   | tcb t =>
     have hS : ∀ i, (KernelObject.tcb t).slotCap (SeLe4n.Slot.ofNat i) =
-        if h : i < 2 then t.spaceCells[i] else none := fun _ => rfl
+        if h : i < 3 then t.spaceCells[i] else none := fun _ => rfl
     have hS0 : (KernelObject.tcb t).slotCap (SeLe4n.Slot.ofNat 0) = t.spaceCells[0] := rfl
     have hS1 : (KernelObject.tcb t).slotCap (SeLe4n.Slot.ofNat 1) = t.spaceCells[1] := rfl
+    have hS2 : (KernelObject.tcb t).slotCap (SeLe4n.Slot.ofNat 2) = t.spaceCells[2] := rfl
     dsimp only [zombieNextSlot]
     by_cases hA : (t.spaceCells[0].isSome && skip != 1) = true
     · rw [if_pos hA]
@@ -259,17 +260,24 @@ theorem zombieNextSlot_spec (o : KernelObject) (skip : Nat) :
         refine .inr ⟨1, rfl, ?_, fun h => hB.2 (by omega)⟩
         rw [hS1]; exact Option.isSome_iff_ne_none.1 hB.1
       · rw [if_neg hB]
-        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not] at hA hB
-        refine .inl ⟨rfl, fun i hi => ?_⟩
-        rw [hS] at hi
-        by_cases hi2 : i < 2
-        · rw [dif_pos hi2] at hi
-          have hs := Option.isSome_iff_ne_none.2 hi
-          have : i = 0 ∨ i = 1 := by omega
-          rcases this with rfl | rfl
-          · exact (hA hs).symm
-          · exact (hB hs).symm
-        · rw [dif_neg hi2] at hi; exact absurd rfl hi
+        by_cases hC : (t.spaceCells[2].isSome && skip != 3) = true
+        · rw [if_pos hC]
+          simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hC
+          refine .inr ⟨2, rfl, ?_, fun h => hC.2 (by omega)⟩
+          rw [hS2]; exact Option.isSome_iff_ne_none.1 hC.1
+        · rw [if_neg hC]
+          simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not] at hA hB hC
+          refine .inl ⟨rfl, fun i hi => ?_⟩
+          rw [hS] at hi
+          by_cases hi2 : i < 3
+          · rw [dif_pos hi2] at hi
+            have hs := Option.isSome_iff_ne_none.2 hi
+            have : i = 0 ∨ i = 1 ∨ i = 2 := by omega
+            rcases this with rfl | rfl | rfl
+            · exact (hA hs).symm
+            · exact (hB hs).symm
+            · exact (hC hs).symm
+          · rw [dif_neg hi2] at hi; exact absurd rfl hi
   | _ => exact .inl ⟨rfl, fun _ h => absurd rfl h⟩
 
 -- ============================================================================
@@ -586,7 +594,7 @@ theorem zombieOccupied_pos {root : SeLe4n.ObjId} {rootSlot : SeLe4n.Slot} {st : 
   exact ⟨hne, hs⟩
 
 /-- **Every slot holding a capability lies below the object's slot count**
-(`zombieObjectSlots`): a CNode's cells, a thread's two space slots. -/
+(`zombieObjectSlots`): a CNode's cells, a thread's three space slots. -/
 theorem zombieObjectSlots_bound (st : SystemState) (x : SeLe4n.ObjId) :
     ∀ i : SeLe4n.Slot, st.slotCapAt ⟨x, i⟩ ≠ none → i.toNat < zombieObjectSlots st x := by
   intro i hi
@@ -604,7 +612,7 @@ theorem zombieObjectSlots_bound (st : SystemState) (x : SeLe4n.ObjId) :
     | tcb t =>
       dsimp only
       simp only [KernelObject.slotCap, TCB.spaceSlotCap] at hi
-      by_cases h2 : i.toNat < 2
+      by_cases h2 : i.toNat < 3
       · exact h2
       · rw [dif_neg h2] at hi; exact absurd rfl hi
     | _ => exact absurd rfl hi

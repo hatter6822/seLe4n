@@ -98,7 +98,7 @@ mapping (`threadSlotsRecordNoMapping`), so the record it loses witnessed
 nothing, and the copy it writes records none. -/
 theorem threadSlotCopied_preserves_liveMappingsRecorded {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t)
-    {slot : SeLe4n.Slot} (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    {slot : SeLe4n.Slot} (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
     (threadSlotCopied st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
   obtain ⟨hFar, -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
@@ -143,7 +143,7 @@ object after the copy (`threadSlotCopied_retireTargetUnnamed`). -/
 theorem threadSlotSet_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
-    (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
     (threadSlotSet ec st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv

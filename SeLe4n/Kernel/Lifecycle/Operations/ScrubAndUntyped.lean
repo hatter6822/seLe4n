@@ -2127,7 +2127,7 @@ theorem untypedRetypeObject_ok_tcb
       tcb.domain = dom ∧ tcb.cpuAffinity = some core ∧
       tcb.schedContextBinding = .unbound ∧ tcb.boundNotification = none ∧
       tcb.runCoreCode = 0 ∧ tcb.pendingMessage = none ∧
-      tcb.spaceCells = #v[none, none] := by
+      tcb.spaceCells = #v[none, none, none] := by
   obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.tcb dom core) st st' hObjInv hStep
   cases hO : st'.objects[childId]? with

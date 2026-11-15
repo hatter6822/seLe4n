@@ -1757,18 +1757,20 @@ structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
   domain : SeLe4n.DomainId
-  /-- The thread's two capability slots, seL4's `tcbCTable` and `tcbVTable`:
-      slot 0 holds the capability to its CSpace root, slot 1 the capability to
-      its VSpace root (`TCB.cspaceRootSlot`, `TCB.vspaceRootSlot`), read through
-      `TCB.cspaceRoot` and `TCB.vspaceRoot`.  The same cell type as a CNode's
-      slot array (`CNode.cells`); an empty slot reads as the sentinel root.  A
-      fixed-size vector, so a write replaces one entry in place. -/
-  spaceCells : Vector (Option Capability) 2 := #v[none, none]
-  /-- The derivation links of the two slots, `slotLinkWords` words per slot in
+  /-- The thread's three capability slots, seL4's `tcbCTable`, `tcbVTable` and
+      `tcbBuffer`: slot 0 holds the capability to its CSpace root, slot 1 the
+      capability to its VSpace root (`TCB.cspaceRootSlot`, `TCB.vspaceRootSlot`),
+      read through `TCB.cspaceRoot` and `TCB.vspaceRoot`, and slot 2 the
+      capability to the frame of its IPC buffer (`TCB.ipcBufferSlot`), which
+      only the boot fills, for the root task.  The same cell type as a CNode's
+      slot array (`CNode.cells`); an empty root slot reads as the sentinel root.
+      A fixed-size vector, so a write replaces one entry in place. -/
+  spaceCells : Vector (Option Capability) 3 := #v[none, none, none]
+  /-- The derivation links of the three slots, `slotLinkWords` words per slot in
       the layout of a CNode's `links` (parent, first child, next and previous
       sibling, each an object word and a slot word, a word of 0 meaning no
       link). -/
-  spaceLinks : Vector Nat (slotLinkWords * 2) := Vector.replicate _ 0
+  spaceLinks : Vector Nat (slotLinkWords * 3) := Vector.replicate _ 0
   ipcBuffer : SeLe4n.VAddr
   /-- WS-ZA ZA4.7: the object word of the thread's IPC state, read with
       `ipcStateCode` through `TCB.ipcState` and written with it through
@@ -2233,18 +2235,24 @@ macro "yield_code_kept" : tactic =>
     | (simp_all; done)
     | (intro _; simp_all; done))
 
-/-! ### A thread's space slots (seL4's `tcbCTable` and `tcbVTable`)
+/-! ### A thread's space slots (seL4's `tcbCTable`, `tcbVTable` and `tcbBuffer`)
 
 A thread holds its CSpace and VSpace roots as capabilities in two slots of its
-own (`TCB.spaceCells`), slot 0 the CSpace root and slot 1 the VSpace root.  The
-roots are reads of those slots: the object the capability names, or the
-sentinel when the slot is empty (an unconfigured thread). -/
+own (`TCB.spaceCells`), slot 0 the CSpace root and slot 1 the VSpace root, and
+in slot 2 the capability to its IPC buffer's frame.  The roots are reads of
+those slots: the object the capability names, or the sentinel when the slot is
+empty (an unconfigured thread). -/
 
 /-- The slot index of a thread's CSpace root capability. -/
 @[inline] def TCB.cspaceRootSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
 
 /-- The slot index of a thread's VSpace root capability. -/
 @[inline] def TCB.vspaceRootSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- The slot index of the capability to a thread's IPC-buffer frame, seL4's
+`tcbBuffer`.  Empty on every thread but the root task, whose buffer the boot
+builds (`create_ipcbuf_frame_cap`, `create_initial_thread`). -/
+@[inline] def TCB.ipcBufferSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
 
 /-- The rights of the capability a CSpace root slot holds when written from a
 root's id: read, write and grant, the rights `resolveSetSpace` asks of the
@@ -2302,17 +2310,18 @@ is a zero guard of `64 - radix` bits, so a one-level root resolves a whole
     | mk v => simp only [SeLe4n.ObjId.isReserved, decide_eq_true_eq] at h; subst h; rfl
   · simp only [h, Bool.false_eq_true, if_false]
 
-/-- The two space slots of a thread whose CSpace root is CNode `c`, named with
+/-- The three space slots of a thread whose CSpace root is CNode `c`, named with
 the root guard `guard` of `guardSize` bits (`cspaceCellOf`), and whose VSpace
-root is `v`. -/
+root is `v`, its buffer slot empty. -/
 @[inline] def TCB.spaceCellsOfRoot (c : SeLe4n.ObjId) (guard : UInt64) (guardSize : UInt8)
-    (v : SeLe4n.ObjId) : Vector (Option Capability) 2 :=
-  #v[TCB.cspaceCellOf c guard guardSize, TCB.spaceCellOf v TCB.vspaceRootRights]
+    (v : SeLe4n.ObjId) : Vector (Option Capability) 3 :=
+  #v[TCB.cspaceCellOf c guard guardSize, TCB.spaceCellOf v TCB.vspaceRootRights, none]
 
-/-- The two space slots of a thread whose CSpace root is `c` and VSpace root
-`v`, each the capability the root implies (`spaceCellOf`). -/
-@[inline] def TCB.spaceCellsOf (c v : SeLe4n.ObjId) : Vector (Option Capability) 2 :=
-  #v[TCB.spaceCellOf c TCB.cspaceRootRights, TCB.spaceCellOf v TCB.vspaceRootRights]
+/-- The three space slots of a thread whose CSpace root is `c` and VSpace root
+`v`, each root slot the capability the root implies (`spaceCellOf`), its buffer
+slot empty. -/
+@[inline] def TCB.spaceCellsOf (c v : SeLe4n.ObjId) : Vector (Option Capability) 3 :=
+  #v[TCB.spaceCellOf c TCB.cspaceRootRights, TCB.spaceCellOf v TCB.vspaceRootRights, none]
 
 /-- **The thread's CSpace root**: the object its CSpace root slot names. -/
 @[reducible, inline] def TCB.cspaceRoot (t : TCB) : SeLe4n.ObjId :=

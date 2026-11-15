@@ -625,7 +625,7 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
 theorem rpi5BoundPlatformConfigAt_wellFormed (v : BCM2712Config) (hv : v.Admissible) :
     (rpi5BoundPlatformConfigAt v).wellFormed = true :=
   PlatformConfig.wellFormed_of_withoutExtents _ _ (rpi5BoundPlatformConfigAt_withoutExtents v hv)
-    (member_wellFormed _ hv.1) (rpi5BoundPlatformConfigAt_placement v hv)
+    (member_wellFormed _ hv.1) (rpi5BoundPlatformConfigAt_placement v hv) rfl
 
 /-- **WS-BP BP3.3**: every configured object passes the boot-safety sweep. -/
 theorem rpi5BoundPlatformConfigAt_bootSafe (v : BCM2712Config) (hv : v.Admissible) :

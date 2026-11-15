@@ -52,8 +52,8 @@ theorem CarveRequest.object_threadSlotsEmpty (untypedId childId : SeLe4n.ObjId)
   unfold TCB.spaceSlotCap at hc
   split at hc
   · next hs =>
-    have : s.toNat = 0 ∨ s.toNat = 1 := by omega
-    rcases this with h | h <;> simp [carvedTcb, h] at hc
+    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 := by omega
+    rcases this with h | h | h <;> simp [carvedTcb, h] at hc
   · cases hc
 
 /-- **The carve keeps the mappings recorded.** -/

@@ -109,4 +109,95 @@ theorem regionMap_clear_of_untyped (e : Nat × Nat) (a : Nat)
   unfold regionMapBaseOf at h
   omega
 
+/-! ## The root server's reservation (WS-SX SX5.1, decision D13)
+
+seL4's boot cuts one region out of free memory for the root task's own objects
+before it makes a single untyped (`create_rootserver_objects`), so no untyped
+covers them.  The boot here builds the root task's IPC buffer: the buffer frame
+and the three tables (levels 1 to 3) that complete the walk to it from the root
+task's top-level table.  Their four pages are cut from the last extension the
+boot maps — seL4's `init_freemem` searches free memory from the top for the
+rootserver region — directly below that extension's region map, so the
+untyped of that extension ends where the reservation begins
+(`untypedExtentsOf`). -/
+
+/-- The pages of the root server's reservation: the IPC buffer frame and the
+    three tables below the root task's top-level table that reach it. -/
+def rootServerPages : Nat := 4
+
+/-- The bytes of the root server's reservation. -/
+def rootServerReserveBytes : Nat := rootServerPages * SeLe4n.pageBytes
+
+/-- The first byte of the root server's reservation cut from extension `e`:
+    directly below its region map. -/
+def rootServerBaseOf (e : Nat × Nat) : Nat :=
+  regionMapBaseOf e - rootServerReserveBytes
+
+/-- The part of an extension its untyped covers when the extension also holds
+    the root server's reservation, below it. -/
+def untypedExtentBelowRootServerOf (e : Nat × Nat) : Nat × Nat :=
+  (e.1, untypedSizeOf e.2 - rootServerReserveBytes)
+
+/-- **The untyped parts of the extensions the boot maps**, in order: each
+    extension's part below its region map (`untypedExtentOf`), the last one's
+    below the root server's reservation too (`untypedExtentBelowRootServerOf`).
+    The untyped lists of every deployment are built from it, and the boot hands
+    the HAL the same parts as the RAM each region map describes. -/
+def untypedExtentsOf : List (Nat × Nat) → List (Nat × Nat)
+  | [] => []
+  | e :: rest =>
+    (if rest.isEmpty then untypedExtentBelowRootServerOf e else untypedExtentOf e) ::
+      untypedExtentsOf rest
+
+/-- The parts are one per extension. -/
+@[simp] theorem untypedExtentsOf_length (l : List (Nat × Nat)) :
+    (untypedExtentsOf l).length = l.length := by
+  induction l with
+  | nil => rfl
+  | cons e rest ih => simp only [untypedExtentsOf, List.length_cons, ih]
+
+/-- Each part starts at its extension's base and is no larger than the part
+    below the region map alone. -/
+theorem untypedExtentsOf_getElem (l : List (Nat × Nat)) (i : Nat)
+    (h' : i < (untypedExtentsOf l).length) :
+    (untypedExtentsOf l)[i].1 = (l[i]'(by simpa using h')).1 ∧
+      (untypedExtentsOf l)[i].2 ≤ untypedSizeOf (l[i]'(by simpa using h')).2 := by
+  induction l generalizing i with
+  | nil => simp at h'
+  | cons e rest ih =>
+    cases i with
+    | zero =>
+      simp only [untypedExtentsOf, List.getElem_cons_zero]
+      split
+      · unfold untypedExtentBelowRootServerOf; exact ⟨rfl, Nat.sub_le _ _⟩
+      · unfold untypedExtentOf; exact ⟨rfl, Nat.le_refl _⟩
+    | succ i =>
+      simp only [untypedExtentsOf, List.getElem_cons_succ]
+      exact ih i _
+
+/-- Whether an extension holds its region map, the root server's reservation
+    below it and at least one page of untyped memory below that. -/
+def rootServerFits (e : Nat × Nat) : Bool :=
+  decide (regionMapReserveBytes e.2 + rootServerReserveBytes + SeLe4n.pageBytes ≤ e.2)
+
+/-- The reservation, the region map and the untyped below them tile an
+    extension that fits: the untyped is not empty and ends where the
+    reservation begins, which ends where the map begins. -/
+theorem rootServer_tiles (e : Nat × Nat) (h : rootServerFits e = true) :
+    0 < (untypedExtentBelowRootServerOf e).2 ∧
+      e.1 + (untypedExtentBelowRootServerOf e).2 = rootServerBaseOf e ∧
+      rootServerBaseOf e + rootServerReserveBytes = regionMapBaseOf e ∧
+      regionMapBaseOf e + regionMapReserveBytes e.2 = e.1 + e.2 := by
+  unfold rootServerFits at h
+  have h' := of_decide_eq_true h
+  unfold untypedExtentBelowRootServerOf rootServerBaseOf regionMapBaseOf untypedSizeOf
+    rootServerReserveBytes rootServerPages SeLe4n.pageBytes
+  unfold rootServerReserveBytes rootServerPages SeLe4n.pageBytes at h'
+  simp only
+  omega
+
+/-- The reservation is whole pages. -/
+theorem rootServerReserveBytes_pages : rootServerReserveBytes % SeLe4n.pageBytes = 0 := by
+  unfold rootServerReserveBytes; exact Nat.mul_mod_left _ _
+
 end SeLe4n.Platform

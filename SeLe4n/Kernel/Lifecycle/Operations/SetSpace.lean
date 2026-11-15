@@ -525,7 +525,7 @@ theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : T
 /-- **A slot copy from a filled source fills the thread's slot.** -/
 theorem threadSlotCopied_slotFilled {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot}
-    (hs : slot.toNat < 2) {srcCNode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    (hs : slot.toNat < 3) {srcCNode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
     (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
     ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights data).getTcb? tid = some t' ∧
@@ -542,7 +542,7 @@ the source held in the pre-state, or nothing; every other slot holds what it
 held. -/
 theorem threadSlotCopied_slotCapAt {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot}
-    (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64) (r : SlotRef) :
     (threadSlotCopied st tid slot srcCNode srcSlot rights data).slotCapAt r =
       if r.cnode = tid.toObjId ∧ r.slot = slot then

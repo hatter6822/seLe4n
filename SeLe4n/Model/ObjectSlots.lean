@@ -15,11 +15,11 @@ import SeLe4n.Kernel.InformationFlow.TaintWordJoin
 
 Two kinds of object hold capability slots: a CNode (its slot array,
 `CNode.cells`, and their link words, `CNode.links`) and a thread (its CSpace and
-VSpace root slots, `TCB.spaceCells`, and their link words, `TCB.spaceLinks`, as
-seL4's `tcbCTable` and `tcbVTable`).  The readers and writers here dispatch on
-the object's kind: the `.cnode` arm is the CNode's own function, so every CNode
-theorem is reused, and the `.tcb` arm reads and writes the thread's two slots,
-indices 0 and 1.  Any other index of a thread, and any slot of any other kind
+VSpace root slots and its IPC-buffer slot, `TCB.spaceCells`, and their link
+words, `TCB.spaceLinks`, as seL4's `tcbCTable`, `tcbVTable` and `tcbBuffer`).
+The readers and writers here dispatch on the object's kind: the `.cnode` arm is
+the CNode's own function, so every CNode theorem is reused, and the `.tcb` arm
+reads and writes the thread's three slots, indices 0 to 2.  Any other index of a thread, and any slot of any other kind
 of object, is no slot.
 -/
 
@@ -27,24 +27,24 @@ namespace SeLe4n.Model
 
 namespace TCB
 
-/-- The capability a thread's space slot `s` holds; slots 0 and 1 only.  Out
+/-- The capability a thread's space slot `s` holds; slots 0 to 2 only.  Out
 of line, so its bound check is no branch of its caller. -/
 @[noinline] def spaceSlotCap (t : TCB) (s : SeLe4n.Slot) : Option Capability :=
-  if h : s.toNat < 2 then t.spaceCells[s.toNat] else none
+  if h : s.toNat < 3 then t.spaceCells[s.toNat] else none
 
 /-- The cell of slot `s` of a thread's space cells, read from the cells alone
 (`spaceCellAt_eq`).  Out of line and taking only the cells, so a caller that
 rebuilds the thread after reading a slot (`removeSpaceCapImpl`) hands the
 thread to no call and rebuilds it over the old thread's cell when that is
 unshared. -/
-@[noinline] def spaceCellAt (cells : Vector (Option Capability) 2) (s : SeLe4n.Slot) :
+@[noinline] def spaceCellAt (cells : Vector (Option Capability) 3) (s : SeLe4n.Slot) :
     Option Capability :=
-  if h : s.toNat < 2 then cells[s.toNat] else none
+  if h : s.toNat < 3 then cells[s.toNat] else none
 
 theorem spaceCellAt_eq (t : TCB) (s : SeLe4n.Slot) :
     spaceCellAt t.spaceCells s = t.spaceSlotCap s := rfl
 
-/-- The object word of link `f` of the thread's space slot `s` (0 past slot 1). -/
+/-- The object word of link `f` of the thread's space slot `s` (0 past slot 2). -/
 @[inline] def spaceLinkNodeWord (t : TCB) (s : SeLe4n.Slot) (f : LinkField) : Nat :=
   t.spaceLinks.toArray.getD (CNode.linkBase s f) 0
 
@@ -71,11 +71,11 @@ they encode, are never observable. -/
 def withoutLinks (t : TCB) : TCB :=
   { t with spaceLinks := Vector.replicate _ 0 }
 
-/-- The thread with its space slot `s` emptied (the identity past slot 1). -/
+/-- The thread with its space slot `s` emptied (the identity past slot 2). -/
 @[inline] def removeSpaceCap (t : TCB) (s : SeLe4n.Slot) : TCB :=
   { t with spaceCells := t.spaceCells.setIfInBounds s.toNat none }
 
-/-- The thread with its space slot `s` holding `cap` (the identity past slot 1). -/
+/-- The thread with its space slot `s` holding `cap` (the identity past slot 2). -/
 @[inline] def insertSpaceCap (t : TCB) (s : SeLe4n.Slot) (cap : Capability) : TCB :=
   { t with spaceCells := t.spaceCells.setIfInBounds s.toNat (some cap) }
 
@@ -106,7 +106,8 @@ overwrites it in place (`removeSpaceCap_eq_impl`). -/
 
 /-- The capabilities the thread's space slots hold, with their slots. -/
 def spaceSlotCaps (t : TCB) : List (SeLe4n.Slot × Capability) :=
-  [(cspaceRootSlot, t.spaceCells[0]), (vspaceRootSlot, t.spaceCells[1])].filterMap
+  [(cspaceRootSlot, t.spaceCells[0]), (vspaceRootSlot, t.spaceCells[1]),
+    (ipcBufferSlot, t.spaceCells[2])].filterMap
     fun p => p.2.map (p.1, ·)
 
 /-- **Every space-slot link word is 0**: the thread's slots hold no derivation
@@ -134,11 +135,13 @@ theorem mem_spaceSlotCaps {t : TCB} {s : SeLe4n.Slot} {cap : Capability}
   split at h
   · next hs =>
     unfold spaceSlotCaps
-    have : s.toNat = 0 ∨ s.toNat = 1 := by omega
-    rcases this with e | e
+    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 := by omega
+    rcases this with e | e | e
     · refine ⟨cspaceRootSlot, List.mem_filterMap.mpr ⟨(cspaceRootSlot, t.spaceCells[0]), by simp, ?_⟩⟩
       simp only [e] at h; simp [h]
     · refine ⟨vspaceRootSlot, List.mem_filterMap.mpr ⟨(vspaceRootSlot, t.spaceCells[1]), by simp, ?_⟩⟩
+      simp only [e] at h; simp [h]
+    · refine ⟨ipcBufferSlot, List.mem_filterMap.mpr ⟨(ipcBufferSlot, t.spaceCells[2]), by simp, ?_⟩⟩
       simp only [e] at h; simp [h]
   · cases h
 
@@ -186,9 +189,9 @@ theorem map_proj_of_map_withoutLinks_eq {α : Sort _} {o o' : Option TCB} (f : T
     obtain ⟨t, rfl, hw⟩ := exists_of_map_withoutLinks_eq h rfl
     exact congrArg some (proj_eq_of_withoutLinks_eq f hw hf)
 
-/-- **Writing a link's words** sets that link, for one of the thread's two
+/-- **Writing a link's words** sets that link, for one of the thread's three
 slots, and leaves every other link. -/
-theorem spaceLinkAt_setSpaceLinkWords (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 2)
+theorem spaceLinkAt_setSpaceLinkWords (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 3)
     (f : LinkField) (c w : Nat) (s' : SeLe4n.Slot) (f' : LinkField) :
     (t.setSpaceLinkWords s f c w).spaceLinkAt s' f' =
       if s' = s ∧ f' = f then decodeLink c w else t.spaceLinkAt s' f' := by
@@ -206,15 +209,15 @@ theorem spaceLinkAt_setSpaceLinkWords (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat 
   · have ⟨n1, n2, n3, n4⟩ := CNode.linkBase_ne he
     simp only [n1, n2, n3, n4, if_false, he]
 
-/-- A thread's links past its two slots read as none. -/
-theorem spaceLinkAt_of_ge (t : TCB) {s : SeLe4n.Slot} (hs : 2 ≤ s.toNat) (f : LinkField) :
+/-- A thread's links past its three slots read as none. -/
+theorem spaceLinkAt_of_ge (t : TCB) {s : SeLe4n.Slot} (hs : 3 ≤ s.toNat) (f : LinkField) :
     t.spaceLinkAt s f = none := by
   have : t.spaceLinks.toArray.size ≤ CNode.linkBase s f := by
     rw [Vector.size_toArray]; unfold CNode.linkBase slotLinkWords; omega
   unfold spaceLinkAt spaceLinkNodeWord decodeLink
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none this]; rfl
 
-/-- **Emptying a space slot** empties that slot and leaves the other. -/
+/-- **Emptying a space slot** empties that slot and leaves the others. -/
 theorem spaceSlotCap_removeSpaceCap (t : TCB) (s s' : SeLe4n.Slot) :
     (t.removeSpaceCap s).spaceSlotCap s' = if s' = s then none else t.spaceSlotCap s' := by
   unfold spaceSlotCap removeSpaceCap
@@ -242,9 +245,9 @@ theorem spaceSlotCap_removeSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap : C
   · cases h
   · exact h
 
-/-- **Filling a space slot** fills that slot, one of the thread's two, and
-leaves the other. -/
-theorem spaceSlotCap_insertSpaceCap (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 2)
+/-- **Filling a space slot** fills that slot, one of the thread's three, and
+leaves the others. -/
+theorem spaceSlotCap_insertSpaceCap (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 3)
     (cap : Capability) (s' : SeLe4n.Slot) :
     (t.insertSpaceCap s cap).spaceSlotCap s' = if s' = s then some cap else t.spaceSlotCap s' := by
   unfold spaceSlotCap insertSpaceCap
@@ -262,7 +265,7 @@ theorem spaceSlotCap_insertSpaceCap (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 
 theorem spaceSlotCap_insertSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap c : Capability}
     (h : (t.insertSpaceCap s cap).spaceSlotCap s' = some c) :
     c = cap ∨ t.spaceSlotCap s' = some c := by
-  by_cases hs : s.toNat < 2
+  by_cases hs : s.toNat < 3
   · rw [spaceSlotCap_insertSpaceCap t hs] at h
     split at h
     · cases h; exact .inl rfl
@@ -280,7 +283,7 @@ theorem spaceSlotCap_insertSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap c :
     (t.insertSpaceCap s cap).spaceLinks = t.spaceLinks := rfl
 
 /-- A filled slot holds every capability its record held, and the one put in. -/
-theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 2)
+theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 3)
     (cap : Capability) (s' : SeLe4n.Slot) (h : t.spaceSlotCap s' ≠ none) :
     (t.insertSpaceCap s cap).spaceSlotCap s' ≠ none := by
   rw [spaceSlotCap_insertSpaceCap t hs]
@@ -344,11 +347,11 @@ space slot, nothing for any other object. -/
   | _ => none
 
 /-- `s` is a slot of the object: below a CNode's slot count, or one of a
-thread's two space slots. -/
+thread's three space slots. -/
 def hasSlot (o : KernelObject) (s : SeLe4n.Slot) : Prop :=
   match o with
   | .cnode cn => s.toNat < 2 ^ cn.radixWidth
-  | .tcb _ => s.toNat < 2
+  | .tcb _ => s.toNat < 3
   | _ => False
 
 /-- The object word of link `f` of slot `s` (0 when it has no target). -/
@@ -406,8 +409,8 @@ theorem hasSlot_of_slotCap {o : KernelObject} {s : SeLe4n.Slot} (h : o.slotCap s
     have := (CNode.slotAddressable_iff_lt_cells cn s).mp (CNode.slotAddressable_of_lookup cn s cap hCap)
     rw [cn.cells_size] at this; exact this
   case tcb t =>
-    show s.toNat < 2
-    if hs : s.toNat < 2 then exact hs
+    show s.toNat < 3
+    if hs : s.toNat < 3 then exact hs
     else exact absurd (by simp only [slotCap, TCB.spaceSlotCap, hs, dite_false]) h
   all_goals exact absurd rfl h
 
@@ -461,7 +464,7 @@ def withoutLinks (o : KernelObject) : KernelObject :=
 
 /-- A thread's space slots and their links; none for any other object.  The
 part of a thread the capability invariants read. -/
-def tcbSlots (o : KernelObject) : Option (Vector (Option Capability) 2 × Vector Nat (slotLinkWords * 2)) :=
+def tcbSlots (o : KernelObject) : Option (Vector (Option Capability) 3 × Vector Nat (slotLinkWords * 3)) :=
   match o with
   | .tcb t => some (t.spaceCells, t.spaceLinks)
   | _ => none
@@ -751,7 +754,7 @@ theorem linkWords_setLinkWords_of_not_hasSlot {o : KernelObject} {s : SeLe4n.Slo
     rw [Array.setIfInBounds_eq_of_size_le hb,
       Array.setIfInBounds_eq_of_size_le (by omega : cn.links.size ≤ CNode.linkBase s f + 1)]
   | tcb t =>
-    have hs : 2 ≤ s.toNat := Nat.le_of_not_lt h
+    have hs : 3 ≤ s.toNat := Nat.le_of_not_lt h
     have hb : t.spaceLinks.toArray.size ≤ CNode.linkBase s f := by
       rw [Vector.size_toArray]; unfold CNode.linkBase slotLinkWords; omega
     show ((t.spaceLinks.setIfInBounds _ c).setIfInBounds _ w).toArray = t.spaceLinks.toArray
@@ -795,12 +798,12 @@ noncomputable def slotCaps (o : KernelObject) : List (SeLe4n.Slot × Capability)
   | _ => []
 
 /-- **The object's slot store is well formed**: a CNode's slot map is unique
-(`CNode.slotsUnique`), and a thread's slot store has its two cells.  Both hold
+(`CNode.slotsUnique`), and a thread's slot store has its three cells.  Both hold
 by construction (`slotsUnique_holds`). -/
 def slotsUnique (o : KernelObject) : Prop :=
   match o with
   | .cnode cn => cn.slotsUnique
-  | .tcb t => t.spaceCells.toArray.size = 2
+  | .tcb t => t.spaceCells.toArray.size = 3
   | _ => True
 
 theorem slotsUnique_holds (o : KernelObject) : o.slotsUnique := by
