@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.28` (`lakefile.toml`) |
+| **Package version** | `0.37.29` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 637,264 across 638 Lean files |
 | **Test LoC** | 90,246 across 70 Lean test suites |
@@ -801,7 +801,12 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   inside the reserved extent no boot untyped reaches, and outside
   `[_start, __lean_heap_end)`.  An unknown key, a repeated or missing key, and
   a conditional `[...]` section are refused, since each could move the load or
-  the blob somewhere the check did not look.
+  the blob somewhere the check did not look.  The files are also booted by
+  what reads them (WS-RB RB4): every `raspi5b` lane boots `kernel8.img` with
+  the machine placing it, and the device tree, at `config.txt`'s addresses,
+  and `scripts/test_qemu.sh` boots them from an SD card through rpi5_machine's
+  `rpi5-boot`, which reads `config.txt` as the firmware does, entered through
+  the firmware's own BL31 and through TF-A's `rpi5` BL31.
 - **The image's size and section map** (BP5.4).  `build_rpi5_image.sh` ends by
   running `scripts/kernel_image_report.py`, which reads `kernel8.img`'s size
   from the file and refuses one that is not the loaded extent, then reports it

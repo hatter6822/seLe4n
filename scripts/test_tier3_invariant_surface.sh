@@ -9396,6 +9396,20 @@ run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --b
 run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^            boot_once "\$\{LEAN_LABEL\}virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^            boot_once "\$\{LEAN_LABEL\}Raspberry Pi 5, raspi5b, EL2 entry" "\$\{QEMU_BOARD_MACHINE\}" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"$' scripts/test_qemu.sh
+# WS-RB RB4: every Raspberry Pi 5 lane boots the packaged `kernel8.img` at the
+# addresses its `config.txt` gives the firmware, each key under the machine
+# property rpi5_machine names for it; the lane then boots the same files from
+# an SD card through `rpi5-boot`, once through the firmware's own BL31 and once
+# through TF-A's, whose banner it requires; the setup installs `rpi5-boot`,
+# `dtmerge` and the firmware before the emulator, whose presence marks a
+# finished build.
+run_check "INVARIANT" rg -n -U '^        if ! python3 "\$\{REPO_ROOT\}/scripts/rpi5_boot_files\.py" package "\$\{KERNEL_BIN\}" "\$\{boot_files\}" >/dev/null \\\n            \|\| ! options=\$\(python3 "\$\{REPO_ROOT\}/scripts/rpi5_boot_files\.py" machine-options "\$\{boot_files\}"\); then$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^        QEMU_IMAGE="\$\{boot_files\}/kernel8\.img"\n        QEMU_RPI5_BOOT_FILES="\$\{boot_files\}"\n        QEMU_BOARD_MACHINE="raspi5b,\$\{options\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^MACHINE_PROPERTIES = \(\("kernel_address", "kernel-address"\),\n                      \("device_tree_address", "dtb-address"\),\n                      \("device_tree_end", "dtb-end"\)\)$' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -n -U '^        qemu_cmd=\(python3 "\$\{machine_root\}/rpi5-boot"\n            --qemu "\$\{QEMU_BIN\}"\n            --dtmerge "\$\{machine_root\}/dtmerge"\n            --no-reboot\n            "\$\{QEMU_CARD\}" --$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^            qemu_rpi5_card firmware\n            boot_once "\$\{LEAN_LABEL\}Raspberry Pi 5 SD card, rpi5-boot, the firmware.s BL31" "" \\\n                "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "\$\{per_core\[@\]\}"\n            qemu_rpi5_card tf-a\n            boot_once "\$\{LEAN_LABEL\}Raspberry Pi 5 SD card, rpi5-boot, TF-A.s BL31" "" \\\n                "NOTICE:  BL31: v" "\$\{banner\}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" \\\n                "\$\{per_core\[@\]\}"\n            qemu_rpi5_card_done$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^    if tf_a:\n        config \+= f"armstub=\{TF_A_ARMSTUB\}\\n"$' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -n -U '^"\$\{SOURCE_DIR\}/scripts/firmware" "\$\{MACHINE_ROOT\}/firmware" bl31\.bin bcm2712-rpi-5-b\.dtb >&2\ncp "\$\{SOURCE_DIR\}/scripts/rpi5-boot" "\$\{MACHINE_ROOT\}/rpi5-boot"\ncp "\$\{SOURCE_DIR\}/build/dtmerge" "\$\{MACHINE_ROOT\}/dtmerge"\n\ncp "\$\{SOURCE_DIR\}/build/qemu-system-aarch64" "\$\{MACHINE_BIN\}\.partial"$' scripts/setup_rpi5_machine.sh
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""' scripts/test_qemu.sh
 # shellcheck disable=SC2016

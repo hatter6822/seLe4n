@@ -2,7 +2,7 @@
 
 > **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
 > **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`;
-> RB3 at `v0.37.28`.
+> RB3 at `v0.37.28`; RB4 at `v0.37.29`.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
 > **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
@@ -118,6 +118,20 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
   thing that reads them, not only against the ELF.
 - A second run boots the same card through TF-A's `rpi5` BL31 as the
   armstub (`secure=on`, `-bios`), the Pi 5's own boot chain.
+- *Landed (`v0.37.29`), wider than the row:* rpi5_machine's fix (its PR #7)
+  went into the machine, not only `rpi5-boot`: without an armstub `raspi5b`
+  now loads the kernel, initrd and tree as the firmware does and enters the
+  kernel from a stub at 0 standing in for the firmware's own BL31, with
+  `kernel-address`, `dtb-address` and `dtb-end` beside it, and its
+  `scripts/firmware` builds just the outputs named. Every `raspi5b` lane, not
+  only the archive lane, now boots the packaged `kernel8.img` at its
+  `config.txt` addresses (`rpi5_boot_files.py machine-options`), and
+  `test_qemu.sh` boots the SD card through `rpi5-boot` with the firmware's
+  BL31 and with TF-A's, on the HAL-only and the Lean-linked image alike. The
+  card carries the device tree the Raspberry Pi firmware release ships, which
+  `scripts/setup_rpi5_machine.sh` fetches with TF-A from rpi5_machine's pinned
+  builder; the TF-A card's `config.txt` adds `armstub=bl31.bin`, the one line
+  that is the card's rather than the boot files'.
 
 ### RB5 — Closure
 

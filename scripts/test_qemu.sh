@@ -282,6 +282,17 @@ boot_board() {
             board_dtb_fixture rpi5 rpi5_machine_dtb.hex
             boot_once "${LEAN_LABEL}Raspberry Pi 5, raspi5b, EL2 entry" "${QEMU_BOARD_MACHINE}" \
                 "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${per_core[@]}"
+            # WS-RB RB4: the same boot files on an SD card, read by rpi5-boot as
+            # the Pi 5's firmware reads one, entered through the firmware's own
+            # BL31 and then through TF-A's, whose banner shows it ran.
+            qemu_rpi5_card firmware
+            boot_once "${LEAN_LABEL}Raspberry Pi 5 SD card, rpi5-boot, the firmware's BL31" "" \
+                "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${per_core[@]}"
+            qemu_rpi5_card tf-a
+            boot_once "${LEAN_LABEL}Raspberry Pi 5 SD card, rpi5-boot, TF-A's BL31" "" \
+                "NOTICE:  BL31: v" "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" \
+                "${per_core[@]}"
+            qemu_rpi5_card_done
             ;;
         virt)
             banner="booting on QEMU virt"

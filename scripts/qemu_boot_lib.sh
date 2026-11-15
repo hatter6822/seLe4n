@@ -103,9 +103,13 @@ LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
 LEAN_EXERCISER_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n_exerciser.a"
 
 QEMU_TEMP_FILES=()
+QEMU_TEMP_DIRS=()
 qemu_cleanup() {
     if [[ "${#QEMU_TEMP_FILES[@]}" -gt 0 ]]; then
         rm -f "${QEMU_TEMP_FILES[@]}"
+    fi
+    if [[ "${#QEMU_TEMP_DIRS[@]}" -gt 0 ]]; then
+        rm -rf "${QEMU_TEMP_DIRS[@]}"
     fi
 }
 trap qemu_cleanup EXIT
@@ -147,6 +151,21 @@ qemu_require_tools() {
         exit "${SELE4N_SKIP_EXIT:-77}"
     fi
     log_section "META" "QEMU found: $("${QEMU_BIN}" --version | head -1)"
+    # WS-RB RB4: the Raspberry Pi 5 lanes also boot an SD card, written with
+    # mtools and read by rpi5_machine's rpi5-boot.
+    if [[ "${QEMU_BOARD}" == "rpi5" ]]; then
+        local tool
+        for tool in mformat mcopy; do
+            if ! command -v "${tool}" &>/dev/null; then
+                if [[ "${REQUIRE_QEMU}" -eq 1 ]]; then
+                    record_failure "META" "${tool} not found: the SD card cannot be written (REQUIRE_QEMU=1)"
+                    finalize_report
+                fi
+                log_section "META" "SKIP: ${tool} not found — install mtools (Debian/Ubuntu: apt install mtools)"
+                exit "${SELE4N_SKIP_EXIT:-77}"
+            fi
+        done
+    fi
     if ! command -v cargo &>/dev/null; then
         log_section "META" "SKIP: cargo not found — cannot build kernel binary"
         exit "${SELE4N_SKIP_EXIT:-77}"
@@ -290,14 +309,64 @@ qemu_build_image() {
 # qemu_cut_image: the raw image QEMU boots, named in QEMU_IMAGE.  QEMU passes
 # the device tree in x0 only to an image carrying the arm64 Image header, so it
 # is handed the raw binary cut from the ELF, never the ELF.
+#
+# WS-RB RB4: on `raspi5b` the image is the Raspberry Pi 5 boot files' own
+# `kernel8.img`, packaged and checked against the ELF by
+# `scripts/rpi5_boot_files.py`, and the machine loads it, and writes the device
+# tree, at the addresses their `config.txt` gives the firmware
+# (`kernel-address`, `dtb-address`, `dtb-end`): the boot the lane runs is the
+# one the firmware would make from those files.
+# shellcheck disable=SC2034  # QEMU_BOARD_MACHINE is the callers'
 qemu_cut_image() {
     local objcopy
+    if [[ "${QEMU_BOARD}" == "rpi5" ]]; then
+        local boot_files options
+        boot_files=$(mktemp -d /tmp/qemu_rpi5_boot_XXXXXX)
+        QEMU_TEMP_DIRS+=("${boot_files}")
+        if ! python3 "${REPO_ROOT}/scripts/rpi5_boot_files.py" package "${KERNEL_BIN}" "${boot_files}" >/dev/null \
+            || ! options=$(python3 "${REPO_ROOT}/scripts/rpi5_boot_files.py" machine-options "${boot_files}"); then
+            record_failure "BUILD" "could not package the Raspberry Pi 5 boot files from ${KERNEL_BIN}"
+            finalize_report
+        fi
+        QEMU_IMAGE="${boot_files}/kernel8.img"
+        QEMU_RPI5_BOOT_FILES="${boot_files}"
+        QEMU_BOARD_MACHINE="raspi5b,${options}"
+        return
+    fi
     objcopy=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from check_fp_simd_free_objects import rust_llvm_tool; print(rust_llvm_tool("llvm-objcopy"))' "${REPO_ROOT}/scripts")
     qemu_temp_file QEMU_IMAGE qemu_image
     if ! "${objcopy}" -O binary "${KERNEL_BIN}" "${QEMU_IMAGE}"; then
         record_failure "BUILD" "${objcopy} could not cut a raw image from ${KERNEL_BIN}"
         finalize_report
     fi
+}
+
+# qemu_rpi5_card ARMSTUB: an SD card for `raspi5b`, named in QEMU_CARD, holding
+# the boot files `qemu_cut_image` packaged and the Raspberry Pi firmware's
+# device tree, as a Pi 5 boots from one (WS-RB RB4).  ARMSTUB `firmware` leaves
+# the firmware's own BL31 to enter the kernel (rpi5_machine stands in for it
+# with QEMU's PSCI); `tf-a` names TF-A's `rpi5` BL31 as the armstub, which then
+# provides PSCI itself.  `qemu_run` with QEMU_CARD set boots the card with
+# rpi5_machine's `rpi5-boot`, which reads its `config.txt` as the firmware does;
+# `qemu_rpi5_card_done` goes back to booting QEMU_IMAGE.
+qemu_rpi5_card() {
+    local machine_root tf_a=()
+    machine_root=$(dirname "${QEMU_BIN}")
+    case "$1" in
+        firmware) ;;
+        tf-a) tf_a=(--tf-a) ;;
+        *) echo "qemu_boot_lib.sh: unknown armstub: $1 (firmware or tf-a)" >&2; exit 2 ;;
+    esac
+    qemu_temp_file QEMU_CARD qemu_rpi5_card
+    if ! python3 "${REPO_ROOT}/scripts/rpi5_boot_files.py" card "${QEMU_RPI5_BOOT_FILES}" \
+        "${machine_root}/firmware" "${QEMU_CARD}" "${tf_a[@]}"; then
+        record_failure "BUILD" "could not write the Raspberry Pi 5 SD card"
+        finalize_report
+    fi
+}
+QEMU_CARD=""
+qemu_rpi5_card_done() {
+    QEMU_CARD=""
 }
 
 # qemu_run LABEL LOG MACHINE SMP TIMEOUT UNTIL_FRAGMENT UNTIL_COUNT [QEMU_ARG...]:
@@ -327,6 +396,28 @@ qemu_run() {
         -monitor none
         -display none
         -no-reboot)
+    if [[ -n "${QEMU_CARD}" ]]; then
+        # The card names the machine, the kernel and the device tree; rpi5-boot
+        # runs QEMU without a display of its own (`-nographic`).
+        if [[ -n "${machine}" ]]; then
+            echo "qemu_boot_lib.sh: a card boot takes its machine from the card, not ${machine}" >&2
+            exit 2
+        fi
+        local machine_root
+        machine_root=$(dirname "${QEMU_BIN}")
+        qemu_cmd=(python3 "${machine_root}/rpi5-boot"
+            --qemu "${QEMU_BIN}"
+            --dtmerge "${machine_root}/dtmerge"
+            --no-reboot
+            "${QEMU_CARD}" --
+            -cpu "${QEMU_CPU}"
+            -smp "${smp}"
+            "$@"
+            -m "${QEMU_MEMORY}"
+            -nic none
+            -serial "file:${log}"
+            -monitor none)
+    fi
     local status=0
     if [[ -z "${until}" ]]; then
         timeout "${deadline}" "${qemu_cmd[@]}" || true
