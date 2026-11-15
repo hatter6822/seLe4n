@@ -131,6 +131,50 @@ blocking IPC by a cancel now restarts its system call, as seL4 sets it
 
   The frozen suspend and resume are in the archive, but the linker drops
   them from the kernel image, so no compiled path changed.
+- **The frozen suspend cancels the IPC in every arm** (review fix). It
+  cleared the thread's own IPC fields and queue links, but removed the thread
+  from no queue. So a suspended or restarted head sender stayed the endpoint's
+  head, and the next receive refused `endpointStateMismatch`. This was the
+  second divergence between the frozen and live suspends, so the whole cancel
+  is mirrored now. `frozenCancelIpcBlocking` mirrors `cancelIpcKeepingContexts`
+  arm for arm and, like it, never refuses:
+  - the endpoint queue at any position (`frozenRemoveFromBlockingEndpoint`,
+    the frozen `removeFromBlockingEndpoint`);
+  - the notification wait queue (`frozenRemoveFromNotificationWaitQueue`);
+  - the reply arm, in four steps: the head frame cut off a donated context
+    (`frozenCutHeadFrameKeepingContext`), the frame cut out
+    (`frozenCutThreadReplyFrameOut`), the link consumed
+    (`frozenConsumeCallerReplyLink`) and the reply-waiter entry unlinked
+    (`frozenUnlinkReplyWaiter`);
+  - after the cancel, the server's boost revert
+    (`frozenRevertPriorityInheritance`).
+
+  The live teardown takes `SystemState`'s tables, so it can't run over the
+  frozen store. The arms are mirrors, and they share the record-level pieces
+  (`restoredToRestart`, `queueRemoveBoundary`, `queueUnlinkPredecessor`,
+  `queueUnlinkSuccessor`, `Reply.consumed`).
+
+  `.tcbSuspend` now has three `FrozenOpBranch`es: blocked in IPC, runnable and
+  `Inactive`. Each is compared whole against `suspendThreadOnCore`, which
+  replaces the "adapter owed" reason. `.tcbResume` keeps a reason, because the
+  live restart dispatches at its scheduling point, so its scenarios compare
+  objects only. The reply-stack write census registers the three new reply
+  writers as mirrors.
+
+  New tests in FrozenOpsSuite:
+  - FO-060: a resume of the head, middle or tail sender, then a receive that
+    gets the next sender;
+  - FO-061: a suspend at each position leaves the queue well formed;
+  - FO-062: a notification waiter is removed;
+  - FO-063: a reply-blocked caller's link is consumed;
+  - FO-064: a donating caller's context stays with its server, and the boost
+    is reverted;
+  - FO-065: a runnable suspend and an `Inactive` suspend;
+  - FO-066: a sender on an absent endpoint is still suspended.
+
+  The first mirror used the fallible `frozenQueueRemove`, which refused FO-066's
+  state. The suspend-resume suite caught that in the full run.
+  `frozenCancelIpcBlocking` is not linked into the kernel image either (`nm`).
 - **Fixed along the way:** the cancellation suite's stale-register victim was
   built with the record's `Inactive` default while placed runnable; it is now
   `Running`, so the restart check reads a thread that was running when it

@@ -766,8 +766,9 @@ private def sr031_resumeLowerPriorityKeepsCurrent : IO Unit := do
 -- recompute and the preemption since R5.B and PR #811; the frozen side had
 -- none, and `frozenResumeThread` performed neither step.  None of SR-010,
 -- SR-020 or SR-021 sets `scheduler.current`, so the comparison branch was
--- unexecuted, and `.tcbResume` is outside `FrozenOpBranch.all`, so no
--- differential reached it either.  These are the twins.
+-- unexecuted, and `.tcbResume` has no `FrozenOpBranch` (its FrozenOpsSuite
+-- scenarios compare objects only), so no differential reached the preemption
+-- either.  These are the twins.
 
 /-- The **retired** frozen restore: `ipcState := .ready` and nothing else, which
 is what `frozenResumeThread` cleared until `v0.35.134`.  It lives here and
