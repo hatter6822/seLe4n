@@ -463,6 +463,15 @@ theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.succ_le_of_lt (lockSet_endpointReceive_size_lt ..)
 
+/-- …and at most seventeen members, its receive slot's CNode beside the sixteen. -/
+theorem lockSet_endpointReceiveOnCore_size_le_seventeen (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId) :
+    (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).size ≤ 17 := by
+  unfold lockSet_endpointReceiveOnCore
+  exact Nat.le_trans (lockSetExtendOpt_size_le _ _)
+    (Nat.add_le_add_right (lockSet_endpointReceive_size_le_sixteen ..) 1)
+
 -- ============================================================================
 -- §2  The notification footprints
 -- ============================================================================

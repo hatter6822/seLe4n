@@ -2249,6 +2249,25 @@ private def sd053_serverFirstLink : IO Unit := do
         expect "sd053b_caller_blocked_on_reply"
           ((st'.getTcb? caller).any (fun t => decide (t.ipcState = .blockedOnReply epId (some server))))
           "the linked Call caller should land blockedOnReply awaiting the server"
+        -- WS-SX SX4: seL4-MCS `receiveIPC` on a busy reply cancels its holder
+        -- (`cancelIPC(replyTCB)`): the reply the server presents again names the
+        -- linked caller, and the cancel frees the reply and stops the caller.
+        expect "sd053b_busy_reply_names_caller"
+          (SeLe4n.Kernel.busyReplyHolder? st' server (some rid) == some caller)
+          "a reply linked to a blocked caller is busy with that caller"
+        let stC := SeLe4n.Kernel.cancelReplyHolder st' caller bootCoreId
+        expect "sd053b_busy_reply_cancel_frees_reply"
+          ((stC.getReply? rid).any (fun r => decide (r.caller = none)) &&
+           SeLe4n.Kernel.busyReplyHolder? stC server (some rid) == none)
+          "the holder's cancel unlinks the reply, so a receive may present it"
+        expect "sd053b_busy_reply_cancel_stops_holder"
+          ((stC.getTcb? caller).any (fun t =>
+            decide (t.ipcState = .ready) && decide (t.threadState = .Inactive)))
+          "the cancelled holder leaves its reply wait and is Inactive, as seL4's cancelIPC leaves it"
+        expect "sd053b_ready_holder_cancel_is_identity"
+          ((SeLe4n.Kernel.cancelReplyHolder stC caller bootCoreId).getTcb? caller ==
+            stC.getTcb? caller)
+          "a holder no longer blocked is not cancelled again"
     | .error _ => failLine "sd053b" "server-first Call rendezvous should succeed and link"
   -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
   -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).

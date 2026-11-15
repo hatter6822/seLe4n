@@ -99,12 +99,18 @@ move the ones they name on the cancelled state, the leg re-run from it. -/
 def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
-  match busyReplyHolder? st receiver replyId with
-  | none => schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore
-  | some holder =>
-    schedFootprintOfCores Concurrency.allCores
-      (endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore) endpointId
-        receiver replyId executingCore)
+  -- The canonical ladder at the top, each segment chosen by the busy reply,
+  -- so the shared `schedFootprintOfCores` lemmas apply at full arity; with no
+  -- busy reply it is `schedLockSet_endpointReceiveOnCore` by definition.
+  schedFootprintOfCores
+    (match busyReplyHolder? st receiver replyId with
+      | none => endpointReceiveDualWriteSet st endpointId executingCore
+          ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
+      | some _ => Concurrency.allCores)
+    (match busyReplyHolder? st receiver replyId with
+      | none => endpointReceiveHandoffReplenishCores st endpointId receiver
+      | some holder => endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore)
+          endpointId receiver replyId executingCore)
 
 /-- The receive's footprint, busy reply or not, is a cores footprint. -/
 theorem schedLockSet_receiveCancellingHolderOnCore_ofCores (st : SystemState)
@@ -112,10 +118,7 @@ theorem schedLockSet_receiveCancellingHolderOnCore_ofCores (st : SystemState)
     (executingCore : CoreId) :
     ∃ run repl, schedLockSet_receiveCancellingHolderOnCore st endpointId receiver replyId
       executingCore = schedFootprintOfCores run repl := by
-  unfold schedLockSet_receiveCancellingHolderOnCore schedLockSet_endpointReceiveOnCore
-  split
-  · exact ⟨_, _, rfl⟩
-  · exact ⟨_, _, rfl⟩
+  exact ⟨_, _, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.

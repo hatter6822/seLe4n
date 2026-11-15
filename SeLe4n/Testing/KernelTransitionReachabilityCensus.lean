@@ -1389,6 +1389,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `registerRoutedSyscall_viaDecode` and compiles nothing, so only proofs
   -- and the suites' refusal checks run it.
   , `SeLe4n.Model.RefusalCarrying.ofKernel
+  -- Its reporting twin, whose refusal reports the state the receive's busy
+  -- reply cancel committed (`endpointReceiveCheckedArmR`,
+  -- `dispatchOperandCheckedR`): a specification form the compiled arms are
+  -- proven equal to, run by proofs and the suites alone, as `ofKernel` is.
+  , `SeLe4n.Model.RefusalCarrying.ofKernelReporting
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked
