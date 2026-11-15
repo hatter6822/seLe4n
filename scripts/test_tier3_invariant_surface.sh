@@ -12366,7 +12366,7 @@ run_negative_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Pl
 run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Contract.lean
-run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # PR #889 review round 2: the idle slots are unreachable by user authority — a
 # capability naming one resolves like an empty slot at the single resolution
