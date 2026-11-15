@@ -21,6 +21,7 @@ import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 import SeLe4n.Kernel.IPC.CrossCore.RestartFootprint
+import SeLe4n.Kernel.IPC.CrossCore.BusyReplyReceiveFootprint
 
 /-!
 # The syscall-level scheduler footprint — one footprint per arm, from the operands
@@ -68,57 +69,6 @@ open SeLe4n.Kernel.Concurrency (CoreId
 -- resolver cannot live beside its object-domain twin.
 
 open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
-
-/-- **The replenish queues a receive's leg and its rendezvous donation move**,
-read off the leg run from `st`: the leg's own pre-receive return
-(`receivePreReturnReplenishCores`) and the donation of the `Call` it dequeues
-(`rendezvousCallDonationReplenishCores`, at the state the donation runs on).
-Each is the set its step's own frame names, so the footprint and the frame read
-one answer; the chain walk that follows moves no reservation. -/
-def endpointReceiveLegReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) :
-    List CoreId :=
-  receivePreReturnReplenishCores st endpointId receiver ++
-    match endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st with
-    | (_, .error _) => []
-    | (st1, .ok (dequeued, _, _)) => rendezvousCallDonationReplenishCores st1 receiver dequeued
-
-/-- **The `.receive` arm's scheduler-domain footprint, its busy reply's cancel
-included** (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`).
-
-A receive whose named reply is free, or that names none, is the receive's own
-footprint (`schedLockSet_endpointReceiveOnCore`).  One whose reply is busy with
-another thread (`busyReplyHolder?`) cancels that thread first
-(`cancelRecvBusyReply`): the cancel's priority revert re-buckets the run queue of
-every member of a chain the cancel itself discovers, on its home core, and a
-refusal after the cancel hands the cancelled state back from the entry's spilled
-state rather than the dispatch's, so the run segment names every core's run
-queue.  The replenish segment is exact: the cancel moves no reservation
-(`cancelReplyHolder_replenishQueueOnCore`), and the receive's leg and donation
-move the ones they name on the cancelled state, the leg re-run from it. -/
-def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  -- The canonical ladder at the top, each segment chosen by the busy reply,
-  -- so the shared `schedFootprintOfCores` lemmas apply at full arity; with no
-  -- busy reply it is `schedLockSet_endpointReceiveOnCore` by definition.
-  schedFootprintOfCores
-    (match busyReplyHolder? st receiver replyId with
-      | none => endpointReceiveDualWriteSet st endpointId executingCore
-          ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
-      | some _ => Concurrency.allCores)
-    (match busyReplyHolder? st receiver replyId with
-      | none => endpointReceiveHandoffReplenishCores st endpointId receiver
-      | some holder => endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore)
-          endpointId receiver replyId executingCore)
-
-/-- The receive's footprint, busy reply or not, is a cores footprint. -/
-theorem schedLockSet_receiveCancellingHolderOnCore_ofCores (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) :
-    ∃ run repl, schedLockSet_receiveCancellingHolderOnCore st endpointId receiver replyId
-      executingCore = schedFootprintOfCores run repl := by
-  exact ⟨_, _, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.

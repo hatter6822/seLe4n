@@ -18,7 +18,6 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
 -- teardown leaves.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.BusyReplyHolder
-import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 /-!
 # WS-SM SM3.C.9 — the syscall → lock-set dispatcher
 
@@ -235,21 +234,6 @@ def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
   | some holder =>
       (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).union
         (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder)
-
-/-- **The cancelling receive's footprint is inside the ceiling**: the receive's
-seventeen members and the cancel's thirteen. -/
-theorem lockSet_receiveCancellingHolder_size_le (st : SystemState) (endpointId : ObjId)
-    (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) :
-    (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).size
-      ≤ maxLockSetSize := by
-  have hR := lockSet_endpointReceiveOnCore_size_le_seventeen st endpointId receiver
-    cnodeRootObjId replyId
-  unfold lockSet_receiveCancellingHolder maxLockSetSize
-  split
-  · omega
-  · rename_i holder _
-    have hC := SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_thirteen st holder
-    exact Nat.le_trans (union_size_le _ _) (by omega)
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.

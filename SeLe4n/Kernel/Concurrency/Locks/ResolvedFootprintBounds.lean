@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 
 /-!
 # WS-RR RR7.18 — size bounds for the **state-resolved** lock footprints
@@ -724,6 +725,21 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ maxLockSetSize :=
   Nat.le_trans (lockSet_cancelIpcBlockingOnCore_size_le_thirteen st victimTid)
     (by unfold maxLockSetSize; omega)
+
+/-- **The cancelling receive's footprint is inside the ceiling**: the receive's
+seventeen members and the cancel's thirteen. -/
+theorem Concurrency.lockSet_receiveCancellingHolder_size_le (st : SystemState) (endpointId : ObjId)
+    (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) :
+    (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).size
+      ≤ maxLockSetSize := by
+  have hR := lockSet_endpointReceiveOnCore_size_le_seventeen st endpointId receiver
+    cnodeRootObjId replyId
+  unfold Concurrency.lockSet_receiveCancellingHolder maxLockSetSize
+  split
+  · omega
+  · rename_i holder _
+    have hC := lockSet_cancelIpcBlockingOnCore_size_le_thirteen st holder
+    exact Nat.le_trans (union_size_le _ _) (by omega)
 
 /-- …and the state-resolved donation cancellation, which adds nothing beyond the
 parametric form's arguments. -/
