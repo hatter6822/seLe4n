@@ -683,7 +683,7 @@ for driver in drivers:
             "busy-reply-resume-sender", "busy-reply-root-waits",
             "busy-reply-sender-wakes-root", "busy-reply-sender-sends",
             "receive-busy-reply-cancels-caller", "busy-reply-suspend-sender",
-            "busy-reply-suspend-partner", "busy-reply-sender-delete",
+            "busy-reply-sender-delete",
             "untyped-retype-unheld-long-recv-caps-server",
             "untyped-retype-unheld-long-recv-reply", "untyped-retype-unheld-long-recv-server",
             # The lifecycle branches: final deletes of untypeds with live
