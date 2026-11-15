@@ -3,10 +3,11 @@
 //!
 //! The HAL describes one machine at a time, chosen at build time: the
 //! Raspberry Pi 5 (BCM2712) by default, QEMU's `virt` machine under the
-//! `board_qemu_virt` feature.  QEMU ships no BCM2712 model, and `virt` is the
-//! only machine it has that carries what the boot path needs — PSCI, a GICv2
-//! and a PL011 — so a boot under QEMU runs an image whose device map is
-//! `virt`'s rather than an RPi5 image that meets no device.
+//! `board_qemu_virt` feature.  Upstream QEMU ships no BCM2712 model; the
+//! Raspberry Pi 5 image runs under rpi5_machine's `raspi5b` (WS-RB), which
+//! does, and `virt` stays the second machine the QEMU lanes boot, carrying
+//! what the boot path needs (PSCI, a GICv2 and a PL011) under a device map of
+//! its own.
 //!
 //! Every board-dependent constant the boot path reads is a field of
 //! [`BoardMap`] and nowhere else: the RAM the kernel's reserved extent sits at
@@ -61,6 +62,13 @@ pub struct BoardMap {
     /// the one whose affinity is zero (`boot.S`'s `MPIDR_CORE_ID_MASK` test),
     /// so no entry is zero.
     pub secondary_mpidrs: [u64; crate::smp::MAX_SECONDARY_CORES],
+    /// Two shared peripheral interrupts the board wires to no device: INTIDs
+    /// the kernel serves (below `gic_intid_count`) that no peripheral
+    /// raises, so a line raised by software at the distributor is the only
+    /// way either is ever pending.  The Tier-4 interrupt scenarios issue
+    /// their handlers and raise them (`smp_exercisers`'s `IRQ_BOUND_LINE` and
+    /// `IRQ_UNBOUND_LINE`); a line a device drives would race the scenario.
+    pub unwired_spis: [u32; 2],
 }
 
 /// The Raspberry Pi 5 (BCM2712): DRAM contiguous from 0, UART10 and the
@@ -76,6 +84,9 @@ pub struct BoardMap {
 /// `MPIDR_EL1.MT`, so Aff0 is the thread within a core (always 0) and Aff1 the
 /// core (`bcm2712.dtsi`'s `cpu@0` .. `cpu@300`, `reg = <0x0>` .. `<0x300>`), and
 /// the secondaries are `0x100`, `0x200` and `0x300`.
+/// Its unwired lines are the bank's last two, `GIC_SPI 286` and `287`
+/// (INTIDs 318 and 319): above UARTA, the last line `bcm2712.dtsi` wires.
+/// `virt`'s 250 and 251 are PCIe interrupts here (`GIC_SPI 209`–`234`).
 pub const RPI5: BoardMap = BoardMap {
     name: "Raspberry Pi 5 (BCM2712)",
     ram_base: 0x0,
@@ -88,6 +99,7 @@ pub const RPI5: BoardMap = BoardMap {
     gicc_base: 0x10_7FFF_A000,
     gic_intid_count: 320,
     secondary_mpidrs: [0x100, 0x200, 0x300],
+    unwired_spis: [318, 319],
 };
 
 /// QEMU's `virt` machine (`hw/arm/virt.c`, `base_memmap`): RAM from
@@ -100,6 +112,9 @@ pub const RPI5: BoardMap = BoardMap {
 /// GICv2 carries 288 INTIDs (`num-irq = NUM_IRQS + 32`).  `virt` numbers its
 /// PEs in Aff0 (`cpu@0` .. `cpu@3`, `reg = <0x0>` .. `<0x3>`, the CPUs of one
 /// cluster with `MPIDR_EL1.MT` clear), so the secondaries are 1, 2 and 3.
+/// `virt` wires every device below SPI 176 (`a15irqmap`, whose highest range
+/// is the platform bus's 64 lines from SPI 112), so INTIDs 250 and 251
+/// (`SPI 218` and `219`) are wired to nothing.
 pub const QEMU_VIRT: BoardMap = BoardMap {
     name: "QEMU virt (GICv2, PL011)",
     ram_base: 0x4000_0000,
@@ -112,6 +127,7 @@ pub const QEMU_VIRT: BoardMap = BoardMap {
     gicc_base: 0x0801_0000,
     gic_intid_count: 288,
     secondary_mpidrs: [0x1, 0x2, 0x3],
+    unwired_spis: [250, 251],
 };
 
 /// The board this image is built for.
@@ -154,6 +170,13 @@ const fn well_formed(b: &BoardMap) -> bool {
         && b.gic_intid_count.is_multiple_of(32)
         && b.gic_intid_count <= crate::gic::MAX_SUPPORTED_INTID
         && secondary_mpidrs_well_formed(&b.secondary_mpidrs)
+        && unwired_spis_well_formed(&b.unwired_spis, b.gic_intid_count)
+}
+
+/// Both unwired lines are shared peripheral interrupts (INTID 32 and up) the
+/// kernel serves (below `intid_count`), and they are two lines.
+const fn unwired_spis_well_formed(l: &[u32; 2], intid_count: u32) -> bool {
+    l[0] >= 32 && l[1] >= 32 && l[0] < intid_count && l[1] < intid_count && l[0] != l[1]
 }
 
 /// The `MPIDR_EL1` affinity bits a PSCI `target_cpu` carries: Aff3 [39:32]
@@ -253,6 +276,19 @@ mod tests {
                 ..RPI5
             };
             assert!(!well_formed(&board), "{bad:x?} admitted");
+        }
+    }
+
+    #[test]
+    fn an_unwired_line_that_is_private_out_of_range_or_repeated_is_refused() {
+        assert_eq!(RPI5.unwired_spis, [318, 319]);
+        assert_eq!(QEMU_VIRT.unwired_spis, [250, 251]);
+        for bad in [[31, 319], [318, 320], [319, 319]] {
+            let board = BoardMap {
+                unwired_spis: bad,
+                ..RPI5
+            };
+            assert!(!well_formed(&board), "{bad:?} admitted");
         }
     }
 }

@@ -98,8 +98,8 @@ ROOT_MODULE = "SeLe4n"
 # closure, and the Lake library that names it.  Its modules beyond the kernel's
 # closure are a second archive with their own roots, which only the exerciser
 # image links, so the shipped images carry none of it.
-EXERCISER_ROOT_MODULE = "SeLe4n.Platform.QemuVirt.Exerciser"
-EXERCISER_LIBRARY = "SeLe4nQemuVirtExerciser"
+EXERCISER_ROOT_MODULE = "SeLe4n.Platform.Exerciser"
+EXERCISER_LIBRARY = "SeLe4nExerciser"
 PACKAGE_PREFIX = "SeLe4n"
 STDLIB_PREFIXES = ("Init", "Std")
 TESTING_PREFIX = "SeLe4n.Testing"

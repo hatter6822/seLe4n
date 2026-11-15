@@ -15,11 +15,11 @@ import Lean.Elab.Command
 -- would read as absent and this census would pass vacuously about it.
 import SeLe4n
 import SeLe4n.Platform.Staged
--- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`),
+-- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nExerciser`),
 -- outside `SeLe4n.lean`'s closure so the shipped images do not carry it; its
--- boot entry is a symbol of the exerciser image's archive, so it is in this
+-- boot entries are symbols of the exerciser images' archive, so they are in this
 -- environment beside the production ones.
-import SeLe4n.Platform.QemuVirt.Exerciser
+import SeLe4n.Platform.Exerciser
 
 /-!
 # WS-RR RR7.13 — every state-committing `@[export]` is classified
@@ -288,7 +288,14 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
   , (`SeLe4n.Platform.QemuVirt.exerciserKernelMain,
       .unbracketed "boot install: `lean_kernel_main_qemu_virt_exerciser` is the QEMU \
         `virt` install under the exerciser's labeling — it installs the kernel state once, \
-        on the boot core, before any secondary is released, so no other committer exists") ]
+        on the boot core, before any secondary is released, so no other committer exists")
+    -- WS-RB RB3: the Raspberry Pi 5 exerciser image's entry, in place of the
+    -- shipped `lean_kernel_main` when `smp_exercisers` is built in.
+  , (`SeLe4n.Platform.RPi5.exerciserKernelMain,
+      .unbracketed "boot install: `lean_kernel_main_rpi5_exerciser` is the Raspberry Pi 5 \
+        install under the exerciser's deployment and labeling — it installs the kernel state \
+        once, on the boot core, before any secondary is released, so no other committer \
+        exists") ]
 
 /-- The seams that commit and are recorded as bracketed. -/
 def bracketedSeams : List Name :=
