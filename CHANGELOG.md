@@ -1,6 +1,76 @@
 ## v0.37.28 — the boot builds the root task's IPC buffer
 
-WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). Entry in progress.
+WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D13–D15). The boot now
+gives the root task an IPC buffer before it runs, as seL4's boot does
+(`create_ipcbuf_frame_cap`, `tcbBuffer`, `create_it_pt_cap`). Before, no
+thread had a buffer at boot, and the QEMU exerciser built its own: from an
+untyped carved out of the root task's RAM, retyped and mapped by boot-time
+invocations.
+
+- **The reservation (SX5.1).** `PlatformConfig.rootServer`, supplied by the
+  binding (`PlatformBinding.rootServerFor`, bound by `bindPlatformConfig`):
+  four pages directly below the last boot RAM extension's region map
+  (`rootServerBaseOf`, `rootServerReservationOf`). Page 0 is the buffer's
+  frame, pages 1–3 its tables. `virt` and the exerciser reserve
+  `[0x7FE7_C000, 0x7FE8_0000)`, and every RPi5 variant the four pages below its
+  top region map.
+  - `rootServerPlaced` is the sixteenth `wellFormed` conjunct, with its own
+    diagnostic. It checks the memory (one `.ram` region, clear of every
+    untyped, the kernel's reserved extent, every driven device and every region
+    map), the thread (an empty buffer slot, four empty root CNode slots, a
+    VSpace root owning a table page), fresh ids and a page-aligned user buffer
+    address. The object budget counts the four objects.
+  - The last extension's untyped stops below the reservation
+    (`untypedExtentsOf`, `untypedExtentBelowRootServerOf`), and the boot hands
+    the HAL the same parts as the RAM each region map describes.
+  - `region::thread_ram_covered` decides through the new pure
+    `region::thread_ram_admitted`, which admits the reservation and refuses
+    every region map page. The HAL's boot-map tests check that on the shared
+    fixtures' new `untyped … regionMap …` and `rootServer …` lines.
+  - `PlatformConfig.withoutExtents` also erases the reservation's memory.
+- **The buffer slot (SX5.2).** A TCB has three space slots: the CSpace root,
+  the VSpace root and the buffer's frame (`TCB.ipcBufferSlot`). Every slot
+  reader, invariant and teardown covers the third.
+- **The stage (SX5.3).** `installRootServer` runs after the interrupt nodes
+  and before the capability links. It creates the frame and the three tables
+  and records the root's tables, mapping and epoch. It installs the mapped
+  frame capability in the root CNode and a derived copy in the buffer slot,
+  and sets `ipcBuffer` (`2^40`). It records eight owed writes: four page
+  scrubs, three table descriptors and the buffer's page descriptor. The bundle
+  is reproved over the new objects (`proofLayerInvariantBundle_of_bootShape`,
+  `bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle`).
+- **The writes are performed (D15).** Every boot entry performs the owed writes
+  (`completePhysicalWrites`) and installs the drained state
+  (`drainBootPhysicalWrites`). `bootToRuntime_invariantBridge_installed` states
+  the bundle on that state; `bootToRuntime_invariantBridge_started`, on the
+  undrained state no entry installs, is deleted. The HAL counts the writes it
+  performs before the boot map is sealed and prints the count after the
+  install. `qemu_lean_boot_expected.txt` pins eight (`BOOT_WRITES`).
+- **The exerciser's workaround is deleted (SX5.4).**
+  `qemuVirtExerciserRootInvoke`, `…RootIpcBufferInvocations`,
+  `…GiveRootIpcBuffer(OrHalt)`, the IPC-buffer untyped with its pages, slots
+  and tile theorem.
+- **Tests.**
+  - `tests/Ak9PlatformSuite.lean` checks the boot-built buffer on `virt`, the
+    exerciser and all seven RPi5 configurations: `ipcBuffer`, the buffer slot,
+    the frame capability, the first overflow word resolving into the frame, and
+    the eight owed writes drained. Controls: a configuration without a
+    reservation boots bufferless and owes nothing, and a reservation outside
+    RAM is refused by `rootServerPlaced`.
+  - The QEMU heap gate gains `root-ipc-buffer-at-boot` (a mint whose badge is
+    the first overflow word, read from the boot-built buffer) and
+    `root-ipc-buffer-cap` (an Unmap through the frame capability, a remap, then
+    the same overflow read). Its pinned set gains them and their unmap and
+    remap steps.
+- **Fixed along the way.**
+  - `rootServerTaskPlaced` read the CNode through `CNode.lookup`, which is
+    noncomputable, so `wellFormed` could not be decided. It reads
+    `CNode.lookupCells` now.
+  - Docstrings that counted a thread's two space slots now count three.
+  - The `virt` deployment's object table gave its untyped as reaching
+    `0x8000_0000`, through the region map. It now stops at the root server.
+  - The spec's RPi5 deployment table still listed the two fixed
+    first-gigabyte untypeds that BP7.10 retired.
 
 ## v0.37.27 — a cancelled IPC restarts its system call
 

@@ -39,7 +39,8 @@ Three things it establishes, each over the stage rather than one config:
   occurrence;
 * **the bundle** — the started state is of boot shape
   (`bootStartShape`), so the proof-layer bundle and the frozen bundle hold of
-  it by the same argument as the idle boot's (`bootToRuntime_invariantBridge_started`);
+  it by the same argument as the idle boot's, and of the drained state every
+  boot entry installs (`bootToRuntime_invariantBridge_installed`);
 * **the classification** — the full thread-state classification survives every
   start (`Kernel.startInitialThreadOnCore_preserves_threadStateConsistent`), and
   every named thread is queued and stored `.Ready`
@@ -831,18 +832,6 @@ theorem bootFromPlatformCheckedStartedFor_untypedMemoryInvariant
     (fun r c hc => hIdxM r c ((hA.slotCapAt r).symm.trans hc))
     (fun u U hU => hSole.2 u U (by rw [← hUI, ← hUtM, ← hA.getUntyped?]; exact hU))
     (fun u r r' hr hr' => hSole.1 u r r' (hBack hr) (hBack hr'))
-
-/-- **WS-BP BP7.11**: the end-to-end bridge for the started boot — the bundle of
-the state it installs, and the frozen bundle of its freeze. -/
-theorem bootToRuntime_invariantBridge_started
-    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
-    (config : PlatformConfig) (ist : IntermediateState)
-    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
-    Architecture.proofLayerInvariantBundle ist.state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
-  let hBundle :=
-    bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle cores hNodup config ist h
-  ⟨hBundle, SeLe4n.Model.freeze_preserves_invariants _ hBundle⟩
 
 /-- **WS-SX SX5.3 (D15): the end-to-end bridge for the state the boot entry
 installs** — the started boot's state with the physical writes it owes

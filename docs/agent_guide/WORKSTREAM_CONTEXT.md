@@ -142,7 +142,7 @@ a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
 first; rpi5_machine moves only by editing the pin in
 `scripts/setup_rpi5_machine.sh`, in its own PR.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.28)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -209,6 +209,22 @@ blocked system call and means it to re-issue the call writes it through
 `TCB.restoredToRestart` (the restart PC is written when the thread leaves its
 blocked state, never at activation); no new code returns an error to a
 cancelled thread.
+SX5 (`v0.37.28`) made the boot build the root task's IPC buffer, as seL4's
+`create_ipcbuf_frame_cap` does: the binding reserves four pages below the last
+boot RAM extension's region map (`PlatformBinding.rootServerFor`,
+`rootServerPlaced` the sixteenth `wellFormed` conjunct), the last untyped stops
+below them (`untypedExtentsOf`), `installRootServer` builds the frame, three
+page tables, the mapping and the frame capability in the root CNode and in the
+TCB's buffer slot (`TCB.ipcBufferSlot`, seL4's `tcbBuffer`), and every boot
+entry performs the eight writes the boot owes and installs the drained state
+(D15). The exerciser's IPC-buffer untyped and its boot-time invocations are
+deleted. **Standing constraints for new code:** a TCB has three space slots;
+a slot walk, invariant or teardown covers all three. A boot stage that owes
+physical writes records them on the intermediate state
+(`recordBootPhysicalWrites`), and every boot entry performs and drains them
+before it installs the state; no boot stage writes memory any other way. The
+root task's memory is the binding's reservation, never an untyped the root task
+retypes at boot.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked
@@ -797,7 +813,8 @@ off the configuration rather than evaluated out of the boot. `BaseIO` has no
 and there is one argument for it** (BP3.5).
 `bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle` covers the
 started, linked boot of every configuration the checked boot accepts,
-`bootToRuntime_invariantBridge_started` adds the freeze, and
+`bootToRuntime_invariantBridge_installed` carries it to the drained state the
+entry installs and adds the freeze (WS-SX SX5), and
 `rpi5DeploymentBootStateAt_invariantBridge` is the deployment's instance (since
 part 16 of WS-ZA ZA5.4 only the linked boot carries the bundle, which requires
 every capability in the tree). It is the instance of

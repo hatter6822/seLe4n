@@ -2880,9 +2880,9 @@ def root_server_builds_the_ipc_buffer_at_boot : IO Unit := do
               decide (t.ipcBuffer.toNat = 0) && t.spaceCells[2].isNone) &&
             ist.state.drainedPhysicalWrites.count == 0)
       let outside := { config with rootServer := some { rs with base := SeLe4n.PAddr.ofNat 0x1000 } }
-      expect s!"SX5.1 NEGATIVE {name}: a reservation outside RAM is refused"
+      expect s!"SX5.1 NEGATIVE {name}: a reservation outside RAM is refused by rootServerPlaced"
         (match bootFromPlatformCheckedStartedFor cores outside with
-          | .error _ => true
+          | .error e => e == rootServerPlacementBootError
           | .ok _ => false)
   IO.println "the boot builds the root task's IPC buffer on every deployment: PASS"
 

@@ -9344,7 +9344,9 @@ run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(boo
 run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_installed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# WS-SX SX5.3: the bridge on the undrained state no boot entry installs is gone.
+run_negative_check "INVARIANT" rg -n '\bbootToRuntime_invariantBridge_started\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_of_nil($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean

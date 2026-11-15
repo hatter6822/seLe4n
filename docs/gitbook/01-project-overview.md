@@ -118,7 +118,10 @@ task's code is fetched as the firmware loaded it.  **BP4.6** maps the RAM a
 board has outside the kernel's reserved extent, once the verified parse has
 chosen the variant, and seals the boot map before any secondary is released,
 and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
-RAM outside the kernel's reserved extent is left unowned.  **BP5.1** makes the
+RAM outside the kernel's reserved extent is left unowned.  Since WS-SX SX5
+(`v0.37.28`) the boot also builds the root task's IPC buffer, as seL4's boot
+does, in four pages it reserves below the last region map
+([spec §6.2.20](../spec/SELE4N_SPEC.md)).  **BP5.1** makes the
 kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under
 `link.ld` and checked as an image by `scripts/check_kernel_image.py`; its panic
 handler halts the system.  **BP5.2** links the Lean kernel into that image with

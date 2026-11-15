@@ -458,9 +458,10 @@ variant.
 |---|---|---|---|
 | root task TCB (lower separation witness) | `2` | boot | CNode `3`, VSpace `4` |
 | root task CNode | `3` | boot | its TCB, CNode, VSpace; notification `5`; untypeds `6`, `7` |
-| root task VSpace | `4` | boot | ASID 1, no mappings |
+| root task VSpace | `4` | boot | ASID 1; the boot maps the IPC buffer in it (§6.2.20) |
 | interrupt notification | `5` | boot | signalled by every SPI (INTIDs 32–319), badged by INTID |
-| untypeds | `6`, `7` | boot | `[256 MiB, 512 MiB)`, `[512 MiB, 1 GiB)` |
+| untypeds | `6`, … | boot | one per boot RAM extension, below its region map, and below the root server on the last (§6.2.12) |
+| root server | `8`–`11` | boot | the IPC buffer's frame and its three page tables; the frame capability at root CNode slot `7` and in the TCB's buffer slot (§6.2.20) |
 | untrusted initial TCB (upper witness) | `0x10_0000` | untrusted | CNode `0x10_0001`, VSpace `0x10_0002` (ASID 2) |
 
 No capability crosses the boundary between the two domains, which
@@ -508,8 +509,8 @@ hardware boot installs this deployment and never halts on it.
 **The bundle (BP3.5):** the state this boot installs satisfies the proof-layer
 invariant bundle, and its freeze the frozen one —
 `rpi5DeploymentBootStateAt_invariantBridge`, an instance of
-`bootToRuntime_invariantBridge_started`, which covers every configuration the
-checked boot accepts.  §8.14.2 has the argument and the CNode-check gap it
+`bootToRuntime_invariantBridge_installed`, which covers every configuration the
+checked boot accepts, on the drained state the entry installs (§6.2.20).  §8.14.2 has the argument and the CNode-check gap it
 closed.
 
 ### 6.2.9 The boot entry and its install ordering (WS-BP BP4.1/BP4.2, v0.36.2)
@@ -713,8 +714,9 @@ configuration.
   per extension, at ids `6, 7, …` and root-CNode slots `5, 6, …` (since BP7.10,
   which retired the two fixed first-gigabyte untypeds), and
   `rpi5RootTaskUntypeds_regions` states its regions **are**
-  `rpi5BootRamExtensions v` below their region maps (`untypedExtentOf`, since
-  `v0.37.18`).  `rpi5BootRamExtensions_fit` shows every extension holds its
+  `rpi5BootRamExtensions v` below their region maps, the last one below the
+  root server's pages too (`untypedExtentsOf`; since `v0.37.18` and
+  `v0.37.28`).  `rpi5BootRamExtensions_fit` shows every extension holds its
   map and an untyped beside it, and
   `rpi5RootTaskUntypeds_clear_of_regionMaps` shows no untyped meets a map.
   Every gate holds over every admissible
@@ -1147,6 +1149,64 @@ speculative walk may fetch into the cache over memory the secure world owns.
 - **The corpus carries the reservation**: `eight_gib_rpi5_firmware` has the
   `atf@0` node, and `tests/Ak9PlatformSuite.lean` boots it end to end, with a
   witness that the retired reach from `0` answers `0` on it.
+
+### 6.2.20 The boot builds the root task's IPC buffer (WS-SX SX5, v0.37.28)
+
+seL4's boot gives its initial thread an IPC buffer before the thread runs
+(`create_ipcbuf_frame_cap`, the thread's `tcbBuffer`, `create_it_pt_cap` for
+the tables that map it). seLe4n's boot does the same on every deployment.
+
+- **The reservation.** The binding supplies a `RootServerReservation`
+  (`PlatformBinding.rootServerFor`, bound into `PlatformConfig.rootServer` by
+  `bindPlatformConfig`): four pages directly below the last boot RAM
+  extension's region map (`rootServerBaseOf`). Page 0 is the buffer's frame and
+  pages 1–3 its level-1 to level-3 tables. The reservation also names the
+  thread, its buffer address (`2^40` on every deployment), the four object ids
+  and the four root-CNode slots. The last extension's untyped stops below it
+  (`untypedExtentsOf`, `untypedExtentBelowRootServerOf`), so no untyped
+  describes those pages. The boot hands the HAL the same untyped parts as the
+  RAM each region map describes.
+- **Checked by `wellFormed`.** `rootServerPlaced` is the sixteenth conjunct,
+  with its own diagnostic (`rootServerPlacementBootError`):
+  - the pages are whole and lie in one `.ram` region, clear of every untyped,
+    the kernel's reserved extent, every driven device and every region map;
+  - the thread's buffer slot and the four CNode slots are empty, and its
+    VSpace root owns a table page;
+  - the ids are fresh;
+  - the buffer address is a page-aligned user address.
+
+  The object budget counts the four objects. `qemuVirtRegionMap_layout`,
+  `qemuVirtExerciserRootServer_layout` and
+  `rpi5BoundPlatformConfigAt_rootServerMemoryPlaced` decide the layout on
+  every deployment.
+- **The buffer slot.** A TCB has three space slots: the CSpace root, the
+  VSpace root and the buffer's frame (`TCB.ipcBufferSlot`, seL4's
+  `tcbBuffer`). Every slot reader, invariant and teardown covers the third.
+- **The stage.** `installRootServer` runs after the interrupt nodes and before
+  the capability links (`bootFromPlatformCheckedStartedFor`). It creates the
+  frame and the three tables, and records the root's tables, mapping and
+  epoch. It installs the mapped frame capability in the root CNode and a
+  derived copy in the buffer slot, and sets `ipcBuffer`. It records eight
+  owed physical writes: four page scrubs (seL4 zeroes the rootserver region),
+  three table descriptors and the buffer's page descriptor.
+- **The writes are performed (D15).** Every boot entry performs the owed
+  writes (`completePhysicalWrites`) and installs the drained state
+  (`drainBootPhysicalWrites`). The bundle theorems are stated on that drained
+  state. The HAL counts the writes it performs before the boot map is sealed,
+  and prints the count after the install. `qemu_lean_boot_expected.txt` pins
+  eight on both platforms, and `tests/Ak9PlatformSuite.lean` pins the model's
+  eight on every deployment, with zero for a configuration without a
+  reservation.
+- **Thread memory admits it.** Every thread-memory decode takes
+  `region::thread_ram_covered`, which decides through the pure
+  `region::thread_ram_admitted`. That predicate admits the reservation's pages
+  and refuses every region map page. The HAL's boot-map tests check this on
+  the shared fixtures' `untyped … regionMap …` and `rootServer …` lines.
+- **No boot-time workaround.** The exerciser's IPC-buffer untyped, and the
+  boot-time invocations that retyped and mapped it, are deleted. Its
+  `root-ipc-buffer-at-boot` scenario reads the first system call's overflow
+  word from the boot-built buffer. `root-ipc-buffer-cap` unmaps the buffer
+  through the frame capability and maps it back.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
@@ -4841,16 +4901,17 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
     boot, never from the kernel heap. The Lean boot lays it out
     (`Platform.Boot.RegionMapReservation`): each RAM extension's top
     `regionMapReserveBytes` (the fewest whole pages `R` with `513 · R ≥ S`)
-    hold its map, and its untyped covers the rest (`untypedExtentOf`).
+    hold its map. Its untyped covers the rest, but on the last extension the
+    root server's four pages lie between them (`untypedExtentsOf`, §6.2.20).
     `extendBootRamMap` hands the HAL each layout (`ffi_reserve_region_map`).
     The HAL checks it (`region::reservation_layout`) and halts the boot on one
     that does not fit, rather than shrinking the map. It then zeroes and
     registers the map (`region::register_reserved_map`). Every thread-memory
     decode takes `region::thread_ram_covered`, which refuses a reservation's
-    pages, so the map is kernel-only. QEMU `virt` reserves 1.5 MiB at
-    `[0x7FE8_0000, 0x8000_0000)` (`qemuVirtRegionMap_layout`). The QEMU
-    exerciser's root IPC-buffer untyped is the shipped root untyped's top four
-    pages, directly below the map (`qemuVirtExerciserRootUntypeds_tile`).
+    pages (through `region::thread_ram_admitted`), so the map is kernel-only.
+    QEMU `virt` reserves 1.5 MiB at `[0x7FE8_0000, 0x8000_0000)`, with the
+    root server at `[0x7FE7_C000, 0x7FE8_0000)` below it
+    (`qemuVirtRegionMap_layout`).
   - **The header.** A range's header holds its log2 size, an atomic live
     count, a bump cursor, a cell-start bitmap and a live bitmap. It is
     `24 + size / 32` bytes (`region::header_bytes`).
@@ -5308,7 +5369,7 @@ bundle, the IPC invariant, the run-queue stage and the reschedule key frame are
 preserved by each set (`threadSlotSet_preserves_capabilityInvariantBundle`,
 `threadSlotSet_preserves_ipcInvariantFull`, `threadSlotSet_runQueueStage`,
 `threadSlotSet_keyFrame`), and the space change is invisible to an observer
-the thread, the objects its two space slots name, and the untypeds recording
+the thread, the objects its CSpace and VSpace slots name, and the untypeds recording
 them are hidden from (`copyThreadSpaces_preserves_projection`, through
 `retireFinalObject_preserves_projection`).  The arm now takes the executing
 core, for the retire of a root and its acknowledged ASID round, and is a
@@ -7836,7 +7897,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   and the untrusted thread pinned to core 1
   (`rpi5DeploymentBootStateAt_initialThreadsStarted`).  The proof-layer bundle
   holds of the started state by the idle boot's own argument over a named shape
-  (`bootStartShape`, `bootToRuntime_invariantBridge_started`), and the full
+  (`bootStartShape`, `bootToRuntime_invariantBridge_installed`), and the full
   thread-state classification survives every start
   (`startInitialThreadOnCore_preserves_threadStateConsistent`).  Witness:
   `tests/Ak9PlatformSuite.lean`.
@@ -11349,7 +11410,9 @@ pre-allocated objects) **the production boot's bundle is unconditional**:
 bundle of the state the started boot installs (checked, idle threads stored,
 initial threads started, capabilities linked), for every configuration the
 checked boot accepts and every duplicate-free core list, and
-`bootToRuntime_invariantBridge_started` adds its freeze.  Since WS-ZA ZA5.4
+`bootToRuntime_invariantBridge_installed` carries it to the state the boot
+entry installs — the owed writes performed and the ledger drained (WS-SX SX5,
+`drainBootPhysicalWrites`) — and adds its freeze.  Since WS-ZA ZA5.4
 part 16 the bundle requires every capability-holding slot to be in the
 derivation tree (`CapTreeShape`), so only the linked boot carries it: the
 idle-boot and unchecked-boot bundle theorems are retired, and the unchecked
