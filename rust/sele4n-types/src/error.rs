@@ -2,22 +2,22 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–60 other than the retired 35 and 37 are a 1:1 mapping from
-//! the Lean inductive (59 variants after `RangeError` at 59 and `FailedLookup` at
+//! Discriminants 0–60 other than the retired 35, 37 and 57 are a 1:1 mapping from
+//! the Lean inductive (58 variants after `RangeError` at 59 and `FailedLookup` at
 //! 60 — seL4's `seL4_RangeError` and `seL4_FailedLookup` for a CNode
 //! operation's address — and `TruncatedMessage` at 58 — seL4's
 //! `seL4_TruncatedMessage`, an invocation's message shorter than its decode
-//! reads — and WS-RR RR7.14's `IpcCancelled` at 57, the error a forcibly-cancelled
-//! blocking IPC returns, distinct from `IpcTimeout`'s budget expiry —
-//! WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
+//! reads — WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
 //! WS-SM SM9.A.2's `AuditFieldTooLarge` at 55, WS-SM SM8.C.9's
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
 //! Discriminant 35 is retired (WS-SX SX1.3, the former `InvalidCapPtr`, which
 //! no register can provoke once a register is a 64-bit word) and 37 is retired
-//! (WS-ZA ZA5.4 part 14, the former `AllocationMisaligned`): no variant carries
-//! either and neither is reassigned (see [`KernelError::RETIRED`]).
+//! (WS-ZA ZA5.4 part 14, the former `AllocationMisaligned`), and 57 is retired
+//! (WS-SX SX4, the former `IpcCancelled`: a cancelled IPC restarts its system
+//! call, as seL4's does): no variant carries one and none is reassigned (see
+//! [`KernelError::RETIRED`]).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 //!
 //! A discriminant names an error's **code**.  Five codes carry seL4's error
@@ -26,7 +26,7 @@
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// Discriminants 0–60 (35 and 37 retired) match the Lean `KernelError` inductive exactly.
+/// Discriminants 0–60 (35, 37 and 57 retired) match the Lean `KernelError` inductive exactly.
 /// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
 /// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
@@ -156,13 +156,7 @@ pub enum KernelError {
     /// caller from an authorized caller aimed at an unauthorized sink; the two
     /// call for opposite responses.
     DeclassificationDeniedAtReceiver = 56,
-    /// WS-RR RR7.14: a thread's blocking IPC was forcibly cancelled — by
-    /// `.tcbSuspend` on a blocked victim, by lifecycle cleanup, or by a retype
-    /// of an object it was blocked on.  Distinct from `IpcTimeout`, which is the
-    /// SchedContext budget expiring under a live operation: a timed-out caller
-    /// may retry the same call, a cancelled one has had its queue entry
-    /// destroyed.
-    IpcCancelled = 57,
+    // 57: retired (WS-SX SX4, `IpcCancelled`); reserved.
     /// seL4's `seL4_TruncatedMessage`: an invocation's message holds fewer
     /// argument words than its decode reads.  Answered once the capability is
     /// found and its kind accepted, before any argument is read.
@@ -185,9 +179,10 @@ impl KernelError {
     /// `InvalidCapPtr`, a capability-pointer register past `2^64`, which no
     /// register can hold once a register is a 64-bit word; `37` was
     /// `AllocationMisaligned`, which no carve returns once the free index is
-    /// rounded up to the object's boundary.  `from_u32` maps each to `None`.
-    /// Mirrors Lean's `KernelError.retiredDiscriminants`.
-    pub const RETIRED: [u32; 2] = [35, 37];
+    /// rounded up to the object's boundary; `57` was `IpcCancelled`, which no
+    /// thread reads once a cancelled IPC restarts its system call.  `from_u32`
+    /// maps each to `None`.  Mirrors Lean's `KernelError.retiredDiscriminants`.
+    pub const RETIRED: [u32; 3] = [35, 37, 57];
 
     /// Convert from a raw `u32` discriminant. Returns `None` for out-of-range
     /// and retired values.
@@ -248,7 +243,6 @@ impl KernelError {
             54 => Some(Self::AuditLogCapacityExceeded),
             55 => Some(Self::AuditFieldTooLarge),
             56 => Some(Self::DeclassificationDeniedAtReceiver),
-            57 => Some(Self::IpcCancelled),
             58 => Some(Self::TruncatedMessage),
             59 => Some(Self::RangeError),
             60 => Some(Self::FailedLookup),
@@ -303,10 +297,6 @@ impl std::fmt::Display for KernelError {
             Self::MmioUnaligned => write!(f, "MMIO access at unaligned address"),
             Self::InvalidSyscallArgument => write!(f, "invalid syscall argument"),
             Self::IpcTimeout => write!(f, "IPC timeout"),
-            Self::IpcCancelled => write!(
-                f,
-                "blocking IPC cancelled (the operation was destroyed, not timed out — reissuing may be meaningless)"
-            ),
             Self::AlignmentError => write!(f, "alignment error"),
             Self::VmFault => write!(f, "virtual memory fault"),
             Self::UserException => write!(f, "user exception"),
@@ -511,7 +501,7 @@ mod tests {
         // WS-SM SM8.C.9: AuditLogCapacityExceeded added at discriminant 54.
         // WS-SM SM9.A.2: AuditFieldTooLarge added at discriminant 55.
         // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
-        // WS-RR RR7.14: IpcCancelled added at discriminant 57.
+        // WS-RR RR7.14 added IpcCancelled at 57; WS-SX SX4 retired it.
         // TruncatedMessage added at discriminant 58.
         // RangeError and FailedLookup added at discriminants 59 and 60.
         for i in 0..=60u32 {
@@ -546,7 +536,9 @@ mod tests {
         assert!(KernelError::from_u32(35).is_none());
         assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
         // 37 is retired: no variant carries it.
-        assert_eq!(KernelError::RETIRED, [35, 37]);
+        assert_eq!(KernelError::RETIRED, [35, 37, 57]);
+        // 57 is retired: no variant carries it.
+        assert!(KernelError::from_u32(57).is_none());
         assert!(KernelError::from_u32(37).is_none());
         assert_eq!(KernelError::RevocationRequired as u32, 38);
         assert_eq!(KernelError::InvalidArgument as u32, 39);
@@ -574,12 +566,12 @@ mod tests {
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
     /// The Lean KernelError inductive has these 2 variants at positions 34 and
-    /// 36, and 35 and 37 are retired:
+    /// 36, and 35, 37 and 57 are retired:
     ///   | resourceExhausted       (34)
     ///   | objectStoreCapacityExceeded (36)
     #[test]
     fn lean_rust_correspondence() {
-        // 61 discriminants (0-60, 35 and 37 retired) — verify the range matches
+        // 61 discriminants (0-60, 35, 37 and 57 retired) — verify the range matches
         // Lean's `kernelErrorEncodingBound` (FailedLookup at 60).
         let max_valid = 60u32;
         assert!(KernelError::from_u32(max_valid).is_some());

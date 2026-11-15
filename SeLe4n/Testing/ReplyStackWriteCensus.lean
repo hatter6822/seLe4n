@@ -326,7 +326,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeContext,
       "stores the context `SchedContext.refillUnblockCheck` returns (its head's start and its merged refills); `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeThread,
-      "the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in either")
+      "a blocked thread's suspend through `frozenSuspendThread` (neutral, above), then the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in any")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
       "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------
@@ -413,6 +413,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "a footprint: builds the suspend's intermediate states only to read the cores the release removal purges from, and returns those cores; stores nothing")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
       "the admitted suspend: the notification wait's cancel in its slots or the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut), the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; its own body builds no chain-bearing record")
+  , (`SeLe4n.Kernel.cancelReplyHolder,
+      "a busy reply's holder cancelled by a receive (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`): the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut) and the holder's `threadState`; its own body builds no chain-bearing record")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,
@@ -844,6 +846,17 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
   , (`SeLe4n.Kernel.FrozenOps.frozenSeverUnheldSchedContext,
       .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
+    -- WS-SX SX4: the frozen suspend's cancel of a reply-blocked thread, each
+    -- step the frozen form of the live suspend's (`cancelIpcKeepingContexts`):
+    -- the head frame cut off the context it heads, the thread's frame cut out
+    -- of its stack, and the caller's reply link consumed.  `FO-063` and
+    -- `FO-064` run each against the live suspend, whole state.
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutHeadFrameKeepingContext,
+      .mirrors `SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutThreadReplyFrameOut,
+      .mirrors `SeLe4n.Kernel.cutThreadReplyFrameOut)
+  , (`SeLe4n.Kernel.FrozenOps.frozenConsumeCallerReplyLink,
+      .mirrors `SeLe4n.Model.SystemState.consumeCallerReplyLink)
     -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation

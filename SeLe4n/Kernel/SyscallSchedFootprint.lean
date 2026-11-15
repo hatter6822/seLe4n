@@ -20,6 +20,8 @@ import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
+import SeLe4n.Kernel.IPC.CrossCore.RestartFootprint
+import SeLe4n.Kernel.IPC.CrossCore.BusyReplyReceiveFootprint
 
 /-!
 # The syscall-level scheduler footprint — one footprint per arm, from the operands
@@ -123,7 +125,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .tcbResume =>
       ops.targetThread.bind fun target =>
         target.toValid?.bind fun vtid =>
-          LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
+          LockSet.ofList? (schedLockSet_restartThreadOnCore st vtid executingCore)
   | .tcbSetPriority | .tcbSetMCPriority =>
       ops.targetThread.bind fun target =>
         LockSet.ofList? (schedLockSet_priorityControlOnCore st target executingCore)
@@ -160,11 +162,12 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- **WS-LS LS2.3**: the footprint re-runs the receive leg to read the chain
   -- walk's write set at the state the walk runs on.  The capability transfer's
   -- receive slot is named by the receiver's IPC buffer, which the leg reads off
-  -- the state itself, so the arm reads no operand beyond the endpoint.
+  -- the state itself, so the arm reads no operand beyond the endpoint and the
+  -- reply, whose busy holder the receive cancels first (WS-SX SX4).
   | .receive =>
       ops.targetObject.bind fun epId =>
         LockSet.ofList?
-          (schedLockSet_endpointReceiveOnCore st epId ops.caller ops.targetReply
+          (schedLockSet_receiveCancellingHolderOnCore st epId ops.caller ops.targetReply
             executingCore)
   -- **WS-ZA ZA4.7**: read at the entry's own state.  The call resolves no
   -- capability before it runs -- the transfer is looked up at the rendezvous
@@ -382,9 +385,12 @@ theorem schedLockSetForSyscall_receive_isSome_iff
     (schedLockSetForSyscall .receive ops executingCore st).isSome
       ↔ ops.targetObject.isSome := by
   unfold schedLockSetForSyscall
-  cases ops.targetObject <;>
-    simp [LockSet.ofList?, schedLockSet_endpointReceiveOnCore,
-      schedFootprintOfCores_keys_nodup]
+  cases ops.targetObject with
+  | none => simp
+  | some epId =>
+    obtain ⟨run, repl, h⟩ := schedLockSet_receiveCancellingHolderOnCore_ofCores st epId
+      ops.caller ops.targetReply executingCore
+    simp [LockSet.ofList?, h, schedFootprintOfCores_keys_nodup]
 
 /-- The two thread-directed priority arms declare on the target alone. -/
 theorem schedLockSetForSyscall_priority_isSome_iff
@@ -423,7 +429,7 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
      | some t =>
         cases hV : t.toValid? <;>
           simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
-            schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
+            schedLockSet_restartThreadOnCore, schedFootprintOfCores_keys_nodup])
 
 /-- `.call` needs the endpoint and the payload; its write set re-runs the
 dispatch, which reads both. -/
@@ -492,15 +498,21 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
   case cspaceRevoke | tcbSetSpace | irqHandlerSetNotification | irqHandlerClear =>
     rw [LockSet.ofList?_pairs hS]
     exact schedFootprintOfCores_contains_objStore_write _ _
+  case receive =>
+    obtain ⟨epId, -, hS⟩ := hS
+    obtain ⟨run, repl, h⟩ := schedLockSet_receiveCancellingHolderOnCore_ofCores st epId
+      ops.caller ops.targetReply executingCore
+    rw [LockSet.ofList?_pairs hS, h]
+    exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals
     repeat' obtain ⟨_, _, hS⟩ := hS
     rw [LockSet.ofList?_pairs hS]
-    simp only [schedLockSet_suspendThreadOnCore, schedLockSet_resumeThreadOnCore,
+    simp only [schedLockSet_suspendThreadOnCore, schedLockSet_restartThreadOnCore,
       schedLockSet_priorityControlOnCore, schedLockSet_setThreadCpuAffinityOnCore,
       schedLockSet_schedControlConfigure, schedLockSet_schedContextBindOnCore,
       schedLockSet_schedContextUnbindOnCore, schedLockSet_schedContextYieldToOnCore,
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
-      schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
+      schedLockSet_endpointSendOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
       schedLockSet_replyRecvTransferOnCore, schedLockSet_yieldOnCore]
     exact schedFootprintOfCores_contains_objStore_write _ _

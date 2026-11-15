@@ -4873,7 +4873,7 @@ private theorem resumeReadyMidState_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hLk]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
         (Lifecycle.Suspend.restoreToReady st tid) tid t
-        { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }
+        { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }
         hObjInv1 hInv1
         ((SystemState.getTcb?_eq_some_iff _ tid t).mp hLk)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
@@ -4927,11 +4927,11 @@ private theorem resumeReadyMidState_getTcb_ready
       rw [SystemState.updateTcb_eq_of_some hLk] at hT
       have hTobj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT
       dsimp only [] at hTobj
-      have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }) := by
+      have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }) := by
         simp only [RHTable_getElem?_eq_get?]
         exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
       rw [hAt] at hTobj
-      obtain rfl : ({ t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) } : TCB) = tcb := by
+      obtain rfl : ({ t with threadState := .Restart, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) } : TCB) = tcb := by
         simpa using hTobj
       show t.ipcState = .ready
       have hPre1 := (SystemState.getTcb?_eq_some_iff _ tid t).mp hLk
@@ -5858,7 +5858,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
       rw [hLk] at hStep
       dsimp only [] at hStep
       split at hStep
-      · cases hStep
+      · cases hStep; exact hInv
       · have hReady := hQ.ready tcb hLk
         have hC : Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb = st := by
           rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply _ _ _

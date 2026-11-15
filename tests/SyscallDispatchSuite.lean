@@ -141,7 +141,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -160,6 +160,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_51_partialResolution"            .partialResolution            51
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
   pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
+  -- 57 is retired (the former `ipcCancelled`): a cancelled IPC answers with
+  -- no error, as seL4's does — the thread restarts its system call.
+  expect "sd001_57_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 57 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 57)).isNone)
+    "discriminant 57 is retired: it must decode to no error"
 
 /-- SD-002 (WS-RA shape): every `KernelError` discriminant 0..54 resolves
 through `ofDiscriminant?`, carries the **offset** label `disc + 1`, and its
@@ -341,15 +347,21 @@ private def sd020_suspendThreadInner_ready : IO Unit := do
   | _ => failLine "sd020_tcb_missing" "TCB missing after suspend"
 
 /-- SD-021: `suspendThreadInner` on an already-Inactive thread
-    returns the `IllegalState` discriminant (2). -/
+    returns 0 and leaves the thread Inactive, as seL4's `suspend` does. -/
 private def sd021_suspendThreadInner_inactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨4⟩
   let st := mkState [(⟨4⟩, .tcb (mkTcb 4 .Inactive))] (some tid)
   initialiseKernelState st
   let result ← suspendThreadInner 4
-  expect "sd021_returns_illegalState"
-    (result == KernelError.toUInt32 .illegalState)
-    s!"suspendThreadInner of an Inactive thread must return IllegalState (2), got {result}"
+  expect "sd021_returns_zero" (result == 0)
+    s!"suspendThreadInner of an Inactive thread must return 0, got {result}"
+  let st' ← getKernelState
+  match st'.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      expect "sd021b_thread_inactive"
+        (tcb.threadState == .Inactive)
+        "TCB must stay Inactive after suspendThreadInner"
+  | _ => failLine "sd021_tcb_missing" "TCB missing after suspend"
 
 /-- SD-022: `suspendThreadInner` on a non-existent thread returns
     the `InvalidArgument` discriminant (39). -/
@@ -2243,6 +2255,25 @@ private def sd053_serverFirstLink : IO Unit := do
         expect "sd053b_caller_blocked_on_reply"
           ((st'.getTcb? caller).any (fun t => decide (t.ipcState = .blockedOnReply epId (some server))))
           "the linked Call caller should land blockedOnReply awaiting the server"
+        -- WS-SX SX4: seL4-MCS `receiveIPC` on a busy reply cancels its holder
+        -- (`cancelIPC(replyTCB)`): the reply the server presents again names the
+        -- linked caller, and the cancel frees the reply and stops the caller.
+        expect "sd053b_busy_reply_names_caller"
+          (SeLe4n.Kernel.busyReplyHolder? st' server (some rid) == some caller)
+          "a reply linked to a blocked caller is busy with that caller"
+        let stC := SeLe4n.Kernel.cancelReplyHolder st' caller bootCoreId
+        expect "sd053b_busy_reply_cancel_frees_reply"
+          ((stC.getReply? rid).any (fun r => decide (r.caller = none)) &&
+           SeLe4n.Kernel.busyReplyHolder? stC server (some rid) == none)
+          "the holder's cancel unlinks the reply, so a receive may present it"
+        expect "sd053b_busy_reply_cancel_stops_holder"
+          ((stC.getTcb? caller).any (fun t =>
+            decide (t.ipcState = .ready) && decide (t.threadState = .Inactive)))
+          "the cancelled holder leaves its reply wait and is Inactive, as seL4's cancelIPC leaves it"
+        expect "sd053b_ready_holder_cancel_is_identity"
+          ((SeLe4n.Kernel.cancelReplyHolder stC caller bootCoreId).getTcb? caller ==
+            stC.getTcb? caller)
+          "a holder no longer blocked is not cancelled again"
     | .error _ => failLine "sd053b" "server-first Call rendezvous should succeed and link"
   -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
   -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).

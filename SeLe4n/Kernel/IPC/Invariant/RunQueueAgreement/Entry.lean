@@ -500,21 +500,50 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
       = some tid := by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   dsimp only at h
   split at h
-  · split at h
+  · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, a
+    -- kernel-entry stage that keeps the endpoint heads blocked.
+    have hC : SystemState.RunQueueEntryStage
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+        (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).scheduler.currentOnCore e
+          = some tid := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
+      · exact ⟨(RunQueueStage.refl _).entry, E1.queueHeads, hCur1⟩
+      · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e,
+          cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
+          by rw [cancelReplyHolder_currentOnCore]; exact hCur1⟩
+    obtain ⟨hS, hQR, hCurR⟩ := hC
+    obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
+    have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
+    generalize cancelReceiveBusyReply ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      at h hS hQR hIR hRR hDR hCurR
+    split at h
     · cases h
       unfold Platform.FFI.deliverSyscallCapFault
-      have hW2 := writeFaultRegistersToTcb_runQueueStage
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+      have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-      have E2 := E1.of_ipcFrame hW2 (by
+      obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
+      have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
+      have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
         unfold writeFaultRegistersToTcb
-        exact IpcFrame.updateTcb _ _ fun _ => rfl)
-      exact ((hW.trans hW2).entry.trans
-        (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e E2.endpointHeads
-          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI E2.objInv E2.refined
-          (E2.dequeued.runnable (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1)).activeAt)).toOn _
+        exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
+      have hCur2 : (writeFaultRegistersToTcb stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)).scheduler.currentOnCore e
+          = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
+      exact ((hW.entry.trans hS).trans (hW2.entry.trans
+        (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e
+          (endpointHeadsWakeable_of hD2 hQ2) hCur2 hNI hI2 hR2
+          (hD2.runnable hCur2).activeAt))).toOn _
     · cases h
-      exact (hW.trans (RunQueueStage.of_frame
+      exact ((hW.entry.trans hS).trans (RunQueueStage.of_frame
         ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
           (Architecture.recordErrorOverflow_objects _ _ _))
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
@@ -523,7 +552,7 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
         (hRes := by
           unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
-          split <;> (try split) <;> (try split) <;> rfl))).entry.toOn _
+          split <;> (try split) <;> (try split) <;> rfl)).entry).toOn _
   · rename_i hE
     cases h
     rw [← SystemState.currentObjOn_congr (st' := Platform.FFI.writeFfiRegistersToTcb st tid syscallId

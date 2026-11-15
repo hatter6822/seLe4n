@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.27` (`lakefile.toml`) |
+| **Package version** | `0.37.28` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 631,930 across 628 Lean files |
-| **Test LoC** | 89,743 across 70 Lean test suites |
-| **Proved declarations** | 24,234 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 637,264 across 638 Lean files |
+| **Test LoC** | 90,246 across 70 Lean test suites |
+| **Proved declarations** | 24,402 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1066,8 +1066,7 @@ Two console rules came out of its first run:
   `uart::tests::a_printed_line_takes_the_console_lock_once` counts the lock's
   tickets per line.
 
-**The Tier-4 gates execute on the test images (BP8.4, v0.36.28; on
-rpi5_machine's `raspi5b` before `virt` since WS-RB RB3).**  The
+**The Tier-4 gates execute on the `virt` test image (BP8.4, v0.36.28).**  The
 four Tier-4 gates that need no user program are in-image drivers
 (`rust/sele4n-hal/src/smp_exercisers.rs`, feature `smp_exercisers`) that the
 boot core runs after every declared PE serves the kernel and before it hands
@@ -1092,13 +1091,7 @@ declares four and holds the HAL-only image to booting and the Lean-linked one
 to refusing before the boot core dispatches.  `scripts/qemu_exerciser_lib.sh`
 is the shared boot and checker, holding each driver's banners as relations
 rather than tokens, and the archive lane runs the all-driver gate on both
-images, each on both machines: the Raspberry Pi 5 exerciser image (its own
-entry, `lean_kernel_main_rpi5_exerciser`) on `raspi5b`, then the `virt` one.
-The deployment is one board-generic module over each board's RAM, the
-interrupt scenarios' two unwired lines are board data
-(`BoardMap::unwired_spis`: 318 and 319 on the BCM2712, whose 250 and 251 are
-PCIe, and 250 and 251 on `virt`), and every pin reads the same exact count on
-both machines.  The eight gates that drive kernel transitions from user space report
+images.  The eight gates that drive kernel transitions from user space report
 NOT RUN naming their reason — SM10's root task — and never PASS.
 
 **The per-core counters are read on the booted machine (BP8.5, v0.36.29).**
@@ -3227,25 +3220,63 @@ the walk stops (`resolveAddressBitsWalk`) and answers that one level with the
 caller's continuations (`resolveAddressBitsLevel`), so a refused lookup of an
 invoked or an argument capability builds no result on the heap.
 
-**WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
-A thread taken out of a blocking IPC has no value to receive, and both
-unblocking paths staged nothing at all, so the SM10.1 context restore would
-have delivered its own argument spill back as a return value.  Both now stage,
-and they stage **different** errors because they are different facts:
-`timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` — a
-SchedContext budget expiring under a well-formed operation the caller may
-reissue) and `cancelIpcBlocking`'s four blocked arms stage
-`Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
-discriminant **57** — the operation was destroyed, so reissuing may be
-meaningless and a userspace library cannot write a correct retry against a
-conflated code).  seL4 answers this by setting the thread `Restart`; this
-kernel has no restart state, so the crossing has to end in a distinguishable
-error.  Two paths deliberately stage nothing: the `.ready` arm (the thread was
-not blocked) and `restoreToReady` itself, the *resume* spelling of the same
-field clear, because `.tcbResume` restarts a thread where it was and
-overwriting `x0`-`x5` would destroy the window the restart preserves.  The
-`KernelError` range is therefore `0..57` in Lean and in the three Rust crates
-that mirror it.
+**WS-RR RR7.14 (v0.34.67), restated by WS-SX SX4 (v0.37.27) — what a forcibly
+unblocked thread resumes with.**  A thread taken out of a blocking IPC has no
+value to receive.  A timed-out thread (`timeoutThread`) is staged
+`Architecture.timeoutFrame` (`.ipcTimeout`).  A cancelled one is set to restart,
+as seL4 sets it `ThreadState_Restart`: `cancelIpcBlocking`'s four blocked arms
+(`restoreToReadyCancelled`, `TCB.restoredToRestart`) and `cancelAllIPC`'s
+waiters (`cancelledEndpointWaiterTcb`) write `ThreadState.Restart` and move the
+thread's saved program counter to its restart PC (`TCB.restartPc`, seL4's
+`getRestartPC`): the `SVC` itself, four bytes before the PC its context resumes
+at, as `lel_syscall` stores `FaultIP = ELR - 4`, or for a thread blocked on its
+fault handler the fault's recorded `faultIp`.  The thread resumes at the `SVC`
+with its own arguments and re-issues the system call.  The model has one
+program counter, so the rewind is written when the thread leaves its blocked
+state rather than at activation (`activateThread`'s `setNextPC(getRestartPC)`):
+a rewind at activation would also rewind a Resume of a thread that was not in a
+system call, where seL4's `FaultIP` equals its `NextIP`.  Its user-visible PC is
+therefore seL4's `FaultIP` throughout.  The former `.ipcCancelled` error (and
+`cancelledIpcFrame`) is retired; its discriminant 57 is reserved
+(`KernelError.retiredDiscriminants = [35, 37, 57]`) and decodes to no error in
+Lean and in the three Rust crates.  Two paths move nothing: the `.ready` arm
+(the thread was not blocked) and `restoreToReady`, the resume spelling of the
+same field clear.  Resume sets `Restart` (seL4's `restart`), so a thread a
+suspend took out of a system call re-issues it once resumed.  A thread already
+`Inactive` stays so under the restart (`TCB.restoredToRestart`); no cancel
+reaches one.
+
+A receive whose reply object is busy cancels the thread it is busy with, as
+seL4-MCS `receiveIPC` runs `cancelIPC(replyTCB)`: the caller the reply is
+linked to, or another receiver that stashed it and still waits
+(`busyReplyHolder?`), when the receiver flows to that thread.  The receive arm
+runs the cancel in place after its checks (`cancelRecvBusyReply`,
+`cancelReplyHolder`: the suspend's cancel and priority revert, then
+`Inactive`), with no scheduling point, and the cancel commits: a refusal after
+it reports the cancelled state (`cancelReceiveBusyReply`).  The receive's lock
+footprints name the cancel's writes (`lockSet_receiveCancellingHolder`,
+`schedLockSet_receiveCancellingHolderOnCore`).  The cancel keeps
+`ipcInvariantFull` (`cancelReplyHolder_preserves_ipcInvariantFull`, given the
+teardown's queue-connectivity premises at the holder), and under the same
+premises it leaves the reply with no caller and no live stash
+(`cancelReplyHolder_frees_reply`), so the receive's reply resolves on the
+cancelled state and its `replyCapInvalid` refusal cannot fire
+(`resolveRecvReplyId_cancelRecvBusyReply`).
+
+A suspend of a thread already `Inactive` succeeds and writes nothing, as
+seL4's `suspend` (`suspendThreadOnCore_of_inactive`): its IPC is cancelled
+already, and it sits in no run or release queue and names no yield link.
+The compiled `.tcbSuspend` admits such a target, and `suspendPerform` returns
+the state it was handed, so that entry allocates nothing either.
+The frozen suspend cancels a blocked thread through the same record step as
+the live one (`TCB.restoredToRestart`), so `frozenResumeThread` resumes a
+blocked thread at its `SVC`, as `restartThreadOnCore` does.  It cancels the
+blocking itself in every arm too (`frozenCancelIpcBlocking`, the frozen
+`cancelIpcKeepingContexts`): the endpoint queue at any position, the
+notification wait queue, and the reply arm's head cut, frame cut, link consume
+and reply-waiter unlink, then the server's boost revert.  Like the live cancel
+it never refuses.  The `.tcbSuspend` branches of the frozen agreement registry
+compare it whole against `suspendThreadOnCore`.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*
@@ -5325,11 +5356,10 @@ thread, is blocked on that notification and is linked into no endpoint queue
 (`notificationWaiterCancellable`).  A refused step ends the walk, and the
 object, then not quiescent, is kept by the retire; the walk's fuel is the
 object table's size.  A cancelled waiter becomes `.ready` with no pending
-message or stashed reply and the `.ipcCancelled` frame staged
-(`Architecture.cancelledIpcFrame`), and is woken on its own core
-(`determineTargetCore`, `enqueueRunnableOnCore`).  seL4 sets the thread
-`Restart`, so it reissues its system call; this model's answer to a cancelled
-IPC is the `.ipcCancelled` frame, the one `cancelIpcBlocking` already gives.
+message or stashed reply, set to restart (`ThreadState.Restart`, its saved PC
+moved to its restart PC, `TCB.restartPc`), and is woken on its own core
+(`determineTargetCore`, `enqueueRunnableOnCore`), so it reissues its system
+call, as seL4's `cancelAllIPC` restarts it (`restart_thread_if_no_fault`).
 
 The finalisation keeps the IPC bundle, given that a lent context heads its
 lender's reply stack (`finaliseFinalObject_preserves_ipcInvariantFull`,
@@ -7692,9 +7722,10 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   resumes the incoming thread with the frame its TCB holds
   (`switchToThreadOnCore_delivers_readReturnFrame`, over the one reading
   `Architecture.RestoreTarget.deliveredFrame?`), since the switch's only object
-  write is the outgoing thread's context save; composed with RR7.14's staging, a
-  cancelled thread resumes reading `.ipcCancelled` and a timed-out one
-  `.ipcTimeout` (`restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame`,
+  write is the outgoing thread's context save; composed with the restart (WS-SX
+  SX4), a cancelled thread resumes at its `SVC` with its own arguments, and a
+  timed-out one reads `.ipcTimeout`
+  (`restoreToReadyCancelled_then_switch_resumes_at_restartPc`,
   `abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame`).  Witnesses:
   `tests/SmpCancellationSuite.lean` §3.19b and `tests/SmpTimerSuite.lean` §3.15b,
   each with a switch-before-unblock control.

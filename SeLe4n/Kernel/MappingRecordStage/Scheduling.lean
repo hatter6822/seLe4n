@@ -413,7 +413,7 @@ theorem suspendThreadOnCore_mappingStage {st st' : SystemState}
   case h_1 tcb hT =>
     have hS1 := cancelIpcKeepingContexts_mappingStage st vtid.val tcb
     split at hStep
-    case isTrue => exact absurd hStep (by simp)
+    case isTrue => cases hStep; exact MappingStage.refl st
     case isFalse hA =>
       have hS12 : MappingStage (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
           (match PriorityInheritance.blockingServer st vtid.val with

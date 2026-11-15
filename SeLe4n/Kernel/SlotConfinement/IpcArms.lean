@@ -1442,7 +1442,10 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
   · next tcb hTcb =>
     simp only [hTcb] at hStep
     split
-    · next hInact => simp only [hInact] at hStep; exact absurd hStep (by simp)
+    · next hInact =>
+      simp only [hInact] at hStep
+      cases hStep
+      exact observableSlotsConfinedToCores_refl st []
     · next hInact =>
       rw [if_neg hInact] at hStep
       have hCancel := cancelIpcKeepingContexts_confinedToCores st vtid.val tcb

@@ -987,15 +987,15 @@ theorem priorityInheritance_perCore_witness_full (st : SystemState) (tid : Threa
 -- shared `restoreToReady`); it deliberately does NOT set `threadState`.  The
 -- complete per-core resume `resumeThreadOnCore` (the per-core analogue of
 -- `resumeThread`) closes that gap: it validates the target is `.Inactive`, sets
--- `threadState := .Ready`, recomputes the GLOBAL `pipBoost`, enqueues on the home
+-- `threadState := .Restart` (WS-SX SX4, seL4's `restart`), recomputes the GLOBAL `pipBoost`, enqueues on the home
 -- core, and returns the cross-core `.reschedule` SGI for a remote resume.
 
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" carries a TCB at `tid` whose
-`threadState` is `.Ready` — the H3c step `restoreToReadyOnCore` omits, isolated from
+`threadState` is `.Restart` (WS-SX SX4, seL4's `restart`) — the H3c step `restoreToReadyOnCore` omits, isolated from
 the run-queue enqueue. -/
-theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (tcb : TCB)
+theorem resumeReadyMidState_getTcb?_restart (st : SystemState) (tid : ThreadId) (tcb : TCB)
     (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
-    ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Ready := by
+    ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Restart := by
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
   have hst1 : (restoreToReady st tid).getTcb? tid
       = some tcb.restoredToReady := by
@@ -1051,9 +1051,9 @@ theorem resumeReadyMidState_machine_eq (st : SystemState) (tid : ThreadId) :
     Lifecycle.Suspend.restoreToReady_machine_eq]
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume H3c): the **complete** per-core resume sets the
-resumed thread's `threadState := .Ready` — the run-queue enqueue (no-op when already
-runnable, else `_makes_ready` which touches only `ipcState`) preserves it, so the
-post-resume thread is genuinely `.Ready`.  This is the gap `restoreToReadyOnCore`
+resumed thread's `threadState := .Restart` (WS-SX SX4, seL4's `restart`) — the run-queue
+enqueue (no-op when already runnable, else `_makes_ready` which touches only `ipcState`)
+preserves it, so the post-resume thread is genuinely `.Restart`.  This is the gap `restoreToReadyOnCore`
 leaves and `resumeThreadOnCore` closes. -/
 theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (ec : CoreId) (tcb : TCB) (st' : SystemState) (sgi : Option (CoreId × SgiKind))
@@ -1061,8 +1061,8 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
     (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
     (hNotCur : st.scheduler.currentOnCore ec ≠ some vtid.val)
     (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
-    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready := by
-  obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st vtid.val tcb hGet hInv
+    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Restart := by
+  obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_restart st vtid.val tcb hGet hInv
   have hkInv : (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val).objects.invExt := by
     rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hInv
   -- The key hook writes flags alone, and the context's resume writes no thread.
@@ -1074,9 +1074,9 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
     exact hmid
   have hmidInv : X.objects.invExt := by
     rw [← hX]; exact Lifecycle.Suspend.resumeContext_objects_invExt _ _ _ hkInv
-  -- The enqueue establishes `tid` `.Ready` in `st3` (no-op-or-`_makes_ready`).
+  -- The enqueue keeps `tid` `.Restart` in `st3` (no-op-or-`_makes_ready`).
   have hst3 : ∃ t3, (enqueueRunnableOnCore X (determineTargetCore st vtid.val) vtid.val).getTcb?
-        vtid.val = some t3 ∧ t3.threadState = .Ready := by
+        vtid.val = some t3 ∧ t3.threadState = .Restart := by
     by_cases hRun : wakeDeclines X (determineTargetCore st vtid.val) vtid.val = true
     · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
       exact ⟨tm, hmid, hmidReady⟩
@@ -1235,14 +1235,14 @@ theorem resumeThreadOnCore_remote_sgi (st : SystemState) (vtid : SeLe4n.ValidThr
   exact ⟨_, rfl⟩
 
 /-- WS-SM SM5.F.6 (PR #811 P2-3): the cross-core resume wake leaves the resumed thread
-genuinely `.Ready` — it never enqueues / pokes a core for a still-`.Inactive` TCB.  The
+genuinely `.Restart` — it never enqueues / pokes a core for a still-`.Inactive` TCB.  The
 pure (state + SGI) analogue of `resumeThreadOnCore_sets_threadState`; the state path goes
-through `resumeReadyMidState` (which sets `.Ready`). -/
+through `resumeReadyMidState` (which sets `.Restart`). -/
 theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (tcb : TCB) (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
-    ∃ t', (restoreToReadyWithWake st tid ec).1.getTcb? tid = some t' ∧ t'.threadState = .Ready := by
+    ∃ t', (restoreToReadyWithWake st tid ec).1.getTcb? tid = some t' ∧ t'.threadState = .Restart := by
   rw [restoreToReadyWithWake_state]
-  obtain ⟨tm, hmid0, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
+  obtain ⟨tm, hmid0, hmidReady⟩ := resumeReadyMidState_getTcb?_restart st tid tcb hGet hInv
   have hmid : (resumeWakeMidState st tid).getTcb? tid = some tm :=
     (resumeWakeMidState_getTcb? st tid hInv tid).trans hmid0
   have hmidInv := resumeWakeMidState_objects_invExt st tid hInv

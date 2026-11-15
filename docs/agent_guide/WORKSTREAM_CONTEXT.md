@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.27)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.28)
 
 The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
 which models the Pi 5, with `virt` kept as the second lane (owner decision
@@ -145,7 +145,7 @@ exerciser deployment code is board-generic
 same count on both machines; rpi5_machine moves only by editing the pin in
 `scripts/setup_rpi5_machine.sh`, in its own PR.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -199,7 +199,19 @@ fault in the receive phase. **Standing constraints for new code:** a receive
 arm's reply capability is resolved only through `lookupReplyCap` (its K form
 `lookupReplyCapK`); whether a refusal is the reply capability's fault is decided
 by re-running that lookup (`receiveReplyFaults`, `replyLookupRefusal`), never by
-the refusal's form alone. SX4 is the next cut.
+the refusal's form alone.
+SX4 (`v0.37.27`) made a cancelled IPC restart its system call: the cancelled
+thread is `ThreadState.Restart` with its saved PC at its restart PC
+(`TCB.restartPc`, seL4's `getRestartPC`), and Resume sets `Restart`;
+`ipcCancelled` is retired (57 reserved). A receive on a busy reply cancels its
+holder (seL4-MCS `cancelIPC(replyTCB)`, `cancelRecvBusyReply`), the cancel keeps
+`ipcInvariantFull` and frees the reply, and a suspend of a thread already
+`Inactive` succeeds with nothing written.
+**Standing constraints for new code:** a path that takes a thread out of a
+blocked system call and means it to re-issue the call writes it through
+`TCB.restoredToRestart` (the restart PC is written when the thread leaves its
+blocked state, never at activation); no new code returns an error to a
+cancelled thread.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked
