@@ -1,3 +1,19 @@
+## v0.37.26 — the four-PE bring-up and the refusal probe boot `raspi5b` first
+
+WS-RB RB2 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
+
+- **The bring-up gate.** `scripts/test_qemu_smp_bringup.sh` boots the
+  Raspberry Pi 5 image on rpi5_machine's `raspi5b` at EL2 first, HAL-only and
+  Lean-linked, then the `virt` image at EL1 and EL2. Tested by breaking the
+  relation: with RB1's MPIDR table put back to `virt`'s `1`/`2`/`3`, the
+  `raspi5b` run fails (no secondary enters its per-core init, Phase 6 counts
+  none) while both `virt` runs still pass, which is the bug RB1 fixed and
+  the reason the gate boots the board first.
+- **The refusal probe.** `scripts/test_qemu_lean_init_refusal.sh` builds the
+  probe for each board (`probe_board`) and runs every mode on `raspi5b`, then
+  on `virt`. The probe stays a test image: the release image's build is still
+  refused if it names the probe feature (`scripts/check_aarch64_cross_target.py`).
+
 ## v0.37.25 — the Raspberry Pi 5 image boots on rpi5_machine's `raspi5b`
 
 WS-RB RB1 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`, registered here). The

@@ -433,7 +433,9 @@ first idle dispatch, under `-icount shift=0,sleep=off` — without it, one
 emulated Lean tick outlasts the 1 ms tick period on multi-threaded TCG and four
 PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
 (WS-BP BP8.2) is live too: it boots the HAL-only image, and with `--lean-kernel`
-the Lean-linked one, on four PEs at EL1 and EL2, and requires every secondary's
+the Lean-linked one, on four PEs, the Raspberry Pi 5 image on `raspi5b` at EL2
+first and the `virt` image at EL1 and EL2 after it (WS-RB RB2; so is
+`scripts/test_qemu_lean_init_refusal.sh`), and requires every secondary's
 per-core init in order and every banner as a whole line; the same lane runs both
 modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
 shared by the two scripts (`qemu_select_board rpi5|virt`), and the images build

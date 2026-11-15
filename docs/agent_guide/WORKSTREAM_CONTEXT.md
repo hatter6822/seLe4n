@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26)
 
 The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
 which models the Pi 5, with `virt` kept as the second lane (owner decision

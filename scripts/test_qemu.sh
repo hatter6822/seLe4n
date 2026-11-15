@@ -262,7 +262,6 @@ board_dtb_fixture() {
 boot_board() {
     local board="$1" banner
     qemu_select_board "${board}"
-    qemu_require_tools
     qemu_build_image "${LEAN_KERNEL}"
     qemu_cut_image
     local per_core=()
@@ -310,8 +309,12 @@ if [[ -n "${QEMU_MACHINE}" ]]; then
     qemu_cut_image
     boot_once "the image on ${QEMU_MACHINE}" "${QEMU_MACHINE}"
 else
-    boot_board rpi5
-    boot_board virt
+    # Both boards' tools first, then each board in order; a HAL-only image
+    # named by KERNEL_BIN boots on its own board alone (`qemu_gate_boards`).
+    qemu_gate_boards "${LEAN_KERNEL}"
+    for board in "${QEMU_GATE_BOARDS[@]}"; do
+        boot_board "${board}"
+    done
 fi
 
 # ── Summary ────────────────────────────────────────────────────────────────

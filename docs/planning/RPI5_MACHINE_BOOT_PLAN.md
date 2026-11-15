@@ -1,7 +1,7 @@
 # WS-RB — Boot the kernel on the emulated Raspberry Pi 5
 
 > **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
-> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1.
+> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
 > **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
