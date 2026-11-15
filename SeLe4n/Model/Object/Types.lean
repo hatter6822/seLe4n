@@ -2080,12 +2080,14 @@ structure TCB where
       `0`, so an id reused after a thread is destroyed is the origin of no
       context, whatever a context still records.  -/
   originScCode : Nat := 0
-  /-- WS-ZA ZA5.4 part 26: **the records the three space slots keep while
-      empty**, as a CNode's slots keep theirs (`CNode.spare`): entry `i` is
-      the capability cell slot `i` last held, or the one the carve made with
-      the thread (seL4's TCB CTEs, which exist from the retype), so the next
-      capability written there overwrites it in place.  Logically one value
-      (`SpareCells`), so no theorem reads it. -/
+  /-- WS-ZA ZA5.4 part 26: **the records the CSpace and VSpace root slots
+      keep while empty**, as a CNode's slots keep theirs (`CNode.spare`):
+      entry `i` is the capability cell slot `i` last held, or the one the
+      carve made with the thread (seL4's TCB CTEs, which exist from the
+      retype), so the next capability written there overwrites it in place.
+      The IPC-buffer slot (`TCB.ipcBufferSlot`) has no entry: only the boot
+      writes it, building the root task's buffer capability.  Logically one
+      value (`SpareCells`), so no theorem reads it. -/
   spaceSpare : SpareCells := Squash.mk #[none, none]
   /-- WS-ZA ZA5.11: **the thread's declassification provenance**, as plain
       words: eight tag words, the count of those in use and the saturated bit,
