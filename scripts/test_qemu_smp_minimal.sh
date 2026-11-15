@@ -71,8 +71,8 @@ if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
     LABEL="two PEs, Lean-linked image, virt, EL2 entry"
 fi
 
-log_section "TRACE" "RUN: ${LABEL} — -machine ${EXERCISER_MACHINE} -smp 2 (deadline: ${DEADLINE}s)"
-qemu_run "${LABEL}" "${MINIMAL_LOG}" "${EXERCISER_MACHINE}" 2 "${DEADLINE}" \
+log_section "TRACE" "RUN: ${LABEL} — -machine ${QEMU_BOARD_MACHINE} -smp 2 (deadline: ${DEADLINE}s)"
+qemu_run "${LABEL}" "${MINIMAL_LOG}" "${QEMU_BOARD_MACHINE}" 2 "${DEADLINE}" \
     "${UNTIL_FRAGMENT}" 1 "${BOOT_EXTRA[@]}" || true
 
 verdict=$(python3 - "${MINIMAL_LOG}" "${LEAN_KERNEL}" <<'PY'

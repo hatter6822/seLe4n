@@ -85,7 +85,7 @@ IMAGE_BIN="sele4n-kernel"
 ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"
 
 echo "[1/6] Host static archive (the reconciliation's other half)"
-lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
+lake build SeLe4n:static SeLe4nExerciser:static
 
 echo "[2/6] Cross archive"
 python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py"

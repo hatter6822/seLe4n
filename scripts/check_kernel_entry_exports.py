@@ -112,12 +112,12 @@ ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 # here, and a failure under `--require-cross`, which the archive lane passes
 # after building the pair from this tree.
 CROSS_ARCHIVE = REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n.a"
-# WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`,
+# WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nExerciser`,
 # outside `SeLe4n.lean`'s import closure), host and cross.  Its boot entry and
 # initializer are HAL declarations only the exerciser image names, so each
 # side's provider is the kernel's archive together with the exerciser's: a
 # symbol either defines is defined on that side.
-EXERCISER_ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4nQemuVirtExerciser.a"
+EXERCISER_ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4nExerciser.a"
 CROSS_EXERCISER_ARCHIVE = (
     REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n_exerciser.a"
 )
@@ -163,15 +163,18 @@ EXTERN_FN = re.compile(
 #: The symbols the boot entries export, one per board: `lean_kernel_main`
 #: (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP BP4.1) and
 #: `lean_kernel_main_qemu_virt` (`SeLe4n.Platform.QemuVirt.kernelMain`, WS-BP
-#: BP8.1); and the `virt` exerciser image's,
+#: BP8.1); and each board's exerciser image's,
 #: `lean_kernel_main_qemu_virt_exerciser`
-#: (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`, WS-ZA ZA5.13).  Only the
+#: (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`, WS-ZA ZA5.13) and
+#: `lean_kernel_main_rpi5_exerciser` (`SeLe4n.Platform.RPi5.exerciserKernelMain`,
+#: WS-RB RB3).  Only the
 #: link-level reconciliation reads them here — that both archives define each,
 #: like every other HAL declaration.  What each entry must *do* is
 #: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
 #: environment (PR #889 review round 17), one row of its `bootEntries` table per
 #: symbol.
-BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")
+BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser",
+                      "lean_kernel_main_rpi5_exerciser")
 #: `#[link_name = "…"]` — in both spellings — on an `extern` declaration: the
 #: symbol the linker is actually asked for, whatever the Rust item is called.
 #: Matched over the string-free view, where the literal's delimiters survive
@@ -415,7 +418,7 @@ def rust_fn_signature(
 
 #: The Lean compiler's C for the host library: one `.c` per module, each
 #: exported function given a `LEAN_EXPORT` prototype.  Built by the same
-#: `lake build SeLe4n:static SeLe4nQemuVirtExerciser:static` that produces
+#: `lake build SeLe4n:static SeLe4nExerciser:static` that produces
 #: `ARCHIVE` and `EXERCISER_ARCHIVE`.
 IR_ROOT = REPO / ".lake" / "build" / "ir"
 
@@ -2323,7 +2326,7 @@ def checked_archives(require_cross: bool) -> list[tuple[str, tuple[Path, ...]]]:
             if not path.exists():
                 sys.exit(
                     f"[FAIL] {path} does not exist. Build it first: "
-                    "`lake build SeLe4n:static SeLe4nQemuVirtExerciser:static` (host) or "
+                    "`lake build SeLe4n:static SeLe4nExerciser:static` (host) or "
                     "`python3 scripts/build_lean_aarch64_archive.py` (cross)"
                 )
     return archives

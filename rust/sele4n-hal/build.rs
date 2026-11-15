@@ -22,9 +22,9 @@ const LEAN_ARCHIVE: &str = "libsele4n.a";
 const LEAN_ARCHIVE_ROOTS: &str = "libsele4n.roots.ld";
 /// WS-ZA ZA5.13: the allocation exerciser's Lean half, which the same builder
 /// writes into the same directory — its own library
-/// (`SeLe4n.Platform.QemuVirt.Exerciser`, outside the kernel's import closure)
+/// (`SeLe4n.Platform.Exerciser`, outside the kernel's import closure)
 /// and the linker script rooting the link at that library's initializer and
-/// boot entry.  Only the QEMU `virt` exerciser image links them; the builder's
+/// boot entries.  Only an exerciser image links them; the builder's
 /// self-test holds its `EXERCISER_ARCHIVE` and `EXERCISER_ROOTS_SCRIPT` equal
 /// to these two.
 const LEAN_EXERCISER_ARCHIVE: &str = "libsele4n_exerciser.a";
@@ -279,15 +279,14 @@ fn main() {
         // kernel without its Lean half; a check-only build (the cross clippy
         // lane) never links and never needs them.
         //
-        // WS-ZA ZA5.13: the QEMU `virt` exerciser image (`board_qemu_virt` with
+        // WS-ZA ZA5.13, WS-RB RB3: an exerciser image (either board, with
         // `smp_exercisers`) also links the exerciser's archive and roots, ahead
         // of the kernel's because it references the kernel's symbols.  No
         // other image names them, so the shipped RPi5 and `virt` images carry
-        // neither the exerciser's boot entry nor its labeling.
+        // neither the exerciser's boot entries nor its labeling.
         if std::env::var_os("CARGO_FEATURE_HW_TARGET").is_some() {
             let archive_dir = format!("{manifest_dir}/../../{LEAN_ARCHIVE_DIR}");
-            let exerciser_image = std::env::var_os("CARGO_FEATURE_BOARD_QEMU_VIRT").is_some()
-                && std::env::var_os("CARGO_FEATURE_SMP_EXERCISERS").is_some();
+            let exerciser_image = std::env::var_os("CARGO_FEATURE_SMP_EXERCISERS").is_some();
             let exerciser_inputs: &[&str] = if exerciser_image {
                 &[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS]
             } else {
@@ -2444,6 +2443,17 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          on that image: it runs in its place, under the same token and before the \
          same permit, on an image built with `board_qemu_virt` and `smp_exercisers`",
     ),
+    // WS-RB RB3: the Raspberry Pi 5 exerciser image's install (`smp_exercisers`
+    // without `board_qemu_virt`), in place of the shipped one.
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_rpi5_exerciser",
+        1,
+        "the Raspberry Pi 5 exerciser image's boot install, `lean_kernel_main` on \
+         that image: it runs in its place, under the same token and before the \
+         same permit, on an image built with `smp_exercisers` and not `board_qemu_virt`",
+    ),
     // WS-BP BP2.3: the library initializer runs before any Lean code, on the
     // primary, so it precedes every readiness decision there is.  Its caller
     // refuses a second run and halts the system on a failed one.
@@ -2455,14 +2465,14 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
         "the Lean library initializer: it must run before any Lean definition \
          is used, which is before the boot core can be marked ready",
     ),
-    // WS-ZA ZA5.13: the exerciser image's library initializer, in place of
+    // WS-ZA ZA5.13: an exerciser image's library initializer, in place of
     // the root's — the image calls exactly one of the two, by `cfg`.
     (
         "src/lean_entry.rs",
         "initialise_lean_library",
-        "initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser",
+        "initialize_seLe4n_SeLe4n_Platform_Exerciser",
         1,
-        "the QEMU `virt` exerciser image's library initializer, `initialize_seLe4n_SeLe4n` \
+        "an exerciser image's library initializer, `initialize_seLe4n_SeLe4n` \
          on that image: it initializes the kernel and then the exerciser, under \
          the same guard, before any Lean definition is used",
     ),
@@ -2511,6 +2521,13 @@ const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = 
     ),
     (
         "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_rpi5_exerciser",
+        1,
+        "the Raspberry Pi 5 exerciser image's boot install, under the same ordering",
+    ),
+    (
+        "src/lean_entry.rs",
         "initialise_lean_library",
         "initialize_seLe4n_SeLe4n",
         1,
@@ -2520,9 +2537,9 @@ const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = 
     (
         "src/lean_entry.rs",
         "initialise_lean_library",
-        "initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser",
+        "initialize_seLe4n_SeLe4n_Platform_Exerciser",
         1,
-        "the QEMU `virt` exerciser image's library initializer, under the same ordering",
+        "an exerciser image's library initializer, under the same ordering",
     ),
     (
         "src/trap.rs",

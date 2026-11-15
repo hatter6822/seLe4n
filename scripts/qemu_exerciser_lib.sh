@@ -9,11 +9,15 @@
 # read its console.  Sourced after `test_lib.sh` and `qemu_boot_lib.sh`; never
 # executed.
 #
-# Every exerciser gate boots the same image — the `virt` image with the
-# in-image drivers (`smp_exercisers`, `rust/sele4n-hal/src/smp_exercisers.rs`)
-# — on four PEs at EL2, the Raspberry Pi 5 firmware's entry level, HAL-only
-# or, with `--lean-kernel`, Lean-linked, and holds the log to the banners its
-# driver prints.  The four drivers run in one boot, so a gate that reads one
+# Every exerciser gate boots the same kernel with the in-image drivers
+# (`smp_exercisers`, `rust/sele4n-hal/src/smp_exercisers.rs`) on four PEs at
+# EL2, the Raspberry Pi 5 firmware's entry level, HAL-only or, with
+# `--lean-kernel`, Lean-linked, and holds the log to the banners its driver
+# prints.  WS-RB RB3: it boots the Raspberry Pi 5 image on rpi5_machine's
+# `raspi5b` first, then the `virt` image as the second lane, and holds both
+# logs to the same banners and the same pins: the kernel and the deployment
+# are the same on both boards (`SeLe4n/Platform/Exerciser/Deployment.lean`),
+# so a count that differs between them is a finding, not a second pin.  The four drivers run in one boot, so a gate that reads one
 # driver's banners still boots all four; `scripts/test_qemu_smp_exercisers.sh`
 # reads all of them from one boot, which is what the Lean archive lane runs.
 #
@@ -29,7 +33,6 @@
 # carry 32 distinct generations — one per round, which is what the round lock
 # serialising them means.
 
-EXERCISER_MACHINE="virt,gic-version=2,virtualization=on"
 EXERCISER_SUMMARY="[smp-test] exercisers: "
 EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall remote-stall)
 
@@ -46,9 +49,9 @@ exerciser_parse_args() {
     done
 }
 
-# exerciser_boot LABEL: build the exerciser image (Lean-linked when LEAN_KERNEL
-# is 1), boot it on four PEs until its summary line, and name the log in
-# EXERCISER_LOG.
+# exerciser_boot LABEL: build the exerciser image for the selected board
+# (`qemu_select_board`; Lean-linked when LEAN_KERNEL is 1), boot it on four PEs
+# until its summary line, and name the log in EXERCISER_LOG.
 #
 # Both images run under `-icount shift=0,sleep=off`, the HAL-only one included,
 # because the drivers' verdicts are **bounded waits** — a round's acknowledgment
@@ -72,11 +75,11 @@ exerciser_boot() {
     qemu_cut_image
     qemu_temp_file EXERCISER_LOG qemu_exercisers
     deadline="${QEMU_TIMEOUT:-300}"
-    log_section "TRACE" "RUN: ${label} — -machine ${EXERCISER_MACHINE} -smp 4 (deadline: ${deadline}s)"
+    log_section "TRACE" "RUN: ${label} — -machine ${QEMU_BOARD_MACHINE} -smp 4 (deadline: ${deadline}s)"
     # The summary is the third `[smp-test] exercisers: ` line — the
     # announcement, the window, the tally.  A run that never prints it runs to
     # the deadline and fails the check below.
-    qemu_run "${label}" "${EXERCISER_LOG}" "${EXERCISER_MACHINE}" 4 "${deadline}" \
+    qemu_run "${label}" "${EXERCISER_LOG}" "${QEMU_BOARD_MACHINE}" 4 "${deadline}" \
         "${EXERCISER_SUMMARY}" 3 "${extra[@]}"
 }
 
@@ -1108,7 +1111,8 @@ PY
 }
 
 # exerciser_gate ID SUBJECT DRIVER... [-- "$@"]: the whole of a single-driver
-# gate — parse the arguments, boot, check, report.
+# gate — parse the arguments, then on each board (the Raspberry Pi 5 on
+# `raspi5b`, then `virt`) boot and check, and report.
 exerciser_gate() {
     local id="$1" subject="$2" driver="$3" known candidate
     shift 3
@@ -1123,15 +1127,18 @@ exerciser_gate() {
         echo "${0##*/}: unknown exerciser driver: ${driver}" >&2
         exit 2
     fi
-    log_section "META" "=== ${id}: ${subject} under QEMU virt ==="
-    local image="HAL-only"
+    local image="HAL-only" board
     [[ "${LEAN_KERNEL}" -eq 1 ]] && image="Lean-linked"
-    exerciser_boot "${subject}, ${image} image, four PEs, EL2 entry" || true
-    if exerciser_check "${subject}" "${driver}"; then
-        log_section "META" "PASS: ${subject}"
-    else
-        log_section "META" "FAIL: ${subject}"
-    fi
+    for board in rpi5 virt; do
+        qemu_select_board "${board}"
+        log_section "META" "=== ${id}: ${subject} under ${QEMU_BOARD_LABEL} ==="
+        exerciser_boot "${subject}, ${QEMU_BOARD_LABEL}, ${image} image, four PEs, EL2 entry" || true
+        if exerciser_check "${subject} on ${QEMU_BOARD_LABEL}" "${driver}"; then
+            log_section "META" "PASS: ${subject} on ${QEMU_BOARD_LABEL}"
+        else
+            log_section "META" "FAIL: ${subject} on ${QEMU_BOARD_LABEL}"
+        fi
+    done
     finalize_report
 }
 

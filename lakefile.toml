@@ -21,15 +21,16 @@ name = "SeLe4n"
 name = "SeLe4nBoundaryProbes"
 roots = ["SeLe4n.Testing.BoundaryProbes"]
 
-# The allocation exerciser's QEMU `virt` boot (`SeLe4n/Platform/QemuVirt/Exerciser.lean`):
-# its entry `lean_kernel_main_qemu_virt_exerciser` and the labeling that permits
-# the declassification and audit calls it measures.  A library of its own so it
-# stays outside `SeLe4n.lean`'s import closure: the kernel's archive and the
-# shipped RPi5 and `virt` images carry none of it, and only the exerciser image
-# links its own archive (`libsele4n_exerciser.a`).
+# The allocation exerciser (`SeLe4n/Platform/Exerciser.lean`): its deployment,
+# the labeling that permits the declassification and audit calls it measures,
+# and its two boards' entries, `lean_kernel_main_rpi5_exerciser` and
+# `lean_kernel_main_qemu_virt_exerciser`.  A library of its own so it stays
+# outside `SeLe4n.lean`'s import closure: the kernel's archive and the shipped
+# RPi5 and `virt` images carry none of it, and only an exerciser image links
+# its own archive (`libsele4n_exerciser.a`).
 [[lean_lib]]
-name = "SeLe4nQemuVirtExerciser"
-roots = ["SeLe4n.Platform.QemuVirt.Exerciser"]
+name = "SeLe4nExerciser"
+roots = ["SeLe4n.Platform.Exerciser"]
 
 [[lean_exe]]
 name = "sele4n"

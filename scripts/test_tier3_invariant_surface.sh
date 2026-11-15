@@ -5723,9 +5723,10 @@ run_check "INVARIANT" rg -n '^        unless passed == blob do return none$' SeL
 run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall,$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
 # RPi5 entry's shape under the `virt` one — the table decides which board.
-run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig,$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessRPi5ExerciserCompliant\] do$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall, ..bootEntryWitnessQemuVirtExerciserCompliant\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -U -n '^def bootEntries : List BootEntrySpec :=\n  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^def bootEntries : List BootEntrySpec :=\n  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry, rpi5ExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
@@ -6966,9 +6967,9 @@ run_check "INVARIANT" rg -n '^    let board_script = board_link_script\(&manifes
 # builder's reachable link reads that same roots script; and the Lean archive
 # lane checks the linked image against it.
 run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for &input in exerciser_inputs\n                \.iter\(\)\n                \.chain\(\[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\]\.iter\(\)\)\n            \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
-# WS-ZA ZA5.13: the exerciser's archive and roots join that link only on the
-# `virt` exerciser image (`board_qemu_virt` with `smp_exercisers`).
-run_check "INVARIANT" rg -U -n '^            let exerciser_image = std::env::var_os\("CARGO_FEATURE_BOARD_QEMU_VIRT"\)\.is_some\(\)\n                && std::env::var_os\("CARGO_FEATURE_SMP_EXERCISERS"\)\.is_some\(\);\n            let exerciser_inputs: &\[&str\] = if exerciser_image \{\n                &\[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS\]\n            \} else \{\n                &\[\]\n            \};$' rust/sele4n-hal/build.rs
+# WS-ZA ZA5.13, WS-RB RB3: the exerciser's archive and roots join that link
+# only on an exerciser image (`smp_exercisers`, either board).
+run_check "INVARIANT" rg -U -n '^            let exerciser_image = std::env::var_os\("CARGO_FEATURE_SMP_EXERCISERS"\)\.is_some\(\);\n            let exerciser_inputs: &\[&str\] = if exerciser_image \{\n                &\[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS\]\n            \} else \{\n                &\[\]\n            \};$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            println!\("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections"\);$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)\n    inputs = \[str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
 run_check "INVARIANT" rg -U -n '^    argv = \[lld, "-flavor", "gnu", "--gc-sections", "-e", roots\[0\],\n            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os\.devnull, \*inputs\]$' scripts/build_lean_aarch64_archive.py
@@ -9251,7 +9252,7 @@ run_check "INVARIANT" rg -n '^        frame\.sp_el0 = idle\.sp_el0;$' rust/sele4
 # whose project closure is compiled to something other than its kernel term.
 run_check "INVARIANT" rg -n '^            match compiledEffectConstant env args with$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^    if \(Lean\.Compiler\.getImplementedBy\? env n\)\.isSome \|\| isExtern env n \|\| ci\.isUnsafe then$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'bootEntryWitnessEffectfulConfig,$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_retry_of_owned_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^theorem fpReleaseOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^    else if fpOwnedElsewhere st c tid then \(\.retry, st\)$' SeLe4n/Kernel/Architecture/FpContext.lean
@@ -9407,17 +9408,31 @@ run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt
 run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt_exerciser(dtb) };' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt_exerciser\]$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+# WS-RB RB3: the Raspberry Pi 5 exerciser image (`smp_exercisers` without
+# `board_qemu_virt`) boots its own entry; the shipped image keeps
+# `lean_kernel_main` and the confined deny-all labeling.
+run_check "INVARIANT" rg -n -F -- '#[cfg(all(not(feature = "board_qemu_virt"), feature = "smp_exercisers"))]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_rpi5_exerciser(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_rpi5_exerciser\]$' SeLe4n/Platform/RPi5/Exerciser.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialiseRPi5ExerciserFromDtbOrHalt dtb rpi5ExerciserInitialObjectsFor none$' SeLe4n/Platform/RPi5/Exerciser.lean
+run_check "INVARIANT" rg -n '^theorem rpi5ExerciserMeasured_checked\b' SeLe4n/Platform/RPi5/Exerciser.lean
+run_check "INVARIANT" rg -n '^def qemuVirtExerciserInitialObjects : List ObjectEntry :=$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^  Exerciser\.initialObjects qemuVirtBootTablePage qemuVirtBootRamExtensions$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^  Exerciser\.initialObjects rpi5BootTablePage \(rpi5BootRamExtensions v\)$' SeLe4n/Platform/RPi5/Exerciser.lean
 # WS-ZA ZA5.13: the exerciser is a library of its own, outside the kernel's
 # root: `SeLe4n.lean` does not import it, the builder refuses a kernel closure
 # that reaches it, the exerciser image calls its initializer in place of the
 # root's, and the shipped `virt` image is checked to carry none of its archive.
-run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n.lean
-run_check "INVARIANT" rg -U -n '^\[\[lean_lib\]\]\nname = "SeLe4nQemuVirtExerciser"\nroots = \["SeLe4n\.Platform\.QemuVirt\.Exerciser"\]$' lakefile.toml
-run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.(QemuVirt\.|RPi5\.)?Exerciser' SeLe4n.lean
+run_check "INVARIANT" rg -U -n '^\[\[lean_lib\]\]\nname = "SeLe4nExerciser"\nroots = \["SeLe4n\.Platform\.Exerciser"\]$' lakefile.toml
+run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Platform/Exerciser/Deployment.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Exerciser$' SeLe4n/Platform/Exerciser.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n/Platform/Exerciser.lean
 run_check "INVARIANT" rg -U -n '^    if EXERCISER_ROOT_MODULE in closure:\n        problems\.append' scripts/build_lean_aarch64_archive.py
-run_check "INVARIANT" rg -n -F -- 'let result = unsafe { initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(1) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let result = unsafe { initialize_seLe4n_SeLe4n_Platform_Exerciser(1) };' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -U -n '^        if \[\[ "\$\{lean\}" -eq 1 && "\$\{exercisers\}" -ne 1 \]\] \\\n            && ! python3 "\$\{REPO_ROOT\}/scripts/check_kernel_image\.py" --exclusion-only \\\n                --excludes "\$\{LEAN_EXERCISER_ARCHIVE\}" "\$\{KERNEL_BIN\}"; then$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^theorem qemuVirt_shippedLabeling_denies\b' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_shippedLabeling_denies\b' SeLe4n/Platform/RPi5/Exerciser.lean
 # WS-ZA ZA5.13: the declassification and audit calls are the register route's
 # audited arm, dispatched to the routed form the specification is proven equal
 # to; an admitted record writes its ring slot in place, the ring's append.
@@ -9438,7 +9453,7 @@ run_check "INVARIANT" rg -n '^  \| 14 => refusalTagsSlotCode rl index$' SeLe4n/K
 run_check "INVARIANT" rg -n '^        refusalTagSlots \* KernelError\.discriminantOfCode s\.reasonCode\) \+ 1$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem refusalTagsSlotCode_eq\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem toDiscriminant_ofPayloadWords\b' SeLe4n/Model/KernelErrorWords.lean
-run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry, rpi5ExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
@@ -9450,7 +9465,7 @@ run_check "INVARIANT" rg -n -F -- 'qemu_dtb_fixture.py" --self-test' scripts/tes
 run_check "INVARIANT" rg -n -F -- 'qemu_dtb_fixture.py" "${board}" --check' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'board_dtb_fixture virt qemu_virt_dtb.hex' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'board_dtb_fixture rpi5 rpi5_machine_dtb.hex' scripts/test_qemu.sh
-run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -U -n '^BOOT_ENTRY_SYMBOLS = \("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser",\n +"lean_kernel_main_rpi5_exerciser"\)$' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
 run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
 run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests
@@ -9627,7 +9642,7 @@ run_negative_check "INVARIANT" rg -n 'SELE4N_KERNEL_IMAGE' scripts/test_qemu_smp
 # The PE-withheld boot: two PEs, the Lean-linked image's refusal naming the
 # count, the boot core's dispatch refused and a serving secondary's admitted.
 # shellcheck disable=SC2016,SC1003
-run_check "INVARIANT" rg -n -F -- 'qemu_run "${LABEL}" "${MINIMAL_LOG}" "${EXERCISER_MACHINE}" 2 "${DEADLINE}" \' scripts/test_qemu_smp_minimal.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${LABEL}" "${MINIMAL_LOG}" "${QEMU_BOARD_MACHINE}" 2 "${DEADLINE}" \' scripts/test_qemu_smp_minimal.sh
 run_check "INVARIANT" rg -n -F -- 'require_prefix("[boot] FATAL: 2 PE(s) serving the kernel but the linked Lean kernel declares 4")' scripts/test_qemu_smp_minimal.sh
 run_check "INVARIANT" rg -n -F -- 'if line.startswith("[sched] core 0:"):' scripts/test_qemu_smp_minimal.sh
 run_negative_check "INVARIANT" rg -n 'line\.endswith\("first idle dispatch"\)' scripts/test_qemu_smp_minimal.sh
