@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/project-thread-nvgmgm",
-      "commit_sha": "5ceb51eeecb2b84144795466654e9c9171872996",
-      "tree_sha": "5028682dd5b25ab68f7b12e5a0bf00c9ee03f77c",
-      "committed_at_utc": "2026-11-15T16:16:09+00:00"
+      "branch": "main",
+      "commit_sha": "f8244d8300181334adfe38f98812edc18511be6a",
+      "tree_sha": "39ec59914a686269ee4982efb0b83668b7cb7794",
+      "committed_at_utc": "2026-11-15T13:11:37-05:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "672f831d0e348727679e356ff92b7c3f120bf6023a90ee654752739ef3702f1d"
+    "source_digest": "33541003b77d95eff357f47f0c97426675dc89eb1c6bd189b096ea25e51be0e8"
   },
   "summary": {
     "module_count": 695,
