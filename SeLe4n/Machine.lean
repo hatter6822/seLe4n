@@ -1195,6 +1195,20 @@ read the fifth, which no line the model names reaches). -/
 @[inline] def irqMaskWordWith (w : UInt64) (n : Nat) (masked : Bool) : UInt64 :=
   if masked then w ||| irqMaskBit n else w &&& ~~~(irqMaskBit n)
 
+/-- Mask word `i`, given line `n` of word `k`: the line's bit written when
+`k = i`, the word as it was otherwise.  Out of line and scalar in and out, so
+the record update that calls it once per word has no branch of its own: with
+the choice inside the update, the compiler split the update per word and the
+split for the fifth word rebuilt the record rather than reusing it (one cell
+per mask write on a line of 256 or more). -/
+@[noinline] def irqMaskWordAt (w : UInt64) (i k n : Nat) (masked : Bool) : UInt64 :=
+  if k = i then irqMaskWordWith w n masked else w
+
+/-- The fifth mask word, given line `n` of word `k`: the word every line past
+the fourth word writes (`irqMaskWordAt`'s counterpart for the last word). -/
+@[noinline] def irqMaskWordPast (w : UInt64) (k n : Nat) (masked : Bool) : UInt64 :=
+  if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then w else irqMaskWordWith w n masked
+
 /-- **Line `n` masked (`masked = true`) or unmasked at the interrupt
 controller**: its word rewritten, every other word and every other field kept
 (each by `rfl`).  Written as one update of all five words, so the state is
@@ -1203,12 +1217,11 @@ rewritten in place and no field but the masks is touched. -/
     MachineState :=
   let k := n / 64
   { ms with
-    irqMaskWord0 := if k = 0 then irqMaskWordWith ms.irqMaskWord0 n masked else ms.irqMaskWord0
-    irqMaskWord1 := if k = 1 then irqMaskWordWith ms.irqMaskWord1 n masked else ms.irqMaskWord1
-    irqMaskWord2 := if k = 2 then irqMaskWordWith ms.irqMaskWord2 n masked else ms.irqMaskWord2
-    irqMaskWord3 := if k = 3 then irqMaskWordWith ms.irqMaskWord3 n masked else ms.irqMaskWord3
-    irqMaskWord4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then ms.irqMaskWord4
-      else irqMaskWordWith ms.irqMaskWord4 n masked }
+    irqMaskWord0 := irqMaskWordAt ms.irqMaskWord0 0 k n masked
+    irqMaskWord1 := irqMaskWordAt ms.irqMaskWord1 1 k n masked
+    irqMaskWord2 := irqMaskWordAt ms.irqMaskWord2 2 k n masked
+    irqMaskWord3 := irqMaskWordAt ms.irqMaskWord3 3 k n masked
+    irqMaskWord4 := irqMaskWordPast ms.irqMaskWord4 k n masked }
 
 /-- Every line's bit is a set bit. -/
 theorem irqMaskBit_ne_zero_fin : ∀ k : Fin 64, (1 : UInt64) <<< k.val.toUInt64 ≠ 0 := by decide
@@ -1244,7 +1257,7 @@ line `n` reads `masked`. -/
     · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
   rcases this with h | h | h | h | ⟨k, h⟩ <;>
     simp only [MachineState.setIrqLineMask, MachineState.irqLineMasked, MachineState.irqMaskWord,
-      h] <;> simp [irqMaskWordWith_bit]
+      irqMaskWordAt, irqMaskWordPast, h] <;> simp [irqMaskWordWith_bit]
 
 /-- **A set of interrupt lines**, one bit per line in five words (the 320
 lines the model names), so a line is added or removed in place. -/
@@ -1277,11 +1290,11 @@ def capacity : Nat := 320
 /-- Line `n`'s word rewritten, every other word kept. -/
 @[inline] def setWord (s : InterruptLineSet) (n : Nat) (b : Bool) : InterruptLineSet :=
   let k := n / 64
-  { w0 := if k = 0 then irqMaskWordWith s.w0 n b else s.w0
-    w1 := if k = 1 then irqMaskWordWith s.w1 n b else s.w1
-    w2 := if k = 2 then irqMaskWordWith s.w2 n b else s.w2
-    w3 := if k = 3 then irqMaskWordWith s.w3 n b else s.w3
-    w4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then s.w4 else irqMaskWordWith s.w4 n b }
+  { w0 := irqMaskWordAt s.w0 0 k n b
+    w1 := irqMaskWordAt s.w1 1 k n b
+    w2 := irqMaskWordAt s.w2 2 k n b
+    w3 := irqMaskWordAt s.w3 3 k n b
+    w4 := irqMaskWordPast s.w4 k n b }
 
 /-- **Line `n` added (`b = true`) or removed**, in place; a line past
 `capacity` leaves the set as it is. -/
@@ -1350,7 +1363,7 @@ theorem irqMaskWordWith_bit_ne (w : UInt64) (n m : Nat) (b : Bool) (h : n % 64 �
     · omega
     · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
   rcases this with h | h | h | h | ⟨k, h⟩ <;>
-    simp only [setWord, word, h] <;> simp [irqMaskWordWith_bit]
+    simp only [setWord, word, irqMaskWordAt, irqMaskWordPast, h] <;> simp [irqMaskWordWith_bit]
 
 /-- **…and every other line as it was.** -/
 theorem mem_set_ne (s : InterruptLineSet) {n m : Nat} (b : Bool) (h : n ≠ m) :
@@ -1371,13 +1384,14 @@ theorem mem_set_ne (s : InterruptLineSet) {n m : Nat} (b : Bool) (h : n ≠ m) :
       · omega
       · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨m / 64 - 4, by omega⟩)))
     rcases this with h' | h' | h' | h' | ⟨k, h'⟩ <;>
-      simp only [setWord, word, hw, h'] <;> simp [irqMaskWordWith_bit_ne _ _ _ _ hb]
+      simp only [setWord, word, irqMaskWordAt, irqMaskWordPast, hw, h'] <;>
+        simp [irqMaskWordWith_bit_ne _ _ _ _ hb]
   · have hn' : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ n / 64 = 4 := by omega
     have hm' : m / 64 = 0 ∨ m / 64 = 1 ∨ m / 64 = 2 ∨ m / 64 = 3 ∨ m / 64 = 4 := by omega
     rcases hn' with e | e | e | e | e <;> rcases hm' with f | f | f | f | f <;>
       first
       | omega
-      | simp [setWord, word, e, f]
+      | simp [setWord, word, irqMaskWordAt, irqMaskWordPast, e, f]
 
 /-- WS-ZA ZA6.32: the set rebuilt in a cell of its own.  The boot's sets are the
 shared initial constant, so the first line a `seL4_IRQControl_Get` issued after

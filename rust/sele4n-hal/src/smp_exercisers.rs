@@ -9834,9 +9834,11 @@ const FLOW_DENIED: u64 = 13;
 /// a refused lookup whose error carries a payload (a guard mismatch) recorded in
 /// the refusal ledger from its words, so neither the error nor the record is
 /// built on the entry path.  The address is a bare slot number, below the root
-/// guard.  The fifth word (`GuardFound`'s size) goes to the root task's IPC
-/// buffer, so the length is 5; the buffer is not at `FRAME_VADDR` in this
-/// phase, so the word itself is not probed.
+/// guard.  The fifth word (`GuardFound`'s size) goes to the caller's IPC
+/// buffer, and only the root task has one here, so the length is 5 only with
+/// the root task as the caller: the driver runs it with the partner suspended,
+/// where no tick can hand core 0 to another thread.  The buffer is not at
+/// `FRAME_VADDR` in this phase, so the word itself is not probed.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
     name: "declassify-guard-mismatch-refused",
@@ -11256,9 +11258,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
             return Some(false);
         }
-        if heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) != Some(true) {
-            return Some(false);
-        }
         for step in AUDIT_SCENARIO.iter() {
             if heap_allocations_round_trip(step, which) != Some(true) {
                 return Some(false);
@@ -11284,11 +11283,15 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
     // downgrade and its refused second hop, the partner suspended and the
     // timer masked across each run; then the boot audit capability deleted so
-    // its slot is the copy's again.
+    // its slot is the copy's again.  Each run opens with the refused lookup,
+    // which needs the root task as its caller: with the partner suspended the
+    // root task is the only thread core 0 can run, whatever a tick did before.
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         let saved = crate::interrupts::disable_interrupts();
-        let ok = bound_declassified_signals(which);
+        let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which)
+            == Some(true)
+            && bound_declassified_signals(which);
         crate::interrupts::restore_interrupts(saved);
         if !ok {
             return Some(false);
@@ -13720,8 +13723,9 @@ fn dispatch_round_trip_at(
         }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x})",
-                regs[1] >> 12
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x}, length {})",
+                regs[1] >> 12,
+                regs[1] & 0x7f
             );
             Dispatched::Failed
         }

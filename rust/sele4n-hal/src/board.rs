@@ -3,10 +3,11 @@
 //!
 //! The HAL describes one machine at a time, chosen at build time: the
 //! Raspberry Pi 5 (BCM2712) by default, QEMU's `virt` machine under the
-//! `board_qemu_virt` feature.  QEMU ships no BCM2712 model, and `virt` is the
-//! only machine it has that carries what the boot path needs — PSCI, a GICv2
-//! and a PL011 — so a boot under QEMU runs an image whose device map is
-//! `virt`'s rather than an RPi5 image that meets no device.
+//! `board_qemu_virt` feature.  Upstream QEMU ships no BCM2712 model; the
+//! Raspberry Pi 5 image runs under rpi5_machine's `raspi5b` (WS-RB), which
+//! does, and `virt` stays the second machine the QEMU lanes boot, carrying
+//! what the boot path needs (PSCI, a GICv2 and a PL011) under a device map of
+//! its own.
 //!
 //! Every board-dependent constant the boot path reads is a field of
 //! [`BoardMap`] and nowhere else: the RAM the kernel's reserved extent sits at

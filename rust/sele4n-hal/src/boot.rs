@@ -406,7 +406,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
         // if it refuses, then enter the kernel with the proof that it ran.
         #[cfg(not(feature = "lean_init_refusal_probe"))]
         let initialised = crate::lean_entry::initialise_lean_library();
-        // v0.36.31: the refusal probe's `virt` test image drives a refused
+        // v0.36.31: the refusal probe's test image drives a refused
         // initialization through the same report-and-halt path, so the
         // refusal is executed on the target rather than asserted
         // (`scripts/test_qemu_lean_init_refusal.sh`).  It never returns.

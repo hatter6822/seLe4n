@@ -9552,13 +9552,14 @@ run_negative_check "INVARIANT" rg -n -U '\$crate::kprint!\(\$\(\$arg\)\*\);\n[ ]
 run_check "INVARIANT" rg -n '^    fn a_printed_line_takes_the_console_lock_once\(\) \{$' rust/sele4n-hal/src/uart.rs
 
 # ----------------------------------------------------------------------------
-# WS-BP BP8.4 (v0.36.28): the Tier-4 gates execute on the `virt` test image,
-# and the shootdown box is decided by a run.
+# WS-BP BP8.4 (v0.36.28): the Tier-4 gates execute on the test images (on
+# rpi5_machine's `raspi5b` and on `virt` since WS-RB RB3), and the shootdown
+# box is decided by a run.
 # ----------------------------------------------------------------------------
 # The drivers are a module behind a feature, and the feature never reaches a
 # release image: the exerciser image builds into a target directory of its
-# own, no image build in either lane names the feature without the board
-# selector, and the packager never sees it.  The `.sh` negatives are scoped to
+# own, no released image build in either lane names the feature, and the
+# packager never sees it.  The `.sh` negatives are scoped to
 # the COMMANDS, since a shell script is read raw and each lane's header names
 # the feature in prose to say exactly this.
 run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "smp_exercisers"\)\]\npub mod smp_exercisers;$' rust/sele4n-hal/src/lib.rs

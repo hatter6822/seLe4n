@@ -50,17 +50,18 @@
 # images build into target directories of their own (`scripts/qemu_boot_lib.sh`).
 #
 # WS-BP BP8.4: and the Tier-4 in-image exercisers,
-# `scripts/test_qemu_smp_exercisers.sh`, on the HAL-only `virt` test image and
-# on the Lean-linked one: the cross-core SGI round trip, the per-core console
+# `scripts/test_qemu_smp_exercisers.sh`, HAL-only and Lean-linked, on a
+# Raspberry Pi 5 test image booted on rpi5_machine's `raspi5b` and on a `virt`
+# one (WS-RB RB3): the cross-core SGI round trip, the per-core console
 # stress, the TLB shootdown round trip and the shootdown stress, driven by the
 # boot core through the HAL's own shootdown round protocol, each banner held as
-# a whole line.  The test image carries the `smp_exercisers` feature and builds
-# into a target directory of its own; the Raspberry Pi 5 image above never
-# carries it, which `scripts/check_aarch64_cross_target.py` refuses.
+# a whole line.  A test image carries the `smp_exercisers` feature and builds
+# into a target directory of its own; the released Raspberry Pi 5 image above
+# never carries it, which `scripts/check_aarch64_cross_target.py` refuses.
 #
 # v0.36.31: and the Lean initialization refusal probe,
-# `scripts/test_qemu_lean_init_refusal.sh`: a Lean-linked `virt` test image
-# whose library initialization refuses as its command line names -- an `IO`
+# `scripts/test_qemu_lean_init_refusal.sh`: a Lean-linked test image (the
+# Raspberry Pi 5's on `raspi5b`, then `virt`'s) whose library initialization refuses as its command line names -- an `IO`
 # error, a malformed result, a second run -- booted on four PEs at the board's
 # EL2 entry, each run held to ending on the refusal with nothing after it
 # (WS-BP BP2.4, on the target).  The probe feature is fenced exactly as the

@@ -31,6 +31,8 @@ roots = ["SeLe4n.Testing.BoundaryProbes"]
 [[lean_lib]]
 name = "SeLe4nExerciser"
 roots = ["SeLe4n.Platform.Exerciser"]
+globs = ["SeLe4n.Platform.Exerciser", "SeLe4n.Platform.Exerciser.+",
+  "SeLe4n.Platform.RPi5.Exerciser", "SeLe4n.Platform.QemuVirt.Exerciser"]
 
 [[lean_exe]]
 name = "sele4n"
