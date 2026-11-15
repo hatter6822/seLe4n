@@ -418,6 +418,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
         crate::lean_entry::report_heap_census("the library initializer");
         let permit = crate::lean_entry::enter_lean_kernel(initialised, dtb_ptr);
         crate::kprintln!("[boot] Phase 5: kernel state installed");
+        // WS-SX SX5.3 (D15): the writes the boot owed — the root server's
+        // page scrubs and descriptors — performed before the install.
+        crate::kprintln!(
+            "[boot] Phase 5: {} owed boot physical write(s) performed",
+            crate::ffi::boot_physical_writes()
+        );
         crate::lean_entry::report_heap_census("the install");
         permit
     };

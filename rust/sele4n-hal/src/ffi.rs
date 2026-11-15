@@ -1939,6 +1939,12 @@ pub extern "C" fn ffi_restore_commit(
 /// a refusal **halts the system**: the Lean kernel names only pages it owns, so
 /// a refused operand is a kernel defect, and performing it would write memory
 /// the kernel did not mean to touch.
+///
+/// WS-SX SX5.3 (D15): a write performed before the boot map is sealed is one
+/// the boot owed — the root server's page scrubs and descriptors, which the
+/// boot entry performs before it installs the drained state — and is counted
+/// ([`boot_physical_writes`]), so the boot transcript shows the target did
+/// them.
 #[no_mangle]
 pub extern "C" fn mmu_apply_physical_write(
     tag: u64,
@@ -1954,7 +1960,22 @@ pub extern "C" fn mmu_apply_physical_write(
         Ok(write) => crate::user_translation::apply_physical_write(write),
         Err(_) => crate::gic::halt_all(),
     }
+    if !crate::mmu::boot_map_sealed() {
+        BOOT_PHYSICAL_WRITES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
     crate::lean_runtime::base_io_unit()
+}
+
+/// The physical writes performed before the boot map was sealed: one writer,
+/// the boot core during the install.
+static BOOT_PHYSICAL_WRITES: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// **WS-SX SX5.3 (D15)**: how many physical writes the boot performed — the
+/// writes the boot entry drained, which `boot.rs` prints after the install.
+#[must_use]
+pub fn boot_physical_writes() -> usize {
+    BOOT_PHYSICAL_WRITES.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 /// **WS-ZA ZA5.2**: the executing PE's entry-word buffer —

@@ -2865,16 +2865,20 @@ def root_server_builds_the_ipc_buffer_at_boot : IO Unit := do
             (decide (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? st t 0 true
               = some (SeLe4n.PAddr.ofNat ((rs.pageAddr 0).toNat +
                   (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr rs.bufferVAddr 0).pageOffset))))
-          expect s!"SX5.3 {name}: the boot owes the root server's writes, which the drain clears"
-            (st.drainedPhysicalWrites.count != 0 &&
+          -- Four page scrubs, the three tables' descriptors and the buffer's
+          -- page descriptor (`rootServerWrites`): the count the HAL prints
+          -- at Phase 5 (`qemu_lean_boot_expected.txt`'s `BOOT_WRITES`).
+          expect s!"SX5.3 {name}: the boot owes the root server's eight writes, which the drain clears"
+            (st.drainedPhysicalWrites.count == 8 &&
               (drainBootPhysicalWrites ist).state.drainedPhysicalWrites.count == 0)
       let bare := { config with rootServer := none }
       match bootFromPlatformCheckedStartedFor cores bare with
       | .error e => expect s!"SX5.3 CONTROL {name} without a reservation boots ({e})" false
       | .ok ist =>
-        expect s!"SX5.3 CONTROL {name} without a reservation leaves the root thread bufferless"
-          ((ist.state.getTcb? rs.thread).any fun t =>
-            decide (t.ipcBuffer.toNat = 0) && t.spaceCells[2].isNone)
+        expect s!"SX5.3 CONTROL {name} without a reservation leaves the root thread bufferless and owes nothing"
+          (((ist.state.getTcb? rs.thread).any fun t =>
+              decide (t.ipcBuffer.toNat = 0) && t.spaceCells[2].isNone) &&
+            ist.state.drainedPhysicalWrites.count == 0)
       let outside := { config with rootServer := some { rs with base := SeLe4n.PAddr.ofNat 0x1000 } }
       expect s!"SX5.1 NEGATIVE {name}: a reservation outside RAM is refused"
         (match bootFromPlatformCheckedStartedFor cores outside with

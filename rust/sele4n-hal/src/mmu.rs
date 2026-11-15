@@ -1326,6 +1326,13 @@ pub fn seal_boot_map() {
     BOOT_MAP_SEALED.store(true, Ordering::Release);
 }
 
+/// Whether the boot map is sealed: `false` exactly while the boot core runs
+/// the install, before any secondary exists.
+#[must_use]
+pub fn boot_map_sealed() -> bool {
+    BOOT_MAP_SEALED.load(Ordering::Acquire)
+}
+
 /// **WS-BP BP4.6**: extend the live boot map over `[base, base + size)` and
 /// widen the cacheable window to match.
 ///
