@@ -316,6 +316,7 @@ qemu_build_image() {
 # tree, at the addresses their `config.txt` gives the firmware
 # (`kernel-address`, `dtb-address`, `dtb-end`): the boot the lane runs is the
 # one the firmware would make from those files.
+# shellcheck disable=SC2034  # QEMU_BOARD_MACHINE is the callers'
 qemu_cut_image() {
     local objcopy
     if [[ "${QEMU_BOARD}" == "rpi5" ]]; then
@@ -347,7 +348,7 @@ qemu_cut_image() {
 # with QEMU's PSCI); `tf-a` names TF-A's `rpi5` BL31 as the armstub, which then
 # provides PSCI itself.  `qemu_run` with QEMU_CARD set boots the card with
 # rpi5_machine's `rpi5-boot`, which reads its `config.txt` as the firmware does;
-# QEMU_CARD="" goes back to booting QEMU_IMAGE.
+# `qemu_rpi5_card_done` goes back to booting QEMU_IMAGE.
 qemu_rpi5_card() {
     local machine_root tf_a=()
     machine_root=$(dirname "${QEMU_BIN}")
@@ -364,6 +365,9 @@ qemu_rpi5_card() {
     fi
 }
 QEMU_CARD=""
+qemu_rpi5_card_done() {
+    QEMU_CARD=""
+}
 
 # qemu_run LABEL LOG MACHINE SMP TIMEOUT UNTIL_FRAGMENT UNTIL_COUNT [QEMU_ARG...]:
 # boot QEMU_IMAGE on MACHINE with SMP PEs, the serial console written to LOG.

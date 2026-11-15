@@ -292,7 +292,7 @@ boot_board() {
             boot_once "${LEAN_LABEL}Raspberry Pi 5 SD card, rpi5-boot, TF-A's BL31" "" \
                 "NOTICE:  BL31: v" "${banner}" "Entered at EL2, running at EL1" "PSCI conduit: Smc" \
                 "${per_core[@]}"
-            QEMU_CARD=""
+            qemu_rpi5_card_done
             ;;
         virt)
             banner="booting on QEMU virt"
