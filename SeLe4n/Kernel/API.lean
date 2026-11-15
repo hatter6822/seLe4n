@@ -27,6 +27,8 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
 -- `.tcbSuspend` arm — the victim is descheduled on its *home* core.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.IPC.CrossCore.ReplyHolderCancel
+import SeLe4n.Kernel.IPC.CrossCore.Restart
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -135,7 +137,7 @@ completed before implementation.
 | `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetPriority` to `setPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean` (`setPriorityOp` remains its boot-core instance). | Complete |
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetMCPriority` to `setMCPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean`. | Complete |
 | `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM6.E). Wired as `SyscallId.tcbSuspend` to `suspendThreadOnCore` in `Lifecycle/Suspend.lean` (`suspendThread` remains its boot-core form). | Complete |
-| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCore` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `restartThreadOnCore` in `IPC/CrossCore/Restart.lean`, seL4's `restart`: a thread that is not stopped is left as it is, one blocked in an IPC has the IPC cancelled through the suspend, and an `Inactive` one is resumed by `resumeThreadOnCore` (`resumeThread` remains its boot-core form). | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 
@@ -546,6 +548,260 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
                   if r.caller.isNone && !st.replyStashedAt rid r then .ok (some rid)
                   else .error .replyCapInvalid
               | none => .error .replyCapInvalid
+
+/-- **WS-SX SX4: the thread a receive's busy reply cancels, as its code** (`0`
+for none, `t + 1` for thread `t`): the reply capability the receive names,
+resolved as `resolveRecvReplyId` resolves it, is busy with another thread
+(`busyReplyHolderCode`), and the receiver may flow to that thread, whose IPC it
+is about to cancel (the reply capability it presents is its authority over the
+reply's holder).  Every answer is read from the state the receive is handed. -/
+def recvBusyReplyHolderCode (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (st : SystemState) : Nat :=
+  if decoded.msgInfo.length == 0 then 0 else
+  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | .error _ => 0
+  | .ok rargs =>
+      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | .error _ => 0
+      | .ok (_, rid) =>
+          let h := busyReplyHolderCode st tid rid
+          if h = 0 then 0
+          else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf ⟨h - 1⟩) then h
+          else 0
+
+/-- **WS-SX SX4: a receive's busy-reply cancel** (seL4-MCS `receiveIPC`'s
+`cancelIPC(replyTCB)`): the holder `recvBusyReplyHolderCode` names cancelled in
+place (`cancelReplyHolder`), committed as seL4's `cancelIPC` is; the state as it
+was when there is none. -/
+def cancelRecvBusyReply (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (executingCore : Concurrency.CoreId)
+    (st : SystemState) : SystemState :=
+  match recvBusyReplyHolderCode ctx tid gate decoded st with
+  | 0 => st
+  | k + 1 => cancelReplyHolder st ⟨k⟩ executingCore
+
+/-- **The reply object a receive's reply capability names** — the lookup
+`resolveRecvReplyId` and `recvBusyReplyHolderCode` both make, without the
+freeness check: what the receive's lock operands name when its reply is busy, so
+its footprints can name the holder the receive cancels. -/
+def recvReplyLookup? (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) : Option SeLe4n.ReplyId :=
+  if decoded.msgInfo.length == 0 then none else
+  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | .error _ => none
+  | .ok rargs =>
+      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+      | .error _ => none
+      | .ok (_, rid) => some rid
+
+/-- The holder a receive cancels is the one its named reply is busy with. -/
+theorem recvBusyReplyHolderCode_succ {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {gate : SyscallGate} {decoded : SyscallDecodeResult} {st : SystemState} {k : Nat}
+    (h : recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) :
+    busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = some ⟨k⟩ := by
+  unfold recvBusyReplyHolderCode at h
+  unfold recvReplyLookup?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at h
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; simp at h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; simp at h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h ⊢
+      split at h
+      · simp at h
+      · split at h
+        · simp only [busyReplyHolder?, h]
+        · simp at h
+
+/-- A receive whose named reply is busy with no other thread cancels nothing. -/
+theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {executingCore : Concurrency.CoreId} {st : SystemState}
+    (h : busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none) :
+    cancelRecvBusyReply ctx tid gate decoded executingCore st = st := by
+  unfold cancelRecvBusyReply
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    have hB := recvBusyReplyHolderCode_succ hC
+    rw [h] at hB
+    cases hB
+
+/-- **A receive's busy-reply cancel is the identity, or a holder's cancel** —
+of a holder that is never the receiver itself. -/
+theorem cancelRecvBusyReply_cases (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    cancelRecvBusyReply ctx tid gate decoded executingCore st = st ∨
+      ∃ holder, holder ≠ tid ∧
+        cancelRecvBusyReply ctx tid gate decoded executingCore st =
+          cancelReplyHolder st holder executingCore := by
+  unfold cancelRecvBusyReply
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => exact Or.inl rfl
+  | succ k => exact Or.inr ⟨⟨k⟩, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), rfl⟩
+
+/-- A receive whose reply resolved free names no busy holder... -/
+theorem busyReplyHolder?_of_resolveRecvReplyId_ok {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {st : SystemState} {r : Option SeLe4n.ReplyId}
+    (tid : SeLe4n.ThreadId) (h : resolveRecvReplyId gate decoded st = .ok r) :
+    busyReplyHolder? st tid r = none := by
+  unfold resolveRecvReplyId at h
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp only [h0, ↓reduceIte, Except.ok.injEq] at h; subst h; rfl
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h
+      cases hR : st.getReply? rid with
+      | none => rw [hR] at h; cases h
+      | some rr =>
+        rw [hR] at h
+        simp only at h
+        split at h
+        · rename_i hFree
+          simp only [Except.ok.injEq] at h
+          subst h
+          simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.not_eq_true'] at hFree
+          simp only [busyReplyHolder?, busyReplyHolderCode, hR, hFree.1, hFree.2,
+            Bool.false_eq_true, ↓reduceIte]
+        · cases h
+
+/-- ...and so cancels none. -/
+theorem busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok
+    {gate : SyscallGate} {decoded : SyscallDecodeResult} {st : SystemState}
+    {r : Option SeLe4n.ReplyId} (tid : SeLe4n.ThreadId)
+    (h : resolveRecvReplyId gate decoded st = .ok r) :
+    busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none := by
+  have hN := busyReplyHolder?_of_resolveRecvReplyId_ok tid h
+  -- the named reply is the resolved one
+  unfold resolveRecvReplyId at h
+  unfold recvReplyLookup?
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0, busyReplyHolder?]
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid⟩ := p
+      rw [hL] at h
+      simp only at h ⊢
+      cases hR : st.getReply? rid with
+      | none => rw [hR] at h; cases h
+      | some rr =>
+        rw [hR] at h
+        simp only at h
+        split at h
+        · simp only [Except.ok.injEq] at h
+          subst h
+          exact hN
+        · cases h
+
+theorem recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {st : SystemState} {r : Option SeLe4n.ReplyId}
+    (h : resolveRecvReplyId gate decoded st = .ok r) :
+    recvBusyReplyHolderCode ctx tid gate decoded st = 0 := by
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    have hB := recvBusyReplyHolderCode_succ hC
+    rw [busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok tid h] at hB
+    cases hB
+
+/-- `lookupReplyCap` reads only CNodes. -/
+theorem lookupReplyCap_congr_getCNode? (gate : SyscallGate) (st₁ st₂ : SystemState)
+    (hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id) :
+    lookupReplyCap gate st₁ = lookupReplyCap gate st₂ := by
+  have hL : ∀ ref, SystemState.lookupSlotCap st₁ ref = SystemState.lookupSlotCap st₂ ref := by
+    intro ref
+    have e := hC ref.cnode
+    simp only [SystemState.getCNode?] at e
+    simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, e]
+  unfold lookupReplyCap syscallLookupCap syscallResolveCap
+  rw [SyscallGate.lookupSlot_congr_getCNode? _ st₁ st₂ hC]
+  generalize SyscallGate.lookupSlot _ st₂ = res
+  cases res with
+  | error f => rfl
+  | ok ref =>
+    simp only [hL ref]
+    generalize SystemState.lookupSlotCap st₂ ref = oc
+    cases oc with
+    | none => rfl
+    | some cap =>
+      by_cases hR : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+      · simp [hR]
+      · by_cases hW : cap.hasRight AccessRight.write = true <;> simp [hR, hW]
+
+/-- The busy-reply holder a receive names reads only the object store. -/
+theorem recvBusyReplyHolderCode_congr_objects (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) {st₁ st₂ : SystemState}
+    (h : st₁.objects = st₂.objects) :
+    recvBusyReplyHolderCode ctx tid gate decoded st₁ =
+      recvBusyReplyHolderCode ctx tid gate decoded st₂ := by
+  have hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id := fun id => by
+    simp only [SystemState.getCNode?, h]
+  have hB : ∀ rid, busyReplyHolderCode st₁ tid rid = busyReplyHolderCode st₂ tid rid := by
+    intro rid
+    simp only [busyReplyHolderCode, SystemState.getReply?, SystemState.replyStashedAt,
+      SystemState.getTcb?, h]
+  unfold recvBusyReplyHolderCode
+  simp only [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC, hB]
+
+/-- A receive whose CNodes a step left alone names the same reply after it: a
+resolution on the later state, when it succeeds, is the reply the earlier
+state's lookup named. -/
+theorem resolveRecvReplyId_eq_of_getCNode? {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {r : Option SeLe4n.ReplyId}
+    (hC : ∀ id, st'.getCNode? id = st.getCNode? id)
+    (hLk : recvReplyLookup? gate decoded st = some rid)
+    (h : resolveRecvReplyId gate decoded st' = .ok r) : r = some rid := by
+  unfold recvReplyLookup? at hLk
+  unfold resolveRecvReplyId at h
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0] at hLk
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hLk
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => rw [hA] at h; cases h
+  | ok rargs =>
+    rw [hA] at h hLk
+    simp only at h hLk
+    rw [lookupReplyCap_congr_getCNode? _ st' st hC] at h
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => rw [hL] at h; cases h
+    | ok p =>
+      obtain ⟨_, rid'⟩ := p
+      rw [hL] at h hLk
+      simp only [Option.some.injEq] at hLk
+      subst hLk
+      simp only at h
+      split at h
+      · split at h
+        · simp only [Except.ok.injEq] at h; exact h.symm
+        · cases h
+      · cases h
 
 /-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
 (`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
@@ -1384,6 +1640,27 @@ theorem receiveReplyFault?_of_resolveRecvReplyId_ok (gate : SyscallGate)
       | error lf => rw [hL] at h; cases h
       | ok q => rw [hL] at hF; cases hF
 
+/-- A receive whose reply capability looked up raises no reply fault, whether
+or not the reply it names is free. -/
+theorem receiveReplyFault?_of_recvReplyLookup?_some (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hSid : decoded.syscallId = .receive) (h : recvReplyLookup? gate decoded st = some rid) :
+    receiveReplyFault? gate decoded st = none := by
+  unfold recvReplyLookup? at h
+  unfold receiveReplyFault? receiveReplyAddr?
+  rw [hSid]
+  by_cases h0 : (decoded.msgInfo.length == 0) = true
+  · simp [h0]
+  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | error e => simp [hA] at h
+  | ok rargs =>
+    rw [hA] at h
+    simp only at h ⊢
+    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+    | error e => simp [hL] at h
+    | ok q => simp only
+
 /-- A reply-receive whose reply capability resolved raises no reply fault. -/
 theorem receiveReplyFault?_of_resolveReplyRecvReply_ok (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState)
@@ -1460,6 +1737,13 @@ theorem receiveReplyFault?_congr_objects (gate : SyscallGate) (decoded : Syscall
           · simp [h1]
           · by_cases h2 : c.hasRight .write = true <;> simp [h1, h2]
     rw [hL]
+
+/-- The reply capability's fault reads only CNodes. -/
+theorem receiveReplyFault?_congr_getCNode? (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st₁ st₂ : SystemState) (hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id) :
+    receiveReplyFault? gate decoded st₁ = receiveReplyFault? gate decoded st₂ := by
+  unfold receiveReplyFault?
+  simp only [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC]
 
 theorem receiveReplyFaults_none_of_namesReply (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState) (ke : KernelError)
@@ -3977,12 +4261,14 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         -- ordinary Call would be answered through the reply seam's fault
         -- branch and rewound to the old fault PC.  A thread carrying no fault
         -- is untouched (`retirePendingFaultForResume_of_no_fault`).
+        --
+        -- WS-SX SX4: the arm is seL4's `restart` (`restartThreadOnCore`): a
+        -- thread blocked in an IPC is stopped too, so its IPC is cancelled and
+        -- it is resumed; a thread that is not stopped is left as it is.
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCore
-                (retirePendingFaultForResume st vtid.val) vtid
-                executingCore with
+            match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -4536,21 +4822,22 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+          cases hRes : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCore_preserves_ipcInvariantFull
-                (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
-                (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
-                (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
-                  (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_noFault st _ hObjInv)
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+              have hQ := hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal
+              rcases Lifecycle.Suspend.restartThreadOnCore_cases_of_ready hQ.ready hRes with
+                hRes | ⟨rfl, _⟩
+              · exact resumeThreadOnCore_preserves_ipcInvariantFull
+                  (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
+                  (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
+                  (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv hQ)
+                  (retirePendingFaultForResume_noFault st _ hObjInv)
+                  (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+              · exact hInv
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4789,6 +5076,66 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
   · exact absurd rfl hR
   · rfl
 
+/-- **The checked receive arm once its gate has passed and its busy reply is
+cancelled** (`dispatchWithCapChecked`'s `.receive` arm, WS-SX SX4): the reply
+object resolved, the per-core receive with its capabilities, the rendezvous
+hand-off and the delivery staged. -/
+def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) :
+    Kernel Unit :=
+  fun st =>
+      -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
+      -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
+      match resolveRecvReplyId gate decoded st with
+      | .error e => .error e
+      | .ok replyIdOpt =>
+        -- WS-SM SM6.D (PR #822 review): route through the per-core receive
+        -- transition (the endpoint→receiver flow is already gated above, so the
+        -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
+        -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
+        -- `endpointReceiveDualChecked` when the flow is permitted.
+        -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
+        -- transition (the endpoint→receiver flow is gated above); the dequeued
+        -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
+        -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
+        let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
+        -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
+        -- routing — a send that parked before its receiver arrived delivers
+        -- its capabilities here too, gated on the authority the sender
+        -- recorded on the message.  The endpoint→receiver flow is gated
+        -- above, so the *unchecked* per-core WithCaps receive is correct
+        -- here for the same reason the bare one was.
+        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+        | (st', .ok (dequeued, summary, _sgi)) =>
+            -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
+            -- `maybeDonateSchedContext` step, and the *same* definition.  No
+            -- extra flow gate is owed: the donation writes only
+            -- `schedContextBinding` and `SchedContext.boundThread`, both of
+            -- which `projectKernelObject` erases, so it is invisible to every
+            -- observer (`returnDonatedSchedContext_preserves_projection` makes
+            -- the same argument for the hand-off's other direction); and the
+            -- endpoint→receiver flow this donation follows is gated above.
+            --
+            -- **WS-OD OD3.14**: likewise the priority half, and for the same
+            -- reason no extra gate is owed -- `projectKernelObject` strips
+            -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
+            -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
+            -- exactly as the flow-checked `.call` arm's own walk is bounded
+            -- by `endpointCallLiveWriteSet`.
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            | .error e => .error e
+            | .ok stDon =>
+              -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
+              -- checked twin of the unchecked arm's staging; the endpoint
+              -- flow gate above governs the consumed message).  PR #873
+              -- round 6: `extraCaps` is the summary's INSTALLED count, the
+              -- same honest figure the send and call paths report — it was
+              -- hardcoded to zero while the receive installed nothing.
+              .ok ((), Architecture.stageDeliveredMessage
+                        (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                        summary.capInfo)
+        | (_, .error e) => .error e
+
 /-- T6-I/M-IF-1/U5-A: Policy-checked dispatch — replaces unchecked operations
 with their information-flow-checked equivalents. All cross-domain operations
 (IPC send/receive/call/reply, CSpace mint/copy/move, service register) are
@@ -4885,57 +5232,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
-          -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
-          -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
-          match resolveRecvReplyId gate decoded st with
-          | .error e => .error e
-          | .ok replyIdOpt =>
-            -- WS-SM SM6.D (PR #822 review): route through the per-core receive
-            -- transition (the endpoint→receiver flow is already gated above, so the
-            -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
-            -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
-            -- `endpointReceiveDualChecked` when the flow is permitted.
-            -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
-            -- transition (the endpoint→receiver flow is gated above); the dequeued
-            -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
-            -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
-            let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-            -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
-            -- routing — a send that parked before its receiver arrived delivers
-            -- its capabilities here too, gated on the authority the sender
-            -- recorded on the message.  The endpoint→receiver flow is gated
-            -- above, so the *unchecked* per-core WithCaps receive is correct
-            -- here for the same reason the bare one was.
-            match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
-            | (st', .ok (dequeued, summary, _sgi)) =>
-                -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
-                -- `maybeDonateSchedContext` step, and the *same* definition.  No
-                -- extra flow gate is owed: the donation writes only
-                -- `schedContextBinding` and `SchedContext.boundThread`, both of
-                -- which `projectKernelObject` erases, so it is invisible to every
-                -- observer (`returnDonatedSchedContext_preserves_projection` makes
-                -- the same argument for the hand-off's other direction); and the
-                -- endpoint→receiver flow this donation follows is gated above.
-                --
-                -- **WS-OD OD3.14**: likewise the priority half, and for the same
-                -- reason no extra gate is owed -- `projectKernelObject` strips
-                -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
-                -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
-                -- exactly as the flow-checked `.call` arm's own walk is bounded
-                -- by `endpointCallLiveWriteSet`.
-                match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
-                | .error e => .error e
-                | .ok stDon =>
-                  -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
-                  -- checked twin of the unchecked arm's staging; the endpoint
-                  -- flow gate above governs the consumed message).  PR #873
-                  -- round 6: `extraCaps` is the summary's INSTALLED count, the
-                  -- same honest figure the send and call paths report — it was
-                  -- hardcoded to zero while the receive installed nothing.
-                  .ok ((), Architecture.stageDeliveredMessage
-                            (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                            summary.capInfo)
-            | (_, .error e) => .error e
+          -- WS-SX SX4: a reply busy with another thread has that thread's IPC
+          -- cancelled first (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`), every
+          -- check that can refuse the receive asked of the state it was handed;
+          -- the cancel is committed and the receive runs on the cancelled state.
+          receiveResolvedArm decoded gate tid epId executingCore
+            (cancelRecvBusyReply ctx tid gate decoded executingCore st)
     | _ => fun _ => .error (.invalidCapability 0)
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
@@ -6457,6 +6759,10 @@ theorem dispatchArm_receive_matches_returnShape
     (replyIdOpt : Option SeLe4n.ReplyId) (st st' stDon : SystemState)
     (next : SeLe4n.ThreadId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (summary : CapTransferSummary) (msg : IpcMessage) (tcb : TCB)
+    (st0 : SystemState)
+    -- WS-SX SX4: `st` is the state the receive runs on, its busy reply's holder
+    -- cancelled (`cancelRecvBusyReply`) from the state `st0` the arm is handed.
+    (hCancel : cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
@@ -6484,7 +6790,7 @@ theorem dispatchArm_receive_matches_returnShape
     (hObjInv : (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt) :
     Architecture.syscallReturnShape .receive = .message ∧
-    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
@@ -6494,7 +6800,9 @@ theorem dispatchArm_receive_matches_returnShape
       (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.capInfo,
     ?_, ?_⟩
-  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply, hDispatch, hDon]
+  · subst hCancel
+    simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget, hFlow,
+      hReply, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -7716,9 +8024,7 @@ theorem dispatchWithCapChecked_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCore
-              (retirePendingFaultForResume st vtid.val) vtid
-              executingCore with
+      (match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
   obtain ⟨a, hD⟩ := hDecode
@@ -7734,7 +8040,10 @@ broken citation rather than a prose disagreement between two tables. -/
 theorem dispatchWithCapChecked_receive_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-    (replyIdOpt : Option SeLe4n.ReplyId) (st : SystemState)
+    (replyIdOpt : Option SeLe4n.ReplyId) (st st0 : SystemState)
+    -- WS-SX SX4: `st` is the state the receive runs on, its busy reply's holder
+    -- cancelled from the state `st0` the arm is handed.
+    (hCancel : cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
     (hFlow : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
@@ -7742,7 +8051,7 @@ theorem dispatchWithCapChecked_receive_delegates
     (hOverride : endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
       (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
       -- PR #873 round 6: the arm routes through the WithCaps per-core receive, so
       -- a send that parked before its receiver arrived delivers its capabilities
       -- too, and the staged `extraCaps` is the summary's installed count.
@@ -7760,7 +8069,8 @@ theorem dispatchWithCapChecked_receive_delegates
                             ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
                           summary.capInfo))
        | (_, .error e) => .error e) := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
+  subst hCancel
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
@@ -7917,7 +8227,10 @@ def syscallDelegates : SyscallId → Prop
   | .receive =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-        (replyIdOpt : Option SeLe4n.ReplyId) (st : SystemState),
+        (replyIdOpt : Option SeLe4n.ReplyId) (st st0 : SystemState),
+        -- WS-SX SX4: the receive runs on `st`, the state `st0` the arm is handed
+        -- with its busy reply's holder cancelled.
+        cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st →
         decoded.syscallId = .receive →
         cap.target = .object epId →
         securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true →
@@ -7926,7 +8239,7 @@ def syscallDelegates : SyscallId → Prop
         endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
-        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
           (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
            -- into the caller's return frame.  PR #873 round 6: with the receive
@@ -7968,9 +8281,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCore
-                  (retirePendingFaultForResume st vtid.val) vtid
-                  executingCore with
+          (match Lifecycle.Suspend.restartThreadOnCore st vtid executingCore with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
   | .schedContextUnbind =>
@@ -8253,9 +8564,10 @@ theorem syscallDelegates_irqHandlerClear : syscallDelegates .irqHandlerClear := 
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by
-  intro ctx decoded tid executingCore gate cap epId replyIdOpt st hSyscall hTarget hFlow hOverride hReply
+  intro ctx decoded tid executingCore gate cap epId replyIdOpt st st0 hCancel hSyscall hTarget hFlow
+    hOverride hReply
   exact dispatchWithCapChecked_receive_delegates ctx decoded tid executingCore gate cap epId replyIdOpt st
-    hSyscall hTarget hFlow hOverride hReply
+    st0 hCancel hSyscall hTarget hFlow hOverride hReply
 
 /-- The `.tcbResume` obligation, discharged. -/
 theorem syscallDelegates_tcbResume : syscallDelegates .tcbResume := by

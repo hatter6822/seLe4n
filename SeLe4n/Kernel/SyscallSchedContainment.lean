@@ -16,6 +16,7 @@ import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SchedLockBracket
 import SeLe4n.Kernel.SlotConfinement
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
+import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelFrame
 
 /-!
 # WS-RR RR8.12 Cut C6a — the non-donating arms' footprints are not false
@@ -264,6 +265,94 @@ theorem schedLockSet_suspendThreadOnCore_coversWrites (st st' : SystemState)
     (fun d hd => suspendThreadOnCore_replenishQueueOnCore_ne st st' vtid executingCore sgi d
       hd hStep)
 
+/-- The resume of the retired state is covered by the resume's footprint read
+off the entry state: the retire writes one TCB and no scheduler field. -/
+theorem schedLockSet_resumeThreadOnCore_retired_coversWrites (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.resumeThreadOnCore (retirePendingFaultForResume st vtid.val) vtid
+      executingCore = .ok (st', sgi))
+    (hS : LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]; exact schedFootprintOfCores_contains_objStore_write _ _
+  refine footprintCoversWrites_trans S (st₂ := retirePendingFaultForResume st vtid.val)
+    (footprintCoversWrites_of_scheduler_eq S hTable
+      (retirePendingFaultForResume_scheduler_eq st vtid.val)) ?_
+  rw [← schedLockSet_resumeThreadOnCore_retire st vtid executingCore hObjInv] at hS
+  exact schedLockSet_resumeThreadOnCore_coversWrites _ st' vtid executingCore sgi S
+    (retirePendingFaultForResume_preserves_objects_invExt st vtid.val hObjInv) hStep hS
+
+/-- **WS-SX SX4: `.tcbResume`'s footprint covers its writes** — the restart's
+three arms: the resume of an `Inactive` thread, the suspend's cancel followed by
+the resume, and no write at all. -/
+theorem schedLockSet_restartThreadOnCore_coversWrites (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi))
+    (hS : LockSet.ofList? (schedLockSet_restartThreadOnCore st vtid executingCore) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]; exact schedFootprintOfCores_contains_objStore_write _ _
+  unfold Lifecycle.Suspend.restartThreadOnCore at hStep
+  cases hT : st.getTcb? vtid.val with
+  | none => rw [hT] at hStep; exact absurd hStep (by simp)
+  | some tcb =>
+    rw [hT] at hStep
+    by_cases hI : tcb.threadState = .Inactive
+    · have hN : restartCancelledState? st vtid executingCore = none := by
+        unfold restartCancelledState?; simp [hT, hI]
+      rw [schedLockSet_restartThreadOnCore_of_none hN] at hS
+      simp only [hI, beq_self_eq_true, ↓reduceIte] at hStep
+      exact schedLockSet_resumeThreadOnCore_retired_coversWrites st st' vtid executingCore sgi S
+        hObjInv hStep hS
+    · have hI' : (tcb.threadState == .Inactive) = false := by simpa using hI
+      simp only [hI', Bool.false_eq_true, ↓reduceIte] at hStep
+      by_cases hB : tcb.ipcState = .ready
+      · simp only [hB, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, Except.ok.injEq,
+          Prod.mk.injEq] at hStep
+        rw [← hStep.1]; exact footprintCoversWrites_refl S st
+      · have hB' : (tcb.ipcState != .ready) = true := by simpa using hB
+        simp only [hB', ↓reduceIte] at hStep
+        cases hSus : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore with
+        | error e => rw [hSus] at hStep; exact absurd hStep (by simp)
+        | ok p =>
+          obtain ⟨st1, sgi1⟩ := p
+          rw [hSus] at hStep
+          have hC : restartCancelledState? st vtid executingCore = some st1 := by
+            unfold restartCancelledState?; simp [hT, hI', hB', hSus]
+          have hPairs := LockSet.ofList?_pairs hS
+          unfold schedLockSet_restartThreadOnCore restartThreadOnCoreWriteSet
+            restartThreadOnCoreReplenishCores at hPairs
+          rw [hC] at hPairs
+          obtain ⟨S1, hS1⟩ := schedFootprintOfCores_ofList?_isSome
+            (suspendThreadOnCoreWriteSet st vtid executingCore)
+            (suspendThreadReplenishCores st vtid executingCore)
+          obtain ⟨S2, hS2⟩ := schedFootprintOfCores_ofList?_isSome
+            (resumeThreadOnCoreWriteSet (retirePendingFaultForResume st1 vtid.val) vtid executingCore)
+            (resumeThreadOnCoreReplenishCores (retirePendingFaultForResume st1 vtid.val) vtid)
+          have hInv1 := suspendThreadOnCore_preserves_objects_invExt
+            st st1 vtid executingCore sgi1 hObjInv hSus
+          have c1 : footprintCoversWrites S1 st st1 :=
+            schedLockSet_suspendThreadOnCore_coversWrites st st1 vtid executingCore sgi1 S1 hSus hS1
+          have c2 : footprintCoversWrites S2 st1 st' := by
+            have hR : LockSet.ofList? (schedLockSet_resumeThreadOnCore
+                (retirePendingFaultForResume st1 vtid.val) vtid executingCore) = some S2 := hS2
+            rw [schedLockSet_resumeThreadOnCore_retire st1 vtid executingCore hInv1] at hR
+            exact schedLockSet_resumeThreadOnCore_retired_coversWrites st1 st' vtid executingCore
+              sgi S2 hInv1 hStep hR
+          refine footprintCoversWrites_trans S
+            (footprintCoversWrites_mono S1 S st st1 (fun l hl => ?_) c1)
+            (footprintCoversWrites_mono S2 S st1 st' (fun l hl => ?_) c2)
+          · rw [LockSet.ofList?_pairs hS1] at hl
+            rw [hPairs]
+            exact schedFootprintOfCores_subset (fun c hc => List.mem_append_left _ hc)
+              (fun c hc => List.mem_append_left _ hc) _ hl
+          · rw [LockSet.ofList?_pairs hS2] at hl
+            rw [hPairs]
+            exact schedFootprintOfCores_subset (fun c hc => List.mem_append_right _ hc)
+              (fun c hc => List.mem_append_right _ hc) _ hl
+
 -- ============================================================================
 -- §10  The IPC arms
 -- ============================================================================
@@ -454,6 +543,68 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
       unfold applyReceiverPipHandoff
       rw [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
       exact hReplDon d hd
+
+/-- **The receive's leg and hand-off move only the reservations its re-run leg
+names** (`endpointReceiveLegReplenishCores`): the leg's own pre-receive return
+and the donation of the `Call` it dequeues; the chain walk moves none
+(`propagatePipChainCrossCore_replenishQueueOnCore`).  No queue-head premise: the
+segment is read off the leg's own run, not predicted from the endpoint. -/
+theorem endpointReceiveLegAndHandoff_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointReceiveLegReplenishCores st endpointId receiver replyId executingCore)
+    (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st =
+      (st1, .ok (dequeued, summary, sgi)))
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointReceiveLegReplenishCores at hne
+  rw [hLeg] at hne
+  simp only [List.mem_append, not_or] at hne
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
+  have hR1 := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne endpointId receiver
+    replyId executingCore st st1 dequeued summary sgi c hObjInv hne.1 hLeg
+  have hR2 := applyReceiveRendezvousDonation_replenishQueueOnCore_ne st1 stDon receiver dequeued c
+    hne.2 hDon
+  subst hEq
+  split
+  · unfold applyReceiverPipHandoff
+    rw [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore, hR2, hR1]
+  · rw [hR2, hR1]
+
+/-- **A footprint naming every core's run queue covers a step that moves no
+reservation outside its replenish segment.** -/
+theorem footprintCoversWrites_of_allCores (S : LockSet) (replenishCores : List CoreId)
+    (st st' : SystemState)
+    (hS : S.pairs = schedFootprintOfCores Concurrency.allCores replenishCores)
+    (hRepl : ∀ d : CoreId, d ∉ replenishCores →
+      st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d) :
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_cores S _ _ st st' hS
+    (fun d hd => absurd (Concurrency.mem_allCores d) hd) hRepl
+
+/-- **The busy-reply receive's footprint covers its writes**
+(`schedLockSet_receiveCancellingHolderOnCore`'s busy arm): the holder's cancel,
+which moves no reservation, then the receive's leg and hand-off on the cancelled
+state, which move the ones the leg re-run there names. -/
+theorem schedLockSet_receiveCancellingHolder_coversWrites (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (holder : SeLe4n.ThreadId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
+    (hObjInv : st.objects.invExt)
+    (hS : S.pairs = schedFootprintOfCores Concurrency.allCores
+      (endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore) endpointId
+        receiver replyId executingCore))
+    (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
+      (cancelReplyHolder st holder executingCore) = (st1, .ok (dequeued, summary, sgi)))
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_allCores S _ st st' hS fun d hd => by
+    rw [endpointReceiveLegAndHandoff_replenishQueueOnCore_ne endpointId receiver replyId
+      executingCore _ st1 st' dequeued summary sgi d
+      (cancelReplyHolder_objects_invExt st holder executingCore hObjInv) hd hLeg hHand,
+      cancelReplyHolder_replenishQueueOnCore]
 
 -- ============================================================================
 -- §7  What the obligation refuses

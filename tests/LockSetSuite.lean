@@ -429,8 +429,10 @@ example : permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore] := by deci
 -- WS-OD OD3.6: `.schedContext` — a receive that dequeues a queued `Call`
 -- donates that caller's scheduling context to the receiver (seL4-MCS's
 -- `receiveIPC`), reaching the same donation primitive `.call` does.
+-- WS-SX SX4: `.notification` — a receive whose reply is busy cancels the
+-- holder's IPC first, and the cancel's footprint names a waiter's notification.
 example : permittedKinds .receive
-    = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
+    = [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore] := by decide
 -- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
 -- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
 -- consumes a first-class Reply object under the per-object reply write-lock.

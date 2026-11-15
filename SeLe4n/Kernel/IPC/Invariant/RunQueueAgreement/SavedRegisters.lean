@@ -291,7 +291,7 @@ theorem completeYieldFrom_savedRegsKeptOffCore {e : CoreId} {base st : SystemSta
 /-! ### The cancellation's write -/
 
 /-- **The cancellation restore names the cancelled thread**: a blocking IPC
-destroyed under a thread restores it to ready with the cancellation frame staged
+destroyed under a thread restores it to ready and sets it to restart
 (`restoreToReadyCancelled`), writing that thread's saved registers alone. -/
 theorem restoreToReadyCancelled_savedRegsKeptOffCore {e : CoreId} {base st : SystemState}
     {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt) (hFree : offCoreFree e base tid)

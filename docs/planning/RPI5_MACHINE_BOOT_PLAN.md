@@ -2,7 +2,7 @@
 
 > **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
 > **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`;
-> RB3 at `v0.37.27`; RB4 at `v0.37.28`.
+> RB3 at `v0.37.28`; RB4 at `v0.37.29`.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
 > **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
@@ -99,7 +99,7 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
 - `scripts/qemu_exerciser_lib.sh` boots `raspi5b`, then `virt`. Every pin
   reads its exact count on both machines: the kernel is the same, so a count
   that differs between boards is a finding, not a second pin.
-- *Landed (`v0.37.27`), with the two findings the first `raspi5b` run made,
+- *Landed (`v0.37.28`), with the two findings the first `raspi5b` run made,
   each fixed in the row:* the interrupt-mask and issued-line writes rebuilt a
   record on lines 256 and up (one cell per Pi 5 interrupt entry on 318/319;
   the per-word choice is now out of line, `irqMaskWordAt`/`irqMaskWordPast`),
@@ -118,7 +118,7 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
   thing that reads them, not only against the ELF.
 - A second run boots the same card through TF-A's `rpi5` BL31 as the
   armstub (`secure=on`, `-bios`), the Pi 5's own boot chain.
-- *Landed (`v0.37.28`), wider than the row:* rpi5_machine's fix (its PR #7)
+- *Landed (`v0.37.29`), wider than the row:* rpi5_machine's fix (its PR #7)
   went into the machine, not only `rpi5-boot`: without an armstub `raspi5b`
   now loads the kernel, initrd and tree as the firmware does and enters the
   kernel from a stub at 0 standing in for the firmware's own BL31, with

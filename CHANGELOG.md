@@ -1,4 +1,4 @@
-## v0.37.28 — the Raspberry Pi 5 boot files boot as the firmware boots them
+## v0.37.29 — the Raspberry Pi 5 boot files boot as the firmware boots them
 
 WS-RB RB4 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
 
@@ -28,7 +28,7 @@ WS-RB RB4 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
   which now builds only the outputs named); the Raspberry Pi 5 lanes need
   mtools, and CI installs it with the Linux cross compiler TF-A builds with.
 
-## v0.37.27 — the Tier-4 exercisers boot `raspi5b` first
+## v0.37.28 — the Tier-4 exercisers boot `raspi5b` first
 
 WS-RB RB3 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
 
@@ -66,6 +66,209 @@ WS-RB RB3 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
     tick can hand core 0 to the runnable partner, which has no buffer. It now
     runs with the partner suspended, where only the root task can run.
 
+## v0.37.27 — a cancelled IPC restarts its system call
+
+WS-SX SX4 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A thread taken out of a
+blocking IPC by a cancel now restarts its system call, as seL4 sets it
+`ThreadState_Restart` (`cancelAllIPC`, `cancelAllSignals`,
+`restart_thread_if_no_fault`, `restart`), instead of resuming with an
+`ipcCancelled` error seL4 never returns.
+
+- **`ThreadState.Restart`.** A new state. `TCB.restartPc` is seL4's
+  `getRestartPC`: the `SVC` itself (`pc - 4`, as `lel_syscall` stores
+  `FaultIP = ELR - 4`) for a thread blocked in a system call, the recorded
+  `faultIp` for one blocked on its fault handler. `TCB.restoredToRestart` is
+  the cancel's field clear with the saved PC moved to the restart PC and the
+  state `Restart`.
+- **The restart PC is written when the thread leaves its blocked state.** The
+  model has one program counter (seL4's `NextIP`). Rewinding at activation, as
+  seL4's `activateThread` does, would also rewind a resumed thread that was not
+  in a system call, where seL4's `FaultIP` equals `NextIP`. So the cancel
+  writes it, the thread resumes at its `SVC` with its own arguments, and its
+  user-visible PC is seL4's `FaultIP` throughout. The plan row's "activation
+  rewinds" is corrected to say so.
+- **Every cancel restarts.** `cancelIpcBlocking`'s endpoint, notification and
+  reply-blocked arms (`restoreToReadyCancelled`, now `restoreToReadyStaging`
+  with `restart : Bool`) and `cancelAllIPC`'s waiters
+  (`cancelledEndpointWaiterTcb`).
+- **Suspend and Resume (SX4.2).** A suspended blocked thread is `Inactive`
+  with its PC at its restart PC; Resume sets `Restart` (`resumeReadyMidState`,
+  `resumeThreadReady`), so it re-issues the call it was suspended in. The
+  frozen resume (`frozenResumeThread`) sets `Restart` too, as the live one
+  does.
+- **Resume is seL4's `restart`.** `.tcbResume` runs `restartThreadOnCore`
+  (`IPC/CrossCore/Restart.lean`), which acts only on a stopped thread
+  (`isStopped`: `Inactive`, or blocked in an IPC). A thread that is neither is
+  left as it is with no error, where the model refused `illegalState`; one
+  blocked in an IPC has the IPC cancelled through the suspend (seL4's
+  `cancelIPC`, which leaves it `Inactive`), then is resumed. The lock set is
+  resolved from the pre-state (`schedLockSet_restartThreadOnCore`: the
+  suspend's members on the cancelling arm, the resume's otherwise), and the
+  run-queue, kernel-record, readiness, mapping, reschedule, containment,
+  bank-agreement and saved-register families cover all three arms. The
+  cancelling arm runs two scheduling points on the executing core; the second
+  saves a thread the first may have switched in, which another core may hold
+  resident, and the census shows that save writes back the context the switch
+  restored (`currentFreeOrMatched`). The frozen resume and the test suite's boot
+  resume follow the same three arms.
+- **A faulted `cancelAllIPC` waiter stays `Inactive`.** seL4's
+  `restart_thread_if_no_fault` restarts a waiter only if it carries no fault;
+  one blocked sending its fault message is left `Inactive` with the fault kept.
+  The endpoint walk now does the same (`storeEndpointWaiterCancelled` takes
+  `faulted`, dispatching to `storeEndpointWaiterRestarted` or
+  `storeEndpointWaiterFaulted`, which writes `faultedEndpointWaiterTcb`: queue
+  links cleared, `.ready`, `Inactive`, registers and fault kept, no wake). The
+  walk's guard (`endpointWaiterCancellable`) also asks that the head is
+  blocked, as every queue head is, so the `Inactive` write is the
+  deschedule-style frame of a thread on no run queue and not idle
+  (`storeEndpointWaiterCancelled_runQueueEntryStage`,
+  `storeEndpointWaiterCancelled_readyEntry`). `cancelAllSignals` restarts
+  unconditionally in seL4, and a notification waiter carries no fault, so it is
+  unchanged.
+- **A receive on a busy reply cancels its holder** (seL4-MCS `receiveIPC`'s
+  `cancelIPC(replyTCB)`, `endpoint.c:152`), where the model refused
+  `replyCapInvalid`. When the reply the receive presents is linked to another
+  caller or stashed by another waiting receiver (`busyReplyHolder?`), and the
+  receiver flows to that thread, the receive arm cancels the holder in place
+  after its checks (`cancelRecvBusyReply`, `cancelReplyHolder`: the suspend's
+  cancel and priority revert, then `Inactive`; no scheduling point, as
+  `receiveIPC` runs none). The cancel commits as seL4's does: a refusal after
+  it hands back the cancelled state (`cancelReceiveBusyReply`), so compiled =
+  specification stays unconditional. The lock operands name the reply
+  (`recvReplyLookup?`); the object footprint adds the cancel's
+  (`lockSet_receiveCancellingHolder`, bounded at thirty members) and the
+  scheduler footprint names every core's run queue on the busy arm
+  (`schedLockSet_receiveCancellingHolderOnCore`). The run-queue, kernel-record,
+  readiness, mapping, step-cover, saved-register, executing-bank,
+  context-match and declassification families compose across the cancel; the
+  run-queue entry premises carry the queue facts the cancel's endpoint arm
+  reads (`EntryPremises.queueTails`, `queueLinkIntegrity`, `queueAcyclic`,
+  `queueNextTargets`), each discharged from the `ipcInvariantFull` its callers
+  already hold. Scenario `receive-busy-reply-cancels-caller`; dispatch-suite
+  checks `sd053b_busy_reply_*`.
+- **The cancel keeps the IPC bundle, and after it the receive refuses
+  nothing** (`IPC/Invariant/ReplyHolderCancelBundle.lean`, staged).
+  `cutCancelledCallerHead_preserves_ipcInvariantFull` carries the bundle across
+  the head cut; `cancelReplyHolder_preserves_ipcInvariantFull` composes it with
+  the teardown, the priority revert and the `Inactive` write, taking the
+  teardown's queue-connectivity premises at the holder as a hypothesis
+  (`replyHolderCancelPremises`), as
+  `cancelIpcBlockingOnCore_preserves_ipcInvariantFull` does.
+  `cancelReplyHolder_frees_reply` shows that, under those premises, the reply
+  has no caller and no live stash once its holder is cancelled, so
+  `resolveRecvReplyId_cancelRecvBusyReply` resolves the receive's reply on the
+  cancelled state: the `replyCapInvalid` refusal the cancel commits before
+  cannot fire. The frame behind it is now generic:
+  `TcbReadingKeptExcept`/`TcbReadingCancelBlind` (`IpcStateKeptExcept` is its
+  IPC-state instance) and `consumeReplyLink_getTcb?_ne`. The staged dispatch
+  payoff keeps `recvReplyNotBusy`: its receive-stage fields (`recvStage`,
+  `callerShape`, the timeout-budget fact) describe the handed state, and a
+  busy reply's receive runs on the cancelled one.
+- **Suspend of an already-`Inactive` thread succeeds and writes nothing**, as
+  seL4's `suspend` (`invokeTCB_Suspend`), where the model refused
+  `illegalState` (`suspendThread`, `suspendThreadOnCore`,
+  `frozenSuspendThread`). `suspendThreadOnCore_of_inactive` replaces
+  `_rejects_inactive`; `suspendThreadOnCore_total` no longer asks that the
+  thread be active. The suspend's stage, footprint, confinement, record and
+  bundle theorems cover the identity arm; `suspendThreadOnCore_target_ipcReady`
+  asks an active target, and the restart's cancelling arm reads its `Inactive`
+  sub-case as the resume it is. Tests SR-002, SR-011, SD-021 and the
+  cancellation suite's Inactive victim now check the no-op success; QEMU step
+  `busy-reply-suspend-partner` is restored. The compiled `.tcbSuspend` admits
+  an `Inactive` target and `suspendPerform` hands the state back
+  (`threadIsInactive`), because the first QEMU run read 2 allocations
+  (16 + 24 bytes) on that step. The non-admitted fallback had built the
+  specification's `.ok (st, none)` and then rebuilt the invocation's result
+  from it. `suspendThreadOnCore_of_admitted` covers the new arm.
+- **The frozen restart resumes a blocked thread at its `SVC`** (review fix).
+  `frozenResumeThread` cancels a blocked thread through `frozenSuspendThread`,
+  but the frozen suspend kept the saved program counter, so the restarted
+  thread ran past its cancelled syscall. The frozen suspend now cancels a
+  blocked thread through the live record step (`TCB.restoredToRestart`).
+  That moves the PC to its restart PC, retires the fault record and clears
+  the stashed reply, so the frozen suspend leaves a blocked thread `Inactive`
+  at its restart PC, as the live suspend does. A thread that is not blocked
+  keeps its PC on both paths. This was the only site in the class: every live
+  cancel already goes through `restoredToRestart` or
+  `cancelledEndpointWaiterTcb`, and the live resumes set `.Restart` on a
+  thread whose cancel already rewound it. New tests:
+  - SR-020c: a frozen resume of a blocked thread resumes at its `SVC`. It
+    fails on the unfixed code.
+  - SR-020d: the frozen and live suspends agree on the PC, for a blocked
+    thread and for a ready one.
+
+  The frozen suspend and resume are in the archive, but the linker drops
+  them from the kernel image, so no compiled path changed.
+- **The frozen suspend cancels the IPC in every arm** (review fix). It
+  cleared the thread's own IPC fields and queue links, but removed the thread
+  from no queue. So a suspended or restarted head sender stayed the endpoint's
+  head, and the next receive refused `endpointStateMismatch`. This was the
+  second divergence between the frozen and live suspends, so the whole cancel
+  is mirrored now. `frozenCancelIpcBlocking` mirrors `cancelIpcKeepingContexts`
+  arm for arm and, like it, never refuses:
+  - the endpoint queue at any position (`frozenRemoveFromBlockingEndpoint`,
+    the frozen `removeFromBlockingEndpoint`);
+  - the notification wait queue (`frozenRemoveFromNotificationWaitQueue`);
+  - the reply arm, in four steps: the head frame cut off a donated context
+    (`frozenCutHeadFrameKeepingContext`), the frame cut out
+    (`frozenCutThreadReplyFrameOut`), the link consumed
+    (`frozenConsumeCallerReplyLink`) and the reply-waiter entry unlinked
+    (`frozenUnlinkReplyWaiter`);
+  - after the cancel, the server's boost revert
+    (`frozenRevertPriorityInheritance`).
+
+  The live teardown takes `SystemState`'s tables, so it can't run over the
+  frozen store. The arms are mirrors, and they share the record-level pieces
+  (`restoredToRestart`, `queueRemoveBoundary`, `queueUnlinkPredecessor`,
+  `queueUnlinkSuccessor`, `Reply.consumed`).
+
+  `.tcbSuspend` now has three `FrozenOpBranch`es: blocked in IPC, runnable and
+  `Inactive`. Each is compared whole against `suspendThreadOnCore`, which
+  replaces the "adapter owed" reason. `.tcbResume` keeps a reason, because the
+  live restart dispatches at its scheduling point, so its scenarios compare
+  objects only. The reply-stack write census registers the three new reply
+  writers as mirrors.
+
+  New tests in FrozenOpsSuite:
+  - FO-060: a resume of the head, middle or tail sender, then a receive that
+    gets the next sender;
+  - FO-061: a suspend at each position leaves the queue well formed;
+  - FO-062: a notification waiter is removed;
+  - FO-063: a reply-blocked caller's link is consumed;
+  - FO-064: a donating caller's context stays with its server, and the boost
+    is reverted;
+  - FO-065: a runnable suspend and an `Inactive` suspend;
+  - FO-066: a sender on an absent endpoint is still suspended.
+
+  The first mirror used the fallible `frozenQueueRemove`, which refused FO-066's
+  state. The suspend-resume suite caught that in the full run.
+  `frozenCancelIpcBlocking` is not linked into the kernel image either (`nm`).
+- **Fixed along the way:** the cancellation suite's stale-register victim was
+  built with the record's `Inactive` default while placed runnable; it is now
+  `Running`, so the restart check reads a thread that was running when it
+  blocked. The dispatch suite pins discriminant 57 as retired.
+- **The restart writes the TCB in place.** `TCB.restoredToRestart` and
+  `cancelledEndpointWaiterTcb` read both scalars (restart PC, restart state)
+  before the clear consumes the record, so the compiled kernel reuses it; read
+  after, the record was shared at the clear and every cancel copied the TCB.
+- **Retired:** `KernelError.ipcCancelled` (discriminant 57 reserved:
+  `retiredDiscriminants = [35, 37, 57]`, `ofDiscriminant?_retired_ipcCancelled`;
+  Rust `KernelError::IpcCancelled` and `RETIRED`), `cancelledIpcFrame`,
+  `stageCancelledIpcFrame` and their theorems, `unblockFrames_ne_success`,
+  `unblockFrames_decode`, `timeout_and_cancelled_frames_differ`,
+  `restoreToReadyCancelled_readReturnFrame`,
+  `restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame`. The timeout
+  frame keeps its own `timeoutFrame_ne_success` and `timeoutFrame_decode`.
+- **Proofs:** `restoreToReadyCancelled_restarts`,
+  `restoreToReadyCancelled_then_switch_resumes_at_restartPc`; `restoredTcb_eq`
+  names the restart's two fields; the cancellation-shape, placement,
+  run-queue, reply-view, refill-view and projection families restated over
+  `restart : Bool`.
+- **QEMU:** `cancelled-send-restarts` (an endpoint carved under a blocked
+  sender and deleted; the sender, switched in, resumes at its `SVC` with its
+  own arguments and its re-issued send faults on the emptied slot) and
+  `suspend-resume-restarts` (a blocked sender suspended and resumed; it
+  resumes at its `SVC` and its re-issued send reaches the waiting receiver).
 ## v0.37.26 — the four-PE bring-up and the refusal probe boot `raspi5b` first
 
 WS-RB RB2 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).

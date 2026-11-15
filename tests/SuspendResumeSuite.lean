@@ -62,14 +62,19 @@ private def sr001_suspendReady : IO Unit := do
     | _ => throw <| IO.userError "TCB not found after suspend"
   | .error e => throw <| IO.userError s!"suspend should succeed, got {repr e}"
 
-/-- SR-002: Suspend an already Inactive thread — should fail with illegalState. -/
+/-- SR-002: Suspend an already Inactive thread — succeeds and changes nothing,
+as seL4's `suspend` leaves a thread already `Inactive`. -/
 private def sr002_suspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
   match bootSuspendThread st ⟨tid, by decide⟩ with
-  | .ok _ => throw <| IO.userError "should fail for Inactive thread"
-  | .error e =>
-    expect "error is illegalState" (e == .illegalState)
+  | .ok st' =>
+    expect "suspend of an Inactive thread writes no object"
+      (st'.objects[tid.toObjId]? == st.objects[tid.toObjId]?)
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb) => expect "thread stays Inactive" (tcb.threadState == .Inactive)
+    | _ => throw <| IO.userError "TCB not found after suspend"
+  | .error e => throw <| IO.userError s!"suspend of an Inactive thread should succeed, got {repr e}"
 
 /-- SR-003: Suspend a non-existent thread — should fail with invalidArgument. -/
 private def sr003_suspendMissing : IO Unit := do
@@ -102,7 +107,7 @@ private def sr004_suspendClearsPending : IO Unit := do
 -- D1-Q2: resumeThread tests
 -- ============================================================================
 
-/-- SR-005: Resume an Inactive thread — should succeed, thread becomes Ready. -/
+/-- SR-005: Resume an Inactive thread — should succeed, thread is set to restart. -/
 private def sr005_resumeInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
@@ -110,19 +115,41 @@ private def sr005_resumeInactive : IO Unit := do
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "thread is Ready" (tcb.threadState == .Ready)
+      expect "thread is set to restart" (tcb.threadState == .Restart)
       expect "ipcState is ready" (tcb.ipcState == .ready)
     | _ => throw <| IO.userError "TCB not found after resume"
   | .error e => throw <| IO.userError s!"resume should succeed, got {repr e}"
 
-/-- SR-006: Resume a non-Inactive thread — should fail with illegalState. -/
+/-- SR-006: Resume a thread that is not stopped — seL4's `restart` leaves it as
+it is (`isStopped` is false), with no error. -/
 private def sr006_resumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
   match bootResumeThread st ⟨tid, by decide⟩ with
-  | .ok _ => throw <| IO.userError "should fail for Ready thread"
-  | .error e =>
-    expect "error is illegalState" (e == .illegalState)
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "not-stopped thread keeps its state" (tcb'.threadState == .Ready)
+      expect "not-stopped thread stays ready in IPC" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"restart of a running thread should succeed, got {repr e}"
+
+/-- SR-006b: Resume a thread blocked in an IPC — seL4's `restart` cancels the IPC
+(`cancelIPC`) and restarts the thread. -/
+private def restartOfBlockedSenderCancelsIpc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedSend } (.blockedOnSend epId))
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match bootResumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "blocked thread's IPC is cancelled" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"restart of a blocked thread should succeed, got {repr e}"
 
 /-- SR-007: Resume a non-existent thread — should fail with invalidArgument. -/
 private def sr007_resumeMissing : IO Unit := do
@@ -133,7 +160,7 @@ private def sr007_resumeMissing : IO Unit := do
   | .error e =>
     expect "error is invalidArgument" (e == (.invalidArgument 0))
 
-/-- SR-008: Suspend then resume roundtrip — thread returns to Ready. -/
+/-- SR-008: Suspend then resume roundtrip — thread is set to restart. -/
 private def sr008_suspendResumeRoundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
@@ -143,7 +170,7 @@ private def sr008_suspendResumeRoundtrip : IO Unit := do
     | .ok st'' =>
       match st''.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        expect "thread is Ready after roundtrip" (tcb.threadState == .Ready)
+        expect "thread is set to restart after roundtrip" (tcb.threadState == .Restart)
       | _ => throw <| IO.userError "TCB not found"
     | .error e => throw <| IO.userError s!"resume failed: {repr e}"
   | .error e => throw <| IO.userError s!"suspend failed: {repr e}"
@@ -172,7 +199,7 @@ private def sr009_frozenSuspend : IO Unit := do
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen suspend should succeed, got {repr e}"
 
-/-- SR-010: Frozen resume — Inactive thread becomes Ready. -/
+/-- SR-010: Frozen resume — Inactive thread is set to restart. -/
 private def sr010_frozenResume : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
@@ -180,18 +207,21 @@ private def sr010_frozenResume : IO Unit := do
   | .ok ((), fst') =>
     match fst'.objects.get? tid.toObjId with
     | some (.tcb tcb) =>
-      expect "frozen thread is Ready" (tcb.threadState == .Ready)
+      expect "frozen thread is set to restart" (tcb.threadState == .Restart)
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen resume should succeed, got {repr e}"
 
-/-- SR-011: Frozen suspend of Inactive thread fails. -/
+/-- SR-011: Frozen suspend of an Inactive thread succeeds and leaves the state
+as it was, as the live suspend does. -/
 private def sr011_frozenSuspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
   match frozenSuspendThread tid fst with
-  | .ok _ => throw <| IO.userError "frozen suspend should fail for Inactive"
-  | .error e =>
-    expect "frozen error is illegalState" (e == .illegalState)
+  | .ok ((), fst') =>
+    match frozenLookupTcb fst' tid with
+    | some tcb => expect "frozen thread stays Inactive" (tcb.threadState == .Inactive)
+    | none => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen suspend of Inactive should succeed, got {repr e}"
 
 -- ============================================================================
 -- D1-Q4: IPC blocked state tests
@@ -333,14 +363,86 @@ private def sr019_resumeEndpoint : IO Unit := do
 -- D1-Q7: Additional frozen operation tests
 -- ============================================================================
 
-/-- SR-020: Frozen resume of Ready thread fails with illegalState. -/
+/-- SR-020: Frozen resume of a Ready thread leaves it as it is, as seL4's
+`restart` does. -/
 private def sr020_frozenResumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
   match frozenResumeThread tid fst with
-  | .ok _ => throw <| IO.userError "frozen resume should fail for Ready"
-  | .error e =>
-    expect "frozen error is illegalState" (e == .illegalState)
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb) =>
+      expect "frozen not-stopped thread keeps its state" (tcb.threadState == .Ready)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen restart of a running thread should succeed, got {repr e}"
+
+/-- SR-020b: Frozen resume of a thread blocked in an IPC cancels the IPC and
+restarts the thread. -/
+private def frozenRestartOfBlockedReceiverCancelsIpc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedRecv } (.blockedOnReceive epId))
+  let fst := mkFrozenState [(⟨1⟩, .tcb tcb)]
+  match frozenResumeThread tid fst with
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb') =>
+      expect "frozen blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "frozen blocked thread's IPC is cancelled" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen restart of a blocked thread should succeed, got {repr e}"
+
+/-- A thread blocked on a receive at endpoint 10, its saved program counter
+four bytes past the `SVC` it trapped on (`0x1000`), as `lel_syscall` leaves it. -/
+private def blockedReceiverAtSvc : TCB :=
+  let t := mkTcb 1 .Ready
+  TCB.setIpcState { t with
+    threadState := .BlockedRecv
+    registerContext := { t.registerContext with pc := 0x1004 } } (.blockedOnReceive ⟨10⟩)
+
+/-- SR-020c (WS-SX SX4, seL4's `restart`): **a frozen resume of a blocked thread
+resumes it at its `SVC`**: the cancel through the suspend moves its saved
+program counter to its restart PC (`TCB.restartPc`), so it re-issues the call,
+as the live `restartThreadOnCore` does. -/
+private def frozenRestartOfBlockedThreadResumesAtSvc : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let tcb := blockedReceiverAtSvc
+  expect "SR-020c the fixture's restart PC is its SVC" (tcb.restartPc == 0x1000)
+  match frozenResumeThread tid (mkFrozenState [(⟨1⟩, .tcb tcb)]) with
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId with
+    | some (.tcb tcb') =>
+      expect "SR-020c the frozen blocked thread is restarted" (tcb'.threadState == .Restart)
+      expect "SR-020c and resumes at its SVC" (tcb'.registerContext.pc == 0x1000)
+    | _ => throw <| IO.userError "SR-020c frozen TCB not found"
+  | .error e => throw <| IO.userError s!"SR-020c frozen restart should succeed, got {repr e}"
+
+/-- SR-020d (WS-SX SX4, seL4's `suspend`): **the frozen suspend's program
+counter is the live suspend's**: a blocked thread is left `Inactive` at its
+restart PC on both, and a thread not blocked keeps its program counter on both. -/
+private def frozenSuspendPcAgreesWithLive : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let ready := let t := mkTcb 1 .Ready
+    { t with registerContext := { t.registerContext with pc := 0x2004 } }
+  for (label, tcb, pc) in [("blocked", blockedReceiverAtSvc, (0x1000 : UInt64)),
+                           ("ready", ready, 0x2004)] do
+    let frozenPc? : Option UInt64 :=
+      match frozenSuspendThread tid (mkFrozenState [(⟨1⟩, .tcb tcb)]) with
+      | .ok ((), fst') =>
+        match fst'.objects.get? tid.toObjId with
+        | some (.tcb t') => if t'.threadState == .Inactive then some t'.registerContext.pc else none
+        | _ => none
+      | .error _ => none
+    let livePc? : Option UInt64 :=
+      match bootSuspendThread (mkState [(⟨1⟩, .tcb tcb)]) ⟨tid, by decide⟩ with
+      | .ok st' =>
+        match st'.objects[tid.toObjId]? with
+        | some (.tcb t') => if t'.threadState == .Inactive then some t'.registerContext.pc else none
+        | _ => none
+      | .error _ => none
+    expect s!"SR-020d {label}: the frozen suspend leaves it Inactive at {pc}" (frozenPc? == some pc)
+    expect s!"SR-020d {label}: as the live suspend does" (livePc? == some pc)
 
 /-- SR-021: Frozen suspend-resume roundtrip. -/
 private def sr021_frozenRoundtrip : IO Unit := do
@@ -352,7 +454,7 @@ private def sr021_frozenRoundtrip : IO Unit := do
     | .ok ((), fst'') =>
       match fst''.objects.get? tid.toObjId with
       | some (.tcb tcb) =>
-        expect "frozen roundtrip thread is Ready" (tcb.threadState == .Ready)
+        expect "frozen roundtrip thread is set to restart" (tcb.threadState == .Restart)
       | _ => throw <| IO.userError "frozen TCB not found"
     | .error e => throw <| IO.userError s!"frozen resume failed: {repr e}"
   | .error e => throw <| IO.userError s!"frozen suspend failed: {repr e}"
@@ -445,7 +547,7 @@ private def sr026_resumePipBoostRecomputedNoWaiters : IO Unit := do
       -- to `none`, not the stale `some ⟨50⟩`.
       expect "stale pipBoost cleared on resume (no waiters)"
         tcb'.pipBoost.isNone
-      expect "threadState is Ready after resume" (tcb'.threadState == .Ready)
+      expect "threadState is Restart after resume" (tcb'.threadState == .Restart)
       expect "ipcState is ready after resume" (tcb'.ipcState == .ready)
     | _ => throw <| IO.userError "TCB not found after resume"
   | .error e => throw <| IO.userError s!"resume failed: {repr e}"
@@ -501,7 +603,7 @@ private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
       -- Resumed TCB's pipBoost should be some ⟨99⟩, NOT the stale some ⟨50⟩.
       expect "pipBoost recomputed from current waiter (not stale)"
         (tcb'.pipBoost == some ⟨99⟩)
-      expect "threadState is Ready after resume" (tcb'.threadState == .Ready)
+      expect "threadState is Restart after resume" (tcb'.threadState == .Restart)
     | _ => throw <| IO.userError "TCB not found after resume"
   | .error e => throw <| IO.userError s!"resume failed: {repr e}"
 
@@ -664,8 +766,9 @@ private def sr031_resumeLowerPriorityKeepsCurrent : IO Unit := do
 -- recompute and the preemption since R5.B and PR #811; the frozen side had
 -- none, and `frozenResumeThread` performed neither step.  None of SR-010,
 -- SR-020 or SR-021 sets `scheduler.current`, so the comparison branch was
--- unexecuted, and `.tcbResume` is outside `FrozenOpBranch.all`, so no
--- differential reached it either.  These are the twins.
+-- unexecuted, and `.tcbResume` has no `FrozenOpBranch` (its FrozenOpsSuite
+-- scenarios compare objects only), so no differential reached the preemption
+-- either.  These are the twins.
 
 /-- The **retired** frozen restore: `ipcState := .ready` and nothing else, which
 is what `frozenResumeThread` cleared until `v0.35.134`.  It lives here and
@@ -711,7 +814,7 @@ private def sr032_frozenResumeClearsEveryRestoredField : IO Unit := do
       expect "frozen resume: queuePPrev cleared" tcb'.queuePPrev.isNone
       expect "frozen resume: stashed receive Reply relinquished"
         tcb'.pendingReceiveReply.isNone
-      expect "frozen resume: threadState is Ready" (tcb'.threadState == .Ready)
+      expect "frozen resume: threadState is Restart" (tcb'.threadState == .Restart)
     | _ => throw <| IO.userError "frozen TCB not found after resume"
   | .error e => throw <| IO.userError s!"frozen resume should succeed, got {repr e}"
 
@@ -1478,14 +1581,14 @@ private def sr055_exhaustedContextRoundTrip : IO Unit := do
       expect "SR-055 the resume puts the context back on the release queue"
         (st2.releaseQueuedOn core scId)
       expect "SR-055 at its refill's release time" (st2.releaseAtOn core scId == 5000)
-      expect "SR-055 the thread is Ready"
-        ((st2.getTcb? tid).any (·.threadState == .Ready))
+      expect "SR-055 the thread is set to restart"
+        ((st2.getTcb? tid).any (·.threadState == .Restart))
       expect "SR-055 and stays off the run queue until the refill is due"
         (!st2.queuedOn core tid)
 
 /-- SR-056 (WS-ZA ZA6.33): **the frozen round trip of a thread on a used-up
 context** mirrors the live one: the suspend takes the thread out of its bucket,
-and the resume leaves it Ready and in no bucket. -/
+and the resume leaves it set to restart and in no bucket. -/
 private def sr056_frozenExhaustedContextRoundTrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let (tcb, sc) := exhaustedBoundParts .Ready
@@ -1495,8 +1598,8 @@ private def sr056_frozenExhaustedContextRoundTrip : IO Unit := do
     match frozenResumeThread tid fst1 with
     | .error e => throw <| IO.userError s!"SR-056 frozen resume should succeed, got {repr e}"
     | .ok ((), fst') =>
-      expect "SR-056 the frozen thread is Ready"
-        ((fst'.getTcb? tid).any (·.threadState == .Ready))
+      expect "SR-056 the frozen thread is set to restart"
+        ((fst'.getTcb? tid).any (·.threadState == .Restart))
       expect "SR-056 and in no bucket" (!frozenQueuedAnywhere fst' tid)
 
 end SeLe4n.Testing.SuspendResumeSuite
@@ -1513,6 +1616,7 @@ def main : IO Unit := do
   IO.println "--- D1-Q2: resumeThread ---"
   sr005_resumeInactive
   sr006_resumeReady
+  restartOfBlockedSenderCancelsIpc
   sr007_resumeMissing
   sr008_suspendResumeRoundtrip
   IO.println "--- D1-Q3: Frozen Operations ---"
@@ -1532,6 +1636,9 @@ def main : IO Unit := do
   sr019_resumeEndpoint
   IO.println "--- D1-Q7: Additional Frozen Operations ---"
   sr020_frozenResumeReady
+  frozenRestartOfBlockedReceiverCancelsIpc
+  frozenRestartOfBlockedThreadResumesAtSvc
+  frozenSuspendPcAgreesWithLive
   sr021_frozenRoundtrip
   IO.println "--- R5.A: cancelDonation split ---"
   sr022_cancelBoundDonationClearsBinding

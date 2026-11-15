@@ -336,6 +336,14 @@ inductive FrozenOpBranch where
   | endpointCallParks
   /-- A reply delivered to a linked `.blockedOnReply` caller. -/
   | endpointReplyToBlockedCaller
+  /-- A suspend of a thread blocked in IPC: the blocking is cancelled first
+  (seL4's `cancelIPC` from `suspend`), so no queue, reply or waiter list names
+  the thread afterwards. -/
+  | threadSuspendCancelsBlocking
+  /-- A suspend of a runnable thread: it leaves the run queue. -/
+  | threadSuspendRunnable
+  /-- A suspend of a thread that is already `Inactive`: nothing changes. -/
+  | threadSuspendInactive
   deriving DecidableEq, Repr, Inhabited
 
 /-- Every branch, for the totality the interlocks below decide over. -/
@@ -345,7 +353,8 @@ def FrozenOpBranch.all : List FrozenOpBranch :=
     .notificationWaitBlocks, .endpointSendToWaitingReceiver, .endpointSendParks,
     .endpointReceiveFromBlockedSender, .endpointReceiveFromBlockedCaller,
     .endpointReceiveBlocks, .endpointCallToWaitingReceiver, .endpointCallParks,
-    .endpointReplyToBlockedCaller ]
+    .endpointReplyToBlockedCaller, .threadSuspendCancelsBlocking,
+    .threadSuspendRunnable, .threadSuspendInactive ]
 
 /-- The syscall each branch belongs to. -/
 def FrozenOpBranch.syscall : FrozenOpBranch → SyscallId
@@ -362,6 +371,9 @@ def FrozenOpBranch.syscall : FrozenOpBranch → SyscallId
   | .endpointCallToWaitingReceiver => .call
   | .endpointCallParks => .call
   | .endpointReplyToBlockedCaller => .reply
+  | .threadSuspendCancelsBlocking => .tcbSuspend
+  | .threadSuspendRunnable => .tcbSuspend
+  | .threadSuspendInactive => .tcbSuspend
 
 /-- WS-SM: the **branches** whose frozen transition is run against its live
 counterpart by `FrozenOpsSuite`'s differential scenarios. -/
@@ -379,6 +391,9 @@ def frozenBranchDifferentiallyChecked : FrozenOpBranch → Bool
   | .endpointCallParks => true                 -- against `endpointCall`
   | .endpointReplyToBlockedCaller => true      -- against the leg named in
                                                -- `frozenBranchLiveLeg` below
+  | .threadSuspendCancelsBlocking => true      -- against `suspendThreadOnCore`
+  | .threadSuspendRunnable => true             -- against `suspendThreadOnCore`
+  | .threadSuspendInactive => true             -- against `suspendThreadOnCore`
   | _ => false
 
 /-- **WHICH live leg a differentially-checked branch is run beside.**
@@ -407,6 +422,9 @@ def frozenBranchLiveLeg : FrozenOpBranch → String
   | .endpointReceiveFromBlockedCaller => "endpointReceiveDual"
   | .endpointCallParks => "endpointCall"
   | .endpointReplyToBlockedCaller => "endpointReplyOnCore"
+  | .threadSuspendCancelsBlocking => "suspendThreadOnCore"
+  | .threadSuspendRunnable => "suspendThreadOnCore"
+  | .threadSuspendInactive => "suspendThreadOnCore"
   | _ => ""
 
 /-- **A leg counterpart is named exactly for the differentially-checked branches.**
@@ -520,6 +538,10 @@ def frozenBranchOperationUncheckedReason : FrozenOpBranch → String
   -- (`applyCallDonation`), which `frozenEndpointCall` does not perform.
   | .endpointCallToWaitingReceiver => "leg differential owed first"
   | .endpointCallParks => "call-rendezvous donation not mirrored"
+  -- The live `.tcbSuspend` arm calls `suspendThreadOnCore` and nothing else.
+  | .threadSuspendCancelsBlocking => "live operation is the leg"
+  | .threadSuspendRunnable => "live operation is the leg"
+  | .threadSuspendInactive => "live operation is the leg"
 
 /-- **Every branch is either checked at the operation, or says why not.**
 
@@ -654,18 +676,14 @@ def frozenOpUncheckedReason : SyscallId → String
   | .tcbSetPriority => "priority operation; scenario owed"
   | .tcbSetMCPriority => "priority operation; scenario owed"
   | .tcbSetIPCBuffer => "architecture operation; scenario owed"
-  -- These two are not `Kernel`-shaped on the live side: `suspendThread` and
-  -- `resumeThreadOnCore` take a `ValidThreadId` and answer an `Except` over the
-  -- state directly, so running them beside the frozen pair needs an adapter
-  -- rather than a scenario.  Named rather than dropped -- and `v0.35.134`
-  -- measured what the gap costs, so the reason says so rather than reading as a
-  -- formality: `frozenResumeThread` was found performing **none** of the live
-  -- resume's three scheduling steps (the shared field clear, the boost
-  -- recompute, the effective-priority preemption test), and it was found by
-  -- reading the two bodies side by side rather than by any check.  A stated
-  -- reason bounds nothing; it only says who owes the work.
-  | .tcbSuspend => "live entry is not Kernel-shaped; adapter owed (v0.35.134 found 3 divergences in its sibling)"
-  | .tcbResume => "live entry is not Kernel-shaped; adapter owed (v0.35.134 fixed 3 divergences found by reading, not by a check)"
+  -- `.tcbSuspend` is checked per branch above, whole state against
+  -- `suspendThreadOnCore`.  The resume is compared on its objects only
+  -- (`FrozenOpsSuite` FO-060, FO-062 to FO-064): the live restart ends in a
+  -- scheduling point that dispatches the picked thread, while
+  -- `frozenResumeThread` leaves selection to `frozenSchedule`, so the
+  -- `current` and run-queue halves of the whole-state comparison differ by
+  -- design.  The resume is therefore not claimed as checked.
+  | .tcbResume => "live restart dispatches at its scheduling point; objects compared, scheduler state not"
   | _ => ""
 
 /-- **The interlock.**  Every syscall `frozenOpCoverage` claims a frozen

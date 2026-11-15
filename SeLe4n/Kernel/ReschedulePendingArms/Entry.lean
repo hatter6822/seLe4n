@@ -198,6 +198,16 @@ theorem writeFfiRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadI
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact updateTcb_keyFrame st tid (fun _ => rfl) hInv
 
+/-- The state a refusal of the checked entry reports (`cancelReceiveBusyReply`)
+covers: the state itself, or its busy reply's holder cancelled. -/
+theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
+    (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    stepCovers e st (cancelReceiveBusyReply ctx ec st) ∧
+      (cancelReceiveBusyReply ctx ec st).objects.invExt := by
+  rcases cancelReceiveBusyReply_cases ctx ec st with h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+  · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
+  · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
+
 /-- **The ABI dispatch covers** on the executing core: the argument spill moves
 no key, the checked entry covers, a capability fault is a covered delivery, and
 a refusal record touches the refusal ledger alone. -/
@@ -219,16 +229,22 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
   have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
   dsimp only at h
   split at h
-  · split at h
+  · -- the refusal's reported state: the spill, or its busy reply's holder
+    -- cancelled on it
+    obtain ⟨hC, hCInv⟩ := cancelReceiveBusyReply_stepCovers e ctx e
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) hW.2.2
+    split at h
     · cases h
       unfold Platform.FFI.deliverSyscallCapFault
       have hF := writeFaultRegistersToTcb_keyFrame _ tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hW.2.2
-      exact stepCoversInv_trans (stepCovers_trans hW.stepCovers hF.stepCovers)
+        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hCInv
+      exact stepCoversInv_trans
+        (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
         (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
     · cases h
-      refine stepCoversInv_trans hW.stepCovers (capabilityKeyFrame.stepCoversInv ?_)
-      exact capabilityKeyFrame_of_objects_scheduler_eq hW.2.2
+      refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+        (capabilityKeyFrame.stepCoversInv ?_)
+      exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
         ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
           (Architecture.recordErrorOverflow_objects _ _ _))
         ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans

@@ -793,7 +793,7 @@ theorem finaliseReplyRevertCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId}
       have i3 := Lifecycle.Suspend.restoreToReadyCancelled_invExt S2 x i2
       obtain ⟨w3, hx3, e3⟩ : ∃ w3, (Lifecycle.Suspend.restoreToReadyCancelled S2 x).getTcb? x =
           some w3 ∧ w3.cancelKey = TCB.quietKey u.bindKey := by
-        refine ⟨(u.restoredToReady).withReturnFrame Architecture.cancelledIpcFrame, ?_, rfl⟩
+        refine ⟨u.restoredToRestart, ?_, rfl⟩
         unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
         rw [SystemState.updateTcb_getTcb?_self _ _ _ i2, hu]
         rfl

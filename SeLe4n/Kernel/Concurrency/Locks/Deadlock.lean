@@ -633,6 +633,21 @@ theorem insertOrMerge_size_le (S : LockSet) (l : LockKey) (m : AccessMode) :
   · simp [List.length_map]
   · simp
 
+/-- A union holds at most the members of both sides. -/
+theorem union_size_le (S₁ S₂ : LockSet) : (S₁.union S₂).size ≤ S₁.size + S₂.size := by
+  unfold LockSet.union
+  have hF : ∀ (L : List (LockKey × AccessMode)) (acc : LockSet),
+      (L.foldl (fun acc p => acc.insertOrMerge p.fst p.snd) acc).size ≤ acc.size + L.length := by
+    intro L
+    induction L with
+    | nil => intro acc; simp
+    | cons p L ih =>
+      intro acc
+      simp only [List.foldl_cons, List.length_cons]
+      have := insertOrMerge_size_le acc p.1 p.2
+      exact Nat.le_trans (ih _) (by omega)
+  exact Nat.le_trans (hF _ _) (by unfold LockSet.size; omega)
+
 /-- WS-SM SM3.D.6b: `lockSetOfList` has size at most the length of its
 source list (the fold of `insertOrMerge` over the empty set grows by ≤ 1
 per element). -/
@@ -1052,6 +1067,20 @@ theorem lockSet_endpointReceive_size_lt (a : ThreadId) (b c : ObjId) (d : Option
   unfold lockSet_endpointReceive maxLockSetSize
   refine Nat.lt_of_le_sub_one (by decide) ?_
   -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head; `3 + 12 = 15`.
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
+    (by size_bound)
+
+/-- The receive's footprint holds at most sixteen members: three fixed and
+thirteen optionals, so a busy reply's cancel, at most thirteen more, still fits
+under the ceiling (`lockSet_receiveCancellingHolder_size_le`). -/
+theorem lockSet_endpointReceive_size_le_sixteen (a : ThreadId) (b c : ObjId)
+    (d : Option ThreadId) (e : Option ReplyId) (f : Bool) (g : Option SchedContextId)
+    (h : Option ThreadId) (i : Option ReplyId) (j : Option SchedContextId) (k : Option ThreadId)
+    (l : Option ReplyId) (m : Option ReplyId) (n : Option ThreadId) (o : Option ThreadId)
+    (p : Option ObjId) :
+    (lockSet_endpointReceive a b c d e f g h i j k l m n o p).size ≤ 16 := by
+  unfold lockSet_endpointReceive
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
     (by size_bound)

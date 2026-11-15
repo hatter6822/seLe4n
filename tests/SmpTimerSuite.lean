@@ -870,9 +870,6 @@ private def runTimeoutFrameStagingChecks : IO Unit := do
   assertBool "a timed-out waiter reads back .ipcTimeout after the exhaustion tick"
     (decide (Architecture.readReturnFrame (timerTickOnCore stLocal core1) tidW
       = Architecture.timeoutFrame))
-  assertBool "…and it is the TIMEOUT frame, not the cancellation one"
-    (decide (Architecture.readReturnFrame (timerTickOnCore stLocal core1) tidW
-      ≠ Architecture.cancelledIpcFrame))
   assertBool "…while `timedOut` is still set — the flag and the frame are both carried"
     (match (timerTickOnCore stLocal core1).getTcb? tidW with
      | some t => decide (t.timedOut = true ∧ t.ipcState = ThreadIpcState.ready)

@@ -1402,7 +1402,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
         | none => false)
      | none => false)
   -- **The footprint is read off the STATE, not emitted as a fixed set.**  The
-  -- fixture's victim is `.Inactive`, which the suspend arm refuses — so its
+  -- fixture's victim is `.Inactive`, which the suspend arm leaves as it is — so its
   -- footprint is the object-store write lock and nothing else
   -- (`schedLockSet_suspendThreadOnCore_of_inactive`).  Flip that one field and
   -- the executing core's run-queue lock appears, which is what a resolver that

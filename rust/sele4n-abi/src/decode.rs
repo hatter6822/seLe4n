@@ -295,13 +295,12 @@ mod tests {
     }
 
     #[test]
-    fn decode_ipc_cancelled_error() {
-        // WS-RR RR7.14: discriminant 57 survives the label round trip.  A
-        // cancelled waiter must be distinguishable from a timed-out one: the
-        // timed-out caller may retry the same call, the cancelled one has had
-        // its endpoint queue entry destroyed.
+    fn decode_retired_ipc_cancelled_error() {
+        // WS-SX SX4: discriminant 57 (the former `IpcCancelled`) is retired —
+        // a cancelled IPC restarts its system call, as seL4's does — so a label
+        // carrying it decodes to the forward-compatibility sentinel.
         let regs = [0, error_x1(57), 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::IpcCancelled));
+        assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 
     #[test]
