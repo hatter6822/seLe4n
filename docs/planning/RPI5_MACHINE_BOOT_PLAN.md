@@ -1,7 +1,8 @@
 # WS-RB — Boot the kernel on the emulated Raspberry Pi 5
 
 > **Workstream**: WS-RB (the QEMU lanes moved onto rpi5_machine's `raspi5b`).
-> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`.
+> **Status**: **ACTIVE** — registered at `v0.37.25` with RB1; RB2 at `v0.37.26`;
+> RB3 at `v0.37.27`.
 > **Baseline**: the tree at `v0.37.24`. Every `file:line` below was read
 > against it.
 > **Rows**: RB1–RB5, numbered in the order they are implemented, one PR each.
@@ -98,6 +99,14 @@ kernel would have halted at its Phase 7 topology refusal. `virt` hid it.
 - `scripts/qemu_exerciser_lib.sh` boots `raspi5b`, then `virt`. Every pin
   reads its exact count on both machines: the kernel is the same, so a count
   that differs between boards is a finding, not a second pin.
+- *Landed (`v0.37.27`), with the two findings the first `raspi5b` run made,
+  each fixed in the row:* the interrupt-mask and issued-line writes rebuilt a
+  record on lines 256 and up (one cell per Pi 5 interrupt entry on 318/319;
+  the per-word choice is now out of line, `irqMaskWordAt`/`irqMaskWordPast`),
+  and the declassification scenario's refused lookup assumed the root task
+  was current where a tick can hand core 0 to the partner (it now runs with
+  the partner suspended). Every board-booting gate checks every board's
+  emulator first (`qemu_gate_boards`, from RB2's review).
 
 ### RB4 — Boot the packaged boot files as the firmware does
 

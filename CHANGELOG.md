@@ -1,3 +1,41 @@
+## v0.37.27 — the Tier-4 exercisers boot `raspi5b` first
+
+WS-RB RB3 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).
+
+- **One exerciser deployment, two boards.** The allocation exerciser's Lean
+  half is one board-generic module (`SeLe4n/Platform/Exerciser/Deployment.lean`:
+  labeling, ids, the root CNode, untypeds tiling each board's RAM, the root
+  task's IPC buffer) applied to each board's table pool and RAM extensions.
+  `SeLe4n/Platform/QemuVirt/Exerciser.lean` is now that module at `virt`
+  (proved `rfl`-equal to the objects it replaced) and
+  `SeLe4n/Platform/RPi5/Exerciser.lean` is the Pi 5's, with its own boot
+  entry `lean_kernel_main_rpi5_exerciser` through the RPi5 device-tree check.
+  The library is `SeLe4nExerciser` (root `SeLe4n.Platform.Exerciser`), still
+  outside the kernel's closure; the boot-entry contract and the export census
+  hold the new entry.
+- **The Pi 5 exerciser image.** `smp_exercisers` builds on either board: the
+  HAL's initializer and entry are chosen by the board and the feature, and the
+  cross-target gate holds every *released* image free of test features rather
+  than tying the feature to `virt`. The interrupt scenarios' two unwired lines
+  are `BoardMap::unwired_spis` (318/319 on the BCM2712, whose 250/251 are
+  PCIe; 250/251 on `virt`), checked by `well_formed`.
+- **Both machines, the same pins.** `scripts/qemu_exerciser_lib.sh` boots
+  `raspi5b`, then `virt`, both emulators checked first (`qemu_gate_boards`).
+  Every reading is the same exact count on both.
+- **Found by the first `raspi5b` run, fixed here.**
+  - `MachineState.setIrqLineMask` and `InterruptLineSet.setWord` chose each
+    mask word inside the record update; the compiler split the update per
+    word, and the fifth word's split (lines 256–319) rebuilt the record. Every
+    interrupt entry, acknowledge and handler issue on such a line allocated a
+    304-byte cell (and the issue a 24-byte tree cell). `virt`'s lines are
+    below 256, so no gate saw it. The choice is now out of line
+    (`irqMaskWordAt`, `irqMaskWordPast`, scalar in and out); the readings are
+    0. The old cell was freed each time, so the heap did not grow.
+  - The declassification scenario's refused lookup (length 5, the fifth word
+    in the caller's IPC buffer) assumed the root task was the caller, but a
+    tick can hand core 0 to the runnable partner, which has no buffer. It now
+    runs with the partner suspended, where only the root task can run.
+
 ## v0.37.26 — the four-PE bring-up and the refusal probe boot `raspi5b` first
 
 WS-RB RB2 (`docs/planning/RPI5_MACHINE_BOOT_PLAN.md`).

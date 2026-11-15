@@ -9799,6 +9799,8 @@ run_check "INVARIANT" rg -n -F -- 'if lines[-1] != refusal:' scripts/test_qemu_l
 run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${QEMU_BOARD_MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
 # WS-RB RB2: the probe and the bring-up gate boot `raspi5b` first, then `virt`.
 run_check "INVARIANT" rg -n -U '^qemu_gate_boards 1\nfor board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n    probe_board "\$\{board\}"\ndone$' scripts/test_qemu_lean_init_refusal.sh
+# WS-RB RB3: every exerciser gate boots both boards, both boards' tools first.
+run_check "INVARIANT" rg -n -U '^    qemu_gate_boards 1\n    for board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n        qemu_select_board "\$\{board\}"\n        log_section "META" "=== \$\{id\}: \$\{subject\} under \$\{QEMU_BOARD_LABEL\} ==="\n        exerciser_boot ' scripts/qemu_exerciser_lib.sh
 # The board each run selects is the board whose machine it boots: the Pi 5 arm
 # passes the selected board's machine (`raspi5b`, `qemu_select_board`).
 run_check "INVARIANT" rg -n -U '^qemu_gate_boards "\$\{LEAN_KERNEL\}"\nfor board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n    qemu_select_board "\$\{board\}"\n    qemu_build_image "\$\{LEAN_KERNEL\}"\n    qemu_cut_image\n    case "\$\{board\}" in\n        rpi5\)\n            bringup_once "four PEs, Raspberry Pi 5, raspi5b, EL2 entry" "\$\{QEMU_BOARD_MACHINE\}"\n            ;;$' scripts/test_qemu_smp_bringup.sh

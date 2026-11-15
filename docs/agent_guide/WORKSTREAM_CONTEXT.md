@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26)
+### WS-RB Boot the kernel on the emulated Raspberry Pi 5 — ACTIVE (registered v0.37.25 with RB1; RB2 v0.37.26; RB3 v0.37.27)
 
 The QEMU lanes move from QEMU `virt` onto hatter6822/rpi5_machine's `raspi5b`,
 which models the Pi 5, with `virt` kept as the second lane (owner decision
@@ -139,7 +139,10 @@ RB5 closes. Plan: [`RPI5_MACHINE_BOOT_PLAN.md`](../planning/RPI5_MACHINE_BOOT_PL
 is a `BoardMap` field (`rust/sele4n-hal/src/board.rs`), never a literal in the
 module that uses it (RB1 found the secondaries' MPIDRs as `virt`'s literals);
 a QEMU lane selects its board with `qemu_select_board` and boots `raspi5b`
-first; rpi5_machine moves only by editing the pin in
+first, and a gate that boots both boards takes them from `qemu_gate_boards`;
+exerciser deployment code is board-generic
+(`SeLe4n/Platform/Exerciser/Deployment.lean`) and an exerciser pin reads the
+same count on both machines; rpi5_machine moves only by editing the pin in
 `scripts/setup_rpi5_machine.sh`, in its own PR.
 
 ### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24)

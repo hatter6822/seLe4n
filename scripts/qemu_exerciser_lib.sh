@@ -51,7 +51,8 @@ exerciser_parse_args() {
 
 # exerciser_boot LABEL: build the exerciser image for the selected board
 # (`qemu_select_board`; Lean-linked when LEAN_KERNEL is 1), boot it on four PEs
-# until its summary line, and name the log in EXERCISER_LOG.
+# until its summary line, and name the log in EXERCISER_LOG.  The caller has
+# required the board's tools (`qemu_gate_boards`).
 #
 # Both images run under `-icount shift=0,sleep=off`, the HAL-only one included,
 # because the drivers' verdicts are **bounded waits** — a round's acknowledgment
@@ -70,7 +71,6 @@ exerciser_parse_args() {
 # period.)
 exerciser_boot() {
     local label="$1" deadline extra=(-icount "shift=0,sleep=off")
-    qemu_require_tools
     qemu_build_image "${LEAN_KERNEL}" 1
     qemu_cut_image
     qemu_temp_file EXERCISER_LOG qemu_exercisers
@@ -1129,7 +1129,11 @@ exerciser_gate() {
     fi
     local image="HAL-only" board
     [[ "${LEAN_KERNEL}" -eq 1 ]] && image="Lean-linked"
-    for board in rpi5 virt; do
+    # Both boards' tools before either boots (`qemu_gate_boards`; the exerciser
+    # image is always built, so a named KERNEL_BIN never narrows it), then
+    # `raspi5b`, then `virt`.
+    qemu_gate_boards 1
+    for board in "${QEMU_GATE_BOARDS[@]}"; do
         qemu_select_board "${board}"
         log_section "META" "=== ${id}: ${subject} under ${QEMU_BOARD_LABEL} ==="
         exerciser_boot "${subject}, ${QEMU_BOARD_LABEL}, ${image} image, four PEs, EL2 entry" || true
