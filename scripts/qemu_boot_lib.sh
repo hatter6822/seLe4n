@@ -21,7 +21,7 @@
 #   QEMU_BOARD    the board the image is built for and booted on: `rpi5`, the
 #                 Raspberry Pi 5 image on rpi5_machine's `raspi5b` (WS-RB), or
 #                 `virt`, the `board_qemu_virt` image on QEMU's `virt`
-#                 (default virt; a caller may also `qemu_select_board`)
+#                 (default rpi5, WS-RB RB5; a caller may also `qemu_select_board`)
 #   QEMU_BIN      the emulator for `virt`  (default qemu-system-aarch64)
 #   QEMU_RPI5_BIN the emulator for `rpi5`  (default: the one
 #                 `scripts/setup_rpi5_machine.sh` builds at its pin)
@@ -95,7 +95,7 @@ qemu_image_features() {
     fi
 }
 
-qemu_select_board "${QEMU_BOARD:-virt}"
+qemu_select_board "${QEMU_BOARD:-rpi5}"
 LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
 # WS-ZA ZA5.13: the allocation exerciser's archive, which the same builder
 # writes.  Only the exerciser image links it; every other Lean-linked image is
@@ -186,11 +186,11 @@ qemu_require_tools() {
 # failure is recorded on another, never after it, where its skip would hide
 # that failure.  A HAL-only image the caller named (KERNEL_BIN, LEAN 0) is one
 # board's image, since the board is chosen at build time (`src/board.rs`), so
-# it is booted on the board QEMU_BOARD names (`virt` when unnamed), alone.
+# it is booted on the board QEMU_BOARD names (`rpi5` when unnamed), alone.
 qemu_gate_boards() {
     local lean="$1" board
     if [[ -n "${KERNEL_BIN_NAMED}" && "${lean}" -ne 1 ]]; then
-        QEMU_GATE_BOARDS=("${QEMU_BOARD_NAMED:-virt}")
+        QEMU_GATE_BOARDS=("${QEMU_BOARD_NAMED:-rpi5}")
     else
         QEMU_GATE_BOARDS=(rpi5 virt)
     fi
