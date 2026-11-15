@@ -497,7 +497,6 @@ theorem bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor (board : SeLe4n.Mach
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_qemuVirtPlatformConfigFor, qemuVirtBoundPlatformConfig_boot]
   simp only [qemuVirtDeploymentBootState_witnessesInstalled, ↓reduceIte]
-  rfl
 
 /-- ...so the halting boot never halts on it. -/
 theorem bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :

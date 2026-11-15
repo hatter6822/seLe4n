@@ -1189,9 +1189,15 @@ the tables that map it). seLe4n's boot does the same on every deployment.
   derived copy in the buffer slot, and sets `ipcBuffer`. It records eight
   owed physical writes: four page scrubs (seL4 zeroes the rootserver region),
   three table descriptors and the buffer's page descriptor.
-- **The writes are performed (D15).** Every boot entry performs the owed
-  writes (`completePhysicalWrites`) and installs the drained state
-  (`drainBootPhysicalWrites`). The bundle theorems are stated on that drained
+- **The writes are performed (D15).** The boot wrapper takes the machine's
+  performer (`bootAndInitialiseFromPlatformOn machine`). Every hardware entry
+  (`bootAndInitialiseRPi5`, `bootAndInitialiseQemuVirt`,
+  `bootAndInitialiseQemuVirtExerciser`) passes the HAL's
+  (`completePhysicalWrites`), and the wrapper installs the drained state
+  (`drainBootPhysicalWrites`). A host or simulation entry passes none, and a
+  boot that owes writes there is refused
+  (`unperformedBootPhysicalWritesBootError`), never installed with its writes
+  dropped. The bundle theorems are stated on that drained
   state. The HAL counts the writes it performs before the boot map is sealed,
   and prints the count after the install. `qemu_lean_boot_expected.txt` pins
   eight on both platforms, and `tests/Ak9PlatformSuite.lean` pins the model's

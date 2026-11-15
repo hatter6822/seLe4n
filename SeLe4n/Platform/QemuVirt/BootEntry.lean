@@ -57,11 +57,12 @@ def qemuVirtPlatformConfigFromDtb (blob : ByteArray) (initialObjects : List Obje
 /-- The checked platform boot at the `virt` binding — the platform a
     definition, not an argument the exported entry could vary. -/
 def bootAndInitialiseQemuVirt (config : PlatformConfig) : BaseIO (Except String SeLe4n.Model.SystemState) :=
-  bootAndInitialisePlatform QemuVirtPlatform config
+  bootAndInitialisePlatform QemuVirtPlatform (some completePhysicalWrites) config
 
 /-- The `virt` boot is the generic one at this binding. -/
 theorem bootAndInitialiseQemuVirt_eq (config : PlatformConfig) :
-    bootAndInitialiseQemuVirt config = bootAndInitialisePlatform QemuVirtPlatform config := rfl
+    bootAndInitialiseQemuVirt config =
+      bootAndInitialisePlatform QemuVirtPlatform (some completePhysicalWrites) config := rfl
 
 /-- The `virt` boot with its failure handled: a refused boot halts every PE. -/
 def bootAndInitialiseQemuVirtOrHalt (config : PlatformConfig) : BaseIO Unit := do

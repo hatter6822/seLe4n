@@ -221,8 +221,10 @@ entry performs the eight writes the boot owes and installs the drained state
 deleted. **Standing constraints for new code:** a TCB has three space slots;
 a slot walk, invariant or teardown covers all three. A boot stage that owes
 physical writes records them on the intermediate state
-(`recordBootPhysicalWrites`), and every boot entry performs and drains them
-before it installs the state; no boot stage writes memory any other way. The
+(`recordBootPhysicalWrites`); every hardware entry passes the HAL's performer
+to the boot wrapper, which performs them and installs the drained state, and a
+host or simulation entry passes none and so refuses a boot that owes any. No
+boot stage writes memory any other way. The
 root task's memory is the binding's reservation, never an untyped the root task
 retypes at boot.
 

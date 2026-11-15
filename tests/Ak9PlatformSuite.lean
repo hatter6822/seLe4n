@@ -2884,6 +2884,20 @@ def root_server_builds_the_ipc_buffer_at_boot : IO Unit := do
         (match bootFromPlatformCheckedStartedFor cores outside with
           | .error e => e == rootServerPlacementBootError
           | .ok _ => false)
+  -- WS-SX SX5.3 (D15): a boot that owes writes on a machine that performs none
+  -- — the host entry, which no HAL backs — is refused and installs nothing,
+  -- never installed with its writes dropped.
+  let before ← SeLe4n.Platform.FFI.getKernelState
+  match ← SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
+      SeLe4n.Platform.QemuVirt.qemuVirtBoundPlatformConfig
+      (PlatformBinding.labeling (platform := SeLe4n.Platform.QemuVirt.QemuVirtPlatform)) with
+  | .error e =>
+      expect "SX5.3 NEGATIVE the host entry refuses a boot that owes physical writes"
+        (e == SeLe4n.Platform.FFI.unperformedBootPhysicalWritesBootError)
+  | .ok _ => expect "SX5.3 NEGATIVE the host entry refuses a boot that owes physical writes" false
+  let after ← SeLe4n.Platform.FFI.getKernelState
+  expect "SX5.3 NEGATIVE ...and installs nothing"
+    (after.objects.size == before.objects.size && (after.getTcb? ⟨2⟩).isNone == (before.getTcb? ⟨2⟩).isNone)
   IO.println "the boot builds the root task's IPC buffer on every deployment: PASS"
 
 end SeLe4n.Testing.Ak9PlatformSuite

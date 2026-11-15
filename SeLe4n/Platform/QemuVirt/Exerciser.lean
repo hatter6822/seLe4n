@@ -226,7 +226,7 @@ def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
 /-- The checked platform boot at the exerciser's binding. -/
 def bootAndInitialiseQemuVirtExerciser (config : PlatformConfig) :
     BaseIO (Except String SeLe4n.Model.SystemState) :=
-  bootAndInitialisePlatform QemuVirtExerciserPlatform config
+  bootAndInitialisePlatform QemuVirtExerciserPlatform (some completePhysicalWrites) config
 
 /-- The exerciser's boot with its failure handled: a refused boot halts every
     PE.  The boot itself builds the root task's IPC buffer (WS-SX SX5.3,

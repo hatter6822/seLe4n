@@ -39,9 +39,18 @@ invocations.
   scrubs, three table descriptors and the buffer's page descriptor. The bundle
   is reproved over the new objects (`proofLayerInvariantBundle_of_bootShape`,
   `bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle`).
-- **The writes are performed (D15).** Every boot entry performs the owed writes
-  (`completePhysicalWrites`) and installs the drained state
-  (`drainBootPhysicalWrites`). `bootToRuntime_invariantBridge_installed` states
+- **The writes are performed (D15).** The boot wrapper takes the machine's
+  write performer (`bootAndInitialiseFromPlatformOn machine`, inlined so each
+  caller's choice reduces at compile time). Every hardware entry passes the
+  HAL's (`completePhysicalWrites`), and the wrapper installs the drained state
+  (`drainBootPhysicalWrites`). The host and simulation entries pass none, and
+  refuse a boot that owes writes (`unperformedBootPhysicalWritesBootError`).
+  Under the RPi5 binding, which always reserves a root server, a config whose
+  root thread cannot take the buffer is refused by `rootServerPlaced`; the
+  dispatch suite's two binding tests now assert that refusal and check the
+  binding's root, witnesses and machine configuration on the bound config
+  without the reservation. The idle suite's object-budget boundary counts the
+  four root-server objects. `bootToRuntime_invariantBridge_installed` states
   the bundle on that state; `bootToRuntime_invariantBridge_started`, on the
   undrained state no entry installs, is deleted. The HAL counts the writes it
   performs before the boot map is sealed and prints the count after the
@@ -62,6 +71,7 @@ invocations.
     `root-ipc-buffer-cap` (an Unmap through the frame capability, a remap, then
     the same overflow read). Its pinned set gains them and their unmap and
     remap steps.
+  - The host entry refuses a boot that owes writes, and installs nothing.
 - **Fixed along the way.**
   - `rootServerTaskPlaced` read the CNode through `CNode.lookup`, which is
     noncomputable, so `wellFormed` could not be decided. It reads

@@ -3935,8 +3935,12 @@ run_check "INVARIANT" rg -n '^  rootServerFor := fun board => rpi5RootServerAt \
 run_check "INVARIANT" rg -n '^def untypedExtentsOf : List \(Nat × Nat\) → List \(Nat × Nat\)$' SeLe4n/Platform/Boot/RegionMapReservation.lean
 run_check "INVARIANT" rg -n -U '^  \(extensions\.zip \(untypedExtentsOf extensions\)\)\.forM fun \(e, u\) => do\n    ffiExtendBootRamMap \(UInt64\.ofNat e\.1\) \(UInt64\.ofNat e\.2\)\n    ffiReserveRegionMap \(UInt64\.ofNat u\.1\) \(UInt64\.ofNat u\.2\)\n      \(UInt64\.ofNat \(regionMapBaseOf e\)\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U '^def installRootServer \(config : PlatformConfig\) \(ist : IntermediateState\) : IntermediateState :=\n  match config\.rootServer with\n  \| none => ist\n  \| some r => installRootServerAt r ist$' SeLe4n/Platform/Boot/RootServer.lean
-run_check "INVARIANT" rg -n -U '^      if declaredWitnessesInstalled ist\.state ctx then\n        completePhysicalWrites ist\.state\.drainedPhysicalWrites\n        let st := Architecture\.clearPhysicalWrites ist\.state\n        initialiseKernelState st$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^              completePhysicalWrites ist\.state\.drainedPhysicalWrites\n              initialiseKernelState \(Architecture\.clearPhysicalWrites ist\.state\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^        match machine with\n        \| some perform =>\n          perform ist\.state\.drainedPhysicalWrites\n          let st := \(drainBootPhysicalWrites ist\)\.state\n          initialiseKernelState st$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^        \| none =>\n          if ist\.state\.drainedPhysicalWrites\.count == 0 then\n            let st := \(drainBootPhysicalWrites ist\)\.state\n            initialiseKernelState st[^\n]*(\n([ \t][^\n]*)?)*?          else\n            pure \(Except\.error unperformedBootPhysicalWritesBootError\)$' SeLe4n/Platform/FFI.lean
+# Every hardware entry passes the HAL's performer; no entry a host or a simulation reaches does.
+run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform SeLe4n\.Platform\.RPi5\.RPi5Platform \(some completePhysicalWrites\) config$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform QemuVirtPlatform \(some completePhysicalWrites\) config$' SeLe4n/Platform/QemuVirt/BootEntry.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform QemuVirtExerciserPlatform \(some completePhysicalWrites\) config$' SeLe4n/Platform/QemuVirt/Exerciser.lean
 # NEGATIVE: the exerciser's IPC-buffer workaround — an untyped the root task
 # retyped into its own buffer frame through boot-time invocations — is gone.
 run_negative_check "INVARIANT" rg -n '\b(qemuVirtExerciserRootInvoke|qemuVirtExerciserRootIpcBufferInvocations|qemuVirtExerciserGiveRootIpcBuffer|qemuVirtExerciserGiveRootIpcBufferOrHalt|qemuVirtExerciserIpcBufferUntyped[A-Za-z]*)\b' SeLe4n/ tests/ rust/ scripts/
@@ -9828,7 +9832,7 @@ run_check "INVARIANT" rg -n -U '^qemu_gate_boards "\$\{LEAN_KERNEL\}"\nfor board
 # log to the relations: the install allocated (more live allocations after it
 # than before), the heap's invariants hold at both points, and the install
 # precedes the release, which precedes every secondary's first line.
-run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::kprintln!\(\n\s+"\[boot\] Phase 5: \{\} owed boot physical write\(s\) performed",\n\s+crate::ffi::boot_physical_writes\(\)\n\s+\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n -F -- 'heap.check_invariants().map_err(|_| HeapFault::Corrupt)?;' rust/sele4n-hal/src/lean_heap.rs
 run_check "INVARIANT" rg -n -U 'let crate::lean_entry::SecondaryReleasePermit \{ \.\. \} = permit;\n\s+if !enabled\.load\(Ordering::Acquire\) \{\n\s+return 0;\n\s+\}\n(\s+//[^\n]*\n)*\s+crate::kprintln!\("\[smp\] releasing the secondaries under the install permit"\);' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -n -F -- 'RELEASE          | [smp] releasing the secondaries under the install permit' tests/fixtures/qemu_lean_boot_expected.txt
@@ -12431,8 +12435,8 @@ run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCoun
 # barrier rather than the per-PE park; and the assembly source fallback asks
 # the same section question the archive parser has asked since round 8.
 run_check "INVARIANT" rg -n '^def declaredCoresOfConfig($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
-run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn none (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn none SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs

@@ -1175,6 +1175,12 @@ witnesses are not installed threads of the boot state. -/
 def uninstalledSeparationWitnessBootError : String :=
   "boot: the labeling's declared separation witnesses are not installed threads of the boot state (PR #889 review round 3)"
 
+/-- **WS-SX SX5.3 (D15)**: the refusal for a boot that owes physical writes on
+a machine that performs none — the host and simulation entries, which no HAL
+backs.  Every binding of those reserves no root server, so they owe none. -/
+def unperformedBootPhysicalWritesBootError : String :=
+  "boot: the boot owes physical writes and this entry's machine performs none (WS-SX SX5.3)"
+
 /-- **WS-BP BP7.2: perform one physical write a committed transition
     recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
     the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
@@ -1219,11 +1225,19 @@ the guard exists to refuse.
 WS-SX SX5.3 (D15): an accepted boot owes physical writes — the root task's IPC
 buffer page and its three tables zeroed and their descriptors stored
 (`installRootServer`, seL4's `create_rootserver_objects` and
-`create_ipcbuf_frame_cap`).  The entry performs them (`completePhysicalWrites`)
-and installs the state with its ledger drained (`clearPhysicalWrites`), so the
-root task's first instruction finds its buffer mapped and the first syscall's
-commit starts from an empty ledger. -/
-def bootAndInitialiseFromPlatformOn
+`create_ipcbuf_frame_cap`).  The entry performs them on the machine it boots
+(`machine`: the hardware entries pass `completePhysicalWrites`) and installs
+the state with its ledger drained (`drainBootPhysicalWrites`), so the root
+task's first instruction finds its buffer mapped and the first syscall's
+commit starts from an empty ledger.  A fourth refusal: a boot that owes writes
+on a machine that performs none (`machine = none`, the host and simulation
+entries) is refused (`unperformedBootPhysicalWritesBootError`), never
+installed with its writes dropped.  Inlined, with `bootAndInitialisePlatform`,
+so each caller's `machine` is a constructor the match reduces at compile time:
+a hardware entry calls the HAL's performer directly, and a host or simulation
+entry links no HAL symbol. -/
+@[inline] def bootAndInitialiseFromPlatformOn
+    (machine : Option (Architecture.PhysicalWriteLedger → BaseIO Unit))
     (cores : List SeLe4n.Kernel.Concurrency.CoreId)
     (config : PlatformConfig)
     (ctx : LabelingContext) :
@@ -1235,11 +1249,21 @@ def bootAndInitialiseFromPlatformOn
     | Except.error e => pure (Except.error e)
     | Except.ok ist =>
       if declaredWitnessesInstalled ist.state ctx then
-        completePhysicalWrites ist.state.drainedPhysicalWrites
-        let st := Architecture.clearPhysicalWrites ist.state
-        initialiseKernelState st
-        initialiseKernelLabelingContext ctx
-        pure (Except.ok st)
+        match machine with
+        | some perform =>
+          perform ist.state.drainedPhysicalWrites
+          let st := (drainBootPhysicalWrites ist).state
+          initialiseKernelState st
+          initialiseKernelLabelingContext ctx
+          pure (Except.ok st)
+        | none =>
+          if ist.state.drainedPhysicalWrites.count == 0 then
+            let st := (drainBootPhysicalWrites ist).state
+            initialiseKernelState st
+            initialiseKernelLabelingContext ctx
+            pure (Except.ok st)
+          else
+            pure (Except.error unperformedBootPhysicalWritesBootError)
       else
         pure (Except.error uninstalledSeparationWitnessBootError)
 
@@ -1348,7 +1372,7 @@ def bootAndInitialiseFromPlatform
     (config : PlatformConfig)
     (ctx : LabelingContext) :
     BaseIO (Except String SystemState) :=
-  bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx
+  bootAndInitialiseFromPlatformOn none (declaredCoresOfConfig config) config ctx
 
 /-- PR #889 review round 7: the binding's own boot configuration — the caller's
 initial objects under the **binding's** machine configuration and
@@ -1507,9 +1531,10 @@ the machine configuration the binding binds for the caller's account
 RAM variant the account covers).  The hardware entry `lean_kernel_main`
 (`SeLe4n.Platform.RPi5.kernelMain`) calls `bootAndInitialiseRPi5`, the instance
 of this entry fixed at `RPi5Platform`, through `bootAndInitialiseRPi5OrHalt`. -/
-def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
+@[inline] def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
+    (machine : Option (Architecture.PhysicalWriteLedger → BaseIO Unit))
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
-  bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
+  bootAndInitialiseFromPlatformOn machine (PlatformBinding.declaredCores (platform := platform))
     (bindPlatformConfig platform config) (PlatformBinding.labeling (platform := platform))
 
 /-- PR #889 review round 7: **the hardware boot entry** — `bootAndInitialisePlatform`
@@ -1525,14 +1550,14 @@ gate never inspected the platform argument, so an entry executing
 and a single idle thread, on an image whose Rust boot releases four PEs —
 satisfied it.  Here the platform cannot be chosen at all. -/
 def bootAndInitialiseRPi5 (config : PlatformConfig) : BaseIO (Except String SystemState) :=
-  bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config
+  bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform (some completePhysicalWrites) config
 
 /-- PR #889 review round 7: the hardware entry is the generic one at the RPi5
 binding — definitional, so every theorem about `bootAndInitialisePlatform` at
 `RPi5Platform` is a theorem about the hardware entry. -/
 theorem bootAndInitialiseRPi5_eq (config : PlatformConfig) :
     bootAndInitialiseRPi5 config =
-      bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config := rfl
+      bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform (some completePhysicalWrites) config := rfl
 
 /-- **PR #889 review round 17: the hardware boot entry's only correct call.**
 
@@ -1906,18 +1931,18 @@ theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
     (`PlatformBinding.labeling_admitted`) rewriting the guard to `false`; there
     is no case analysis, because there is no case. -/
 theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
-    (config : PlatformConfig) :
-    bootAndInitialisePlatform platform config =
+    (perform : Architecture.PhysicalWriteLedger → BaseIO Unit) (config : PlatformConfig) :
+    bootAndInitialisePlatform platform (some perform) config =
       (match bootFromPlatformCheckedStartedFor
           (PlatformBinding.declaredCores (platform := platform))
           (bindPlatformConfig platform config) with
         | Except.error e => pure (Except.error e)
         | Except.ok ist =>
             if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
-              completePhysicalWrites ist.state.drainedPhysicalWrites
-              initialiseKernelState (Architecture.clearPhysicalWrites ist.state)
+              perform ist.state.drainedPhysicalWrites
+              initialiseKernelState (drainBootPhysicalWrites ist).state
               initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
-              pure (Except.ok (Architecture.clearPhysicalWrites ist.state))
+              pure (Except.ok (drainBootPhysicalWrites ist).state)
             else
               pure (Except.error uninstalledSeparationWitnessBootError)) := by
   unfold bootAndInitialisePlatform bootAndInitialiseFromPlatformOn

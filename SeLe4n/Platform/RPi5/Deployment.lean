@@ -1080,7 +1080,6 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_rpi5PlatformConfigFor, rpi5BoundPlatformConfigAt_boot _ hv]
   simp only [rpi5DeploymentBootStateAt_witnessesInstalled _ hv, ↓reduceIte]
-  rfl
 
 /-- **WS-BP BP3 acceptance**: ...so the halting boot the entry reaches
     (`bootAndInitialiseRPi5OrHalt`) installs the deployment and never reaches
