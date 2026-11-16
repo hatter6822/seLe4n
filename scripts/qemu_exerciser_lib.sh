@@ -498,8 +498,9 @@ for driver in drivers:
             "tail-send-blocks-suspend", "tail-reply-recv-resume",
             "tail-reply-recv-call", "tail-reply-recv-takes", "tail-reply-recv-blocks",
             "tail-reply-recv-suspend",
-            "reply-recv-extra-cap-skips-reply-resume", "reply-recv-extra-cap-skips-reply-call",
-            "reply-recv-extra-cap-skips-reply-takes", "reply-recv-extra-cap-skips-reply",
+            "reply-recv-extra-cap-skips-reply-resume", "reply-recv-extra-cap-skips-reply",
+            "reply-recv-extra-cap-skips-reply-partner-sends",
+            "reply-recv-extra-cap-skips-reply-partner-receives",
             "reply-recv-extra-cap-skips-reply-suspend",
             # Capability-carrying sends and calls that block.
             "caps-send-blocks-resume", "caps-send-blocks", "caps-send-blocks-suspend-root",

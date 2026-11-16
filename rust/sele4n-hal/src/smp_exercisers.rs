@@ -4629,31 +4629,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // resolve (a bare slot index, whose guard bits do not match the root's
         // guard): seL4-MCS `SysReplyRecv` runs `handleInvocation` with
         // `isBlocking = false`, so the failed `lookupExtraCaps` skips the reply
-        // with no fault, and the receive half still runs.  The reply is still
-        // the caller's, so the receive cancels the caller's IPC first
-        // (`receiveIPC`'s `cancelIPC(replyTCB)`), then blocks with no sender
-        // waiting.  The caller, restarted, suspends the partner.
+        // with no fault, and the receive half still runs and blocks with no
+        // sender waiting.  The partner's send then completes the receive, the
+        // partner blocks on a receive of its own, and the root task suspends it.
         invocation(
             "reply-recv-extra-cap-skips-reply-resume",
             TCB_RESUME,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
-        partner_step(
-            "reply-recv-extra-cap-skips-reply-call",
-            CALL,
-            ENDPOINT_CAP,
-            2,
-            [0x6c, 0x6d],
-            true,
-        ),
-        partner_step(
-            "reply-recv-extra-cap-skips-reply-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
         ),
         with_caps(
             partner_step(
@@ -4666,6 +4649,22 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             ),
             TAIL_IPC_BUFFER,
             [EMPTY_SOURCE_SLOT, 0, 0],
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-partner-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            false,
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-partner-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
         ),
         invocation(
             "reply-recv-extra-cap-skips-reply-suspend",
