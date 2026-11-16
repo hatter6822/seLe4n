@@ -435,6 +435,59 @@ resolved, and no derivation node minted, before the bracket holds its locks. -/
 def abiEntryPayload (cap : Capability) : SendPayload :=
   .frame cap.badge (cap.rights.mem .grant)
 
+/-- **The operands a receive declares** on the endpoint `epId`: the reply the
+receive resolves, or, when the reply is busy with another thread, the reply its
+capability names, through which its footprints name the holder the receive
+cancels first (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`,
+`cancelRecvBusyReply`); `none` when the reply refuses otherwise.  A `.receive`
+declares these, and so does a `.replyRecv` whose reply is skipped. -/
+def receiveLockOperands (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (s : SystemState) :
+    Option SyscallLockOperands :=
+  match resolveRecvReplyId gate decoded s with
+  | .error _ =>
+      let rid? := recvReplyLookup? gate decoded s
+      if (busyReplyHolder? s tid rid?).isSome then
+        some { caller := tid, targetObject := some epId, targetReply := rid? }
+      else none
+  | .ok replyId? =>
+      some { caller := tid, targetObject := some epId, targetReply := replyId? }
+
+/-- **The syscall whose footprint an entry declares**: the decoded syscall,
+except a `.replyRecv` whose reply is skipped (an extra capability of its message
+does not look up: seL4-MCS `handleInvocation` with `isBlocking = false`), which
+runs the receive alone and so declares the receive's footprint, the busy
+reply's holder included (`receivesWithoutReply`). -/
+def abiEntryFootprintId (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (s : SystemState) : SyscallId :=
+  if decoded.syscallId = .replyRecv ∧
+      (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome = true then .receive
+  else decoded.syscallId
+
+/-- The footprint is the receive's exactly when the dispatch runs the receive
+arm with no reply leg. -/
+theorem abiEntryFootprintId_eq_receive_iff (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) :
+    abiEntryFootprintId decoded tid s = .receive ↔ receivesWithoutReply decoded tid s := by
+  unfold abiEntryFootprintId receivesWithoutReply
+  by_cases h : decoded.syscallId = .replyRecv ∧
+      (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome = true
+  · simp only [h, and_self, ↓reduceIte, or_true]
+  · rw [if_neg h]
+    constructor
+    · exact Or.inl
+    · rintro (h' | h')
+      · exact h'
+      · exact absurd h' h
+
+/-- Every entry but a skipped reply-receive declares its decoded syscall's
+footprint. -/
+theorem abiEntryFootprintId_of_not_replyRecv (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (h : decoded.syscallId ≠ .replyRecv) :
+    abiEntryFootprintId decoded tid s = decoded.syscallId := by
+  unfold abiEntryFootprintId
+  rw [if_neg (fun h' => h h'.1)]
+
 /-- **WS-RR RR7.12**: the operands the declared-footprint resolver takes, read
 off the capability the decode addresses.
 
@@ -512,19 +565,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       | .call, .object epId =>
           some { caller := tid, targetObject := some epId,
                  payload := some (abiEntryPayload cap) }
-      | .receive, .object epId =>
-          match resolveRecvReplyId gate decoded s with
-          | .error _ =>
-              -- a receive whose reply is busy with another thread cancels that
-              -- thread's IPC first (seL4-MCS `receiveIPC`'s
-              -- `cancelIPC(replyTCB)`, `cancelRecvBusyReply`), so it names the
-              -- reply, and through it the holder its footprints declare
-              let rid? := recvReplyLookup? gate decoded s
-              if (busyReplyHolder? s tid rid?).isSome then
-                some { caller := tid, targetObject := some epId, targetReply := rid? }
-              else none
-          | .ok replyId? =>
-              some { caller := tid, targetObject := some epId, targetReply := replyId? }
+      | .receive, .object epId => receiveLockOperands gate decoded tid epId s
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
       | .notificationWait, .object nId => some (.ofObjectTarget tid nId)
       -- **Cut C4b**: `.reply` carries the message the live arm builds and the
@@ -546,6 +587,14 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- cap's, and the `MessageInfo` whose label a faulted caller's answer
       -- decodes.
       | .replyRecv, .object epId =>
+          -- an extra capability whose lookup fails skips the reply (seL4-MCS
+          -- `handleInvocation` with `isBlocking = false`) and the receive runs
+          -- alone, so the operands are the receive's, the busy reply's holder
+          -- named as `.receive` names it; the footprint is the receive's
+          -- (`abiEntryFootprintId`)
+          if (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome then
+            receiveLockOperands gate decoded tid epId s
+          else
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
           | .ok (rid, _, replyBadge, replyGrant) =>
@@ -617,10 +666,12 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
 
 /-- **WS-RR RR7.12**: the footprint the live ABI seam declares.
 
-`lockSetForSyscall` at the **decoded** syscall id, the caller the executing core
-is running, and the operands that caller's capability names — every input
-derived from the entry's own resolution rather than supplied alongside it.  A
-caller cannot bracket one syscall's footprint around another's. -/
+`lockSetForSyscall` at the syscall the decode runs (`abiEntryFootprintId`: the
+decoded syscall id, or the receive for a reply-receive whose reply is skipped),
+the caller the executing core is running, and the operands that caller's
+capability names — every input derived from the entry's own resolution rather
+than supplied alongside it.  A caller cannot bracket one syscall's footprint
+around another's. -/
 def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
     Option LockSet :=
@@ -628,7 +679,7 @@ def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
   | none => none
   | some (tid, decoded, stFilled) =>
     (abiEntryLockOperands decoded tid stFilled).bind
-      (fun ops => lockSetForSyscall decoded.syscallId ops stFilled)
+      (fun ops => lockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops stFilled)
 
 /-- **WS-RR RR7.12 (the binding, as a theorem)**: a declared footprint is
 `lockSetForSyscall`'s output at the decode the dispatch runs, the caller the
@@ -646,7 +697,7 @@ theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
       abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = some (tid, decoded, stFilled) ∧
       abiEntryLockOperands decoded tid stFilled = some ops ∧
-      lockSetForSyscall decoded.syscallId ops stFilled = some S := by
+      lockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops stFilled = some S := by
   unfold declaredLockSetForAbiEntry at h
   cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => rw [hPlan] at h; exact absurd h (by simp)
@@ -710,6 +761,19 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
         rw [ht]
         exact valid.property
 
+/-- A receive's operands name the receiving thread as the caller. -/
+theorem receiveLockOperands_caller {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {epId : SeLe4n.ObjId} {s : SystemState}
+    {ops : SyscallLockOperands}
+    (h : receiveLockOperands gate decoded tid epId s = some ops) : ops.caller = tid := by
+  unfold receiveLockOperands at h
+  split at h
+  · dsimp only at h
+    split at h
+    · rw [← Option.some.inj h]
+    · cases h
+  · rw [← Option.some.inj h]
+
 /-- **WS-RR RR7.12**: the caller in the operands is the thread the executing core
 is running — not a value a caller supplied.
 
@@ -741,10 +805,41 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
       repeat' split at h
       all_goals
         first
+          | exact receiveLockOperands_caller h
           | (rw [← Option.some.inj h]; rfl)
           | rw [← Option.some.inj h]
           | exact absurd h (by simp)
           | simp_all
+
+/-- A reply-receive names its reply capability's address as a receive does:
+both decodes read MR0 (`decodeReplyRecvArgs`, `decodeRecvArgs`). -/
+theorem receiveReplyFault?_replyRecv (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (s : SystemState) (hS : decoded.syscallId = .replyRecv) :
+    receiveReplyFault? gate decoded s =
+      receiveReplyFault? gate { decoded with syscallId := .receive } s := by
+  unfold receiveReplyFault? receiveReplyAddr?
+  rw [hS]
+  simp only [Architecture.SyscallArgDecode.decodeReplyRecvArgs,
+    Architecture.SyscallArgDecode.decodeRecvArgs]
+  cases Architecture.SyscallArgDecode.requireMsgReg decoded.msgRegs 0 <;> rfl
+
+/-- A receive's declared operands mean its reply capability raises no fault:
+the reply resolved, or looked up and is busy. -/
+theorem receiveLockOperands_receiveReplyFault? (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (s : SystemState) (ops : SyscallLockOperands) (hS : decoded.syscallId = .receive)
+    (h : receiveLockOperands gate decoded tid epId s = some ops) :
+    receiveReplyFault? gate decoded s = none := by
+  unfold receiveLockOperands at h
+  split at h
+  · dsimp only at h
+    split at h
+    · rename_i hB
+      cases hR : recvReplyLookup? gate decoded s with
+      | none => rw [hR] at hB; simp [busyReplyHolder?] at hB
+      | some rid => exact receiveReplyFault?_of_recvReplyLookup?_some gate decoded s rid hS hR
+    · cases h
+  · exact receiveReplyFault?_of_resolveRecvReplyId_ok gate decoded s _ hS (by assumption)
 
 /-- **WS-LS LS2.3**: resolved operands come from a resolved gate and a
 successful rights-gated lookup of the capability the decode addresses, at the
@@ -786,17 +881,16 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
         · have hS : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv := by
             revert hN; cases decoded.syscallId <;> simp [syscallNamesReply]
           rcases hS with hS | hS <;> rw [hS] at h <;> cases hT : cap.target <;>
-            simp only [hT] at h <;> (try (simp at h; done)) <;> split at h <;>
-            (try (simp at h; done))
+            simp only [hT] at h <;> (try (simp at h; done))
+          · exact receiveLockOperands_receiveReplyFault? gate decoded tid _ s ops hS h
           · split at h
-            · rename_i hB
-              cases hR : recvReplyLookup? gate decoded s with
-              | none => rw [hR] at hB; simp [busyReplyHolder?] at hB
-              | some rid => exact receiveReplyFault?_of_recvReplyLookup?_some gate decoded s rid hS hR
-            · cases h
-          · exact receiveReplyFault?_of_resolveRecvReplyId_ok gate decoded s _ hS (by assumption)
-          · exact receiveReplyFault?_of_resolveReplyRecvReply_ok gate decoded s _ hS
-              (by assumption)
+            · rw [receiveReplyFault?_replyRecv gate decoded s hS]
+              exact receiveLockOperands_receiveReplyFault? gate { decoded with syscallId := .receive }
+                tid _ s ops rfl h
+            · split at h
+              · simp at h
+              · exact receiveReplyFault?_of_resolveReplyRecvReply_ok gate decoded s _ hS
+                  (by assumption)
       · rw [hG] at h; exact absurd h (by simp)
 
 /-- **Declared operands mean the extra capabilities resolved**: every syscall
@@ -822,15 +916,27 @@ receive's capability names, through which its footprints name the holder. -/
 theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands) (tcb : TCB)
     (gate : SyscallGate) (holder : SeLe4n.ThreadId)
-    (hRecv : decoded.syscallId = .receive)
+    (hRecv : receivesWithoutReply decoded tid s)
     (hGate : abiEntryGate decoded tid s = some (tcb, gate))
     (hB : busyReplyHolder? s tid (recvReplyLookup? gate decoded s) = some holder)
     (h : abiEntryLockOperands decoded tid s = some ops) :
     ∃ epId : SeLe4n.ObjId, ops =
       { caller := tid, targetObject := some epId,
         targetReply := recvReplyLookup? gate decoded s } := by
+  have hOps : ∀ epId, receiveLockOperands gate decoded tid epId s = some ops →
+      ∃ epId : SeLe4n.ObjId, ops =
+        { caller := tid, targetObject := some epId,
+          targetReply := recvReplyLookup? gate decoded s } := by
+    intro epId hO
+    unfold receiveLockOperands at hO
+    split at hO
+    · simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hO
+      exact ⟨epId, hO.symm⟩
+    · rename_i hR
+      rw [busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok tid hR] at hB
+      cases hB
   unfold abiEntryLockOperands at h
-  rw [if_neg (by rw [hRecv]; decide)] at h
+  rw [if_neg (by rcases hRecv with hS | ⟨hS, -⟩ <;> rw [hS] <;> decide)] at h
   split at h
   · exact absurd h (by simp)
   rw [hGate] at h
@@ -843,14 +949,10 @@ theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
     simp only at h
     split at h
     · exact absurd h (by simp)
-    rw [hRecv] at h
-    cases hT : cap.target <;> simp only [hT] at h <;> (try (simp at h; done))
-    rename_i epId
-    split at h
-    · simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at h
-      exact ⟨epId, h.symm⟩
-    · rename_i hR
-      rw [busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok tid hR] at hB
-      cases hB
+    rcases hRecv with hS | ⟨hS, hX⟩ <;> rw [hS] at h <;> cases hT : cap.target <;>
+      simp only [hT] at h <;> (try (simp at h; done))
+    · exact hOps _ h
+    · rw [if_pos hX] at h
+      exact hOps _ h
 
 end SeLe4n.Kernel

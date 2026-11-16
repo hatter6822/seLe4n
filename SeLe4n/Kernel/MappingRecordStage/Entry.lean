@@ -334,7 +334,7 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
 its busy reply's holder cancelled. -/
 theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
     (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases ctx e st with h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩
   · rw [h]; exact MappingStage.refl _
   · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
 

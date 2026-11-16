@@ -1496,6 +1496,38 @@ theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   · exact ⟨stepCovers_refl e st, hInv⟩
   · exact cancelReplyHolder_stepCovers e st _ ec hInv
 
+/-- A receive run on its busy-reply-cancelled state covers: the cancel, the
+dual-queue receive, the rendezvous hand-off and the two stagings.  The
+`.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
+theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {gate : SyscallGate}
+    {epId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : receiveResolvedArm decoded gate tid epId e
+      (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold receiveResolvedArm at h
+  obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
+  generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
+    obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
+    have hS1 := stageWokenSendCompletion_keyFrame stDon
+      ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
+    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
+    exact stepCoversInv_trans
+      (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
+      hS2.stepCoversInv
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes covers** on the executing core,
 the capability-only arms it delegates included. -/
 theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1551,28 +1583,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
-    generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
-      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
-      have hS1 := stageWokenSendCompletion_keyFrame stDon
-        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-      have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
-      exact stepCoversInv_trans
-        (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
-        hS2.stepCoversInv
-    · cases h
+    exact receiveResolvedArm_cancelled_stepCovers e hInv h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1643,6 +1654,10 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    split at h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
