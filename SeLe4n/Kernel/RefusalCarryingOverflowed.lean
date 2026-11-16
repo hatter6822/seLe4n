@@ -108,11 +108,11 @@ A specification: the compiled entry runs the routed arm
 (`RoutedArms.Overflowed`). -/
 noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w : UInt64)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
   match sid with
-  | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
-  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
-  | .cspaceMint => dispatchMintCheckedR ctx capAddr rf w tid executingCore
+  | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore xc
+  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore xc
+  | .cspaceMint => dispatchMintCheckedR ctx capAddr rf w tid executingCore xc
   | _ => fun st => .error (.illegalState, st)
 
 /-- The syscalls `routedOverflowOne` admits: the five-word invocations. -/
@@ -136,18 +136,11 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
 /-- Every overflowed call is the operand dispatch of its arm. -/
 theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w : UInt64)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat)
     (h : routedOverflowOne sid = true) :
-    dispatchOverflowedCheckedR ctx sid capAddr rf w tid executingCore =
-      dispatchOperandCheckedR capAddr tid executingCore (overflowedArmOf ctx sid rf w tid) := by
+    dispatchOverflowedCheckedR ctx sid capAddr rf w tid executingCore xc =
+      dispatchOperandCheckedR capAddr tid executingCore xc (overflowedArmOf ctx sid rf w tid) := by
   rcases routedOverflowOne_cases h with rfl | rfl | rfl <;> rfl
-
-/-- The overflowed arm refuses a missing operand as the operand check does. -/
-theorem overflowedArmOf_none (ctx : LabelingContext) (sid : SyscallId)
-    (rf : SeLe4n.RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) (s : SystemState) :
-    overflowedArmOf ctx sid rf w tid none s = .error (.invalidCapability 0, s) := by
-  unfold overflowedArmOf
-  cases sid <;> rfl
 
 /-- An overflowed decode's words read as the inline words and then slot 0's
 word below five. -/
@@ -175,7 +168,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     (mi : MessageInfo) (executingCore : Concurrency.CoreId)
     (hRt : routedOverflowOne sid = true) (hLen : 4 < mi.length) (st : SystemState) :
     dispatchOverflowedCheckedR ctx sid capAddr rf (overflowWordAt S tid 0) tid
-        executingCore st =
+        executingCore (syscallExtraCapCount sid mi.extraCaps) st =
       RefusalCarrying.ofKernel
         (dispatchSyscallChecked ctx (overflowedDecode S tid rf sid capAddr mi) tid executingCore)
         st := by
@@ -270,14 +263,14 @@ before any argument word. -/
 /-- `dispatchSyscallChecked` for an invocation whose message is shorter than its
 arguments (`dispatchShortArgsCheckedR_eq`). -/
 @[inline] def dispatchShortArgsCheckedR (sid : SyscallId) (capAddr : SeLe4n.CPtr)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore (shortArgsOperandArmR sid)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc (shortArgsOperandArmR sid)
 
 theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hR : (routedInvocation decoded.syscallId || routedOverflowOne decoded.syscallId) = true)
     (hT : decoded.msgInfo.length < truncationMinimum decoded.syscallId) :
-    dispatchShortArgsCheckedR decoded.syscallId decoded.capAddr tid executingCore =
+    dispatchShortArgsCheckedR decoded.syscallId decoded.capAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
     intro h; rw [h] at hR; cases hR

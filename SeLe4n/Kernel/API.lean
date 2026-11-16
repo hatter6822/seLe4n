@@ -1421,19 +1421,29 @@ def syscallMissingRightError : SyscallId → KernelError
   | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .mintReplyCap => .illegalAuthority
 
-/-- **The syscall gate, in seL4's order**: resolve the capability, then check
-its type (`syscallTargetAccepted`, `.invalidCapability`), then the syscall's
-right (`syscallMissingRightError`), then run the arm, which checks the
-message length and the arguments.  Every check precedes every write. -/
+/-- **The syscall gate, in seL4's order** (`handleInvocation`): resolve the
+capability (`lookupCapAndSlot`), then the extra capabilities' lookup
+(`lookupExtraCaps`), whose first failure `xf` — its address and lookup fault —
+is refused as `.failedLookup false`, the send-phase capability fault the entry
+raises at that address; then the capability's type (`syscallTargetAccepted`,
+`.invalidCapability`), then the syscall's right (`syscallMissingRightError`),
+then the arm, which checks the message length and the arguments.  Every check
+precedes every write.  The dispatchers hand `xf` in already read on the state
+the gate runs on (`callerExtraCapsFault?`), `none` for a syscall that receives
+on its capability, which looks no extra capability up (seL4's `handleRecv`). -/
 def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault))
     (op : Capability → Kernel α) : Kernel α :=
   fun st =>
     match syscallResolveCap gate st with
     | .error e => .error e
     | .ok (cap, st') =>
-      if !syscallTargetAccepted sid st' cap then .error (.invalidCapability 0)
-      else if cap.hasRight gate.requiredRight then op cap st'
-      else .error (syscallMissingRightError sid)
+      match xf with
+      | some (_, f) => .error (.failedLookup false f)
+      | none =>
+        if !syscallTargetAccepted sid st' cap then .error (.invalidCapability 0)
+        else if cap.hasRight gate.requiredRight then op cap st'
+        else .error (syscallMissingRightError sid)
 
 /-- **The syscalls that receive on the invoked capability**, seL4's
 `handleRecv`: the receive, the notification wait, and the receive half of the
@@ -1451,6 +1461,58 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
   | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
   | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
+
+/-- **How many extra capabilities a syscall looks up before its arm** (seL4's
+`handleInvocation` runs `lookupExtraCaps` on the message info's count): the
+count `n` its message info names, or none for a syscall that receives on its
+capability, which seL4's `handleRecv` serves with no lookup of its own. -/
+@[inline] def syscallExtraCapCount (sid : SyscallId) (n : Nat) : Nat :=
+  if syscallReceivesOnCap sid then 0 else n
+
+/-- **The extra-capability lookup failure a caller's invocation raises**
+(`extraCapsLookupFault?`), read from the caller's TCB on the state the gate
+runs on: the first of its `n` extra capabilities whose address does not
+resolve, with its lookup fault; `none` when every one resolves or the caller
+is no thread. -/
+def callerExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat) :
+    Option (SeLe4n.CPtr × LookupFault) :=
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) => extraCapsLookupFault? st tcb n
+  | _ => none
+
+theorem callerExtraCapsFault?_zero (st : SystemState) (tid : SeLe4n.ThreadId) :
+    callerExtraCapsFault? st tid 0 = none := by
+  unfold callerExtraCapsFault?
+  split
+  · exact extraCapsLookupFault?_zero st _
+  · rfl
+
+/-- A receive-phase syscall looks no extra capability up. -/
+theorem callerExtraCapsFault?_receive (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (n : Nat) (h : syscallReceivesOnCap sid = true) :
+    callerExtraCapsFault? st tid (syscallExtraCapCount sid n) = none := by
+  simp only [syscallExtraCapCount, h, ↓reduceIte, callerExtraCapsFault?_zero]
+
+theorem callerExtraCapsFault?_of_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (h : st.getObject? tid.toObjId = some (.tcb tcb)) (n : Nat) :
+    callerExtraCapsFault? st tid n = extraCapsLookupFault? st tcb n := by
+  simp only [callerExtraCapsFault?, h]
+
+theorem callerExtraCapsFault?_perCoreTlb (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat)
+    (t : Vector TlbState Concurrency.numCores) :
+    callerExtraCapsFault? { st with perCoreTlb := t } tid n = callerExtraCapsFault? st tid n := by
+  unfold callerExtraCapsFault?
+  show (match st.getObject? tid.toObjId with
+    | some (.tcb tcb) => extraCapsLookupFault? { st with perCoreTlb := t } tcb n
+    | _ => none) = _
+  split <;> simp only [extraCapsLookupFault?_perCoreTlb]
+
+/-- **The extra-capability failure a decoded syscall's gate refuses**: the
+caller's lookup of the extra capabilities the message info names, none on a
+receive-phase syscall (`syscallExtraCapCount`). -/
+@[inline] def decodedExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : Option (SeLe4n.CPtr × LookupFault) :=
+  callerExtraCapsFault? st tid (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
 
 /-- **A notification bound to another thread** (seL4's `handleRecv`): a wait on
 a notification capability whose notification is bound to a thread other than
@@ -1769,31 +1831,51 @@ theorem syscallNamesReply_of_routedAudited {sid : SyscallId}
     syscallNamesReply sid = false := by
   revert h; cases sid <;> decide
 
-/-- **The lookup a capability fault reads**: the resolution, then, for a
+/-- **The lookup a capability fault reads**, with the address that failed, in
+the gate's order (`syscallInvokeTyped`): the resolution at the gate's address;
+then the caller's `xc` extra capabilities (seL4's `lookupExtraCaps`,
+`callerExtraCapsFault?`), the first that fails answered at its own address
+with `.failedLookup false`, the error the gate refuses it with; then, for a
 receive-phase syscall, the type and the right (`receiveGateRefuses`), whose
 failure is the lookup failure `.invalidCapability`, seL4's
-`missing_capability`.  On every other syscall it fails exactly as the
-resolution does (`syscallOperandLookup_error_of_not_receive`). -/
-def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (st : SystemState) :
-    Except KernelError Unit :=
+`missing_capability`.  The dispatchers look up `syscallExtraCapCount` of the
+extra capabilities, none on a receive-phase syscall. -/
+def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (xc : Nat)
+    (st : SystemState) : Except (SeLe4n.CPtr × KernelError) Unit :=
   match syscallResolveCap gate st with
-  | .error e => .error e
+  | .error e => .error (gate.capAddr, e)
   | .ok (cap, _) =>
-      if receiveGateRefuses sid gate.callerId st cap then .error (.invalidCapability 0) else .ok ()
+      match callerExtraCapsFault? st gate.callerId xc with
+      | some (a, f) => .error (a, .failedLookup false f)
+      | none =>
+        if receiveGateRefuses sid gate.callerId st cap then .error (gate.capAddr, .invalidCapability 0)
+        else .ok ()
 
-theorem syscallOperandLookup_error_of_not_receive (sid : SyscallId) (gate : SyscallGate)
-    (st : SystemState) (e : KernelError) (h : syscallReceivesOnCap sid = false) :
-    syscallOperandLookup sid gate st = .error e ↔ syscallResolveCap gate st = .error e := by
-  unfold syscallOperandLookup
-  rcases syscallResolveCap gate st with e' | ⟨cap, _⟩
-  · simp only [Except.error.injEq]
-  · simp [receiveGateRefuses, h]
+/-- Every failure the lookup answers is either the resolution's or the
+receive gate's, at the gate's address, or an extra capability's failed lookup
+at that capability's address. -/
+theorem syscallOperandLookup_error_cases (sid : SyscallId) (gate : SyscallGate) (xc : Nat)
+    (st : SystemState) (a : SeLe4n.CPtr) (e : KernelError)
+    (h : syscallOperandLookup sid gate xc st = .error (a, e)) :
+    (a = gate.capAddr ∧ (syscallResolveCap gate st = .error e ∨ e = .invalidCapability 0)) ∨
+    ∃ f, e = .failedLookup false f ∧ callerExtraCapsFault? st gate.callerId xc = some (a, f) := by
+  unfold syscallOperandLookup at h
+  rcases hR : syscallResolveCap gate st with e' | ⟨cap, _⟩
+  · rw [hR] at h; cases h; exact .inl ⟨rfl, .inl rfl⟩
+  · rw [hR] at h
+    simp only at h
+    split at h
+    · next a' f hX => cases h; exact .inr ⟨f, rfl, hX⟩
+    · split at h
+      · cases h; exact .inl ⟨rfl, .inr rfl⟩
+      · cases h
 
 /-- A successful typed gate resolved a capability of the syscall's type that
 carries the required right, at the state it was handed, and ran the arm on it. -/
 theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)
+    {xf : Option (SeLe4n.CPtr × LookupFault)}
     (op : Capability → Kernel α) (st : SystemState) (a : α) (st' : SystemState)
-    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    (hOk : syscallInvokeTyped sid gate xf op st = .ok (a, st')) :
     ∃ cap, syscallLookupCap gate st = .ok (cap, st) ∧
       syscallTargetAccepted sid st cap = true ∧ op cap st = .ok (a, st') := by
   unfold syscallInvokeTyped at hOk
@@ -1805,6 +1887,10 @@ theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)
     subst hSt
     rw [hR] at hOk
     simp only at hOk
+    cases xf with
+    | some e => exact absurd hOk (by simp)
+    | none =>
+    simp only at hOk
     by_cases hT : syscallTargetAccepted sid stR cap = true
     · by_cases hRt : cap.hasRight gate.requiredRight = true
       · simp only [hT, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hOk
@@ -1814,12 +1900,27 @@ theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)
     · simp only [hT, Bool.not_false, ↓reduceIte] at hOk
       exact absurd hOk (by simp)
 
+/-- A successful typed gate met no extra-capability lookup failure. -/
+theorem syscallInvokeTyped_ok_extraCaps (sid : SyscallId) (gate : SyscallGate)
+    {xf : Option (SeLe4n.CPtr × LookupFault)}
+    (op : Capability → Kernel α) (st : SystemState) (a : α) (st' : SystemState)
+    (hOk : syscallInvokeTyped sid gate xf op st = .ok (a, st')) : xf = none := by
+  unfold syscallInvokeTyped at hOk
+  cases hR : syscallResolveCap gate st with
+  | error e => rw [hR] at hOk; exact absurd hOk (by simp)
+  | ok p =>
+    rw [hR] at hOk
+    cases xf with
+    | some e => exact absurd hOk (by simp)
+    | none => rfl
+
 /-- The typed gate's success implies a resolved capability with the required
 right. -/
 theorem syscallInvokeTyped_requires_right (sid : SyscallId)
-    (gate : SyscallGate) (op : Capability → Kernel α) (st : SystemState)
+    (gate : SyscallGate) {xf : Option (SeLe4n.CPtr × LookupFault)}
+    (op : Capability → Kernel α) (st : SystemState)
     (a : α) (st' : SystemState)
-    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    (hOk : syscallInvokeTyped sid gate xf op st = .ok (a, st')) :
     ∃ cap ref, gate.lookupSlot st = .ok ref ∧
                SystemState.lookupSlotCap st ref = some cap ∧
                cap.hasRight gate.requiredRight = true := by
@@ -1835,9 +1936,10 @@ theorem syscallInvokeTyped_requires_right (sid : SyscallId)
     `lookupSlot` (`resolveAddressBits` at 64 bits) → `lookupSlotCap` → the
     type → `hasRight` before any operation is executed. -/
 theorem resolveAddressBits_callers_check_rights (sid : SyscallId)
-    (gate : SyscallGate) (op : Capability → Kernel α)
+    (gate : SyscallGate) {xf : Option (SeLe4n.CPtr × LookupFault)}
+    (op : Capability → Kernel α)
     (st : SystemState) (a : α) (st' : SystemState)
-    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    (hOk : syscallInvokeTyped sid gate xf op st = .ok (a, st')) :
     ∃ cap ref,
       gate.lookupSlot st = .ok ref ∧
       SystemState.lookupSlotCap st ref = some cap ∧
@@ -5696,7 +5798,8 @@ def dispatchSyscallChecked (ctx : LabelingContext)
       -- (`.invalidCapability` for every non-audit target, whatever its
       -- rights), right second.  Everything else keeps the classic
       -- rights-gated lookup.
-      match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+      match (syscallInvokeTyped decoded.syscallId gate (decodedExtraCapsFault? st tid decoded)
+          (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
       | .error e => .error e
       | .ok ((), stPost) =>
           .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
@@ -5710,10 +5813,11 @@ non-inlined function so its arguments are read before the arm runs. -/
 @[noinline] def dispatchCheckedArmThenTaint (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault))
     (plan : TaintPlan) (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintMap) : Kernel Unit :=
   fun st =>
-    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate xf (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLength preTaint stPost)
 
@@ -5723,9 +5827,10 @@ and the audit epoch and trail length read before the arm. -/
 @[noinline] def dispatchCheckedArmThenDeclassifyTaint (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault))
     (nrB : Bool) (nrId : SeLe4n.ObjId) (preEpoch preLength : Nat) : Kernel Unit :=
   fun st =>
-    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate xf (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), declassifyTaintStep nrB nrId preEpoch preLength stPost)
 
@@ -5736,12 +5841,13 @@ and the audit epoch and trail length — all read before the arm. -/
 @[noinline] def dispatchCheckedArmThenDeclassifySignalTaint (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault))
     (taintCode : Nat) (nid : SeLe4n.ObjId)
     (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
     (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
     (preEpoch preLength : Nat) : Kernel Unit :=
   fun st =>
-    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate xf (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) =>
         .ok ((), declassifySignalTaintStep (SignalTaintCase.ofCode taintCode) nid tid
@@ -5752,9 +5858,10 @@ and the audit epoch and trail length — all read before the arm. -/
 (`auditTaintStep_eq`). -/
 @[noinline] def dispatchCheckedArmOnly (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) : Kernel Unit :=
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault)) : Kernel Unit :=
   fun st =>
-    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate xf (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), stPost)
 
@@ -5772,6 +5879,7 @@ step over the pre-state's taint (`dispatchCheckedArmThenTaintFused_eq`). -/
     | .declassify =>
         let operand := syscallOperandCap? st tid decoded.capAddr
         dispatchCheckedArmThenDeclassifyTaint ctx decoded tid executingCore gate
+          (decodedExtraCapsFault? st tid decoded)
           (declassifyBypassB st operand) (operandObjectId operand)
           st.declassificationAuditEpoch st.declassificationAudit.length st
     | .declassifySignal =>
@@ -5780,13 +5888,15 @@ step over the pre-state's taint (`dispatchCheckedArmThenTaintFused_eq`). -/
         withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
         withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
         dispatchCheckedArmThenDeclassifySignalTaint ctx decoded tid executingCore gate
+          (decodedExtraCapsFault? st tid decoded)
           (signalTaintCaseOf st operand).code nid a0 a1 a2 a3 a4 a5 a6 a7 ac as
           b0 b1 b2 b3 b4 b5 b6 b7 bc bs
           st.declassificationAuditEpoch st.declassificationAudit.length st
-    | .auditRead | .auditDrain => dispatchCheckedArmOnly ctx decoded tid executingCore gate st
+    | .auditRead | .auditDrain =>
+        dispatchCheckedArmOnly ctx decoded tid executingCore gate (decodedExtraCapsFault? st tid decoded) st
     | _ =>
         dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-          (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
+          (decodedExtraCapsFault? st tid decoded) (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
           st.declassificationAudit.length
           (sourceTaint (planSourceWords (syscallTaintPlan st tid decoded) st)) st
 
@@ -5822,12 +5932,13 @@ taint step over the captured source words is the one over the pre-state's taint
 (`applySyscallTaintAfter_planSourceWords`). -/
 theorem dispatchCheckedArmThenTaint_planSourceWords (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (plan : TaintPlan)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault)) (plan : TaintPlan)
     (st : SystemState) :
-    dispatchCheckedArmThenTaint ctx decoded tid executingCore gate plan
+    dispatchCheckedArmThenTaint ctx decoded tid executingCore gate xf plan
         st.declassificationAuditEpoch st.declassificationAudit.length
         (sourceTaint (planSourceWords plan st)) st =
-      dispatchCheckedArmThenTaint ctx decoded tid executingCore gate plan
+      dispatchCheckedArmThenTaint ctx decoded tid executingCore gate xf plan
         st.declassificationAuditEpoch st.declassificationAudit.length
         st.declassificationTaint st := by
   unfold dispatchCheckedArmThenTaint
@@ -5844,6 +5955,7 @@ theorem dispatchCheckedArmThenTaintFused_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (st : SystemState) :
     dispatchCheckedArmThenTaintFused ctx decoded tid executingCore gate st =
       dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+        (decodedExtraCapsFault? st tid decoded)
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint st := by
   unfold dispatchCheckedArmThenTaintFused
@@ -5872,7 +5984,7 @@ theorem dispatchCheckedArmThenTaintFused_eq (ctx : LabelingContext)
     split
     · rfl
     · rw [auditTaintStep_eq st tid decoded (Or.inr h)]
-  next => exact dispatchCheckedArmThenTaint_planSourceWords ctx decoded tid executingCore gate _ st
+  next => exact dispatchCheckedArmThenTaint_planSourceWords ctx decoded tid executingCore gate _ _ st
 
 @[csimp] theorem dispatchSyscallChecked_eq_impl :
     @dispatchSyscallChecked = @dispatchSyscallCheckedImpl := by
@@ -7638,14 +7750,40 @@ theorem dispatchSyscallChecked_type_before_rights
     (hTcb : st.getTcb? tid = some tcb)
     (hResolve : lookupSlot tcb decoded.capAddr st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
+    (hXf : decodedExtraCapsFault? st tid decoded = none)
     (hType : syscallTargetAccepted decoded.syscallId st cap = false) :
     dispatchSyscallChecked ctx decoded tid executingCore st = .error (.invalidCapability 0) := by
   simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
     SystemState.getObject?,
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup]
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup, hXf]
   by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;>
     simp [hRes, hType]
+
+/-- **The extra capabilities are looked up after the invoked capability and
+before its type** (seL4's `handleInvocation`: `lookupCapAndSlot`, then
+`lookupExtraCaps`, then `decodeInvocation`): a capability that resolves to one
+user space may hold, with an extra capability whose address does not resolve,
+is refused with that lookup's failure in the send phase, whatever the
+capability's type and rights. -/
+theorem dispatchSyscallChecked_extraCaps_before_type
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (tcb : TCB) (ref : SlotRef) (cap : Capability) (st : SystemState)
+    (a : SeLe4n.CPtr) (f : LookupFault)
+    (hNotYield : decoded.syscallId ≠ .yield)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hResolve : lookupSlot tcb decoded.capAddr st = .ok ref)
+    (hLookup : SystemState.lookupSlotCap st ref = some cap)
+    (hNotReserved : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false)
+    (hXf : decodedExtraCapsFault? st tid decoded = some (a, f)) :
+    dispatchSyscallChecked ctx decoded tid executingCore st = .error (.failedLookup false f) := by
+  simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
+    SystemState.getObject?,
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup, hXf,
+    hNotReserved, Bool.false_eq_true]
 
 /-- **The right is checked after the type**: a capability of the syscall's
 type without the syscall's right is refused with the syscall's missing-right
@@ -7661,6 +7799,7 @@ theorem dispatchSyscallChecked_right_after_type
     (hResolve : lookupSlot tcb decoded.capAddr st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hNotReserved : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false)
+    (hXf : decodedExtraCapsFault? st tid decoded = none)
     (hType : syscallTargetAccepted decoded.syscallId st cap = true)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
     dispatchSyscallChecked ctx decoded tid executingCore st =
@@ -7668,7 +7807,7 @@ theorem dispatchSyscallChecked_right_after_type
   simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
     SystemState.getObject?,
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup]
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup, hXf]
   simp [hNotReserved, hType, hRight]
 
 -- ============================================================================

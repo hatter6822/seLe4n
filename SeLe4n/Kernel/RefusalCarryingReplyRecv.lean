@@ -1684,7 +1684,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
         decoded.msgInfo.label tid executingCore
         (syscallRequiredRight decoded.syscallId) (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   have hOperand := syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
@@ -1723,8 +1723,8 @@ A specification: the compiled entry runs the arm out of line
 noncomputable def dispatchReplyRecvCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
     (replyRecvOperandArmThenTaintR ctx layout rf len extraCaps label tid executingCore
       (syscallRequiredRight .replyRecv))
 
@@ -1735,7 +1735,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
     (hRR : decoded.syscallId = .replyRecv)
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs) :
     dispatchReplyRecvCheckedR ctx decoded.capAddr layout rf decoded.msgInfo.length
-        decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore =
+        decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRR]; decide)
   intro st tcb ref hTcb hRef
@@ -2322,7 +2322,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
         decoded.msgInfo.label tid executingCore
         (syscallRequiredRight decoded.syscallId) (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   have hOperand := syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
@@ -2357,8 +2357,8 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
 A specification: the compiled entry runs the arm out of line. -/
 noncomputable def dispatchReplyRecvLongCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
     (replyRecvLongOperandArmThenTaintR ctx rf len extraCaps label tid executingCore
       (syscallRequiredRight .replyRecv))
 
@@ -2373,7 +2373,7 @@ theorem dispatchReplyRecvLongCheckedR_eq (ctx : LabelingContext)
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
     (hRf : ∀ stcb, st.getTcb? tid = some stcb → stcb.registerContext = rf) :
     dispatchReplyRecvLongCheckedR ctx decoded.capAddr rf decoded.msgInfo.length
-        decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore st =
+        decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hRR]; decide) st
   intro tcb ref hTcb hRef

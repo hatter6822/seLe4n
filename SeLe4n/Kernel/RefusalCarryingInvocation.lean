@@ -1733,8 +1733,8 @@ A specification: the compiled entry runs the arm out of line
 (`syscallEntryRoutedK`), so no code is generated for it. -/
 noncomputable def dispatchInvocationCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
     (invocationOperandArmR ctx sid capAddr regs tid executingCore)
 
 theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
@@ -1744,7 +1744,7 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hLen : truncationMinimum decoded.syscallId ≤ decoded.msgInfo.length) :
-    dispatchInvocationCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
+    dispatchInvocationCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   obtain ⟨-, -, hNotYield⟩ := routedInvocation_classic _ hRouted
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
@@ -1904,9 +1904,9 @@ then `dispatchConfigureByR`. -/
 /-- `dispatchSyscallChecked` for a configure whose fifth word is `w`
 (`dispatchConfigureCheckedR_eq`). -/
 @[inline] def dispatchConfigureCheckedR (capAddr : SeLe4n.CPtr) (regs : RegisterFile)
-    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
+    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) :
     RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore (configureOperandArmR regs w tid)
+  dispatchOperandCheckedR capAddr tid executingCore xc (configureOperandArmR regs w tid)
 
 theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
@@ -1915,7 +1915,7 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
-    dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore =
+    dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
@@ -2230,8 +2230,8 @@ right, then `dispatchServiceRegisterByR`. -/
 (`dispatchServiceRegisterCheckedR_eq`). -/
 @[inline] def dispatchServiceRegisterCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore (serviceRegisterOperandArmR ctx tid regs w)
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc (serviceRegisterOperandArmR ctx tid regs w)
 
 theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
@@ -2240,7 +2240,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
-    dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore =
+    dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
@@ -2426,8 +2426,8 @@ then `dispatchMintByR`. -/
 (`dispatchMintCheckedR_eq`). -/
 @[inline] def dispatchMintCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore (mintOperandArmR ctx tid regs w)
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc (mintOperandArmR ctx tid regs w)
 
 theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
@@ -2436,7 +2436,7 @@ theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
-    dispatchMintCheckedR ctx decoded.capAddr regs w tid executingCore =
+    dispatchMintCheckedR ctx decoded.capAddr regs w tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
@@ -2477,11 +2477,11 @@ fifth word is `w` (`dispatchOverflowOneCheckedR_eq`).  The last arm is never
 taken: the route names only `routedOverflowOne` calls. -/
 @[inline] def dispatchOverflowOneCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
   match sid with
-  | .schedContextConfigure => dispatchConfigureCheckedR capAddr regs w tid executingCore
-  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore
-  | .cspaceMint => dispatchMintCheckedR ctx capAddr regs w tid executingCore
+  | .schedContextConfigure => dispatchConfigureCheckedR capAddr regs w tid executingCore xc
+  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore xc
+  | .cspaceMint => dispatchMintCheckedR ctx capAddr regs w tid executingCore xc
   | _ => fun st => .error (.illegalState, st)
 
 theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
@@ -2491,13 +2491,17 @@ theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
-    dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore =
+    dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   cases hSid : decoded.syscallId <;> rw [hSid] at hR <;>
     first
     | (cases hR; done)
-    | exact dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
-    | exact dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
-    | exact dispatchMintCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+    | (have h := dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+       rw [hSid] at h; exact h)
+    | (have h := dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+       rw [hSid] at h; exact h)
+    | (have h := dispatchMintCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+       rw [hSid] at h; exact h)
 
 end SeLe4n.Kernel
