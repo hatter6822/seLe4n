@@ -13540,9 +13540,7 @@ fn cancelled_ipc_restarts(
             );
             return false;
         }
-        if !unmeasured(wake_handler, "the waiting root task was not woken")
-            || !suspend_partner()
-        {
+        if !unmeasured(wake_handler, "the waiting root task was not woken") || !suspend_partner() {
             return false;
         }
         let name = "suspend-resume-restarts";
