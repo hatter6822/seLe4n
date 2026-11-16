@@ -1487,17 +1487,6 @@ capability, which seL4's `handleRecv` serves with no lookup of its own. -/
 @[inline] def syscallExtraCapCount (sid : SyscallId) (n : Nat) : Nat :=
   if syscallReceivesOnCap sid then 0 else n
 
-/-- **The extra-capability lookup failure a caller's invocation raises**
-(`extraCapsLookupFault?`), read from the caller's TCB on the state the gate
-runs on: the first of its `n` extra capabilities whose address does not
-resolve, with its lookup fault; `none` when every one resolves or the caller
-is no thread. -/
-def callerExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat) :
-    Option (SeLe4n.CPtr × LookupFault) :=
-  match st.getObject? tid.toObjId with
-  | some (.tcb tcb) => extraCapsLookupFault? st tcb n
-  | _ => none
-
 theorem callerExtraCapsFault?_zero (st : SystemState) (tid : SeLe4n.ThreadId) :
     callerExtraCapsFault? st tid 0 = none := by
   unfold callerExtraCapsFault?
@@ -1519,10 +1508,10 @@ theorem callerExtraCapsFault?_of_tcb {st : SystemState} {tid : SeLe4n.ThreadId} 
 theorem callerExtraCapsFault?_perCoreTlb (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat)
     (t : Vector TlbState Concurrency.numCores) :
     callerExtraCapsFault? { st with perCoreTlb := t } tid n = callerExtraCapsFault? st tid n := by
+  have hObj : ({ st with perCoreTlb := t } : SystemState).getObject? tid.toObjId =
+      st.getObject? tid.toObjId := rfl
   unfold callerExtraCapsFault?
-  show (match st.getObject? tid.toObjId with
-    | some (.tcb tcb) => extraCapsLookupFault? { st with perCoreTlb := t } tcb n
-    | _ => none) = _
+  rw [hObj]
   split <;> simp only [extraCapsLookupFault?_perCoreTlb]
 
 /-- **The extra-capability failure a decoded syscall's gate refuses**: the
@@ -5594,6 +5583,15 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
+          -- WS-SX SX6.1: the reply half is seL4-MCS's `handleInvocation` with
+          -- `isBlocking = false` on the reply capability: an extra capability
+          -- of the message that does not look up skips the reply with no fault,
+          -- and the receive half (`handleRecv`) still runs, as `.receive` runs.
+          match callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
+          | some _ =>
+            receiveResolvedArm decoded gate tid epId executingCore
+              (cancelRecvBusyReply ctx tid gate decoded executingCore st)
+          | none =>
           match resolveReplyRecvReply gate decoded st with
           | .error e => .error e
           | .ok (rid, prevCaller, replyBadge, replyGrant) =>
@@ -6970,6 +6968,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
     (hReplyFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
@@ -6987,7 +6986,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
         = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites stB tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
-  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hResolve,
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hXc, hResolve,
       hReplyFlow, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv

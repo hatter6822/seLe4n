@@ -480,6 +480,39 @@ theorem extraCapsLookupFault?_perCoreTlb (st : SystemState) (tcb : TCB) (n : Nat
     extraCapsLookupFault? { st with perCoreTlb := t } tcb n = extraCapsLookupFault? st tcb n := by
   simp only [extraCapsLookupFault?, lookupExtraCaps_perCoreTlb]
 
+/-- **The extra-capability lookup failure a caller's invocation raises**
+(`extraCapsLookupFault?`), read from the caller's TCB on the state the gate
+runs on: the first of its `n` extra capabilities whose address does not
+resolve, with its lookup fault; `none` when every one resolves or the caller
+is no thread. -/
+def callerExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat) :
+    Option (SeLe4n.CPtr × LookupFault) :=
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) => extraCapsLookupFault? st tcb n
+  | _ => none
+
+/-- **Whether a caller's extra capabilities fail, in continuation form**
+(`callerExtraCapsFault?`, `callerExtraCapsFailK_eq`): `onFail` when one of the
+`n` the caller's message names does not look up, `onOk` otherwise, through the
+allocation-free `extraCapsLookupK`, so nothing is built. -/
+@[inline] def callerExtraCapsFailK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (n : Nat) (onFail onOk : Unit → α) : α :=
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) => extraCapsLookupK st tcb n (fun _ _ _ _ _ => onFail ()) onOk
+  | _ => onOk ()
+
+theorem callerExtraCapsFailK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat)
+    (onFail onOk : Unit → α) :
+    callerExtraCapsFailK st tid n onFail onOk =
+      match callerExtraCapsFault? st tid n with
+      | some _ => onFail ()
+      | none => onOk () := by
+  unfold callerExtraCapsFailK callerExtraCapsFault? extraCapsLookupFault?
+  split
+  · rw [extraCapsLookupK_eq]
+    cases lookupExtraCaps st _ n <;> rfl
+  · rfl
+
 theorem extraCapsLookupFault?_zero (st : SystemState) (tcb : TCB) :
     extraCapsLookupFault? st tcb 0 = none := by
   simp only [extraCapsLookupFault?, lookupExtraCaps_zero]

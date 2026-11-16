@@ -596,10 +596,15 @@ gate carries), the `.replyCap` shape, then `getReply? → reply.caller` — whic
 is `replyTaintEdges`, so the `.reply` arm and this leg cannot drift apart.
 Rights are deliberately not re-checked (the arm requires `.write` and errors
 before content moves; a spuriously declared edge on a call that fails is the
-safe direction), exactly as `syscallOperandCap?` itself declines to gate. -/
+safe direction), exactly as `syscallOperandCap?` itself declines to gate.
+
+WS-SX SX6.1: a message naming an extra capability that does not look up skips
+the reply leg (seL4-MCS `handleInvocation` with `isBlocking = false`), so it
+declares no edge: no content reaches the caller. -/
 def replyRecvReplyLegEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
   if decoded.msgInfo.length == 0 then []
+  else if (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome then []
   else
     match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
     | .error _ => []
@@ -2721,6 +2726,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
     (hLen : (decoded.msgInfo.length == 0) = false)
+    (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded = .ok rargs)
     (hRCap : syscallOperandCap? st tid (rargs.replyCPtr) = some rcap)
     (hRTarget : rcap.target = .replyCap rid)
@@ -2733,7 +2739,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
       contentFlowEdges st tid decoded := by
     simp only [contentFlowEdges, hCap, hSid, hTarget, List.mem_append]
     refine Or.inr ?_
-    simp only [replyRecvReplyLegEdges, hLen, hArgs, hRCap, hRTarget]
+    simp only [replyRecvReplyLegEdges, hLen, hXc, hArgs, hRCap, hRTarget]
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hLive hServer

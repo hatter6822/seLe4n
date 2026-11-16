@@ -4585,6 +4585,43 @@ after it reports the cancelled state (`receiveArmReport`). -/
         (cancelReceiveArmBusyReply ctx tid len replyAddr executingCore root? st)
     | _ => .error (.invalidCapability 0, st)
 
+/-- **The receive arm past its endpoint and flow gate** is the specification's
+`receiveResolvedArm` on the state its busy-reply cancel leaves, a refusal
+reporting that state.  Stated with no syscall: the `.receive` arm and a
+`.replyRecv` whose reply half an extra capability skips both run it. -/
+theorem endpointReceiveCheckedArmR_eq_resolved (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (st : SystemState) (epId : SeLe4n.ObjId)
+    (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (hCaller : gate.callerId = tid)
+    (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
+    (hLen : decoded.msgInfo.length = len)
+    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr })
+    (hTgt : cap.target = .object epId)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st =
+      match receiveResolvedArm decoded gate tid epId executingCore
+          (cancelRecvBusyReply ctx tid gate decoded executingCore st) with
+      | .ok r => .ok r
+      | .error e => .error (e, cancelRecvBusyReply ctx tid gate decoded executingCore st) := by
+  have hCancel : cancelReceiveArmBusyReply ctx tid len replyAddr executingCore
+      (callerCspaceRoot st tid) st = cancelRecvBusyReply ctx tid gate decoded executingCore st := by
+    unfold cancelReceiveArmBusyReply cancelRecvBusyReply
+    rw [receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
+    rfl
+  simp only [endpointReceiveCheckedArmR, hTgt, hFlow, Bool.not_true, Bool.false_eq_true,
+    ↓reduceIte]
+  rw [hCancel]
+  have hR := endpointReceiveReplyResolvedR_eq decoded tid executingCore gate epId
+    (cancelRecvBusyReply ctx tid gate decoded executingCore st) (callerCspaceRoot st tid) len
+    replyAddr (resolveRecvReplyIdRootR_eq _ tid _ gate decoded len replyAddr hCaller hRoot hLen
+      hArgs)
+  rw [hR]
+  simp only [RefusalCarrying.ofKernel]
+  cases receiveResolvedArm decoded gate tid epId executingCore
+    (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
+
 theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
@@ -4603,23 +4640,23 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     unfold cancelReceiveArmBusyReply cancelRecvBusyReply
     rw [receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
     rfl
-  simp only [endpointReceiveCheckedArmR, RefusalCarrying.ofKernelReporting, receiveArmReport,
-    dispatchWithCapChecked, dispatchCapabilityOnly, hRecv]
-  cases cap.target with
+  cases hTgt : cap.target with
   | object epId =>
-    simp only []
-    split
-    · rfl
-    · rw [hCancel]
-      have hR := endpointReceiveReplyResolvedR_eq decoded tid executingCore gate epId
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st) (callerCspaceRoot st tid) len
-        replyAddr (resolveRecvReplyIdRootR_eq _ tid _ gate decoded len replyAddr hCaller hRoot hLen
-          hArgs)
-      rw [hR]
-      simp only [RefusalCarrying.ofKernel]
+    by_cases hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
+        (ctx.threadLabelOf tid) = true
+    · rw [endpointReceiveCheckedArmR_eq_resolved ctx decoded tid executingCore gate cap st epId
+        len replyAddr hCaller hRoot hLen hArgs hTgt hFlow]
+      simp only [RefusalCarrying.ofKernelReporting, receiveArmReport, dispatchWithCapChecked,
+        dispatchCapabilityOnly, hRecv, hTgt, hFlow, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
+        hCancel]
       cases receiveResolvedArm decoded gate tid epId executingCore
         (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
-  | _ => rfl
+    · simp only [endpointReceiveCheckedArmR, RefusalCarrying.ofKernelReporting, receiveArmReport,
+        dispatchWithCapChecked, dispatchCapabilityOnly, hRecv, hTgt, hFlow, Bool.not_false,
+        ↓reduceIte]
+  | _ =>
+    simp only [endpointReceiveCheckedArmR, RefusalCarrying.ofKernelReporting, receiveArmReport,
+      dispatchWithCapChecked, dispatchCapabilityOnly, hRecv, hTgt]
 
 /-- The sender whose content a receive takes, read from the pre-state before
 the arm: the head of the send queue of the endpoint its capability names
