@@ -4626,9 +4626,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [0; 4],
         ),
         // A send and a call carrying one capability, each within the inline
-        // words and at full length, that block with no receiver waiting: seL4
-        // looks a message's capabilities up only at the rendezvous, so the
-        // blocked sender holds its request and nothing is transferred.  The
+        // words and at full length, that block with no receiver waiting.  The
+        // capability's address resolves (the endpoint's own), as it must:
+        // seL4's `handleInvocation` looks a message's capabilities up at the
+        // send (`lookupExtraCaps`), and a failure there is a capability fault.
+        // The blocked sender holds its request and nothing is transferred.  The
         // partner then suspends the root task, which cancels its send, and
         // restarts it before suspending itself.
         invocation(
@@ -4647,7 +4649,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-send-blocks-suspend-root",
@@ -4683,7 +4685,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-long-send-blocks-suspend-root",
@@ -4719,7 +4721,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-call-blocks-suspend-root",
@@ -4755,7 +4757,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-long-call-blocks-suspend-root",
