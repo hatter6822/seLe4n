@@ -1764,8 +1764,11 @@ structure TCB where
       capability to the frame of its IPC buffer (`TCB.ipcBufferSlot`), which
       only the boot fills, for the root task.  The same cell type as a CNode's
       slot array (`CNode.cells`); an empty root slot reads as the sentinel root.
-      A fixed-size vector, so a write replaces one entry in place. -/
-  spaceCells : Vector (Option Capability) 3 := #v[none, none, none]
+      A fixed-size vector, so a write replaces one entry in place.  The empty
+      default is built at exactly three entries (`Vector.replicate`, compiled to
+      `lean_mk_array`): a literal is built by pushes onto a shared array, which
+      over-expands it, and the carve copies the array at its capacity. -/
+  spaceCells : Vector (Option Capability) 3 := Vector.replicate 3 none
   /-- The derivation links of the three slots, `slotLinkWords` words per slot in
       the layout of a CNode's `links` (parent, first child, next and previous
       sibling, each an object word and a slot word, a word of 0 meaning no

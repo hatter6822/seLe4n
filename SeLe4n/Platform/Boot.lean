@@ -8244,11 +8244,10 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
     subst h
     rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with hB | ⟨c, _, rfl⟩
     · exact bootFromPlatformChecked_ok_capObject_of_config config base hChecked oid obj hB s hs
-    · have hc : (readyIdleThread c).spaceCells = #v[none, none, none] := rfl
-      have hn : ∀ (i : Nat) (hi : i < 3), (#v[none, none, none] : Vector (Option Capability) 3)[i] = none
-        | 0, _ => rfl
-        | 1, _ => rfl
-        | 2, _ => rfl
+    · have hc : (readyIdleThread c).spaceCells = Vector.replicate 3 none := rfl
+      have hn : ∀ (i : Nat) (hi : i < 3),
+          (Vector.replicate 3 none : Vector (Option Capability) 3)[i] = none :=
+        fun i hi => Vector.getElem_replicate hi
       exact absurd (by
         simp only [KernelObject.slotCap, TCB.spaceSlotCap]
         split
