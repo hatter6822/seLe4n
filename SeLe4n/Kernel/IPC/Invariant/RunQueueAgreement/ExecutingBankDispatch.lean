@@ -353,6 +353,50 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       bankAgree ec tid s := fun hS hC =>
     (bankFrame.of_offCore hne hC.1 (savedRegsKeptOffCore_of_savedRegsKept hS P.dequeued hRT
       hC.1.currentKept hC.1.residentKept)).bankAgree hA
+  -- the receive arm on its busy-reply-cancelled state: `.receive`, and the
+  -- `.replyRecv` whose reply is skipped
+  have hRecvArm : ∀ epId, receiveResolvedArm decoded gate tid epId ec
+      (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st') →
+      bankAgree ec tid st' := by
+    intro epId h
+    unfold receiveResolvedArm at h
+    -- WS-SX SX4: the busy reply's holder cancelled first; it writes only the
+    -- holder, blocked and so free of every other core.
+    have hSC : stepCovers e' st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+        savedRegsWrittenFree e' st st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt ∧
+        ∀ w, ((cancelRecvBusyReply ctx tid gate decoded ec st).getEndpoint? epId).bind
+          (·.sendQ.head) = some w → offCoreFree e' st w := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded ec st with x | ⟨hd, -, x⟩ <;> rw [x]
+      · exact ⟨stepCovers_refl e' st, .refl _, hInv,
+          fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h⟩
+      · exact ⟨(cancelReplyHolder_stepCovers e' st hd ec hInv).1,
+          cancelReplyHolder_savedRegsWrittenFree hInv P.blocked hBNR,
+          cancelReplyHolder_objects_invExt st hd ec hInv,
+          fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
+            P.toEntryPremises.queueHeadCancelFacts h⟩
+    obtain ⟨c0, w0, hIC, hHC⟩ := hSC
+    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
+        (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
+      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
+      have hS1 := stageWokenSendCompletion_keyFrame stDon
+        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
+      obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
+        hIC hHC hRecv hHand
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans (stepCovers_trans hV hD)
+        hS1.stepCovers)) (w0.trans w1)).trans
+        (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
+    · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.auditRead =>
@@ -393,44 +437,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    -- WS-SX SX4: the busy reply's holder cancelled first; it writes only the
-    -- holder, blocked and so free of every other core.
-    have hSC : stepCovers e' st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
-        savedRegsWrittenFree e' st st (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt ∧
-        ∀ w, ((cancelRecvBusyReply ctx tid gate decoded ec st).getEndpoint? epId).bind
-          (·.sendQ.head) = some w → offCoreFree e' st w := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded ec st with x | ⟨hd, -, x⟩ <;> rw [x]
-      · exact ⟨stepCovers_refl e' st, .refl _, hInv,
-          fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h⟩
-      · exact ⟨(cancelReplyHolder_stepCovers e' st hd ec hInv).1,
-          cancelReplyHolder_savedRegsWrittenFree hInv P.blocked hBNR,
-          cancelReplyHolder_objects_invExt st hd ec hInv,
-          fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
-            P.toEntryPremises.queueHeadCancelFacts h⟩
-    obtain ⟨c0, w0, hIC, hHC⟩ := hSC
-    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
-      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
-      have hS1 := stageWokenSendCompletion_keyFrame stDon
-        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-      obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
-        hIC hHC hRecv hHand
-      exact ((hW (stepCovers_trans c0 (stepCovers_trans (stepCovers_trans hV hD)
-        hS1.stepCovers)) (w0.trans w1)).trans
-        (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
-    · cases h
+    exact hRecvArm epId h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -522,6 +529,12 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
         (notificationWaitCrossCoreDispatchChecked_stepCovers e' hInv) hWt).1 h1).bankAgree hA
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR

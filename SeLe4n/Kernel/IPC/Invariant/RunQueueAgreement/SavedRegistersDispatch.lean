@@ -240,6 +240,40 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
   have hW : savedRegsWrittenFree ec st st st' → savedRegsKeptOffCore ec st st' := fun w =>
     w.census hCK hRK
   clear hCK hRK
+  -- the receive arm on its busy-reply-cancelled state: `.receive`, and the
+  -- `.replyRecv` whose reply is skipped
+  have hRecvArm : ∀ epId, receiveResolvedArm decoded gate tid epId ec
+      (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st') →
+      savedRegsKeptOffCore ec st st' := by
+    intro epId h
+    unfold receiveResolvedArm at h
+    -- WS-SX SX4: the busy reply's holder cancelled first, writing only the
+    -- holder's saved registers; the receive's writes are then the woken
+    -- sender's, blocked since the entry's start, and the caller's.
+    have hSC : savedRegsWrittenFree ec st st
+          (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
+        (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt ∧
+        ∀ w, ((cancelRecvBusyReply ctx tid gate decoded ec st).getEndpoint? epId).bind
+          (·.sendQ.head) = some w → offCoreFree ec st w := by
+      rcases cancelRecvBusyReply_cases ctx tid gate decoded ec st with e | ⟨hd, -, e⟩ <;> rw [e]
+      · exact ⟨.refl _, hInv, fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h⟩
+      · exact ⟨cancelReplyHolder_savedRegsWrittenFree hInv P.blocked hBNR,
+          cancelReplyHolder_objects_invExt st hd ec hInv,
+          fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
+            P.toEntryPremises.queueHeadCancelFacts h⟩
+    obtain ⟨w0, hIC, hHC⟩ := hSC
+    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h w0 hIC hHC
+    simp only at h
+    split at h
+    · cases h
+    split at h
+    · rename_i st1 dequeued summ sgi hRecv
+      split at h
+      · cases h
+      rename_i stDon hHand
+      cases h
+      exact hW (w0.trans (receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand))
+    · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.auditRead =>
@@ -276,34 +310,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    -- WS-SX SX4: the busy reply's holder cancelled first, writing only the
-    -- holder's saved registers; the receive's writes are then the woken
-    -- sender's, blocked since the entry's start, and the caller's.
-    have hSC : savedRegsWrittenFree ec st st
-          (cancelRecvBusyReply ctx tid gate decoded ec st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt ∧
-        ∀ w, ((cancelRecvBusyReply ctx tid gate decoded ec st).getEndpoint? epId).bind
-          (·.sendQ.head) = some w → offCoreFree ec st w := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded ec st with e | ⟨hd, -, e⟩ <;> rw [e]
-      · exact ⟨.refl _, hInv, fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h⟩
-      · exact ⟨cancelReplyHolder_savedRegsWrittenFree hInv P.blocked hBNR,
-          cancelReplyHolder_objects_invExt st hd ec hInv,
-          fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
-            P.toEntryPremises.queueHeadCancelFacts h⟩
-    obtain ⟨w0, hIC, hHC⟩ := hSC
-    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h w0 hIC hHC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      exact hW (w0.trans (receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand))
-    · cases h
+    exact hRecvArm epId h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -366,6 +373,12 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       exact hW (notificationWaitArm_savedRegsWrittenFree default P hN hWt).1
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR

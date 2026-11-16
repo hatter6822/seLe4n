@@ -1335,6 +1335,64 @@ theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingC
   · exact .refl _
 
 
+/-- A receive run on its busy-reply-cancelled state keeps every ready thread
+but the receiver ready: the `.receive` arm, and the `.replyRecv` arm whose
+reply is skipped. -/
+theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : receiveResolvedArm decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
+    readyKeptStage (· = tid) st st' := by
+  unfold receiveResolvedArm at h
+  -- WS-SX SX4: the busy reply's holder cancelled first, which blocks no
+  -- thread; the receive then runs from the cancelled state.
+  have hSC : SystemState.RunQueueEntryStage st
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      readyKeptStage (· = tid) st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
+        executingCore = some tid ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
+    rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+      rw [e]
+    · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, P.endpointHeads, P.current,
+        P.currentActive⟩
+    · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
+        cancelReplyHolder_readyKeptStage st hd executingCore,
+        cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
+          P.toEntryPremises.queueHeadCancelFacts,
+        by rw [cancelReplyHolder_currentOnCore]; exact P.current,
+        cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
+  obtain ⟨hS, hK, hHC, hCurC, hActC⟩ := hSC
+  obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
+  have hDC := hS.2 P.objInv P.refined hRC P.dequeued
+  generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
+    at h hS hK hHC hCurC hActC hIC hRC hDC
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    have E := runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
+        hCurC P.notIdle hActC) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
+    exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
+        hCurC P.notIdle hActC) hRecv).trans E.1
+      (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
+          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+        (stageWokenSendCompletion_runQueueStage _ _)).trans
+        (stageDeliveredMessage_runQueueStage _ _ _))))
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
 other arm blocks a thread. -/
@@ -1392,52 +1450,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    -- WS-SX SX4: the busy reply's holder cancelled first, which blocks no
-    -- thread; the receive then runs from the cancelled state.
-    have hSC : SystemState.RunQueueEntryStage st
-          (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        readyKeptStage (· = tid) st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
-          executingCore = some tid ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
-        rw [e]
-      · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, P.endpointHeads, P.current,
-          P.currentActive⟩
-      · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
-          cancelReplyHolder_readyKeptStage st hd executingCore,
-          cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
-            P.toEntryPremises.queueHeadCancelFacts,
-          by rw [cancelReplyHolder_currentOnCore]; exact P.current,
-          cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
-    obtain ⟨hS, hK, hHC, hCurC, hActC⟩ := hSC
-    obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
-    have hDC := hS.2 P.objInv P.refined hRC P.dequeued
-    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
-      at h hS hK hHC hCurC hActC hIC hRC hDC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      have E := runQueueStage_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-          hCurC P.notIdle hActC) hRecv
-      obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-      exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
-          hCurC P.notIdle hActC) hRecv).trans E.1
-        (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
-            ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-          (stageWokenSendCompletion_runQueueStage _ _)).trans
-          (stageDeliveredMessage_runQueueStage _ _ _))))
-    · cases h
+    exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1514,6 +1527,12 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
