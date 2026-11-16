@@ -131,9 +131,9 @@ delete of its capability, or the allocation gate fails.
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
 (SX2), receive-side capability faults (SX3), the Restart state (SX4), the root
-task's IPC buffer built by the boot (SX5), seL4-MCS's syscall set, invocation
-labels and the reply register (SX6), capability arguments as extra
-capabilities (SX7), timeout faults with SetTimeoutEndpoint and SetSchedParams
+task's IPC buffer built by the boot (SX5), capability arguments as extra
+capabilities (SX6), seL4-MCS's syscall set, invocation labels and the reply
+register (SX7), timeout faults with SetTimeoutEndpoint and SetSchedParams
 (SX8), the full CNode invocation set (SX9), seL4's error codes in the label
 (SX10) and closure (SX11). Rows and decisions D1–D17 (each default taken, owner
 card open) are in
@@ -160,7 +160,7 @@ word (`RegValue.word`, `readRegWord`) and tests a bound on the word
 (`wordLtNat`, a `UInt64` comparison) before any `.toNat`; a typed identifier
 that keeps a `Nat` is built only after that test; `.val` on a register is for
 specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
-raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
+raw-slot and model-only decodes that SX7.1, SX6.2, SX6.5 and SX9.1 re-decode
 still convert, under the narrowed `docs/REGISTERED_DEBT.md` row.
 
 SX2 (`v0.37.23`) moved the guard into the capability and made the lookup seL4's
