@@ -432,21 +432,13 @@ theorem lookupIPCBuffer_mapTcbInPlace (Z : SystemState) (tcb : TCB) (w : Bool) :
   Architecture.IpcBufferRead.bufferFrameBase?_congr
     (getFrame?_mapTcbInPlace_blind (G := G) x Z) _ _ _
 
-theorem ipcBufferWordPAddrIn?_mapTcbInPlace (Z : SystemState) (b : Option SeLe4n.PAddr)
-    (idx : Nat) :
-    Architecture.IpcBufferRead.ipcBufferWordPAddrIn? (Z.mapTcbInPlace x G) b idx =
-      Architecture.IpcBufferRead.ipcBufferWordPAddrIn? Z b idx := by
-  unfold Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
-  cases b <;> simp only [Architecture.IpcBufferRead.ipcBufferWordIn?_congr
-    (show (Z.mapTcbInPlace x G).machine = Z.machine from rfl)]
-
 /-- A badge write commutes with the thread write. -/
 theorem recordUnwrappedBadge_mapTcbInPlace (Z : SystemState) (rtcb : TCB) (i : Nat)
     (b : SeLe4n.Badge) :
     recordUnwrappedBadge (Z.mapTcbInPlace x G) rtcb i b =
       (recordUnwrappedBadge Z rtcb i b).mapTcbInPlace x G := by
   unfold recordUnwrappedBadge
-  rw [lookupIPCBuffer_mapTcbInPlace (G := G) x, ipcBufferWordPAddrIn?_mapTcbInPlace (G := G) x]
+  rw [lookupIPCBuffer_mapTcbInPlace (G := G) x]
   split <;> rfl
 
 theorem recordUnwrappedBadge_noResizeDue (Z : SystemState) (rtcb : TCB) (i : Nat)

@@ -53,7 +53,7 @@ and the word resolved in it as `ipcBufferWordIn?` resolves it, read-only. -/
         Architecture.IpcBufferRead.bufferFrameBaseK st false tcb.spaceCells[2] tcb.ipcBuffer kNone
           (fun base =>
             let pa := Architecture.IpcBufferRead.ipcBufferWordAt base idx
-            if pa.toNat % 8 == 0 && st.machine.addrInRange pa then
+            if pa.toNat % 8 == 0 then
               kSome (SeLe4n.CPtr.ofWord (Architecture.IpcBufferRead.userWordAt st.machine pa))
             else kNone ())
       else kNone ()

@@ -456,24 +456,19 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
 -- WS-BP BP7.8: the slot resolver both directions share, and the RAM sync
 -- ============================================================================
 
-/-- **WS-BP BP7.8: where word `idx` of the buffer at `base` lives in RAM, as
-the kernel may touch it** — `none` unless the word is one of the buffer's
-(`ipcBufferWords`), eight-byte aligned (so it lies in one page), and declared
-RAM (`addrInRange`, never a device region).  Since the HAL admits exactly an
-eight-byte aligned word of RAM past the kernel's reserved extent
-(`user_translation::user_word_admissible`), every address it answers is one
-the HAL performs. -/
-@[inline] def ipcBufferWordIn? (st : SystemState) (base : PAddr) (idx : Nat) : Option PAddr :=
+/-- **WS-BP BP7.8: where word `idx` of the buffer at `base` lives** — `none`
+unless the word is one of the buffer's (`ipcBufferWords`) and eight-byte
+aligned, so it lies in one page.  Nothing else is asked of it (WS-SX SX6.6):
+seL4's `lookupIPCBuffer` answers the frame its capability names, and the word
+is at a fixed offset in that frame, whatever the platform's memory map says;
+a frame the lookup answers is never device memory (`bufferFrameBase?`).  The
+HAL's `user_translation::user_word_admissible` stays the backstop for a word
+outside RAM. -/
+@[inline] def ipcBufferWordIn? (base : PAddr) (idx : Nat) : Option PAddr :=
   if idx < ipcBufferWords then
     let pa := ipcBufferWordAt base idx
-    if pa.toNat % 8 == 0 && st.machine.addrInRange pa then some pa else none
+    if pa.toNat % 8 == 0 then some pa else none
   else none
-
-/-- The word resolver reads nothing of a state but its machine. -/
-theorem ipcBufferWordIn?_congr {st st' : SystemState} (hM : st'.machine = st.machine)
-    (base : PAddr) (idx : Nat) : ipcBufferWordIn? st' base idx = ipcBufferWordIn? st base idx := by
-  unfold ipcBufferWordIn?
-  rw [hM]
 
 /-- **Word `idx` of a buffer `lookupIPCBuffer` answered**: the one resolver
 both directions share.  The entry reads a sender's words from RAM at the
@@ -481,10 +476,10 @@ addresses it answers on the sender's buffer (`callerOverflowAddrs`, a lookup
 with `isReceiver = false`), and a delivery writes a receiver's at the
 addresses it answers on the receiver's (`isReceiver = true`), so the kernel
 names no address in either direction that this function did not. -/
-@[inline] def ipcBufferWordPAddrIn? (st : SystemState) (base? : Option PAddr) (idx : Nat) :
+@[inline] def ipcBufferWordPAddrIn? (base? : Option PAddr) (idx : Nat) :
     Option PAddr :=
   match base? with
-  | some base => ipcBufferWordIn? st base idx
+  | some base => ipcBufferWordIn? base idx
   | none => none
 
 /-- **Where overflow slot `idx` lives**: word `idx` of the thread's buffer,
@@ -493,7 +488,7 @@ message registers. -/
 @[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
     (isReceiver : Bool) : Option PAddr :=
   if idx < maxOverflowSlots then
-    ipcBufferWordPAddrIn? st (lookupIPCBuffer isReceiver st tcb) idx
+    ipcBufferWordPAddrIn? (lookupIPCBuffer isReceiver st tcb) idx
   else none
 
 /-- **WS-BP BP7.8**: where the sender's resolver answers, the read reads
@@ -522,9 +517,9 @@ theorem ipcBufferReadMr_of_slotPAddr? (st : SystemState) (tid : ThreadId)
   · cases hPa
 
 /-- An answered word is eight-byte aligned. -/
-theorem ipcBufferWordPAddrIn?_aligned (st : SystemState) (base? : Option PAddr)
+theorem ipcBufferWordPAddrIn?_aligned (base? : Option PAddr)
     (idx : Nat) (pa : PAddr)
-    (hPa : ipcBufferWordPAddrIn? st base? idx = some pa) : pa.toNat % 8 = 0 := by
+    (hPa : ipcBufferWordPAddrIn? base? idx = some pa) : pa.toNat % 8 = 0 := by
   unfold ipcBufferWordPAddrIn? ipcBufferWordIn? at hPa
   split at hPa
   · split at hPa
@@ -532,26 +527,8 @@ theorem ipcBufferWordPAddrIn?_aligned (st : SystemState) (base? : Option PAddr)
       split at hPa
       · rename_i hOk
         cases hPa
-        simp only [Bool.and_eq_true, beq_iff_eq] at hOk
-        exact hOk.1
-      · cases hPa
-    · cases hPa
-  · cases hPa
-
-/-- An answered word is declared RAM. -/
-theorem ipcBufferWordPAddrIn?_ram (st : SystemState) (base? : Option PAddr)
-    (idx : Nat) (pa : PAddr)
-    (hPa : ipcBufferWordPAddrIn? st base? idx = some pa) :
-    st.machine.addrInRange pa = true := by
-  unfold ipcBufferWordPAddrIn? ipcBufferWordIn? at hPa
-  split at hPa
-  · split at hPa
-    · dsimp only at hPa
-      split at hPa
-      · rename_i hOk
-        cases hPa
-        simp only [Bool.and_eq_true] at hOk
-        exact hOk.2
+        simp only [beq_iff_eq] at hOk
+        exact hOk
       · cases hPa
     · cases hPa
   · cases hPa
@@ -562,17 +539,7 @@ theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
     (hPa : ipcBufferSlotPAddr? st tcb idx isReceiver = some pa) : pa.toNat % 8 = 0 := by
   unfold ipcBufferSlotPAddr? at hPa
   split at hPa
-  · exact ipcBufferWordPAddrIn?_aligned st _ idx pa hPa
-  · cases hPa
-
-/-- An answered slot is declared RAM. -/
-theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
-    (idx : Nat) (isReceiver : Bool) (pa : PAddr)
-    (hPa : ipcBufferSlotPAddr? st tcb idx isReceiver = some pa) :
-    st.machine.addrInRange pa = true := by
-  unfold ipcBufferSlotPAddr? at hPa
-  split at hPa
-  · exact ipcBufferWordPAddrIn?_ram st _ idx pa hPa
+  · exact ipcBufferWordPAddrIn?_aligned _ idx pa hPa
   · cases hPa
 
 /-- **How many overflow slots a `MessageInfo` word asks the decode to read**:

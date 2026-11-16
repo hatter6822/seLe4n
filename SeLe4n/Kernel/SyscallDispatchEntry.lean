@@ -710,7 +710,7 @@ words of its IPC buffer, so one page (`ipcBufferWords_within_alignment`),
 captured into the core's buffer from pair `idx` as one run; the next free pair
 is answered.  A receiver whose buffer does not resolve has none read. -/
 @[inline] def captureReceivePath (st : SystemState) (rtcb : TCB) (idx : Nat) : BaseIO Nat :=
-  match Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st
+  match Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
       (Architecture.IpcBufferRead.lookupIPCBuffer true st rtcb)
       Architecture.IpcBufferRead.ipcBufferReceiveCNodeWord with
   | some pa => do
@@ -726,7 +726,7 @@ free pair is answered.  A sender whose buffer does not resolve has none read. -/
 @[inline] def captureSenderCapAddrs (st : SystemState) (stcb : TCB) (msgInfo : UInt64)
     (idx : Nat) : BaseIO Nat :=
   if (msgInfo >>> 7) &&& 0x3 == 0 then pure idx else
-  match Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st
+  match Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
       (Architecture.IpcBufferRead.lookupIPCBuffer false st stcb)
       (Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) with
   | some pa => do

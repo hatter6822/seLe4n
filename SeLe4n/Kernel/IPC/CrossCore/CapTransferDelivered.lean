@@ -41,7 +41,6 @@ theorem bufferWordPAddrOf? (cell : Option Capability) (buf : SeLe4n.VAddr) (idx 
     (w : Bool) : bufferWordPAddrOf? X cell buf idx w = bufferWordPAddrOf? st cell buf idx w := by
   unfold SeLe4n.Kernel.bufferWordPAddrOf? Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
   rw [Architecture.IpcBufferRead.bufferFrameBase?_congr h.getFrame?]
-  split <;> simp only [Architecture.IpcBufferRead.ipcBufferWordIn?_congr h.2]
 
 theorem senderExtraCapAddr? (tcb : TCB) (i : Nat) :
     senderExtraCapAddr? X tcb i = senderExtraCapAddr? st tcb i := by

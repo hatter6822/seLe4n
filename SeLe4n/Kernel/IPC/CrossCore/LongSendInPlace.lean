@@ -227,7 +227,6 @@ theorem overflowSlotOf (r : SeLe4n.ThreadId) (i : Nat) :
     simp only [Architecture.IpcBufferRead.ipcBufferSlotPAddr?,
       Architecture.IpcBufferRead.ipcBufferWordPAddrIn?, Architecture.IpcBufferRead.lookupIPCBuffer]
     rw [hv, hb, Architecture.IpcBufferRead.bufferFrameBase?_congr h.getFrame?]
-    simp only [Architecture.IpcBufferRead.ipcBufferWordIn?_congr h.2]
 
 end ipcWordReadsAgree
 

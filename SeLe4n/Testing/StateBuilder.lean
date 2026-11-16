@@ -546,7 +546,7 @@ def withSenderCapAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => st
   | some tcb =>
     let st1 :=
-      if (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st
+      if (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
           (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer false st tcb)
           (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0)).isSome then st
       else withReceivePath st tid ⟨0x7E000000 + tid.toNat⟩ (SeLe4n.VAddr.ofNat 0x7e0000)
@@ -555,7 +555,7 @@ def withSenderCapAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
     | none => st1
     | some tcb1 =>
       let mem := (List.range addrs.size).foldl (fun mem i =>
-        match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st1
+        match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
             (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer false st1 tcb1)
             (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i),
             addrs[i]? with

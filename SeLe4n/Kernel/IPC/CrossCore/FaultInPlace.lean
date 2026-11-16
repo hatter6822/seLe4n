@@ -446,7 +446,6 @@ theorem ipcBufferSlotPAddr?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId
       Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t idx needWrite := by
   unfold Architecture.IpcBufferRead.ipcBufferSlotPAddr? Architecture.IpcBufferRead.lookupIPCBuffer
   rw [hV, hB, Architecture.IpcBufferRead.bufferFrameBase?_congr (getFrame?_mapTcbInPlace X r g)]
-  rfl
 
 /-- …so a delivery's overflow writes are where they were. -/
 theorem overflowDeliveryWrites_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId)

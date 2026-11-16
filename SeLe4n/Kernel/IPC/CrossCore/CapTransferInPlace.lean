@@ -49,10 +49,10 @@ whose buffer is at `buf`: `lookupIPCBuffer` on those two words, then the word's
 address in the frame (`ipcBufferWordPAddrIn?`, `bufferWordPAddrOf?_eq`). -/
 @[inline] def bufferWordPAddrOf? (st : SystemState) (cell : Option Capability) (buf : SeLe4n.VAddr)
     (idx : Nat) (isReceiver : Bool) : Option SeLe4n.PAddr :=
-  ipcBufferWordPAddrIn? st (bufferFrameBase? st isReceiver cell buf) idx
+  ipcBufferWordPAddrIn? (bufferFrameBase? st isReceiver cell buf) idx
 
 theorem bufferWordPAddrOf?_eq (st : SystemState) (tcb : TCB) (idx : Nat) (w : Bool) :
-    ipcBufferWordPAddrIn? st (lookupIPCBuffer w st tcb) idx =
+    ipcBufferWordPAddrIn? (lookupIPCBuffer w st tcb) idx =
       bufferWordPAddrOf? st tcb.spaceCells[2] tcb.ipcBuffer idx w :=
   rfl
 
