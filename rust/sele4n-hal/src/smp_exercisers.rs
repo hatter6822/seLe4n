@@ -4037,6 +4037,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),
         truncated("mint-reply-cap-short", MINT_REPLY_CAP, CNODE_CAP, 1),
         truncated("untyped-retype-short", UNTYPED_RETYPE, UNTYPED_CAP, 3),
+        // Five words, one overflow word: the retype's `overflowOne` route
+        // (seven words long, it reads three), still short of its seven.
+        truncated("untyped-retype-five-words", UNTYPED_RETYPE, UNTYPED_CAP, 5),
         truncated("vspace-map-short", VSPACE_MAP, VSPACE_CAP, 3),
         truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
         truncated(

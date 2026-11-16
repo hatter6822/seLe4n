@@ -856,7 +856,7 @@ for driver in drivers:
             # its arguments: refused TruncatedMessage before any argument read.
             "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
             "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
-            "untyped-retype-short", "vspace-map-short", "vspace-unmap-short",
+            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short", "vspace-unmap-short",
             "vspace-unify-instruction-short", "page-table-map-short",
             "sched-context-configure-short", "sched-context-bind-short",
             "tcb-bind-notification-short", "tcb-set-priority-short",
