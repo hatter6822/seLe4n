@@ -213,7 +213,6 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~1072 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean` (~1053 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1048 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~1044 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
