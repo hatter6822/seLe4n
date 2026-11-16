@@ -835,7 +835,7 @@ for driver in drivers:
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
             # Every syscall with a message past its inline words, refused: only
-            # an IPC transfer and a five-word invocation read the overflow words.
+            # an IPC transfer, a five-word invocation and a retype read the overflow words.
             "overflowed-cspace-mint", "overflowed-cspace-copy",
             "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
             "overflowed-vspace-map", "overflowed-vspace-unmap",

@@ -236,29 +236,34 @@ fn xval_008_cspace_delete() {
 /// RUST-XVAL-009: the carve's register layout.  WS-ZA ZA5.4 part 14 retired the
 /// in-place `lifecycleRetype` (syscall 8) this vector used to pin; every object
 /// is now carved from an untyped, so the vector pins the carve of a kernel
-/// object with a size — a CNode of radix 4.
+/// object with a size — a CNode of radix 4.  WS-SX SX6.3 (D9): seL4's word
+/// order, the first four in x2–x5 and the rest in the IPC buffer.
 #[test]
 fn xval_009_untyped_retype_kernel_object() {
     let args = lifecycle::UntypedRetypeArgs {
         new_type: TypeTag::CNode,
         size_bits: 4,
+        node_index: CPtr::from(3u64),
+        node_depth: 64,
+        node_offset: 7,
+        num_objects: 1,
         child_id: ObjId::from(42u64),
-        dst_cnode: CPtr::from(3u64),
-        dst_slot: Slot::from(7u64),
     };
+    let e = args.encode();
+    assert_eq!(&e[4..], &[7, 1, 42], "MR4..MR6 = offset, count, child id");
     let req = SyscallRequest {
         cap_addr: CPtr::from(900u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: args.encode(),
+        msg_info: MessageInfo::new(7, 1, 0).unwrap(),
+        msg_regs: [e[0], e[1], e[2], e[3]],
         syscall_id: SyscallId::UntypedRetype,
     };
     verify_regs(
         &req,
         &[
-            (2, 3 | (4 << 8), "x2=newType(CNode)|radix<<8"),
-            (3, 42, "x3=childId"),
-            (4, 3, "x4=dstCNode"),
-            (5, 7, "x5=dstSlot"),
+            (2, 3, "x2=newType(CNode)"),
+            (3, 4, "x3=size_bits(radix)"),
+            (4, 3, "x4=nodeIndex"),
+            (5, 64, "x5=nodeDepth"),
             (6, 36, "x7=SyscallId::UntypedRetype"),
         ],
     );
@@ -1073,17 +1078,17 @@ fn thread_on_different_core_decode() {
 fn untyped_retype_invalid_type_tag() {
     // Type tag 10 (first invalid, after PageTable = 9 — WS-BP BP7.1)
     assert_eq!(
-        lifecycle::UntypedRetypeArgs::decode(&[10, 42, 0, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[10, 0, 0, 0, 0, 1, 42]),
         Err(KernelError::InvalidTypeTag)
     );
-    // The low byte all ones
+    // A full byte
     assert_eq!(
-        lifecycle::UntypedRetypeArgs::decode(&[0xFF, 42, 0, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[0xFF, 0, 0, 0, 0, 1, 42]),
         Err(KernelError::InvalidTypeTag)
     );
     // Every valid tag decodes
     for i in 0..=9u64 {
-        assert!(lifecycle::UntypedRetypeArgs::decode(&[i, 42, 0, 0]).is_ok());
+        assert!(lifecycle::UntypedRetypeArgs::decode(&[i, 0, 0, 0, 0, 1, 42]).is_ok());
     }
 }
 
@@ -1541,23 +1546,21 @@ fn sched_context_configure_zero_values() {
 
 // --- AA1-G: SchedContext TypeTag retype conformance ---
 
-/// AA1-G-1: the carve of a TypeTag::SchedContext (discriminant 6), its size in
-/// MR0's upper bits.
+/// AA1-G-1: the carve of a TypeTag::SchedContext (discriminant 6), its size the
+/// second word.
 #[test]
 fn untyped_retype_sched_context() {
     let args = lifecycle::UntypedRetypeArgs {
         new_type: TypeTag::SchedContext,
         size_bits: lifecycle::MIN_SCHED_CONTEXT_SIZE_BITS,
+        node_index: CPtr::from(0u64),
+        node_depth: 0,
+        node_offset: 1,
+        num_objects: 1,
         child_id: ObjId::from(42u64),
-        dst_cnode: CPtr::from(3u64),
-        dst_slot: Slot::from(1u64),
     };
     let encoded = args.encode();
-    assert_eq!(
-        encoded[0] & 0xFF,
-        6,
-        "TypeTag::SchedContext must encode as 6"
-    );
+    assert_eq!(encoded[0], 6, "TypeTag::SchedContext must encode as 6");
     let decoded = lifecycle::UntypedRetypeArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
 }
@@ -2762,53 +2765,34 @@ fn wrappers_name_their_syscalls() {
     let _ = sele4n_sys::cspace::cspace_revoke(cap, Slot::from(0u64));
     assert_names("cspace_revoke", SyscallId::CspaceRevoke);
 
-    let _ = sele4n_sys::lifecycle::untyped_retype_tcb(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let dst = sele4n_sys::lifecycle::RetypeDestination {
+        root: cap,
+        node_index: CPtr::from(0u64),
+        node_depth: 0,
+        node_offset: 3,
+    };
+    let _ = sele4n_sys::lifecycle::untyped_retype_tcb(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_tcb)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_endpoint(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_endpoint(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_endpoint)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_notification(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_notification(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_notification)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_cnode(
-        cap,
-        4,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_cnode(cap, 4, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_cnode)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_reply(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_reply(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_reply)",
         SyscallId::UntypedRetype,
@@ -2817,40 +2801,26 @@ fn wrappers_name_their_syscalls() {
         cap,
         8,
         ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
+        dst,
+        &mut buf,
     );
     assert_names(
         "untyped_retype (untyped_retype_sched_context)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_frame(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_frame(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_frame)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_untyped(
-        cap,
-        21,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_untyped(cap, 21, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_untyped)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_vspace_root(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_vspace_root(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_vspace_root)",
         SyscallId::UntypedRetype,

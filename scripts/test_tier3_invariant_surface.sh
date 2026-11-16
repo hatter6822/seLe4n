@@ -4064,7 +4064,7 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # a RAM page is zeroed before the capability exists, the new capability is a
 # CDT child of the untyped's, and a device untyped backs exactly the
 # memory-backed kinds.
-run_check "INVARIANT" rg -n -U '^    \| \.object _ =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^    \| \.object _ => fun st =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr\n          \(callerExtraCapAddr\? st tid decoded\.msgInfo\.extraCaps 0\)\n          \(decodeUntypedRetypeArgs decoded\) st$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st executingCore args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
 # WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
 # ASID the arm picks (never 0) and the carve itself checks is free before
@@ -4088,7 +4088,7 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:
 # refusal from the checks' words (`untypedRetypeRefusalCode`), so the general
 # path (a second decode) never runs for a carve; and a refusal crosses the
 # boundary as scalar words, building no frame or outcome.
-run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !CarveRequest\.heapAdmittedW st k n then \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n([ \t]*(--[^\n]*)?\n)*                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild\.val\n                    k n asid then\n                  \.ok \(\(\), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot\n[^\n]*\n                else\n                  \.error \(untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                    vChild\.val k n asid, st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^            \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*              if !CarveRequest\.heapAdmittedW st k n then\n                \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n([ \t]*(--[^\n]*)?\n)*              if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild\.val\n                  k n asid then\n                \.ok \(\(\), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot\n[^\n]*\n              else\n                \.error \(untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                  vChild\.val k n asid, st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeRefusalCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -4136,8 +4136,16 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*        cspaceRootCap := callerTcb\.spaceCells\[0\]\n        capAddr       := dstCNode\n        requiredRight := \.write' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
+# WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
+# 0, the CNode the root itself at depth 0 or the slot its index and depth name,
+# and the window is held to seL4's three range checks, in seL4's order.
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*\n  fun st =>\n    match root\? with\n    \| none => \.error \.truncatedMessage\n    \| some rootAddr =>\n    match args\? with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*        match retypeDestinationCNode \(SystemState\.lookupSlotCap st rootRef\) index depth st with(\n([ \t][^\n]*)?)*          match retypeWindowRefusal size offset count with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def retypeDestinationCNode[^\n]*(\n([ \t][^\n]*)?)*    if depth = 0 then \.ok rootCap\? else' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def retypeWindowRefusal[^\n]*\n  if size - 1 < offset then some \(\.rangeError 0 \(size - 1\)\.toUInt64\)\n  else if count < 1 ∨ retypeFanOutLimit < count then\n    some \(\.rangeError 1 retypeFanOutLimit\.toUInt64\)\n  else if size - offset < count then some \(\.rangeError 1 \(size - offset\)\.toUInt64\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveRetypeSlotsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'resolveIssuingSlots[^A]|issuingDestinationCapNumber' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4181,7 +4189,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -23824,14 +23832,15 @@ run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterfac
 # configure, one overflow word read from the IPC buffer, and runs checks first;
 # WS-SX SX6.2: the CNode copy's rights and the mint's rights and badge are
 # overflow words too, in seL4's word order.
-run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint \| \.cspaceCopy => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^def routedOverflowOne : SyscallId → Bool\n  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint \| \.cspaceCopy\n  \| \.untypedRetype => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 # The CNode operations' source root is the message's extra capability 0,
 # looked up after the destination and refused `TruncatedMessage` when the
 # message names none (seL4's `decodeCNodeInvocation`), and their lengths are
 # seL4's: a copy five words, a mint six.
 run_check "INVARIANT" rg -n -U '^  \| \.ok dst =>\n    match srcRoot with\n    \| none => \.error \.truncatedMessage$' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceCopy => 5\n  \| \.cspaceMint => 6$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem truncationMinimum_le_six($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem truncationMinimum_le_seven($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedRetype => 7$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_negative_check "INVARIANT" rg -n 'CNodeOpWord' SeLe4n rust
 run_check "INVARIANT" rg -U -n '^    if routedOverflowOne sid then\n      if len = size \+ 1 then \.overflowOne sid capAddr else \.overflowed sid capAddr len$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
@@ -23843,7 +23852,7 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 # answer, not on a syscall name.  A buffer the kernel cannot read clamps the
 # message to its inline words (`clampToInline`), as seL4's `handleInvocation`
 # clamps a message with no IPC buffer, in each of the three merges.
-run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint \| \.cspaceCopy => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint \| \.cspaceCopy \| \.untypedRetype => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean

@@ -1451,15 +1451,16 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         IO.println s!"[KSD-003] cspaceDelete via decoded regs slot cleared: {slotEmpty}"
 
   -- KSD-004: an untyped carve via decoded registers — success path.  The
-  -- type word is `tag | sizeBits << 8` (notification is tag 2, size 0); the
+  -- words are seL4's (type, size, node index, node depth, node offset, object
+  -- count) and the model's object id: a notification (tag 2, size 0); the
   -- child is object 602, carved from the demo untyped (slot 6 of CNode 10)
-  -- into the root CNode's empty slot 3.
+  -- into the root CNode's empty slot 3 (the window's offset).
   let ksdCarveChild : SeLe4n.ObjId := ⟨602⟩
   let carveDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 6
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 7, extraCaps := 1, label := 0 }
     syscallId := .untypedRetype
-    msgRegs := #[⟨2⟩, ⟨602⟩, ⟨0⟩, ⟨3⟩]
+    msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨3⟩, ⟨1⟩, ⟨602⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded with
   | .error e => IO.println s!"[KSD-004] untypedRetype decode error: {reprStr e}"
@@ -1467,7 +1468,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       match SeLe4n.Kernel.carveRequestOf? st1 bootCoreId carveArgs.newType carveArgs.sizeBits with
       | .error e => IO.println s!"[KSD-004] untypedRetype request error: {reprStr e}"
       | .ok req =>
-          let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := carveArgs.dstSlot }
+          let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat carveArgs.nodeOffset }
           match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot carveArgs.childId dst req st1 with
           | .error e => IO.println s!"[KSD-004] untypedRetype carve error: {reprStr e}"
           | .ok (_, stCarved) =>

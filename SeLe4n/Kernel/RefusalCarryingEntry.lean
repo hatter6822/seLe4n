@@ -228,7 +228,7 @@ noncomputable def syscallEntryCheckedR (ctx : LabelingContext)
               (fun _ => dispatchShortArgsCheckedR sid capAddr tid executingCore (routedExtraCapCount sid tcb.registerContext) st)
               (fun w =>
                     dispatchOverflowedCheckedR ctx sid capAddr tcb.registerContext w
-                      (overflowWordAt st tid 1) tid executingCore
+                      (overflowWordAt st tid 1) (overflowWordAt st tid 2) len tid executingCore
                       (routedExtraCapCount sid tcb.registerContext) st)
         -- A five-word invocation of the inline words alone, short of its
         -- fifth argument: refused once its capability is found and checked.
@@ -1347,6 +1347,7 @@ mint's refusal short of its sixth; no other syscall is routed here
   | .serviceRegister => serviceRegisterOperandArmR ctx tid regs w
   | .cspaceCopy => copyOperandArmR ctx tid xc regs w
   | .cspaceMint => shortArgsOperandArmR .cspaceMint
+  | .untypedRetype => shortArgsOperandArmR .untypedRetype
   | _ => configureOperandArmR regs w tid
 
 theorem dispatchOverflowOneCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
@@ -1533,7 +1534,8 @@ noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
                 st kGen kRes (kLook sid))
               (fun w =>
                     dispatchOperandCheckedK sid capAddr tid executingCore (routedExtraCapCount sid tcb.registerContext)
-                      (overflowedArmOf ctx sid tcb.registerContext w (overflowWordAt st tid 1) tid
+                      (overflowedArmOf ctx sid tcb.registerContext w (overflowWordAt st tid 1)
+                        (overflowWordAt st tid 2) len tid executingCore capAddr
                         (routedExtraCapCount sid tcb.registerContext))
                       st kGen kRes (kLook sid))
       | .shortArgs sid capAddr =>
@@ -2250,12 +2252,13 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
           msgInfo hMI hRt hRead
         exact entryOperandOutcome_of_dispatch ctx executingCore st kGen kRes kLook tid tcb
           (overflowedDecode st tid tcb.registerContext sid capAddr msgInfo) sid hNRs
-          (overflowedArmOf ctx sid tcb.registerContext w0 (overflowWordAt st tid 1) tid
+          (overflowedArmOf ctx sid tcb.registerContext w0 (overflowWordAt st tid 1)
+            (overflowWordAt st tid 2) msgInfo.length tid executingCore capAddr
             (routedExtraCapCount sid tcb.registerContext)) hCur hObj hDec rfl (by
             simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true,
               ↓reduceIte, SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq, hR0,
               dispatchOverflowedCheckedR_eq_operand ctx sid capAddr tcb.registerContext
-                w0 _ tid executingCore _ hOv]
+                w0 _ _ _ tid executingCore _ hOv]
             rfl)
     | shortArgs sid capAddr =>
       obtain ⟨decoded, hDec, hSid, hRS, hCap, -⟩ :=

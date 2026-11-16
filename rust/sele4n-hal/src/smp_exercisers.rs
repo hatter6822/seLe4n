@@ -1535,15 +1535,16 @@ struct RoundTrip {
     /// and `getReceiveSlots`).  The two threads share the buffer, so the
     /// receive path is the receiver's as well.
     caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
-    /// The first two overflow words of a message longer than the four
+    /// The first three overflow words of a message longer than the four
     /// registers carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, words 5
-    /// and 6 of the buffer), written unmeasured before the call into the IPC
+    /// to 7 of the buffer), written unmeasured before the call into the IPC
     /// buffer at this address, the caller's own, and cleared after it, so a
     /// later call reading them still finds the zeros the kernel scrubbed: a
     /// copy's rights, a mint's rights and badge (seL4's `seL4_CNode_Copy` and
     /// `seL4_CNode_Mint`, whose fifth and sixth arguments are read from the
-    /// buffer).
-    overflow: Option<(u64, [u64; 2])>,
+    /// buffer), a retype's window offset, object count and object id
+    /// ([`retype`]).
+    overflow: Option<(u64, [u64; 3])>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1964,7 +1965,7 @@ const fn cnode_copy(
 ) -> RoundTrip {
     RoundTrip {
         msg_len: ONE_EXTRA_CAP | 5,
-        overflow: Some((buffer, [rights, 0])),
+        overflow: Some((buffer, [rights, 0, 0])),
         ..cnode_trip(name, CSPACE_COPY, cptr, src_root, slots, buffer)
     }
 }
@@ -2014,7 +2015,7 @@ const fn mint(
 ) -> RoundTrip {
     RoundTrip {
         msg_len: ONE_EXTRA_CAP | 6,
-        overflow: Some((buffer, [rights, badge])),
+        overflow: Some((buffer, [rights, badge, 0])),
         ..cnode_trip(
             name,
             CSPACE_MINT,
@@ -2574,11 +2575,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
     // WS-ZA ZA5.4 part 23: the final delete of a busy endpoint, of a busy
     // notification, and of a bound one.
     &[
-        invocation(
+        retype(
             "untyped-retype-busy-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("receive-on-carved", RECEIVE, FRAME_CAP, 0, [0, 0], true),
         invocation(
@@ -2589,9 +2590,8 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-busy-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -2599,6 +2599,7 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("wait-on-carved", WAIT, FRAME_CAP, 0, [0, 0], true),
         invocation(
@@ -2612,11 +2613,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
     // caller is blocked on: the sender pass of the endpoint's queue cancel
     // (seL4's `cancelAllIPC`), which restarts each.
     &[
-        invocation(
+        retype(
             "untyped-retype-send-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("send-on-carved", SEND, FRAME_CAP, 1, [0x88, 0], true),
         invocation(
@@ -2627,11 +2628,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-call-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("call-on-carved", CALL, FRAME_CAP, 1, [0x66, 0], true),
         invocation(
@@ -2642,9 +2643,8 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-bound-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -2652,6 +2652,7 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         cap_argument(
             "bind-carved-notification",
@@ -2684,6 +2685,31 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         caps_or_badges: None,
         overflow: None,
         returns: None,
+    }
+}
+
+/// **The untyped retype** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3): the
+/// invoked untyped `untyped` and the exerciser's carve `[type, child, root,
+/// slot]` — `type` the object's `KernelObjectType` tag with its size bits
+/// above bit 8, `child` the new object's id, `root` the destination CNode's
+/// capability address and `slot` the slot in it.  Seven words: the type and
+/// the size inline, the node index and depth 0 (the destination is the root
+/// capability itself), then the window's offset (`slot`), its object count
+/// (one) and the model's object id word, read from the caller's IPC buffer at
+/// `buffer` ([`RoundTrip::overflow`]); the root is extra capability 0,
+/// written to the same buffer ([`RoundTrip::caps_or_badges`]).
+#[cfg(feature = "hw_target")]
+const fn retype(name: &'static str, untyped: u64, carve: [u64; 4], buffer: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 7,
+        caps_or_badges: Some((buffer, [carve[2], 0, 0], None)),
+        overflow: Some((buffer, [carve[3], 1, carve[1]])),
+        ..invocation(
+            name,
+            UNTYPED_RETYPE,
+            untyped,
+            [carve[0] & 0xff, carve[0] >> 8, 0, 0],
+        )
     }
 }
 
@@ -2749,7 +2775,7 @@ const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
         // own overflow words, or a zero, go back after the window.
         overflow: match trip.overflow {
             Some(words) => Some(words),
-            None => Some((FRAME_VADDR, [0, 0])),
+            None => Some((FRAME_VADDR, [0, 0, 0])),
         },
         returns: refused_with(
             FAILED_LOOKUP,
@@ -3331,11 +3357,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     // shared; and a carved thread's while it is queued to run.  Each delete
     // finalises its object (seL4's `finaliseCap`) and retires it.
     &[
-        invocation(
+        retype(
             "untyped-retype-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "inactive-tcb-delete",
@@ -3343,11 +3369,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-bound-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         cap_argument(
             "bind-carved-tcb",
@@ -3362,9 +3388,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-sched-context",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 SCHED_CONTEXT_TYPE,
@@ -3372,12 +3397,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 MINT_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-sc-thread",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         cap_argument(
             "bind-carved-sched-context",
@@ -3404,18 +3430,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // deleted, which retires it (the steady-state run carves its id
         // again); then the second's, which the finalisation suspends, taking
         // it off the queue in place, and retires.
-        invocation(
+        retype(
             "untyped-retype-queued-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[4], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation("resume-carved-tcb", TCB_RESUME, FRAME_CAP, [0; 4]),
-        invocation(
+        retype(
             "untyped-retype-shared-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[5], CNODE_CAP, MINT_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation("resume-shared-tcb", TCB_RESUME, MINT_CAP, [0; 4]),
         invocation("suspend-queued-tcb", TCB_SUSPEND, FRAME_CAP, [0; 4]),
@@ -3568,9 +3594,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-page-table-1",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3578,6 +3603,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[0],
             ],
+            ROOT_IPC_BUFFER,
         ),
         page_table_map(
             "page-table-map-1",
@@ -3585,9 +3611,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-page-table-2",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3595,6 +3620,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[1],
             ],
+            ROOT_IPC_BUFFER,
         ),
         page_table_map(
             "page-table-map-2",
@@ -3602,9 +3628,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-page-table-3",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3612,6 +3637,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[2],
             ],
+            ROOT_IPC_BUFFER,
         ),
         page_table_map(
             "page-table-map-3",
@@ -3619,11 +3645,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-frame",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-map",
@@ -3776,11 +3802,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // capability deleted: the final delete drops the registration
         // (`releaseFinalRegistration`, seL4's endpoint finalisation with the
         // registry's back-link) and retires the endpoint.
-        invocation(
+        retype(
             "untyped-retype-registered-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MINT_SLOT],
+            FRAME_VADDR,
         ),
         service_register("registered-endpoint-register", MINT_CAP, SERVICE_INTERFACE),
         invocation(
@@ -4395,16 +4421,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             5,
             INVALID_CAPABILITY,
         ),
-        // The untyped retype past its inline words, its type tag one no
-        // object kind has, refused by the argument decode.
+        // The untyped retype at its full seven words, read past its inline
+        // words on the overflowed route, its type tag one no object kind
+        // has, refused by the argument decode.
         RoundTrip {
             msg: [0xff, 0, 0, 0],
-            ..overflowed(
+            returns: refused(INVALID_TYPE_TAG),
+            ..retype(
                 "overflowed-untyped-retype",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
-                5,
-                INVALID_TYPE_TAG,
+                [0, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+                FRAME_VADDR,
             )
         },
         cap_argument(
@@ -6579,11 +6606,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // server's reply onto a stack that already holds the root task's.
         // The server answers and receives again, the root task answers the
         // partner, and everything is taken down.  The timer is still masked.
-        invocation(
+        retype(
             "untyped-retype-chain-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "chain-tcb-set-space",
@@ -6598,9 +6625,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-chain-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6608,6 +6634,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "chain-reply-cap-mint",
@@ -6870,11 +6897,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // loan goes back to its lender, who is ended as the server's waiter,
         // and the server's wait is cancelled before it is retired.  The
         // context's unbind leaves the state the scenario found.
-        invocation(
+        retype(
             "untyped-retype-third-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "third-tcb-set-space",
@@ -6889,9 +6916,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-third-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6899,6 +6925,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "third-reply-cap-mint",
@@ -6955,9 +6982,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         // The server's reply carved again, so the call it answers is on a
         // reply the root task can delete.
-        invocation(
+        retype(
             "untyped-retype-waited-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6965,6 +6991,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "waited-reply-cap-mint",
@@ -7039,11 +7066,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // (`performReplyUnheldCapsDelivered`).  A signal through the copy shows
         // it is there; the copy, the partner's run and the reply are removed,
         // leaving the state the first orphan left.
-        invocation(
+        retype(
             "untyped-retype-unheld-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-caps-server-set-space",
@@ -7058,9 +7085,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7068,6 +7094,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-caps-reply-cap-mint",
@@ -7196,11 +7223,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // endpoint; the partner's send wakes it and the partner waits.  The
         // root task suspends the partner and deletes the reply, leaving the
         // state the first orphan left.
-        invocation(
+        retype(
             "untyped-retype-orphan-recv-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-recv-server-set-space",
@@ -7215,9 +7242,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-recv-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7225,6 +7251,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-recv-reply-cap-mint",
@@ -7334,11 +7361,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // (`performReplyRecvUnheldCapsDelivered`).  The partner signals
         // through the copy, the wait takes its badge, and the copy is
         // deleted; its send wakes the root task, and it waits.
-        invocation(
+        retype(
             "untyped-retype-unheld-recv-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-recv-caps-server-set-space",
@@ -7353,9 +7380,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-recv-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7363,6 +7389,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-recv-caps-reply-cap-mint",
@@ -7499,11 +7526,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // message, 120 words: transferring nothing, then installing the
         // notification capability in the empty slot the partner's buffer
         // names; each with the second orphan's set-up again.
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-server-set-space",
@@ -7518,9 +7545,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7528,6 +7554,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-reply-cap-mint",
@@ -7628,11 +7655,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-caps-server-set-space",
@@ -7647,9 +7674,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7657,6 +7683,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-caps-reply-cap-mint",
@@ -7809,11 +7836,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // in the empty slot the partner's buffer names; a signal through the
         // copy, the wait and the delete follow.  At each switch exactly one
         // thread is runnable.
-        invocation(
+        retype(
             "untyped-retype-queued-sender",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "queued-sender-set-space",
@@ -8009,11 +8036,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // receive through the same reply cancels the partner's call and takes
         // the queued send at once, and returns.  At each switch exactly one
         // thread is runnable.
-        invocation(
+        retype(
             "untyped-retype-busy-reply-sender",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "busy-reply-sender-set-space",
@@ -8124,11 +8151,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // across the whole sequence, so no budget runs out between steps, and
         // at each switch exactly one thread is runnable.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
-        invocation(
+        retype(
             "untyped-retype-queued-caller",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "queued-caller-set-space",
@@ -8379,11 +8406,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // thread resumes the root task and waits; the root task suspends the
         // three others (the server's frame heads the context, which its
         // holder keeps as its own) and unbinds the context.
-        invocation(
+        retype(
             "untyped-retype-stack-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-server-set-space",
@@ -8398,9 +8425,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-top",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 TCB_TYPE,
@@ -8408,6 +8434,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_TCB_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-top-set-space",
@@ -8422,9 +8449,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-server-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8432,6 +8458,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-server-reply-cap-mint",
@@ -8439,9 +8466,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-top-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8449,6 +8475,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-top-reply-cap-mint",
@@ -8557,11 +8584,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // unbound), then the top reply's: its caller, the server, is ended
         // and the frame below loses its link up to it.  The partner and the
         // fourth thread are suspended and the two carved threads deleted.
-        invocation(
+        retype(
             "untyped-retype-stack-context",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+            FRAME_VADDR,
         ),
         configure(
             "stack-context-configure",
@@ -8682,11 +8709,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and the partner receive on it, the partner waking the root task
         // first; the root task deletes it, which cancels both receives, and
         // suspends the two threads again.
-        invocation(
+        retype(
             "untyped-retype-queue-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+            FRAME_VADDR,
         ),
         invocation("queue-resume-top", TCB_RESUME, STACK_TOP_TCB_CAP, [0; 4]),
         partner_step("queue-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
@@ -8750,9 +8777,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-server-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8760,6 +8786,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-server-reply-cap-mint",
@@ -8767,9 +8794,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-top-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8777,6 +8803,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-top-reply-cap-mint",
@@ -8894,9 +8921,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [STACK_TOP_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-top",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 TCB_TYPE,
@@ -8904,6 +8930,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_TCB_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-top-set-space",
@@ -9076,11 +9103,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         // WS-ZA ZA5.4 part 22: each passive kernel kind carved and its only
         // capability deleted, which retires it, quiescent and unreferenced.
-        invocation(
+        retype(
             "untyped-retype-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "endpoint-delete",
@@ -9088,9 +9115,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -9098,6 +9124,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "notification-delete",
@@ -9105,11 +9132,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "reply-delete",
@@ -9117,11 +9144,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "cnode-delete",
@@ -9133,17 +9160,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // capability, its own only capability deleted: the delete empties
         // the CNode slot by slot (the zombie loop, seL4's `finaliseSlot`),
         // which retires the endpoint, then retires the CNode.
-        invocation(
+        retype(
             "untyped-retype-populated-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-into-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], FRAME_CAP, 0],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "populated-cnode-delete",
@@ -9156,17 +9183,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // thread's slot holds its last, then the thread's only capability
         // deleted: the finalisation leaves its space slots, which the loop
         // then deletes, retiring the CNode, and the thread is retired.
-        invocation(
+        retype(
             "untyped-retype-spaced-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-space-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "set-carved-tcb-space",
@@ -9190,9 +9217,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // its only capability deleted, which retires it: a VSpace root (one
         // page, its top-level table, under the least free ASID) and a child
         // untyped of one page (seL4's `Untyped_Retype` to an untyped).
-        invocation(
+        retype(
             "untyped-retype-vspace-root",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 VSPACE_ROOT_TYPE,
@@ -9200,6 +9226,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-root-delete",
@@ -9213,9 +9240,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // the carves before it set, so not pinned here).
         RoundTrip {
             returns: refused(UNTYPED_REGION_EXHAUSTED),
-            ..invocation(
+            ..retype(
                 "untyped-retype-region-exhausted",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 [
                     UNTYPED_REGION_EXHAUSTED_TYPE,
@@ -9223,6 +9249,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                     CNODE_CAP,
                     FRAME_SLOT,
                 ],
+                ROOT_IPC_BUFFER,
             )
         },
         // A carve into an occupied slot (the untyped's own): refused
@@ -9230,18 +9257,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // after the heap's is, without decoding the invocation again.
         RoundTrip {
             returns: refused(TARGET_SLOT_OCCUPIED),
-            ..invocation(
+            ..retype(
                 "untyped-retype-slot-occupied",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, UNTYPED_SLOT],
+                ROOT_IPC_BUFFER,
             )
         },
-        invocation(
+        retype(
             "untyped-retype-untyped",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "child-untyped-delete",
@@ -9269,11 +9296,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
 /// holding none of them, and no other.
 #[cfg(feature = "hw_target")]
 const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
-    invocation(
+    retype(
         "untyped-retype-owned-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     cnode_copy(
         "owned-cnode-fill",
@@ -9414,17 +9441,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // which has no child; then the untyped's last capability deleted while the
     // notification lives, so the boot untyped adopts the child and its
     // capability, whose delete retires it.
-    invocation(
+    retype(
         "untyped-retype-parent-untyped",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "child-retype-endpoint",
-        UNTYPED_RETYPE,
         FRAME_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(REVOCATION_REQUIRED),
@@ -9441,9 +9468,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    retype(
         "child-retype-notification",
-        UNTYPED_RETYPE,
         FRAME_CAP,
         [
             NOTIFICATION_TYPE,
@@ -9451,6 +9477,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             MOVE_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "childless-revoke",
@@ -9473,9 +9500,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A capability with a derivation child moved: the child stays linked below
     // it in its new slot; the child deleted, then the moved capability, the
     // last.
-    invocation(
+    retype(
         "untyped-retype-moved-parent",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             NOTIFICATION_TYPE,
@@ -9483,6 +9509,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             FRAME_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
     root_copy("moved-parent-copy", FRAME_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
     root_move("parent-cap-move", FRAME_SLOT, MINT_SLOT, ROOT_IPC_BUFFER),
@@ -9501,9 +9528,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A carved thread's last capability deleted while its scheduling context
     // is still bound to it: the finalisation unbinds the context (seL4's
     // `schedContext_unbindTCB`), which the context's own delete then retires.
-    invocation(
+    retype(
         "untyped-retype-bound-context",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             SCHED_CONTEXT_TYPE,
@@ -9511,12 +9537,13 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             MINT_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-context-thread",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     cap_argument(
         "bind-context-thread",
@@ -9545,17 +9572,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // the same CNode as the thread's CSpace root when the thread's own last
     // capability is deleted (the loop goes down two levels, thread to CNode to
     // endpoint); and a carved VSpace root as its VSpace root then.
-    invocation(
+    retype(
         "untyped-retype-space-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-space-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "space-root-set-space",
@@ -9575,11 +9602,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         [CNODE_CAP, VSPACE_CAP, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-replaced-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "replaced-cnode-set-space",
@@ -9599,17 +9626,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         [CNODE_CAP, VSPACE_CAP, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-zombie-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-zombie-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "zombie-cnode-set-space",
@@ -9629,17 +9656,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         [CNODE_CAP, VSPACE_CAP, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-nested-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-nested-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "nested-cnode-set-space",
@@ -9659,17 +9686,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-rooted-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-thread-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "thread-root-set-space",
@@ -9702,9 +9729,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // below it, which takes the subtree out; the second's unmap, its record
     // stale, and both deleted; and a table never installed unmapped and
     // deleted.
-    invocation(
+    retype(
         "untyped-retype-installed-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9712,6 +9738,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "installed-table-map-1",
@@ -9719,9 +9746,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         VSPACE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-installed-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9729,6 +9755,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "installed-table-map-2",
@@ -9736,9 +9763,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         VSPACE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-installed-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9746,6 +9772,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "installed-table-map-3",
@@ -9762,11 +9789,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             [0, 0, 0, 0],
         )
     },
-    invocation(
+    retype(
         "untyped-retype-mapped-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "mapped-frame-map",
@@ -9846,9 +9873,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [PAGE_TABLE_SLOTS[2], 0, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-uninstalled-table",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9856,6 +9882,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "uninstalled-table-unmap",
@@ -9873,9 +9900,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // last capability deleted: the ASID released with its tables attached; the
     // deepest table's unmap, its root gone; the tables' and the frame's last
     // capabilities deleted, each naming the gone root.
-    invocation(
+    retype(
         "untyped-retype-tabled-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             VSPACE_ROOT_TYPE,
@@ -9883,10 +9909,10 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             FRAME_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9894,6 +9920,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "tabled-root-table-map-1",
@@ -9901,9 +9928,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9911,6 +9937,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "tabled-root-table-map-2",
@@ -9918,9 +9945,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9928,6 +9954,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "tabled-root-table-map-3",
@@ -9935,11 +9962,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "tabled-root-map",
@@ -10092,11 +10119,11 @@ const CARVED_ROOT_ASID: u64 = 3;
 /// and retires the reply.  The partner ends where the suspend left it.
 #[cfg(feature = "hw_target")]
 const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
-    invocation(
+    retype(
         "untyped-retype-busy-reply",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     partner_step(
         "mint-busy-reply-cap",
@@ -10146,11 +10173,11 @@ const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// then suspended, unmeasured.
 #[cfg(feature = "hw_target")]
 const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
-    invocation(
+    retype(
         "untyped-retype-stashed-reply",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     partner_step(
         "mint-stashed-reply-cap",
@@ -10759,9 +10786,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
 const UPPER_NOTIFICATION_ID: u64 = 0x10_0010;
 /// The declassification scenario's carve, unmeasured.
 #[cfg(feature = "hw_target")]
-const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
+const UPPER_NOTIFICATION_CARVE: RoundTrip = retype(
     "untyped-retype-upper-notification",
-    UNTYPED_RETYPE,
     UNTYPED_CAP,
     [
         NOTIFICATION_TYPE,
@@ -10769,6 +10795,7 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
         CNODE_CAP,
         FRAME_SLOT,
     ],
+    ROOT_IPC_BUFFER,
 );
 /// The low band's thread: its id in the exerciser labeling's lower trusted
 /// domain.
@@ -10793,11 +10820,11 @@ const REFUSAL_RING_SIZE: u64 = 32;
 /// The bound scenario's setup, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
-    invocation(
+    retype(
         "untyped-retype-low-thread",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, LOW_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "low-thread-set-space",
@@ -10812,9 +10839,8 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         PARTNER_PRIORITY,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-low-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             ENDPOINT_TYPE,
@@ -10822,10 +10848,10 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
             CNODE_CAP,
             STACK_TOP_TCB_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-boot-domain-notification",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             NOTIFICATION_TYPE,
@@ -10833,6 +10859,7 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
             CNODE_CAP,
             MOVE_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
     UPPER_NOTIFICATION_CARVE,
     cap_argument(
@@ -12190,15 +12217,6 @@ const HEAP_RETYPE_MSG: [u64; 4] = [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CA
 /// `untypedRegionExhausted` before any write, so it allocates nothing.
 #[cfg(feature = "hw_target")]
 const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
-    name: "untyped-retype-heap-refused",
-    syscall: UNTYPED_RETYPE,
-    cptr: UNTYPED_CAP,
-    msg_len: 4,
-    msg: HEAP_RETYPE_MSG,
-    primed: None,
-    blocks: false,
-    caps_or_badges: None,
-    overflow: None,
     // seL4's `seL4_NotEnoughMemory`: MR0 the memory left, the kernel heap's
     // free bytes the refusal read.
     returns: refused_with(
@@ -12206,6 +12224,12 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
         1,
         [Some(HEAP_REFUSED_CEILING), None, None, None],
     ),
+    ..retype(
+        "untyped-retype-heap-refused",
+        UNTYPED_CAP,
+        HEAP_RETYPE_MSG,
+        ROOT_IPC_BUFFER,
+    )
 };
 
 /// **The kernel heap's refusal of a retype**: the free bytes the kernel is
@@ -12221,11 +12245,11 @@ fn heap_refused_retype(which: &str) -> bool {
     crate::lean_heap::set_reported_free_bytes_ceiling(None);
     refused
         && unmeasured(
-            &invocation(
+            &retype(
                 "untyped-retype-heap-admitted",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 HEAP_RETYPE_MSG,
+                ROOT_IPC_BUFFER,
             ),
             "the carve the heap refused did not succeed on the heap's own capacity",
         )
@@ -12452,9 +12476,8 @@ fn interrupt_binding_revoked(which: &str) -> bool {
 fn interrupt_notification_finalised(which: &str) -> bool {
     let handler = cap_address(IRQ_UNBOUND_HANDLER_SLOT);
     let steps = [
-        invocation(
+        retype(
             "untyped-retype-irq-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -12462,6 +12485,7 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         cap_argument(
             "irq-handler-set-carved-notification",
@@ -12483,9 +12507,8 @@ fn interrupt_notification_finalised(which: &str) -> bool {
             NOTIFICATION_CAP,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-irq-cleared-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -12493,6 +12516,7 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         cap_argument(
             "irq-handler-set-notification-over-copy",
@@ -13088,7 +13112,7 @@ fn overflow_cap_faults(which: &str) -> bool {
     };
     let wide_deadline = RoundTrip {
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(4), None, None, None]),
-        overflow: Some((FRAME_VADDR, [WIDE_WORD, 0])),
+        overflow: Some((FRAME_VADDR, [WIDE_WORD, 0, 0])),
         ..configure("configure-wide-deadline", admitted_args)
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
@@ -13987,9 +14011,8 @@ fn cancelled_ipc_restarts(
     wake_handler: &RoundTrip,
 ) -> bool {
     let carved = cap_address(EMPTY_DEST_SLOT);
-    let carve = invocation(
+    let carve = retype(
         "restart-endpoint-carve",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             ENDPOINT_TYPE,
@@ -13997,6 +14020,7 @@ fn cancelled_ipc_restarts(
             CNODE_CAP,
             EMPTY_DEST_SLOT,
         ],
+        FRAME_VADDR,
     );
     let delete = invocation(
         "restart-endpoint-delete",
@@ -14372,11 +14396,11 @@ fn fault_entries() -> Option<bool> {
         FRAME_VADDR,
     );
     let restorer_setup = [
-        invocation(
+        retype(
             "fault-long-restorer-carve",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, RESTORER_CHILD_ID, CNODE_CAP, RESTORER_TCB_SLOT],
+            FRAME_VADDR,
         ),
         invocation(
             "fault-long-restorer-set-space",
@@ -14703,7 +14727,7 @@ fn dispatch_round_trip_at(
         // The word back to the zero the boot's scrub left, outside the
         // measured window; the page was mapped a moment ago, so this write
         // finds it again.
-        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0, 0]);
+        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0, 0, 0]);
     }
     // The restore replaced the published frame with the resumed thread's
     // context: its `x0` to `x5` and its PC are what that thread resumes with.
@@ -14847,11 +14871,11 @@ const MOVE_MARKER: u64 = 0x6d6f_7665;
 /// configured and bound to the carved thread, whose space is the root task's.
 #[cfg(feature = "hw_target")]
 const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
-    invocation(
+    retype(
         "move-retype-sched-context",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     configure(
         "move-configure",
@@ -14862,11 +14886,11 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
             MOVE_PRIORITY,
         ],
     ),
-    invocation(
+    retype(
         "move-retype-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "move-tcb-set-space",
@@ -14886,9 +14910,8 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
 /// first page, a frame carved and mapped there user-executable.
 #[cfg(feature = "hw_target")]
 const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
-    invocation(
+    retype(
         "move-retype-page-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14896,6 +14919,7 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "move-page-table-map-1",
@@ -14903,9 +14927,8 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
         VSPACE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-page-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14913,6 +14936,7 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "move-page-table-map-2",
@@ -14920,9 +14944,8 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
         VSPACE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-page-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14930,6 +14953,7 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
     page_table_map(
         "move-page-table-map-3",
@@ -14937,11 +14961,11 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
         VSPACE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The frame mapped user-executable, after its code is written.
@@ -15832,22 +15856,26 @@ fn heap_allocations_round_trip_resuming(
                 regs[1]
             );
             // A retype that succeeded names the object it carved, its kind and
-            // its size bits as the tag word gave them: the host-side gate holds
-            // the reading to that object's own cells.  It names the object's id
-            // and the slot its capability went to, and a delete that succeeded
-            // names the slot it emptied, so the gate can relate each carved
-            // kind to the delete of its capability (WS-UC UC1).
-            if trip.syscall == UNTYPED_RETYPE
-                && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE
+            // its size bits as the type and size words gave them: the
+            // host-side gate holds the reading to that object's own cells.  It
+            // names the object's id (the third overflow word) and the slot its
+            // capability went to (the root, extra capability 0, and the
+            // window's offset, the first overflow word), and a delete that
+            // succeeded names the slot it emptied, so the gate can relate each
+            // carved kind to the delete of its capability (WS-UC UC1).
+            if let (UNTYPED_RETYPE, Some((_, [offset, _, child])), Some((_, [root, _, _], _))) =
+                (trip.syscall, trip.overflow, trip.caps_or_badges)
             {
-                crate::kprintln!(
-                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
-                    carved_kind(trip.msg[0] & 0xff),
-                    trip.msg[0] >> 8,
-                    trip.msg[1],
-                    trip.msg[2],
-                    trip.msg[3]
-                );
+                if regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE {
+                    crate::kprintln!(
+                        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
+                        carved_kind(trip.msg[0]),
+                        trip.msg[1],
+                        child,
+                        root,
+                        offset
+                    );
+                }
             }
             if trip.syscall == CSPACE_DELETE
                 && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE

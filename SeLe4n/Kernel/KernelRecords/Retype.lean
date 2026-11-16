@@ -265,12 +265,12 @@ theorem untypedRetypeObject {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
-    {srcAddr : SeLe4n.CPtr}
+    {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
     {st st' : SystemState}
-    (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
+    (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
     RecordsStage st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
   exact untypedRetypeObject hCarve
 
 end RecordsStage

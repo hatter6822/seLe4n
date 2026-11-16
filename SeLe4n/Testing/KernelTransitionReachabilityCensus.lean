@@ -1145,6 +1145,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-ZA ZA5.2: the routed configure's specification arm; the entry runs its
   -- refusal-carrying form `dispatchConfigureByR` (`dispatchConfigureByR_eq`).
   , `SeLe4n.Kernel.dispatchConfigureBy
+  -- WS-SX SX6.3 (D9): the routed untyped retype's specification arm; the
+  -- entry runs its refusal-carrying form `dispatchRetypeByR`
+  -- (`dispatchRetypeByR_eq`).
+  , `SeLe4n.Kernel.dispatchRetypeBy
   -- WS-ZA ZA5.5: the routed service register's specification arm; the entry
   -- runs `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq`).
   , `SeLe4n.Kernel.dispatchServiceRegisterBy
@@ -1219,7 +1223,7 @@ def nonExecutedTransitionsPlain : List Name :=
   -- continuation form (`syscallEntryCheckedK_eq_routed`,
   -- `dispatchOperandCheckedK_spec`).  A long message on a syscall that reads
   -- no overflow word takes its short route (`syscallReadsOverflow`), so the
-  -- overflowed dispatch holds only the five-word invocations
+  -- overflowed dispatch holds only the five-word invocations and the retype
   -- (`dispatchOverflowedCheckedR_eq_operand`, run as `overflowedRoutedArm`).
   , `SeLe4n.Kernel.dispatchSignalCheckedR
   , `SeLe4n.Kernel.dispatchWaitCheckedR
@@ -1230,6 +1234,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchServiceRegisterCheckedR
   , `SeLe4n.Kernel.dispatchCopyCheckedR
   , `SeLe4n.Kernel.dispatchMintCheckedR
+  , `SeLe4n.Kernel.dispatchRetypeCheckedR
   , `SeLe4n.Kernel.dispatchOverflowedCheckedR
   , `SeLe4n.Kernel.dispatchOperandCheckedR
   -- The long call's, reply's and reply-receive's and the capability-carrying

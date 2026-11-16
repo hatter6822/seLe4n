@@ -2838,12 +2838,12 @@ private def runWSKGCSpaceChecks : IO Unit := do
 private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- ---- K-G2: Lifecycle/VSpace negative tests ----
 
-  -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 7) → invalidMessageInfo
   let threeRegCarve : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 7, extraCaps := 1, label := 0 }
     syscallId := .untypedRetype
-    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
+    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 7
   }
   expectErr "K-G-NEG-07 untypedRetype decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs threeRegCarve)
@@ -2852,7 +2852,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- K-G-NEG-08: decodeUntypedRetypeArgs with invalid type tag (99) → invalidTypeTag
   expectErr "K-G-NEG-08 untypedRetype decode invalid tag"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
-      { threeRegCarve with msgRegs := #[⟨99⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩] })
+      { threeRegCarve with msgRegs := #[⟨99⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨0⟩, ⟨1⟩, ⟨5⟩] })
     .invalidTypeTag
 
   -- K-G-NEG-09 (WS-ZA ZA5.4 part 14, retargeted from the in-place retype): a
@@ -3009,9 +3009,9 @@ private def runWSKGDeterminismChecks : IO Unit := do
   for tag in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] do
     let carveDecoded : SyscallDecodeResult := {
       capAddr := SeLe4n.CPtr.ofNat 0
-      msgInfo := { length := 4, extraCaps := 0, label := 0 }
+      msgInfo := { length := 7, extraCaps := 1, label := 0 }
       syscallId := .untypedRetype
-      msgRegs := #[⟨tag + 256⟩, ⟨600⟩, ⟨1⟩, ⟨2⟩] }
+      msgRegs := #[⟨tag⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨2⟩, ⟨1⟩, ⟨600⟩] }
     let o1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
     let o2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
     unless o1 == o2 do

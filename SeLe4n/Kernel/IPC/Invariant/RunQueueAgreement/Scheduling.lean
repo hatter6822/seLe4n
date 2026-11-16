@@ -1980,12 +1980,12 @@ theorem timerTickOnCore_runQueueEntryStage (st : SystemState) (c : Concurrency.C
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap_runQueueStage {tid : SeLe4n.ThreadId}
-    {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr}
+    {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
-    {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
+    {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
     RunQueueStage st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hCarve⟩ :=
+    untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
   exact untypedRetypeObject_runQueueStage hCarve
 
 /-- The per-core context unbind: the unbind, then the preemption seam. -/

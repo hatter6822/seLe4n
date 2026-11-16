@@ -82,7 +82,11 @@ already extra capability 0).  The seL4 counterparts, and their checks:
   root is extra capability 0, a missing one refused `.truncatedMessage` as
   seL4 refuses a null `excaprefs[0]` (`resolveCNodeOpSlots`);
   `cspaceDelete` `cspaceRevoke` 1 (`length < 2`);
-* `untypedRetype` 4 (`decodeUntypedInvocation`, `length < 6`);
+* `untypedRetype` 7 (`decodeUntypedInvocation`, `length < 6`: the type, the
+  size, the destination node's index and depth, the offset and the object
+  count, then the model's object id word after seL4's six; the root is extra
+  capability 0, a missing one refused `.truncatedMessage` as seL4 refuses a
+  null `excaprefs[0]`);
 * `vspaceMap` 4 (`decodeARMFrameInvocation`, Map `length < 3`),
   `vspaceUnmap` `vspaceUnifyInstruction` 2 (Unify `length < 2`);
 * `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`: the address
@@ -113,7 +117,8 @@ calls it, and fails the build otherwise.
 Every other syscall reads no argument word, or is an IPC or a signal, for
 which seL4 checks no length (`notificationSignal` included). -/
 def truncationMinimum : SyscallId → Nat
-  | .untypedRetype | .vspaceMap => 4
+  | .untypedRetype => 7
+  | .vspaceMap => 4
   | .cspaceMove => 4
   | .irqControlGet | .auditRead | .tcbSetSpace => 3
   | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -141,9 +146,10 @@ theorem requireMessageLength_of_lt {decoded : SyscallDecodeResult} {n : Nat}
     requireMessageLength decoded n = .error .truncatedMessage := by
   unfold requireMessageLength; simp only [h, ↓reduceIte]
 
-/-- No invocation reads more than six argument words (seL4's CNode Mint, the
-most a decode reads), so a message of six words or more is never truncated. -/
-theorem truncationMinimum_le_six (sid : SyscallId) : truncationMinimum sid ≤ 6 := by
+/-- No invocation reads more than seven argument words (the untyped retype's,
+seL4's six and the model's object id word, the most a decode reads), so a
+message of seven words or more is never truncated. -/
+theorem truncationMinimum_le_seven (sid : SyscallId) : truncationMinimum sid ≤ 7 := by
   cases sid <;> decide
 
 -- ============================================================================
@@ -244,29 +250,61 @@ structure CSpaceDeleteArgs where
 
 /-- **WS-BP BP7.1 (`v0.36.5`)**: per-syscall argument structure for
 `untypedRetype` — seL4's `seL4_Untyped_Retype`, invoked on an untyped
-capability.  Register mapping: x2=newType tag in bits `[0, 8)` and the object's
-size in bits `[8, 64)` as a power of two (seL4's `size_bits`), x3=childId (the
-object id the carved object takes), x4=destination CNode capability address,
-x5=destination slot.  `newType` is typed at the decode boundary; the arm
-carves every kind (WS-ZA ZA5.4 part 14), each at the size `carveRequestOf?`
-decodes: a fixed-size kind with `sizeBits = 0`, a child untyped, CNode or
-scheduling context at the size `sizeBits` names.
+capability.  **WS-SX SX6.3 (D9)**: the words are seL4's, in its order
+(`decodeUntypedInvocation`): MR0 the object type, MR1 the size (`size_bits`),
+MR2 and MR3 the index and depth of the destination CNode under the root, MR4 the
+offset of the first destination slot in it and MR5 the object count
+(`node_window`); the root is extra capability 0.  The model's object id word
+follows seL4's six as MR6 (`childId`, the id the carved object takes), a stated
+model-only operand.  `newType` is typed at the decode boundary; the arm carves
+every kind (WS-ZA ZA5.4 part 14), each at the size `carveRequestOf?` decodes: a
+fixed-size kind with `sizeBits = 0`, a child untyped, CNode or scheduling
+context at the size `sizeBits` names.
 
-The size shares MR0 with the tag because every register a syscall can read is
-already taken — the four argument registers x2–x5 — and seL4's own
-`seL4_Untyped_Retype` carries `size_bits` beside `type`.  A frame's MR0 is its
-tag alone, exactly as before this field existed. -/
+A size, depth, offset or count word is read as a number only below a bound
+every check refuses past (`bitCountOfWord`, `cnodeDepthOfWord`,
+`windowWordOf`), so a full-width word builds no heap number and is refused as
+seL4 refuses it. -/
 structure UntypedRetypeArgs where
-  newType  : KernelObjectType
-  sizeBits : Nat
-  childId  : ObjId
-  dstCNode : CPtr
-  dstSlot  : Slot
+  newType    : KernelObjectType
+  sizeBits   : Nat
+  nodeIndex  : CPtr
+  nodeDepth  : Nat
+  nodeOffset : Nat
+  numObjects : Nat
+  childId    : ObjId
   deriving Repr, DecidableEq
 
-/-- The message word a retype's child id is read from (MR1), the word a child
+/-- The message word a retype's child id is read from (MR6), the word a child
 id the kernel refuses names (`invalidArgument`). -/
-def UntypedRetypeArgs.childIdWord : UInt64 := 1
+def UntypedRetypeArgs.childIdWord : UInt64 := 6
+
+/-- A bit count read from a word: the word up to 64 and 65 past it, which every
+size bound refuses as it refuses the word (`carveRequestOf?`), so a full-width
+word builds no heap number. -/
+@[noinline] def bitCountOfWord (w : UInt64) : Nat := if w ≤ 64 then w.toNat else 65
+
+/-- A bit count up to 64 is its word. -/
+theorem bitCountOfWord_of_le {w : UInt64} (h : w.toNat ≤ 64) : bitCountOfWord w = w.toNat := by
+  unfold bitCountOfWord
+  rw [if_pos (UInt64.le_iff_toNat_le.mpr (by simpa using h))]
+
+/-- The bound a destination offset or object count is held at
+(`windowWordOf`): past every CNode's slot count and every fan-out limit. -/
+def windowWordBound : Nat := 2 ^ 62
+
+/-- A destination offset or object count read from a word: the word below
+`windowWordBound` and `windowWordBound` at or past it, which the window checks
+refuse as they refuse the word (no CNode has `2 ^ 62` slots), so a full-width
+word builds no heap number. -/
+@[noinline] def windowWordOf (w : UInt64) : Nat :=
+  if w < 0x4000000000000000 then w.toNat else windowWordBound
+
+/-- A window word below the bound is its word. -/
+theorem windowWordOf_of_lt {w : UInt64} (h : w.toNat < windowWordBound) :
+    windowWordOf w = w.toNat := by
+  unfold windowWordOf
+  rw [if_pos (UInt64.lt_iff_toNat_lt.mpr (by simpa [windowWordBound] using h))]
 
 /-- Per-syscall argument structure for `vspaceMap`.
     Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
@@ -378,8 +416,9 @@ def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
 -- Lifecycle and VSpace decode functions
 -- ============================================================================
 
-/-- **WS-BP BP7.1**: decode untyped-retype arguments from message registers.
-Requires 4 message registers; an unrecognised type tag is `.invalidTypeTag`. -/
+/-- **WS-BP BP7.1; WS-SX SX6.3 (D9)**: decode untyped-retype arguments from
+message registers.  Requires seven: seL4's six and the model's object id word;
+an unrecognised type tag is `.invalidTypeTag`. -/
 def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
     : Except KernelError UntypedRetypeArgs := do
   requireMessageLength decoded (truncationMinimum .untypedRetype)
@@ -387,13 +426,18 @@ def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  match KernelObjectType.ofNat? (r0.val % 256) with
+  let r4 ← requireMsgReg decoded.msgRegs 4
+  let r5 ← requireMsgReg decoded.msgRegs 5
+  let r6 ← requireMsgReg decoded.msgRegs 6
+  match KernelObjectType.ofNat? (bitCountOfWord r0.word) with
   | some objType =>
-    pure { newType  := objType
-           sizeBits := r0.val / 256
-           childId  := ObjId.ofNat r1.val
-           dstCNode := CPtr.ofNat r2.val
-           dstSlot  := Slot.ofNat r3.val }
+    pure { newType    := objType
+           sizeBits   := bitCountOfWord r1.word
+           nodeIndex  := CPtr.ofWord r2.word
+           nodeDepth  := cnodeDepthOfWord r3.word
+           nodeOffset := windowWordOf r4.word
+           numObjects := windowWordOf r5.word
+           childId    := ObjId.ofNat r6.val }
   | none => .error .invalidTypeTag
 
 /-- Decode VSpace map arguments from message registers.
@@ -592,11 +636,13 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
 @[inline] def encodeCSpaceDeleteArgs (args : CSpaceDeleteArgs) : Array RegValue :=
   #[RegValue.ofNat (args.targetSlot.toNat)]
 
-/-- **WS-BP BP7.1**: encode untyped-retype arguments into message registers.
-    Inverse of `decodeUntypedRetypeArgs`. -/
+/-- **WS-BP BP7.1; WS-SX SX6.3 (D9)**: encode untyped-retype arguments into
+    message registers, seL4's six words and the object id word.  Inverse of
+    `decodeUntypedRetypeArgs`. -/
 @[inline] def encodeUntypedRetypeArgs (args : UntypedRetypeArgs) : Array RegValue :=
-  #[RegValue.ofNat (args.newType.toNat + args.sizeBits * 256), RegValue.ofNat (args.childId.toNat),
-    ⟨args.dstCNode.word⟩, RegValue.ofNat (args.dstSlot.toNat)]
+  #[RegValue.ofNat args.newType.toNat, RegValue.ofNat args.sizeBits, ⟨args.nodeIndex.word⟩,
+    RegValue.ofNat args.nodeDepth, RegValue.ofNat args.nodeOffset,
+    RegValue.ofNat args.numObjects, RegValue.ofNat args.childId.toNat]
 
 /-- Encode VSpace map arguments into message registers.
     Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
@@ -669,23 +715,36 @@ theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) (hLen : trunc
     simp only [decodeCSpaceDeleteArgs, hL, bind, Except.bind]
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
-/-- **WS-BP BP7.1**: untyped-retype decode fails if fewer than 4 message registers. -/
+/-- **WS-BP BP7.1; WS-SX SX6.3**: untyped-retype decode fails if fewer than 7
+message registers. -/
 theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (hLen : truncationMinimum .untypedRetype ≤ d.msgInfo.length)
-    (h : d.msgRegs.size < 4) :
+    (h : d.msgRegs.size < 7) :
     ∃ e, decodeUntypedRetypeArgs d = .error e := by
   have hL := requireMessageLength_of_le hLen
   refine ⟨.invalidMessageInfo, ?_⟩
   simp only [decodeUntypedRetypeArgs, hL, bind, Except.bind]
+  have key : ∀ i, i < 7 → ¬ i < d.msgRegs.size →
+      requireMsgReg d.msgRegs i = .error .invalidMessageInfo := fun i _ hi =>
+    requireMsgReg_unfold_err _ _ hi
   by_cases h0 : 0 < d.msgRegs.size
-  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp only
     by_cases h1 : 1 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp only
       by_cases h2 : 2 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
-        rw [requireMsgReg_unfold_err _ _ (by omega)]
-      · rw [requireMsgReg_unfold_err _ _ h2]
-    · rw [requireMsgReg_unfold_err _ _ h1]
-  · rw [requireMsgReg_unfold_err _ _ h0]
+      · rw [requireMsgReg_unfold_ok _ _ h2]; simp only
+        by_cases h3 : 3 < d.msgRegs.size
+        · rw [requireMsgReg_unfold_ok _ _ h3]; simp only
+          by_cases h4 : 4 < d.msgRegs.size
+          · rw [requireMsgReg_unfold_ok _ _ h4]; simp only
+            by_cases h5 : 5 < d.msgRegs.size
+            · rw [requireMsgReg_unfold_ok _ _ h5]; simp only
+              rw [key 6 (by omega) (by omega)]
+            · rw [key 5 (by omega) h5]
+          · rw [key 4 (by omega) h4]
+        · rw [key 3 (by omega) h3]
+      · rw [key 2 (by omega) h2]
+    · rw [key 1 (by omega) h1]
+  · rw [key 0 (by omega) h0]
 
 /-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
 theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
@@ -985,26 +1044,46 @@ theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs)
     truncationMinimum, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
     RegValue.val_ofNat_of_lt hSlot, Slot.ofNat_toNat]
 
-/-- **WS-BP BP7.1**: round-trip for UntypedRetypeArgs — the type tag's `ofNat?`
-and `toNat` are inverses per variant, every tag is below `256` so the size in
-the word's upper bits reads back whole, and the three identifier registers carry
-their values verbatim, each a register word (WS-SX SX1.3: the size below
-`2 ^ 56`, so the tag word is one word, and the child and slot below `2 ^ 64`). -/
+/-- **WS-BP BP7.1; WS-SX SX6.3**: round-trip for UntypedRetypeArgs — the type
+tag's `ofNat?` and `toNat` are inverses per variant, and every other word reads
+back whole below the bound its decode holds it at (a size and a depth up to 64,
+an offset and a count below `windowWordBound`, the child below `2 ^ 64`). -/
 theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
-    (hSize : args.sizeBits < 2 ^ 56) (hChild : args.childId.toNat < 2 ^ 64)
-    (hSlot : args.dstSlot.toNat < 2 ^ 64) :
+    (hSize : args.sizeBits ≤ 64) (hDepth : args.nodeDepth ≤ 64)
+    (hOff : args.nodeOffset < windowWordBound) (hNum : args.numObjects < windowWordBound)
+    (hChild : args.childId.toNat < 2 ^ 64) :
     decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args := by
-  rcases args with ⟨t, b, c, d, sl⟩
-  simp only at hSize hChild hSlot
-  have hLt : t.toNat < 256 := by cases t <;> decide
-  have hDiv : (t.toNat + b * 256) / 256 = b := by omega
-  have hTag' : KernelObjectType.ofNat? (t.toNat % 256) = some t := by
-    rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
-  have hWord : t.toNat + b * 256 < 2 ^ 64 := by omega
-  simp [requireMessageLength, truncationMinimum, decodeUntypedRetypeArgs,
-    encodeUntypedRetypeArgs, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
-    RegValue.val_ofNat_of_lt hWord, RegValue.val_ofNat_of_lt hChild,
-    RegValue.val_ofNat_of_lt hSlot, hTag', hDiv, ObjId.ofNat_toNat, Slot.ofNat_toNat]
+  rcases args with ⟨t, b, ni, nd, no, nn, c⟩
+  simp only at hSize hDepth hOff hNum hChild
+  have hB : windowWordBound < 2 ^ 64 := by decide
+  have hLt : t.toNat ≤ 64 := by cases t <;> decide
+  have hWord : ∀ n, n < 2 ^ 64 → (RegValue.ofNat n).word.toNat = n := fun n hn => by
+    have := RegValue.val_ofNat_of_lt hn
+    simpa [RegValue.val] using this
+  have hTag : KernelObjectType.ofNat? (bitCountOfWord (RegValue.ofNat t.toNat).word) = some t := by
+    rw [bitCountOfWord_of_le (by rw [hWord _ (by omega)]; exact hLt), hWord _ (by omega)]
+    exact KernelObjectType.ofNat_toNat t
+  have hStep : ∀ a0 a1 a2 a3 a4 a5 a6 : RegValue,
+      decodeUntypedRetypeArgs (stubDecoded #[a0, a1, a2, a3, a4, a5, a6]) =
+        match KernelObjectType.ofNat? (bitCountOfWord a0.word) with
+        | some objType =>
+          .ok { newType := objType, sizeBits := bitCountOfWord a1.word,
+                nodeIndex := CPtr.ofWord a2.word, nodeDepth := cnodeDepthOfWord a3.word,
+                nodeOffset := windowWordOf a4.word, numObjects := windowWordOf a5.word,
+                childId := ObjId.ofNat a6.val }
+        | none => .error .invalidTypeTag := fun _ _ _ _ _ _ _ => rfl
+  rw [show encodeUntypedRetypeArgs ⟨t, b, ni, nd, no, nn, c⟩ = #[RegValue.ofNat t.toNat,
+    RegValue.ofNat b, ⟨ni.word⟩, RegValue.ofNat nd, RegValue.ofNat no, RegValue.ofNat nn,
+    RegValue.ofNat c.toNat] from rfl, hStep, hTag]
+  simp only [bitCountOfWord_of_le (show (RegValue.ofNat b).word.toNat ≤ 64 by
+      rw [hWord _ (by omega)]; exact hSize), hWord _ (show b < 2 ^ 64 by omega),
+    cnodeDepthOfWord_ofNat hDepth,
+    windowWordOf_of_lt (show (RegValue.ofNat no).word.toNat < windowWordBound by
+      rw [hWord _ (by omega)]; exact hOff), hWord _ (show no < 2 ^ 64 by omega),
+    windowWordOf_of_lt (show (RegValue.ofNat nn).word.toNat < windowWordBound by
+      rw [hWord _ (by omega)]; exact hNum), hWord _ (show nn < 2 ^ 64 by omega),
+    RegValue.val_ofNat_of_lt hChild, ObjId.ofNat_toNat]
+  rfl
 
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
@@ -1601,8 +1680,9 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args : CSpaceDeleteArgs, args.targetSlot.toNat < 2 ^ 64 →
       decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
-    (∀ args : UntypedRetypeArgs, args.sizeBits < 2 ^ 56 → args.childId.toNat < 2 ^ 64 →
-      args.dstSlot.toNat < 2 ^ 64 →
+    (∀ args : UntypedRetypeArgs, args.sizeBits ≤ 64 → args.nodeDepth ≤ 64 →
+      args.nodeOffset < windowWordBound → args.numObjects < windowWordBound →
+      args.childId.toNat < 2 ^ 64 →
       decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.perms.wxCompliant = true → args.asid.toNat < 2 ^ 64 →
@@ -2219,37 +2299,6 @@ theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
 
-@[inline] def decodeUntypedRetypeArgsBy (get : MsgRegReader)
-    : Except KernelError UntypedRetypeArgs := do
-  let r0 ← get 0
-  let r1 ← get 1
-  let r2 ← get 2
-  let r3 ← get 3
-  match KernelObjectType.ofNat? (r0 % 256).toNat with
-  | some objType =>
-    pure { newType  := objType
-           sizeBits := (r0 / 256).toNat
-           childId  := ObjId.ofNat r1.toNat
-           dstCNode := CPtr.ofWord r2
-           dstSlot  := Slot.ofNat r3.toNat }
-  | none => .error .invalidTypeTag
-
-theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .untypedRetype ≤ decoded.msgInfo.length) :
-    decodeUntypedRetypeArgs decoded = decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeUntypedRetypeArgs decodeUntypedRetypeArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
-      UInt64.toNat_mod, UInt64.toNat_div]
-
 /-- `PagePermissions.ofNat?` of a word, its range tested on the word first, so a
 full-width word is refused without being made a `Nat` (WS-SX SX1.3). -/
 @[inline] def pagePermissionsOfWord? (w : UInt64) : Option PagePermissions :=
@@ -2519,6 +2568,89 @@ theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout)
   generalize msgRegOfFileThenTwo layout regs w0 w1 = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;> cases g 5 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+
+/-- A reader over the layout's message registers, read from the file, then
+three overflow words (slots 0, 1 and 2 of the caller's IPC buffer, at the
+entry): an untyped retype's fifth, sixth and seventh. -/
+@[inline] def msgRegOfFileThenThree (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) : MsgRegReader :=
+  fun i => if h : i < layout.msgRegs.size then .ok (readRegWord regs layout.msgRegs[i])
+    else if i = layout.msgRegs.size then .ok w0
+    else if i = layout.msgRegs.size + 1 then .ok w1
+    else if i = layout.msgRegs.size + 2 then .ok w2
+    else .error .invalidMessageInfo
+
+/-- A decode whose message registers are the layout's, read from the file, then
+three overflow words, reads each as the number of its word. -/
+theorem requireMsgReg_map_readReg_push_three (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w0 w1 w2 : UInt64) (i : Nat) :
+    requireMsgReg (layout.msgRegs.map (readReg regs) ++
+        #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]) i =
+      (msgRegOfFileThenThree layout regs w0 w1 w2 i).map (fun w => (⟨w⟩ : RegValue)) := by
+  unfold requireMsgReg msgRegOfFileThenThree
+  by_cases hi : i < layout.msgRegs.size
+  · have hi' : i < (layout.msgRegs.map (readReg regs) ++
+        #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]).size := by
+      simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
+        List.length_nil]
+      omega
+    simp only [hi, hi', ↓reduceDIte, Except.map]
+    rw [Array.getElem_append_left (by simpa using hi)]
+    simp only [Array.getElem_map, readReg_eq_word]
+  · by_cases hEq : i = layout.msgRegs.size
+    · subst hEq
+      simp [Except.map]
+    · by_cases hEq1 : i = layout.msgRegs.size + 1
+      · subst hEq1
+        simp [Except.map, show ¬ layout.msgRegs.size + 1 < layout.msgRegs.size by omega]
+      · by_cases hEq2 : i = layout.msgRegs.size + 2
+        · subst hEq2
+          simp [Except.map, show ¬ layout.msgRegs.size + 2 < layout.msgRegs.size by omega]
+        · have hi' : ¬ i < (layout.msgRegs.map (readReg regs) ++
+              #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]).size := by
+            simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
+              List.length_nil]
+            omega
+          simp only [hi, hi', hEq, hEq1, hEq2, ↓reduceDIte, ↓reduceIte, Except.map]
+
+/-- **WS-SX SX6.3 (D9)**: `decodeUntypedRetypeArgs` over a reader: seL4's six
+words and the object id word, the last three the caller's overflow slots 0–2
+(at the entry). -/
+@[inline] def decodeUntypedRetypeArgsBy (get : MsgRegReader)
+    : Except KernelError UntypedRetypeArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  let r4 ← get 4
+  let r5 ← get 5
+  let r6 ← get 6
+  match KernelObjectType.ofNat? (bitCountOfWord r0) with
+  | some objType =>
+    pure { newType    := objType
+           sizeBits   := bitCountOfWord r1
+           nodeIndex  := CPtr.ofWord r2
+           nodeDepth  := cnodeDepthOfWord r3
+           nodeOffset := windowWordOf r4
+           numObjects := windowWordOf r5
+           childId    := ObjId.ofNat r6.toNat }
+  | none => .error .invalidTypeTag
+
+theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w0 w1 w2 : UInt64) (decoded : SyscallDecodeResult)
+    (h : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]) 7)
+    (hLen : truncationMinimum .untypedRetype ≤ decoded.msgInfo.length) :
+    decodeUntypedRetypeArgs decoded =
+      decodeUntypedRetypeArgsBy (msgRegOfFileThenThree layout regs w0 w1 w2) := by
+  unfold decodeUntypedRetypeArgs decodeUntypedRetypeArgsBy
+  rw [requireMessageLength_of_le hLen]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
+  simp only [requireMsgReg_map_readReg_push_three]
+  generalize msgRegOfFileThenThree layout regs w0 w1 w2 = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;> cases g 5 <;>
+    cases g 6 <;> simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
 /-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
 decode's order. -/

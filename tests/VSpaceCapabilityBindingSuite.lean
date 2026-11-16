@@ -644,14 +644,25 @@ private def carveScenario : SystemState :=
   let m1 := SeLe4n.writeMem st.machine (SeLe4n.PAddr.ofNat carveUtBase) 0xAB
   { st with machine := SeLe4n.writeMem m1 (SeLe4n.PAddr.ofNat carveDevBase) 0xCD }
 
-/-- Four-register decode (type tag, child id, destination CNode capability
-address, destination slot), invoked on the capability at `utSlot`. -/
-private def decodeCarve (utSlot tag child dstCn dstSlot : Nat) : SyscallDecodeResult :=
+/-- seL4's six retype words and the model's object id word (WS-SX SX6.3, D9),
+invoked on the capability at `utSlot`: `tag` the kind's tag plus its size bits
+times 256, split into the type and size words; the destination the CNode reached
+from the owner's root — extra capability 0, the grant-bearing root the buffer
+names — by `index` at `depth` (seL4's `lookupTargetSlot`; at depth 0 the root
+itself); the window one object at `dstSlot`. -/
+private def decodeCarveAt (utSlot tag child index depth dstSlot : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat utSlot
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 7, extraCaps := 1, label := 0 }
   , syscallId := .untypedRetype
-  , msgRegs   := #[SeLe4n.RegValue.ofNat tag, SeLe4n.RegValue.ofNat child,
-                   SeLe4n.RegValue.ofNat dstCn, SeLe4n.RegValue.ofNat dstSlot] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat (tag % 256), SeLe4n.RegValue.ofNat (tag / 256),
+                   SeLe4n.RegValue.ofNat index, SeLe4n.RegValue.ofNat depth,
+                   SeLe4n.RegValue.ofNat dstSlot, SeLe4n.RegValue.ofNat 1,
+                   SeLe4n.RegValue.ofNat child]
+  , inlineCount := 4, overflowCount := 3 }
+
+/-- `decodeCarveAt` into the owner's root itself (depth 0). -/
+private def decodeCarve (utSlot tag child dstSlot : Nat) : SyscallDecodeResult :=
+  decodeCarveAt utSlot tag child 0 0 dstSlot
 
 private def frameTag : Nat := 8
 
@@ -688,7 +699,7 @@ private def runCarveChecks : IO Unit := do
     match r with | .error e' => e' == e | .ok _ => false
   assertBool "the RAM page holds a non-zero byte before the carve"
     (SeLe4n.readMem st.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0xAB)
-  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved)
+  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotCarved)
       carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"the carve succeeds (got {repr e})" false
   | .ok ((), st1) => do
@@ -704,7 +715,7 @@ private def runCarveChecks : IO Unit := do
     -- so carving and resetting the same page cannot grow the kernel heap.
     assertBool "the scrub of a page holding a non-zero byte writes the model's memory"
       (memoryAddr st1.machine != memoryAddr st.machine)
-    match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9)
+    match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 951 9)
         carveOwner Concurrency.bootCoreId st1 with
     | .error e => assertBool s!"a second carve succeeds (got {repr e})" false
     | .ok ((), st2) =>
@@ -721,7 +732,7 @@ private def runCarveChecks : IO Unit := do
       assertBool "and `.vspaceMap` maps the CARVED page, writable"
         (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
     -- A second carve takes the NEXT page, never the same one.
-    match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9)
+    match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 951 9)
         carveOwner Concurrency.bootCoreId st1 with
     | .error e => assertBool s!"a second carve succeeds (got {repr e})" false
     | .ok ((), st3) =>
@@ -730,9 +741,9 @@ private def runCarveChecks : IO Unit := do
     -- The child id is now taken; reusing it is refused.
     assertBool "reusing a child id that holds an object is refused (childIdCollision)"
       (isErr .childIdCollision
-        (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotOwnCnRW 9) carveOwner Concurrency.bootCoreId st1))
+        (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 9) carveOwner Concurrency.bootCoreId st1))
   -- A device untyped yields a DEVICE frame, which is left unscrubbed.
-  match dispatchSyscallAsCurrent (decodeCarve slotDevUt frameTag 952 slotOwnCnRW slotCarved)
+  match dispatchSyscallAsCurrent (decodeCarve slotDevUt frameTag 952 slotCarved)
       carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"a device carve succeeds (got {repr e})" false
   | .ok ((), stD) =>
@@ -745,11 +756,11 @@ private def runCarveChecks : IO Unit := do
     match r with | .error _ => true | .ok _ => false
   assertBool "an untyped capability WITHOUT `.retype` is refused (illegalAuthority)"
     (isErr .illegalAuthority
-      (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotOwnCnRW slotCarved)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- Every kind is carved: the endpoint tag the frames-only carve refused is now
   -- the endpoint carve (WS-ZA ZA5.4 part 14).
-  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype 1 953 slotOwnCnRW slotCarved)
+  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype 1 953 slotCarved)
       carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"a kernel-object tag is carved too (got {repr e})" false
   | .ok ((), stE) =>
@@ -757,32 +768,43 @@ private def runCarveChecks : IO Unit := do
       (stE.getObjectType? (SeLe4n.ObjId.ofNat 953) == some .endpoint)
   assertBool "an unknown type tag is refused (invalidTypeTag)"
     (isErr .invalidTypeTag
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype 10 953 slotOwnCnRW slotCarved) carveOwner Concurrency.bootCoreId st))
-  assertBool "a destination CNode capability without `.write` is refused (illegalAuthority)"
-    (isErr .illegalAuthority
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnCnRO slotCarved)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype 10 953 slotCarved) carveOwner Concurrency.bootCoreId st))
+  -- seL4's `decodeUntypedInvocation` asks no right of the destination CNode
+  -- capability (WS-SX SX6.3, D9): a read-only one names the same CNode.
+  assertBool "a destination CNode capability without `.write` names its CNode (seL4)"
+    (match dispatchSyscallAsCurrent (decodeCarveAt slotUtRetype frameTag 953 slotOwnCnRO 4 slotCarved)
+        carveOwner Concurrency.bootCoreId st with
+     | .ok ((), stR) => frameAt stR 953 |>.isSome
+     | .error _ => false)
+  assertBool "a destination capability that is no CNode capability is failedLookup"
+    (isErr (.failedLookup false (.missingCapability 4))
+      (dispatchSyscallAsCurrent (decodeCarveAt slotUtRetype frameTag 953 slotOwnVsp 4 slotCarved)
+        carveOwner Concurrency.bootCoreId st))
+  assertBool "a window past the CNode is rangeError 0 (size - 1)"
+    (isErr (.rangeError 0 15)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 16)
         carveOwner Concurrency.bootCoreId st))
   assertBool "an occupied destination slot is refused (targetSlotOccupied)"
     (isErr .targetSlotOccupied
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnCnRW slotOwnVsp)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnVsp)
         carveOwner Concurrency.bootCoreId st))
   assertBool "a child id that already holds an object is refused (childIdCollision)"
     (isErr .childIdCollision
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag carveVsp.toNat slotOwnCnRW slotCarved)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag carveVsp.toNat slotCarved)
         carveOwner Concurrency.bootCoreId st))
-  assertBool "the reserved sentinel as a child id is refused (invalidArgument 1, the child id's word)"
-    (isErr (.invalidArgument 1)
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 0 slotOwnCnRW slotCarved)
+  assertBool "the reserved sentinel as a child id is refused (invalidArgument 6, the child id's word)"
+    (isErr (.invalidArgument 6)
+      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 0 slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- The syscall gate checks the capability's type before its right (seL4
   -- dispatches on the cap type first), so a VSpace-root cap is refused there.
   assertBool "a `.retype` capability to a non-untyped object is refused on its type (invalidCapability)"
     (isErr (.invalidCapability 0)
-      (dispatchSyscallAsCurrent (decodeCarve slotVspRetype frameTag 953 slotOwnCnRW slotCarved)
+      (dispatchSyscallAsCurrent (decodeCarve slotVspRetype frameTag 953 slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- An exhausted untyped: three pages, then nothing.
   let carveN : SystemState → Nat → Except KernelError (Unit × SystemState) :=
-    fun s n => dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag n slotOwnCnRW (n - 950))
+    fun s n => dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag n (n - 950))
       carveOwner Concurrency.bootCoreId s
   match carveN st 960 with
   | .error _ => assertBool "the first of three carves succeeds" false
@@ -794,7 +816,7 @@ private def runCarveChecks : IO Unit := do
         assertBool "a fourth carve of a three-page untyped is refused (untypedRegionExhausted)"
           (isErr (.untypedRegionExhausted 0) (carveN c 963))
   assertBool "the carve refusals are refusals (no success path leaks through)"
-    (refused (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotOwnCnRW slotCarved)
+    (refused (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotCarved)
       carveOwner Concurrency.bootCoreId st))
 
 -- ============================================================================
@@ -860,9 +882,9 @@ private def runUntypedCopyChecks : IO Unit := do
       (freeIndexAt stCopy slotUtRetype == some 0x3000 && freeIndexAt stCopy 10 == some 0)
     assertBool "a carve through the full source is refused (untypedRegionExhausted)"
       (isErr (.untypedRegionExhausted 0)
-        (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnCnRW 11)
+        (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 11)
           carveOwner Concurrency.bootCoreId stCopy))
-    match dispatchSyscallAsCurrent (decodeCarve 10 frameTag 953 slotOwnCnRW 11)
+    match dispatchSyscallAsCurrent (decodeCarve 10 frameTag 953 11)
         carveOwner Concurrency.bootCoreId stCopy with
     | .error e => assertBool s!"the copy carves (got {repr e})" false
     | .ok ((), stCarved) =>
@@ -877,10 +899,10 @@ private def runResetChecks : IO Unit := do
   -- Carve two frames, map the first, and map a DEVICE frame from the other
   -- untyped: the reset must remove the first mapping and keep the device one.
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
-       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
+       decodeCarve slotUtRetype frameTag 951 9,
        decodeOwnMap 0x60000 slotCarved permsRWUC,
-       decodeCarve slotDevUt frameTag 952 slotOwnCnRW 11,
+       decodeCarve slotDevUt frameTag 952 11,
        decodeOwnMap 0x70000 11 11] with
   | .error e => assertBool s!"the carve-and-map setup succeeds (got {repr e})" false
   | .ok st => do
@@ -959,7 +981,7 @@ private def runResetChecks : IO Unit := do
            (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
         -- The memory and the id are both reusable, and the page is scrubbed
         -- again before any capability to it exists.
-        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved)
+        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotCarved)
             carveOwner Concurrency.bootCoreId stReset with
         | .error e => assertBool s!"a carve after the reset succeeds (got {repr e})" false
         | .ok ((), stAgain) => do
@@ -995,11 +1017,11 @@ private def runRetypeResetChecks : IO Unit := do
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
     match r with | .error e' => e' == e | .ok _ => false
   let carve (slot child dst : Nat) (s : SystemState) :=
-    dispatchSyscallAsCurrent (decodeCarve slot frameTag child slotOwnCnRW dst) carveOwner
+    dispatchSyscallAsCurrent (decodeCarve slot frameTag child dst) carveOwner
       Concurrency.bootCoreId s
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
-       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9] with
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
+       decodeCarve slotUtRetype frameTag 951 9] with
   | .error e => assertBool s!"the two-carve setup succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: two carves advanced the invoked capability's free index by two pages"
@@ -1040,7 +1062,7 @@ private def runRetypeResetChecks : IO Unit := do
            freeIndexAt stCarved slotUtRetype == some SeLe4n.pageBytes)
         -- The carve is the reset's rewind and then the carve.
         match runAll stRev [decodeReset slotUtRetype,
-            decodeCarve slotUtRetype frameTag 954 slotOwnCnRW slotCarved] with
+            decodeCarve slotUtRetype frameTag 954 slotCarved] with
         | .error e => assertBool s!"the reset then the carve succeed (got {repr e})" false
         | .ok stTwo =>
           assertBool "and it carves what the reset followed by the carve carves"
@@ -1074,21 +1096,21 @@ private def runChildUntypedChecks : IO Unit := do
   -- The sizes the decode refuses, before anything is resolved.
   assertBool "a child untyped smaller than a page is refused (invalidArgument)"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (untypedTagOfSize 11) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (untypedTagOfSize 11) 970 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a child untyped above seL4_MaxUntypedBits is refused (invalidArgument)"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (untypedTagOfSize 48) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (untypedTagOfSize 48) 970 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a frame with a non-zero size is refused (invalidArgument) — a frame is one page"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (frameTag + 12 * 256) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (frameTag + 12 * 256) 970 12) carveOwner Concurrency.bootCoreId st))
   -- seL4's `NotEnoughMemory` answers the bytes the untyped has left: all of
   -- its three pages (0x3000), nothing carved yet.
   assertBool "a child larger than the parent's free region is refused (untypedRegionExhausted 0x3000)"
     (isErr (.untypedRegionExhausted 0x3000) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (untypedTagOfSize 14) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (untypedTagOfSize 14) 970 12) carveOwner Concurrency.bootCoreId st))
   -- Carve a one-page child untyped into slot 12, a frame out of it into slot 13,
   -- and map the frame.
-  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12)
+  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype (untypedTagOfSize 12) 970 12)
       carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"the child-untyped carve succeeds (got {repr e})" false
   | .ok ((), st1) => do
@@ -1107,9 +1129,9 @@ private def runChildUntypedChecks : IO Unit := do
         == some (untypedCapability (SeLe4n.ObjId.ofNat 970)))
     assertBool "a second carve at the child's id is refused (childIdCollision): nothing overwrites it"
       (isErr .childIdCollision (dispatchSyscallAsCurrent
-        (decodeCarve slotUtRetype frameTag 970 slotOwnCnRW 13) carveOwner Concurrency.bootCoreId st1))
+        (decodeCarve slotUtRetype frameTag 970 13) carveOwner Concurrency.bootCoreId st1))
     match runAll st1
-        [decodeCarve 12 frameTag 971 slotOwnCnRW 13,
+        [decodeCarve 12 frameTag 971 13,
          decodeOwnMap 0x60000 13 permsRWUC] with
     | .error e => assertBool s!"carving a frame from the child and mapping it succeeds (got {repr e})" false
     | .ok st2 => do
@@ -1121,7 +1143,7 @@ private def runChildUntypedChecks : IO Unit := do
         (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
       assertBool "the child is exhausted after one page (untypedRegionExhausted)"
         (isErr (.untypedRegionExhausted 0)
-          (dispatchSyscallAsCurrent (decodeCarve 12 frameTag 972 slotOwnCnRW 14) carveOwner Concurrency.bootCoreId st2))
+          (dispatchSyscallAsCurrent (decodeCarve 12 frameTag 972 14) carveOwner Concurrency.bootCoreId st2))
       assertBool "a reset of the parent while the child's capability lives is refused"
         (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st2))
       -- One revocation of the parent capability reaches the child's capability
@@ -1156,7 +1178,7 @@ private def runChildUntypedChecks : IO Unit := do
              (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
           -- Both ids and the memory are reusable: carve a larger child in the same place.
           match dispatchSyscallAsCurrent
-              (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 slotOwnCnRW 12)
+              (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 12)
               carveOwner Concurrency.bootCoreId stReset with
           | .error e => assertBool s!"a carve after the subtree reset succeeds (got {repr e})" false
           | .ok ((), stAgain) =>
@@ -1166,8 +1188,8 @@ private def runChildUntypedChecks : IO Unit := do
                 == some (carveUtBase, 2 * SeLe4n.pageBytes))
   -- A device untyped yields a device child, and that child a device frame.
   match runAll st
-      [decodeCarve slotDevUt (untypedTagOfSize 12) 975 slotOwnCnRW 12,
-       decodeCarve 12 frameTag 976 slotOwnCnRW 13] with
+      [decodeCarve slotDevUt (untypedTagOfSize 12) 975 12,
+       decodeCarve 12 frameTag 976 13] with
   | .error e => assertBool s!"a device child and its frame carve (got {repr e})" false
   | .ok stD => do
     assertBool "a device untyped's child untyped is a device untyped"
@@ -1245,14 +1267,14 @@ private def runCarvedRootChecks : IO Unit := do
   let one := SeLe4n.ASID.ofNat 1
   assertBool "a VSpace root with a non-zero size is refused (invalidArgument) — a root is one page"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (vspaceRootTag + 256) 980 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (vspaceRootTag + 256) 980 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a device untyped cannot back a VSpace root (untypedDeviceRestriction) — a table is RAM"
     (isErr .untypedDeviceRestriction (dispatchSyscallAsCurrent
-      (decodeCarve slotDevUt vspaceRootTag 980 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotDevUt vspaceRootTag 980 12) carveOwner Concurrency.bootCoreId st))
   match runAll st
-      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
-       decodeCarve slotUtRetype vspaceRootTag 981 slotOwnCnRW 13,
-       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype vspaceRootTag 980 12,
+       decodeCarve slotUtRetype vspaceRootTag 981 13,
+       decodeCarve slotUtRetype frameTag 982 14] with
   | .error e => assertBool s!"carving two roots and a frame succeeds (got {repr e})" false
   | .ok st1 => do
     assertBool "the first root is registered under the least free ASID (1), not 0"
@@ -1296,7 +1318,7 @@ private def runCarvedRootChecks : IO Unit := do
            stReset.asidTable[carveAsid]? == some carveVsp)
         assertBool "the reset posts no shootdown round: the revocation already released the ASIDs"
           ((Architecture.shootdownPostedOps stLive stReset).isEmpty)
-        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12)
+        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 12)
             carveOwner Concurrency.bootCoreId stReset with
         | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false
         | .ok ((), stAgain) =>
@@ -1311,8 +1333,8 @@ private def runFrameFinaliseChecks : IO Unit := do
   -- Carve two frames (slots 8, 9), map the first through slot 8 at 0x60000,
   -- and copy slot 8 to slot 12.
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
-       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
+       decodeCarve slotUtRetype frameTag 951 9,
        decodeOwnMap 0x60000 slotCarved permsRWUC,
        decodeCopy slotCarved 12] with
   | .error e => assertBool s!"the carve-map-copy setup succeeds (got {repr e})" false
@@ -1365,8 +1387,8 @@ private def runFrameFinaliseChecks : IO Unit := do
   -- chain, with no copy of slot 8: a deleted copy's CDT node keeps its parent
   -- a derivation parent until a revocation, as it always has.)
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
-       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
+       decodeCarve slotUtRetype frameTag 951 9,
        decodeOwnMap 0x60000 slotCarved permsRWUC,
        decodeOwnUnmap 0x60000,
        decodeOwnMap 0x60000 9 permsRWUC] with
@@ -1398,7 +1420,7 @@ private def runFrameFinaliseChecks : IO Unit := do
   -- whose record goes stale — a leaf, so it can be deleted without a revocation.
   -- The retired reading is computed beside the live one.
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCopy slotCarved 15,
        decodeOwnMap 0x60000 15 permsRWUC,
        decodeOwnUnmap 0x60000,
@@ -1570,7 +1592,7 @@ private def runSetSpaceChecks : IO Unit := do
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
     match r with | .error e' => e' == e | .ok _ => false
   let root := SeLe4n.ObjId.ofNat 980
-  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st with
+  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 12) carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"carving a root succeeds (got {repr e})" false
   | .ok ((), st1) => do
     -- The refusals, each on the state the success runs on.
@@ -1768,17 +1790,17 @@ private def runPageTableChecks : IO Unit := do
   let va : Nat := 0x70000
   assertBool "a page table with a non-zero size is refused (invalidArgument) — a table is one page"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
-      (decodeCarve slotUtRetype (pageTableTag + 256) 983 slotOwnCnRW 15) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotUtRetype (pageTableTag + 256) 983 15) carveOwner Concurrency.bootCoreId st))
   assertBool "a device untyped cannot back a page table (untypedDeviceRestriction)"
     (isErr .untypedDeviceRestriction (dispatchSyscallAsCurrent
-      (decodeCarve slotDevUt pageTableTag 983 slotOwnCnRW 15) carveOwner Concurrency.bootCoreId st))
+      (decodeCarve slotDevUt pageTableTag 983 15) carveOwner Concurrency.bootCoreId st))
   match runAll st
-      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
-       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
-       decodeCarve slotUtRetype pageTableTag 983 slotOwnCnRW 15,
-       decodeCarve slotUtRetype pageTableTag 984 slotOwnCnRW 16,
-       decodeCarve slotUtRetype pageTableTag 985 slotOwnCnRW 17,
-       decodeCarve slotUtRetype pageTableTag 986 slotOwnCnRW 18] with
+      [decodeCarve slotUtRetype vspaceRootTag 980 12,
+       decodeCarve slotUtRetype frameTag 982 14,
+       decodeCarve slotUtRetype pageTableTag 983 15,
+       decodeCarve slotUtRetype pageTableTag 984 16,
+       decodeCarve slotUtRetype pageTableTag 985 17,
+       decodeCarve slotUtRetype pageTableTag 986 18] with
   | .error e => assertBool s!"carving a root, a frame and four tables succeeds (got {repr e})" false
   | .ok st1 => do
     assertBool "a carved table is installed nowhere, and its page is zeroed"
@@ -1921,8 +1943,8 @@ private def runPageTableChecks : IO Unit := do
           -- root: revoking the child's capability destroys the table's last
           -- capability, so the table leaves the root and the child resets alone.
           match (runAll st4
-              [decodeCarve slotUtRetype (untypedTagOfSize 12) 990 slotOwnCnRW 19,
-               decodeCarve 19 pageTableTag 991 slotOwnCnRW 20]).bind
+              [decodeCarve slotUtRetype (untypedTagOfSize 12) 990 19,
+               decodeCarve 19 pageTableTag 991 20]).bind
               (tableMapSt 20 12 (2 ^ 39)) with
           | .error e => assertBool s!"carving a child untyped and a table from it, and installing it, succeeds (got {repr e})" false
           | .ok stA => do
@@ -1947,8 +1969,8 @@ private def runPageTableChecks : IO Unit := do
                 -- revocation: the root goes with its last capability, the table
                 -- outlives it, and the child resets.
                 match (runAll st5r
-                    [decodeCarve 19 vspaceRootTag 993 slotOwnCnRW 21,
-                     decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22]).bind
+                    [decodeCarve 19 vspaceRootTag 993 21,
+                     decodeCarve slotUtRetype pageTableTag 994 22]).bind
                     (tableMapSt 22 21 va) with
                 | .error e => assertBool s!"carving a root from the child and installing a parent table in it succeeds (got {repr e})" false
                 | .ok st6pre => do
@@ -2014,12 +2036,12 @@ private def runPhysicalWriteChecks : IO Unit := do
   assertBool "the scenario starts with nothing owed"
     (SeLe4n.Testing.pendingWrites st == [])
   match runAll st
-      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
-       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
-       decodeCarve slotUtRetype pageTableTag 983 slotOwnCnRW 15,
-       decodeCarve slotUtRetype pageTableTag 984 slotOwnCnRW 16,
-       decodeCarve slotUtRetype pageTableTag 985 slotOwnCnRW 17,
-       decodeCarve slotUtRetype pageTableTag 986 slotOwnCnRW 18] with
+      [decodeCarve slotUtRetype vspaceRootTag 980 12,
+       decodeCarve slotUtRetype frameTag 982 14,
+       decodeCarve slotUtRetype pageTableTag 983 15,
+       decodeCarve slotUtRetype pageTableTag 984 16,
+       decodeCarve slotUtRetype pageTableTag 985 17,
+       decodeCarve slotUtRetype pageTableTag 986 18] with
   | .error e => assertBool s!"carving a root, a frame and four tables succeeds (got {repr e})" false
   | .ok st1 => do
     assertBool "every carved page is zeroed in memory, in carve order"
@@ -2100,7 +2122,7 @@ private def runPhysicalWriteChecks : IO Unit := do
   -- copies the owner's capabilities into its slots.
   match runAll spaceScenario
       [decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp,
-       decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12] with
+       decodeCarve slotUtRetype vspaceRootTag 980 12] with
   | .error e => assertBool s!"placing the worker and carving a root in the §5j scenario succeeds (got {repr e})" false
   | .ok sp1 => do
     assertBool "a thread in the fixture's mappable root installs that root's page and ASID"
@@ -2132,7 +2154,7 @@ private def runFinalDeleteRetireChecks : IO Unit := do
   IO.println "-- §5l the final capability's delete retires its memory object (WS-ZA ZA5.4)"
   -- A frame and a copy of its capability: the copy's delete is not final.
   match runAll carveScenario
-      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+      [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCopy slotCarved 12] with
   | .error e => assertBool s!"the carve-copy setup succeeds (got {repr e})" false
   | .ok st => do
@@ -2156,7 +2178,7 @@ private def runFinalDeleteRetireChecks : IO Unit := do
             | .error _ => false)
   -- A carved address space: its last capability's delete retires it and
   -- releases its ASID.
-  match runAll carveScenario [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12] with
+  match runAll carveScenario [decodeCarve slotUtRetype vspaceRootTag 980 12] with
   | .error e => assertBool s!"the root carve succeeds (got {repr e})" false
   | .ok st => do
     let one := SeLe4n.ASID.ofNat 1
@@ -2173,8 +2195,8 @@ private def runFinalDeleteRetireChecks : IO Unit := do
   -- spliced out of the derivation tree (WS-ZA ZA5.4 part 26): its parent
   -- records the frame in its place, and the frame goes with its own.
   match runAll carveScenario
-      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12,
-       decodeCarve 12 frameTag 971 slotOwnCnRW 13] with
+      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 12,
+       decodeCarve 12 frameTag 971 13] with
   | .error e => assertBool s!"the child-untyped setup succeeds (got {repr e})" false
   | .ok st => do
     match runAll st [decodeDelete 12] with
@@ -2190,14 +2212,14 @@ private def runFinalDeleteRetireChecks : IO Unit := do
           ((frameAt st2 971).isNone && !recordsChildAt st2 carveUt 971)
   -- An empty child untyped goes with its last capability.
   match runAll carveScenario
-      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12, decodeDelete 12] with
+      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 12, decodeDelete 12] with
   | .error e => assertBool s!"the child-untyped carve and delete succeed (got {repr e})" false
   | .ok st =>
     assertBool "a childless untyped is retired with its last capability"
       ((st.getUntyped? (SeLe4n.ObjId.ofNat 970)).isNone && !recordsChildAt st carveUt 970)
   -- A page table installed nowhere goes with its last capability.
   match runAll carveScenario
-      [decodeCarve slotUtRetype pageTableTag 990 slotOwnCnRW 12, decodeDelete 12] with
+      [decodeCarve slotUtRetype pageTableTag 990 12, decodeDelete 12] with
   | .error e => assertBool s!"the table carve and delete succeed (got {repr e})" false
   | .ok st =>
     assertBool "a page table is retired with its last capability"
@@ -2242,7 +2264,7 @@ private def runPassiveRetireChecks : IO Unit := do
   IO.println "-- §5m the final capability's delete retires a quiescent kernel object (WS-ZA ZA5.4)"
   for (name, tag) in [("endpoint", endpointTag), ("notification", notificationTag),
       ("reply", replyTag), ("CNode", cnodeTagOfRadix 2)] do
-    match runAll carveScenario [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12] with
+    match runAll carveScenario [decodeCarve slotUtRetype tag 960 12] with
     | .error e => assertBool s!"carving the {name} succeeds (got {repr e})" false
     | .ok st => do
       assertBool s!"setup: the untyped records the {name}"
@@ -2262,7 +2284,7 @@ private def runPassiveRetireChecks : IO Unit := do
               | .ok ((), stOld) => storedAt stOld 960 && recordsChildAt stOld carveUt 960
               | .error _ => false)
           assertBool s!"the retired {name}'s id carves again"
-            ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
+            ((runAll st2 [decodeCarve slotUtRetype tag 960 12]).toOption.isSome)
   -- A registered endpoint is finalised before it is retired: its last
   -- capability's delete drops the registration it carries
   -- (`releaseFinalRegistration`, seL4's `finaliseCap` tearing down what the
@@ -2270,7 +2292,7 @@ private def runPassiveRetireChecks : IO Unit := do
   -- Before, the recorded `serviceRegistered` kept the endpoint out of the
   -- retirable kinds and no capability was left to revoke the service
   -- through, so the endpoint and its untyped's space were held for good.
-  match runAll carveScenario [decodeCarve slotUtRetype endpointTag 960 slotOwnCnRW 12] with
+  match runAll carveScenario [decodeCarve slotUtRetype endpointTag 960 12] with
   | .error e => assertBool s!"carving the endpoint to register succeeds (got {repr e})" false
   | .ok st0 =>
     match SystemState.lookupSlotCap st0 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 } with
@@ -2306,7 +2328,7 @@ private def runPassiveRetireChecks : IO Unit := do
   -- `unbindMaybeNotification`, `finaliseFinalObject`), and the then quiescent
   -- notification is retired (WS-ZA ZA5.4 part 23).
   match runAll spaceScenario
-      [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12] >>=
+      [decodeCarve slotUtRetype notificationTag 960 12] >>=
       bindStep (decodeBindNotification slotWorkerTcb) 12 with
   | .error e => assertBool s!"carving and binding a notification succeeds (got {repr e})" false
   | .ok st => do
@@ -2322,7 +2344,7 @@ private def runPassiveRetireChecks : IO Unit := do
   -- The space-slot replace destroys what the slot held: a VSpace root whose
   -- last capability is the worker's slot is retired with it.
   match runAll spaceScenario
-      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+      [decodeCarve slotUtRetype vspaceRootTag 980 12,
        decodeSetSpace slotWorkerTcb slotOwnCnGrant 12,
        decodeDelete 12] with
   | .error e => assertBool s!"carving a root, moving the worker into it and deleting the source succeeds (got {repr e})" false
@@ -2339,7 +2361,7 @@ private def runPassiveRetireChecks : IO Unit := do
         (rootsOf st1 spaceWorker == some (carveCn, carveVsp))
   -- A replace that is not the last capability's destroy retires nothing.
   match runAll spaceScenario
-      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+      [decodeCarve slotUtRetype vspaceRootTag 980 12,
        decodeSetSpace slotWorkerTcb slotOwnCnGrant 12,
        decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp] with
   | .error e => assertBool s!"setting and replacing the worker's root succeeds (got {repr e})" false
@@ -2386,7 +2408,7 @@ private def kernelState {α : Type} (r : Except KernelError (α × SystemState))
 private def runThreadFinaliseChecks : IO Unit := do
   IO.println "-- §5n the final capability's delete finalises a thread or a scheduling context (WS-ZA ZA5.4 part 24)"
   for (name, tag) in [("thread", tcbTag), ("scheduling context", schedContextTag)] do
-    match runAll carveScenario [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12] with
+    match runAll carveScenario [decodeCarve slotUtRetype tag 960 12] with
     | .error e => assertBool s!"carving the {name} succeeds (got {repr e})" false
     | .ok st => do
       assertBool s!"setup: the untyped records the {name}"
@@ -2402,12 +2424,12 @@ private def runThreadFinaliseChecks : IO Unit := do
           assertBool s!"deleting the {name}'s last capability finalises it and retires it from the store and the untyped's list"
             (!storedAt st2 960 && !recordsChildAt st2 carveUt 960 && (st2.getUntyped? carveUt).isSome)
           assertBool s!"the finalised {name}'s id carves again"
-            ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
+            ((runAll st2 [decodeCarve slotUtRetype tag 960 12]).toOption.isSome)
   -- A thread bound to a notification is unbound from it (seL4's
   -- `unbindNotification`) before it is retired; the notification stays.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13] >>=
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype notificationTag 961 13] >>=
       bindStep (decodeBindNotification 12) 13 with
   | .error e => assertBool s!"carving a thread and a notification and binding them succeeds (got {repr e})" false
   | .ok st => do
@@ -2423,8 +2445,8 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- delete unbinds the two (seL4's `schedContext_unbindAllTCBs` /
   -- `unbindFromSC`) and retires only the destroyed side.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype schedContextTag 961 slotOwnCnRW 13] >>=
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype schedContextTag 961 13] >>=
       bindStep (decodeBindSchedContext 13) 12 with
   | .error e => assertBool s!"carving a thread and a scheduling context and binding them succeeds (got {repr e})" false
   | .ok st => do
@@ -2471,8 +2493,8 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- are empty (their finalising delete is a later row), so the wait is staged
   -- through the kernel's own wait on the carved thread.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype notificationTag 961 13] with
   | .error e => assertBool s!"carving a thread and a notification succeeds (got {repr e})" false
   | .ok st0 =>
     let staged := st0.updateTcb ⟨960⟩ fun t => { t with threadState := .BlockedNotif }
@@ -2492,7 +2514,7 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- the core running it, that core's reschedule flag raised), every core's
   -- FP/SIMD and resident hold on it released, and retired.  Each placement is
   -- staged through the kernel's own writers on the carved thread.
-  match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12] with
+  match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 12] with
   | .error e => assertBool s!"carving a thread succeeds (got {repr e})" false
   | .ok st0 => do
     let tid : SeLe4n.ThreadId := ⟨960⟩
@@ -2558,8 +2580,8 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- thread's own run links with its core code (`TCB.detachRun`), so the
   -- already-`.Inactive` thread is quiescent; the other thread stays queued.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype tcbTag 961 slotOwnCnRW 13] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype tcbTag 961 13] with
   | .error e => assertBool s!"carving two threads succeeds (got {repr e})" false
   | .ok st0 => do
     let c0 := Concurrency.bootCoreId
@@ -2593,9 +2615,9 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- the carved threads, three waiting in carve order: the middle one's delete
   -- comes first, then the head's, then the tail's.
   let threeThreads :=
-    [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-     decodeCarve slotUtRetype tcbTag 961 slotOwnCnRW 13,
-     decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14]
+    [decodeCarve slotUtRetype tcbTag 960 12,
+     decodeCarve slotUtRetype tcbTag 961 13,
+     decodeCarve slotUtRetype tcbTag 962 14]
   let epId := SeLe4n.ObjId.ofNat 963
   let blocks : List (String × ThreadState × Bool × ThreadIpcState ×
       (SeLe4n.ThreadId → SystemState → Except KernelError SystemState)) :=
@@ -2606,7 +2628,7 @@ private def runThreadFinaliseChecks : IO Unit := do
      ("calling", .BlockedCall, false, .blockedOnCall epId,
        fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false) st))]
   for (name, ts, isRecv, blocked, block) in blocks do
-    match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype endpointTag 963 slotOwnCnRW 15]) with
+    match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype endpointTag 963 15]) with
     | .error e => assertBool s!"carving three threads and an endpoint succeeds (got {repr e})" false
     | .ok st0 =>
       let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid ts) st0
@@ -2649,7 +2671,7 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- suspended one still holding one.  The message is staged on the carved
   -- thread directly, as a payload wake leaves it.
   for (name, ts) in [("ready", ThreadState.Ready), ("suspended", ThreadState.Inactive)] do
-    match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12] with
+    match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 12] with
     | .error e => assertBool s!"carving a thread succeeds (got {repr e})" false
     | .ok st0 => do
       let msg : IpcMessage := { registers := #[SeLe4n.RegValue.ofNat 7] }
@@ -2664,7 +2686,7 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- A thread waiting on a notification behind another is cancelled off the
   -- queue just as its head is, wherever it waits: the middle waiter's delete,
   -- then the tail's.
-  match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype notificationTag 963 slotOwnCnRW 15]) with
+  match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype notificationTag 963 15]) with
   | .error e => assertBool s!"carving three threads and a notification succeeds (got {repr e})" false
   | .ok st0 =>
     let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid .BlockedNotif) st0
@@ -2754,9 +2776,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- inactive and retires the reply.
   for server? in [none, some (⟨962⟩ : SeLe4n.ThreadId)] do
     match runAll carveScenario
-        [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-         decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-         decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14] with
+        [decodeCarve slotUtRetype tcbTag 960 12,
+         decodeCarve slotUtRetype replyTag 961 13,
+         decodeCarve slotUtRetype tcbTag 962 14] with
     | .error e => assertBool s!"carving a caller, a reply and a server succeeds (got {repr e})" false
     | .ok st0 =>
       match stageReplyCaller st0 server? with
@@ -2777,8 +2799,8 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- delete finalises it all the same (seL4 keeps a lazily saved context across
   -- `setThreadState Inactive`), and the hold stays.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13] with
   | .error e => assertBool s!"carving a caller and a reply succeeds (got {repr e})" false
   | .ok st0 =>
     let c1 : Concurrency.CoreId := ⟨1, by decide⟩
@@ -2798,9 +2820,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- clears the stash (seL4's `reply_unlink` on a `BlockedOnReceive` thread),
   -- the receiver keeps waiting on its endpoint, and the reply is retired.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype endpointTag 962 14] with
   | .error e => assertBool s!"carving a receiver, a reply and an endpoint succeeds (got {repr e})" false
   | .ok st0 => do
     -- The stash as a receive makes it: the Reply records its stasher, then the
@@ -2823,10 +2845,10 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- context goes back to the caller, the server holds none — then cancels the
   -- caller's call, makes the caller inactive and retires the reply.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 15] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype tcbTag 962 14,
+       decodeCarve slotUtRetype schedContextTag 963 15] with
   | .error e => assertBool s!"carving a caller, a reply, a server and a context succeeds (got {repr e})" false
   | .ok st0 =>
     match stageReplyCaller st0 (some ⟨962⟩) with
@@ -2866,9 +2888,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- linked to no caller.
   for server? in [none, some (⟨962⟩ : SeLe4n.ThreadId)] do
     match runAll carveScenario
-        [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-         decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-         decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14] with
+        [decodeCarve slotUtRetype tcbTag 960 12,
+         decodeCarve slotUtRetype replyTag 961 13,
+         decodeCarve slotUtRetype tcbTag 962 14] with
     | .error e => assertBool s!"carving a caller, a reply and a server succeeds (got {repr e})" false
     | .ok st0 =>
       -- With a server, the caller joins its reply-waiter queue as the call
@@ -2897,10 +2919,10 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- context, now as its own — then retires the caller; the reply heads no stack
   -- and is linked to no caller.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 15] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype tcbTag 962 14,
+       decodeCarve slotUtRetype schedContextTag 963 15] with
   | .error e => assertBool s!"carving a caller, a reply, a server and a context succeeds (got {repr e})" false
   | .ok st0 =>
     match stageReplyCaller st0 (some ⟨962⟩) with
@@ -2934,9 +2956,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- `cancelIPC`, `reply_unlink` on the stash) and retires it; the reply stays,
   -- stashed by no thread.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype endpointTag 962 14] with
   | .error e => assertBool s!"carving a receiver, a reply and an endpoint succeeds (got {repr e})" false
   | .ok st0 =>
     match kernelState (SeLe4n.Kernel.endpointReceiveDual (SeLe4n.ObjId.ofNat 962) ⟨960⟩
@@ -2957,9 +2979,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- not name it back as its head, nor any thread as its holder — is not
   -- finalised: checks before writes, its delete keeps the reply and its caller.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype schedContextTag 963 14] with
   | .error e => assertBool s!"carving a caller, a reply and a context succeeds (got {repr e})" false
   | .ok st0 =>
     match stageReplyCaller st0 none with
@@ -2981,9 +3003,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- stack (seL4's `schedContext_unbindReply`: the head's upward link cleared)
   -- and retires the context; the reply and its caller stay.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype schedContextTag 963 14] with
   | .error e => assertBool s!"carving a caller, a reply and a context succeeds (got {repr e})" false
   | .ok st0 =>
     match stageReplyCaller st0 none with
@@ -3009,9 +3031,9 @@ private def runReplyFinaliseChecks : IO Unit := do
   -- reply object, not on the endpoint (seL4's MCS `BlockedOnReply`), so the
   -- endpoint's last capability's delete retires it; the caller still waits.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
-       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype replyTag 961 13,
+       decodeCarve slotUtRetype endpointTag 962 14] with
   | .error e => assertBool s!"carving a caller, a reply and an endpoint succeeds (got {repr e})" false
   | .ok st0 =>
     match stageReplyCallerOn st0 962 961 none with
@@ -3035,12 +3057,12 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
   -- server's delete unbinds the borrowed context, which keeps heading the
   -- lender's reply, and leaves both callers blocked on their replies.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 10,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 11,
-       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 12,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
-       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15] with
+      [decodeCarve slotUtRetype tcbTag 960 10,
+       decodeCarve slotUtRetype replyTag 961 11,
+       decodeCarve slotUtRetype tcbTag 962 12,
+       decodeCarve slotUtRetype schedContextTag 963 13,
+       decodeCarve slotUtRetype tcbTag 964 14,
+       decodeCarve slotUtRetype replyTag 965 15] with
   | .error e => assertBool s!"carving a lender, a server, a context and a second waiter succeeds (got {repr e})" false
   | .ok st0 =>
     match stageWaitersOn st0 ⟨962⟩ [(960, 961), (964, 965)] with
@@ -3086,11 +3108,11 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
                   waiterOrphaned st2 964 965)
   -- A server holding no loan, with two waiters: its delete orphans both.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
-       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 963 slotOwnCnRW 14,
-       decodeCarve slotUtRetype replyTag 964 slotOwnCnRW 15] with
+      [decodeCarve slotUtRetype tcbTag 960 11,
+       decodeCarve slotUtRetype replyTag 961 12,
+       decodeCarve slotUtRetype tcbTag 962 13,
+       decodeCarve slotUtRetype tcbTag 963 14,
+       decodeCarve slotUtRetype replyTag 964 15] with
   | .error e => assertBool s!"carving two callers, their replies and a server succeeds (got {repr e})" false
   | .ok st0 =>
     match stageWaitersOn st0 ⟨962⟩ [(960, 961), (963, 964)] with
@@ -3123,11 +3145,11 @@ and it is retired. -/
 private def runContextlessStackChecks : IO Unit := do
   IO.println "-- §5o a contextless stack's top reply is retired on its final delete (WS-ZA ZA5.4 part 25)"
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
-       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15] with
+      [decodeCarve slotUtRetype tcbTag 960 11,
+       decodeCarve slotUtRetype replyTag 961 12,
+       decodeCarve slotUtRetype schedContextTag 963 13,
+       decodeCarve slotUtRetype tcbTag 964 14,
+       decodeCarve slotUtRetype replyTag 965 15] with
   | .error e => assertBool s!"carving two callers, two replies and a context succeeds (got {repr e})" false
   | .ok st0 =>
     let staged : Option SystemState := do
@@ -3164,13 +3186,13 @@ through the final delete's `@[csimp]` form. -/
 private def runMiddleReplyFinaliseChecks : IO Unit := do
   IO.println "-- §5o a reply stack's middle reply is severed out and retired on its final delete (WS-ZA ZA5.4 part 25)"
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
-       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
-       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
-       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
-       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15,
-       decodeCarve slotUtRetype tcbTag 966 slotOwnCnRW 9,
-       decodeCarve slotUtRetype replyTag 967 slotOwnCnRW 10] with
+      [decodeCarve slotUtRetype tcbTag 960 11,
+       decodeCarve slotUtRetype replyTag 961 12,
+       decodeCarve slotUtRetype schedContextTag 963 13,
+       decodeCarve slotUtRetype tcbTag 964 14,
+       decodeCarve slotUtRetype replyTag 965 15,
+       decodeCarve slotUtRetype tcbTag 966 9,
+       decodeCarve slotUtRetype replyTag 967 10] with
   | .error e => assertBool s!"carving three callers, three replies and a context succeeds (got {repr e})" false
   | .ok st0 =>
     let staged : Option SystemState := do
@@ -3216,8 +3238,8 @@ private def runZombieDeleteChecks : IO Unit := do
   -- capability's delete deletes the notification's slot first (the
   -- notification is retired), then retires the emptied CNode.
   match runAll carveScenario
-      [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 12,
-       decodeCarve slotUtRetype notificationTag 971 12 0] with
+      [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 12,
+       decodeCarveAt slotUtRetype notificationTag 971 12 4 0] with
   | .error e => assertBool s!"carving a CNode and a notification into it succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: the carved CNode holds the notification's capability"
@@ -3246,7 +3268,7 @@ private def runZombieDeleteChecks : IO Unit := do
       | .ok stR => do
         assertBool "the reset rewinds the free index"
           (freeIndexAt stR slotUtRetype == some 0)
-        match runAll stR [decodeCarve slotUtRetype notificationTag 971 slotOwnCnRW 12] with
+        match runAll stR [decodeCarve slotUtRetype notificationTag 971 12] with
         | .error e => assertBool s!"carving the notification's id again after the reset succeeds (got {repr e})" false
         | .ok st2 =>
           assertBool "a notification carved at the retired id after the reset inherits no tag"
@@ -3256,8 +3278,8 @@ private def runZombieDeleteChecks : IO Unit := do
   -- space slots, which retires the CNode; the boot VSpace root, named by
   -- another slot, stays.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 13,
+      [decodeCarve slotUtRetype tcbTag 960 12,
+       decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 13,
        decodeSetSpace 12 13 slotOwnVsp,
        decodeDelete 13] with
   | .error e => assertBool s!"carving a thread and a CNode, setting its spaces and deleting the CNode's other capability succeeds (got {repr e})" false
@@ -3277,7 +3299,7 @@ private def runZombieDeleteChecks : IO Unit := do
   -- deletes the thread's space slots (copies, so nothing they name is
   -- retired), and the thread is retired.
   match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+      [decodeCarve slotUtRetype tcbTag 960 12,
        decodeSetSpace 12 slotOwnCnGrant slotOwnVsp] with
   | .error e => assertBool s!"carving a thread and giving it the owner's spaces succeeds (got {repr e})" false
   | .ok st0 =>

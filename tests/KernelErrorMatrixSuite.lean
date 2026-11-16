@@ -641,7 +641,7 @@ private def row_invalidTypeTag : KernelErrorRejection :=
                      " at the ABI decode boundary"
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
-        (mkDecoded #[rv 99, rv 0, rv 0, rv 0])) }
+        (mkDecoded #[rv 99, rv 0, rv 0, rv 0, rv 0, rv 1, rv 0])) }
 
 -- ============================================================================
 -- AN11-A.5 — Architecture / Capability / Service residual variants

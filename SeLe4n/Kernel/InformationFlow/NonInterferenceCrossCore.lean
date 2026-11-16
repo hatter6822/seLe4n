@@ -447,14 +447,14 @@ takes the executing core only to read the domain a carved thread starts in, and
 writes the object store and the CDT alone. -/
 theorem untypedRetypeFromCap_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) (srcAddr : SeLe4n.CPtr)
+    (executingCore : CoreId) (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError Architecture.SyscallArgDecode.UntypedRetypeArgs)
     (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
-    (hStep : untypedRetypeFromCap tid executingCore srcAddr args? st = .ok ((), st'))
+    (hStep : untypedRetypeFromCap tid executingCore srcAddr root? args? st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
-  obtain ⟨_, _, _, _, _, -, -, -, -, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid executingCore srcAddr args? st st' hStep
+  obtain ⟨_, _, _, _, _, _, _, -, -, -, -, hCarve⟩ :=
+    untypedRetypeFromCap_ok tid executingCore srcAddr root? args? st st' hStep
   exact crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedRetypeObject_confinedToCores _ _ _ _ st st' hInv hCarve) hShared
 

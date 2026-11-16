@@ -15,8 +15,9 @@ import SeLe4n.Kernel.RoutedArms.OverflowOne
 
 The routed entry's `.overflowed` arm (`syscallEntryCheckedK`): an invocation
 past the inline words (a scheduling-context configure, a service register, a
-CNode copy, or a CNode mint, whose sixth word is slot 1's, read off the state
-the arm is handed) whose message runs past them, as its own function.  Only a syscall that
+CNode copy, a CNode mint, whose sixth word is slot 1's, or an untyped retype,
+whose sixth and seventh are slots 1 and 2's, each read off the state the arm is
+handed) whose message runs past them, as its own function.  Only a syscall that
 reads its overflow words is routed past the inline registers
 (`syscallReadsOverflow`), so no other kind reaches this arm.  Its overflow
 words read as the long send's are (slot 0, the buffer in one frame), the
@@ -54,8 +55,9 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 /-- **The overflowed arm**: the configure's, the service register's, the CNode
-copy's or the CNode mint's, its fifth word slot 0's and a mint's sixth slot
-1's. -/
+copy's, the CNode mint's or the untyped retype's, its fifth word slot 0's, a
+mint's sixth slot 1's and a retype's sixth and seventh slots 1 and 2's; a retype
+of six words is refused short of its seventh. -/
 @[noinline] def overflowedRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
     (capWord : UInt64) (xc : Nat) (length : Nat) (st : SystemState) : SystemState :=
@@ -69,6 +71,13 @@ copy's or the CNode mint's, its fifth word slot 0's and a mint's sixth slot
   | .cspaceMint =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       mintOperandArmR ctx tid xc rf w (overflowWordAt st tid 1)) st
+  | .untypedRetype =>
+    overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
+      if length < SeLe4n.Kernel.Architecture.SyscallArgDecode.truncationMinimum .untypedRetype then
+        shortArgsOperandArmR .untypedRetype
+      else
+        retypeOperandArmR tid executingCore (SeLe4n.CPtr.ofWord capWord) xc rf w
+          (overflowWordAt st tid 1) (overflowWordAt st tid 2)) st
   | _ =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       serviceRegisterOperandArmR ctx tid rf w) st
@@ -80,7 +89,8 @@ theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurre
     (st : SystemState) (hOv : Architecture.RegisterDecode.routedOverflowOne sid = true) :
     overflowedRoutedArm ctx executingCore tid sid capWord xc length st =
       overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
-        overflowedArmOf ctx sid rf w (overflowWordAt st tid 1) tid xc) st := by
-  rcases routedOverflowOne_cases hOv with rfl | rfl | rfl | rfl <;> rfl
+        overflowedArmOf ctx sid rf w (overflowWordAt st tid 1) (overflowWordAt st tid 2) length
+          tid executingCore (SeLe4n.CPtr.ofWord capWord) xc) st := by
+  rcases routedOverflowOne_cases hOv with rfl | rfl | rfl | rfl | rfl <;> rfl
 
 end SeLe4n.Kernel

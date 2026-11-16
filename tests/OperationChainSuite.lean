@@ -2704,9 +2704,11 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
 
 /-- WS-ZA ZA5.4 part 14: a carve via `syscallEntryChecked` (syscall 36), and the retired
-number 8 refused at decode.  x2 = type word (notification, 2), x3 = child id,
-x4 = the destination CNode's capability address (slot 1, the caller's root,
-writable), x5 = destination slot. -/
+number 8 refused at decode.  seL4's words (WS-SX SX6.3, D9): x2 = the type
+(notification, 2), x3 = the size bits (0), x4 and x5 = the node index and depth
+(0: the destination is the root itself), then the window's offset (slot 2), its
+object count (1) and the model's object id word (801) in the IPC buffer's
+overflow slots; the root, extra capability 0, is the caller's root at slot 1. -/
 private def chain29SyscallCarve : IO Unit := do
   let utId : SeLe4n.ObjId := ⟨800⟩
   let child : SeLe4n.ObjId := ⟨801⟩
@@ -2715,9 +2717,11 @@ private def chain29SyscallCarve : IO Unit := do
   let st0 := buildSyscallState 36 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
-    [(2, 2), (3, 801), (4, 1), (5, 2)]
+    [(2, 2), (3, 0), (4, 0), (5, 0)]
     [(utId, .untyped)]
     [(1, rootCap)]
+    (overflowWords := [2, 1, 801])
+    (extraCapWords := [1])
   match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     match stAfter.objects[child]? with

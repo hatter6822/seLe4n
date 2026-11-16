@@ -345,20 +345,22 @@ private def sad005_cspaceDelete : IO Unit := do
 -- Lifecycle family -------------------------------------------------------------
 
 /-- SAD-006: decodeUntypedRetypeArgs — valid decode of every kernel object
-kind's type word (`tag ||| sizeBits <<< 8`, WS-ZA ZA5.4 part 14). -/
+kind's seven seL4-shaped words (type, size, node index, node depth, node
+offset, object count, then the model's object id word; WS-SX SX6.3). -/
 private def sad006_untypedRetype : IO Unit := do
   for tag in [0, 1, 2, 3, 6, 7] do
-    let stub := mkStub #[⟨tag + 256⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+    let stub := mkStub #[⟨tag⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩, ⟨100⟩]
     match decodeUntypedRetypeArgs stub with
     | .ok args =>
         expect s!"SAD-006a carve decode tag {tag}"
-          (args.newType.toNat == tag.toNat && args.sizeBits == 1 && args.childId == ⟨100⟩)
+          (args.newType.toNat == tag.toNat && args.sizeBits == 1 && args.childId == ⟨100⟩ &&
+            args.nodeOffset == 4 && args.numObjects == 1 && args.nodeDepth == 0)
     | .error _ => expect s!"SAD-006a carve decode tag {tag}" false
-  expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨100⟩, ⟨1⟩])).isOk)
+  expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩])).isOk)
 
 /-- SAD-007: decodeUntypedRetypeArgs — invalid type tag. -/
 private def sad007_untypedRetypeInvalidType : IO Unit := do
-  let stub := mkStub #[⟨99⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+  let stub := mkStub #[⟨99⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩, ⟨100⟩]
   let result := decodeUntypedRetypeArgs stub
   expect "SAD-007a carve invalid type" (!result.isOk)
 

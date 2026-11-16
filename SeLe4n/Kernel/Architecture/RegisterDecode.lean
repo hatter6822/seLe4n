@@ -221,9 +221,9 @@ refused or clamped by the buffer.  No wildcard: a new syscall states its
 answer. -/
 def syscallReadsOverflow : SyscallId → Bool
   | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister
-  | .cspaceMint | .cspaceCopy => true
+  | .cspaceMint | .cspaceCopy | .untypedRetype => true
   | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
-  | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
+  | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -990,14 +990,14 @@ inductive RegisterRoutedSyscall where
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
 `invoke`: every invocation whose arguments fit the layout's message registers,
 whose taint step is the identity and whose rights are checked in the classic
-order.  The scheduling-context configure, the service register and the CNode
-mint carry one argument word more and are routed as `overflowOne`
-(`routedOverflowOne`); the
+order.  The scheduling-context configure, the service register, the CNode copy
+and mint and the untyped retype carry argument words past the registers and are
+routed as `overflowOne` or `overflowed` (`routedOverflowOne`); the
 declassification and audit calls, whose taint steps are not the identity or
 whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
   | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .mintReplyCap | .untypedRetype | .untypedReset
+  | .mintReplyCap | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
@@ -1026,11 +1026,13 @@ theorem routedInvocationSid?_some {n : Nat} {sid : SyscallId}
   · cases h
 
 /-- WS-ZA ZA5.2, ZA5.5: the capability invocations the register file routes as
-`overflowOne`: those whose arguments are the layout's message registers and one
-overflow word, whose taint step is the identity and whose rights are checked in
-the classic order. -/
+`overflowOne`: those whose arguments are the layout's message registers and
+overflow words (one for the configure, the service register and the CNode copy,
+two for the CNode mint and three for the untyped retype, WS-SX SX6.3), whose
+taint step is the identity and whose rights are checked in the classic order. -/
 def routedOverflowOne : SyscallId → Bool
-  | .schedContextConfigure | .serviceRegister | .cspaceMint | .cspaceCopy => true
+  | .schedContextConfigure | .serviceRegister | .cspaceMint | .cspaceCopy
+  | .untypedRetype => true
   | _ => false
 
 /-- The one-overflow-word invocation syscall number `n` names, if any. -/

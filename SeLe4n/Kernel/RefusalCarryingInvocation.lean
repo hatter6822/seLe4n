@@ -168,10 +168,6 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
     | _ => .error (.invalidCapability 0)
-  | .untypedRetype =>
-    match cap.target with
-    | .object _ => untypedRetypeFromCap tid executingCore capAddr (decodeUntypedRetypeArgsBy (msgRegOfFile layout regs)) st
-    | _ => .error (.invalidCapability 0)
   | .untypedReset =>
     match cap.target with
     | .object _ => untypedResetFromCap tid capAddr st
@@ -487,7 +483,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hMove := decodeCSpaceMoveArgs_eq_by layout regs decoded hRegs
   have hReply := decodeMintReplyCapArgs_eq_by layout regs decoded hRegs
   have hDelete := decodeCSpaceDeleteArgs_eq_by layout regs decoded hRegs
-  have hRetype := decodeUntypedRetypeArgs_eq_by layout regs decoded hRegs
   have hMap := decodeVSpaceMapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hUnmap := decodeVSpaceUnmapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hPrio := decodeSetPriorityArgs_eq_by layout regs decoded hRegs
@@ -505,7 +500,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     simp only [truncationMinimum] at hLen <;>
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
-      hMove, hReply, hDelete, hRetype, hMap, hUnmap,
+      hMove, hReply, hDelete, hMap, hUnmap,
       hPrio, hMcp, hIpcBuf, hAff, hFault,
       hSpace, hPt, hIrqGet, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
@@ -1034,38 +1029,6 @@ refusal is read where it is, never rebuilt. -/
         RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
           (fun st => pageTableUnmapPerformAt objId st)
           (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
-    | _ => .error (.invalidCapability 0, st)
-  | .untypedRetype =>
-    match cap.target with
-    | .object _ =>
-      match decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
-        -- The request as words (`carveRequestWordsK`), read by the carve's
-        -- checks and writes (`untypedRetypeAdmittedCode`,
-        -- `untypedRetypePerformCode`), so no request is built.
-        carveRequestWordsK st executingCore args.newType args.sizeBits (fun e => .error (e, st))
-          (fun k n dom core asid =>
-          match validateObjIdArg args.childId with
-          | .error e => .error (e.forArgumentWord UntypedRetypeArgs.childIdWord, st)
-          | .ok vChild =>
-            resolveIssuingSlotsK tid capAddr args.dstCNode args.dstSlot st (fun e => .error (e, st))
-              (fun srcCnode srcSlot dstCnode dstSlot =>
-                -- The kernel heap's refusal, answered here in the state the
-                -- arm was handed: the carve's first check, so the general
-                -- path it would otherwise fall back to (which decodes the
-                -- invocation again) never runs for it.
-                if !CarveRequest.heapAdmittedW st k n then .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) else
-                -- Every other refusal is read from the checks' words as well
-                -- (`untypedRetypeRefusalCode`), so the general path, which
-                -- decodes the invocation again, never runs here.
-                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
-                    k n asid then
-                  .ok ((), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
-                    vChild.val k n dom core asid st)
-                else
-                  .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
-                    vChild.val k n asid, st)))
     | _ => .error (.invalidCapability 0, st)
   | .untypedReset =>
     match cap.target with
@@ -1769,54 +1732,6 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       · apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
-    all_goals rfl
-  case untypedRetype =>
-    cases target
-    case object _ =>
-      dsimp only
-      cases hD : decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
-      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD]
-      | ok args =>
-        dsimp only
-        rw [carveRequestWordsK_eq]
-        cases hQ : carveRequestOf? st executingCore args.newType args.sizeBits with
-        | error e =>
-          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ]
-        | ok req =>
-          dsimp only
-          cases hV : validateObjIdArg args.childId with
-          | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV]
-          | ok vChild =>
-            dsimp only
-            rw [resolveIssuingSlotsK_eq]
-            cases hR : resolveIssuingSlots tid capAddr args.dstCNode args.dstSlot st with
-            | error e =>
-              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
-                hV, hR]
-            | ok pr =>
-              obtain ⟨src, dst⟩ := pr
-              dsimp only
-              rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
-                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req,
-                untypedRetypeRefusalCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
-              have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
-                  vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
-                  (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
-                  untypedRetypePerformAt src dst vChild.val req s := fun s =>
-                untypedRetypePerformCode_eq src dst vChild.val (.ofNat 0) executingCore (.ofNat 0)
-                  req s
-              simp only [hP]
-              cases hH : req.heapAdmitted st
-              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
-                  hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
-              · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-                cases hA : untypedRetypeAdmittedAt st src dst vChild.val req
-                · simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel,
-                    dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR, hH,
-                    untypedRetypeObject_refused hA]
-                · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    untypedRetypeFromCap, hD, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
     all_goals rfl
   case untypedReset =>
     cases target
@@ -2795,5 +2710,228 @@ theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-! ## The untyped retype (WS-SX SX6.3, D9)
+
+An untyped retype carries seven argument words: seL4's six (the type, the size,
+the destination node's index and depth, the window's offset and object count)
+and the model's object id word; the last three are overflow slots 0–2 of the
+caller's IPC buffer, read at the entry and handed here as `w0`, `w1` and `w2`.
+Its destination root is extra capability 0.  Its taint step is the identity and
+its rights are checked in the classic order. -/
+
+/-- `dispatchWithCapChecked`'s untyped-retype arm, its arguments read from the
+register file `regs` through `layout` and then the overflow words `w0`–`w2`
+(`dispatchWithCapChecked_eq_retypeBy`). -/
+@[inline] def dispatchRetypeBy (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (capAddr : SeLe4n.CPtr) (xc : Nat) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) (cap : Capability) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match cap.target with
+  | .object _ =>
+    untypedRetypeFromCap tid executingCore capAddr (callerExtraCapAddr? st tid xc 0)
+      (decodeUntypedRetypeArgsBy (msgRegOfFileThenThree layout regs w0 w1 w2)) st
+  | _ => .error (.invalidCapability 0)
+
+theorem dispatchWithCapChecked_eq_retypeBy (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (h : decoded.syscallId = .untypedRetype)
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]) 7)
+    (hLen : 7 ≤ decoded.msgInfo.length) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      dispatchRetypeBy tid executingCore decoded.capAddr decoded.msgInfo.extraCaps layout regs
+        w0 w1 w2 cap st := by
+  have hDec := decodeUntypedRetypeArgs_eq_by layout regs w0 w1 w2 decoded hRegs hLen
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  simp only at h
+  subst h
+  cases target <;>
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchRetypeBy, hDec]
+  all_goals rfl
+
+/-- `dispatchRetypeBy`, refusal-carrying: the root read in continuation form
+(`callerExtraCapAddrK`), the request as words (`carveRequestWordsK`), read by
+the carve's checks and writes (`untypedRetypeAdmittedCode`,
+`untypedRetypePerformCode`), so no request is built, and the slots in
+continuation form (`resolveRetypeSlotsK`); a refusal is in the state handed in
+(`dispatchRetypeByR_eq`). -/
+@[inline] def dispatchRetypeByR (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (capAddr : SeLe4n.CPtr) (xc : Nat) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+  match cap.target with
+  | .object _ =>
+    callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun rootAddr =>
+    match decodeUntypedRetypeArgsBy (msgRegOfFileThenThree layout regs w0 w1 w2) with
+    | .error e => .error (e, st)
+    | .ok args =>
+      carveRequestWordsK st executingCore args.newType args.sizeBits (fun e => .error (e, st))
+        (fun k n dom core asid =>
+        match validateObjIdArg args.childId with
+        | .error e => .error (e.forArgumentWord UntypedRetypeArgs.childIdWord, st)
+        | .ok vChild =>
+          resolveRetypeSlotsK tid capAddr rootAddr args.nodeIndex args.nodeDepth args.nodeOffset
+            args.numObjects st (fun e => .error (e, st))
+            (fun srcCnode srcSlot dstCnode dstSlot =>
+              -- The kernel heap's refusal, answered here in the state the arm
+              -- was handed: the carve's first check.
+              if !CarveRequest.heapAdmittedW st k n then
+                .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) else
+              -- Every other refusal is read from the checks' words as well
+              -- (`untypedRetypeRefusalCode`).
+              if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
+                  k n asid then
+                .ok ((), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
+                  vChild.val k n dom core asid st)
+              else
+                .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
+                  vChild.val k n asid, st)))
+  | _ => .error (.invalidCapability 0, st)
+
+theorem dispatchRetypeByR_eq (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (capAddr : SeLe4n.CPtr) (xc : Nat) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) (cap : Capability) (st : SystemState) :
+    dispatchRetypeByR tid executingCore capAddr xc layout regs w0 w1 w2 cap st =
+      RefusalCarrying.ofKernel
+        (dispatchRetypeBy tid executingCore capAddr xc layout regs w0 w1 w2 cap) st := by
+  unfold dispatchRetypeByR
+  cases hT : cap.target with
+  | object _ =>
+    dsimp only
+    rw [callerExtraCapAddrK_eq]
+    cases hX : callerExtraCapAddr? st tid xc 0 with
+    | none => simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hX]
+    | some rootAddr =>
+    dsimp only
+    cases hD : decodeUntypedRetypeArgsBy (msgRegOfFileThenThree layout regs w0 w1 w2) with
+    | error e =>
+      simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX]
+    | ok args =>
+      dsimp only
+      rw [carveRequestWordsK_eq]
+      cases hQ : carveRequestOf? st executingCore args.newType args.sizeBits with
+      | error e =>
+        simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX, hQ]
+      | ok req =>
+        dsimp only
+        cases hV : validateObjIdArg args.childId with
+        | error e =>
+          simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX, hQ,
+            hV]
+        | ok vChild =>
+          dsimp only
+          rw [resolveRetypeSlotsK_eq]
+          cases hR : resolveRetypeSlots tid capAddr rootAddr args.nodeIndex args.nodeDepth
+              args.nodeOffset args.numObjects st with
+          | error e =>
+            simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX,
+              hQ, hV, hR]
+          | ok pr =>
+            obtain ⟨src, dst⟩ := pr
+            dsimp only
+            rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
+              untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req,
+              untypedRetypeRefusalCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
+            have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
+                vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
+                (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
+                untypedRetypePerformAt src dst vChild.val req s := fun s =>
+              untypedRetypePerformCode_eq src dst vChild.val (.ofNat 0) executingCore (.ofNat 0)
+                req s
+            simp only [hP]
+            cases hH : req.heapAdmitted st
+            · simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX,
+                hQ, hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
+            · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+              cases hA : untypedRetypeAdmittedAt st src dst vChild.val req
+              · simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel,
+                  dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX, hQ, hV, hR, hH,
+                  untypedRetypeObject_refused hA]
+              · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchRetypeBy,
+                  untypedRetypeFromCap, hT, hD, hX, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
+  | _ => simp [RefusalCarrying.ofKernel, dispatchRetypeBy, hT]
+
+/-- An untyped retype's taint step leaves the state as its arm left it. -/
+theorem applySyscallTaintAfter_untypedRetype (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .untypedRetype)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintMap)
+    (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
+      post := by
+  simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
+    syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
+    applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
+
+/-- The untyped retype's arm behind the operand check: the gate's type and
+right, then `dispatchRetypeByR`. -/
+@[inline] def retypeOperandArmR (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (capAddr : SeLe4n.CPtr) (xc : Nat) (regs : RegisterFile) (w0 w1 w2 : UInt64) :
+    Option Capability → RefusalCarrying Unit :=
+  fun operand st =>
+    match operand with
+    | none => .error (.invalidCapability 0, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .untypedRetype st cap then .error (.invalidCapability 0, st)
+        else if cap.hasRight (syscallRequiredRight .untypedRetype) then
+          dispatchRetypeByR tid executingCore capAddr xc SeLe4n.arm64DefaultLayout regs w0 w1 w2
+            cap st
+        else .error (syscallMissingRightError .untypedRetype, st)
+
+/-- `dispatchSyscallChecked` for an untyped retype whose fifth to seventh words
+are `w0`–`w2` (`dispatchRetypeCheckedR_eq`). -/
+@[inline] def dispatchRetypeCheckedR (capAddr : SeLe4n.CPtr) (regs : RegisterFile)
+    (w0 w1 w2 : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
+    (retypeOperandArmR tid executingCore capAddr xc regs w0 w1 w2)
+
+theorem dispatchRetypeCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w0 w1 w2 : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hSid : decoded.syscallId = .untypedRetype)
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++
+        #[(⟨w0⟩ : RegValue), ⟨w1⟩, ⟨w2⟩]) 7)
+    (hLen : 7 ≤ decoded.msgInfo.length) :
+    dispatchRetypeCheckedR decoded.capAddr regs w0 w1 w2 tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  have hNotYield : decoded.syscallId ≠ .yield := by
+    rw [hSid]; exact fun h => SyscallId.noConfusion h
+  have hXc : syscallExtraCapCount .untypedRetype decoded.msgInfo.extraCaps =
+      decoded.msgInfo.extraCaps := rfl
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+  intro st tcb ref _ hRef
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
+    applySyscallTaintAfter_untypedRetype st tid decoded hSid]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [retypeOperandArmR, hSid]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hType : syscallTargetAccepted .untypedRetype st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .untypedRetype st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .untypedRetype) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte,
+          Bool.false_eq_true]
+        rw [dispatchRetypeByR_eq, hXc]
+        simp only [RefusalCarrying.ofKernel]
+        rw [← dispatchWithCapChecked_eq_retypeBy ctx decoded SeLe4n.arm64DefaultLayout
+          regs w0 w1 w2 tid executingCore
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+            requiredRight := syscallRequiredRight .untypedRetype }
+          cap st hSid hRegs hLen]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte,
+          Bool.false_eq_true]
 
 end SeLe4n.Kernel

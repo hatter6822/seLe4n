@@ -2326,10 +2326,6 @@ extra capability 0** — seL4's `decodeIRQHandlerInvocation` reads
   | none => .error .truncatedMessage
   | some cptr => .ok { notificationCPtr := cptr }
 
-/-- The destination CNode an issuing invocation names (a carve's MR2, a handler
-issue's MR1): its argument capability `0`. -/
-def issuingDestinationCapNumber : UInt64 := 1
-
 /-- **`v0.35.204`: the thread a `.schedContextBind` binds is a CAPABILITY the
 caller holds, resolved through the caller's own CSpace — never a raw thread id.**
 
@@ -3071,110 +3067,9 @@ theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
     · have hB : (!cnCap.hasRight .write) = true := by simpa using hW
       rw [hB] at h; cases h
 
-/-- **WS-BP BP7.1 (`v0.36.5`): the two slots an issuing invocation names,
-resolved through the caller's own CSpace** — a carve's (`seL4_Untyped_Retype`).
-A handler issue (`seL4_IRQControl_Get`) names its destination as seL4 does since
-WS-SX SX6.3 (`resolveIssuingSlotsAt`).
-
-The *source* is the slot the syscall's own capability was resolved from — the
-caller's CSpace root, the invoked address, the root's depth, which is exactly the
-resolution `syscallResolveCap` performed — so the capability the invocation
-checks and records the derivation from is the one the caller presented.  The
-*destination* CNode (a carve's MR2) is resolved with
-`.write`, as `resolveVSpaceMapFrame` resolves its frame: issuing installs a
-capability, and installing into a CNode is writing it, so a caller can deposit
-the new capability only in a CNode it holds a writable capability to.  The
-destination slot is taken verbatim — the install primitive refuses an index its
-CNode cannot address. -/
-def resolveIssuingSlots (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState) :
-    Except KernelError (CSpaceAddr × CSpaceAddr) :=
-  match st.getTcb? callerTid with
-  | none => .error .objectNotFound
-  | some callerTcb =>
-    match lookupSlot callerTcb srcAddr st with
-    | .error f => .error (.failedLookup false f)
-    | .ok src =>
-      let dstGate : SyscallGate := {
-        callerId      := callerTid
-        cspaceRootCap := callerTcb.spaceCells[0]
-        capAddr       := dstCNode
-        requiredRight := .write
-      }
-      match syscallLookupArgumentCap issuingDestinationCapNumber dstGate st with
-      | .error e => .error e
-      | .ok (dstCap, _) =>
-        match dstCap.target with
-        | .object cnodeId =>
-          match st.getCNode? cnodeId with
-          | none => .error (.invalidCapability issuingDestinationCapNumber)
-          | some _ => .ok (src, { cnode := cnodeId, slot := dstSlot })
-        | _ => .error (.invalidCapability issuingDestinationCapNumber)
-
-/-- WS-ZA ZA5.4: `resolveIssuingSlots` in continuation form: the source slot
-through `lookupSlotK` and the destination CNode through
-`resolveCallerCapObjectK`, each handed on as words, so no slot reference, pair or
-result cell is built (`resolveIssuingSlotsK_eq`). -/
-@[inline] def resolveIssuingSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState)
-    (onErr : KernelError → α)
-    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
-  match st.getTcb? callerTid with
-  | none => onErr .objectNotFound
-  | some callerTcb =>
-    lookupSlotK callerTcb srcAddr st
-      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
-      (fun srcCnode srcSlot =>
-        resolveCallerCapObjectK callerTid dstCNode .write st
-          (KernelError.argumentCapRefusal issuingDestinationCapNumber onErr) (fun _ cnodeId =>
-          match st.getCNode? cnodeId with
-          | none => onErr (.invalidCapability issuingDestinationCapNumber)
-          | some _ => onOk srcCnode srcSlot cnodeId dstSlot))
-
-theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState)
-    (onErr : KernelError → α)
-    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
-    resolveIssuingSlotsK callerTid srcAddr dstCNode dstSlot st onErr onOk =
-      match resolveIssuingSlots callerTid srcAddr dstCNode dstSlot st with
-      | .error e => onErr e
-      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
-  unfold resolveIssuingSlotsK resolveIssuingSlots
-  cases hT : st.getTcb? callerTid with
-  | none => rfl
-  | some callerTcb =>
-    simp only []
-    rw [lookupSlotK_eq]
-    cases lookupSlot callerTcb srcAddr st with
-    | error f => simp only [LookupFault.ofWords_word]
-    | ok src =>
-      simp only []
-      rw [resolveCallerCapObjectK_eq]
-      unfold resolveCallerCapObject resolveCallerCapSlot
-      simp only [hT, syscallLookupArgumentCap, KernelError.argumentCapRefusal, syscallLookupCap,
-        syscallResolveCap, SyscallGate.lookupSlot_mk]
-      cases lookupSlot callerTcb dstCNode st with
-      | error f => rfl
-      | ok dst =>
-        simp only []
-        cases SystemState.lookupSlotCap st dst with
-        | none => rfl
-        | some dstCap =>
-          simp only []
-          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject dstCap = true
-          · simp only [hIdle, ↓reduceIte]
-          · by_cases hR : dstCap.hasRight .write = true
-            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
-              cases dstCap.target with
-              | object cnodeId =>
-                simp only []
-                cases st.getCNode? cnodeId <;> rfl
-              | _ => rfl
-            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
-
 /-- **WS-SX SX6.3 (D10): the two slots of a handler issue** (seL4's
 `decodeIRQControlInvocation`).  The *source* is the slot the invoked capability
-was resolved from (`lookupSlot` at `srcAddr`, as `resolveIssuingSlots`).  The
+was resolved from (`lookupSlot` at `srcAddr`, as `resolveRetypeSlots`).  The
 *destination* is seL4's `lookupTargetSlot`: the CNode capability the caller
 names as extra capability 0 (`rootAddr`, its address in the caller's CSpace,
 looked up as the dispatch prologue's `lookupExtraCaps` looks it up — a failed
@@ -3250,6 +3145,192 @@ theorem resolveIssuingSlotsAtK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
           simp only []
           rw [lookupSlotForCNodeOpK_eq]
           cases lookupSlotForCNodeOp false rootCap index depth st <;> rfl
+
+/-- **WS-SX SX6.3 (D9): seL4's fan-out limit** (`CONFIG_RETYPE_FAN_OUT_LIMIT`):
+the most objects one `seL4_Untyped_Retype` creates.  The model's configuration
+is one object per call; a count past it, or of none, is
+`seL4_RangeError (1, limit)`. -/
+def retypeFanOutLimit : Nat := 1
+
+/-- **WS-SX SX6.3 (D9): the destination CNode a retype's root, index and depth
+name** (seL4's `decodeUntypedInvocation`).  At depth 0 the destination is the
+root capability itself; past it, the slot `lookupTargetSlot` (`lookupSlotForCNodeOp`)
+finds under the root at `index`, read to the capability it holds.  A destination
+that is not a CNode capability — an empty root slot or target slot included — is
+`seL4_FailedLookup` (destination) `MissingCapability` with the depth as its bits
+left, seL4's answer; the walk's own refusals are its own.  No right is required
+of either: seL4's lookup checks none.  The CNode is handed on with its slot
+count. -/
+def retypeDestinationCNode (rootCap? : Option Capability) (index : SeLe4n.CPtr)
+    (depth : Nat) (st : SystemState) : Except KernelError (SeLe4n.ObjId × Nat) :=
+  let nodeCap? : Except KernelError (Option Capability) :=
+    if depth = 0 then .ok rootCap? else
+    match rootCap? with
+    | none => .error (.failedLookup false .invalidRoot)
+    | some rootCap =>
+      match lookupSlotForCNodeOp false rootCap index depth st with
+      | .error e => .error e
+      | .ok ref => .ok (SystemState.lookupSlotCap st ref)
+  match nodeCap? with
+  | .error e => .error e
+  | .ok nodeCap? =>
+    match nodeCap? with
+    | some nodeCap =>
+      match nodeCap.target with
+      | .object cnodeId =>
+        match st.getCNode? cnodeId with
+        | some cn => .ok (cnodeId, 2 ^ cn.radixWidth)
+        | none => .error (.failedLookup false (.missingCapability depth.toUInt8))
+      | _ => .error (.failedLookup false (.missingCapability depth.toUInt8))
+    | none => .error (.failedLookup false (.missingCapability depth.toUInt8))
+
+/-- **WS-SX SX6.3 (D9): the window a retype names in its destination CNode**,
+seL4's checks in its order: an offset past the last slot is
+`seL4_RangeError (0, size - 1)`; a count of none or past the fan-out limit
+`seL4_RangeError (1, retypeFanOutLimit)`; a window past the CNode's end
+`seL4_RangeError (1, size - offset)`. -/
+def retypeWindowRefusal (size offset count : Nat) : Option KernelError :=
+  if size - 1 < offset then some (.rangeError 0 (size - 1).toUInt64)
+  else if count < 1 ∨ retypeFanOutLimit < count then
+    some (.rangeError 1 retypeFanOutLimit.toUInt64)
+  else if size - offset < count then some (.rangeError 1 (size - offset).toUInt64)
+  else none
+
+/-- **WS-SX SX6.3 (D9): the two slots of a carve** (seL4's
+`decodeUntypedInvocation`).  The *source* is the slot the invoked untyped
+capability was resolved from (`lookupSlot` at `srcAddr`).  The *destination* is
+the first slot of the window: the root is the capability the caller names as
+extra capability 0 (`rootAddr`, looked up as the dispatch prologue's
+`lookupExtraCaps` looks it up — a failed walk is `seL4_FailedLookup`), the CNode
+the one the root, index and depth name (`retypeDestinationCNode`), and the slot
+the window's offset in it once the window is in range (`retypeWindowRefusal`).
+The slot's emptiness is the carve's own check (`cspaceDstRefusal`). -/
+def resolveRetypeSlots (callerTid : SeLe4n.ThreadId) (srcAddr rootAddr index : SeLe4n.CPtr)
+    (depth offset count : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match lookupSlot callerTcb srcAddr st with
+    | .error f => .error (.failedLookup false f)
+    | .ok src =>
+      match lookupSlot callerTcb rootAddr st with
+      | .error f => .error (.failedLookup false f)
+      | .ok rootRef =>
+        match retypeDestinationCNode (SystemState.lookupSlotCap st rootRef) index depth st with
+        | .error e => .error e
+        | .ok (cnodeId, size) =>
+          match retypeWindowRefusal size offset count with
+          | some e => .error e
+          | none => .ok (src, { cnode := cnodeId, slot := SeLe4n.Slot.ofNat offset })
+
+/-- `retypeDestinationCNode` in continuation form: the walk is
+`lookupSlotForCNodeOpK`'s and the CNode is handed on as words, so no slot
+reference, option or pair is built (`retypeDestinationCNodeK_eq`). -/
+@[inline] def retypeDestinationCNodeK {α : Type} (rootCap? : Option Capability)
+    (index : SeLe4n.CPtr) (depth : Nat) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → Nat → α) : α :=
+  let ofNode : Option Capability → α := fun nodeCap? =>
+    match nodeCap? with
+    | some nodeCap =>
+      match nodeCap.target with
+      | .object cnodeId =>
+        match st.getCNode? cnodeId with
+        | some cn => onOk cnodeId (2 ^ cn.radixWidth)
+        | none => onErr (.failedLookup false (.missingCapability depth.toUInt8))
+      | _ => onErr (.failedLookup false (.missingCapability depth.toUInt8))
+    | none => onErr (.failedLookup false (.missingCapability depth.toUInt8))
+  if depth = 0 then ofNode rootCap? else
+  match rootCap? with
+  | none => onErr (.failedLookup false .invalidRoot)
+  | some rootCap =>
+    lookupSlotForCNodeOpK false rootCap index depth st onErr
+      (fun cn sl => ofNode (SystemState.lookupSlotCap st { cnode := cn, slot := sl }))
+
+theorem retypeDestinationCNodeK_eq {α : Type} (rootCap? : Option Capability)
+    (index : SeLe4n.CPtr) (depth : Nat) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → Nat → α) :
+    retypeDestinationCNodeK rootCap? index depth st onErr onOk =
+      match retypeDestinationCNode rootCap? index depth st with
+      | .error e => onErr e
+      | .ok (cnodeId, size) => onOk cnodeId size := by
+  unfold retypeDestinationCNodeK retypeDestinationCNode
+  by_cases hD : depth = 0
+  · simp only [hD, ↓reduceIte]
+    rcases rootCap? with _ | cap
+    · rfl
+    · simp only []
+      cases hT : cap.target <;> simp only [hT]
+      rename_i cnodeId
+      cases st.getCNode? cnodeId <;> rfl
+  · simp only [hD, ↓reduceIte]
+    rcases rootCap? with _ | rootCap
+    · rfl
+    · simp only []
+      rw [lookupSlotForCNodeOpK_eq]
+      cases lookupSlotForCNodeOp false rootCap index depth st with
+      | error e => rfl
+      | ok ref =>
+        simp only []
+        rcases SystemState.lookupSlotCap st ref with _ | cap
+        · rfl
+        · simp only []
+          cases hT : cap.target <;> simp only [hT]
+          rename_i cnodeId
+          cases st.getCNode? cnodeId <;> rfl
+
+/-- `resolveRetypeSlots` in continuation form: the walks are `lookupSlotK`'s and
+`retypeDestinationCNodeK`'s, each slot handed on as words, so no slot reference
+or pair is built (`resolveRetypeSlotsK_eq`). -/
+@[inline] def resolveRetypeSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr rootAddr index : SeLe4n.CPtr) (depth offset count : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    lookupSlotK callerTcb srcAddr st
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun srcCnode srcSlot =>
+        lookupSlotK callerTcb rootAddr st
+          (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+          (fun rCn rSlot =>
+            retypeDestinationCNodeK
+              (SystemState.lookupSlotCap st { cnode := rCn, slot := rSlot }) index depth st onErr
+              (fun cnodeId size =>
+                match retypeWindowRefusal size offset count with
+                | some e => onErr e
+                | none => onOk srcCnode srcSlot cnodeId (SeLe4n.Slot.ofNat offset))))
+
+theorem resolveRetypeSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr rootAddr index : SeLe4n.CPtr) (depth offset count : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveRetypeSlotsK callerTid srcAddr rootAddr index depth offset count st onErr onOk =
+      match resolveRetypeSlots callerTid srcAddr rootAddr index depth offset count st with
+      | .error e => onErr e
+      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
+  unfold resolveRetypeSlotsK resolveRetypeSlots
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    simp only []
+    rw [lookupSlotK_eq]
+    cases lookupSlot callerTcb srcAddr st with
+    | error f => simp only [LookupFault.ofWords_word]
+    | ok src =>
+      simp only []
+      rw [lookupSlotK_eq]
+      cases lookupSlot callerTcb rootAddr st with
+      | error f => simp only [LookupFault.ofWords_word]
+      | ok rootRef =>
+        simp only []
+        rw [retypeDestinationCNodeK_eq]
+        cases retypeDestinationCNode (SystemState.lookupSlotCap st rootRef) index depth st with
+        | error e => rfl
+        | ok p =>
+          obtain ⟨cnodeId, size⟩ := p
+          simp only []
+          cases retypeWindowRefusal size offset count <;> rfl
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14: the
 carve a decoded `.untypedRetype` requests.**  A kind of fixed size — a frame, a
@@ -3432,16 +3513,24 @@ theorem carveRequestWordsK_eq {α : Type} (st : SystemState) (executingCore : Co
 `.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
 object kind since WS-ZA ZA5.4 part 14.
 
-The arm's decode of the message registers (`args?`), then the carve request
-(`carveRequestOf?`: each kind at its size bounds, a VSpace root under a fresh
-ASID and a thread in the creating core's domain — anything else
-`.invalidArgument`).  The
-child id is a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
-the sentinel — before anything is resolved.  Then the two slots, then
-`untypedRetypeObject`, whose own guards decide everything else. -/
+The destination root first, the caller's extra capability 0 (`root?`; none is
+`seL4_TruncatedMessage`, checked with the length and before the type as seL4's
+`decodeUntypedInvocation` checks it — WS-SX SX6.3, D9), then the arm's decode of
+the message registers (`args?`), then the carve request (`carveRequestOf?`: each kind at its size
+bounds, a VSpace root under a fresh ASID and a thread in the creating core's
+domain — anything else `.invalidArgument`).  The child id is a raw operand, so it
+passes `validateObjIdArg` — no reserved idle object and not the sentinel —
+before anything is resolved.  Then the two slots (`resolveRetypeSlots`: the
+invoked capability's own slot, and the window's first slot in the CNode the root,
+index and depth name, in range), then `untypedRetypeObject`, whose own guards
+decide everything else. -/
 def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (srcAddr : SeLe4n.CPtr) (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
+    (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
+    (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
   fun st =>
+    match root? with
+    | none => .error .truncatedMessage
+    | some rootAddr =>
     match args? with
     | .error e => .error e
     | .ok args =>
@@ -3451,9 +3540,19 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.Co
         match validateObjIdArg args.childId with
         | .error e => .error (e.forArgumentWord UntypedRetypeArgs.childIdWord)
         | .ok vChild =>
-          match resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+          match resolveRetypeSlots tid srcAddr rootAddr args.nodeIndex args.nodeDepth
+              args.nodeOffset args.numObjects st with
           | .error e => .error e
           | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
+
+/-- A retype whose message is short is `seL4_TruncatedMessage` whether or not it
+names its root: seL4 answers both with the one error. -/
+theorem untypedRetypeFromCap_truncated (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
+    (st : SystemState) :
+    untypedRetypeFromCap tid executingCore srcAddr root? (.error .truncatedMessage) st =
+      .error .truncatedMessage := by
+  cases root? <;> rfl
 
 /-- **WS-ZA ZA6.32: the live `.irqControlGet` arm's transition** — seL4's
 `seL4_IRQControl_Get`.  The decode, then the destination root, the caller's
@@ -3559,17 +3658,23 @@ decode, the carve request, the validated child id, the resolved slots, and the
 carve.  The case analysis has one owner, so the invariant and non-interference
 proofs read these equations. -/
 theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
-    (srcAddr : SeLe4n.CPtr)
+    (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
-    (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
-    ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
-      (src dst : CSpaceAddr),
-      args? = .ok args ∧
+    (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    ∃ (args : UntypedRetypeArgs) (rootAddr : SeLe4n.CPtr) (req : CarveRequest)
+      (vChild : SeLe4n.ValidObjId) (src dst : CSpaceAddr),
+      args? = .ok args ∧ root? = some rootAddr ∧
       carveRequestOf? st ec args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
-      resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st = .ok (src, dst) ∧
+      resolveRetypeSlots tid srcAddr rootAddr args.nodeIndex args.nodeDepth args.nodeOffset
+        args.numObjects st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
   unfold untypedRetypeFromCap at h
+  cases hRt : root? with
+  | none => rw [hRt] at h; cases h
+  | some rootAddr =>
+  rw [hRt] at h
+  simp only at h
   cases hD : args? with
   | error e => rw [hD] at h; cases h
   | ok args =>
@@ -3585,26 +3690,26 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
       | ok vChild =>
         rw [hV] at h
         simp only at h
-        cases hR : resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+        cases hR : resolveRetypeSlots tid srcAddr rootAddr args.nodeIndex args.nodeDepth
+            args.nodeOffset args.numObjects st with
         | error e => rw [hR] at h; cases h
         | ok pr =>
           obtain ⟨src, dst⟩ := pr
           rw [hR] at h
-          exact ⟨args, req, vChild, src, dst, by first | exact hD | rfl,
-            by first | exact hQ | rfl,
-            by first | exact hV | rfl, by first | exact hR | rfl, h⟩
+          exact ⟨args, rootAddr, req, vChild, src, dst, rfl, rfl, hQ, hV, hR, h⟩
 
 /-- **WS-ZA ZA5.4 part 17: the `.untypedRetype` arm preserves the capability
 bundle** — the carve keeps every conjunct
 (`untypedRetypeObject_preserves_capabilityInvariantBundle`) of whatever request
 the decode built. -/
 theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle (tid : SeLe4n.ThreadId)
-    (ec : Concurrency.CoreId) (srcAddr : SeLe4n.CPtr)
+    (ec : Concurrency.CoreId) (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
     (hInv : capabilityInvariantBundle st)
-    (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
+    (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, req, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
+  obtain ⟨_, _, req, _, _, _, _, _, _, _, _, hCarve⟩ :=
+    untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
   exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st' hInv hCarve
 
 /-- WS-ZA ZA5.4: **`.untypedReset` on the invoked slot.**  The free index is in
@@ -4206,13 +4311,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype` — the only path by
   -- which an object comes to exist on a live state (since WS-ZA ZA5.4 part 14
   -- every kind, as in seL4): the caller presents an untyped capability, names a
-  -- fresh object id and an empty slot in a CNode it can write, and receives a
-  -- capability to the object carved at that capability's free index.
+  -- fresh object id, a destination root as extra capability 0 and a window in
+  -- the CNode under it (WS-SX SX6.3, D9), and receives a capability to the
+  -- object carved at that capability's free index.
   -- `.vspaceMap` maps a carved frame and no other page.
   | .untypedRetype =>
     some <| match cap.target with
-    | .object _ =>
-        untypedRetypeFromCap tid executingCore decoded.capAddr (decodeUntypedRetypeArgs decoded)
+    | .object _ => fun st =>
+        untypedRetypeFromCap tid executingCore decoded.capAddr
+          (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
+          (decodeUntypedRetypeArgs decoded) st
     | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap`.  The free index is the
   -- invoked capability's, so the arm resets through the invoked slot
@@ -4878,7 +4986,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ st st' hStep
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ _ st st' hStep
       exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case untypedReset =>
@@ -6716,7 +6824,8 @@ theorem dispatchWithCapChecked_vspaceUnmap_delegates
 /-- WS-ZA ZA5.4 part 14: the live `.untypedRetype` arm *is* the carve — every
 kernel object is made this way — at the invoking thread's executing core, whose
 domain and affinity a carved thread takes, and the untyped the capability names.
-The arm's operands are the decoded message registers. -/
+The arm's operands are the decoded message registers and the destination root,
+extra capability 0. -/
 theorem dispatchWithCapChecked_untypedRetype_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
@@ -6724,6 +6833,7 @@ theorem dispatchWithCapChecked_untypedRetype_delegates
     (hTarget : cap.target = .object untypedId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       untypedRetypeFromCap tid executingCore decoded.capAddr
+        (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
         (decodeUntypedRetypeArgs decoded) st := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
@@ -8732,6 +8842,7 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object untypedId →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           untypedRetypeFromCap tid executingCore decoded.capAddr
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
             (decodeUntypedRetypeArgs decoded) st
   | .untypedReset =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)

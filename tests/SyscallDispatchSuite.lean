@@ -1933,17 +1933,22 @@ private def sd061_every_kind_is_carved : IO Unit := do
              (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
              (SeLe4n.Slot.ofNat 2, capTo frObj [.read, .retype]),
              (SeLe4n.Slot.ofNat 3, capTo utObj [.read, .write])]))) ] }
-  let st : SystemState := builder.buildChecked
+  -- The destination root, the CSpace root at slot 1, is extra capability 0.
+  let st : SystemState := withSenderCapAddrs builder.buildChecked caller #[SeLe4n.CPtr.ofNat 1]
+  -- seL4's six words (type, size, node index, node depth 0 — the root itself —
+  -- the window's offset and one object) and the model's object id word.
   let carve (utSlot typeWord child dstSlot : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat utSlot,
-      msgInfo := { length := 4, extraCaps := 0, label := 0 },
+      msgInfo := { length := 7, extraCaps := 1, label := 0 },
       syscallId := .untypedRetype,
-      msgRegs := #[SeLe4n.RegValue.ofNat typeWord, SeLe4n.RegValue.ofNat child,
-                   SeLe4n.RegValue.ofNat 1, SeLe4n.RegValue.ofNat dstSlot],
-      inlineCount := 4, overflowCount := 0 }
+      msgRegs := #[SeLe4n.RegValue.ofNat (typeWord % 256), SeLe4n.RegValue.ofNat (typeWord / 256),
+                   SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 0,
+                   SeLe4n.RegValue.ofNat dstSlot, SeLe4n.RegValue.ofNat 1,
+                   SeLe4n.RegValue.ofNat child],
+      inlineCount := 4, overflowCount := 3 }
   let kindAt (s : SystemState) (o : Nat) : Option KernelObjectType :=
     (s.getObject? (SeLe4n.ObjId.ofNat o)).map KernelObject.objectType
-  -- The type word is `tag ||| sizeBits <<< 8`.
+  -- Each kind as `tag + sizeBits * 256`, split into the type and size words.
   let kinds : List (String × Nat × KernelObjectType) :=
     [("tcb", 0, .tcb), ("endpoint", 1, .endpoint), ("notification", 2, .notification),
      ("cnode", 3 + 1 * 256, .cnode), ("schedContext", 6 + 7 * 256, .schedContext),
@@ -2005,14 +2010,15 @@ private def sd062_carve_checks_authority_before_child : IO Unit := do
             [(SeLe4n.Slot.ofNat 0, capTo utObj [.read, .write, .retype]),
              (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
              (SeLe4n.Slot.ofNat 3, capTo utObj [.read, .write])]))) ] }
-  let st : SystemState := builder.buildChecked
+  let st : SystemState := withSenderCapAddrs builder.buildChecked caller #[SeLe4n.CPtr.ofNat 1]
   let carve (utSlot child : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat utSlot,
-      msgInfo := { length := 4, extraCaps := 0, label := 0 },
+      msgInfo := { length := 7, extraCaps := 1, label := 0 },
       syscallId := .untypedRetype,
-      msgRegs := #[SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat child,
-                   SeLe4n.RegValue.ofNat 1, SeLe4n.RegValue.ofNat 4],
-      inlineCount := 4, overflowCount := 0 }
+      msgRegs := #[SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 0,
+                   SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 4, SeLe4n.RegValue.ofNat 1,
+                   SeLe4n.RegValue.ofNat child],
+      inlineCount := 4, overflowCount := 3 }
   let isIllegalAuthority : Except KernelError (Unit × SystemState) → Bool
     | .error .illegalAuthority => true
     | _ => false
@@ -2563,13 +2569,34 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
         (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0
           (.ok { notificationCPtr := cptr w }) st) == some 1)
         "an IRQ handler's empty notification argument is refused invalidCapability 1"
-  -- An issue's destination CNode: an endpoint capability (slot 0), an empty slot.
+  -- A retype's destination (WS-SX SX6.3, D9, seL4's `decodeUntypedInvocation`):
+  -- the root is extra capability 0 and, at depth 0, the destination CNode is
+  -- the root capability itself; a root that is no CNode capability — the
+  -- endpoint capability at slot 0, the empty slot 9 — is `failedLookup`
+  -- `missingCapability` with the depth as its bits left, on both forms.
+  let retypeAt (root depth offset count : Nat) :=
+    resolveRetypeSlots caller (cptr 3) (cptr root) (cptr 0) depth offset count st
+  let retypeAtK (root depth offset count : Nat) : Option (Option KernelError) :=
+    resolveRetypeSlotsK caller (cptr 3) (cptr root) (cptr 0) depth offset count st
+      (fun e => some (some e)) (fun _ _ c sl => if c == cnId && sl == SeLe4n.Slot.ofNat 5
+        then some none else none)
   for (w, what) in [(0, "wrong_kind"), (9, "empty")] do
-    expect s!"argcap_issuing_destination_{what}"
-      (capNum (resolveIssuingSlots caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st) == some 1 &&
-       kNum (resolveIssuingSlotsK caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st some
-         (fun _ _ _ _ => none)) == some 1)
-      "an issue's destination CNode argument is refused invalidCapability 1 on the spec and K forms"
+    expect s!"retype_destination_{what}"
+      ((match retypeAt w 0 5 1 with
+        | .error (.failedLookup false (.missingCapability 0)) => true | _ => false) &&
+       retypeAtK w 0 5 1 == some (some (.failedLookup false (.missingCapability 0))))
+      "a retype's destination that is no CNode capability is failedLookup missingCapability"
+  expect "retype_destination_window"
+    ((match retypeAt 3 0 5 1 with
+      | .ok (_, dst) => dst.cnode == cnId && dst.slot == SeLe4n.Slot.ofNat 5
+      | .error _ => false) && retypeAtK 3 0 5 1 == some none)
+    "a retype's destination is the window's offset in the CNode the root names"
+  expect "retype_window_refusals"
+    ((match retypeAt 3 0 16 1 with | .error (.rangeError 0 15) => true | _ => false) &&
+     (match retypeAt 3 0 5 0 with | .error (.rangeError 1 1) => true | _ => false) &&
+     (match retypeAt 3 0 5 2 with | .error (.rangeError 1 1) => true | _ => false) &&
+     retypeAtK 3 0 16 1 == some (some (.rangeError 0 15)))
+    "an offset past the CNode is rangeError 0 and a count outside the fan-out rangeError 1"
   -- A handler issue's destination (WS-SX SX6.3, D10): the root CNode is extra
   -- capability 0 and the slot its index and depth (seL4's `lookupTargetSlot`):
   -- the CNode capability at slot 3 names slot 5 by index 5 at depth 4; a root
