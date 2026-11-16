@@ -1404,6 +1404,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
+  -- The per-core TLB replaced, the form the busy-reply cancel's TLB frame is
+  -- stated over (`cancelReplyHolder_withPerCoreTlb`,
+  -- `tlbUndoFillOnCore_fill_of_withPerCoreTlb`): a proof device, run by no
+  -- seam.
+  , `SeLe4n.Model.SystemState.withPerCoreTlb
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
