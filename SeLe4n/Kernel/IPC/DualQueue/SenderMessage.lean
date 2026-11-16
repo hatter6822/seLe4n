@@ -221,6 +221,97 @@ theorem senderExtraCapAddrs_getElem?_zero {st : SystemState} {tcb : TCB} {count 
       | none => simp [List.mapM_cons, h0, hr] at ha
       | some l => simp [List.mapM_cons, h0, hr] at ha; rw [ha]
 
+/-- **One extra capability an invocation names, looked up** (seL4's
+`lookupCapAndSlot` inside `lookupExtraCaps`): the slot the address resolves to
+in the caller's CSpace and the capability it holds, `none` for an empty slot
+(seL4's null capability, which the invocation's decode then refuses as the
+wrong kind).  A failed lookup answers the address and its lookup fault, which
+the entry raises as `CapFault(cptr, false)`, the send phase. -/
+def lookupExtraCapsOf (st : SystemState) (tcb : TCB) :
+    List SeLe4n.CPtr → Except (SeLe4n.CPtr × LookupFault) (List (SlotRef × Option Capability))
+  | [] => .ok []
+  | cptr :: rest =>
+    match lookupSlot tcb cptr st with
+    | .error f => .error (cptr, f)
+    | .ok ref =>
+      match lookupExtraCapsOf st tcb rest with
+      | .error e => .error e
+      | .ok refs => .ok ((ref, st.lookupSlotCap ref) :: refs)
+
+/-- WS-SX SX6.1: **seL4's `lookupExtraCaps`** (`tcb.c`), run at decode for an
+invocation: the first `count` addresses of the caller's IPC buffer
+`caps_or_badges` (`senderExtraCapAddrs`, at most `maxExtraCaps`, none where the
+buffer does not resolve, as seL4's null buffer names none), each looked up in
+the caller's CSpace (`lookupExtraCapsOf`).  IPC transfers still look their
+capabilities up at the rendezvous (`resolveExtraCaps`, seL4's `thread.c`). -/
+def lookupExtraCaps (st : SystemState) (tcb : TCB) (count : Nat) :
+    Except (SeLe4n.CPtr × LookupFault) (List (SlotRef × Option Capability)) :=
+  lookupExtraCapsOf st tcb (senderExtraCapAddrs st tcb count).toList
+
+/-- A looked-up list has one entry per address. -/
+theorem lookupExtraCapsOf_length {st : SystemState} {tcb : TCB} :
+    ∀ {addrs : List SeLe4n.CPtr} {refs : List (SlotRef × Option Capability)},
+      lookupExtraCapsOf st tcb addrs = .ok refs → refs.length = addrs.length
+  | [], refs, h => by simp only [lookupExtraCapsOf, Except.ok.injEq] at h; subst h; rfl
+  | cptr :: rest, refs, h => by
+    unfold lookupExtraCapsOf at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · next refs' hR =>
+        simp only [Except.ok.injEq] at h; subst h
+        simp only [List.length_cons, lookupExtraCapsOf_length hR]
+
+/-- Each entry is the slot its address resolves to, and that slot's capability. -/
+theorem lookupExtraCapsOf_getElem? {st : SystemState} {tcb : TCB} :
+    ∀ {addrs : List SeLe4n.CPtr} {refs : List (SlotRef × Option Capability)} {i : Nat}
+      {cptr : SeLe4n.CPtr},
+      lookupExtraCapsOf st tcb addrs = .ok refs → addrs[i]? = some cptr →
+      ∃ ref, lookupSlot tcb cptr st = .ok ref ∧ refs[i]? = some (ref, st.lookupSlotCap ref)
+  | [], _, _, _, _, h => by simp at h
+  | c :: rest, refs, i, cptr, h, hi => by
+    unfold lookupExtraCapsOf at h
+    split at h
+    · cases h
+    · next ref hL =>
+      split at h
+      · cases h
+      · next refs' hR =>
+        simp only [Except.ok.injEq] at h; subst h
+        cases i with
+        | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi
+          exact ⟨ref, hL, rfl⟩
+        | succ j =>
+          simp only [List.getElem?_cons_succ] at hi ⊢
+          exact lookupExtraCapsOf_getElem? hR hi
+
+/-- A failed lookup names an address of the list and its fault. -/
+theorem lookupExtraCapsOf_error {st : SystemState} {tcb : TCB} :
+    ∀ {addrs : List SeLe4n.CPtr} {cptr : SeLe4n.CPtr} {f : LookupFault},
+      lookupExtraCapsOf st tcb addrs = .error (cptr, f) →
+      cptr ∈ addrs ∧ lookupSlot tcb cptr st = .error f
+  | [], _, _, h => by simp [lookupExtraCapsOf] at h
+  | c :: rest, cptr, f, h => by
+    unfold lookupExtraCapsOf at h
+    split at h
+    · next f' hL =>
+      simp only [Except.error.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨List.mem_cons_self .., hL⟩
+    · split at h
+      · next e hR =>
+        simp only [Except.error.injEq] at h; subst h
+        obtain ⟨hm, hf⟩ := lookupExtraCapsOf_error hR
+        exact ⟨List.mem_cons_of_mem _ hm, hf⟩
+      · cases h
+
+/-- A frame that names no extra capability looks none up. -/
+theorem lookupExtraCaps_zero (st : SystemState) (tcb : TCB) :
+    lookupExtraCaps st tcb 0 = .ok [] := by
+  unfold lookupExtraCaps; rw [senderExtraCapAddrs_zero]; rfl
+
 /-- WS-ZA ZA4.7: **the capabilities a sender's frame asks to transfer**, as the
 CSpace root capability and the addresses it resolves (at 64 bits) -- or
 `none` when it transfers nothing: no grant right, a frame that does not decode,
