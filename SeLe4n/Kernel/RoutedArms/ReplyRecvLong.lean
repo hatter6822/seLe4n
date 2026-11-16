@@ -15,8 +15,8 @@ import SeLe4n.Kernel.RoutedArms.ReplyRecv
 
 The routed entry's `.replyRecvLong` arm (`syscallEntryCheckedK`): a
 reply-receive of more than the inline words, as its own function, read and
-filled as the long reply's (`replyRecvLongRoutedArm`): slot 0 and the next
-page's first slot read, the reply-receive dispatched through its long arm
+filled as the long reply's (`replyRecvLongRoutedArm`): slot 0 read, the
+reply-receive dispatched through its long arm
 (`replyRecvLongOperandArmThenTaintR`) on the state it is handed.  The
 replier's TCB is read here, off the state the arm is handed.
 
@@ -29,7 +29,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **The long reply-receive arm**: slot 0 and the next page's first slot read, then the
+/-- **The long reply-receive arm**: slot 0 read, then the
 reply-receive's operand dispatch on the state it is handed; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
@@ -40,18 +40,14 @@ apart, a result under the first. -/
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
-        (fun _ =>
-          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
-            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
-            (fun _ => dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+        (fun _ => dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))
                   st entryReportGeneral (entryReportPushOk 1)
                   (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
                     (entryReportPushErrorW 1)
                     (entryReportPushLookupAtW (replyRecvReplyAddr tcb.registerContext).word))
-                  entryReportLookup entryReportLookupAtW))
+                  entryReportLookup entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

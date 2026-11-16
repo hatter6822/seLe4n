@@ -1820,8 +1820,9 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let rtcb ← match st2.getTcb? receiver with
     | some t => pure t
     | none => throw <| IO.userError "chain14: receiver TCB not found"
-  let badgeWordPa := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr? st2 rtcb
-    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) true
+  let badgeWordPa := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st2
+    (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer true st2 rtcb)
+    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0)
   expect "chain14: the unwrapped badge is written to caps_or_badges[0]"
     (match badgeWordPa with
      | some pa => (SeLe4n.Testing.pendingWrites st2).contains (.storeUserWord pa unwrapBadge.word)
@@ -2451,7 +2452,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   let bufferPA : Nat := 0x40000
   let bufferWord (i : Nat) : Option Nat :=
     let ob := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord
-    let cb := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0
+    let cb := ob + SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0
     if ob ≤ i ∧ i - ob < overflowWords.length then overflowWords[i - ob]?
     else if cb ≤ i ∧ i - cb < extraCapWords.length then extraCapWords[i - cb]?
     else none
@@ -2492,6 +2493,10 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
     |>.withRunnable []
     |>.withCurrent (some tid)
+  -- WS-SX SX6.6: the buffer is found through the frame capability in the
+  -- thread's buffer slot (seL4's `lookupIPCBuffer`).
+  if mapsBuffer then
+    builder := builder.withIpcBufferFrame tid ⟨503⟩ (SeLe4n.PAddr.ofNat bufferPA)
   -- Add remaining extra objects (skip first which was added as target)
   for (oid, obj) in extraObjects.tail do
     builder := builder.withObject oid obj

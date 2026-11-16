@@ -792,8 +792,8 @@ theorem decodeSyscallArgsFromState_syscallId_eq
 
 /-- AK4-A.5 (NI): The decode wrapper's read scope on `SystemState` is
     exclusively what `ipcBufferReadMr` consults for each `tid`. If two
-    states agree on the caller's TCB (via `tid.toObjId`), the caller's
-    VSpaceRoot object, the full memory function and the synced words, the decode result
+    states agree on the caller's TCB (via `tid.toObjId`), the frame its
+    buffer slot names, the full memory function and the synced words, the decode result
     is identical.
 
     This is the top-level NI witness for Phase AK4 — it lifts the
@@ -805,11 +805,12 @@ theorem decodeSyscallArgsFromState_reads_only_caller
     (st st' : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
     (hTcb  : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?)
-    (hVs   : ∀ vs : SeLe4n.ObjId,
+    (hFrame : ∀ fr : SeLe4n.ObjId,
               (st.objects[tid.toObjId]?).bind
-                 (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
-                 = some vs →
-              st'.objects[vs]? = st.objects[vs]?)
+                 (fun o => match o with
+                   | .tcb t => some (TCB.spaceCellObject t.spaceCells[2]) | _ => none)
+                 = some fr →
+              st'.objects[fr]? = st.objects[fr]?)
     (hMem  : st'.machine.memory = st.machine.memory)
     (hBytes : st'.machine.entryWordBytes = st.machine.entryWordBytes)
     (hCount : st'.machine.entryWordCount = st.machine.entryWordCount) :
@@ -824,7 +825,7 @@ theorem decodeSyscallArgsFromState_reads_only_caller
         = SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid i := by
     intro i
     exact SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb
-            st st' tid i hTcb hVs hMem hBytes hCount
+            st st' tid i hTcb hFrame hMem hBytes hCount
   have hWord : readOverflowWord st' tid = readOverflowWord st tid := by
     funext i; simp only [readOverflowWord, hRead]
   unfold decodeSyscallArgsFromState

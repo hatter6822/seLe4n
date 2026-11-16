@@ -979,7 +979,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def capTransferInertW[^\n]*(\n([ \t][^
 run_negative_check "INVARIANT" rg -n 'decodeExtraCapAddrs' SeLe4n
 # The IPC buffer is seL4's seL4_IPCBuffer: a tag word, then msg[0..120].
 run_check "INVARIANT" rg -n '^def ipcBufferOverflowBaseWord : Nat := 1 \+ 4$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcBufferSlotAddr[^\n]*\n[^\n]*ipcBufferOverflowBaseWord \+ idx" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def ipcBufferWordAt[^\n]*\n[^\n]*ipcBufferOverflowBaseWord \+ idx" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
 # The label is seL4's 52 bits, and an error's word is shifted as a machine word.
 run_check "INVARIANT" rg -n '^def maxLabel : Nat := \(1 <<< 52\) - 1$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def errorLabelWord \(e : KernelError\) : UInt64 := \(errorLabel e\)\.toUInt64 <<< 12$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
@@ -6769,11 +6769,15 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks($|[ (
 # walks no user translation and fills no TLB entry.
 run_negative_check "INVARIANT" rg -n 'tlbFillIpcBuffer' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingEntry.lean SeLe4n/Kernel/RoutedArms
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
-# The page-granular IPC-buffer translation the fill rests on: the read and the
-# fill must resolve through ONE page computation, not two copies.
+# WS-SX SX6.6: every IPC-buffer read finds the buffer as seL4's lookupIPCBuffer
+# does, through the frame capability in the thread's buffer slot: a device
+# frame is refused, a receiver needs `.write` and a sender `.read`, and no
+# buffer word is translated through the thread's address space.
 run_check "INVARIANT" rg -n '^def VAddr.pageBase($|[ ({:\[\]])' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^def ipcBufferSlotPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lookupIPCBuffer[^\n]*(\n([ \t][^\n]*)?)*bufferFrameBase\? st isReceiver tcb\.spaceCells\[2\] tcb\.ipcBuffer" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def bufferFrameBase\?[^\n]*(\n([ \t][^\n]*)?)*if !f\.isDevice && cap\.rights\.mem \(if isReceiver then \.write else \.read\) then" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcBufferReadMr[^\n]*(\n([ \t][^\n]*)?)*match lookupIPCBuffer false st tcb with" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_negative_check "INVARIANT" rg -n 'getVSpaceRoot\?|root\.lookup|ipcBufferSlotPage|firstPageSlots|overflowSecondRead' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 # WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
@@ -9217,12 +9221,14 @@ run_check "INVARIANT" rg -n 'restoreTargetAt st3 0\)\.deliveredFrame\?' tests/Sy
 run_check "INVARIANT" rg -n '11 CONTROL: \.\.\.and the waiter.s core resumes no badge' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 # WS-BP BP7.8: message registers past the fourth cross the kernel in both
-# directions, through ONE resolver; the write requires a writable mapping, the
+# directions, through ONE resolver; the write requires a writable buffer frame
+# capability (`lookupIPCBuffer` with `isReceiver`), the
 # delivery records user-word stores and counts them in the frame's length, both
 # fault seams drain the ledger, and the HAL never stores a user word into the
 # table pool.
 run_check "INVARIANT" rg -n '^@\[inline\] def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n 'st\.machine\.addrInRange pa && \(!needWrite \|\| perms\.write\)' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n 'if pa\.toNat % 8 == 0 && st\.machine\.addrInRange pa then some pa else none' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^    ipcBufferWordPAddrIn\? st \(lookupIPCBuffer isReceiver st tcb\) idx$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
 run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean

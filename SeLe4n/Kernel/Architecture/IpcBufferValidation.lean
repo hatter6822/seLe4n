@@ -79,8 +79,7 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
         -- Step 5: Mapping check via VSpaceRoot.lookup, at the page holding
         -- the buffer: the mappings are keyed by page base
         -- (`VAddr.pageBase`), so a 512-aligned buffer inside a page is
-        -- found through its page, as the overflow reads find it
-        -- (`ipcBufferSlotPage`).
+        -- found through its page.
         match root.lookup addr.pageBase with
         | some (paddr, perms) =>
           -- Step 6: Write permission check

@@ -638,6 +638,9 @@ private def carveScenario : SystemState :=
             ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
       |>.withRunnable [carveOwner]
       |>.build)
+  -- The owner's IPC buffer names the grant-bearing root as its extra
+  -- capability 0, the source root of every copy (`decodeCopyAt`).
+  let st := SeLe4n.Testing.withSenderCapAddrs st carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant]
   let m1 := SeLe4n.writeMem st.machine (SeLe4n.PAddr.ofNat carveUtBase) 0xAB
   { st with machine := SeLe4n.writeMem m1 (SeLe4n.PAddr.ofNat carveDevBase) 0xCD }
 
@@ -813,17 +816,20 @@ private def decodeRevoke (slot : Nat) : SyscallDecodeResult :=
   , syscallId := .cspaceRevoke
   , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
 
-/-- `.cspaceCopy` of `src` to `dst` in the owner's CSpace root, invoked on the
-grant-bearing root capability, which is also the source root; both indices are
-resolved at the root's `radix` bits (it has no guard), and the copy's rights
-mask is every right (seL4's `seL4_AllRights`), so the copy keeps the source's. -/
+/-- `.cspaceCopy` of `src` to `dst` in the owner's CSpace root, in seL4's
+order (`destIndex`, `destDepth`, `srcIndex`, `srcDepth`, rights), invoked on the
+grant-bearing root capability, which is also the source root, the invocation's
+extra capability 0 (named in the owner's IPC buffer, `carveScenario`); both
+indices are resolved at the root's `radix` bits (it has no guard), and the
+copy's rights mask is every right (seL4's `seL4_AllRights`), so the copy keeps
+the source's. -/
 private def decodeCopyAt (radix src dst : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnGrant
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 5, extraCaps := 1, label := 0 }
   , syscallId := .cspaceCopy
-  , msgRegs   := #[SeLe4n.RegValue.ofNat dst, SeLe4n.RegValue.ofNat slotOwnCnGrant,
-                   SeLe4n.RegValue.ofNat src,
-                   SeLe4n.RegValue.ofNat (radix + radix * 256 + 31 * 65536)] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat dst, SeLe4n.RegValue.ofNat radix,
+                   SeLe4n.RegValue.ofNat src, SeLe4n.RegValue.ofNat radix,
+                   SeLe4n.RegValue.ofNat 31] }
 
 /-- `decodeCopyAt` in the 4-bit root every scenario but the table scenario
 uses. -/

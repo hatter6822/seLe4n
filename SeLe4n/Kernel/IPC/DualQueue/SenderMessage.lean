@@ -184,8 +184,9 @@ def blockedSenderMessage (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TC
 `getExtraCPtr`): word `i` of its IPC buffer's `caps_or_badges`, read where the
 kernel may read the buffer; `none` where the buffer does not resolve. -/
 @[inline] def senderExtraCapAddr? (st : SystemState) (tcb : TCB) (i : Nat) : Option SeLe4n.CPtr :=
-  (Architecture.IpcBufferRead.ipcBufferWordPAddr? st tcb
-    (Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i) false).map
+  (Architecture.IpcBufferRead.ipcBufferWordPAddrIn? st
+    (Architecture.IpcBufferRead.lookupIPCBuffer false st tcb)
+    (Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i)).map
     fun pa => SeLe4n.CPtr.ofWord (Architecture.IpcBufferRead.userWordAt st.machine pa)
 
 /-- **The extra capability addresses a sender names** (seL4's

@@ -549,24 +549,29 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     | none => .error .objectNotFound
 
 /-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
-live `ipcBufferReadMr` reads it (slot bound, the thread's VSpace root, the page
-the slot resolves through, then the synced word or memory), every failure the live decode's
-`.invalidMessageInfo`. -/
+live `ipcBufferReadMr` reads it (slot bound, the frame the thread's buffer slot
+names as `lookupIPCBuffer` finds it, then the synced word or memory), every
+failure the live decode's `.invalidMessageInfo`. -/
 private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (idx : Nat) : Except KernelError UInt64 :=
   if idx ≥ Architecture.IpcBufferRead.maxOverflowSlots then .error .invalidMessageInfo else
   match frozenLookupTcb st tid with
   | none => .error .invalidMessageInfo
   | some tcb =>
-    match st.getObject? tcb.vspaceRoot with
-    | some (.vspaceRoot root) =>
-      match root.mappings.get? (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
-      | some (paddr, _) =>
-          .ok (Architecture.IpcBufferRead.userWordAt st.machine
-            (SeLe4n.PAddr.ofNat (paddr.toNat +
-              (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
-      | none => .error .invalidMessageInfo
-    | _ => .error .invalidMessageInfo
+    match tcb.spaceCells[2] with
+    | some cap =>
+      match cap.target with
+      | .object id =>
+        match st.getObject? id with
+        | some (.frame f) =>
+          if !f.isDevice && cap.rights.mem .read then
+            .ok (Architecture.IpcBufferRead.userWordAt st.machine
+              (Architecture.IpcBufferRead.ipcBufferWordAt
+                (SeLe4n.PAddr.ofNat (f.base.toNat + tcb.ipcBuffer.pageOffset)) idx))
+          else .error .invalidMessageInfo
+        | _ => .error .invalidMessageInfo
+      | _ => .error .invalidMessageInfo
+    | none => .error .invalidMessageInfo
 
 /-- WS-ZA ZA4.7: the frozen decode of a sender's saved frame -- the live
 decoder (`decodeSyscallArgsWith`) with the overflow words read from the frozen

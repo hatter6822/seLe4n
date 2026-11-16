@@ -26,7 +26,7 @@ at the receiver's slot (`overflowCopyStore`), up to the first slot the
 receiver's buffer does not resolve (`overflowSlotsFrom`).
 
 The words are read after the rendezvous and the wake, which write no thread's
-VSpace root or IPC buffer and no VSpace root (`ipcBufferReadsAgree`), so each
+buffer slot or IPC buffer and no frame (`ipcBufferReadsAgree`), so each
 word is the one the specification's decode read before them
 (`performSendDeliveredLong_eq`).
 -/
@@ -37,26 +37,26 @@ open SeLe4n.Model
 
 /-! ## What an IPC-buffer read reads -/
 
-/-- What an IPC-buffer read reads of an object: a thread's VSpace root and
-buffer address, a VSpace root itself -- and a CNode itself, which a capability
+/-- What an IPC-buffer read reads of an object: a thread's buffer slot and
+buffer address, a frame itself -- and a CNode itself, which a capability
 transfer's lookups read (the receive slot the buffer names, the sender's
 extra capabilities) -- nothing of any other object. -/
 @[inline] def ipcBufferViewOf :
-    KernelObject → Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode)
-  | .tcb t => some (.inl (t.vspaceRoot, t.ipcBuffer))
-  | .vspaceRoot r => some (.inr (.inl r))
+    KernelObject → Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject ⊕ CNode)
+  | .tcb t => some (.inl (t.spaceCells[2], t.ipcBuffer))
+  | .frame f => some (.inr (.inl f))
   | .cnode cn => some (.inr (.inr cn))
   | _ => none
 
-/-- The VSpace root a view names. -/
-@[inline] def viewVSpaceRoot : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
-    Option VSpaceRoot
+/-- The frame a view names. -/
+@[inline] def viewFrame : Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject ⊕ CNode) →
+    Option FrameObject
   | some (.inr (.inl r)) => some r
   | _ => none
 
-/-- The thread's VSpace root and buffer address a view names. -/
-@[inline] def viewBuffer : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
-    Option (SeLe4n.ObjId × SeLe4n.VAddr)
+/-- The thread's buffer slot and buffer address a view names. -/
+@[inline] def viewBuffer : Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject ⊕ CNode) →
+    Option (Option Capability × SeLe4n.VAddr)
   | some (.inl p) => some p
   | _ => none
 
@@ -82,15 +82,15 @@ theorem of_eq {st st' : SystemState} (hO : st'.objects = st.objects)
 
 end ipcBufferReadsAgree
 
-theorem getVSpaceRoot?_eq_view (st : SystemState) (id : SeLe4n.ObjId) :
-    st.getVSpaceRoot? id = viewVSpaceRoot ((st.objects[id]?).bind ipcBufferViewOf) := by
-  unfold SystemState.getVSpaceRoot?
+theorem getFrame?_eq_view (st : SystemState) (id : SeLe4n.ObjId) :
+    st.getFrame? id = viewFrame ((st.objects[id]?).bind ipcBufferViewOf) := by
+  unfold SystemState.getFrame?
   cases st.objects[id]? with
   | none => rfl
   | some o => cases o <;> rfl
 
 /-- The CNode at a key, as the view names it. -/
-@[inline] def viewCNode : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
+@[inline] def viewCNode : Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject ⊕ CNode) →
     Option CNode
   | some (.inr (.inr cn)) => some cn
   | _ => none
@@ -103,7 +103,7 @@ theorem getCNode?_eq_view (st : SystemState) (id : SeLe4n.ObjId) :
   | some o => cases o <;> rfl
 
 theorem getTcb?_buffer_eq_view (st : SystemState) (t : SeLe4n.ThreadId) :
-    (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
+    (st.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) =
       viewBuffer ((st.objects[t.toObjId]?).bind ipcBufferViewOf) := by
   unfold SystemState.getTcb?
   cases st.objects[t.toObjId]? with
@@ -113,17 +113,17 @@ theorem getTcb?_buffer_eq_view (st : SystemState) (t : SeLe4n.ThreadId) :
 /-! ## What a read of a buffer's words reads -/
 
 /-- What a read of a thread's IPC-buffer words reads of an object: a thread's
-VSpace root and buffer address, and a VSpace root itself -- the reads of
+buffer slot and buffer address, and a frame itself -- the reads of
 `ipcBufferViewOf` without the CNodes, which a word read does not look up. -/
-@[inline] def ipcWordViewOf : KernelObject → Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot)
-  | .tcb t => some (.inl (t.vspaceRoot, t.ipcBuffer))
-  | .vspaceRoot r => some (.inr r)
+@[inline] def ipcWordViewOf : KernelObject → Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject)
+  | .tcb t => some (.inl (t.spaceCells[2], t.ipcBuffer))
+  | .frame f => some (.inr f)
   | _ => none
 
 /-- The word view a buffer view names. -/
 @[inline] def wordViewOfView :
-    ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
-      Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot)
+    ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject ⊕ CNode) →
+      Option ((Option Capability × SeLe4n.VAddr) ⊕ FrameObject)
   | .inl p => some (.inl p)
   | .inr (.inl r) => some (.inr r)
   | .inr (.inr _) => none
@@ -161,18 +161,18 @@ theorem ipcBufferReadsAgree.words {st st' : SystemState} (h : ipcBufferReadsAgre
   simp only [Option.bind_assoc, ← ipcWordViewOf_eq] at hx
   exact hx
 
-theorem getVSpaceRoot?_eq_wordView (st : SystemState) (id : SeLe4n.ObjId) :
-    st.getVSpaceRoot? id =
+theorem getFrame?_eq_wordView (st : SystemState) (id : SeLe4n.ObjId) :
+    st.getFrame? id =
       (match (st.objects[id]?).bind ipcWordViewOf with
         | some (.inr r) => some r
         | _ => none) := by
-  unfold SystemState.getVSpaceRoot?
+  unfold SystemState.getFrame?
   cases st.objects[id]? with
   | none => rfl
   | some o => cases o <;> rfl
 
 theorem getTcb?_buffer_eq_wordView (st : SystemState) (t : SeLe4n.ThreadId) :
-    (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
+    (st.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) =
       (match (st.objects[t.toObjId]?).bind ipcWordViewOf with
         | some (.inl p) => some p
         | _ => none) := by
@@ -186,12 +186,12 @@ namespace ipcWordReadsAgree
 variable {st st' : SystemState} (h : ipcWordReadsAgree st' st)
 include h
 
-theorem getVSpaceRoot? (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
-  rw [getVSpaceRoot?_eq_wordView, getVSpaceRoot?_eq_wordView, h.1]
+theorem getFrame? (id : SeLe4n.ObjId) : st'.getFrame? id = st.getFrame? id := by
+  rw [getFrame?_eq_wordView, getFrame?_eq_wordView, h.1]
 
 theorem getTcb?_buffer (t : SeLe4n.ThreadId) :
-    (st'.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
-      (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) := by
+    (st'.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) =
+      (st.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) := by
   rw [getTcb?_buffer_eq_wordView, getTcb?_buffer_eq_wordView, h.1]
 
 /-- A read of a thread's IPC buffer reads the same word in both states. -/
@@ -209,8 +209,8 @@ theorem ipcBufferReadMr (tid : SeLe4n.ThreadId) (i : Nat) :
     · rfl
     · next t' t =>
       obtain ⟨hv, hb⟩ := hT
-      simp only []
-      rw [hv, hb, h.getVSpaceRoot?, h.2]
+      simp only [Architecture.IpcBufferRead.lookupIPCBuffer]
+      rw [hv, hb, Architecture.IpcBufferRead.bufferFrameBase?_congr h.getFrame?, h.2]
 
 /-- A slot of a thread's IPC buffer resolves to the same address in both
 states. -/
@@ -225,8 +225,9 @@ theorem overflowSlotOf (r : SeLe4n.ThreadId) (i : Nat) :
   · next t' t =>
     obtain ⟨hv, hb⟩ := hT
     simp only [Architecture.IpcBufferRead.ipcBufferSlotPAddr?,
-      Architecture.IpcBufferRead.ipcBufferWordPAddr?]
-    rw [hv, hb, h.getVSpaceRoot?, h.2]
+      Architecture.IpcBufferRead.ipcBufferWordPAddrIn?, Architecture.IpcBufferRead.lookupIPCBuffer]
+    rw [hv, hb, Architecture.IpcBufferRead.bufferFrameBase?_congr h.getFrame?]
+    simp only [Architecture.IpcBufferRead.ipcBufferWordIn?_congr h.2]
 
 end ipcWordReadsAgree
 
@@ -235,16 +236,16 @@ namespace ipcBufferReadsAgree
 variable {st st' : SystemState} (h : ipcBufferReadsAgree st' st)
 include h
 
-theorem getVSpaceRoot? (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
-  rw [getVSpaceRoot?_eq_view, getVSpaceRoot?_eq_view, h.1]
+theorem getFrame? (id : SeLe4n.ObjId) : st'.getFrame? id = st.getFrame? id := by
+  rw [getFrame?_eq_view, getFrame?_eq_view, h.1]
 
 /-- Every CNode is read alike, so every capability lookup is. -/
 theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
   rw [getCNode?_eq_view, getCNode?_eq_view, h.1]
 
 theorem getTcb?_buffer (t : SeLe4n.ThreadId) :
-    (st'.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
-      (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) := by
+    (st'.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) =
+      (st.getTcb? t).map (fun tcb => (tcb.spaceCells[2], tcb.ipcBuffer)) := by
   rw [getTcb?_buffer_eq_view, getTcb?_buffer_eq_view, h.1]
 
 /-- A read of a thread's IPC buffer reads the same word in both states. -/
@@ -263,10 +264,10 @@ end ipcBufferReadsAgree
 
 /-! ## Writes that keep every read -/
 
-/-- A TCB write that keeps the thread's VSpace root and buffer address keeps
+/-- A TCB write that keeps the thread's buffer slot and buffer address keeps
 every read. -/
 theorem ipcBufferReadsAgree_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId)
-    (g : TCB → TCB) (hg : ∀ t, (g t).vspaceRoot = t.vspaceRoot ∧ (g t).ipcBuffer = t.ipcBuffer) :
+    (g : TCB → TCB) (hg : ∀ t, (g t).spaceCells[2] = t.spaceCells[2] ∧ (g t).ipcBuffer = t.ipcBuffer) :
     ipcBufferReadsAgree (X.mapTcbInPlace r g) X := by
   refine ⟨fun x => ?_, rfl⟩
   rw [SystemState.objects_mapTcbInPlace]
@@ -298,7 +299,7 @@ theorem ipcBufferReadsAgree_modifyObject (X : SystemState) (k : SeLe4n.ObjId)
   · rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo]
 
 theorem ipcBufferReadsAgree_updateTcb (X : SystemState) (r : SeLe4n.ThreadId)
-    (g : TCB → TCB) (hg : ∀ t, (g t).vspaceRoot = t.vspaceRoot ∧ (g t).ipcBuffer = t.ipcBuffer)
+    (g : TCB → TCB) (hg : ∀ t, (g t).spaceCells[2] = t.spaceCells[2] ∧ (g t).ipcBuffer = t.ipcBuffer)
     (hNo : X.objects.noResizeDue) : ipcBufferReadsAgree (X.updateTcb r g) X := by
   rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
   exact ipcBufferReadsAgree_mapTcbInPlace X r g hg
@@ -321,11 +322,11 @@ theorem ipcBufferViewOf_popEndpoint (isReceiveQ : Bool) (nextCode : Nat) (o : Ke
   | _ => rfl
 
 /-- **The send rendezvous keeps every read**: it pops the endpoint's queue and
-writes queue links and the receiver's message slots, never a VSpace root or a
+writes queue links and the receiver's message slots, never a buffer slot or a
 buffer address. -/
 theorem ipcBufferReadsAgree_storeSendRendezvousWith (st : SystemState)
     (endpointId : SeLe4n.ObjId) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
-    (g : TCB → TCB) (hg : ∀ t, (g t).vspaceRoot = t.vspaceRoot ∧ (g t).ipcBuffer = t.ipcBuffer)
+    (g : TCB → TCB) (hg : ∀ t, (g t).spaceCells[2] = t.spaceCells[2] ∧ (g t).ipcBuffer = t.ipcBuffer)
     (hNo : st.objects.noResizeDue) :
     ipcBufferReadsAgree (storeSendRendezvousWith st endpointId head next g) st := by
   unfold storeSendRendezvousWith
