@@ -9416,7 +9416,7 @@ run_check "INVARIANT" rg -n -U '^    qemu_gate_boards "\$\{LEAN_KERNEL\}"\n    f
 # Every board's tools before any board runs, so a later board's skip cannot
 # hide an earlier board's recorded failure; a named HAL-only image boots on its
 # own board alone.
-run_check "INVARIANT" rg -n -U '^        QEMU_GATE_BOARDS=\("\$\{QEMU_BOARD_NAMED:-virt\}"\)\n    else\n        QEMU_GATE_BOARDS=\(rpi5 virt\)\n    fi\n    for board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n        qemu_select_board "\$\{board\}"\n        qemu_require_tools\n    done$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^        QEMU_GATE_BOARDS=\("\$\{QEMU_BOARD_NAMED:-rpi5\}"\)\n    else\n        QEMU_GATE_BOARDS=\(rpi5 virt\)\n    fi\n    for board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n        qemu_select_board "\$\{board\}"\n        qemu_require_tools\n    done$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^    if \[\[ -n "\$\{KERNEL_BIN_NAMED\}" && "\$\{lean\}" -ne 1 \]\]; then$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --bin sele4n-kernel \\\n                --target-dir "\$\{target_dir\}"\) ' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
@@ -9703,6 +9703,9 @@ run_check "INVARIANT" rg -n -F -- 'qemu_run "${LABEL}" "${MINIMAL_LOG}" "${QEMU_
 run_check "INVARIANT" rg -n -F -- 'require_prefix("[boot] FATAL: 2 PE(s) serving the kernel but the linked Lean kernel declares 4")' scripts/test_qemu_smp_minimal.sh
 run_check "INVARIANT" rg -n -F -- 'if line.startswith("[sched] core 0:"):' scripts/test_qemu_smp_minimal.sh
 run_negative_check "INVARIANT" rg -n 'line\.endswith\("first idle dispatch"\)' scripts/test_qemu_smp_minimal.sh
+# WS-RB RB5: the PE-withheld boot runs on every board, both emulators checked
+# before either boots.
+run_check "INVARIANT" rg -n -U '^qemu_gate_boards "\$\{LEAN_KERNEL\}"\nfor board in "\$\{QEMU_GATE_BOARDS\[@\]\}"; do\n    withheld_board "\$\{board\}"\ndone\nfinalize_report$' scripts/test_qemu_smp_minimal.sh
 # The lanes: the archive lane runs the all-driver gate on both images requiring
 # QEMU, and the Tier-4 runner runs every executable gate on both images.
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_exercisers\.sh"$' scripts/test_lean_aarch64_archive.sh

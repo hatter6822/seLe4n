@@ -13,7 +13,8 @@
 > "NOT RUN until the image exists" are dated, and each row re-reads its state
 > when it starts.  WS-ZA's exerciser (`scripts/qemu_exerciser_lib.sh`, driver
 > `heap-allocations-per-syscall`) issues a user-space `svc` round trip for every
-> pinned scenario on the `virt` image, which covers part of SM10.3.17's
+> pinned scenario on both exerciser images, on `raspi5b` and then `virt`
+> (WS-RB), which covers part of SM10.3.17's
 > procedure; SM10.3.17 owes the per-`SyscallId` sweep and derives the ids the
 > exerciser does not reach from `SyscallId.all` rather than listing them.
 > **Zero allocation**: no row here adds or changes a kernel entry, an object

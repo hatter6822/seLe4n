@@ -1,4 +1,4 @@
-## v0.37.30 — the boot builds the root task's IPC buffer
+## v0.37.31 — the boot builds the root task's IPC buffer
 
 WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D13–D15). The boot now
 gives the root task an IPC buffer before it runs, as seL4's boot does
@@ -107,6 +107,39 @@ invocations.
     `0x8000_0000`, through the region map. It now stops at the root server.
   - The spec's RPi5 deployment table still listed the two fixed
     first-gigabyte untypeds that BP7.10 retired.
+
+## v0.37.30 — WS-RB closes: every QEMU lane boots the emulated Raspberry Pi 5 first
+
+WS-RB RB5, the closure (the plan is archived; `WS-RB` in
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Archived plans by ID*).  The
+close bumps only the patch: the next minor bump follows WS-SX's close, which
+also has work in this minor line.
+
+- **`raspi5b` is the default board.** `scripts/qemu_boot_lib.sh` selects
+  `rpi5` when `QEMU_BOARD` names none, and a HAL-only image named by
+  `KERNEL_BIN` boots on `rpi5` unless `QEMU_BOARD` names `virt`.
+- **The PE-withheld boot runs on both machines.**
+  `scripts/test_qemu_smp_minimal.sh` was the last gate on `virt` alone. It now
+  boots each board's image on two PEs through `qemu_gate_boards`, `raspi5b`
+  first, which marks the absent cores' CPU nodes `fail`: the HAL-only image
+  boots with one secondary, and the Lean-linked one refuses before the boot
+  core dispatches, on both machines.  A Tier 3 anchor holds the board loop.
+- **The nightly builds rpi5_machine.** It installed only the distribution's
+  QEMU and none of rpi5_machine's build dependencies, so its first run on a
+  tree with RB2 would have found no `raspi5b` and skipped every Tier-4 gate (no
+  nightly had run on one yet).  It now installs them, restores the build cached
+  under `scripts/setup_rpi5_machine.sh`'s hash and builds the machine at its
+  pin, as the archive lane does.
+- **Documentation.** The spec gains §6.2.18a (the boot lanes on `raspi5b`);
+  `DEVELOPMENT.md`, `HARDWARE_TESTING.md` and the claims index (a WS-RB row)
+  say `raspi5b` first; the GitBook overview no longer says the kernel does not
+  boot, and the testing chapter's and the roadmap chapter's stage lines, which
+  had restated long-closed workstreams, now point at `WORKSTREAM_CONTEXT.md` and
+  `REGISTERED_DEBT.md`.  The QEMU-lane sentences of the not-yet-started plans
+  (BP8.6 and its risk row, CV's heap counter, SM10.3.17's note) name
+  `raspi5b`.  WS-RB's standing constraints move to *Standing constraints*,
+  its context section to the closed-workstream archive, and its debt row
+  closes.
 
 ## v0.37.29 — the Raspberry Pi 5 boot files boot as the firmware boots them
 

@@ -7,8 +7,12 @@
 #
 # WS-SM SM1.H.3 / WS-BP BP6.3 / WS-BP BP8.4 — the PE-withheld boot.
 #
-# Boots the `virt` image on TWO PEs, where the kernel expects four, and holds
-# each image to what it must do with a machine narrower than it was built for:
+# Boots each board's image on TWO PEs, where the kernel expects four, and
+# holds each image to what it must do with a machine narrower than it was built
+# for.  The Raspberry Pi 5 image runs on rpi5_machine's `raspi5b` first, which
+# marks the absent cores' CPU nodes "fail", then the `virt` image under QEMU
+# `virt` (WS-RB RB5; both emulators are checked before either boots,
+# `qemu_gate_boards`):
 #
 # * The HAL-only image boots: one secondary comes up, Phase 6 counts exactly
 #   one, and no line names a core that does not exist.  (SM1.H.3's minimal
@@ -50,9 +54,11 @@ source "${SCRIPT_DIR}/qemu_boot_lib.sh"
 source "${SCRIPT_DIR}/qemu_exerciser_lib.sh"
 
 exerciser_parse_args "$@"
-log_section "META" "=== WS-SM SM1.H.3 / WS-BP BP6.3: the PE-withheld boot under QEMU virt (-smp 2) ==="
 
-qemu_require_tools
+# withheld_board BOARD: build BOARD's image, boot it on two PEs and check it.
+withheld_board() {
+qemu_select_board "$1"
+log_section "META" "=== WS-SM SM1.H.3 / WS-BP BP6.3: the PE-withheld boot under ${QEMU_BOARD_LABEL} (-smp 2) ==="
 qemu_build_image "${LEAN_KERNEL}" 0
 qemu_cut_image
 qemu_temp_file MINIMAL_LOG qemu_minimal
@@ -63,12 +69,12 @@ qemu_temp_file MINIMAL_LOG qemu_minimal
 UNTIL_FRAGMENT="[smp] core 1: ready, entering kernel"
 DEADLINE="${QEMU_TIMEOUT:-120}"
 BOOT_EXTRA=()
-LABEL="two PEs, HAL-only image, virt, EL2 entry"
+LABEL="two PEs, HAL-only image, ${QEMU_BOARD_LABEL}, EL2 entry"
 if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
     UNTIL_FRAGMENT="[boot] FATAL:"
     DEADLINE="${QEMU_TIMEOUT:-300}"
     BOOT_EXTRA=(-icount "shift=0,sleep=off")
-    LABEL="two PEs, Lean-linked image, virt, EL2 entry"
+    LABEL="two PEs, Lean-linked image, ${QEMU_BOARD_LABEL}, EL2 entry"
 fi
 
 log_section "TRACE" "RUN: ${LABEL} — -machine ${QEMU_BOARD_MACHINE} -smp 2 (deadline: ${DEADLINE}s)"
@@ -133,9 +139,17 @@ if [[ -n "${verdict}" ]]; then
     done <<< "${verdict}"
     log_section "TRACE" "${LABEL}: last 40 lines of the log:"
     tail -n 40 "${MINIMAL_LOG}"
-    log_section "META" "FAIL: the PE-withheld boot"
+    log_section "META" "FAIL: the PE-withheld boot on ${QEMU_BOARD_LABEL}"
 else
     log_section "TRACE" "PASS: ${LABEL} ($(wc -l < "${MINIMAL_LOG}") lines)"
-    log_section "META" "PASS: the PE-withheld boot"
+    log_section "META" "PASS: the PE-withheld boot on ${QEMU_BOARD_LABEL}"
 fi
+}
+
+# Both boards' tools first; a HAL-only image named by KERNEL_BIN boots on its
+# own board alone (`qemu_gate_boards`).
+qemu_gate_boards "${LEAN_KERNEL}"
+for board in "${QEMU_GATE_BOARDS[@]}"; do
+    withheld_board "${board}"
+done
 finalize_report

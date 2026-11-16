@@ -400,11 +400,13 @@ IRQ-ready **and** Lean-ready within one second, so `smp_enabled=false` or an
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-The script (WS-BP BP8.2) builds the image for QEMU's `virt` machine itself
+The script (WS-BP BP8.2, WS-RB RB2) builds each board's image itself
 (`scripts/qemu_boot_lib.sh`; `--lean-kernel` builds the Lean-linked one, from
 the archive `scripts/test_lean_aarch64_archive.sh` builds) and:
-1. Boots it on four PEs, once at EL1 and once with `virtualization=on`
-   (EL2, the Raspberry Pi 5 firmware's entry level).
+1. Boots the Raspberry Pi 5 image on four PEs on rpi5_machine's `raspi5b`,
+   which models the BCM2712 and enters at EL2 as the Pi 5's firmware does,
+   then the `virt` image under QEMU's `virt`, once at EL1 and once with
+   `virtualization=on` (EL2).
 2. Requires every secondary's per-core init, in order, from
    `tests/fixtures/qemu_smp_bringup_expected.txt` — `entering per-core init`
    through `ready, entering kernel` — plus the boot core's `[boot] Phase 6:
@@ -418,8 +420,9 @@ On the board there is no QEMU; read the same banners off the serial console
 
 The cross-core SGI round trip, the per-core console stress, the TLB
 shootdown round trip and the shootdown stress are **in-image drivers** (WS-BP
-BP8.4, `rust/sele4n-hal/src/smp_exercisers.rs`, built into the `virt` test
-image by the `smp_exercisers` feature) that the boot core runs once every
+BP8.4, `rust/sele4n-hal/src/smp_exercisers.rs`, built into each board's test
+image by the `smp_exercisers` feature and run on `raspi5b`, then `virt`,
+WS-RB RB3) that the boot core runs once every
 declared PE serves the kernel.  `./scripts/test_qemu_smp_exercisers.sh` reads
 all four from one boot; the per-driver gates
 (`test_qemu_smp_sgi_roundtrip.sh`, `test_qemu_smp_kprintln_stress.sh`,
@@ -428,7 +431,7 @@ one; the per-core counter check (WS-BP BP8.5,
 `./scripts/test_qemu_smp_per_core_stats.sh --lean-kernel`) is the fifth driver
 and runs on the Lean-linked image alone, since the reader and the verdict are
 the kernel's; and the PE-withheld boot is `./scripts/test_qemu_smp_minimal.sh`
-(`-smp 2`).  `./scripts/test_tier4_smp_bootcheck.sh` orchestrates every
+(`-smp 2`, on both machines).  `./scripts/test_tier4_smp_bootcheck.sh` orchestrates every
 Tier-4 gate on both images, HAL-only and `--lean-kernel`; the eight gates
 that need a user program report NOT RUN until SM10's root task exists.
 
@@ -456,7 +459,11 @@ identifier lookup is a single `mrs xN, tpidr_el1` instruction.
 ./scripts/test_qemu.sh
 ```
 
-> Note: QEMU models no BCM2712, so the script builds the image for QEMU's
+> Note: the script boots the Raspberry Pi 5 image itself first (WS-RB): the
+> packaged `kernel8.img` and `config.txt` on rpi5_machine's `raspi5b`, placed
+> where `config.txt` says as the Pi 5's firmware places them, and then from an
+> SD card through rpi5_machine's `rpi5-boot`, once through the firmware's
+> BL31 and once through TF-A's (RB4).  It then builds the image for QEMU's
 > `virt` machine (`--features kernel_image,board_qemu_virt`, WS-BP BP8.1:
 > `virt`'s device map from `rust/sele4n-hal/src/board.rs`, its link script
 > derived from `link.ld`), cuts the raw binary — QEMU passes the device tree

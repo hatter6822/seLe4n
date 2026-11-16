@@ -611,7 +611,7 @@ attributed by disassembling the traced image.
   instead of copying a shared empty table; the heap admission counts them
   (`carvedVSpaceRootHeapBytes`).  Before, the object group was 3 / 104 and the
   pin 14 / 376.
-- **Thread** (since `v0.37.30`): the object group is 15 / 1960 — the thread's
+- **Thread** (since `v0.37.31`): the object group is 15 / 1960 — the thread's
   three space slots, their 24 derivation-link words (216 B), its empty space
   cells and its two spare space records, each built at exact capacity
   (48 B and 40 B), so the carve's copies keep it.  The pin is 19 / 2064.
