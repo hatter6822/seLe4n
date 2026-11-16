@@ -323,6 +323,7 @@ for driver in drivers:
             "configure-sched-context-guard-mismatch", "set-space-root-guard-mismatch",
             "bind-notification-guard-mismatch", "set-fault-handler-guard-mismatch",
             "cnode-mint-guard", "cnode-mint-guardless", "cnode-copy-no-source-root",
+            "cnode-copy-six-words", "cnode-mint-five-words",
             "cnode-multi-level-copy", "cnode-multi-level-copy-delete",
             "lookup-stops-at-non-cnode", "cnode-mint-guardless-delete",
             "cnode-mint-guard-delete", "cnode-mint-badged-endpoint",

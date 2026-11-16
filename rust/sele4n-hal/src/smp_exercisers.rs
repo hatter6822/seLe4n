@@ -3749,6 +3749,33 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 FRAME_VADDR,
             )
         },
+        // A copy carrying a sixth word: seL4 reads its five and ignores the
+        // rest, so the message takes the route past five words; the
+        // destination is the occupied CNode slot, seL4's `DeleteFirst`.
+        RoundTrip {
+            msg_len: ONE_EXTRA_CAP | 6,
+            returns: refused(TARGET_SLOT_OCCUPIED),
+            ..root_copy(
+                "cnode-copy-six-words",
+                NOTIFICATION_SLOT,
+                CNODE_SLOT,
+                FRAME_VADDR,
+            )
+        },
+        // A mint of five words, short of its badge: seL4's
+        // `TruncatedMessage` (Mint `length < 6`), on the five-word route.
+        RoundTrip {
+            msg_len: ONE_EXTRA_CAP | 5,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..mint(
+                "cnode-mint-five-words",
+                NOTIFICATION_SLOT,
+                MINT_SLOT,
+                ALL_RIGHTS,
+                0,
+                FRAME_VADDR,
+            )
+        },
         // The refusal's fifth word lands in the root task's buffer `msg[4]`,
         // the word a later five-word call (a configure's deadline, a service
         // register's grant flag) reads as its argument; the copy's own rights
