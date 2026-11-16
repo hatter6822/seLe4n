@@ -200,18 +200,18 @@ private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
         (default : SystemState) (ThreadId.ofNat 1)
         (SeLe4n.VAddr.ofNat 0x400) }
 
-/-- Row: `decodeCSpaceMintArgs` rejects a word of the depths and the rights
-mask with a bit set past the mask (bit 21, `CNodeOpWord.rightsFits`) with
-`.invalidArgument 3`, the word's index. -/
-private def row_invalidArgument_mint_rights : KernelErrorRejection :=
+/-- Row: `decodeCSpaceMintArgs` refuses a five-word mint with
+`.truncatedMessage`: seL4's `seL4_CNode_Mint` takes six words (the four slot
+words, the rights and the badge), and its rights word is never refused. -/
+private def row_truncatedMessage_mint_five_words : KernelErrorRejection :=
   { syscall       := "decodeCSpaceMintArgs"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.2.invalidArgument.mint_rights"
-    scenarioDesc  := "AK4-E: cspaceMint args rejected when the word of the" ++
-                     " depths and the rights mask sets a bit past the mask"
+    expectedError := .truncatedMessage
+    scenarioTag   := "SX6.2.truncatedMessage.mint_five_words"
+    scenarioDesc  := "WS-SX SX6.2: a cspaceMint message of five words, short" ++
+                     " of seL4's six, is refused as truncated"
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs (mkDecoded
-        #[rv 0, rv 1, rv 0, rv (0x200000 + 0x4040), rv 0])) }
+        #[rv 0, rv 64, rv 0, rv 64, rv 31])) }
 
 /-- Row: `decodeSyscallId` rejects an unknown syscall number with
 `.invalidSyscallNumber`. -/
@@ -995,7 +995,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_rangeError_period_zero,
     row_alignmentError_ipcBuffer,
     row_objectNotFound_ipcBuffer_missing_tcb,
-    row_invalidArgument_mint_rights,
+    row_truncatedMessage_mint_five_words,
     row_invalidSyscallNumber,
     row_invalidMessageInfo,
     row_rangeError_period_over_max,

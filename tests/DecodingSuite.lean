@@ -278,10 +278,11 @@ private def mkStub (regs : Array RegValue) : SyscallDecodeResult :=
 
 -- CSpace family ---------------------------------------------------------------
 
-/-- SAD-001: decodeCSpaceMintArgs — valid decode with 5 registers: a copy's
-four and the badge. -/
+/-- SAD-001: decodeCSpaceMintArgs — valid decode with 6 registers in seL4's
+order: the destination index and depth, the source index and depth, the
+rights word and the badge. -/
 private def sad001_cspaceMint : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7), ⟨42⟩]
+  let stub := mkStub #[⟨10⟩, ⟨64⟩, ⟨20⟩, ⟨64⟩, ⟨7⟩, ⟨42⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-001a mint ok" result.isOk
   match result with
@@ -292,42 +293,45 @@ private def sad001_cspaceMint : IO Unit := do
     expect "SAD-001e rights" (args.rights.bits == 7)
   | .error _ => expect "SAD-001 unexpected error" false
 
-/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (4). -/
+/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (5). -/
 private def sad002_cspaceMintInsufficient : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7)]
+  let stub := mkStub #[⟨10⟩, ⟨64⟩, ⟨20⟩, ⟨64⟩, ⟨7⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-002a mint insufficient" (!result.isOk)
 
-/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 4 registers, the depths
-and the rights mask packed in the fourth (`CNodeOpWord`); a short message and
-a word with a bit past the mask are refused. -/
+/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 5 registers in seL4's
+order; a short message is refused, a rights word's bits past the rights are
+ignored (seL4's `rightsFromWord`), and a depth past 64 reads as one
+`lookupSlotForCNodeOp` refuses. -/
 private def sad003_cspaceCopy : IO Unit := do
-  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 3 5)]
+  let stub := mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩, ⟨5⟩]
   let result := decodeCSpaceCopyArgs stub
   expect "SAD-003a copy ok" result.isOk
   match result with
   | .ok args =>
     expect "SAD-003b srcIndex" (args.srcIndex.toNat == 5)
     expect "SAD-003c destIndex" (args.destIndex.toNat == 15)
-    expect "SAD-003d srcRoot" (args.srcRoot.toNat == 9)
     expect "SAD-003e depths" (args.destDepth == 64 && args.srcDepth == 3)
     expect "SAD-003e2 rights mask" (args.rights.bits == 5)
   | .error _ => expect "SAD-003 unexpected error" false
   expect "SAD-003f copy short"
-    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩]) with
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩]) with
       | .error .truncatedMessage => true | _ => false)
-  expect "SAD-003g copy stray bit past the mask"
-    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨2097152⟩]) with
-      | .error (.invalidArgument _) => true | _ => false)
+  expect "SAD-003g copy bits past the rights ignored"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩, ⟨0xFFFF_FFE5⟩]) with
+      | .ok args => args.rights.bits == 5 | _ => false)
+  expect "SAD-003h a wide depth reads out of range"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨0xFFFF_FFFF_FFFF_FFFF⟩, ⟨5⟩, ⟨3⟩, ⟨5⟩]) with
+      | .ok args => args.destDepth == 65 | _ => false)
 
-/-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
+/-- SAD-004: decodeCSpaceMoveArgs — valid decode of four words. -/
 private def sad004_cspaceMove : IO Unit := do
-  let stub := mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 0)]
+  let stub := mkStub #[⟨3⟩, ⟨2⟩, ⟨8⟩, ⟨2⟩]
   let result := decodeCSpaceMoveArgs stub
   expect "SAD-004a move ok" result.isOk
-  expect "SAD-004b move stray rights bit"
-    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 1)]) with
-      | .error (.invalidArgument _) => true | _ => false)
+  expect "SAD-004b move short"
+    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨2⟩, ⟨8⟩]) with
+      | .error .truncatedMessage => true | _ => false)
 
 /-- SAD-005: decodeCSpaceDeleteArgs — valid and insufficient. -/
 private def sad005_cspaceDelete : IO Unit := do
@@ -752,14 +756,14 @@ private def signalLongReadsNoIpcBuffer : IO Unit := do
       expect "a long declassified signal routes as audited" (s' == .declassifySignal)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
 
-/-- A receive, a wait, a yield and an invocation of at most four arguments
-read no word past the inline registers (`syscallReadsOverflow`), as seL4
+/-- A receive, a wait, a yield and an invocation of at most four arguments (a
+CNode move) read no word past the inline registers (`syscallReadsOverflow`), as seL4
 reads only the words a syscall uses: one whose message-info word names ten
 words decodes with no IPC buffer mapped, merges no overflow word, and the
 router takes its short route. -/
 private def shortReadersLongReadNoIpcBuffer : IO Unit := do
   for sid in [SyscallId.receive, SyscallId.notificationWait, SyscallId.yield,
-      SyscallId.cspaceCopy] do
+      SyscallId.cspaceMove] do
     let st := buildIpcDecodeState sid.toNat 10 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] (mapIpcBuffer := false)
     let tid : SeLe4n.ThreadId := ⟨800⟩
     let regs : SeLe4n.RegisterFile :=
@@ -775,7 +779,7 @@ private def shortReadersLongReadNoIpcBuffer : IO Unit := do
     | .receive .., .receive => expect "a long receive routes as a receive" true
     | .wait _, .notificationWait => expect "a long wait routes as a wait" true
     | .yield, .yield => expect "a long yield routes as a yield" true
-    | .invoke s' _, .cspaceCopy => expect "a long copy routes as an invocation" (s' == .cspaceCopy)
+    | .invoke s' _, .cspaceMove => expect "a long move routes as an invocation" (s' == .cspaceMove)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
 
 /-- A long send whose IPC buffer the kernel cannot read is clamped to its four

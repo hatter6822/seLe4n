@@ -23813,8 +23813,18 @@ run_check "INVARIANT" rg -n '^  ifaces\.foldl registerInterface ist$' SeLe4n/Pla
 run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceInterfaces \(platform := platform\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterface\]$' SeLe4n/Platform/QemuVirt/Contract.lean
 # WS-ZA ZA5.5: the service register is routed on the register file with the
-# configure, one overflow word read from the IPC buffer, and runs checks first.
-run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# configure, one overflow word read from the IPC buffer, and runs checks first;
+# WS-SX SX6.2: the CNode copy's rights and the mint's rights and badge are
+# overflow words too, in seL4's word order.
+run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint \| \.cspaceCopy => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# The CNode operations' source root is the message's extra capability 0,
+# looked up after the destination and refused `TruncatedMessage` when the
+# message names none (seL4's `decodeCNodeInvocation`), and their lengths are
+# seL4's: a copy five words, a mint six.
+run_check "INVARIANT" rg -n -U '^  \| \.ok dst =>\n    match srcRoot with\n    \| none => \.error \.truncatedMessage$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceCopy => 5\n  \| \.cspaceMint => 6$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem truncationMinimum_le_six($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_negative_check "INVARIANT" rg -n 'CNodeOpWord' SeLe4n rust
 run_check "INVARIANT" rg -U -n '^    if routedOverflowOne sid then\n      if len = size \+ 1 then \.overflowOne sid capAddr else \.overflowed sid capAddr len$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 # A syscall reads a message word past the inline registers only when its
@@ -23825,7 +23835,7 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 # answer, not on a syscall name.  A buffer the kernel cannot read clamps the
 # message to its inline words (`clampToInline`), as seL4's `handleInvocation`
 # clamps a message with no IPC buffer, in each of the three merges.
-run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint \| \.cspaceCopy => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
@@ -23845,8 +23855,8 @@ run_check "INVARIANT" rg -n '^        \(fun _ => replyRecvRoutedArm ctx executin
 run_check "INVARIANT" rg -n '^        \(fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st\)$' SeLe4n/Kernel/RoutedArms/Overflowed.lean
 run_check "INVARIANT" rg -n '^      \(fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st\)$' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
 run_negative_check "INVARIANT" rg -n 'invalidMessageInfo' SeLe4n/Kernel/RoutedArms
-run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore xc$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore xc$' SeLe4n/Kernel/RefusalCarryingOverflowed.lean
+run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingOverflowed.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 # A service's identity is its endpoint's: the registration carries no `sid`
 # field, its `sid` is derived from the capability it keeps, and no builder

@@ -1378,14 +1378,15 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   let ksdWidth : Nat := match stKsd.getCNode? ksdCnodeId with
     | some cn => cn.radixWidth
     | none => 0
-  -- Decode mint args: destIndex=1, srcRoot, srcIndex=0, both depths the
-  -- CNode's width and the rights mask 1 (read), then the badge 42.
+  -- Decode mint args in seL4's order: destIndex=1 and depth the CNode's
+  -- width, srcIndex=0 and the same depth, the rights mask 1 (read), then the
+  -- badge 42 (the source root is extra capability 0, not a word).
   let mintDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 5, extraCaps := 0, label := 0 }
+    msgInfo := { length := 6, extraCaps := 1, label := 0 }
     syscallId := .cspaceMint
-    msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 1), ⟨42⟩]
+    msgRegs := #[⟨1⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨0⟩, SeLe4n.RegValue.ofNat ksdWidth,
+      ⟨1⟩, ⟨42⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintDecoded with
   | .error e => IO.println s!"[KSD-001] cspaceMint decode error: {reprStr e}"
@@ -1407,11 +1408,10 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   -- every right (`AccessRightSet.full`).
   let copyDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 5, extraCaps := 1, label := 0 }
     syscallId := .cspaceCopy
-    -- destIndex=1, srcRoot, srcIndex=0, both depths the CNode's width
-    msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 31)]
+    -- destIndex=1, srcIndex=0, both depths the CNode's width, the mask 31
+    msgRegs := #[⟨1⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨0⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨31⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
   | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
@@ -1668,10 +1668,9 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
   -- Decode move args: srcIndex=0, destIndex=2, each at the CNode's width (2)
   let moveDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 1, label := 0 }
     syscallId := .cspaceMove
-    msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack 2 2 0)]
+    msgRegs := #[⟨2⟩, ⟨2⟩, ⟨0⟩, ⟨2⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
   | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"
@@ -3026,8 +3025,8 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: CSpaceMintArgs encode/decode
   let mintArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs :=
-    { destIndex := SeLe4n.CPtr.ofNat 10, srcRoot := SeLe4n.CPtr.ofNat 3,
-      srcIndex := SeLe4n.CPtr.ofNat 20, destDepth := 64, srcDepth := 64,
+    { destIndex := SeLe4n.CPtr.ofNat 10, destDepth := 64,
+      srcIndex := SeLe4n.CPtr.ofNat 20, srcDepth := 64,
       rights := .ofNat 0x07, badge := Badge.ofNatMasked 999 }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=

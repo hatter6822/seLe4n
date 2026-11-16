@@ -973,7 +973,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -1001,7 +1002,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -1023,7 +1025,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -2276,8 +2279,8 @@ srcRoot 999 (also the retype decoder's type tag -- invalid, so that decoder
 refuses), srcIndex 3, the operation word 3 (destination depth 3, source depth
 and rights 0), badge word 5. -/
 private def witnessDecodedMint : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 5, extraCaps := 0, label := 0 },
-    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨3⟩, ⟨5⟩] }
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 6, extraCaps := 1, label := 0 },
+    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨3⟩, ⟨3⟩, ⟨3⟩, ⟨3⟩, ⟨5⟩] }
 
 private def witnessGateMint : SyscallGate :=
   { callerId := witnessTid, cspaceRootCap := none,
@@ -2304,11 +2307,12 @@ theorem syscallDispatchQuiescence_inhabited_mint :
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     have hWords : Architecture.SyscallArgDecode.decodeCSpaceMintArgs witnessDecodedMint
-        = Architecture.SyscallArgDecode.cnodeMintArgsOfWords (SeLe4n.CPtr.ofNat 0)
-            (SeLe4n.CPtr.ofNat 999) (SeLe4n.CPtr.ofNat 3) 3 5 := rfl
+        = .ok { Architecture.SyscallArgDecode.cnodeOpArgsOfWords 0 3 3 3 with
+                rights := Architecture.SyscallArgDecode.cnodeRightsOfWord 3,
+                badge := SeLe4n.Badge.ofWord 5 } := rfl
     rw [hWords] at hDec
-    rw [Architecture.SyscallArgDecode.cnodeMintArgsOfWords_badge hDec]
-    exact SeLe4n.Badge.ofNatMasked_valid _
+    cases hDec
+    exact SeLe4n.Badge.valid_of_word _
   · intro epId hSy
     simp [witnessDecodedMint] at hSy
   · intro epId hSy

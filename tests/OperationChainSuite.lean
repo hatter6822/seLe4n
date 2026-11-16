@@ -2433,6 +2433,10 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- (a mint's badge): when given, the buffer's page is mapped and the
     -- message length names them too.
     (overflowWords : List Nat := [])
+    -- The extra capabilities' addresses (seL4's `caps_or_badges` words of the
+    -- caller's IPC buffer, a CNode operation's source root): when given, the
+    -- buffer's page is mapped and the message info names them (`x1` bits 7..8).
+    (extraCapWords : List Nat := [])
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2445,23 +2449,29 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
         (fun m (idx, _) => max m (idx - 1)) 0
     else 4 + overflowWords.length
   let bufferPA : Nat := 0x40000
+  let bufferWord (i : Nat) : Option Nat :=
+    let ob := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord
+    let cb := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0
+    if ob ≤ i ∧ i - ob < overflowWords.length then overflowWords[i - ob]?
+    else if cb ≤ i ∧ i - cb < extraCapWords.length then extraCapWords[i - cb]?
+    else none
   let overflowAt (a : SeLe4n.PAddr) : Option UInt8 :=
-    let off := a.toNat - bufferPA
-    let first := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord * 8
-    if a.toNat < bufferPA + first then none else
-      match overflowWords[(off - first) / 8]? with
-      | some w => some (UInt8.ofNat ((w >>> (8 * ((off - first) % 8))) % 256))
+    if a.toNat < bufferPA then none else
+      let off := a.toNat - bufferPA
+      match bufferWord (off / 8) with
+      | some w => some (UInt8.ofNat ((w >>> (8 * (off % 8))) % 256))
       | none => none
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
              else if r.val == 7 then syscallNum
              else match args.find? (fun (idx, _) => idx == r.val) with
                   | some (_, val) => val
-                  | none => if r.val == 1 then msgLen else 0
+                  | none => if r.val == 1 then msgLen + extraCapWords.length * 128 else 0
     SeLe4n.RegValue.ofNat v
+  let mapsBuffer := !overflowWords.isEmpty || !extraCapWords.isEmpty
   let bufferMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
       (SeLe4n.PAddr × SeLe4n.Model.PagePermissions) :=
-    if overflowWords.isEmpty then SeLe4n.Kernel.RobinHood.RHTable.ofList []
+    if !mapsBuffer then SeLe4n.Kernel.RobinHood.RHTable.ofList []
     else SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.VAddr.ofNat 4096,
       (SeLe4n.PAddr.ofNat bufferPA, { read := true, write := true }))]
   let mut builder := BootstrapBuilder.empty
@@ -2489,7 +2499,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   for (oid, ty) in lifecycleTypes do
     builder := builder.withLifecycleObjectType oid ty
   let st := builder.buildChecked
-  if overflowWords.isEmpty then return st
+  if !mapsBuffer then return st
   let machine := { st.machine with
     memory := fun a => (overflowAt a).getD (st.machine.memory a) }
   return { st with machine := machine }
@@ -2503,15 +2513,16 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   let cnode : SeLe4n.Model.CNode := (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ]))
-  -- === cspaceMint (syscallId=4): x2=destIndex(1), x3=srcRoot (the caller's
-  -- address 0), x4=srcIndex(0), x5=both depths 4 and rights 3 (read|write),
-  -- and the badge (42) in the IPC buffer's overflow slot 0 ===
+  -- === cspaceMint (syscallId=4), seL4's words: x2=destIndex(1), x3=its
+  -- depth 4, x4=srcIndex(0), x5=its depth 4, then rights 3 (read|write) and
+  -- the badge (42) in the IPC buffer's overflow slots 0 and 1; the source root
+  -- is extra capability 0, the caller's address 0 ===
   let stMint := buildSyscallState 4 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])  -- cap to the target CNode
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 1), (3, 0), (4, 0), (5, 4 + 4 * 256 + 3 * 65536)]
+    [(2, 1), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
-    (overflowWords := [42])
+    (overflowWords := [3, 42]) (extraCapWords := [0])
   match syscallEntryOnBoot stMint with
   | .ok (_, stAfter) =>
     -- Verify slot 1 now has a minted cap
@@ -2542,14 +2553,16 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceDelete dispatch clears slot 0" ((cn.lookup (((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot))).isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after delete"
   | .error err => throw <| IO.userError s!"chain27: cspaceDelete syscall failed: {toString err}"
-  -- === cspaceCopy (syscallId=5): x2=destIndex(2), x3=srcRoot (the caller's
-  -- address 0, its capability to the target CNode), x4=srcIndex(0), x5=both
-  -- depths 4 (the CNode's 4-bit radix, no guard) ===
+  -- === cspaceCopy (syscallId=5), seL4's words: x2=destIndex(2), x3=its depth
+  -- 4 (the CNode's 4-bit radix, no guard), x4=srcIndex(0), x5=its depth 4, the
+  -- rights 7 in overflow slot 0; the source root is extra capability 0, the
+  -- caller's address 0, its capability to the target CNode ===
   let stCopy := buildSyscallState 5 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256)]
+    [(2, 2), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
+    (overflowWords := [7]) (extraCapWords := [0])
   match syscallEntryOnBoot stCopy with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
@@ -2557,13 +2570,14 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceCopy dispatch populates slot 2" ((cn.lookup (((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot))).isSome)
     | _ => throw <| IO.userError "chain27: CNode not found after copy"
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
-  -- === cspaceMove (syscallId=6): x2=destIndex(3), x3=srcRoot(0), x4=srcIndex(0),
-  -- x5=both depths 4 ===
+  -- === cspaceMove (syscallId=6), seL4's words: x2=destIndex(3), x3=its depth
+  -- 4, x4=srcIndex(0), x5=its depth 4; the source root is extra capability 0 ===
   let stMove := buildSyscallState 6 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 3), (3, 0), (4, 0), (5, 4 + 4 * 256)]
+    [(2, 3), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
+    (extraCapWords := [0])
   match syscallEntryOnBoot stMove with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
@@ -2573,27 +2587,30 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     | _ => throw <| IO.userError "chain27: CNode not found after move"
   | .error err => throw <| IO.userError s!"chain27: cspaceMove syscall failed: {toString err}"
   -- === seL4's CNode-operation refusals, in seL4's order ===
-  let copyRefusal (label : String) (args : List (Nat × Nat)) (want : KernelError) : IO Unit := do
+  -- each a copy in seL4's words (destination index and depth, source index and
+  -- depth, the rights in overflow slot 0) whose source root is extra
+  -- capability 0 at `srcRoot`, or none
+  let copyRefusal (label : String) (dI dD sI sD : Nat) (srcRoot : List Nat)
+      (want : KernelError) : IO Unit := do
     let stBad := buildSyscallState 5 0 cnodeTarget
       (AccessRightSet.ofList [.read, .write, .grant])
-      [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] args
+      [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] [(2, dI), (3, dD), (4, sI), (5, sD)]
       [(cnodeTarget, .cnode), (epId, .endpoint)]
       [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
+      (overflowWords := [7]) (extraCapWords := srcRoot)
     match syscallEntryOnBoot stBad with
     | .error err => expect s!"chain27: {label} refused {toString want} (got {toString err})" (err == want)
     | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
-  copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] (.rangeError 1 64)
-  copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] (.rangeError 1 64)
-  copyRefusal "copy whose destination depth stops short of the radix"
-    [(2, 2), (3, 0), (4, 0), (5, 3 + 4 * 256)] (.failedLookup false (.depthMismatch 3 4))
-  copyRefusal "copy into an occupied destination"
-    [(2, 0), (3, 0), (4, 0), (5, 4 + 4 * 256)] .targetSlotOccupied
-  copyRefusal "copy whose source root names an endpoint"
-    [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] (.failedLookup true .invalidRoot)
-  copyRefusal "copy from an empty source slot"
-    [(2, 2), (3, 0), (4, 5), (5, 4 + 4 * 256)] (.failedLookup true (.missingCapability 4))
-  copyRefusal "copy whose operation word sets a bit past the rights"
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 3)
+  copyRefusal "copy at destination depth 0" 2 0 0 4 [0] (.rangeError 1 64)
+  copyRefusal "copy at source depth 65" 2 4 0 65 [0] (.rangeError 1 64)
+  copyRefusal "copy whose destination depth stops short of the radix" 2 3 0 4 [0]
+    (.failedLookup false (.depthMismatch 3 4))
+  copyRefusal "copy that names no source root" 2 4 0 4 [] .truncatedMessage
+  copyRefusal "copy into an occupied destination" 0 4 0 4 [0] .targetSlotOccupied
+  copyRefusal "copy whose source root names an endpoint" 2 4 0 4 [1]
+    (.failedLookup true .invalidRoot)
+  copyRefusal "copy from an empty source slot" 2 4 5 4 [0]
+    (.failedLookup true (.missingCapability 4))
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntryChecked.
 

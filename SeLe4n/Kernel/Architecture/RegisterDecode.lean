@@ -221,9 +221,9 @@ refused or clamped by the buffer.  No wildcard: a new syscall states its
 answer. -/
 def syscallReadsOverflow : SyscallId → Bool
   | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister
-  | .cspaceMint => true
+  | .cspaceMint | .cspaceCopy => true
   | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
-  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
+  | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
   | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -995,7 +995,7 @@ mint carry one argument word more and are routed as `overflowOne`
 declassification and audit calls, whose taint steps are not the identity or
 whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
-  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
@@ -1029,7 +1029,7 @@ theorem routedInvocationSid?_some {n : Nat} {sid : SyscallId}
 overflow word, whose taint step is the identity and whose rights are checked in
 the classic order. -/
 def routedOverflowOne : SyscallId → Bool
-  | .schedContextConfigure | .serviceRegister | .cspaceMint => true
+  | .schedContextConfigure | .serviceRegister | .cspaceMint | .cspaceCopy => true
   | _ => false
 
 /-- The one-overflow-word invocation syscall number `n` names, if any. -/

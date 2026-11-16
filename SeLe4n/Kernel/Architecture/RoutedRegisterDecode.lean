@@ -921,7 +921,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
     (h : registerRoutedSyscall layout regs regCount = .overflowed sid capAddr len) :
     ∃ msgInfo, decodeMsgInfo (readReg regs layout.msgInfoReg) = .ok msgInfo ∧
     msgInfo.length = len ∧
-    layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
+    layout.msgRegs.size + 1 < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
     routedOverflowOne sid = true ∧
     decodeSyscallArgsFromState st tid layout regs regCount =
       mergeOverflowWords st tid
@@ -952,18 +952,19 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
           exact (MessageInfo.decode_wellFormed hD).1
         · cases hM
       have key : ∀ sid', routedOverflowOneSid? (readReg regs layout.syscallNumReg).val = some sid' →
+          ¬ mi.length = layout.msgRegs.size + 1 →
           RegisterRoutedSyscall.overflowed sid' (CPtr.ofWord (readRegWord regs layout.capPtrReg))
               mi.length = .overflowed sid capAddr len →
           ∃ msgInfo, (Except.ok mi : Except KernelError MessageInfo) = .ok msgInfo ∧
           msgInfo.length = len ∧
-          layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
+          layout.msgRegs.size + 1 < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
           routedOverflowOne sid = true ∧
           decodeSyscallArgsFromState st tid layout regs regCount =
             mergeOverflowWords st tid
               { capAddr, msgInfo, syscallId := sid,
                 msgRegs := layout.msgRegs.map (readReg regs),
                 inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
-        intro sid' hSid hEq
+        intro sid' hSid hNe hEq
         cases hEq
         obtain ⟨hR, hN⟩ := routedOverflowOneSid?_some hSid
         refine ⟨mi, rfl, rfl, by omega, hWf, hR, ?_⟩
@@ -986,7 +987,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
       · next sid' hSid =>
         split at h
         · cases h
-        · exact key sid' hSid h
+        · next hNe => exact key sid' hSid hNe h
       · rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'
   · cases h
 

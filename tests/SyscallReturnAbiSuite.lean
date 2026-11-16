@@ -1299,19 +1299,30 @@ private def abiRegisterLines : List String :=
     ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
     ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
 
-/-- Which field of a copy's CNode operation word owns bit `j`, decided by
-decoding `2^j` alone through the copy's decode (`cnodeCopyArgsOfWords`, a
-mint's decode too): a depth, the rights mask, or `reserved` where the decode
-refuses the bit. -/
-private def cnodeCopyBitOwner (j : Nat) : String :=
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeCopyArgsOfWords
-      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
+/-- **The CNode operations' words, measured**: a mint's six words (a copy's
+are its first five, a move's its first four) decoded with word `i` holding
+`i + 1`, and word `i` owned by the field that comes back holding it.  seL4's
+order (`decodeCNodeInvocation`): the destination index and depth, the source
+index and depth, the rights word and the badge; the source root is extra
+capability 0, no word. -/
+private def cnodeMintWordLines : List String :=
+  let stub : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 6, extraCaps := 1, label := 0 },
+      syscallId := .cspaceMint, msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩, ⟨6⟩] }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs stub with
+  | .error _ => ["cnodeMintWord refused"]
   | .ok a =>
-    if a.destDepth != 0 && a.srcDepth == 0 && a.rights.bits == 0 then "destDepth"
-    else if a.srcDepth != 0 && a.destDepth == 0 && a.rights.bits == 0 then "srcDepth"
-    else if a.rights.bits != 0 && a.destDepth == 0 && a.srcDepth == 0 then "rights"
-    else "inconsistent"
-  | .error _ => "reserved"
+    (List.range 6).map fun i =>
+      let v := i + 1
+      let owner :=
+        if a.destIndex.toNat == v then "destIndex"
+        else if a.destDepth == v then "destDepth"
+        else if a.srcIndex.toNat == v then "srcIndex"
+        else if a.srcDepth == v then "srcDepth"
+        else if a.rights.bits == v then "rights"
+        else if a.badge.toNat == v then "badge"
+        else "unread"
+      s!"cnodeMintWord {i} {owner}"
 
 /-- **WS-SX SX1.2: the error payload's message-register layout, measured.**
 Each payload shape is built with distinct sentinels in its numeric fields
@@ -1357,18 +1368,6 @@ private def errorPayloadLayoutLines : List String :=
       (fun ws a b c => .failedLookup ws (.guardMismatch a.toUInt8 b c.toUInt8))
   , errorPayloadLayoutLine "illegalState" [] (fun _ _ _ _ => .illegalState) ]
 
-/-- Which field of a move's CNode operation word owns bit `j`, decided by
-decoding `2^j` alone through the move's decode (`cnodeOpArgsOfWords`): a depth,
-or `reserved` where the decode refuses the bit (a move takes no rights). -/
-private def cnodeMoveBitOwner (j : Nat) : String :=
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeOpArgsOfWords
-      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
-  | .ok a =>
-    if a.destDepth != 0 && a.srcDepth == 0 then "destDepth"
-    else if a.srcDepth != 0 && a.destDepth == 0 then "srcDepth"
-    else "inconsistent"
-  | .error _ => "reserved"
-
 private def abiLayoutTableLines : List String :=
   "# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)"
     :: (List.range 64).map (fun j => s!"bit {j} {abiLayoutBitOwner j}")
@@ -1379,8 +1378,8 @@ private def abiLayoutTableLines : List String :=
          s!"maxLabel {MessageInfo.maxLabel}",
          s!"errorLabelBase {Kernel.Architecture.errorLabelBase}",
          s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
-    ++ (List.range 64).map (fun j => s!"cnodeCopyBit {j} {cnodeCopyBitOwner j}")
-    ++ (List.range 64).map (fun j => s!"cnodeMoveBit {j} {cnodeMoveBitOwner j}")
+    ++ [ s!"ipcBufferCapsOrBadgesBase {Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord + Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0}" ]
+    ++ cnodeMintWordLines
     ++ errorPayloadLayoutLines
 
 private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"

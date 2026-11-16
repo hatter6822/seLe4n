@@ -106,18 +106,19 @@ fn xval_004_endpoint_reply() {
 // CSpace syscalls (RUST-XVAL-005 through RUST-XVAL-008)
 // ============================================================================
 
-/// RUST-XVAL-005: CSpace mint register layout: a copy's four words, and the
-/// badge in the IPC buffer's overflow slot 0 (message register 4).  The Lean
-/// side's XVAL-003 encodes the same arguments to the same five words.
+/// RUST-XVAL-005: CSpace mint register layout, seL4's `seL4_CNode_Mint`
+/// word order: destIndex, destDepth, srcIndex, srcDepth in x2..x5, and the
+/// rights and the badge in the IPC buffer's message registers 4 and 5.  The
+/// source root is the message's extra capability 0, not a word.  The Lean
+/// side's XVAL-003 encodes the same arguments to the same six words.
 #[test]
 fn xval_005_cspace_mint() {
     let args = cspace::CSpaceMintArgs {
         copy: cspace::CSpaceCopyArgs {
             slots: cspace::CNodeOpArgs {
                 dest_index: CPtr::from(10u64),
-                src_root: CPtr::from(3u64),
-                src_index: CPtr::from(20u64),
                 dest_depth: 64,
+                src_index: CPtr::from(20u64),
                 src_depth: 64,
             },
             rights: AccessRights::try_from(0x07u8).unwrap(), // read|write|grant
@@ -125,10 +126,10 @@ fn xval_005_cspace_mint() {
         badge: Badge::from(999u64),
     };
     let encoded = args.encode();
-    assert_eq!(encoded, [10, 3, 20, 64 | (64 << 8) | (7 << 16), 999]);
+    assert_eq!(encoded, [10, 64, 20, 64, 7, 999]);
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(6, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
     };
@@ -137,64 +138,60 @@ fn xval_005_cspace_mint() {
         &[
             (0, 500, "x0=CPtr"),
             (2, 10, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 20, "x4=srcIndex"),
-            (5, 64 | (64 << 8) | (7 << 16), "x5=depths|rights<<16"),
+            (5, 64, "x5=srcDepth"),
             (6, 4, "x7=SyscallId::CSpaceMint"),
         ],
     );
 }
 
-/// RUST-XVAL-006: CSpace copy register layout.
+/// RUST-XVAL-006: CSpace copy register layout (seL4's `seL4_CNode_Copy`:
+/// the four slot words in x2..x5, the rights in message register 4).
 #[test]
 fn xval_006_cspace_copy() {
     let args = cspace::CSpaceCopyArgs {
         slots: cspace::CNodeOpArgs {
             dest_index: CPtr::from(15u64),
-            src_root: CPtr::from(3u64),
-            src_index: CPtr::from(5u64),
             dest_depth: 64,
+            src_index: CPtr::from(5u64),
             src_depth: 8,
         },
         rights: AccessRights::try_from(0x03u8).unwrap(),
     };
     let encoded = args.encode();
+    assert_eq!(encoded, [15, 64, 5, 8, 3]);
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new(5, 1, 0).unwrap(),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceCopy,
     };
     verify_regs(
         &req,
         &[
             (2, 15, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 5, "x4=srcIndex"),
-            (
-                5,
-                64 | (8 << 8) | (3 << 16),
-                "x5=destDepth|srcDepth<<8|rights<<16",
-            ),
+            (5, 8, "x5=srcDepth"),
             (6, 5, "x7=SyscallId::CSpaceCopy"),
         ],
     );
 }
 
-/// RUST-XVAL-007: CSpace move register layout.
+/// RUST-XVAL-007: CSpace move register layout (seL4's `seL4_CNode_Move`).
 #[test]
 fn xval_007_cspace_move() {
     let args = cspace::CSpaceMoveArgs {
         dest_index: CPtr::from(14u64),
-        src_root: CPtr::from(3u64),
-        src_index: CPtr::from(7u64),
         dest_depth: 64,
+        src_index: CPtr::from(7u64),
         src_depth: 8,
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(700u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(4, 1, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMove,
     };
@@ -202,9 +199,9 @@ fn xval_007_cspace_move() {
         &req,
         &[
             (2, 14, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 7, "x4=srcIndex"),
-            (5, 64 | (8 << 8), "x5=destDepth|srcDepth<<8"),
+            (5, 8, "x5=srcDepth"),
             (6, 6, "x7=SyscallId::CSpaceMove"),
         ],
     );
@@ -626,9 +623,8 @@ fn cspace_args_roundtrip_all() {
         copy: cspace::CSpaceCopyArgs {
             slots: cspace::CNodeOpArgs {
                 dest_index: CPtr::from(2u64),
-                src_root: CPtr::from(1u64),
-                src_index: CPtr::from(1u64),
                 dest_depth: 64,
+                src_index: CPtr::from(1u64),
                 src_depth: 64,
             },
             rights: AccessRights::try_from(0x1Fu8).unwrap(),
@@ -643,9 +639,8 @@ fn cspace_args_roundtrip_all() {
     let copy = cspace::CSpaceCopyArgs {
         slots: cspace::CNodeOpArgs {
             dest_index: CPtr::from(4u64),
-            src_root: CPtr::from(1u64),
-            src_index: CPtr::from(3u64),
             dest_depth: 64,
+            src_index: CPtr::from(3u64),
             src_depth: 64,
         },
         rights: AccessRights::ALL,
@@ -657,9 +652,8 @@ fn cspace_args_roundtrip_all() {
 
     let mv = cspace::CSpaceMoveArgs {
         dest_index: CPtr::from(6u64),
-        src_root: CPtr::from(1u64),
-        src_index: CPtr::from(5u64),
         dest_depth: 1,
+        src_index: CPtr::from(5u64),
         src_depth: 2,
     };
     assert_eq!(cspace::CSpaceMoveArgs::decode(&mv.encode()).unwrap(), mv);
@@ -1102,20 +1096,19 @@ fn ipc_buffer_inline_error_variant() {
     }
 }
 
-/// CSpaceMintArgs decode returns InvalidArgument for a word with a bit set
-/// past the rights field (the message's structure is right, its argument is
-/// not); every 5-bit rights mask decodes, since the kernel masks with it.
+/// CSpaceMintArgs decode refuses no rights word: seL4's `rightsFromWord`
+/// reads the low bits and ignores the rest, and the kernel masks with them.
+/// Only a message shorter than six words is refused.
 #[test]
-fn cspace_mint_invalid_rights_error_variant() {
+fn cspace_mint_rights_word_never_refused() {
+    let wide = cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, u64::MAX, 42]).unwrap();
+    assert_eq!(wide.copy.rights, AccessRights::ALL);
+    let high = cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 1 << 21, 42]).unwrap();
+    assert_eq!(high.copy.rights, AccessRights::EMPTY);
     assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, 3, 1 << 21, 42]),
-        Err(KernelError::InvalidArgument)
+        cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 5]),
+        Err(KernelError::InvalidMessageInfo)
     );
-    assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, 3, u64::MAX, 42]),
-        Err(KernelError::InvalidArgument)
-    );
-    assert!(cspace::CSpaceMintArgs::decode(&[1, 2, 3, 0x1F << 16, 42]).is_ok());
 }
 
 /// V1-G (M-RS-5): PagePerms checked_bitor rejects W^X violations.
@@ -2481,37 +2474,38 @@ fn abi_layout_matches_the_lean_table() {
     rendered.push_str(&std::format!("maxLabel {}\n", message_info::MAX_LABEL));
     rendered.push_str(&std::format!("errorLabelBase {ERROR_LABEL_BASE}\n"));
     rendered.push_str(&std::format!("syscallAbiVersion {SYSCALL_ABI_VERSION}\n"));
-    // The CNode operation word, measured as the Lean side measures it: a
-    // copy's decode (a mint's too) of `2^j` alone names a depth or the rights
-    // mask, and a move's names a depth; a bit the decode refuses is reserved.
-    for j in 0..64 {
-        let word = 1u64 << j;
-        let owner = match cspace::CSpaceCopyArgs::decode(&[0, 0, 0, word]) {
-            Ok(a) => {
-                let (d, s, r) = (a.slots.dest_depth, a.slots.src_depth, a.rights.raw());
-                if d != 0 && s == 0 && r == 0 {
+    // The IPC buffer word that holds extra capability 0's address: a CNode
+    // operation's source root, seL4's `excaprefs[0]`.
+    rendered.push_str(&std::format!(
+        "ipcBufferCapsOrBadgesBase {}\n",
+        core::mem::offset_of!(IpcBuffer, caps_or_badges) / 8
+    ));
+    // A mint's six words in seL4's `decodeCNodeInvocation` order, measured
+    // as the Lean side measures them: decode `[1, 2, 3, 4, 5, 6]` and name
+    // the field each word lands in.
+    match cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 5, 6]) {
+        Err(_) => rendered.push_str("cnodeMintWord refused\n"),
+        Ok(a) => {
+            for i in 0..6u64 {
+                let v = i + 1;
+                let owner = if a.copy.slots.dest_index.raw() == v {
+                    "destIndex"
+                } else if a.copy.slots.dest_depth == v {
                     "destDepth"
-                } else if s != 0 && d == 0 && r == 0 {
+                } else if a.copy.slots.src_index.raw() == v {
+                    "srcIndex"
+                } else if a.copy.slots.src_depth == v {
                     "srcDepth"
-                } else if r != 0 && d == 0 && s == 0 {
+                } else if u64::from(a.copy.rights.raw()) == v {
                     "rights"
+                } else if a.badge.raw() == v {
+                    "badge"
                 } else {
-                    "inconsistent"
-                }
+                    "unread"
+                };
+                rendered.push_str(&std::format!("cnodeMintWord {i} {owner}\n"));
             }
-            Err(_) => "reserved",
-        };
-        rendered.push_str(&std::format!("cnodeCopyBit {j} {owner}\n"));
-    }
-    for j in 0..64 {
-        let word = 1u64 << j;
-        let owner = match cspace::CSpaceMoveArgs::decode(&[0, 0, 0, word]) {
-            Ok(a) if a.dest_depth != 0 && a.src_depth == 0 => "destDepth",
-            Ok(a) if a.src_depth != 0 && a.dest_depth == 0 => "srcDepth",
-            Ok(_) => "inconsistent",
-            Err(_) => "reserved",
-        };
-        rendered.push_str(&std::format!("cnodeMoveBit {j} {owner}\n"));
+        }
     }
     // The error payload's message-register layout, measured as the Lean side
     // measures it: each shape is built with the sentinels `0xA1`, `0xA2`,
@@ -2770,17 +2764,22 @@ fn wrappers_name_their_syscalls() {
 
     let slots = cspace::CNodeOpArgs {
         dest_index: CPtr::from(1u64),
-        src_root: cap,
-        src_index: CPtr::from(0u64),
         dest_depth: 64,
+        src_index: CPtr::from(0u64),
         src_depth: 64,
     };
-    let _ =
-        sele4n_sys::cspace::cspace_mint(cap, slots, AccessRights::ALL, Badge::from(1u64), &mut buf);
+    let _ = sele4n_sys::cspace::cspace_mint(
+        cap,
+        cap,
+        slots,
+        AccessRights::ALL,
+        Badge::from(1u64),
+        &mut buf,
+    );
     assert_names("cspace_mint", SyscallId::CSpaceMint);
-    let _ = sele4n_sys::cspace::cspace_copy(cap, slots, AccessRights::ALL);
+    let _ = sele4n_sys::cspace::cspace_copy(cap, cap, slots, AccessRights::ALL, &mut buf);
     assert_names("cspace_copy", SyscallId::CSpaceCopy);
-    let _ = sele4n_sys::cspace::cspace_move(cap, slots);
+    let _ = sele4n_sys::cspace::cspace_move(cap, cap, slots, &mut buf);
     assert_names("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
     assert_names("cspace_delete", SyscallId::CSpaceDelete);

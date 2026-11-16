@@ -72,14 +72,15 @@ theorem requireMsgReg_ok_iff (regs : Array RegValue) (idx : Nat) :
 seL4's `decode*Invocation` refuses `length < n` once the capability's kind has
 chosen the decode.  The figure is the model's own word count: its ABI carries
 every argument as a word, where seL4 passes a capability argument as an extra
-capability and an index-and-depth pair.  The seL4 counterparts, and their
-checks:
+capability and an index-and-depth pair (the CNode operations' source root is
+already extra capability 0).  The seL4 counterparts, and their checks:
 
-* `cspaceCopy` 4 (`decodeCNodeInvocation`, Copy `length < 5`: the
-  destination index, the source root's address, the source index and the
-  word of the depths and the rights mask, `CNodeOpWord`), `cspaceMove` 4
-  (Move `length < 4`: the same, the word the depths alone), `cspaceMint` 5
-  (Mint `length < 6`: a copy's four and the badge);
+* `cspaceCopy` 5 (`decodeCNodeInvocation`, Copy `length < 5`: the
+  destination index and depth, the source index and depth, and the rights
+  word), `cspaceMove` 4 (Move `length < 4`: the two indices and depths),
+  `cspaceMint` 6 (Mint `length < 6`: a copy's five and the badge); the source
+  root is extra capability 0, a missing one refused `.truncatedMessage` as
+  seL4 refuses a null `excaprefs[0]` (`resolveCNodeOpSlots`);
   `cspaceDelete` `cspaceRevoke` 1 (`length < 2`);
 * `untypedRetype` 4 (`decodeUntypedInvocation`, `length < 6`);
 * `vspaceMap` 4 (`decodeARMFrameInvocation`, Map `length < 3`),
@@ -111,14 +112,15 @@ Every other syscall reads no argument word, or is an IPC or a signal, for
 which seL4 checks no length (`notificationSignal` included). -/
 def truncationMinimum : SyscallId → Nat
   | .untypedRetype | .vspaceMap => 4
-  | .cspaceCopy | .cspaceMove => 4
+  | .cspaceMove => 4
   | .irqControlGet | .auditRead | .tcbSetSpace => 3
   | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
   | .pageTableMap => 2
   | .cspaceDelete | .cspaceRevoke | .schedContextBind | .tcbBindNotification
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbSetFaultHandler | .irqHandlerSetNotification | .auditDrain => 1
-  | .schedContextConfigure | .serviceRegister | .cspaceMint => 5
+  | .schedContextConfigure | .serviceRegister | .cspaceCopy => 5
+  | .cspaceMint => 6
   | _ => 0
 
 /-- **The truncation check** (`truncationMinimum`): a message shorter than
@@ -137,99 +139,71 @@ theorem requireMessageLength_of_lt {decoded : SyscallDecodeResult} {n : Nat}
     requireMessageLength decoded n = .error .truncatedMessage := by
   unfold requireMessageLength; simp only [h, ↓reduceIte]
 
-/-- No invocation reads more than five argument words, so a message past the
-layout's four message registers is never truncated. -/
-theorem truncationMinimum_le_five (sid : SyscallId) : truncationMinimum sid ≤ 5 := by
+/-- No invocation reads more than six argument words (seL4's CNode Mint, the
+most a decode reads), so a message of six words or more is never truncated. -/
+theorem truncationMinimum_le_six (sid : SyscallId) : truncationMinimum sid ≤ 6 := by
   cases sid <;> decide
 
 -- ============================================================================
 -- CSpace argument structures
 -- ============================================================================
 
-/-! ### The CNode operation word
+/-! ### The CNode operation words
 
 seL4's `seL4_CNode_Copy`, `_Mint` and `_Move` each name two slots by an index
 and a depth: the destination's in the invoked CNode, the source's in a source
-root CNode.  seLe4n passes the four words those need in the four argument
-registers: the destination index, the source root (an address in the caller's
-CSpace), the source index, and one word that packs the two depths and, for a
-copy or a mint, the rights mask.  Packing is what keeps the copy and the move
-to the four inline registers, so they make no IPC-buffer read; seL4 itself
-packs its `seL4_CapRights` into a word.  A mint's badge (seL4's `capData`) is
-its fifth word, overflow slot 0 of the caller's IPC buffer.
+root CNode, which is the invocation's extra capability 0 (`excaprefs[0]`).
+The words are seL4's (`decodeCNodeInvocation`): the destination index, the
+destination depth, the source index, the source depth, then a copy's or a
+mint's rights word, then a mint's badge (seL4's `capData`).  The first four are
+the inline message registers, the rights word overflow slot 0 and the badge
+overflow slot 1 of the caller's IPC buffer.
 
-The layout has one owner, the field readers below, and the decoders read the
-word only through them.  Bits `[0, 8)` are the destination depth, `[8, 16)` the
-source depth, and `[16, 21)` a copy's or a mint's rights mask.  A move that
-sets a bit at or above 16, or a copy or a mint one at or above 21, is refused
-`.invalidArgument`.  The Lean suite renders the layout by decoding each bit
-alone through the copy's and the move's decodes, and the Rust ABI crate renders
-its own decoders' layout the same way, against the same fixture
-(`tests/fixtures/abi_layout.expected`). -/
+A depth is read off its word as seL4's `lookupSlotForCNodeOp` reads it: a
+depth outside `1 .. 64` is refused `seL4_RangeError` there, so every word past
+64 reads as the one out-of-range depth 65 (`cnodeDepthOfWord`), and no word is
+made a number past it.  The rights word is read as seL4's `rightsFromWord`
+reads it: its rights bits, the others ignored (`cnodeRightsOfWord`). -/
 
-namespace CNodeOpWord
+/-- A CNode operation's depth from its word: the word itself up to 64, and 65,
+a depth `lookupSlotForCNodeOp` refuses as every depth past 64, above it. -/
+@[inline] def cnodeDepthOfWord (w : UInt64) : Nat := if w ≤ 64 then w.toNat else 65
 
-/-- The destination depth: bits `[0, 8)`. -/
-@[inline] def destDepth (w : Nat) : Nat := w % 256
+/-- A depth up to 64 is its word. -/
+theorem cnodeDepthOfWord_of_le {w : UInt64} (h : w.toNat ≤ 64) : cnodeDepthOfWord w = w.toNat := by
+  unfold cnodeDepthOfWord
+  rw [if_pos (UInt64.le_iff_toNat_le.mpr (by simpa using h))]
 
-/-- The source depth: bits `[8, 16)`. -/
-@[inline] def srcDepth (w : Nat) : Nat := w / 256 % 256
+/-- A depth word reads as a depth in range exactly when it is one. -/
+theorem cnodeDepthOfWord_range (w : UInt64) :
+    (1 ≤ cnodeDepthOfWord w ∧ cnodeDepthOfWord w ≤ 64) ↔ (1 ≤ w.toNat ∧ w.toNat ≤ 64) := by
+  unfold cnodeDepthOfWord
+  by_cases h : w ≤ 64
+  · rw [if_pos h]
+  · rw [if_neg h]
+    have : ¬ w.toNat ≤ 64 := fun h' => h (UInt64.le_iff_toNat_le.mpr (by simpa using h'))
+    omega
 
-/-- A copy's or a mint's rights mask: bits `[16, 21)`. -/
-@[inline] def rights (w : Nat) : Nat := w / 65536 % 32
-
-/-- The words a move admits: the two depths, no other bit. -/
-@[inline] def addressingFits (w : Nat) : Bool := w < 65536
-
-/-- The words a copy or a mint admits: the two depths and the rights mask, no
-other bit. -/
-@[inline] def rightsFits (w : Nat) : Bool := w < 2097152
-
-/-- The word whose fields are the given depths and rights, each cut to its
-width: the encoder the round trips read back. -/
-@[inline] def pack (destDepth srcDepth rights : Nat) : Nat :=
-  destDepth % 256 + srcDepth % 256 * 256 + rights % 32 * 65536
-
-/-- A packed word is one register word (WS-SX SX1.3): below `2 ^ 21`. -/
-theorem pack_lt (d s r : Nat) : pack d s r < 2 ^ 64 := by
-  unfold pack; omega
-
-theorem destDepth_pack (d s r : Nat) : CNodeOpWord.destDepth (pack d s r) = d % 256 := by
-  unfold CNodeOpWord.destDepth pack; omega
-
-theorem srcDepth_pack (d s r : Nat) : CNodeOpWord.srcDepth (pack d s r) = s % 256 := by
-  unfold CNodeOpWord.srcDepth pack; omega
-
-theorem rights_pack (d s r : Nat) : CNodeOpWord.rights (pack d s r) = r % 32 := by
-  unfold CNodeOpWord.rights pack; omega
-
-theorem rightsFits_pack (d s r : Nat) : rightsFits (pack d s r) = true := by
-  unfold rightsFits pack; simp only [decide_eq_true_eq]; omega
-
-theorem addressingFits_pack (d s : Nat) : addressingFits (pack d s 0) = true := by
-  unfold addressingFits pack; simp only [decide_eq_true_eq]; omega
-
-end CNodeOpWord
+/-- A copy's or a mint's rights from the rights word: its rights bits, the
+others ignored, as seL4's `rightsFromWord` reads them. -/
+@[inline] def cnodeRightsOfWord (w : UInt64) : AccessRightSet :=
+  AccessRightSet.ofNat (w &&& 31).toNat
 
 /-- **The two slots of a CNode Copy, Mint or Move**, as seL4 names them: the
 destination by an index and a depth in the invoked CNode, the source by an
-index and a depth in the source root, a CNode capability's address in the
-caller's CSpace (seL4's `srcRoot`).
-    Register mapping: x2=destIndex, x3=srcRoot, x4=srcIndex, x5=the depths
-    (`CNodeOpWord`). -/
+index and a depth in the source root, the invocation's extra capability 0.
+    Register mapping: x2=destIndex, x3=destDepth, x4=srcIndex, x5=srcDepth. -/
 structure CNodeOpArgs where
   destIndex : CPtr
-  srcRoot   : CPtr
-  srcIndex  : CPtr
   destDepth : Nat
+  srcIndex  : CPtr
   srcDepth  : Nat
   deriving Repr, DecidableEq
 
 /-- Per-syscall argument structure for `cspaceCopy`: the two slots and the
 rights mask, seL4's `seL4_CNode_Copy` `rights` (the copy's rights are the
 source's masked by it, `maskCapRights`).
-    Register mapping: x2=destIndex, x3=srcRoot, x4=srcIndex, x5=the depths and
-    the mask (`CNodeOpWord`). -/
+    Register mapping: as `CNodeOpArgs`, then overflow slot 0 = the rights. -/
 structure CSpaceCopyArgs extends CNodeOpArgs where
   rights : AccessRightSet
   deriving Repr, DecidableEq
@@ -240,7 +214,7 @@ abbrev CSpaceMoveArgs := CNodeOpArgs
 
 /-- Per-syscall argument structure for `cspaceMint`: a copy's operands and the
 badge, seL4's `seL4_CNode_Mint` `badge` (its `capData`, `updateCapData`).
-    Register mapping: as `CSpaceCopyArgs`, then overflow slot 0 = the badge. -/
+    Register mapping: as `CSpaceCopyArgs`, then overflow slot 1 = the badge. -/
 structure CSpaceMintArgs extends CSpaceCopyArgs where
   badge : Badge
   deriving Repr, DecidableEq
@@ -330,66 +304,17 @@ abbrev VSpaceUnifyInstructionArgs := VSpaceUnmapArgs
 -- CSpace decode functions
 -- ============================================================================
 
-/-- The two slots of a CNode operation from its four words: the three
-addresses and the depth word, which must set no bit past the two depths
-(`.invalidArgument`, `CNodeOpWord.addressingFits`). -/
-@[inline] def cnodeOpArgsOfWords (destIndex srcRoot srcIndex : CPtr) (depths : Nat) :
-    Except KernelError CNodeOpArgs :=
-  if CNodeOpWord.addressingFits depths then
-    .ok { destIndex, srcRoot, srcIndex
-          destDepth := CNodeOpWord.destDepth depths
-          srcDepth := CNodeOpWord.srcDepth depths }
-  else .error (.invalidArgument 3)
-
-/-- A copy's operands from its four words: the three addresses and the word of
-the depths and the rights mask, which must set no bit past the mask
-(`.invalidArgument`, `CNodeOpWord.rightsFits`). -/
-@[inline] def cnodeCopyArgsOfWords (destIndex srcRoot srcIndex : CPtr) (w : Nat) :
-    Except KernelError CSpaceCopyArgs :=
-  if CNodeOpWord.rightsFits w then
-    .ok { destIndex, srcRoot, srcIndex
-          destDepth := CNodeOpWord.destDepth w
-          srcDepth := CNodeOpWord.srcDepth w
-          rights := AccessRightSet.ofNat (CNodeOpWord.rights w) }
-  else .error (.invalidArgument 3)
-
-/-- `cnodeOpArgsOfWords` on the word itself: a word past the two depths is
-refused before it is made a number, so a full-width word (a heap `Nat` at or
-above `2^63`) is never converted (`cnodeOpArgsOfWordsW_eq`). -/
-@[inline] def cnodeOpArgsOfWordsW (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
-    Except KernelError CNodeOpArgs :=
-  if w < 65536 then cnodeOpArgsOfWords destIndex srcRoot srcIndex w.toNat
-  else .error (.invalidArgument 3)
-
-theorem cnodeOpArgsOfWordsW_eq (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
-    cnodeOpArgsOfWordsW destIndex srcRoot srcIndex w =
-      cnodeOpArgsOfWords destIndex srcRoot srcIndex w.toNat := by
-  unfold cnodeOpArgsOfWordsW cnodeOpArgsOfWords CNodeOpWord.addressingFits
-  by_cases h : w < 65536
-  · rw [if_pos h]
-  · have h' : ¬ w.toNat < 65536 := fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
-    simp only [h, h', decide_false, Bool.false_eq_true, ↓reduceIte]
-
-/-- `cnodeCopyArgsOfWords` on the word itself: a word past the depths and the
-rights mask is refused before it is made a number
-(`cnodeCopyArgsOfWordsW_eq`). -/
-@[inline] def cnodeCopyArgsOfWordsW (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
-    Except KernelError CSpaceCopyArgs :=
-  if w < 2097152 then cnodeCopyArgsOfWords destIndex srcRoot srcIndex w.toNat
-  else .error (.invalidArgument 3)
-
-theorem cnodeCopyArgsOfWordsW_eq (destIndex srcRoot srcIndex : CPtr) (w : UInt64) :
-    cnodeCopyArgsOfWordsW destIndex srcRoot srcIndex w =
-      cnodeCopyArgsOfWords destIndex srcRoot srcIndex w.toNat := by
-  unfold cnodeCopyArgsOfWordsW cnodeCopyArgsOfWords CNodeOpWord.rightsFits
-  by_cases h : w < 2097152
-  · rw [if_pos h]
-  · have h' : ¬ w.toNat < 2097152 := fun h' => h (UInt64.lt_iff_toNat_lt.mpr h')
-    simp only [h, h', decide_false, Bool.false_eq_true, ↓reduceIte]
+/-- The two slots of a CNode operation from its four words (seL4's order):
+the destination index and depth, the source index and depth. -/
+@[inline] def cnodeOpArgsOfWords (destIndex destDepth srcIndex srcDepth : UInt64) :
+    CNodeOpArgs :=
+  { destIndex := CPtr.ofWord destIndex, destDepth := cnodeDepthOfWord destDepth
+    srcIndex := CPtr.ofWord srcIndex, srcDepth := cnodeDepthOfWord srcDepth }
 
 /-- Decode CSpace copy arguments from message registers.
-    Requires 4 message registers (destIndex, srcRoot, srcIndex, the depths and
-    the rights mask). -/
+    Requires 5 message registers: the two slots' indices and depths and the
+    rights word, the fifth read from overflow slot 0 of the caller's IPC
+    buffer. -/
 def decodeCSpaceCopyArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceCopyArgs := do
   requireMessageLength decoded (truncationMinimum .cspaceCopy)
@@ -397,29 +322,13 @@ def decodeCSpaceCopyArgs (decoded : SyscallDecodeResult)
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  cnodeCopyArgsOfWords (CPtr.ofNat r0.val) (CPtr.ofNat r1.val) (CPtr.ofNat r2.val) r3.val
-
-/-- A mint's operands: a copy's four words, then the badge word (seL4's
-`capData`, masked to the badge's width as a badge register is). -/
-@[inline] def cnodeMintArgsOfWords (destIndex srcRoot srcIndex : CPtr) (w badge : Nat) :
-    Except KernelError CSpaceMintArgs :=
-  match cnodeCopyArgsOfWords destIndex srcRoot srcIndex w with
-  | .error e => .error e
-  | .ok c => .ok { c with badge := Badge.ofNatMasked badge }
-
-/-- A decoded mint's badge is its badge word, masked to the badge width. -/
-theorem cnodeMintArgsOfWords_badge {destIndex srcRoot srcIndex : CPtr} {w badge : Nat}
-    {args : CSpaceMintArgs}
-    (h : cnodeMintArgsOfWords destIndex srcRoot srcIndex w badge = .ok args) :
-    args.badge = Badge.ofNatMasked badge := by
-  unfold cnodeMintArgsOfWords at h
-  split at h
-  · cases h
-  · cases h; rfl
+  let r4 ← requireMsgReg decoded.msgRegs 4
+  pure { cnodeOpArgsOfWords r0.word r1.word r2.word r3.word with
+         rights := cnodeRightsOfWord r4.word }
 
 /-- Decode CSpace mint arguments from message registers.
-    Requires 5 message registers: a copy's four and the badge, the fifth read
-    from overflow slot 0 of the caller's IPC buffer. -/
+    Requires 6 message registers: a copy's five and the badge, the fifth and
+    the sixth read from overflow slots 0 and 1 of the caller's IPC buffer. -/
 def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceMintArgs := do
   requireMessageLength decoded (truncationMinimum .cspaceMint)
@@ -428,10 +337,12 @@ def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
   let r4 ← requireMsgReg decoded.msgRegs 4
-  cnodeMintArgsOfWords (CPtr.ofNat r0.val) (CPtr.ofNat r1.val) (CPtr.ofNat r2.val) r3.val r4.val
+  let r5 ← requireMsgReg decoded.msgRegs 5
+  pure { cnodeOpArgsOfWords r0.word r1.word r2.word r3.word with
+         rights := cnodeRightsOfWord r4.word, badge := Badge.ofWord r5.word }
 
 /-- Decode CSpace move arguments from message registers.
-    Requires 4 message registers (destIndex, srcRoot, srcIndex, depths). -/
+    Requires 4 message registers (the two slots' indices and depths). -/
 def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceMoveArgs := do
   requireMessageLength decoded (truncationMinimum .cspaceMove)
@@ -439,7 +350,7 @@ def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  cnodeOpArgsOfWords (CPtr.ofNat r0.val) (CPtr.ofNat r1.val) (CPtr.ofNat r2.val) r3.val
+  pure (cnodeOpArgsOfWords r0.word r1.word r2.word r3.word)
 
 /-- Decode reply-capability mint arguments from message registers.
     Requires 2 message registers (srcSlot, dstSlot). -/
@@ -649,22 +560,22 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
 -- ============================================================================
 
 /-- Encode CSpace mint arguments into message registers.
-    Inverse of `decodeCSpaceMintArgs`. -/
+    Inverse of `decodeCSpaceMintArgs` for depths up to 64 and a valid mask. -/
 @[inline] def encodeCSpaceMintArgs (args : CSpaceMintArgs) : Array RegValue :=
-  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
-    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits), ⟨args.badge.word⟩]
+  #[⟨args.destIndex.word⟩, RegValue.ofNat args.destDepth, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat args.srcDepth, RegValue.ofNat args.rights.bits, ⟨args.badge.word⟩]
 
 /-- Encode CSpace copy arguments into message registers.
-    Inverse of `decodeCSpaceCopyArgs` for depths below 256 and a valid mask. -/
+    Inverse of `decodeCSpaceCopyArgs` for depths up to 64 and a valid mask. -/
 @[inline] def encodeCSpaceCopyArgs (args : CSpaceCopyArgs) : Array RegValue :=
-  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
-    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth args.rights.bits)]
+  #[⟨args.destIndex.word⟩, RegValue.ofNat args.destDepth, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat args.srcDepth, RegValue.ofNat args.rights.bits]
 
 /-- Encode CSpace move arguments into message registers.
-    Inverse of `decodeCSpaceMoveArgs` for depths below 256. -/
+    Inverse of `decodeCSpaceMoveArgs` for depths up to 64. -/
 @[inline] def encodeCSpaceMoveArgs (args : CSpaceMoveArgs) : Array RegValue :=
-  #[⟨args.destIndex.word⟩, ⟨args.srcRoot.word⟩, ⟨args.srcIndex.word⟩,
-    RegValue.ofNat (CNodeOpWord.pack args.destDepth args.srcDepth 0)]
+  #[⟨args.destIndex.word⟩, RegValue.ofNat args.destDepth, ⟨args.srcIndex.word⟩,
+    RegValue.ofNat args.srcDepth]
 
 /-- Encode reply-capability mint arguments into message registers.
     Inverse of `decodeMintReplyCapArgs`. -/
@@ -703,102 +614,37 @@ private theorem requireMsgReg_unfold_ok (regs : Array RegValue) (idx : Nat) (h :
 private theorem requireMsgReg_unfold_err (regs : Array RegValue) (idx : Nat) (h : ¬(idx < regs.size)) :
     requireMsgReg regs idx = .error .invalidMessageInfo := by simp [requireMsgReg, dif_neg h]
 
-/-- A CNode operation's four words refuse exactly when the message is short of
-them or the depth word sets a bit past the two depths. -/
-private theorem cnodeOpWords_error_iff (regs : Array RegValue) :
-    (∃ e, (do
-        let r0 ← requireMsgReg regs 0
-        let r1 ← requireMsgReg regs 1
-        let r2 ← requireMsgReg regs 2
-        let r3 ← requireMsgReg regs 3
-        cnodeOpArgsOfWords (CPtr.ofNat r0.val) (CPtr.ofNat r1.val) (CPtr.ofNat r2.val) r3.val :
-          Except KernelError CNodeOpArgs) = .error e) ↔
-      regs.size < 4 ∨ ∃ h : 3 < regs.size, CNodeOpWord.addressingFits regs[3].val = false := by
-  unfold requireMsgReg cnodeOpArgsOfWords
-  by_cases h3 : 3 < regs.size
-  · simp only [dif_pos (show 0 < regs.size by omega), dif_pos (show 1 < regs.size by omega),
-      dif_pos (show 2 < regs.size by omega), dif_pos h3, bind, Except.bind]
-    cases hF : CNodeOpWord.addressingFits regs[3].val <;> simp [h3, hF] <;> omega
-  · by_cases h0 : 0 < regs.size
-    · by_cases h1 : 1 < regs.size
-      · by_cases h2 : 2 < regs.size
-        · simp [h0, h1, h2, h3, bind, Except.bind]; omega
-        · simp [h0, h1, h2, bind, Except.bind]; omega
-      · simp [h0, h1, bind, Except.bind]; omega
-    · simp [h0, bind, Except.bind]; omega
-
-/-- A copy's four words refuse exactly when the message is short of them or
-the word of the depths and the mask sets a bit past the mask. -/
-private theorem cnodeCopyWords_error_iff (regs : Array RegValue) :
-    (∃ e, (do
-        let r0 ← requireMsgReg regs 0
-        let r1 ← requireMsgReg regs 1
-        let r2 ← requireMsgReg regs 2
-        let r3 ← requireMsgReg regs 3
-        cnodeCopyArgsOfWords (CPtr.ofNat r0.val) (CPtr.ofNat r1.val) (CPtr.ofNat r2.val) r3.val :
-          Except KernelError CSpaceCopyArgs) = .error e) ↔
-      regs.size < 4 ∨ ∃ h : 3 < regs.size, CNodeOpWord.rightsFits regs[3].val = false := by
-  unfold requireMsgReg cnodeCopyArgsOfWords
-  by_cases h3 : 3 < regs.size
-  · simp only [dif_pos (show 0 < regs.size by omega), dif_pos (show 1 < regs.size by omega),
-      dif_pos (show 2 < regs.size by omega), dif_pos h3, bind, Except.bind]
-    cases hF : CNodeOpWord.rightsFits regs[3].val <;> simp [h3, hF] <;> omega
-  · by_cases h0 : 0 < regs.size
-    · by_cases h1 : 1 < regs.size
-      · by_cases h2 : 2 < regs.size
-        · simp [h0, h1, h2, h3, bind, Except.bind]; omega
-        · simp [h0, h1, h2, bind, Except.bind]; omega
-      · simp [h0, h1, bind, Except.bind]; omega
-    · simp [h0, bind, Except.bind]; omega
-
-/-- CSpace copy decode fails iff fewer than 4 message registers, or a word of
-the depths and the mask with a bit set past the mask. -/
+/-- CSpace copy decode fails iff fewer than 5 message registers. -/
 theorem decodeCSpaceCopyArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceCopy ≤ d.msgInfo.length) :
-    (∃ e, decodeCSpaceCopyArgs d = .error e) ↔
-      d.msgRegs.size < 4 ∨ ∃ h : 3 < d.msgRegs.size,
-        CNodeOpWord.rightsFits d.msgRegs[3].val = false := by
+    (∃ e, decodeCSpaceCopyArgs d = .error e) ↔ d.msgRegs.size < 5 := by
   have hL := requireMessageLength_of_le hLen
-  unfold decodeCSpaceCopyArgs
+  unfold decodeCSpaceCopyArgs requireMsgReg
   simp only [hL, bind, Except.bind]
-  exact cnodeCopyWords_error_iff d.msgRegs
+  by_cases h0 : 0 < d.msgRegs.size <;> by_cases h1 : 1 < d.msgRegs.size <;>
+    by_cases h2 : 2 < d.msgRegs.size <;> by_cases h3 : 3 < d.msgRegs.size <;>
+    by_cases h4 : 4 < d.msgRegs.size <;>
+    simp [h0, h1, h2, h3, h4, pure, Except.pure] <;> omega
 
-/-- CSpace mint decode fails iff fewer than 5 message registers, or a word of
-the depths and the mask with a bit set past the mask. -/
+/-- CSpace mint decode fails iff fewer than 6 message registers. -/
 theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMint ≤ d.msgInfo.length) :
-    (∃ e, decodeCSpaceMintArgs d = .error e) ↔
-      d.msgRegs.size < 5 ∨ ∃ h : 3 < d.msgRegs.size,
-        CNodeOpWord.rightsFits d.msgRegs[3].val = false := by
+    (∃ e, decodeCSpaceMintArgs d = .error e) ↔ d.msgRegs.size < 6 := by
   have hL := requireMessageLength_of_le hLen
-  unfold decodeCSpaceMintArgs cnodeMintArgsOfWords cnodeCopyArgsOfWords requireMsgReg
+  unfold decodeCSpaceMintArgs requireMsgReg
   simp only [hL, bind, Except.bind]
-  by_cases h4 : 4 < d.msgRegs.size
-  · simp only [dif_pos (show 0 < d.msgRegs.size by omega), dif_pos (show 1 < d.msgRegs.size by omega),
-      dif_pos (show 2 < d.msgRegs.size by omega), dif_pos (show 3 < d.msgRegs.size by omega),
-      dif_pos h4]
-    cases hF : CNodeOpWord.rightsFits d.msgRegs[3].val <;> simp [hF] <;> omega
-  · constructor
-    · intro _; exact .inl (by omega)
-    · intro _
-      by_cases h0 : 0 < d.msgRegs.size
-      · by_cases h1 : 1 < d.msgRegs.size
-        · by_cases h2 : 2 < d.msgRegs.size
-          · by_cases h3 : 3 < d.msgRegs.size
-            · simp [h0, h1, h2, h3, h4]
-            · simp [h0, h1, h2, h3]
-          · simp [h0, h1, h2]
-        · simp [h0, h1]
-      · simp [h0]
+  by_cases h0 : 0 < d.msgRegs.size <;> by_cases h1 : 1 < d.msgRegs.size <;>
+    by_cases h2 : 2 < d.msgRegs.size <;> by_cases h3 : 3 < d.msgRegs.size <;>
+    by_cases h4 : 4 < d.msgRegs.size <;> by_cases h5 : 5 < d.msgRegs.size <;>
+    simp [h0, h1, h2, h3, h4, h5, pure, Except.pure] <;> omega
 
-/-- CSpace move decode fails iff fewer than 4 message registers, or a depth
-word with a bit set past the two depths. -/
+/-- CSpace move decode fails iff fewer than 4 message registers. -/
 theorem decodeCSpaceMoveArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMove ≤ d.msgInfo.length) :
-    (∃ e, decodeCSpaceMoveArgs d = .error e) ↔
-      d.msgRegs.size < 4 ∨ ∃ h : 3 < d.msgRegs.size,
-        CNodeOpWord.addressingFits d.msgRegs[3].val = false := by
+    (∃ e, decodeCSpaceMoveArgs d = .error e) ↔ d.msgRegs.size < 4 := by
   have hL := requireMessageLength_of_le hLen
-  unfold decodeCSpaceMoveArgs
+  unfold decodeCSpaceMoveArgs requireMsgReg
   simp only [hL, bind, Except.bind]
-  exact cnodeOpWords_error_iff d.msgRegs
+  by_cases h0 : 0 < d.msgRegs.size <;> by_cases h1 : 1 < d.msgRegs.size <;>
+    by_cases h2 : 2 < d.msgRegs.size <;> by_cases h3 : 3 < d.msgRegs.size <;>
+    simp [h0, h1, h2, h3, pure, Except.pure] <;> omega
 
 /-- CSpace delete decode fails iff fewer than 1 message register. -/
 theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceDelete ≤ d.msgInfo.length) :
@@ -1044,87 +890,73 @@ private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
     syscallId := .send
     msgRegs := regs }
 
-/-- A copy's operands read back from their packed word, when both depths fit
-their eight bits and the mask is a valid rights set. -/
-private theorem cnodeCopyArgsOfWords_pack (di sr si : CPtr) (dd sd : Nat) (r : AccessRightSet)
-    (hDest : dd < 256) (hSrc : sd < 256) (hRights : r.valid) :
-    cnodeCopyArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-      (CNodeOpWord.pack dd sd r.bits) = .ok ⟨⟨di, sr, si, dd, sd⟩, r⟩ := by
-  have hFits := CNodeOpWord.rightsFits_pack dd sd r.bits
-  have hLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r hRights
-  simp only [cnodeCopyArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
-    CNodeOpWord.srcDepth_pack, CNodeOpWord.rights_pack, Nat.mod_eq_of_lt hDest,
-    Nat.mod_eq_of_lt hSrc, Nat.mod_eq_of_lt hLt, CPtr.ofNat_toNat,
-    AccessRightSet.ofNat_idempotent r hRights]
+/-- A depth up to 64, encoded as its word, reads back. -/
+private theorem cnodeDepthOfWord_ofNat {d : Nat} (h : d ≤ 64) :
+    cnodeDepthOfWord (RegValue.ofNat d).word = d := by
+  have hv : (RegValue.ofNat d).val = d := RegValue.val_ofNat_of_lt (by omega)
+  rw [cnodeDepthOfWord_of_le (by simp only [RegValue.val] at hv; omega)]
+  simpa [RegValue.val] using hv
 
-/-- A mint's operands are its copy's and the badge. -/
-private theorem cnodeMintArgsOfWords_of_copy {a b c : CPtr} {w bd : Nat} {x : CSpaceCopyArgs}
-    (h : cnodeCopyArgsOfWords a b c w = .ok x) :
-    cnodeMintArgsOfWords a b c w bd = .ok { x with badge := Badge.ofNatMasked bd } := by
-  unfold cnodeMintArgsOfWords; rw [h]
+/-- A valid rights mask, encoded as its word, reads back. -/
+private theorem cnodeRightsOfWord_ofNat (r : AccessRightSet) (h : r.valid) :
+    cnodeRightsOfWord (RegValue.ofNat r.bits).word = r := by
+  have hLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r h
+  have hv : (RegValue.ofNat r.bits).word.toNat = r.bits := by
+    simpa [RegValue.val] using RegValue.val_ofNat_of_lt (show r.bits < 2 ^ 64 by omega)
+  unfold cnodeRightsOfWord
+  rw [show ((RegValue.ofNat r.bits).word &&& 31).toNat = r.bits by
+    rw [UInt64.toNat_and, hv]
+    exact Nat.and_two_pow_sub_one_of_lt_two_pow (n := 5) (by omega)]
+  exact AccessRightSet.ofNat_idempotent r h
 
 /-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original
-when both depths fit their eight bits and the mask is a valid rights set
+when both depths are at most 64 and the mask is a valid rights set
 (`AccessRightSet.ofNat` keeps five bits). -/
 theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs)
-    (hDest : args.destDepth < 256) (hSrc : args.srcDepth < 256) (hRights : args.rights.valid) :
+    (hDest : args.destDepth ≤ 64) (hSrc : args.srcDepth ≤ 64) (hRights : args.rights.valid) :
     decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args := by
-  rcases args with ⟨⟨di, sr, si, dd, sd⟩, r⟩
+  rcases args with ⟨⟨di, dd, si, sd⟩, r⟩
   simp only at hDest hSrc hRights
-  have hFits := CNodeOpWord.rightsFits_pack dd sd r.bits
-  have hLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r hRights
-  -- The word is generalised so the kernel never evaluates the fit check.
-  have hStep : ∀ w, decodeCSpaceCopyArgs
-      (stubDecoded #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat w]) =
-      cnodeCopyArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-        (RegValue.ofNat w).val :=
-    fun _ => rfl
-  rw [show encodeCSpaceCopyArgs ⟨⟨di, sr, si, dd, sd⟩, r⟩ =
-      #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat (CNodeOpWord.pack dd sd r.bits)] from rfl,
-    hStep, RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _)]
-  simp only [cnodeCopyArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
-    CNodeOpWord.srcDepth_pack, CNodeOpWord.rights_pack, Nat.mod_eq_of_lt hDest,
-    Nat.mod_eq_of_lt hSrc, Nat.mod_eq_of_lt hLt, CPtr.ofNat_toNat,
-    AccessRightSet.ofNat_idempotent r hRights]
+  have hStep : ∀ a b c d e : RegValue, decodeCSpaceCopyArgs (stubDecoded #[a, b, c, d, e]) =
+      .ok (CSpaceCopyArgs.mk (cnodeOpArgsOfWords a.word b.word c.word d.word)
+        (cnodeRightsOfWord e.word)) := fun _ _ _ _ _ => rfl
+  rw [show encodeCSpaceCopyArgs ⟨⟨di, dd, si, sd⟩, r⟩ = #[⟨di.word⟩, RegValue.ofNat dd,
+    ⟨si.word⟩, RegValue.ofNat sd, RegValue.ofNat r.bits] from rfl, hStep]
+  simp only [cnodeOpArgsOfWords, cnodeDepthOfWord_ofNat hDest, cnodeDepthOfWord_ofNat hSrc,
+    cnodeRightsOfWord_ofNat r hRights]
+  rfl
 
 /-- Round-trip: encoding then decoding CSpaceMintArgs recovers the original
-    when the copy's operands round-trip and the badge is word-bounded.
-    R6-B: `ofNatMasked` decode requires the badge to fit in one machine word
-    for lossless roundtrip. -/
+    when the copy's operands round-trip. -/
 theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
-    (hDest : args.destDepth < 256) (hSrc : args.srcDepth < 256) (hRights : args.rights.valid)
-    (hBadge : args.badge.valid) :
+    (hDest : args.destDepth ≤ 64) (hSrc : args.srcDepth ≤ 64) (hRights : args.rights.valid) :
     decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args := by
   -- AN2-A: `Badge.mk` is private cross-module, so the badge is not
-  -- destructured; `ofNatMasked_toNat` recovers it.
-  rcases args with ⟨⟨⟨di, sr, si, dd, sd⟩, r⟩, b⟩
-  simp only at hDest hSrc hRights hBadge
-  have hFits := CNodeOpWord.rightsFits_pack dd sd r.bits
-  have hLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r hRights
-  have hBadgeId : Badge.ofNatMasked b.toNat = b := Badge.ofNatMasked_toNat b hBadge
-  -- The word is generalised so the kernel never evaluates the fit check.
-  have hStep : ∀ w, decodeCSpaceMintArgs
-      (stubDecoded #[⟨di.word⟩, ⟨sr.word⟩, ⟨si.word⟩, RegValue.ofNat w, ⟨b.word⟩]) =
-      cnodeMintArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-        (RegValue.ofNat w).val b.toNat :=
-    fun _ => rfl
-  simp only [encodeCSpaceMintArgs]
-  rw [hStep, RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _), cnodeMintArgsOfWords_of_copy
-    (cnodeCopyArgsOfWords_pack di sr si dd sd r hDest hSrc hRights), hBadgeId]
+  -- destructured.
+  rcases args with ⟨⟨⟨di, dd, si, sd⟩, r⟩, b⟩
+  simp only at hDest hSrc hRights
+  have hStep : ∀ a c d e f g : RegValue, decodeCSpaceMintArgs (stubDecoded #[a, c, d, e, f, g]) =
+      .ok (CSpaceMintArgs.mk (CSpaceCopyArgs.mk (cnodeOpArgsOfWords a.word c.word d.word e.word)
+        (cnodeRightsOfWord f.word)) (Badge.ofWord g.word)) := fun _ _ _ _ _ _ => rfl
+  rw [show encodeCSpaceMintArgs ⟨⟨⟨di, dd, si, sd⟩, r⟩, b⟩ = #[⟨di.word⟩, RegValue.ofNat dd,
+    ⟨si.word⟩, RegValue.ofNat sd, RegValue.ofNat r.bits, ⟨b.word⟩] from rfl, hStep]
+  simp only [cnodeOpArgsOfWords, cnodeDepthOfWord_ofNat hDest, cnodeDepthOfWord_ofNat hSrc,
+    cnodeRightsOfWord_ofNat r hRights]
+  rfl
 
 /-- Round-trip: encoding then decoding CSpaceMoveArgs recovers the original
-when both depths fit their eight bits. -/
+when both depths are at most 64. -/
 theorem decodeCSpaceMoveArgs_roundtrip (args : CSpaceMoveArgs)
-    (hDest : args.destDepth < 256) (hSrc : args.srcDepth < 256) :
+    (hDest : args.destDepth ≤ 64) (hSrc : args.srcDepth ≤ 64) :
     decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args := by
-  rcases args with ⟨di, sr, si, dd, sd⟩
+  rcases args with ⟨di, dd, si, sd⟩
   simp only at hDest hSrc
-  have hFits := CNodeOpWord.addressingFits_pack dd sd
-  show cnodeOpArgsOfWords (CPtr.ofNat di.toNat) (CPtr.ofNat sr.toNat) (CPtr.ofNat si.toNat)
-    (RegValue.ofNat (CNodeOpWord.pack dd sd 0)).val = _
-  simp only [RegValue.val_ofNat_of_lt (CNodeOpWord.pack_lt _ _ _), cnodeOpArgsOfWords, hFits, ↓reduceIte, CNodeOpWord.destDepth_pack,
-    CNodeOpWord.srcDepth_pack, Nat.mod_eq_of_lt hDest, Nat.mod_eq_of_lt hSrc,
-    CPtr.ofNat_toNat]
+  have hStep : ∀ a b c d : RegValue, decodeCSpaceMoveArgs (stubDecoded #[a, b, c, d]) =
+      .ok (cnodeOpArgsOfWords a.word b.word c.word d.word) := fun _ _ _ _ => rfl
+  rw [show encodeCSpaceMoveArgs ⟨di, dd, si, sd⟩ = #[⟨di.word⟩, RegValue.ofNat dd,
+    ⟨si.word⟩, RegValue.ofNat sd] from rfl, hStep]
+  simp only [cnodeOpArgsOfWords, cnodeDepthOfWord_ofNat hDest, cnodeDepthOfWord_ofNat hSrc]
+  rfl
 
 /-- Round-trip: encoding then decoding MintReplyCapArgs recovers the original,
 for slots a register word holds (WS-SX SX1.3: a register is a word). -/
@@ -1776,13 +1608,13 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
     through `AccessRightSet.ofNat`. Parallel to `decode_components_roundtrip`
     in `RegisterDecode.lean`. -/
 theorem decode_layer2_roundtrip_all (maxASID : Nat) :
-    (∀ args : CSpaceMintArgs, args.destDepth < 256 → args.srcDepth < 256 →
-      args.rights.valid → args.badge.valid →
+    (∀ args : CSpaceMintArgs, args.destDepth ≤ 64 → args.srcDepth ≤ 64 →
+      args.rights.valid →
       decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
-    (∀ args : CSpaceCopyArgs, args.destDepth < 256 → args.srcDepth < 256 →
+    (∀ args : CSpaceCopyArgs, args.destDepth ≤ 64 → args.srcDepth ≤ 64 →
       args.rights.valid →
       decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
-    (∀ args : CSpaceMoveArgs, args.destDepth < 256 → args.srcDepth < 256 →
+    (∀ args : CSpaceMoveArgs, args.destDepth ≤ 64 → args.srcDepth ≤ 64 →
       decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args : CSpaceDeleteArgs, args.targetSlot.toNat < 2 ^ 64 →
       decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
@@ -2361,36 +2193,13 @@ file: equal to it whenever the decode's message registers are the layout's, read
 from the file (the `_eq_by` theorems).  Capability addresses are built from the
 word (`CPtr.ofWord`), every other field from its number, as the decode does. -/
 
-@[inline] def decodeCSpaceCopyArgsBy (get : MsgRegReader)
-    : Except KernelError CSpaceCopyArgs := do
-  let r0 ← get 0
-  let r1 ← get 1
-  let r2 ← get 2
-  let r3 ← get 3
-  cnodeCopyArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3
-
-theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .cspaceCopy ≤ decoded.msgInfo.length) :
-    decodeCSpaceCopyArgs decoded = decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeCSpaceCopyArgs decodeCSpaceCopyArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      cnodeCopyArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat]
-
 @[inline] def decodeCSpaceMoveArgsBy (get : MsgRegReader)
     : Except KernelError CSpaceMoveArgs := do
   let r0 ← get 0
   let r1 ← get 1
   let r2 ← get 2
   let r3 ← get 3
-  cnodeOpArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3
+  pure (cnodeOpArgsOfWords r0 r1 r2 r3)
 
 theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2404,8 +2213,7 @@ theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      cnodeOpArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat]
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
 @[inline] def decodeMintReplyCapArgsBy (get : MsgRegReader)
     : Except KernelError MintReplyCapArgs := do
@@ -2673,8 +2481,74 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
       schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat, UInt64.lt_iff_toNat_lt, UInt64.ofNat_toNat,
       word_toNat_eq_zero_iff]
 
-/-- `decodeCSpaceMintArgs` over a reader: a copy's four words, then the badge,
-the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/
+/-- `decodeCSpaceCopyArgs` over a reader: the two slots' four words, then the
+rights word, the fifth (overflow slot 0 of the caller's IPC buffer, at the
+entry). -/
+@[inline] def decodeCSpaceCopyArgsBy (get : MsgRegReader)
+    : Except KernelError CSpaceCopyArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  let r4 ← get 4
+  pure { cnodeOpArgsOfWords r0 r1 r2 r3 with rights := cnodeRightsOfWord r4 }
+
+theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
+    (h : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
+    (hLen : truncationMinimum .cspaceCopy ≤ decoded.msgInfo.length) :
+    decodeCSpaceCopyArgs decoded =
+      decodeCSpaceCopyArgsBy (msgRegOfFileThen layout regs w) := by
+  unfold decodeCSpaceCopyArgs decodeCSpaceCopyArgsBy
+  rw [requireMessageLength_of_le hLen]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
+  simp only [requireMsgReg_map_readReg_push]
+  generalize msgRegOfFileThen layout regs w = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+
+/-- Message register `i`'s word for a call whose two overflow words `w0` and
+`w1` follow the layout's registers: the file's registers, then `w0` and `w1`,
+refusing any later index as `requireMsgReg` does past a decode's registers. -/
+@[inline] def msgRegOfFileThenTwo (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w0 w1 : UInt64) : MsgRegReader :=
+  fun i => if h : i < layout.msgRegs.size then .ok (readRegWord regs layout.msgRegs[i])
+    else if i = layout.msgRegs.size then .ok w0
+    else if i = layout.msgRegs.size + 1 then .ok w1
+    else .error .invalidMessageInfo
+
+/-- A decode whose message registers are the layout's, read from the file, then
+two overflow words, reads each as the number of its word. -/
+theorem requireMsgReg_map_readReg_push_two (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w0 w1 : UInt64) (i : Nat) :
+    requireMsgReg (layout.msgRegs.map (readReg regs) ++ #[(⟨w0⟩ : RegValue), ⟨w1⟩]) i =
+      (msgRegOfFileThenTwo layout regs w0 w1 i).map (fun w => (⟨w⟩ : RegValue)) := by
+  unfold requireMsgReg msgRegOfFileThenTwo
+  by_cases hi : i < layout.msgRegs.size
+  · have hi' : i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w0⟩ : RegValue), ⟨w1⟩]).size := by
+      simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
+        List.length_nil]
+      omega
+    simp only [hi, hi', ↓reduceDIte, Except.map]
+    rw [Array.getElem_append_left (by simpa using hi)]
+    simp only [Array.getElem_map, readReg_eq_word]
+  · by_cases hEq : i = layout.msgRegs.size
+    · subst hEq
+      simp [Except.map]
+    · by_cases hEq1 : i = layout.msgRegs.size + 1
+      · subst hEq1
+        simp [Except.map, show ¬ layout.msgRegs.size + 1 < layout.msgRegs.size by omega]
+      · have hi' : ¬ i < (layout.msgRegs.map (readReg regs) ++
+            #[(⟨w0⟩ : RegValue), ⟨w1⟩]).size := by
+          simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
+            List.length_nil]
+          omega
+        simp only [hi, hi', hEq, hEq1, ↓reduceDIte, ↓reduceIte, Except.map]
+
+/-- `decodeCSpaceMintArgs` over a reader: a copy's five words, then the badge,
+the sixth (overflow slot 1 of the caller's IPC buffer, at the entry). -/
 @[inline] def decodeCSpaceMintArgsBy (get : MsgRegReader)
     : Except KernelError CSpaceMintArgs := do
   let r0 ← get 0
@@ -2682,26 +2556,25 @@ the fifth word (overflow slot 0 of the caller's IPC buffer, at the entry). -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  match cnodeCopyArgsOfWordsW (CPtr.ofWord r0) (CPtr.ofWord r1) (CPtr.ofWord r2) r3 with
-  | .error e => .error e
-  | .ok c => .ok { c with badge := Badge.ofWord r4 }
+  let r5 ← get 5
+  pure { cnodeOpArgsOfWords r0 r1 r2 r3 with
+         rights := cnodeRightsOfWord r4, badge := Badge.ofWord r5 }
 
 theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout)
-    (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
+    (regs : RegisterFile) (w0 w1 : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w0⟩ : RegValue), ⟨w1⟩]) 6)
     (hLen : truncationMinimum .cspaceMint ≤ decoded.msgInfo.length) :
     decodeCSpaceMintArgs decoded =
-      decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) := by
-  unfold decodeCSpaceMintArgs decodeCSpaceMintArgsBy cnodeMintArgsOfWords
+      decodeCSpaceMintArgsBy (msgRegOfFileThenTwo layout regs w0 w1) := by
+  unfold decodeCSpaceMintArgs decodeCSpaceMintArgsBy
   rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg_push]
-  generalize msgRegOfFileThen layout regs w = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      cnodeCopyArgsOfWordsW_eq, SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+  simp only [requireMsgReg_map_readReg_push_two]
+  generalize msgRegOfFileThenTwo layout regs w0 w1 = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;> cases g 5 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
 /-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
 decode's order. -/

@@ -1228,6 +1228,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchAuditedCheckedR
   , `SeLe4n.Kernel.dispatchConfigureCheckedR
   , `SeLe4n.Kernel.dispatchServiceRegisterCheckedR
+  , `SeLe4n.Kernel.dispatchCopyCheckedR
   , `SeLe4n.Kernel.dispatchMintCheckedR
   , `SeLe4n.Kernel.dispatchOverflowedCheckedR
   , `SeLe4n.Kernel.dispatchOperandCheckedR

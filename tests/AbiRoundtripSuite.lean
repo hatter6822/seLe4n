@@ -212,15 +212,15 @@ private def t04_sc_configure_domain_rejected : IO Unit := do
     | .ok _ =>
       throw <| IO.userError "expected error, got ok"
 
-/-- AK4-G-T05: cspaceMint (5 words): a copy's four inline (the destination
-index, the source root, the source index and the word of the depths and the
-rights mask), and the badge from overflow slot 0. -/
+/-- AK4-G-T05: cspaceMint (6 words, seL4's order): the destination index and
+depth and the source index and depth inline, the rights word and the badge
+from overflow slots 0 and 1. -/
 private def t05_cspace_mint_no_overflow : IO Unit := do
   let syscallId := 4  -- cspaceMint
-  let msgLen := 5
-  -- destIndex 10, srcRoot 3, srcIndex 20, depths 64/64, rights r|w|g
-  let inline : Array UInt64 := #[10, 3, 20, 0x07 * 65536 + 64 * 256 + 64]
-  let overflow : Array UInt64 := #[42]                        -- MR[4] = badge=42
+  let msgLen := 6
+  -- destIndex 10, depth 64, srcIndex 20, depth 64, rights r|w|g, badge 42
+  let inline : Array UInt64 := #[10, 64, 20, 64]
+  let overflow : Array UInt64 := #[0x07, 42]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -228,25 +228,24 @@ private def t05_cspace_mint_no_overflow : IO Unit := do
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "overflowCount=1" (decoded.overflowCount == 1)
+    expect "overflowCount=2" (decoded.overflowCount == 2)
     match decodeCSpaceMintArgs decoded with
     | .error e =>
       throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
       expect "destIndex=10" (args.destIndex.toNat == 10)
-      expect "srcRoot=3" (args.srcRoot.toNat == 3)
       expect "srcIndex=20" (args.srcIndex.toNat == 20)
       expect "depths=64" (args.destDepth == 64 && args.srcDepth == 64)
       expect "rights=7" (args.rights.bits == 7)
       expect "badge=42" (args.badge.toNat == 42)
 
-/-- AK4-G-T06: cspaceMint whose word of the depths and the rights mask sets a
-    bit past the mask (bit 21) → rejected. -/
-private def t06_cspace_mint_rights_rejected : IO Unit := do
+/-- AK4-G-T06: cspaceMint whose rights word sets bits past the rights: they
+    are ignored, as seL4's `rightsFromWord` ignores them. -/
+private def t06_cspace_mint_rights_bits_ignored : IO Unit := do
   let syscallId := 4
-  let msgLen := 5
-  let inline : Array UInt64 := #[10, 3, 20, 0x200000 + 64 * 256 + 64]
-  let overflow : Array UInt64 := #[42]
+  let msgLen := 6
+  let inline : Array UInt64 := #[10, 64, 20, 64]
+  let overflow : Array UInt64 := #[0x200007, 42]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -255,20 +254,17 @@ private def t06_cspace_mint_rights_rejected : IO Unit := do
     throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeCSpaceMintArgs decoded with
-    | .error (.invalidArgument _) =>
-      expect "stray bit past the mask rejected" true
+    | .ok args => expect "bits past the rights ignored" (args.rights.bits == 7)
     | .error e =>
-      throw <| IO.userError s!"expected invalidArgument, got {toString e}"
-    | .ok _ =>
-      throw <| IO.userError "expected error, got ok"
+      throw <| IO.userError s!"expected the rights read, got {toString e}"
 
-/-- AK4-G-T07: cspaceCopy (4 words, all inline): the destination index, the
-source root, the source index and the packed depths. -/
+/-- AK4-G-T07: cspaceCopy (5 words): the destination index and depth and the
+source index and depth inline, the rights word from overflow slot 0. -/
 private def t07_cspace_copy_minimal : IO Unit := do
   let syscallId := 5  -- cspaceCopy
-  let msgLen := 4
-  let inline : Array UInt64 := #[2, 7, 1, 0x0D05]
-  let overflow : Array UInt64 := #[]
+  let msgLen := 5
+  let inline : Array UInt64 := #[2, 5, 1, 13]
+  let overflow : Array UInt64 := #[0x07]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -276,16 +272,16 @@ private def t07_cspace_copy_minimal : IO Unit := do
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "overflowCount=0" (decoded.overflowCount == 0)
+    expect "overflowCount=1" (decoded.overflowCount == 1)
     match decodeCSpaceCopyArgs decoded with
     | .error e =>
       throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
       expect "destIndex=2" (args.destIndex.toNat == 2)
-      expect "srcRoot=7" (args.srcRoot.toNat == 7)
       expect "srcIndex=1" (args.srcIndex.toNat == 1)
       expect "destDepth=5" (args.destDepth == 5)
       expect "srcDepth=13" (args.srcDepth == 13)
+      expect "rights=7" (args.rights.bits == 7)
 
 /-- AK4-G-T08: size invariant — `msgRegs.size = inlineCount + overflowCount`
     across all decoded results. -/
@@ -363,7 +359,7 @@ private def runAll : IO Unit := do
   t03_sched_context_configure_full_abi
   t04_sc_configure_domain_rejected
   t05_cspace_mint_no_overflow
-  t06_cspace_mint_rights_rejected
+  t06_cspace_mint_rights_bits_ignored
   t07_cspace_copy_minimal
   t08_size_invariant_across_syscalls
   t09_service_register_grant_strict

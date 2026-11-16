@@ -5460,7 +5460,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
+            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+                (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) =>
@@ -5476,7 +5477,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
+            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+                (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st
@@ -5489,7 +5491,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
+            match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+                (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                 args.srcIndex args.srcDepth st with
             | .error e => .error e
             | .ok (src, dst) => cspaceMoveChecked ctx src dst st
@@ -6336,7 +6339,8 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 
 /-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMintWithCdt`
 is invoked with the source and destination slots the arguments name
-(`resolveCNodeOpSlots`, seL4's CNode addressing), the requested rights masked
+(`resolveCNodeOpSlots`, seL4's CNode addressing, the source root extra
+capability 0), the requested rights masked
 by the source capability's (`mintMaskedRights`, seL4's `maskCapRights`) and
 the badge. CDT-tracked (C-01).  The arm first refuses with `.objectNotFound`
 unless the invoked object is a CNode (`cnodeInvoked`). -/
@@ -6349,8 +6353,8 @@ theorem dispatchWithCapChecked_cspaceMint_delegates
     (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
-            args.srcIndex args.srcDepth st with
+        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex args.srcDepth st with
         | .error e => .error e
         | .ok (src, dst) =>
             let badge : Option SeLe4n.Badge :=
@@ -6371,8 +6375,8 @@ theorem dispatchWithCapChecked_cspaceCopy_delegates
     (hDecode : decodeCSpaceCopyArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
-            args.srcIndex args.srcDepth st with
+        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex args.srcDepth st with
         | .error e => .error e
         | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
@@ -6390,8 +6394,8 @@ theorem dispatchWithCapChecked_cspaceMove_delegates
     (hDecode : decodeCSpaceMoveArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth args.srcRoot
-            args.srcIndex args.srcDepth st with
+        match resolveCNodeOpSlots tid cap args.destIndex args.destDepth
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex args.srcDepth st with
         | .error e => .error e
         | .ok (src, dst) => cspaceMoveChecked ctx src dst st := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]

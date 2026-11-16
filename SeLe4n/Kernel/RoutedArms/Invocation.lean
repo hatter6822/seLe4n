@@ -37,7 +37,7 @@ results reported, the arm's refusal pushed from its words
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-      (invocationOperandArmR ctx sid (SeLe4n.CPtr.ofWord capWord) tcb.registerContext tid
+      (invocationOperandArmR ctx sid (SeLe4n.CPtr.ofWord capWord) xc tcb.registerContext tid
         executingCore)
       st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
       entryReportLookupAtW

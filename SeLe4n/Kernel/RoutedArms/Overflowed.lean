@@ -13,10 +13,10 @@ import SeLe4n.Kernel.RoutedArms.OverflowOne
 /-!
 # The overflowed route's arm, out of line
 
-The routed entry's `.overflowed` arm (`syscallEntryCheckedK`): a five-word
-invocation (a scheduling-context configure, a service register or a CNode
-mint) whose
-message runs past the inline words, as its own function.  Only a syscall that
+The routed entry's `.overflowed` arm (`syscallEntryCheckedK`): an invocation
+past the inline words (a scheduling-context configure, a service register, a
+CNode copy, or a CNode mint, whose sixth word is slot 1's, read off the state
+the arm is handed) whose message runs past them, as its own function.  Only a syscall that
 reads its overflow words is routed past the inline registers
 (`syscallReadsOverflow`), so no other kind reaches this arm.  Its overflow
 words read as the long send's are (slot 0 and the next page's first slot), the
@@ -59,8 +59,9 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
               entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
-/-- **The overflowed arm**: the configure's, the service register's or the CNode
-mint's, its fifth word slot 0's. -/
+/-- **The overflowed arm**: the configure's, the service register's, the CNode
+copy's or the CNode mint's, its fifth word slot 0's and a mint's sixth slot
+1's. -/
 @[noinline] def overflowedRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
     (capWord : UInt64) (xc : Nat) (length : Nat) (st : SystemState) : SystemState :=
@@ -68,9 +69,12 @@ mint's, its fifth word slot 0's. -/
   | .schedContextConfigure =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       configureOperandArmR rf w tid) st
+  | .cspaceCopy =>
+    overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
+      copyOperandArmR ctx tid xc rf w) st
   | .cspaceMint =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
-      mintOperandArmR ctx tid rf w) st
+      mintOperandArmR ctx tid xc rf w (overflowWordAt st tid 1)) st
   | _ =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       serviceRegisterOperandArmR ctx tid rf w) st
@@ -82,7 +86,7 @@ theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurre
     (st : SystemState) (hOv : Architecture.RegisterDecode.routedOverflowOne sid = true) :
     overflowedRoutedArm ctx executingCore tid sid capWord xc length st =
       overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
-        overflowedArmOf ctx sid rf w tid) st := by
-  rcases routedOverflowOne_cases hOv with rfl | rfl | rfl <;> rfl
+        overflowedArmOf ctx sid rf w (overflowWordAt st tid 1) tid xc) st := by
+  rcases routedOverflowOne_cases hOv with rfl | rfl | rfl | rfl <;> rfl
 
 end SeLe4n.Kernel

@@ -107,17 +107,20 @@ a syscall that reads its overflow words is routed past the inline registers
 A specification: the compiled entry runs the routed arm
 (`RoutedArms.Overflowed`). -/
 noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : SyscallId)
-    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w : UInt64)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w w1 : UInt64)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
   match sid with
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore xc
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore xc
-  | .cspaceMint => dispatchMintCheckedR ctx capAddr rf w tid executingCore xc
+  | .cspaceCopy => dispatchCopyCheckedR ctx capAddr rf w tid executingCore xc
+  | .cspaceMint => dispatchMintCheckedR ctx capAddr rf w w1 tid executingCore xc
   | _ => fun st => .error (.illegalState, st)
 
-/-- The syscalls `routedOverflowOne` admits: the five-word invocations. -/
+/-- The syscalls `routedOverflowOne` admits: the invocations past the inline
+words. -/
 theorem routedOverflowOne_cases {sid : SyscallId} (h : routedOverflowOne sid = true) :
-    sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .cspaceMint := by
+    sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .cspaceCopy ∨
+      sid = .cspaceMint := by
   cases sid <;> simp_all [routedOverflowOne]
 
 /-- **The overflowed route's operand arm**: the arm `dispatchOverflowedCheckedR`
@@ -125,25 +128,56 @@ runs behind the operand check (`dispatchOverflowedCheckedR_eq_operand`).  A
 specification: the compiled entry runs it out of line
 (`RoutedArms.Overflowed`). -/
 noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
-    (rf : SeLe4n.RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) :
+    (rf : SeLe4n.RegisterFile) (w w1 : UInt64) (tid : SeLe4n.ThreadId) (xc : Nat) :
     Option Capability → RefusalCarrying Unit :=
   match sid with
   | .schedContextConfigure => configureOperandArmR rf w tid
   | .serviceRegister => serviceRegisterOperandArmR ctx tid rf w
-  | .cspaceMint => mintOperandArmR ctx tid rf w
+  | .cspaceCopy => copyOperandArmR ctx tid xc rf w
+  | .cspaceMint => mintOperandArmR ctx tid xc rf w w1
   | _ => fun _ st => .error (.invalidCapability 0, st)
 
 /-- Every overflowed call is the operand dispatch of its arm. -/
 theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
-    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w : UInt64)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w w1 : UInt64)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat)
     (h : routedOverflowOne sid = true) :
-    dispatchOverflowedCheckedR ctx sid capAddr rf w tid executingCore xc =
-      dispatchOperandCheckedR capAddr tid executingCore xc (overflowedArmOf ctx sid rf w tid) := by
-  rcases routedOverflowOne_cases h with rfl | rfl | rfl <;> rfl
+    dispatchOverflowedCheckedR ctx sid capAddr rf w w1 tid executingCore xc =
+      dispatchOperandCheckedR capAddr tid executingCore xc
+        (overflowedArmOf ctx sid rf w w1 tid xc) := by
+  rcases routedOverflowOne_cases h with rfl | rfl | rfl | rfl <;> rfl
 
-/-- An overflowed decode's words read as the inline words and then slot 0's
-word below five. -/
+/-- An overflowed decode past six words reads as the inline words and then
+slots 0 and 1's words below six. -/
+theorem overflowedDecode_agree_two (S : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hLen : 5 < mi.length) :
+    MsgRegsAgreeBelow (overflowedDecode S tid rf sid capAddr mi).msgRegs
+        (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf) ++
+          #[(⟨overflowWordAt S tid 0⟩ : RegValue), ⟨overflowWordAt S tid 1⟩]) 6 := by
+  obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 2 := ⟨mi.length - 6, by omega⟩
+  intro i hi
+  unfold requireMsgReg
+  have hSz : (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf).size = 4 := by
+    simp [Architecture.regMessageRegs, SeLe4n.arm64DefaultLayout]
+  have hA : Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf =
+      SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf) := rfl
+  simp only [overflowedDecode, hm, overflowRegsFrom, ← hA]
+  have h1 : i < (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
+      ((⟨overflowWordAt S tid 0⟩ : RegValue) :: (⟨overflowWordAt S tid 1⟩ : RegValue) ::
+        overflowRegsFrom S tid 2 m).toArray).size := by
+    simp only [Array.size_append, List.size_toArray, List.length_cons, hSz]; omega
+  have h2 : i < (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
+      #[(⟨overflowWordAt S tid 0⟩ : RegValue), ⟨overflowWordAt S tid 1⟩]).size := by
+    simp only [Array.size_append, List.size_toArray, List.length_cons, List.length_nil, hSz]
+    omega
+  rw [dif_pos h1, dif_pos h2]
+  by_cases hl : i < 4
+  · rw [Array.getElem_append_left (by omega), Array.getElem_append_left (by omega)]
+  · rw [Array.getElem_append_right (by omega), Array.getElem_append_right (by omega)]
+    obtain rfl | rfl : i = 4 ∨ i = 5 := by omega
+    all_goals simp [hSz]
+
 theorem overflowedDecode_agree (S : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hLen : 4 < mi.length) :
@@ -166,21 +200,24 @@ invocation's fifth argument is slot 0's word. -/
 theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo) (executingCore : Concurrency.CoreId)
-    (hRt : routedOverflowOne sid = true) (hLen : 4 < mi.length) (st : SystemState) :
-    dispatchOverflowedCheckedR ctx sid capAddr rf (overflowWordAt S tid 0) tid
-        executingCore (syscallExtraCapCount sid mi.extraCaps) st =
+    (hRt : routedOverflowOne sid = true) (hLen : 5 < mi.length) (st : SystemState) :
+    dispatchOverflowedCheckedR ctx sid capAddr rf (overflowWordAt S tid 0)
+        (overflowWordAt S tid 1) tid executingCore (syscallExtraCapCount sid mi.extraCaps) st =
       RefusalCarrying.ofKernel
         (dispatchSyscallChecked ctx (overflowedDecode S tid rf sid capAddr mi) tid executingCore)
         st := by
   refine congrFun ?_ st
-  have hA5 := overflowedDecode_agree S tid rf sid capAddr mi hLen
-  rcases routedOverflowOne_cases hRt with rfl | rfl | rfl
+  have hA5 := overflowedDecode_agree S tid rf sid capAddr mi (by omega)
+  have hA6 := overflowedDecode_agree_two S tid rf sid capAddr mi hLen
+  rcases routedOverflowOne_cases hRt with rfl | rfl | rfl | rfl
   · exact dispatchConfigureCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
   · exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
-  · exact dispatchMintCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
+  · exact dispatchCopyCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
+  · exact dispatchMintCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ _ tid
+      executingCore rfl hA6 (show 6 ≤ mi.length by omega)
 
 /-! ## An invocation short of its arguments (seL4's `seL4_TruncatedMessage`) -/
 
@@ -284,6 +321,7 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
         | exact applySyscallTaintAfter_configure st tid decoded h pe pl pt post
         | exact applySyscallTaintAfter_serviceRegister st tid decoded h pe pl pt post
         | exact applySyscallTaintAfter_cspaceMint st tid decoded h pe pl pt post
+        | exact applySyscallTaintAfter_cspaceCopy st tid decoded h pe pl pt post
     · exact applySyscallTaintAfter_routed st tid decoded hI pe pl pt post
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb ref _ hRef
@@ -304,5 +342,51 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
           truncationTarget_of_accepted _ st cap hR (Nat.lt_of_le_of_lt (Nat.zero_le _) hT) hType]
         rfl
       · simp only [hIdle, hType, Bool.not_true, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-! ## The one-overflow-word invocations
+
+The register route's `overflowOne` arm names one of `routedOverflowOne`, its
+fifth word `w`: the configure, the service register and the CNode copy, whose
+fifth argument it is, and the CNode mint, whose six words a five-word message
+falls short of, so it is refused `.truncatedMessage` once its operand is found
+and checked (`dispatchShortArgsCheckedR`). -/
+
+/-- `dispatchSyscallChecked` for a one-overflow-word invocation `sid` whose
+fifth word is `w` (`dispatchOverflowOneCheckedR_eq`).  The last arm is never
+taken: the route names only `routedOverflowOne` calls. -/
+@[inline] def dispatchOverflowOneCheckedR (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  match sid with
+  | .schedContextConfigure => dispatchConfigureCheckedR capAddr regs w tid executingCore xc
+  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore xc
+  | .cspaceCopy => dispatchCopyCheckedR ctx capAddr regs w tid executingCore xc
+  | .cspaceMint => dispatchShortArgsCheckedR .cspaceMint capAddr tid executingCore xc
+  | _ => fun st => .error (.illegalState, st)
+
+theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hR : Architecture.RegisterDecode.routedOverflowOne decoded.syscallId = true)
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
+    (hLen : decoded.msgInfo.length = 5) :
+    dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  have hLen5 : 5 ≤ decoded.msgInfo.length := by omega
+  cases hSid : decoded.syscallId <;> rw [hSid] at hR <;>
+    first
+    | (cases hR; done)
+    | (have h := dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen5
+       rw [hSid] at h; exact h)
+    | (have h := dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs
+         hLen5
+       rw [hSid] at h; exact h)
+    | (have h := dispatchCopyCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen5
+       rw [hSid] at h; exact h)
+    | (have h := dispatchShortArgsCheckedR_eq ctx decoded tid executingCore
+         (by rw [hSid]; rfl) (by rw [hSid, hLen]; decide)
+       rw [hSid] at h; exact h)
 
 end SeLe4n.Kernel

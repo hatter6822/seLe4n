@@ -2759,23 +2759,23 @@ def runWSJ1DecodeChecks : IO Unit := do
 private def runWSKGCSpaceChecks : IO Unit := do
   -- ---- K-G1: CSpace negative tests ----
 
-  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 5) → invalidMessageInfo
+  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 6) → invalidMessageInfo
   let shortDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 5, extraCaps := 0, label := 0 }
+    msgInfo := { length := 6, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
-    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 5
+    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 6
   }
   expectErr "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
     .invalidMessageInfo
 
-  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 5) → invalidMessageInfo
   let oneRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 5, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
-    msgRegs := #[⟨10⟩]  -- only 1, need 4
+    msgRegs := #[⟨10⟩]  -- only 1, need 5
   }
   expectErr "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs oneRegDecode)
@@ -2797,7 +2797,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
     .invalidMessageInfo
 
-  -- A message shorter than the mint's five argument words is refused
+  -- A message shorter than the mint's six argument words is refused
   -- `.truncatedMessage` before any register is read (seL4's
   -- `seL4_TruncatedMessage`), whatever the registers hold.
   expectErr "K-G-NEG-TRUNC cspaceMint decode of a four-word message"

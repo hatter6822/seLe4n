@@ -491,6 +491,28 @@ def callerExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat) :
   | some (.tcb tcb) => extraCapsLookupFault? st tcb n
   | _ => none
 
+/-- **The address of a caller's extra capability `i`** (seL4's
+`current_extra_caps.excaprefs[i]`, read by `getExtraCPtr`): word `i` of its IPC
+buffer's `caps_or_badges` when its message names more than `i` extra
+capabilities (`n`, at most `maxExtraCaps`); `none` when it names fewer, when its
+buffer does not resolve (seL4's null buffer names none), or when the caller is
+no thread.  The dispatch prologue has looked every named one up
+(`lookupExtraCaps`), so an invocation that reads one reads an address that
+resolves. -/
+@[inline] def callerExtraCapAddr? (st : SystemState) (tid : SeLe4n.ThreadId) (n i : Nat) :
+    Option SeLe4n.CPtr :=
+  if i < min n maxExtraCaps then
+    match st.getObject? tid.toObjId with
+    | some (.tcb tcb) => senderExtraCapAddr? st tcb i
+    | _ => none
+  else none
+
+/-- A message that names no extra capability names no address. -/
+theorem callerExtraCapAddr?_zero (st : SystemState) (tid : SeLe4n.ThreadId) (i : Nat) :
+    callerExtraCapAddr? st tid 0 i = none := by
+  unfold callerExtraCapAddr?
+  rw [Nat.zero_min, if_neg (Nat.not_lt_zero i)]
+
 /-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
 a `.replyRecv` whose message names an extra capability that does not look up
 (seL4-MCS `SysReplyRecv`: `handleInvocation` with `isBlocking = false` skips the

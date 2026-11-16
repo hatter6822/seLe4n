@@ -1505,9 +1505,10 @@ struct RoundTrip {
     syscall: u64,
     /// The capability address in `x0`.
     cptr: u64,
-    /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
-    /// scheduling-context configure, the service register and the mint, whose
-    /// fifth word the kernel reads from the root task's IPC buffer (the boot's,
+    /// `x1`'s `MessageInfo`: its length at most 4, except for the
+    /// scheduling-context configure, the service register, the copy and the
+    /// mint, whose fifth word (and a mint's sixth) the kernel reads from the
+    /// root task's IPC buffer (the boot's,
     /// [`ROOT_IPC_BUFFER`], or the window's page while a scenario points the
     /// buffer there), and the long send, whose words past the fourth it reads
     /// from the sender's.
@@ -1534,14 +1535,15 @@ struct RoundTrip {
     /// and `getReceiveSlots`).  The two threads share the buffer, so the
     /// receive path is the receiver's as well.
     caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
-    /// The first overflow word of a message longer than the four registers
-    /// carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, word 5 of the
-    /// buffer), written unmeasured before the call into the IPC buffer at
-    /// this address, the caller's own, and cleared after it, so a later
-    /// call reading that word still finds the zero the kernel scrubbed: a
-    /// mint's badge (seL4's `seL4_CNode_Mint`, whose fifth argument is
-    /// read from the buffer).
-    overflow: Option<(u64, u64)>,
+    /// The first two overflow words of a message longer than the four
+    /// registers carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, words 5
+    /// and 6 of the buffer), written unmeasured before the call into the IPC
+    /// buffer at this address, the caller's own, and cleared after it, so a
+    /// later call reading them still finds the zeros the kernel scrubbed: a
+    /// copy's rights, a mint's rights and badge (seL4's `seL4_CNode_Copy` and
+    /// `seL4_CNode_Mint`, whose fifth and sixth arguments are read from the
+    /// buffer).
+    overflow: Option<(u64, [u64; 2])>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1801,19 +1803,18 @@ const fn cap_address(slot: u64) -> u64 {
 #[cfg(feature = "hw_target")]
 const ROOT_IPC_BUFFER: u64 = 2 << 39;
 
-/// The CNode operation word (`sele4n_abi::args::cspace::cnode_op_word`) of a
-/// copy or a move between two of the root task's slots: both resolved at the
-/// root CNode's whole depth, its 58-bit guard and its 6-bit radix.
+/// The depth that resolves a root slot's address: the root CNode's whole
+/// depth, its 58-bit guard and its 6-bit radix.
 #[cfg(feature = "hw_target")]
-const ROOT_SLOT_DEPTHS: u64 = 64 | (64 << 8);
+const ROOT_DEPTH: u64 = 64;
 
-/// A move's four words from root slot `src` to root slot `dest` (seL4's
-/// `seL4_CNode_Move` addressing): the destination index in the invoked root
-/// CNode, the source root (the root task's own CNode capability), the source
-/// index, and both depths.
+/// A CNode operation's four slot words from root slot `src` to root slot
+/// `dest`, in seL4's `decodeCNodeInvocation` order: the destination index
+/// and depth in the invoked root CNode, then the source index and depth in
+/// the source root.
 #[cfg(feature = "hw_target")]
-const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
-    root_slot_masked(src, dest, 0)
+const fn root_slots(src: u64, dest: u64) -> [u64; 4] {
+    [cap_address(dest), ROOT_DEPTH, cap_address(src), ROOT_DEPTH]
 }
 
 /// Every access right, as a copy's or a mint's rights mask (seL4's
@@ -1821,30 +1822,81 @@ const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
 #[cfg(feature = "hw_target")]
 const ALL_RIGHTS: u64 = 0x1f;
 
-/// A copy's four words from root slot `src` to root slot `dest` (seL4's
-/// `seL4_CNode_Copy`): [`root_slot_pair`]'s addressing with every right in the
-/// mask, so the copy keeps the source's rights.
+/// **A CNode operation** on the CNode at `cptr` with its four slot words
+/// `slots` ([`root_slots`]'s order) and its source root, the CNode
+/// capability at `src_root`, as the message's extra capability 0 (seL4's
+/// `excaprefs[0]`): written, unmeasured, into `caps_or_badges[0]` of the
+/// caller's IPC buffer at `buffer` ([`RoundTrip::caps_or_badges`]) and
+/// counted in the message info ([`ONE_EXTRA_CAP`]).  Four words: a move's
+/// whole message.
 #[cfg(feature = "hw_target")]
-const fn root_slot_copy(src: u64, dest: u64) -> [u64; 4] {
-    root_slot_masked(src, dest, ALL_RIGHTS)
+const fn cnode_trip(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    src_root: u64,
+    slots: [u64; 4],
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [src_root, 0, 0], None)),
+        ..invocation(name, syscall, cptr, slots)
+    }
 }
 
-/// [`root_slot_pair`]'s addressing with `rights` in the operation word's
-/// rights field (`sele4n_abi::args::cspace::cnode_op_word::RIGHTS_SHIFT`).
+/// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
+/// rights mask, the fifth word, which the kernel reads from the caller's IPC
+/// buffer at `buffer` ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
-const fn root_slot_masked(src: u64, dest: u64, rights: u64) -> [u64; 4] {
-    [
-        cap_address(dest),
+const fn cnode_copy(
+    name: &'static str,
+    cptr: u64,
+    src_root: u64,
+    slots: [u64; 4],
+    rights: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 5,
+        overflow: Some((buffer, [rights, 0])),
+        ..cnode_trip(name, CSPACE_COPY, cptr, src_root, slots, buffer)
+    }
+}
+
+/// A copy from root slot `src` to root slot `dest` with every right in the
+/// mask, so the copy keeps the source's rights; the source root is the root
+/// task's own CNode capability.
+#[cfg(feature = "hw_target")]
+const fn root_copy(name: &'static str, src: u64, dest: u64, buffer: u64) -> RoundTrip {
+    cnode_copy(
+        name,
+        CNODE_CAP,
         cap_address(CNODE_SLOT),
-        cap_address(src),
-        ROOT_SLOT_DEPTHS | (rights << 16),
-    ]
+        root_slots(src, dest),
+        ALL_RIGHTS,
+        buffer,
+    )
+}
+
+/// A move from root slot `src` to root slot `dest` (seL4's
+/// `seL4_CNode_Move`: the four slot words, no rights).
+#[cfg(feature = "hw_target")]
+const fn root_move(name: &'static str, src: u64, dest: u64, buffer: u64) -> RoundTrip {
+    cnode_trip(
+        name,
+        CSPACE_MOVE,
+        CNODE_CAP,
+        cap_address(CNODE_SLOT),
+        root_slots(src, dest),
+        buffer,
+    )
 }
 
 /// **The CNode mint** (seL4's `seL4_CNode_Mint`) from root slot `src` to
 /// root slot `dest`, its capability masked by `rights` and badged `badge`:
-/// five words, [`root_slot_masked`]'s four and the badge, which the kernel
-/// reads from the root task's IPC buffer at `buffer`
+/// six words, [`root_slots`]'s four, the rights and the badge, the last two
+/// read from the root task's IPC buffer at `buffer`
 /// ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
 const fn mint(
@@ -1856,13 +1908,15 @@ const fn mint(
     buffer: u64,
 ) -> RoundTrip {
     RoundTrip {
-        msg_len: 5,
-        overflow: Some((buffer, badge)),
-        ..invocation(
+        msg_len: ONE_EXTRA_CAP | 6,
+        overflow: Some((buffer, [rights, badge])),
+        ..cnode_trip(
             name,
             CSPACE_MINT,
             CNODE_CAP,
-            root_slot_masked(src, dest, rights),
+            cap_address(CNODE_SLOT),
+            root_slots(src, dest),
+            buffer,
         )
     }
 }
@@ -2560,24 +2614,20 @@ const fn overflowed(
     }
 }
 
-/// A CNode Copy on the root CNode refused with `returns`, its four words `msg`.
+/// A CNode Copy on the root CNode refused with `returns`: its four slot words
+/// `slots`, every right in its mask, and its source root the CNode
+/// capability at `src_root`, both in the root task's IPC buffer at `buffer`.
 #[cfg(feature = "hw_target")]
 const fn cnode_refusal(
     name: &'static str,
-    msg: [u64; 4],
+    src_root: u64,
+    slots: [u64; 4],
+    buffer: u64,
     returns: Option<(u64, [Option<u64>; 4])>,
 ) -> RoundTrip {
     RoundTrip {
-        name,
-        syscall: CSPACE_COPY,
-        cptr: CNODE_CAP,
-        msg_len: 4,
-        msg,
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
         returns,
+        ..cnode_copy(name, CNODE_CAP, src_root, slots, ALL_RIGHTS, buffer)
     }
 }
 
@@ -2589,7 +2639,12 @@ const fn cnode_refusal(
 #[cfg(feature = "hw_target")]
 const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
     RoundTrip {
-        overflow: Some((FRAME_VADDR, 0)),
+        // The refusal's fifth word lands in the buffer's `msg[4]`; the trip's
+        // own overflow words, or a zero, go back after the window.
+        overflow: match trip.overflow {
+            Some(words) => Some(words),
+            None => Some((FRAME_VADDR, [0, 0])),
+        },
         returns: refused_with(
             FAILED_LOOKUP,
             5,
@@ -2947,18 +3002,8 @@ const PARTNER_PRIORITY: u64 = 255;
 #[cfg(feature = "hw_target")]
 const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     &[
-        invocation(
-            "cspace-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(NOTIFICATION_SLOT, COPY_SLOT),
-        ),
-        invocation(
-            "cspace-move",
-            CSPACE_MOVE,
-            CNODE_CAP,
-            root_slot_pair(COPY_SLOT, MOVE_SLOT),
-        ),
+        root_copy("cspace-copy", NOTIFICATION_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
+        root_move("cspace-move", COPY_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
         invocation(
             "cspace-delete",
             CSPACE_DELETE,
@@ -3010,16 +3055,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             0,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cnode_copy(
             "cnode-multi-level-copy",
-            CSPACE_COPY,
             CNODE_CAP,
+            cap_address(GUARDED_CNODE_SLOT),
             [
                 cap_address(WALK_COPY_SLOT),
-                cap_address(GUARDED_CNODE_SLOT),
+                ROOT_DEPTH,
                 guarded_index(GUARDLESS_CNODE_SLOT, NOTIFICATION_SLOT),
-                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            ALL_RIGHTS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "cnode-multi-level-copy-delete",
@@ -3029,12 +3076,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         cnode_refusal(
             "lookup-stops-at-non-cnode",
+            cap_address(GUARDED_CNODE_SLOT),
             [
                 cap_address(WALK_COPY_SLOT),
-                cap_address(GUARDED_CNODE_SLOT),
+                ROOT_DEPTH,
                 guarded_index(NOTIFICATION_SLOT, 0),
-                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            ROOT_IPC_BUFFER,
             // The source; DepthMismatch (3), six bits left, none found.
             refused_with(FAILED_LOOKUP, 4, [Some(1), Some(3), Some(6), Some(0)]),
         ),
@@ -3492,23 +3541,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
         ),
-        invocation(
-            "frame-copy-mapped",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
-        ),
+        root_copy("frame-copy-mapped", FRAME_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
         invocation(
             "frame-copy-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [MOVE_SLOT, 0, 0, 0],
         ),
-        invocation(
+        root_copy(
             "frame-copy-for-revoke",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
+            FRAME_SLOT,
+            MOVE_SLOT,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-map-copy",
@@ -3654,63 +3698,84 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // past 64 (`RangeError(1, 64)`), a destination index whose guard
         // matches but whose depth stops inside the root's level (a depth
         // mismatch), an empty source (`MissingCapability`, seL4's
-        // `cnode.c`), and a destination index whose guard bits differ (a
+        // `cnode.c`), a CNode operation naming no source root (seL4's
+        // `TruncatedMessage`), and a destination index whose guard bits differ (a
         // guard mismatch, five words, the fifth written to the root task's
         // IPC buffer `msg[4]` and counted in the length).
         cnode_refusal(
             "range-error-payload",
+            cap_address(CNODE_SLOT),
             [
                 cap_address(COPY_SLOT),
-                cap_address(CNODE_SLOT),
+                65,
                 cap_address(NOTIFICATION_SLOT),
-                65 | (64 << 8) | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            FRAME_VADDR,
             refused_with(RANGE_ERROR, 2, [Some(1), Some(64), None, None]),
         ),
         cnode_refusal(
             "failed-lookup-depth-mismatch",
+            cap_address(CNODE_SLOT),
             [
                 ROOT_CNODE_GUARD >> 4,
-                cap_address(CNODE_SLOT),
+                60,
                 cap_address(NOTIFICATION_SLOT),
-                60 | (64 << 8) | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            FRAME_VADDR,
             // Not the source; DepthMismatch (3), 60 bits left, the level's 64.
             refused_with(FAILED_LOOKUP, 4, [Some(0), Some(3), Some(60), Some(64)]),
         ),
         cnode_refusal(
             "failed-lookup-missing-source",
-            root_slot_copy(EMPTY_SOURCE_SLOT, EMPTY_DEST_SLOT),
+            cap_address(CNODE_SLOT),
+            root_slots(EMPTY_SOURCE_SLOT, EMPTY_DEST_SLOT),
+            FRAME_VADDR,
             // The source; MissingCapability (2), the source's depth, 64.
             refused_with(FAILED_LOOKUP, 3, [Some(1), Some(2), Some(64), None]),
         ),
-        // The fifth word lands in the root task's buffer `msg[4]`, the word
-        // a later five-word call (a configure's deadline, a service
-        // register's grant flag) reads as its argument, so the round trip
-        // names the buffer ([`RoundTrip::overflow`]) and the word goes back
-        // to the boot's zero after the measured window.  The root task's
-        // buffer here is the window's frame ([`FRAME_VADDR`]), where
-        // `root-set-ipc-buffer` pointed it; the tail's configures read the
-        // same page once `tail-root-ipc-buffer-back` points it there again.
+        // The same copy with its message info counting no extra capability:
+        // no source root, seL4's `TruncatedMessage`, after the destination
+        // is found and before its emptiness is checked.
         RoundTrip {
-            overflow: Some((FRAME_VADDR, 0)),
-            ..cnode_refusal(
-                "failed-lookup-guard-mismatch",
-                [
-                    COPY_SLOT,
-                    cap_address(CNODE_SLOT),
-                    cap_address(NOTIFICATION_SLOT),
-                    ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
-                ],
-                // Not the source; GuardMismatch (4), 64 bits left, the root's
-                // guard; its width (58) is the fifth word, in the buffer.
-                refused_with(
-                    FAILED_LOOKUP,
-                    5,
-                    [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-                ),
+            msg_len: 5,
+            caps_or_badges: None,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..root_copy(
+                "cnode-copy-no-source-root",
+                NOTIFICATION_SLOT,
+                COPY_SLOT,
+                FRAME_VADDR,
             )
         },
+        // The refusal's fifth word lands in the root task's buffer `msg[4]`,
+        // the word a later five-word call (a configure's deadline, a service
+        // register's grant flag) reads as its argument; the copy's own rights
+        // word is written there first, so the round trip names the buffer
+        // ([`RoundTrip::overflow`]) and the word goes back to the boot's zero
+        // after the measured window.  The root task's buffer here is the
+        // window's frame ([`FRAME_VADDR`]), where `root-set-ipc-buffer`
+        // pointed it; the tail's configures read the same page once
+        // `tail-root-ipc-buffer-back` points it there again.
+        cnode_refusal(
+            "failed-lookup-guard-mismatch",
+            cap_address(CNODE_SLOT),
+            [
+                COPY_SLOT,
+                ROOT_DEPTH,
+                cap_address(NOTIFICATION_SLOT),
+                ROOT_DEPTH,
+            ],
+            FRAME_VADDR,
+            // Not the source; GuardMismatch (4), 64 bits left, the root's
+            // guard; its width (58) is the fifth word, in the buffer.
+            refused_with(
+                FAILED_LOOKUP,
+                5,
+                [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+            ),
+        ),
         // A second capability whose address misses the root CNode's guard,
         // one per arm that resolves one (seL4's `lookupCap` of an argument,
         // `seL4_FailedLookup` with the guard-mismatch words): the configure's
@@ -8768,11 +8833,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // minted with its own rights, with none and with a badge, into the slot
         // the next carve reuses, and deleted each time; the carve's pin reads
         // that slot's record after.
-        invocation(
+        root_copy(
             "irq-control-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(IRQ_CONTROL_SLOT, FRAME_SLOT),
+            IRQ_CONTROL_SLOT,
+            FRAME_SLOT,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-control-copy-delete",
@@ -9023,27 +9088,31 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
     ),
-    invocation(
+    cnode_copy(
         "owned-cnode-fill",
-        CSPACE_COPY,
+        cap_address(FRAME_SLOT),
+        cap_address(CNODE_SLOT),
+        [
+            CARVED_CNODE_SLOT,
+            CARVED_CNODE_RADIX,
+            cap_address(ENDPOINT_SLOT),
+            ROOT_DEPTH,
+        ],
+        ALL_RIGHTS,
+        ROOT_IPC_BUFFER,
+    ),
+    cnode_copy(
+        "owned-cnode-copy-out",
+        CNODE_CAP,
         cap_address(FRAME_SLOT),
         [
-            CARVED_CNODE_SLOT,
-            cap_address(CNODE_SLOT),
-            cap_address(ENDPOINT_SLOT),
-            CARVED_CNODE_RADIX | (64 << 8) | (ALL_RIGHTS << 16),
-        ],
-    ),
-    invocation(
-        "owned-cnode-copy-out",
-        CSPACE_COPY,
-        CNODE_CAP,
-        [
             cap_address(MOVE_SLOT),
-            cap_address(FRAME_SLOT),
+            ROOT_DEPTH,
             CARVED_CNODE_SLOT,
-            64 | (CARVED_CNODE_RADIX << 8) | (ALL_RIGHTS << 16),
+            CARVED_CNODE_RADIX,
         ],
+        ALL_RIGHTS,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "owned-cnode-slot-delete",
@@ -9057,11 +9126,11 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    root_move(
         "owned-cnode-escaped-move",
-        CSPACE_MOVE,
-        CNODE_CAP,
-        root_slot_pair(MOVE_SLOT, MINT_SLOT),
+        MOVE_SLOT,
+        MINT_SLOT,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "owned-cnode-escaped-delete",
@@ -9228,18 +9297,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             FRAME_SLOT,
         ],
     ),
-    invocation(
-        "moved-parent-copy",
-        CSPACE_COPY,
-        CNODE_CAP,
-        root_slot_copy(FRAME_SLOT, COPY_SLOT),
-    ),
-    invocation(
-        "parent-cap-move",
-        CSPACE_MOVE,
-        CNODE_CAP,
-        root_slot_pair(FRAME_SLOT, MINT_SLOT),
-    ),
+    root_copy("moved-parent-copy", FRAME_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
+    root_move("parent-cap-move", FRAME_SLOT, MINT_SLOT, ROOT_IPC_BUFFER),
     invocation(
         "moved-parent-child-delete",
         CSPACE_DELETE,
@@ -12786,7 +12845,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     };
     let wide_deadline = RoundTrip {
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(4), None, None, None]),
-        overflow: Some((FRAME_VADDR, WIDE_WORD)),
+        overflow: Some((FRAME_VADDR, [WIDE_WORD, 0])),
         ..configure("configure-wide-deadline", admitted_args)
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
@@ -13644,11 +13703,11 @@ fn fault_entries() -> Option<bool> {
             [FAULT_HANDLER_CAP, 0, 0, 0],
         )
     };
-    let copy_handler = invocation(
+    let copy_handler = root_copy(
         "copy-fault-handler",
-        CSPACE_COPY,
-        CNODE_CAP,
-        root_slot_copy(ENDPOINT_SLOT, FAULT_HANDLER_SLOT),
+        ENDPOINT_SLOT,
+        FAULT_HANDLER_SLOT,
+        ROOT_IPC_BUFFER,
     );
     let delete_handler = invocation(
         "delete-fault-handler",
@@ -14128,8 +14187,29 @@ fn dispatch_round_trip_at(
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
-    if let Some((buffer, word)) = trip.overflow {
-        if !write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[word]) {
+    if let Some((buffer, words)) = trip.caps_or_badges.map(|(b, w, _)| (b, w)) {
+        // The extra capabilities' addresses: written here, before every
+        // dispatch of the round trip, so a setup step's CNode operation names
+        // its source root as a measured one does.
+        if !write_caps_or_badges(buffer, words) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {}: the IPC buffer at \
+                 {buffer:#x} has no translation",
+                trip.name
+            );
+            return (
+                Dispatched::Failed,
+                None,
+                None,
+                Resumed {
+                    regs: [0; 6],
+                    pc: 0,
+                },
+            );
+        }
+    }
+    if let Some((buffer, words)) = trip.overflow {
+        if !write_buffer_words(buffer, OVERFLOW_BASE_WORD, &words) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {}: the IPC buffer at \
                  {buffer:#x} has no translation",
@@ -14164,7 +14244,7 @@ fn dispatch_round_trip_at(
         // The word back to the zero the boot's scrub left, outside the
         // measured window; the page was mapped a moment ago, so this write
         // finds it again.
-        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0]);
+        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0, 0]);
     }
     // The restore replaced the published frame with the resumed thread's
     // context: its `x0` to `x5` and its PC are what that thread resumes with.
@@ -14917,11 +14997,11 @@ fn remote_failed(why: &str) -> Option<bool> {
 /// The frame's copy mapped at the next page and unmapped while the root
 /// task's address space is live on core 1, and the copy's capability.
 #[cfg(feature = "hw_target")]
-const REMOTE_COPY: RoundTrip = invocation(
+const REMOTE_COPY: RoundTrip = root_copy(
     "remote-asid-frame-copy",
-    CSPACE_COPY,
-    CNODE_CAP,
-    root_slot_copy(FRAME_SLOT, MOVE_SLOT),
+    FRAME_SLOT,
+    MOVE_SLOT,
+    ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
 const REMOTE_MAP: RoundTrip = invocation(
@@ -15236,12 +15316,10 @@ fn heap_allocations_round_trip_resuming(
 ) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    if let Some((buffer, words, path)) = trip.caps_or_badges {
-        let path_written = match path {
-            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, &path),
-            None => true,
-        };
-        if !(write_caps_or_badges(buffer, words) && path_written) {
+    // The receive path; the extra capabilities' addresses before it are
+    // written by the dispatch itself (`dispatch_round_trip_at`).
+    if let Some((buffer, _, Some(path))) = trip.caps_or_badges {
+        if !write_buffer_words(buffer, RECEIVE_PATH_WORD, &path) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the IPC buffer at \
                  {buffer:#x} has no translation"
