@@ -10607,6 +10607,60 @@ private def replyLegDecoded : SyscallDecodeResult :=
     msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0 0,
     msgRegs := #[⟨3⟩] }
 
+/-- `replyLegDecoded` naming one extra capability, whose address (the IPC
+buffer's `caps_or_badges[0]` word, `replyLegSkipState`) does not look up: seL4-MCS `SysReplyRecv` runs `handleInvocation` with `isBlocking = false`,
+so the failed `lookupExtraCaps` skips the reply with no fault, and the receive
+half still runs (WS-SX SX6.1). -/
+private def replyLegSkipDecoded : SyscallDecodeResult :=
+  { replyLegDecoded with msgInfo := SeLe4n.Model.MessageInfo.mk 1 1 0 0 }
+
+/-- `replyLegState` with the server's IPC buffer naming, as its one extra
+capability, an address its CSpace does not resolve; the reply still records
+`lowCurrent` as its caller. -/
+private def replyLegSkipBusyState : SystemState :=
+  SeLe4n.Testing.withSenderCapAddrs replyLegState highCurrent #[SeLe4n.CPtr.ofNat 0x7FFFFFFF]
+
+/-- `replyLegState` with the server's IPC buffer naming, as its one extra
+capability, an address its CSpace does not resolve, and its reply object free
+(no outstanding caller), so the receive the skipped reply runs takes it without
+a holder to cancel. -/
+private def replyLegSkipState : SystemState :=
+  SeLe4n.Testing.withSenderCapAddrs
+    { replyLegState with
+        objects := replyLegState.objects.insert replyLegReply.toObjId
+          (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode none }) }
+    highCurrent #[SeLe4n.CPtr.ofNat 0x7FFFFFFF]
+
+/-- The reply-receive whose extra capability does not look up: no reply leg,
+the receive's footprint, and the receive runs. -/
+private def runReplyRecvSkipChecks : IO Unit := do
+  IO.println "--- the reply-receive whose extra capability does not look up ---"
+  assertBool "the fixture's extra capability does not look up"
+    ((callerExtraCapsFault? replyLegSkipBusyState highCurrent 1).isSome &&
+      (callerExtraCapsFault? replyLegSkipState highCurrent 1).isSome)
+  assertBool "the same reply-receive naming no extra capability names the recorded caller"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ (syscallTaintPlan replyLegSkipBusyState highCurrent replyLegDecoded).edges))
+  assertBool "NEGATIVE: the skipped reply declares no edge to the recorded caller"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∉ (syscallTaintPlan replyLegSkipBusyState highCurrent replyLegSkipDecoded).edges))
+  assertBool "the skipped reply declares the receive's footprint"
+    (decide (abiEntryFootprintId replyLegSkipDecoded highCurrent replyLegSkipBusyState
+      = .receive))
+  assertBool "NEGATIVE: a reply-receive whose extra capabilities resolve declares its own"
+    (decide (abiEntryFootprintId replyLegDecoded highCurrent replyLegSkipBusyState = .replyRecv))
+  let out := dispatchSyscallChecked fineLockEntryLabeling replyLegSkipDecoded highCurrent c1
+    replyLegSkipState
+  assertBool "the skipped reply raises nothing: the receive runs"
+    (match out with | .ok _ => true | .error _ => false)
+  assertBool "…and the receiver blocks on the endpoint"
+    (match out with
+     | .ok ((), st) =>
+       match st.getTcb? highCurrent with
+       | some t => match t.ipcState with | .blockedOnReceive _ => true | _ => false
+       | none => false
+     | .error _ => false)
+
 /-- §12.4  SM9.D.8-.D.11 — propagation, through the **live** entry. -/
 private def runTaintPropagationChecks : IO Unit := do
   IO.println "--- §12.4 SM9.D.8 propagation on the live syscall path ---"
@@ -12008,6 +12062,7 @@ declassification, causal provenance and the acceptance scenarios"
   runTaintMountChecks
   runContentFlowClassChecks
   runTaintPropagationChecks
+  runReplyRecvSkipChecks
   runTaintRetypeChecks
   runCausalDetectorChecks
   runCausalAcceptanceChecks

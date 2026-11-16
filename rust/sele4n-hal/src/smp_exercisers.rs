@@ -4625,6 +4625,54 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // A reply-receive whose one extra capability's address does not
+        // resolve (a bare slot index, whose guard bits do not match the root's
+        // guard): seL4-MCS `SysReplyRecv` runs `handleInvocation` with
+        // `isBlocking = false`, so the failed `lookupExtraCaps` skips the reply
+        // with no fault, and the receive half still runs.  The reply is still
+        // the caller's, so the receive cancels the caller's IPC first
+        // (`receiveIPC`'s `cancelIPC(replyTCB)`), then blocks with no sender
+        // waiting.  The caller, restarted, suspends the partner.
+        invocation(
+            "reply-recv-extra-cap-skips-reply-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-call",
+            CALL,
+            ENDPOINT_CAP,
+            2,
+            [0x6c, 0x6d],
+            true,
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        with_caps(
+            partner_step(
+                "reply-recv-extra-cap-skips-reply",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [REPLY_CAP, 0x7b],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [EMPTY_SOURCE_SLOT, 0, 0],
+        ),
+        invocation(
+            "reply-recv-extra-cap-skips-reply-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         // A send and a call carrying one capability, each within the inline
         // words and at full length, that block with no receiver waiting.  The
         // capability's address resolves (the endpoint's own), as it must:
