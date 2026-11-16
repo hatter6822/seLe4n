@@ -1909,6 +1909,19 @@ const fn cap_argument(
     }
 }
 
+/// **The table install** (seL4's `seL4_ARM_PageTable_Map`) on the table
+/// capability `table`: the address `FRAME_VADDR` in MR0 and the attributes
+/// word (0) in MR1, the address space `root` named as extra capability 0,
+/// which the kernel reads from the caller's IPC buffer at `buffer`.
+#[cfg(feature = "hw_target")]
+const fn page_table_map(name: &'static str, table: u64, root: u64, buffer: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 2,
+        caps_or_badges: Some((buffer, [root, 0, 0], None)),
+        ..invocation(name, PAGE_TABLE_MAP, table, [FRAME_VADDR, 0, 0, 0])
+    }
+}
+
 /// **The handler issue** (seL4's `seL4_IRQControl_Get`) on the interrupt
 /// control: the line in MR0, and the destination as seL4's `lookupTargetSlot`
 /// reads it — the root CNode capability named as extra capability 0 (from the
@@ -3557,11 +3570,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PAGE_TABLE_SLOTS[0],
             ],
         ),
-        invocation(
+        page_table_map(
             "page-table-map-1",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[0],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "untyped-retype-page-table-2",
@@ -3574,11 +3587,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PAGE_TABLE_SLOTS[1],
             ],
         ),
-        invocation(
+        page_table_map(
             "page-table-map-2",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[1],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "untyped-retype-page-table-3",
@@ -3591,11 +3604,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PAGE_TABLE_SLOTS[2],
             ],
         ),
-        invocation(
+        page_table_map(
             "page-table-map-3",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[2],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "untyped-retype-frame",
@@ -9691,11 +9704,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[0],
         ],
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-installed-table-2",
@@ -9708,11 +9721,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[1],
         ],
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-installed-table-3",
@@ -9725,11 +9738,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[2],
         ],
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(REVOCATION_REQUIRED),
@@ -9873,11 +9886,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[0],
         ],
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-tabled-root-table-2",
@@ -9890,11 +9903,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[1],
         ],
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-tabled-root-table-3",
@@ -9907,11 +9920,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             PAGE_TABLE_SLOTS[2],
         ],
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-tabled-root-frame",
@@ -14894,11 +14907,11 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             PAGE_TABLE_SLOTS[0],
         ],
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "move-retype-page-table-2",
@@ -14911,11 +14924,11 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             PAGE_TABLE_SLOTS[1],
         ],
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "move-retype-page-table-3",
@@ -14928,11 +14941,11 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             PAGE_TABLE_SLOTS[2],
         ],
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "move-retype-frame",

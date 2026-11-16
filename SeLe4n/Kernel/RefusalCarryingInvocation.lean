@@ -435,7 +435,10 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
       match decodePageTableMapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error e
       | .ok args =>
-          match resolveCallerCapObject tid args.vspaceRoot .write st with
+        match callerExtraCapAddr? st tid xc 0 with
+        | none => .error .truncatedMessage
+        | some rootCPtr =>
+          match resolveCallerCapObject tid rootCPtr .write st with
           | .error e => .error (e.forArgumentCap Architecture.pageTableMapRootCapNumber)
           | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
     | _ => .error (.invalidCapability 0)
@@ -1011,7 +1014,10 @@ refusal is read where it is, never rebuilt. -/
       match decodePageTableMapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        resolveCallerCapObjectK tid args.vspaceRoot .write st
+        -- WS-SX SX6.3: the address space is extra capability 0, read in
+        -- continuation form, so no `Option` is built.
+        callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun rootCPtr =>
+        resolveCallerCapObjectK tid rootCPtr .write st
           (KernelError.argumentCapRefusal Architecture.pageTableMapRootCapNumber (fun e => .error (e, st)))
           (fun _ rootId =>
             RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
@@ -1736,16 +1742,21 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
         dsimp only
+        rw [callerExtraCapAddrK_eq]
+        cases hX : callerExtraCapAddr? st tid xc 0 with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX]
+        | some rootCPtr =>
+        dsimp only
         rw [resolveCallerCapObjectK_eq]
-        cases hRs : resolveCallerCapObject tid args.vspaceRoot .write st with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs,
+        cases hRs : resolveCallerCapObject tid rootCPtr .write st with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hRs,
             KernelError.argumentCapRefusal]
         | ok pr =>
           obtain ⟨_, rootId⟩ := pr
           dsimp only
           apply RefusalCarrying.ofChecked_eq
           intro hA
-          simp only [dispatchInvocationBy, hD, hRs,
+          simp only [dispatchInvocationBy, hD, hX, hRs,
             pageTableMap_of_admitted objId rootId args.vaddr st hA]
     all_goals rfl
   case pageTableUnmap =>

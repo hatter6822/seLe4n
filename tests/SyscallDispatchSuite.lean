@@ -2605,13 +2605,22 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0
       (.ok { notificationCPtr := cptr 3 }) st) == some 1)
     "an IRQ handler's non-notification argument is refused invalidCapability 1"
-  -- A page-table map's address space (MR0), an empty slot.
+  -- A page-table map's address space (extra capability 0, WS-SX SX6.3), an
+  -- empty slot; a message naming no extra capability is truncatedMessage.
   let ptCap : Capability := { target := .object ⟨90⟩, rights := all }
+  let ptMap : SyscallDecodeResult :=
+    { decoded .pageTableMap [0, 0] with
+      msgInfo := { length := 2, extraCaps := 1, label := 0 } }
   expect "argcap_pageTableMap_root_empty"
-    (match dispatchCapabilityOnly (decoded .pageTableMap [9, 0]) ptCap caller bootCoreId with
-     | some k => capNum (k st) == some 1
+    (match dispatchCapabilityOnly ptMap ptCap caller bootCoreId with
+     | some k => capNum (k (withSenderCapAddrs st caller #[cptr 9])) == some 1
      | none => false)
     "a page-table map's empty address-space argument is refused invalidCapability 1"
+  expect "argcap_pageTableMap_no_extra_cap_truncated"
+    (match dispatchCapabilityOnly (decoded .pageTableMap [0, 0]) ptCap caller bootCoreId with
+     | some k => match k st with | .error .truncatedMessage => true | _ => false
+     | none => false)
+    "a page-table map naming no address space is refused truncatedMessage"
   -- The invoked capability keeps 0: a `.receive` whose invoked slot is empty.
   expect "argcap_invoked_capability_is_zero"
     (capNum (dispatchSyscallAsCurrent

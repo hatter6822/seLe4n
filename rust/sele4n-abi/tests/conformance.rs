@@ -2859,7 +2859,7 @@ fn wrappers_name_their_syscalls() {
     assert_names("untyped_reset", SyscallId::UntypedReset);
     let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, 0);
     assert_names("tcb_set_space", SyscallId::TcbSetSpace);
-    let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64));
+    let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64), &mut buf);
     assert_names("page_table_map", SyscallId::PageTableMap);
     let _ = sele4n_sys::vspace::page_table_unmap(cap);
     assert_names("page_table_unmap", SyscallId::PageTableUnmap);

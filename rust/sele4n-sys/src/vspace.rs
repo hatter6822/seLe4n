@@ -6,7 +6,7 @@
 use sele4n_abi::args::{
     PagePerms, PageTableMapArgs, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs,
 };
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
 use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
@@ -70,27 +70,33 @@ pub fn vspace_map(
 ///
 /// `table_cap` names the table (held with `Write`); `vspace_root` is the
 /// address, **in the caller's CSpace**, of a capability to the address space
-/// (held with `Write`).  The table is installed at the shallowest level the walk
-/// to `vaddr` is missing, so three calls make an address mappable; a fourth is
-/// refused with `MappingConflict`.  A carved address space maps a frame only
-/// where its walk is complete (`TranslationFault` otherwise).
+/// (held with `Write`), sent as the message's extra capability 0
+/// (`caps_or_badges[0]` of `buf`, the caller's IPC buffer); the words are
+/// `vaddr` and seL4's attributes word (0).  A message naming no extra
+/// capability is `TruncatedMessage`.  The table is installed at the
+/// shallowest level the walk to `vaddr` is missing, so three calls make an
+/// address mappable; a fourth is refused with `MappingConflict`.  A carved
+/// address space maps a frame only where its walk is complete
+/// (`TranslationFault` otherwise).
 ///
 /// Lean: `pageTableMap` (Architecture/PageTableInstall.lean), dispatched as
-/// `SyscallId.pageTableMap` in `API.lean` (WS-BP BP7.1).
+/// `SyscallId.pageTableMap` in `API.lean` (WS-BP BP7.1, WS-SX SX6.3).
 #[inline]
 pub fn page_table_map(
     table_cap: CPtr,
     vspace_root: CPtr,
     vaddr: VAddr,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     let args = PageTableMapArgs {
-        vspace_root: vspace_root.raw(),
         vaddr: vaddr.raw(),
+        attr: 0,
     };
     let encoded = args.encode();
+    buf.caps_or_badges[0] = vspace_root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: table_cap,
-        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_info: MessageInfo::new_const(2, 1, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::PageTableMap,
     })

@@ -4732,15 +4732,21 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Map` — the table from the
-  -- invoked capability (with the write right), the address space from MR0
-  -- resolved through the *caller's* CSpace with `.write`, the address from MR1.
+  -- invoked capability (with the write right), the address from MR0 (MR1 is
+  -- the attributes word).  **WS-SX SX6.3**: the address space is extra
+  -- capability 0 (`current_extra_caps.excaprefs[0]`), resolved through the
+  -- *caller's* CSpace with `.write`; a message naming none is
+  -- `.truncatedMessage`, as seL4 refuses a null `excaprefs[0]`.
   | .pageTableMap =>
     some <| match cap.target with
     | .object objId =>
       fun st => match Architecture.SyscallArgDecode.decodePageTableMapArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match resolveCallerCapObject tid args.vspaceRoot .write st with
+        match callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+        | none => .error .truncatedMessage
+        | some rootCPtr =>
+          match resolveCallerCapObject tid rootCPtr .write st with
           | .error e => .error (e.forArgumentCap Architecture.pageTableMapRootCapNumber)
           | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
     | _ => fun _ => .error (.invalidCapability 0)
@@ -5321,13 +5327,17 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hR : resolveCallerCapObject tid args.vspaceRoot .write st with
-          | error e => simp only [hR] at hStep; cases hStep
-          | ok p =>
-              obtain ⟨_, rootId⟩ := p
-              simp only [hR] at hStep
-              exact pageTableMap_preserves_ipcInvariantFull objId rootId args.vaddr st st'
-                hObjInv hInv hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+            simp only [hX] at hStep
+            cases hR : resolveCallerCapObject tid rootCPtr .write st with
+            | error e => simp only [hR] at hStep; cases hStep
+            | ok p =>
+                obtain ⟨_, rootId⟩ := p
+                simp only [hR] at hStep
+                exact pageTableMap_preserves_ipcInvariantFull objId rootId args.vaddr st st'
+                  hObjInv hInv hStep
     all_goals try cases hStep
   case pageTableUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

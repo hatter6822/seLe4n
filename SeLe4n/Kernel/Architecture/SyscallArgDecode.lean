@@ -85,7 +85,9 @@ already extra capability 0).  The seL4 counterparts, and their checks:
 * `untypedRetype` 4 (`decodeUntypedInvocation`, `length < 6`);
 * `vspaceMap` 4 (`decodeARMFrameInvocation`, Map `length < 3`),
   `vspaceUnmap` `vspaceUnifyInstruction` 2 (Unify `length < 2`);
-* `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`);
+* `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`: the address
+  and the attributes word; the address space is extra capability 0, a missing
+  one refused `.truncatedMessage` in the same check);
 * `tcbSetPriority` `tcbSetMCPriority` `tcbSetIPCBuffer` `tcbSetAffinity`
   1 (`decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`,
   `length < 1`), `tcbSetSpace` 3 (`decodeSetSpace`, `length < 3`),
@@ -2055,13 +2057,15 @@ theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
 -- ============================================================================
 
 /-- WS-BP BP7.1 (`v0.36.12`): per-syscall argument structure for `pageTableMap`
-    — seL4's `seL4_ARM_PageTable_Map`.  Register mapping: x2 = the address, in
-    the caller's CSpace, of a capability to the **address space** the table is
-    installed in (a VSpace root); x3 = a virtual address whose walk the table
-    serves.  The table comes from the invoked capability. -/
+    — seL4's `seL4_ARM_PageTable_Map`.  Register mapping: x2 (MR0) = a virtual
+    address whose walk the table serves; x3 (MR1) = seL4's attributes word
+    (`attr`), read as seL4 reads it; the table install does not consult it.  The table comes from the invoked
+    capability.  **WS-SX SX6.3**: the address space the table is installed in
+    (a VSpace root) is extra capability 0 (`vspaceRootCap =
+    current_extra_caps.excaprefs[0]->cap`), not a message word. -/
 structure PageTableMapArgs where
-  vspaceRoot : SeLe4n.CPtr
   vaddr : SeLe4n.VAddr
+  attr : UInt64
   deriving Repr, DecidableEq
 
 /-- WS-BP BP7.1: decode `pageTableMap` arguments.  Requires 2 message registers. -/
@@ -2070,11 +2074,11 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
   requireMessageLength decoded (truncationMinimum .pageTableMap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  pure { vspaceRoot := SeLe4n.CPtr.ofNat r0.val, vaddr := SeLe4n.VAddr.ofNat r1.val }
+  pure { vaddr := SeLe4n.VAddr.ofNat r0.val, attr := r1.word }
 
 /-- WS-BP BP7.1: encode `pageTableMap` arguments into message registers. -/
 @[inline] def encodePageTableMapArgs (args : PageTableMapArgs) : Array RegValue :=
-  #[⟨args.vspaceRoot.word⟩, RegValue.ofNat (args.vaddr.toNat)]
+  #[RegValue.ofNat (args.vaddr.toNat), ⟨args.attr⟩]
 
 /-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
 theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs)
@@ -2707,7 +2711,7 @@ theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regist
     : Except KernelError PageTableMapArgs := do
   let r0 ← get 0
   let r1 ← get 1
-  pure { vspaceRoot := SeLe4n.CPtr.ofWord r0, vaddr := SeLe4n.VAddr.ofNat r1.toNat }
+  pure { vaddr := SeLe4n.VAddr.ofNat r0.toNat, attr := r1 }
 
 theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

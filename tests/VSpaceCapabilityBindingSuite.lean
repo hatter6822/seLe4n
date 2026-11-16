@@ -1689,13 +1689,14 @@ private def tableScenario : SystemState :=
     | .error _ => st1
   | none => st1
 
-/-- `.pageTableMap` on the table capability at `tableSlot`: MR0 the address
-space's capability address, MR1 the virtual address. -/
-private def decodeTableMap (tableSlot rootSlot vaddr : Nat) : SyscallDecodeResult :=
+/-- `.pageTableMap` on the table capability at `tableSlot`: MR0 the virtual
+address, MR1 the attributes word; the address space is extra capability 0
+(WS-SX SX6.3), staged by `tableMapStaged`. -/
+private def decodeTableMap (tableSlot vaddr : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat tableSlot
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 2, extraCaps := 1, label := 0 }
   , syscallId := .pageTableMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr), SeLe4n.RegValue.ofNat 0] }
 
 /-- WS-BP BP7.2: `.vspaceMap` through the root at `rootSlot` naming the raw
 virtual address `rawVaddr` — no user-window offset, so a scenario can name an
@@ -1708,11 +1709,33 @@ private def decodeRawMapVia (rootSlot asid rawVaddr frameSlot perms : Nat) : Sys
                    SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
 
 /-- WS-BP BP7.2: `.pageTableMap` naming the raw virtual address `rawVaddr`. -/
-private def decodeRawTableMap (tableSlot rootSlot rawVaddr : Nat) : SyscallDecodeResult :=
+private def decodeRawTableMap (tableSlot rawVaddr : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat tableSlot
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 2, extraCaps := 1, label := 0 }
   , syscallId := .pageTableMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat rawVaddr] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat rawVaddr, SeLe4n.RegValue.ofNat 0] }
+
+/-- A table install `d` run with the address space at `rootSlot` staged as
+extra capability 0 of the caller's IPC buffer, which names the source root
+`slotOwnCnGrant` again after (as `bindStep`). -/
+private def tableMapStaged (d : SyscallDecodeResult) (rootSlot : Nat) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId
+      (SeLe4n.Testing.withSenderCapAddrs st carveOwner #[SeLe4n.CPtr.ofNat rootSlot]) with
+  | .error e => .error e
+  | .ok ((), st') =>
+    .ok ((), SeLe4n.Testing.withSenderCapAddrs st' carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant])
+
+/-- `.pageTableMap` of the table at `tableSlot` into the address space at
+`rootSlot`, at `vaddr` past the user window's base. -/
+private def tableMap (tableSlot rootSlot vaddr : Nat) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  tableMapStaged (decodeTableMap tableSlot vaddr) rootSlot st
+
+/-- `tableMap`, keeping the state. -/
+private def tableMapSt (tableSlot rootSlot vaddr : Nat) (st : SystemState) :
+    Except KernelError SystemState :=
+  (tableMap tableSlot rootSlot vaddr st).map (·.2)
 
 /-- `.pageTableUnmap` on the table capability at `tableSlot`. -/
 private def decodeTableUnmap (tableSlot : Nat) : SyscallDecodeResult :=
@@ -1771,17 +1794,17 @@ private def runPageTableChecks : IO Unit := do
     -- root a booted kernel holds — has nowhere for a table to hang from.
     assertBool "a table is refused in a root that owns no page (invalidArgument)"
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
-       | .ok ((), s) => isErr (.invalidArgument 0) (dispatchSyscallAsCurrent (decodeTableMap 15 slotOwnVsp va) carveOwner Concurrency.bootCoreId s)
+       | .ok ((), s) => isErr (.invalidArgument 0) (tableMap 15 slotOwnVsp va s)
        | .error _ => false)
     assertBool "...and a frame is refused there too (translationFault): no table, no walk"
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
        | .ok ((), s) => isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia slotOwnVsp 3 va 14 permsRWUC) carveOwner Concurrency.bootCoreId s)
        | .error _ => false)
     assertBool "an address outside the 48-bit space has no walk (addressOutOfBounds)"
-      (isErr .addressOutOfBounds (dispatchSyscallAsCurrent (decodeTableMap 15 12 (2 ^ 48)) carveOwner Concurrency.bootCoreId st1))
+      (isErr .addressOutOfBounds (tableMap 15 12 (2 ^ 48) st1))
     assertBool "a root capability without .write is refused"
-      ((dispatchSyscallAsCurrent (decodeTableMap 15 slotOwnCnRO va) carveOwner Concurrency.bootCoreId st1).toOption.isNone)
-    match runAll st1 [decodeTableMap 15 12 va, decodeTableMap 16 12 va] with
+      ((tableMap 15 slotOwnCnRO va st1).toOption.isNone)
+    match (tableMapSt 15 12 va st1).bind (tableMapSt 16 12 va) with
     | .error e => assertBool s!"installing two tables succeeds (got {repr e})" false
     | .ok st2 => do
       assertBool "they land at levels 1 and 2, shallowest first, and each records its slot"
@@ -1789,17 +1812,17 @@ private def runPageTableChecks : IO Unit := do
          (installOf st2 983).map (fun i => (i.root.toNat, i.level)) == some (980, 1) &&
          (installOf st2 984).map (fun i => (i.root.toNat, i.level)) == some (980, 2))
       assertBool "a table already installed is refused a second install (invalidCapability)"
-        (isErr (.invalidCapability 0) (dispatchSyscallAsCurrent (decodeTableMap 15 12 va) carveOwner Concurrency.bootCoreId st2))
+        (isErr (.invalidCapability 0) (tableMap 15 12 va st2))
       assertBool "two levels are not a walk: the frame is still refused (translationFault)"
         (isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st2))
-      match runAll st2 [decodeTableMap 17 12 va, decodeMapVia 12 1 va 14 permsRWUC] with
+      match (tableMapSt 17 12 va st2).bind (runAll · [decodeMapVia 12 1 va 14 permsRWUC]) with
       | .error e => assertBool s!"the third table completes the walk and the frame maps (got {repr e})" false
       | .ok st3 => do
         assertBool "the third table is at level 3, and the frame maps"
           (slotsOf st3 980 == some [(1, 983), (2, 984), (3, 985)] &&
            mappedPaddr st3 one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
         assertBool "a complete walk has no room for a fourth table (mappingConflict)"
-          (isErr .mappingConflict (dispatchSyscallAsCurrent (decodeTableMap 18 12 va) carveOwner Concurrency.bootCoreId st3))
+          (isErr .mappingConflict (tableMap 18 12 va st3))
         -- WS-BP BP7.2: the user window.  Level-0 entry 0 of every user root
         -- is the kernel's own window, so neither a table nor a frame may go
         -- below `VAddr.userWindowBase`; and a mapping's virtual address is
@@ -1810,7 +1833,7 @@ private def runPageTableChecks : IO Unit := do
            (SeLe4n.VAddr.ofNat (2 ^ 48 - SeLe4n.pageBytes)).inUserWindow &&
            !(SeLe4n.VAddr.ofNat (2 ^ 48)).inUserWindow)
         assertBool "a table below the user window is refused (addressOutOfBounds)"
-          (isErr .addressOutOfBounds (dispatchSyscallAsCurrent (decodeRawTableMap 18 12 va) carveOwner Concurrency.bootCoreId st3))
+          (isErr .addressOutOfBounds (tableMapStaged (decodeRawTableMap 18 va) 12 st3))
         assertBool "a frame below the user window is refused (addressOutOfBounds)"
           (isErr .addressOutOfBounds
             (dispatchSyscallAsCurrent (decodeRawMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st2))
@@ -1877,7 +1900,7 @@ private def runPageTableChecks : IO Unit := do
                  mappedPaddr r one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes)
              | .error _ => false)
           assertBool "a table left with a stale record installs again, at the shallowest missing level"
-            (match dispatchSyscallAsCurrent (decodeTableMap 16 12 va) carveOwner Concurrency.bootCoreId sDel with
+            (match tableMap 16 12 va sDel with
              | .ok ((), r) => slotsOf r 980 == some [(1, 984)] &&
                  (installOf r 984).map (·.level) == some 1
              | .error _ => false)
@@ -1897,10 +1920,10 @@ private def runPageTableChecks : IO Unit := do
           -- A table carved from a CHILD untyped and installed in the parent's
           -- root: revoking the child's capability destroys the table's last
           -- capability, so the table leaves the root and the child resets alone.
-          match runAll st4
+          match (runAll st4
               [decodeCarve slotUtRetype (untypedTagOfSize 12) 990 slotOwnCnRW 19,
-               decodeCarve 19 pageTableTag 991 slotOwnCnRW 20,
-               decodeTableMap 20 12 (2 ^ 39)] with
+               decodeCarve 19 pageTableTag 991 slotOwnCnRW 20]).bind
+              (tableMapSt 20 12 (2 ^ 39)) with
           | .error e => assertBool s!"carving a child untyped and a table from it, and installing it, succeeds (got {repr e})" false
           | .ok stA => do
             assertBool "before the revocation the child's table is installed in the parent's root"
@@ -1923,10 +1946,10 @@ private def runPageTableChecks : IO Unit := do
                 -- from the parent, whose capability survives the child's
                 -- revocation: the root goes with its last capability, the table
                 -- outlives it, and the child resets.
-                match runAll st5r
+                match (runAll st5r
                     [decodeCarve 19 vspaceRootTag 993 slotOwnCnRW 21,
-                     decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22,
-                     decodeTableMap 22 21 va] with
+                     decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22]).bind
+                    (tableMapSt 22 21 va) with
                 | .error e => assertBool s!"carving a root from the child and installing a parent table in it succeeds (got {repr e})" false
                 | .ok st6pre => do
                   assertBool "a reset of the child while its root's capability lives is refused (revocationRequired)"
@@ -2015,13 +2038,13 @@ private def runPhysicalWriteChecks : IO Unit := do
         | _ => false)
     assertBool "and a descriptor store owes none (only a zeroing can precede a fetch)"
       ((tstore (root + 8) (tableDesc l1)).icacheMaintenance == none)
-    match dispatchSyscallAsCurrent (decodeTableMap 15 12 va) carveOwner Concurrency.bootCoreId st1 with
+    match tableMap 15 12 va st1 with
     | .error e => assertBool s!"installing the level-1 table succeeds (got {repr e})" false
     | .ok ((), st2) => do
       -- 2^39 + 0x70000: level-0 index 1 (entry 0 is the kernel window).
       assertBool "a level-1 install stores its table descriptor at entry 1 of the root's page"
         (recordedBy st1 st2 == [tstore (root + 8) (tableDesc l1)])
-      match runAll st2 [decodeTableMap 16 12 va, decodeTableMap 17 12 va] with
+      match (tableMapSt 16 12 va st2).bind (tableMapSt 17 12 va) with
       | .error e => assertBool s!"installing levels 2 and 3 succeeds (got {repr e})" false
       | .ok st3 => do
         assertBool "levels 2 and 3 store at entry 0 of the table above each"

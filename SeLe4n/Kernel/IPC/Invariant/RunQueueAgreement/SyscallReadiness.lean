@@ -1268,13 +1268,17 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hR : resolveCallerCapObject tid args.vspaceRoot .write st with
-          | error e => simp only [hR] at hStep; cases hStep
-          | ok p =>
-              obtain ⟨_, rootId⟩ := p
-              simp only [hR] at hStep
-              refine readyKeptStage.of_stage ?_
-              exact pageTableMap_runQueueStage hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+            simp only [hX] at hStep
+            cases hR : resolveCallerCapObject tid rootCPtr .write st with
+            | error e => simp only [hR] at hStep; cases hStep
+            | ok p =>
+                obtain ⟨_, rootId⟩ := p
+                simp only [hR] at hStep
+                refine readyKeptStage.of_stage ?_
+                exact pageTableMap_runQueueStage hStep
     all_goals try cases hStep
   case pageTableUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
