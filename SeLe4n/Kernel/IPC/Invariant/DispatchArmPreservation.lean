@@ -263,7 +263,7 @@ theorem writeDeliveredFrameToTcb_preserves_ipcInvariantFull
         (tcb.withDeliveredFrame frame) hInv hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
 
 -- ============================================================================
--- §5  One-TCB field stores (`.tcbSetIPCBuffer` and friends)
+-- §5  One-TCB field stores
 -- ============================================================================
 
 /-- The store-level instance of the one-TCB-rewrite lever: a transition whose
@@ -299,30 +299,6 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
   exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
     hSlots hBnc
-
-/-- `.tcbSetIPCBuffer`: rewrites one TCB's `ipcBuffer` — a field no conjunct
-reads — so the whole bundle transports. -/
-theorem setIPCBufferOp_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (addr : SeLe4n.VAddr)
-    (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    ipcInvariantFull st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  split at hStep
-  · contradiction
-  · split at hStep
-    · rename_i tcb hTcb
-      dsimp only [] at hStep
-      split at hStep
-      · rename_i hStore
-        cases hStep
-        exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st _ vtid.val
-          tcb { tcb with ipcBuffer := addr } hObjInv hInv
-          ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcb)
-          hStore rfl rfl rfl rfl rfl rfl rfl rfl rfl
-      · contradiction
-    · contradiction
 
 -- ============================================================================
 -- §6  Notification-binding arms (`.tcbBindNotification`, `.tcbUnbindNotification`)

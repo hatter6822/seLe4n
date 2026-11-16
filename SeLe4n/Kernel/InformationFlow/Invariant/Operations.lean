@@ -3192,46 +3192,6 @@ theorem endpointReplyWithReversion_preserves_lowEquivalent
   unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
 
 -- ============================================================================
--- AK6-F.2b: setIPCBufferOp preservation
--- ============================================================================
-
-/-- AK6-F.2b (NI-H02): `setIPCBufferOp` preserves projection when the target
-    TCB is non-observable. The op delegates to `storeObject` after validation;
-    validation failures return the state unchanged.
-
-    Hypotheses:
-    - `hTcbHigh`: target TCB is non-observable.
-    - `hObjInv`: object store invariant.
-    - `hStep`: operation succeeded. -/
-theorem setIPCBufferOp_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (vtid : SeLe4n.ValidThreadId) (addr : SeLe4n.VAddr)
-    (st st' : SystemState)
-    (hTcbHigh : objectObservable ctx observer vtid.val.toObjId = false)
-    (hObjInv : st.objects.invExt)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st := by
-  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`.
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st vtid.val addr with
-  | error e => rw [hVal] at hStep; simp at hStep
-  | ok _ =>
-    rw [hVal] at hStep
-    cases hLook : st.getTcb? vtid.val with
-    | none => rw [hLook] at hStep; simp at hStep
-    | some tcb =>
-      rw [hLook] at hStep
-      simp only at hStep
-      cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
-      | error e => rw [hStore] at hStep; simp at hStep
-      | ok pair =>
-        rw [hStore] at hStep
-        simp only [Except.ok.injEq] at hStep
-        subst hStep
-        exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
-          hTcbHigh hObjInv hStore
-
--- ============================================================================
 -- AK6-F Step A: Universal direct-insert frame lemma
 -- ============================================================================
 
@@ -5726,6 +5686,45 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
     · next h0 =>
       rw [if_neg h0]
       exact (hNamed h0).2.1 _ ((recorderWord_spec st _ _ _ hObjInv).1 hr)
+
+/-- **WS-SX SX6.6: a hidden thread's buffer change is invisible when what it
+retires is hidden** — AK6-F.2b (NI-H02) restated over the frame capability: the
+buffer slot's set is (`threadSlotSet_preserves_projection`), given that the
+object the slot's old capability names, and every untyped recording it, are
+hidden; and the address write rewrites the hidden thread alone. -/
+theorem setIPCBufferOp_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {ec : Concurrency.CoreId} {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr} {addr : SeLe4n.VAddr}
+    (hHigh : objectObservable ctx observer vtid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hHid : ∀ c o, st.slotCapAt ⟨vtid.val.toObjId, TCB.ipcBufferSlot⟩ = some c →
+      c.namedObject = some o →
+        objectObservable ctx observer o = false ∧
+          (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
+          ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  generalize hS1 : threadSlotSet ec st vtid.val TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0 = st1
+  have hP1 := threadSlotSet_preserves_projection ctx observer ec hHigh hObjInv hT
+    TCB.ipcBufferSlot hHid (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  rw [hS1] at hP1
+  rw [← hP1]
+  cases hT1 : st1.getTcb? vtid.val with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT1]
+  | some t1 =>
+    rw [SystemState.updateTcb_eq_of_some hT1]
+    have hI1 : st1.objects.invExt := by
+      rw [← hS1]; unfold threadSlotSet
+      exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT _ _ _ _ _).2).1
+    exact objects_insert_preserves_projection_high ctx observer st1 _ _ hHigh hI1
 
 /-- **Setting a hidden thread's space is invisible when what it retires is
 hidden**: each of its two slot sets is (`threadSlotSet_preserves_projection`),

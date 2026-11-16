@@ -377,8 +377,8 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Architecture.IpcBufferValidation.setIPCBufferOp st
-                vtid args.bufferAddr with
+            match Architecture.IpcBufferValidation.setIPCBufferOp executingCore st vtid tid
+                (callerExtraCapAddr? st tid xc 0) args.bufferAddr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
     | _ => .error (.invalidCapability 0)
@@ -611,11 +611,23 @@ refusal is read where it is, never rebuilt. -/
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          RefusalCarrying.ofCheckedThen
-            (Architecture.IpcBufferValidation.setIPCBufferAdmitted st vtid args.bufferAddr)
-            (fun st => st.updateTcb vtid.val (fun t => { t with ipcBuffer := args.bufferAddr }))
-            (fun st => Architecture.IpcBufferValidation.setIPCBufferOp st vtid args.bufferAddr)
-            (fun st' => .ok ((), st')) st
+          -- WS-SX SX6.6: the frame capability is extra capability 0, read and
+          -- resolved in continuation form, so no `Option` or slot record is built.
+          callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun cptr =>
+            match st.getTcb? tid with
+            | none => .error (.objectNotFound, st)
+            | some callerTcb =>
+              lookupSlotK callerTcb cptr st
+                (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
+                fun cnode slot =>
+                  RefusalCarrying.ofCheckedThen
+                    (Architecture.IpcBufferValidation.setIPCBufferAdmitted st vtid cnode slot
+                      args.bufferAddr)
+                    (fun st => Architecture.IpcBufferValidation.setIPCBufferPerform executingCore st
+                      vtid.val cnode slot args.bufferAddr)
+                    (fun st => Architecture.IpcBufferValidation.setIPCBufferFrom executingCore st vtid
+                      cnode slot args.bufferAddr)
+                    (fun st' => .ok ((), st')) st
     | _ => .error (.invalidCapability 0, st)
   | .tcbSetAffinity =>
     match cap.target with
@@ -1128,12 +1140,34 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
         | ok vT =>
           dsimp only
-          refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-          · simp only [dispatchInvocationBy, hD, hT]
-            split <;> simp_all
-          intro hA
-          simp only [dispatchInvocationBy, hD, hT,
-            Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted _ _ _ hA]
+          rw [callerExtraCapAddrK_eq]
+          cases hX : callerExtraCapAddr? st tid xc 0 with
+          | none =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hX,
+              Architecture.IpcBufferValidation.setIPCBufferOp]
+          | some cptr =>
+            dsimp only
+            cases hC : st.getTcb? tid with
+            | none =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hX, hC,
+                Architecture.IpcBufferValidation.setIPCBufferOp]
+            | some callerTcb =>
+              dsimp only
+              rw [lookupSlotK_eq]
+              cases hL : lookupSlot callerTcb cptr st with
+              | error f =>
+                simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hX, hC, hL,
+                  Architecture.IpcBufferValidation.setIPCBufferOp, LookupFault.ofWords_word]
+              | ok ref =>
+                dsimp only
+                refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+                · simp only [dispatchInvocationBy, hD, hT, hX, hC, hL,
+                    Architecture.IpcBufferValidation.setIPCBufferOp]
+                  split <;> simp_all
+                intro hA
+                simp only [dispatchInvocationBy, hD, hT, hX, hC, hL,
+                  Architecture.IpcBufferValidation.setIPCBufferOp,
+                  Architecture.IpcBufferValidation.setIPCBufferFrom_of_admitted hA]
     all_goals rfl
   case tcbSetAffinity =>
     cases target

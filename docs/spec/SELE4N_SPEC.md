@@ -2712,16 +2712,16 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `boundSchedContextId : Option SchedContextId` arg.
      `setMCPriorityOp` calls `updatePrioritySource` in the
      priority-capping branch.
-   * **P1 — `lockSet_tcbSetIPCBuffer`**: gains
-     `targetVSpaceRootObjId : Option ObjId` arg.
-     `setIPCBufferOp` → `validateIpcBufferAddress` reads the
-     target's VSpaceRoot and traverses its mappings.
+   * **P1 — `lockSet_tcbSetIPCBuffer`**: gains an optional
+     object argument.  Since WS-SX SX6.6 it is the buffer's frame
+     (`bufferFrameObjId`, a `page` read lock), beside the
+     state-level write the buffer slot's delete and copy take.
    * **P2 — `lockSet_serviceRegister`**: gains a mandatory
      `endpointObjId : ObjId` arg.  `registerService` reads
      `st.objects[epId]?` to verify endpoint kind.
    * **`permittedKinds` extensions**: `.tcbSetPriority` /
      `.tcbSetMCPriority` add `.schedContext`;
-     `.tcbSetIPCBuffer` adds `.vspaceRoot`; `.serviceRegister`
+     `.tcbSetIPCBuffer` adds `.page` and `.objStore` (SX6.6); `.serviceRegister`
      adds `.endpoint`.  `.serviceRevoke` / `.serviceQuery`
      split out unchanged.
    * **Consistency proofs**: `_tcbSetPriority` /
@@ -5120,29 +5120,32 @@ ARM64 hardware:
 - **Lean model**: IPC buffer alignment is enforced at 1024 bytes, the
   buffer's size (`ipcBufferAlignment = 1024`, defined in `Prelude.lean` and
   consumed by `Architecture/IpcBufferValidation.lean`), as seL4's 64-bit
-  `seL4_IPCBufferSizeBits = 10` requires.  `setIPCBufferOp` validates the
-  address via a 7-step pipeline: alignment, canonical address, VSpace root,
-  the mapping of the buffer's page, write permission, and the physical end
-  of the whole buffer (`[pa, pa + 1024)`) within the platform's physical
-  address width.
+  `seL4_IPCBufferSizeBits = 10` requires.
+- **Setting the buffer** (WS-SX SX6.6, seL4 MCS `decodeSetIPCBuffer`):
+  `setIPCBufferOp` takes the buffer's frame capability as the message's extra
+  capability 0 and resolves it as a slot through the caller's CSpace (no extra
+  capability is `truncatedMessage`; a failed lookup is `failedLookup`).  For a
+  nonzero address it derives the capability (`revocationRequired` for an
+  untyped with children) and runs seL4's `checkValidIPCBuffer`: a capability
+  that is not a frame, or a device frame, is `illegalState` (seL4's
+  `IllegalOperation`), and an address not aligned to 1024 bytes is
+  `alignmentError`.  The thread's buffer slot (slot 2, seL4's `tcbBuffer`) is
+  then deleted and the derived capability inserted with a copy edge from its
+  source (`threadSlotSet`, the slot write `copyThreadSpaces` makes), and the
+  thread's `ipcBuffer` is written.  A zero address empties the slot.  The
+  thread need not be suspended, and no VSpace is walked: every buffer read
+  goes through the slot's frame capability (`IpcBufferRead.lookupIPCBuffer`),
+  so the buffer is the frame the slot names wherever it is mapped.
 - **Rust ABI**: The `IpcBuffer` structure (`sele4n-abi/src/ipc_buffer.rs`) is
-  960 bytes (116 overflow words, the user-data word and three capability
-  words), `#[repr(C)]`, with 8-byte natural alignment.  It fits the
-  1024-byte buffer (`IpcBufferRead.ipcBufferWords_within_buffer`), and
-  `IPC_BUFFER_ALIGNMENT = 1024` refuses an unaligned address before the call.
+  1024 bytes, `#[repr(C)]`, with 8-byte natural alignment.
+  `sele4n_sys::tcb::tcb_set_ipc_buffer` writes the frame capability into
+  `caps_or_badges[0]` and counts it in the message info; the address is
+  decoded as given, and the kernel checks its alignment after the capability.
 - **Page safety**: The `ipcBuffer_within_page` theorem proves that a
   1024-byte-aligned buffer of 1024 bytes never crosses a 4 KiB page (the last
   aligned offset is 3072, and 3072 + 1024 = 4096), so the buffer lies in one
-  frame, as seL4 requires.  Every overflow slot of a validated buffer resolves
-  through slot 0's page (`IpcBufferRead.maxOverflowSlots_le_firstPageSlots`).
-  The overflow reads and writes do not assume it: each slot is translated at
-  its own page, checked for write permission when written and for the
-  physical range when performed (`IpcBufferRead.ipcBufferSlotPAddr?`), so a
-  buffer address no validator checked reads and writes only pages its own
-  VSpace maps.  Before `v0.37.4` the alignment was 512 bytes, which admitted a
-  buffer 512 bytes short of a page's end whose slots from 64 on lay on the
-  next page; those slots were translated and checked one by one, so no access
-  escaped the thread's mappings, but the buffer did not lie in one frame.
+  frame, as seL4 requires.  Before `v0.37.4` the alignment was 512 bytes,
+  which admitted a buffer 512 bytes short of a page's end.
 
 ### 8.6 Memory Zeroing on Creation (`v0.36.125`)
 Every object is made by the untyped carve (`.untypedRetype`, syscall 36,

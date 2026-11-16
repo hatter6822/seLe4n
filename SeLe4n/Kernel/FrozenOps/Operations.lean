@@ -26,7 +26,7 @@ AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
 (`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
 is not being the dispatch path.
 
-AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
+AF5-I (AF-43): Implements 23 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a
 builder-phase operation but uses `FrozenMap.get?`/`FrozenMap.set` instead
 of `RHTable` operations.
@@ -71,7 +71,6 @@ than misleading its next reader.
 |21 | `frozenResumeThread`         | `restartThreadOnCore`      | Lifecycle    |
 |22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
-|24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
 **Lifecycle operations** (`untypedRetype`, `untypedReset`) are builder-only.
 The carve adds an object and a CDT node, which a frozen map's fixed key set
@@ -2376,52 +2375,6 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
           else .ok ((), st1)
 
 -- ============================================================================
--- D3-I: Frozen IPC buffer configuration
--- ============================================================================
-
-/-- D3-I: Frozen-phase setIPCBuffer. Validates alignment, canonical address,
-VSpace mapping with write permission and PA bounds, then updates the target
-TCB's ipcBuffer. Mirrors `setIPCBufferOp` in frozen state using FrozenMap
-lookups.
-
-AJ4-C (L-06): Step 7 (PA bounds check) mirrors `validateIpcBufferAddress`
-step 7, ensuring consistency between frozen and production validation paths. -/
-def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
-    (addr : SeLe4n.VAddr) : FrozenKernel Unit :=
-  fun st =>
-    -- Step 1: Alignment check
-    if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
-    -- Step 2: Canonical address check
-    else if !addr.isCanonical then .error .addressOutOfBounds
-    else
-      match frozenLookupTcb st targetTid with
-      | none => .error .objectNotFound
-      | some tcb =>
-        -- Step 4: VSpace root validity (frozen VSpaceRoot)
-        match st.getVSpaceRoot? tcb.vspaceRoot with
-        | some vsr =>
-          -- Step 5: Mapping check via FrozenMap
-          match vsr.mappings.get? addr.pageBase with
-          | some (paddr, perms) =>
-            -- Step 6: Write permission check
-            if !perms.write then .error .translationFault
-            -- Step 7: Physical address bounds check (AJ4-C / L-06 + AK3-F)
-            -- AK3-F (A-M02): Check end-PA, not just start-PA, so the entire
-            -- `[pa, pa + ipcBufferAlignment)` IPC buffer (`pa` the page's
-            -- `paddr` plus the buffer's offset) fits within the platform's
-            -- PA range. Mirror `validateIpcBufferAddress`.
-            else if !(paddr.toNat + addr.pageOffset + SeLe4n.ipcBufferAlignment ≤
-                      2^st.machine.physicalAddressWidth) then
-              .error .addressOutOfBounds
-            else
-              let tcb' := { tcb with ipcBuffer := addr }
-              match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
-              | .ok st' => .ok ((), st')
-              | .error e => .error e
-          | none => .error .translationFault
-        | _ => .error (.invalidArgument 0)
-
--- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
 -- ============================================================================
 
@@ -2485,7 +2438,7 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbResume => true               -- D1: frozenResumeThread
   | .tcbSetPriority => true          -- D2: frozenSetPriority
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
-  | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
+  | .tcbSetIPCBuffer => false        -- WS-SX SX6.6: deletes the buffer slot and inserts the derived frame cap with a CDT copy edge; the frozen phase models no CDT write
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
   | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
   | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
@@ -2508,8 +2461,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditRead => false              -- WS-SM SM9.A.13: reads the mounted audit trail through a clearance-filtered view; the frozen phase carries the trail but models no `LabelingContext`, so there is no reader's clearance to filter by
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
-/-- S3-L/Z8-H/D1/D2/D3: exactly **18** `SyscallId` arms have frozen operation
-coverage; the other 23 carry the reason beside their own `frozenOpCoverage` row.
+/-- S3-L/Z8-H/D1/D2/D3: exactly **17** `SyscallId` arms have frozen operation
+coverage; the other 24 carry the reason beside their own `frozenOpCoverage` row.
 
 The count is taken over `SyscallId.all`, the derived constructor list, not a
 hand-written one: the enumeration this replaced named every constructor by hand
@@ -2517,7 +2470,7 @@ and its docstring still said "18 uncovered" when 21 were, and "20 covered"
 included two arms (`vspaceMap`, `vspaceUnmap`) whose only frozen operation was a
 read (`v0.36.38`). -/
 theorem frozenOpCoverage_count :
-    (SyscallId.all.filter frozenOpCoverage).length = 18 := by
+    (SyscallId.all.filter frozenOpCoverage).length = 17 := by
   decide
 
 /-- S3-L/D1/D2/D3: All 38 SyscallId arms are accounted for (either covered or documented as builder-only). -/

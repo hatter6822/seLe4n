@@ -1845,6 +1845,29 @@ const fn cnode_trip(
     }
 }
 
+/// **An IPC buffer set** (seL4's `seL4_TCB_SetIPCBuffer`): the thread at
+/// `tcb` gets its buffer at `vaddr` in the frame the capability at `frame`
+/// names, the message's extra capability 0 (seL4's `excaprefs[0]`), written,
+/// unmeasured, into `caps_or_badges[0]` of the caller's IPC buffer at
+/// `buffer` and counted in the message info ([`ONE_EXTRA_CAP`]).  The kernel
+/// derives that capability into the thread's buffer slot, so the thread's
+/// buffer is read through the frame wherever it is mapped (seL4's
+/// `lookupIPCBuffer`).
+#[cfg(feature = "hw_target")]
+const fn set_ipc_buffer(
+    name: &'static str,
+    tcb: u64,
+    vaddr: u64,
+    frame: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [frame, 0, 0], None)),
+        ..invocation(name, TCB_SET_IPC_BUFFER, tcb, [vaddr, 0, 0, 0])
+    }
+}
+
 /// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
 /// rights mask, the fifth word, which the kernel reads from the caller's IPC
 /// buffer at `buffer` ([`RoundTrip::overflow`]).
@@ -3578,17 +3601,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [MOVE_SLOT, 0, 0, 0],
         ),
-        invocation(
+        set_ipc_buffer(
             "tcb-set-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_ipc_buffer(
             "root-set-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         // WS-ZA ZA6.2: a tick that drains a due refill.  The context is
         // configured to a one-tick budget every two ticks and bound to the
@@ -4469,30 +4494,32 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // all 116 of the sender's overflow words and writes the receiver's in
         // place; then the buffers put back.
         RoundTrip {
-            caps_or_badges: None,
             overflow: None,
             returns: Some((
                 (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
                 [None; 4],
             )),
-            ..invocation(
+            ..set_ipc_buffer(
                 "half-aligned-ipc-buffer",
-                TCB_SET_IPC_BUFFER,
                 ROOT_TCB_CAP,
-                [HALF_ALIGNED_IPC_BUFFER, 0, 0, 0],
+                HALF_ALIGNED_IPC_BUFFER,
+                FRAME_CAP,
+                FRAME_VADDR,
             )
         },
-        invocation(
+        set_ipc_buffer(
             "tail-root-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [TAIL_IPC_BUFFER, 0, 0, 0],
+            TAIL_IPC_BUFFER,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_ipc_buffer(
             "tail-partner-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [TAIL_IPC_BUFFER, 0, 0, 0],
+            TAIL_IPC_BUFFER,
+            FRAME_CAP,
+            TAIL_IPC_BUFFER,
         ),
         RoundTrip {
             msg_len: TAIL_MESSAGE_LENGTH,
@@ -6256,17 +6283,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        invocation(
+        set_ipc_buffer(
             "tail-root-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            TAIL_IPC_BUFFER,
         ),
-        invocation(
+        set_ipc_buffer(
             "tail-partner-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes
@@ -6570,11 +6599,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // installs the capability in that slot and blocks the server
         // (`performReplyRecvDonatedCapsDelivered`).  The root task signals
         // through the copy, the wait takes its badge, and the copy is deleted.
-        invocation(
+        set_ipc_buffer(
             "chain-caps-server-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             CHAIN_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
         receive_path(
             "chain-caps-receive-path",
@@ -8784,6 +8814,27 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [STACK_TOP_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // The window's page is about to go, so the root task's buffer goes
+        // back to the one the boot gave it, where the mints below read their
+        // badges, and the partner's buffer slot is emptied (a zero address):
+        // each buffer slot holds a copy of the window's frame capability
+        // (seL4's `tcbBuffer`), which would otherwise keep the frame alive
+        // past its delete.  Both are set while the window is mapped, since
+        // the frame capability is named from the root task's buffer there.
+        set_ipc_buffer(
+            "root-ipc-buffer-back",
+            ROOT_TCB_CAP,
+            ROOT_IPC_BUFFER,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            FRAME_VADDR,
+        ),
+        set_ipc_buffer(
+            "partner-ipc-buffer-clear",
+            PARTNER_TCB_CAP,
+            0,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,
@@ -8841,14 +8892,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PAGE_TABLE_UNMAP,
             PAGE_TABLE_CAPS[0],
             [0; 4],
-        ),
-        // The window's page is gone, so the root task's buffer goes back to
-        // the one the boot gave it, where the mints below read their badges.
-        invocation(
-            "root-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
-            ROOT_TCB_CAP,
-            [ROOT_IPC_BUFFER, 0, 0, 0],
         ),
         invocation(
             "page-table-delete-1",
@@ -13992,11 +14035,12 @@ fn fault_entries() -> Option<bool> {
         VSPACE_CAP,
         [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
     );
-    let root_buffer = invocation(
+    let root_buffer = set_ipc_buffer(
         "fault-long-root-ipc-buffer",
-        TCB_SET_IPC_BUFFER,
         ROOT_TCB_CAP,
-        [FRAME_VADDR, 0, 0, 0],
+        FRAME_VADDR,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     );
     if !unmeasured_all(&MOVE_SETUP_PAGE, "the long fault reply's page setup failed")
         || !unmeasured(
@@ -14129,18 +14173,23 @@ fn fault_entries() -> Option<bool> {
     if !cancelled_ipc_restarts(&handler_waits, &handler_waits_again, &wake_handler) {
         return Some(false);
     }
-    let root_buffer_back = invocation(
+    // The buffer goes back before the page's teardown: the root task names
+    // the boot buffer's frame capability from the window's page, and its
+    // buffer slot's copy of the window's frame capability would otherwise
+    // keep the frame alive past its delete.
+    let root_buffer_back = set_ipc_buffer(
         "fault-long-root-ipc-buffer-back",
-        TCB_SET_IPC_BUFFER,
         ROOT_TCB_CAP,
-        [ROOT_IPC_BUFFER, 0, 0, 0],
+        ROOT_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        FRAME_VADDR,
     );
-    if !unmeasured_all(
-        &MOVE_TEARDOWN[4..],
-        "the long fault reply's page teardown failed",
-    ) || !unmeasured(
+    if !unmeasured(
         &root_buffer_back,
         "the root task's IPC buffer was not set back",
+    ) || !unmeasured_all(
+        &MOVE_TEARDOWN[4..],
+        "the long fault reply's page teardown failed",
     ) {
         return Some(false);
     }

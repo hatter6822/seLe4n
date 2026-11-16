@@ -390,4 +390,34 @@ theorem copyThreadSpacesZombie_mappingStage {ec : Concurrency.CoreId} {st st' : 
     (fun _ hL => copyThreadSpacesZombie_preserves_liveMappingsRecorded ec P.caps P.teardown hL h)
     fun hI hB => copyThreadSpacesZombie_preserves_bookkeepingAgrees ec hI hB h
 
+/-- A buffer-address write is a mapping stage: a thread rewritten in a field
+the records do not read, its space slots kept. -/
+theorem updateTcb_ipcBuffer_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (addr : SeLe4n.VAddr) :
+    MappingStage st (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact MappingStage.refl _
+  | some t =>
+    rw [← SystemState.rewriteObject_tcb_eq_updateTcb hT _ (SystemState.rewriteAdmissible_tcb hT _)]
+    exact MappingStage.rewriteObject_tcb hT _
+
+/-- WS-SX SX6.6: **a buffer change is a mapping stage**: the buffer slot's set
+keeps the capability bundle, the mappings recorded and the bookkeeping, and the
+address write is a thread rewrite keeping its slots. -/
+theorem setIPCBufferOp_mappingStage {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (P : MappingArmPremises st)
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : MappingStage st st' := by
+  obtain ⟨c, s, t, hT, hA, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  refine MappingStage.trans ?_ (updateTcb_ipcBuffer_mappingStage _ _ _)
+  exact MappingStage.of_preserves
+    (fun _ => objects_invExt_of_capabilityInvariantBundle _
+      (threadSlotSet_preserves_capabilityInvariantBundle ec P.caps hT (by decide) _ _ _ _
+        (Architecture.IpcBufferValidation.setIPCBufferSource_notUntyped hT hA)
+        (fun _ _ _ _ _ _ h0 => absurd rfl h0)))
+    (fun _ hL => threadSlotSet_preserves_liveMappingsRecorded ec P.caps hT (by decide) _ _ _ _ hL)
+    (fun hI hB => (threadSlotSet_preserves_bookkeepingAgrees ec hI hT _ _ _ _ _ hB).2)
+
 end SeLe4n.Kernel

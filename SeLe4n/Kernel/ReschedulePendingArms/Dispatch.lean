@@ -106,6 +106,18 @@ theorem threadSlotCopied_machine (st : SystemState) (tid : SeLe4n.ThreadId) (slo
     rw [e] <;>
     simp [threadSlotCleared, storeTcbWith_machine, SystemState.updateTcb_machine]
 
+/-- WS-SX SX6.6: a buffer change writes no machine state: the slot set's copy
+and retire write none, nor does the address write. -/
+theorem setIPCBufferOp_machine_eq {ec : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr}
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : st'.machine = st.machine := by
+  obtain ⟨c, s, t, -, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform threadSlotSet
+  rw [SystemState.updateTcb_machine, (retireFinalObject_fields ec _ _ _).2.2,
+    threadSlotCopied_machine]
+
 theorem setThreadFaultHandlerOp_machine_eq {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {cptr : SeLe4n.CPtr} (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
     st'.machine = st.machine := by
@@ -370,7 +382,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (setThreadFaultHandlerOp_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (setIPCBufferOp_machine_eq _ _ _ _ (by assumption)).trans ?_;
+  (with_reducible refine (setIPCBufferOp_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (setConsumed_machine _ _ _).trans ?_; machine_chain))
@@ -616,6 +628,25 @@ theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
     (threadSlotSet_stepCovers e ec hI1
       (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT _ _ _ _ _).1
       (threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT _ _ _ _ _) hT1' _ _ _ _ _)
+
+/-- WS-SX SX6.6: **a buffer change covers**: the buffer slot's set covers
+(`threadSlotSet_stepCovers`), and the address write moves no key input. -/
+theorem setIPCBufferOp_stepCovers (e ec : CoreId) {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st)
+    (hL : schedContextLinkInvariant st)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  have h1 := threadSlotSet_stepCovers e ec hObjInv hI hL hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  exact stepCoversInv_trans h1.1 ((updateTcb_ipcBuffer_keyFrame _ vtid.val addr h1.2).stepCoversInv
+    (hRes := by rw [SystemState.updateTcb_machine])
+    (hBank := banksKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine])))
 
 /-! ### Retype -/
 
@@ -1407,8 +1438,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
-        | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]))
+        | exact setIPCBufferOp_stepCovers _ _ hB.1.2.1 hB.1.1 hB.2 hU
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
             (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hU]))
         | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ hB hU)

@@ -484,24 +484,6 @@ theorem unbindNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {s
               (fun x hx => by cases hx))
         · cases h; exact k1
 
-/-- The IPC-buffer write stores the thread with its buffer address alone. -/
-theorem setIPCBufferOp_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {addr : SeLe4n.VAddr} (hInv : st.objects.invExt)
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    savedRegsKeptExcept W st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  split at h
-  · cases h
-  · split at h
-    · rename_i tcb hT
-      dsimp only at h
-      split at h
-      · rename_i hS
-        cases h
-        exact .storeObject_tcb hInv ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hS rfl
-      · cases h
-    · cases h
-
 /-- The fault-handler install rewrites the thread with its handler alone. -/
 theorem setThreadFaultHandlerOp_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
@@ -1541,6 +1523,52 @@ theorem threadSlotSet_scheduler_machine (ec : CoreId) (st : SystemState) (tid : 
   exact ⟨hs.trans (threadSlotCopied_scheduler _ _ _ _ _ _ _),
     hm.trans (threadSlotCopied_machine _ _ _ _ _ _ _)⟩
 
+/-- A buffer-address write changes no thread's saved registers. -/
+theorem savedRegs_updateTcb_ipcBuffer {st : SystemState} (hInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr) (u : SeLe4n.ThreadId) :
+    (st.updateTcb tid (fun t => { t with ipcBuffer := addr })).savedRegs u = st.savedRegs u := by
+  by_cases h : u = tid
+  · subst h
+    unfold SystemState.savedRegs
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+    cases st.getTcb? u <;> rfl
+  · exact savedRegs_updateTcb_ne hInv h
+
+/-- WS-SX SX6.6: **a buffer change writes the saved registers of no thread
+another core holds**: the buffer slot's set writes only a thread its retire
+removes (`threadSlotSet_savedRegs`), the address write none, and neither moves
+the scheduler or the machine. -/
+theorem setIPCBufferOp_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (hInv : st.objects.invExt)
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : savedRegsKeptOffCore e st st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  intro d hd u hu
+  obtain ⟨hs, hm⟩ := threadSlotSet_scheduler_machine ec st vtid.val TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  have hI1 := (threadSlotCopied_tcb hInv hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0).2
+  have hI2 := (retireFinalObject_frame ec (slotRetireTarget st vtid.val.toObjId TCB.ipcBufferSlot)
+    (recorderFor st (slotRetireTarget st vtid.val.toObjId TCB.ipcBufferSlot) vtid.val.toObjId
+      TCB.ipcBufferSlot) _ hI1).1
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform at hu ⊢
+  rw [SystemState.updateTcb_scheduler, SystemState.updateTcb_machine, hs, hm] at hu
+  rw [savedRegs_updateTcb_ipcBuffer (by unfold threadSlotSet; exact hI2)]
+  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.ipcBufferSlot
+      (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+      (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+      Architecture.IpcBufferValidation.ipcBufferSlotRights 0 u with r | r
+  · exact r
+  · exfalso
+    rcases hu with x | x
+    · exact (r d hd).1 x
+    · exact (r d hd).2 x
+
 /-- WS-ZA ZA6.25: **a space change writes the saved registers only of threads no
 core holds after it**: each slot set writes only a thread its retire removes,
 and neither moves the scheduler or the machine. -/
@@ -1730,6 +1758,6 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
         | exact hW (setPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (setMCPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)
-        | exact hX (setIPCBufferOp_savedRegsKeptExcept hInv hS)
+        | exact setIPCBufferOp_savedRegsKeptOffCore hInv hS
         | exact hX (setThreadFaultHandlerOp_savedRegsKeptExcept hInv hS)
         | exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS)

@@ -3307,11 +3307,10 @@ theorem vspaceUnmapPage_crossSubsystemInvariant_bridge
 -- ============================================================================
 
 /-- AD4-H (F-08): `setIPCBufferOp` preserves `crossSubsystemInvariant`.
-    Updates TCB `ipcBuffer` field. May conditionally grow `objectIndex` if the
-    TCB's ObjId is not yet indexed — however, `setIPCBufferOp` requires the
-    TCB to already exist in the store (validated before call), so for existing
-    TCBs, `objectIndex` is preserved; the core bridge asks nothing of it
-    either way. -/
+    Deletes the thread's buffer slot (slot 2), inserts the derived frame cap
+    with a copy edge and writes the TCB `ipcBuffer` field.  It touches the
+    object store and the CDT but neither registry, and the core bridge asks
+    nothing of `objectIndex`. -/
 theorem setIPCBuffer_crossSubsystemInvariant_bridge
     (st st' : SystemState)
     (hPre : crossSubsystemInvariant st)

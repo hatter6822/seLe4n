@@ -5549,7 +5549,7 @@ run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[
 # frozen phase claims no coverage of a VSpace write it has only a read for.
 run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_negative_check "INVARIANT" rg -n '^  \| \.vspace(Map|Unmap) => true' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 18 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 17 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 run_check "INVARIANT" rg -n 'frozenCspaceMint strips the source.s mapping record' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -7712,7 +7712,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 39' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -8002,7 +8002,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 39' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -9227,8 +9227,8 @@ run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/Sy
 # fault seams drain the ledger, and the HAL never stores a user word into the
 # table pool.
 run_check "INVARIANT" rg -n '^@\[inline\] def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n 'if pa\.toNat % 8 == 0 && st\.machine\.addrInRange pa then some pa else none' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n '^    ipcBufferWordPAddrIn\? st \(lookupIPCBuffer isReceiver st tcb\) idx$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^    if pa\.toNat % 8 == 0 then some pa else none$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^    ipcBufferWordPAddrIn\? \(lookupIPCBuffer isReceiver st tcb\) idx$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
 run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
@@ -11610,7 +11610,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n(
 # **Test a gate by breaking the relation, not by deleting the token** -- and a
 # negative that is not DECLARATION-BOUNDED is a presence check.  The first draft of
 # the two store negatives below was written file-wide and fired on the clean tree:
-# `frozenSetIPCBuffer` stores a TCB at the same variable name, legitimately, because
+# `frozenSetIPCBuffer` (retired in SX6.6) stored a TCB at the same variable name, legitimately, because
 # `ipcBuffer` is not a run-queue key.  The relation is about *these three
 # declarations*, so each negative is scoped to one, with the gap written so it
 # cannot leave it.  Each keeps every name and re-introduces the defect's shape --

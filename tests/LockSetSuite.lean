@@ -502,7 +502,7 @@ example : permittedKinds .tcbSetPriority =
 example : permittedKinds .tcbSetMCPriority =
     [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
 example : permittedKinds .tcbSetIPCBuffer =
-    [.tcb, .cnode, .vspaceRoot, .endpoint, .notification] := by decide
+    [.tcb, .cnode, .page, .endpoint, .notification, .objStore] := by decide
 -- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
 -- about the arm rather than a relaxation.  The live arm hands
 -- `cap.target = .object targetId` to a transition that commits a `storeObject`
@@ -911,11 +911,11 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .tcbSetMCPriority (audit-pass-6: includes .schedContext)"
     (decide (permittedKinds .tcbSetMCPriority =
       [.tcb, .cnode, .schedContext, .endpoint, .notification]))
-  -- Audit-pass-6: .tcbSetIPCBuffer includes .vspaceRoot.
-  -- validateIpcBufferAddress reads the target's VSpaceRoot.
-  assertBool "permittedKinds .tcbSetIPCBuffer (audit-pass-6: includes .vspaceRoot)"
+  -- .tcbSetIPCBuffer reads the buffer's frame (.page) and writes the
+  -- derivation tree when it installs the frame capability (.objStore).
+  assertBool "permittedKinds .tcbSetIPCBuffer (the frame read + the slot copy's state-level lock)"
     (decide (permittedKinds .tcbSetIPCBuffer =
-      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]))
+      [.tcb, .cnode, .page, .endpoint, .notification, .objStore]))
   -- Audit-pass-6: .serviceRegister includes .endpoint.
   -- registerService reads st.objects[epId]? to verify endpoint kind.
   assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
@@ -1097,13 +1097,14 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- Audit-pass-6 P1: tcbSetMCPriority with bound SC = 4 locks.
   assertBool "tcbSetMCPriority size (.bound binding, SC included) = 4"
     (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
-  -- Audit-pass-6 P1: tcbSetIPCBuffer with no target VSpaceRoot (target absent) = 3 locks.
-  assertBool "tcbSetIPCBuffer size (no VSpaceRoot) = 3"
-    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
-  -- Audit-pass-6 P1: tcbSetIPCBuffer with target VSpaceRoot = 4 locks.
-  assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
+  -- tcbSetIPCBuffer with no frame read (lookup failed, or a zero address) = 4 locks:
+  -- the base three plus the state-level write the buffer slot's copy takes.
+  assertBool "tcbSetIPCBuffer size (no frame) = 4"
+    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  -- tcbSetIPCBuffer with the buffer's frame = 5 locks.
+  assertBool "tcbSetIPCBuffer size (frame included) = 5"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 99)) none).size = 4))
+              (some (ObjId.ofNat 99)) none).size = 5))
   -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint lock;
   -- WS-RR RR7.23 added the registry's own state-level write.
   assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
@@ -1537,12 +1538,12 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .tcbSetMCPriority))
   assertBool "lockSet_tcbSetMCPriority (.bound binding, SC included): all kinds permitted"
     allOk_setMcpBound
-  -- Audit-pass-6 P1: .tcbSetIPCBuffer with VSpaceRoot.
+  -- .tcbSetIPCBuffer with the buffer's frame.
   let setIpcVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                      (some (ObjId.ofNat 99)) none
   let allOk_setIpcVsr := setIpcVsr.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer))
-  assertBool "lockSet_tcbSetIPCBuffer (VSpaceRoot included): all kinds permitted"
+  assertBool "lockSet_tcbSetIPCBuffer (frame included): all kinds permitted"
     allOk_setIpcVsr
   -- Audit-pass-6 P2: .serviceRegister with endpoint.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -1650,15 +1651,18 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
       decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
-  -- P1 (tcbSetIPCBuffer): with target VSpaceRoot, contains read lock.
-  let withVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+  -- tcbSetIPCBuffer: with the buffer's frame, contains its page read lock and
+  -- the state-level write; it never names a VSpace root.
+  let withFrame := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                     (some (ObjId.ofNat 99)) none
-  assertBool "P1: tcbSetIPCBuffer(some 99) contains vspaceRootLock 99 as read"
-    (withVsr.pairs.any (fun p =>
-      decide (p = (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
-  assertBool "P1: tcbSetIPCBuffer(none) does NOT contain any vspaceRoot lock"
-    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-     decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
+  assertBool "tcbSetIPCBuffer(some 99) contains pageLock 99 as read"
+    (withFrame.pairs.any (fun p =>
+      decide (p = (.object ⟨.page, ObjId.ofNat 99⟩, .read))))
+  assertBool "tcbSetIPCBuffer(some 99) contains the state-level lock as write"
+    (withFrame.pairs.any (fun p => decide (p = (.objStore, .write))))
+  assertBool "tcbSetIPCBuffer(none) contains no page lock and no vspaceRoot lock"
+    (let noFrame := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+     decide (noFrame.pairs.all (fun p => p.fst.kind ≠ .page ∧ p.fst.kind ≠ .vspaceRoot)))
   -- P2 (serviceRegister): contains the endpoint read lock.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   assertBool "P2: serviceRegister contains endpointLock 20 as write (it records its code)"
@@ -1673,10 +1677,14 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   let boundPriSeq := boundPri.lockAcquireSequence
   assertBool "P1: tcbSetPriority(.bound 50) canonical sort places SC at end (level 7)"
     (decide (boundPriSeq.getLast? = some (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write)))
-  -- Similarly for setIPCBuffer: VSpaceRoot at level 8, sorts last.
-  let ipcSeq := withVsr.lockAcquireSequence
-  assertBool "P1: tcbSetIPCBuffer(some 99) canonical sort places VSpaceRoot at end (level 8)"
-    (decide (ipcSeq.getLast? = some (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read)))
+  -- Similarly for setIPCBuffer: the frame's page lock sorts last, and the
+  -- state-level lock (level 0) first.
+  let ipcSeq := (lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+                  (some (ObjId.ofNat 99)) none).lockAcquireSequence
+  assertBool "tcbSetIPCBuffer(some 99) canonical sort places the frame's page lock at end"
+    (decide (ipcSeq.getLast? = some (.object ⟨.page, ObjId.ofNat 99⟩, .read)))
+  assertBool "tcbSetIPCBuffer(some 99) canonical sort places the state-level lock first"
+    (decide (ipcSeq.head? = some (.objStore, .write)))
   -- P2 canonical: endpoint at level 4, sorts after cnode(2) but before tcb(3).
   -- Actually wait — hierarchy is cnode=2 < tcb=3 < endpoint=4.  So endpoint is last.
   let svcRegSeq := svcReg.lockAcquireSequence

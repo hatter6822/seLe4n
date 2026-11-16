@@ -137,7 +137,8 @@ justified groups:
   to rewrite).
 * **Scheduler and lifecycle state** — priorities, affinities, binding, suspend
   and resume move no content between objects; they move a thread's *scheduling*
-  attributes.  `.tcbSetIPCBuffer` installs a buffer address, not its contents.
+  attributes.  `.tcbSetIPCBuffer` installs a buffer address and a copy of
+  the frame's capability in the thread's buffer slot, not the buffer's contents.
 
 No syscall re-creates an object at an id that already holds one — every
 object is carved from an untyped into a fresh id — so there is no class that

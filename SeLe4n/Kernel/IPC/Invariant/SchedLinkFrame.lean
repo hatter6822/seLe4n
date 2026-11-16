@@ -1914,6 +1914,36 @@ theorem threadSlotSet_preserves_ipcInvariantFull (ec : CoreId) {st : SystemState
     (allTimeoutBudgetsNone_of_aux
       (SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights data).aux hBudgets)
 
+/-- **A buffer-address write preserves the IPC bundle**: `ipcBuffer` is a field
+no conjunct reads. -/
+theorem updateTcb_ipcBuffer_preserves_ipcInvariantFull {st : SystemState}
+    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInv
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid t _ hObjInv hInv
+      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- **WS-SX SX6.6: a buffer change preserves the IPC bundle** — the buffer slot's
+set does (`threadSlotSet_preserves_ipcInvariantFull`), and so does the address
+write (`updateTcb_ipcBuffer_preserves_ipcInvariantFull`). -/
+theorem setIPCBufferOp_preserves_ipcInvariantFull (ec : CoreId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (callerTid : SeLe4n.ThreadId)
+    (bufferCap? : Option SeLe4n.CPtr) (addr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ :=
+    Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hBudgets hT
+    TCB.ipcBufferSlot _ _ _ _
+  exact updateTcb_ipcBuffer_preserves_ipcInvariantFull _ _ hI1 h1
+
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
 slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
 theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : CoreId)

@@ -126,23 +126,14 @@ impl SetIPCBufferArgs {
     }
 
     /// Decode from message registers. Requires 1 register.
-    /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (1024 bytes).
     ///
-    /// Uses the bitwise-AND form `(addr & MASK) != 0` rather than
-    /// `addr % ALIGN != 0` so the check is lint-clean on the project's
-    /// pinned MSRV (Rust 1.82, predating clippy 1.87's
-    /// `manual_is_multiple_of` lint) without needing an
-    /// `#[allow(clippy::manual_is_multiple_of)]` workaround — and
-    /// without the paired `#[allow(unknown_lints)]` that would
-    /// otherwise be required to keep the inner allow lint-clean on
-    /// 1.82.  `IPC_BUFFER_ALIGNMENT = 1024` is a power of 2, so the
-    /// two forms are mathematically equivalent.
+    /// The address is carried as given: seL4's `decodeSetIPCBuffer` checks
+    /// its alignment (`IPC_BUFFER_ALIGNMENT`) in `checkValidIPCBuffer`, after
+    /// the frame capability, so the kernel refuses a misaligned address with
+    /// `AlignmentError` only once the capability is a non-device frame.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() {
             return Err(KernelError::InvalidMessageInfo);
-        }
-        if (regs[0] & (IPC_BUFFER_ALIGNMENT - 1)) != 0 {
-            return Err(KernelError::AlignmentError);
         }
         Ok(Self {
             buffer_addr: regs[0],
@@ -349,15 +340,12 @@ mod tests {
     }
 
     #[test]
-    fn set_ipc_buffer_unaligned() {
+    fn set_ipc_buffer_unaligned_decodes() {
+        // The alignment is the operation's check, after the frame capability.
+        assert_eq!(SetIPCBufferArgs::decode(&[513]).unwrap().buffer_addr, 513);
         assert_eq!(
-            SetIPCBufferArgs::decode(&[513]),
-            Err(KernelError::AlignmentError)
-        );
-        // 512-aligned but not 1024-aligned: the buffer could cross a page.
-        assert_eq!(
-            SetIPCBufferArgs::decode(&[0x1E00]),
-            Err(KernelError::AlignmentError)
+            SetIPCBufferArgs::decode(&[0x1E00]).unwrap().buffer_addr,
+            0x1E00
         );
     }
 

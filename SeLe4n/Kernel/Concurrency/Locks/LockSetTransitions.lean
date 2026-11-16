@@ -228,8 +228,9 @@ one level up.
   member.  It is a subject write, not a hand-off: resolved from
   the target's binding, never from a donor's.
 * **`lockSet_tcbSetIPCBuffer`**: no donation; it names the
-  target's VSpaceRoot in **read** mode for the buffer-address
-  validation, so it is not TCB-only either.
+  buffer's frame in **read** mode for the frame-capability check
+  and the state-level lock in **write** mode for the buffer slot's
+  delete and copy, so it is not TCB-only either.
 
 ### PIP-chain TCB locks
 
@@ -4573,41 +4574,32 @@ def lockSet_tcbSetMCPriority (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSetIPCBuffer`.
 
-Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
-`Architecture.IpcBufferValidation.setIPCBufferOp` calls
-`validateIpcBufferAddress` which reads:
-
-1. `st.getVSpaceRoot? targetTcb.vspaceRoot` — reads the target's
-   VSpaceRoot object.
-2. `root.lookup addr` — traverses the VSpaceRoot's `mappings`
-   RHTable.
-
-Both are reads (no writes to the VSpaceRoot itself), so a read lock
-on the target's VSpaceRoot is sufficient.  Without this lock, the
-IPC-buffer validation could race with a concurrent
-`VSpaceMap`/`VSpaceUnmap` on the same address space and observe an
-inconsistent mapping.
-
-The caller pre-resolves `targetTcb.vspaceRoot`:
-
-```
-let vsr := (s.getTcb? targetTcbTid).map (·.vspaceRoot)
-```
-
-`vsr = none` covers the case where the target TCB itself doesn't
-exist; in that case the syscall fails before reaching
-`setIPCBufferOp` and no VSpace read happens. -/
+WS-SX SX6.6: `Architecture.IpcBufferValidation.setIPCBufferOp` takes the
+buffer's frame capability as extra capability 0, the seL4 MCS shape.  It
+resolves that capability through the **caller's** CSpace root, reads the frame
+it names to check that it is a frame and not a device frame, then deletes the
+target's buffer slot (slot 2) and inserts the derived capability with a copy
+edge — the same slot write `copyThreadSpaces` makes — and writes the target
+TCB's `ipcBuffer`.  So the target TCB is written (`tcbLock targetTcbTid
+.write`), the derivation tree and the links around the slot are written
+(WS-RR RR7.9's `stateLevelLock` write, as in `lockSet_tcbSetSpace`), and the
+frame is read: without its lock a concurrent retype of the frame races the
+kind check.  The caller pre-resolves the capability's `.object` target the way
+`setIPCBufferOp` does; `none` when the lookup fails or the address is zero,
+since the operation then reads no frame.  No VSpace is read: the buffer's
+reads go through the slot's frame capability, as seL4's do. -/
 def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetVSpaceRootObjId : Option ObjId)
+    (bufferFrameObjId : Option ObjId)
     (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
          (cnodeLock cnodeRootObjId, .read),
-         (tcbLock targetTcbTid, .write)])
-      (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+         (tcbLock targetTcbTid, .write),
+         (stateLevelLock, .write)])
+      (bufferFrameObjId.map (fun f => (pageLock f, .read))))
     (queueOwnerMember queueOwner)
 
 /-- WS-SM SM5.H.4: `lockSet` for `tcbSetAffinity`.
@@ -5179,8 +5171,9 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
   -- SchedContext via `updatePrioritySource` (audit-pass-6 extension).
-  -- `.tcbSetIPCBuffer` reads the target's VSpaceRoot via
-  -- `validateIpcBufferAddress` (audit-pass-6 extension).
+  -- `.tcbSetIPCBuffer` reads the buffer's frame and writes the derivation tree
+  -- (`.objStore`) when it installs the frame capability in the buffer slot
+  -- (WS-SX SX6.6).
   -- WS-SM SM6.E: suspending a `.blockedOnReply` caller consumes its
   -- single-use reply link (`cancelIpcBlocking` → `consumeReplyLink`
   -- writes `reply.caller := none` — the SM6.D reply-object fold), so the
@@ -5199,7 +5192,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .tcbSetPriority | .tcbSetMCPriority =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
   | .tcbSetIPCBuffer =>
-      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
+      [.tcb, .cnode, .page, .endpoint, .notification, .objStore]
   -- WS-SM SM5.H.4: `setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity`
   -- and, for a SchedContext-bound target, migrates that SC's pending replenishments
   -- (so the bound SchedContext object is in the conservative kernel-object footprint;
@@ -7243,13 +7236,13 @@ theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`.
 
-Audit-pass-6: the target-VSpaceRoot read lock is now an
-`lockSetExtendOpt` extension on top of the base list.  Uses
-`base_plus_opt`. -/
+WS-SX SX6.6: the base four locks (caller TCB read, CNode read, target TCB
+write, the state-level write the slot's delete and copy take) plus the optional
+read of the buffer's frame.  Uses `base_plus_opt`. -/
 theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetVSpaceRoot : Option ObjId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (bufferFrame : Option ObjId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb targetVSpaceRoot queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb bufferFrame queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
@@ -7260,11 +7253,13 @@ theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           exact absurd hMem (by intro h; cases h))
       (by intro pp hpp
-          cases targetVSpaceRoot with
+          cases bufferFrame with
           | none => simp at hpp
-          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
+          | some f => simp at hpp; rw [← hpp]; simp [pageLock, permittedKinds]))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM5.H.4 for `.tcbSetAffinity`.

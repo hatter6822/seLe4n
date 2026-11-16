@@ -25,25 +25,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (MappingStage)
 
-theorem setIPCBufferOp_mappingStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {addr : SeLe4n.VAddr}
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    MappingStage st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  split at h
-  · cases h
-  · split at h
-    · rename_i tcb hTcb
-      dsimp only at h
-      split at h
-      · rename_i hStore
-        cases h
-        exact MappingStage.storeObject hStore
-          ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcb) rfl
-          (by simp [KernelObject.objectType])
-      · cases h
-    · cases h
-
 theorem setThreadFaultHandlerOp_mappingStage {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
     (h : setThreadFaultHandlerOp st vtid cptr = .ok st') : MappingStage st st' := by

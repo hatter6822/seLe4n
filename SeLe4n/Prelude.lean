@@ -1354,8 +1354,8 @@ theorem VAddr.pageBase_of_aligned {va : VAddr}
 
     AN2-B.4 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
     callers must use `PAddr.ofNat`. Validation against the platform's
-    `physicalAddressWidth` (e.g. `vspaceMapPageCheckedWithFlushFromState` and
-    AJ4-C's `validateIpcBufferAddress`) remains the caller's obligation —
+    `physicalAddressWidth` (e.g. `vspaceMapPageCheckedWithFlushFromState`)
+    remains the caller's obligation —
     production decode paths must gate against `2^physicalAddressWidth`
     before accepting a raw ABI word. -/
 structure PAddr where

@@ -473,13 +473,6 @@ theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb 
     (hV := by rw [hPre]; simp only [objRefillView, tcbRefillView, hA])
     (hY := by rw [hPre]; simp only [objYieldCodes, hY])
 
-theorem setIPCBufferOp_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {addr : SeLe4n.VAddr}
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    RunQueueStage st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  run_queue_stage_at h
-
 theorem setThreadFaultHandlerOp_runQueueStage {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
     (h : setThreadFaultHandlerOp st vtid cptr = .ok st') : RunQueueStage st st' := by
@@ -520,6 +513,29 @@ theorem threadSlotSet_runQueueStage (ec : Concurrency.CoreId) {st : SystemState}
     RunQueueStage st (threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   unfold threadSlotSet
   exact (threadSlotCopied_runQueueStage hT _ _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
+
+/-- A buffer-address write is a run-queue stage: a thread record rewritten in a
+field the stage does not read. -/
+theorem updateTcb_ipcBuffer_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (addr : SeLe4n.VAddr) :
+    RunQueueStage st (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) := by
+  cases hU : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hU]; exact RunQueueStage.refl _
+  | some u =>
+    rw [SystemState.updateTcb_eq_of_some hU]
+    exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff _ _ _).mp hU) (fun _ => rfl)
+
+/-- WS-SX SX6.6: a buffer change is a run-queue stage: the buffer slot's set,
+then the address write. -/
+theorem setIPCBufferOp_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr}
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    RunQueueStage st st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  exact (threadSlotSet_runQueueStage ec hT _ _ _ _ _).trans
+    (updateTcb_ipcBuffer_runQueueStage _ _ _)
 
 theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId}

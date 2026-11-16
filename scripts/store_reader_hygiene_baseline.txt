@@ -17,18 +17,18 @@ raw_match_cnode          = 0
 raw_match_vspaceroot     = 13
 raw_match_total          = 40
 raw_match_unclassified   = 4
-store_read_spec          = 8581 (diagnostic)
+store_read_spec          = 8574 (diagnostic)
 store_write_spec         = 491 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 4651
+gettcb_adoption          = 4662
 getschedctx_adoption     = 1253
 getendpoint_adoption     = 362
 getnotification_adoption = 174
-getuntyped_adoption      = 162
-getcnode_adoption        = 202
-getvspaceroot_adoption   = 106
+getuntyped_adoption      = 163
+getcnode_adoption        = 203
+getvspaceroot_adoption   = 104
 
 ## Writer-side wrapper adoption (should-grow)
 
@@ -36,12 +36,12 @@ storeobjectchecked_adoption = 16
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
-sentinel_check_dispatch  = 75
+sentinel_check_dispatch  = 77
 
 ## Regression test counts (should-grow)
 
 reader_hygiene_suite_tests           = 42
-kerrormatrix_rows        = 46
+kerrormatrix_rows        = 47
 
 ## Proof-surface health and reader hygiene (should-stay-zero)
 
@@ -120,9 +120,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/Invariant.lean|registerDecodeCon
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/Invariant.lean|writeRegisterState_preserves_ipcInvariantFull|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/IpcBufferRead.lean|ipcBufferReadMr_ok_implies_tcb|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/IpcBufferRead.lean|ipcBufferReadMr_reads_only_caller_tcb|8
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/IpcBufferValidation.lean|setIPCBufferOp_asidTable_eq|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/IpcBufferValidation.lean|setIPCBufferOp_success_shape|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/IpcBufferValidation.lean|validateIpcBufferAddress_implies_mapped_writable|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/PageTableInstall.lean|pageTableMap_ok_installed|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/PageTeardown.lean|tagFrameMapping_ok_frame|6
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/PageTeardown.lean|vspaceRootOnlyWrite|4
@@ -3711,19 +3708,19 @@ RAW_MATCH_VSPACEROOT=13
 RAW_MATCH_TOTAL=40
 RAW_MATCH_UNCLASSIFIED=4
 STORE_READ_CODE=0
-STORE_READ_SPEC=8581
+STORE_READ_SPEC=8574
 STORE_WRITE_CODE=0
 STORE_WRITE_SPEC=491
-GETTCB_ADOPTION=4651
+GETTCB_ADOPTION=4662
 GETSCHEDCTX_ADOPTION=1253
 GETENDPOINT_ADOPTION=362
 GETNOTIFICATION_ADOPTION=174
-GETUNTYPED_ADOPTION=162
-GETCNODE_ADOPTION=202
-GETVSPACEROOT_ADOPTION=106
+GETUNTYPED_ADOPTION=163
+GETCNODE_ADOPTION=203
+GETVSPACEROOT_ADOPTION=104
 STOREOBJECTCHECKED_ADOPTION=16
-SENTINEL_CHECK_DISPATCH=75
+SENTINEL_CHECK_DISPATCH=77
 READER_HYGIENE_SUITE_TESTS=42
-KERRORMATRIX_ROWS=46
+KERRORMATRIX_ROWS=47
 SORRY_COUNT=0
 AXIOM_COUNT=0

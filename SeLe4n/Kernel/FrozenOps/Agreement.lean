@@ -675,7 +675,6 @@ def frozenOpUncheckedReason : SyscallId → String
   | .schedContextUnbind => "budget operation; scenario owed"
   | .tcbSetPriority => "priority operation; scenario owed"
   | .tcbSetMCPriority => "priority operation; scenario owed"
-  | .tcbSetIPCBuffer => "architecture operation; scenario owed"
   -- `.tcbSuspend` is checked per branch above, whole state against
   -- `suspendThreadOnCore`.  The resume is compared on its objects only
   -- (`FrozenOpsSuite` FO-060, FO-062 to FO-064): the live restart ends in a

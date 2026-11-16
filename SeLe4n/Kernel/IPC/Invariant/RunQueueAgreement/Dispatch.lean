@@ -711,7 +711,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp st vtid
+              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp executingCore st
+                  vtid tid (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                   args.bufferAddr with
               | error e => simp only [hSet] at hStep; cases hStep
               | ok stU =>

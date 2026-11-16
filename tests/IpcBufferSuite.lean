@@ -11,13 +11,20 @@ import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
 import SeLe4n.Kernel.FrozenOps
-import SeLe4n.Model.FrozenState
 
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Architecture.IpcBufferValidation
 open SeLe4n.Kernel.FrozenOps
-open SeLe4n.Kernel.RobinHood
+
+/-! # IPC buffer configuration (`seL4_TCB_SetIPCBuffer`)
+
+WS-SX SX6.6: the buffer's frame capability is extra capability 0, resolved as a
+slot through the caller's CSpace, as in seL4 MCS's `decodeSetIPCBuffer`.  A
+nonzero address must name a non-device frame capability (seL4_IllegalOperation
+otherwise) and be aligned (seL4_AlignmentError); the derived capability replaces
+the thread's buffer slot with a copy edge, and the thread need not be suspended.
+A zero address empties the slot. -/
 
 namespace SeLe4n.Testing.IpcBufferSuite
 
@@ -27,322 +34,179 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
   else
     throw <| IO.userError s!"ipc_buffer check failed [{label}]"
 
-/-- Helper: construct a test TCB with given VSpace root. -/
-private def mkTcb (tid : Nat) (vsRoot : Nat := 100)
-    (buf : Nat := 0) (state : ThreadState := .Ready) : TCB :=
+/-- The caller's CSpace root: CNode 10, radix 3, behind a 61-bit guard so a
+64-bit CPtr names its slot by its low three bits. -/
+private def rootCap : Capability :=
+  { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read, .write, .grant],
+    cnodeGuardSize := 61 }
+
+private def frameCap (id : Nat) : Capability :=
+  { target := .object ⟨id⟩, rights := AccessRightSet.ofList [.read, .write] }
+
+/-- A thread whose CSpace root is `rootCap` and VSpace root is object 100. -/
+private def mkTcb (tid : Nat) (state : ThreadState := .Ready)
+    (bufferSlot : Option Capability := none) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨vsRoot⟩, ipcBuffer := (SeLe4n.VAddr.ofNat buf),
-    threadState := state }
+    spaceCells := #v[some rootCap,
+      TCB.spaceCellOf ⟨100⟩ TCB.vspaceRootRights, bufferSlot],
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := state }
 
-/-- Helper: create writable page permissions. -/
-private def writablePerms : PagePermissions :=
-  { read := true, write := true, execute := false, user := true, cacheable := true }
+/-- CNode 10's slots: 3 a frame, 4 a device frame, 5 an endpoint, 6 empty. -/
+private def rootCNode : CNode :=
+  CNode.ofList 3
+    [(SeLe4n.Slot.ofNat 3, frameCap 50),
+     (SeLe4n.Slot.ofNat 4, frameCap 51),
+     (SeLe4n.Slot.ofNat 5, { target := .object ⟨60⟩, rights := AccessRightSet.ofList [.read] })]
 
-/-- Helper: create read-only page permissions. -/
-private def readOnlyPerms : PagePermissions :=
-  { read := true, write := false, execute := false, user := true, cacheable := true }
-
-/-- Helper: build a VSpaceRoot with given mappings. -/
-private def mkVSpaceRoot (mappings : List (VAddr × (PAddr × PagePermissions)))
-    (asid : Nat := 1) : VSpaceRoot :=
-  let table := mappings.foldl (fun acc (va, entry) => acc.insert va entry) (RHTable.empty 16)
-  { asid := ⟨asid⟩, mappings := table }
-
-/-- Helper: build a minimal SystemState with given objects. -/
 private def mkState (objs : List (ObjId × KernelObject))
     (current : Option SeLe4n.ThreadId := none) : SystemState :=
   let builder : SeLe4n.Testing.BootstrapBuilder := {
-    objects := objs
+    objects := objs ++
+      [(⟨10⟩, .cnode rootCNode),
+       (⟨50⟩, .frame { base := SeLe4n.PAddr.ofNat 0x10000 }),
+       (⟨51⟩, .frame { base := SeLe4n.PAddr.ofNat 0x20000, isDevice := true }),
+       (⟨60⟩, .endpoint {}),
+       (⟨100⟩, .vspaceRoot { asid := ⟨1⟩, mappings := {} })]
     current := current
   }
   builder.buildChecked
 
+private def vtid2 : SeLe4n.ValidThreadId := ⟨⟨2⟩, by decide⟩
+
+private def setBuffer (st : SystemState) (cap? : Option Nat) (addr : Nat) :
+    Except KernelError SystemState :=
+  setIPCBufferOp SeLe4n.Kernel.Concurrency.bootCoreId st vtid2 ⟨1⟩ (cap?.map SeLe4n.CPtr.ofNat) (SeLe4n.VAddr.ofNat addr)
+
+private def twoThreads (state : ThreadState := .Ready) (current : Option SeLe4n.ThreadId := none)
+    (bufferSlot : Option Capability := none) : SystemState :=
+  mkState [(⟨1⟩, .tcb (mkTcb 1)), (⟨2⟩, .tcb (mkTcb 2 state bufferSlot))] current
+
+private def slotTarget (st : SystemState) : Option CapTarget :=
+  (st.getTcb? ⟨2⟩).bind (fun t => t.spaceCells[2].map (·.target))
+
+private def bufferAddr (st : SystemState) : Option Nat :=
+  (st.getTcb? ⟨2⟩).map (·.ipcBuffer.toNat)
+
 -- ============================================================================
--- D3-J1: setIPCBufferOp success cases
+-- Admitted changes
 -- ============================================================================
 
-/-- IB-001: setIPCBuffer with valid aligned mapped writable address succeeds. -/
-private def ib001_setIPCBufferValidAddress : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x1000), writablePerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
+/-- IB-001: an aligned address with a frame capability installs the derived
+capability in the buffer slot and writes the address. -/
+private def ib001_frameCapInstalled : IO Unit := do
+  match setBuffer (twoThreads) (some 3) 1024 with
   | .ok st' =>
-    match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "ipcBuffer updated to 1024" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 1024))
-    | _ => throw <| IO.userError "TCB not found after update"
-  | .error e => throw <| IO.userError s!"setIPCBuffer should succeed, got {repr e}"
+    expect "ipcBuffer written" (bufferAddr st' == some 1024)
+    expect "buffer slot holds the frame" (slotTarget st' == some (.object ⟨50⟩))
+    expect "the source keeps its capability"
+      ((st'.getCNode? ⟨10⟩).bind (·.lookup (SeLe4n.Slot.ofNat 3)) |>.isSome)
+  | .error e => throw <| IO.userError s!"set with a frame capability must succeed, got {repr e}"
 
-/-- IB-002: setIPCBuffer with address 0 (trivially aligned, must be mapped). -/
-private def ib002_setIPCBufferZeroAddress : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x2000), writablePerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 0) with
+/-- IB-002: a zero address empties the buffer slot, even when the extra
+capability names no frame (seL4's null capability). -/
+private def ib002_zeroAddressEmptiesSlot : IO Unit := do
+  match setBuffer (twoThreads (bufferSlot := some (frameCap 50))) (some 6) 0 with
   | .ok st' =>
-    match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "ipcBuffer set to 0" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 0))
-    | _ => throw <| IO.userError "TCB not found"
-  | .error e => throw <| IO.userError s!"setIPCBuffer at 0 should succeed, got {repr e}"
+    expect "ipcBuffer zero" (bufferAddr st' == some 0)
+    expect "buffer slot emptied" (slotTarget st' == none)
+  | .error e => throw <| IO.userError s!"a zero address must succeed, got {repr e}"
 
-/-- IB-003: setIPCBuffer on running thread succeeds (no suspend required). -/
-private def ib003_setIPCBufferRunningThread : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x3000), writablePerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1 (state := .Running))),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ] (current := some ⟨1⟩)
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok _ => expect "setIPCBuffer on running thread succeeds" true
-  | .error e => throw <| IO.userError s!"should succeed on running thread, got {repr e}"
+/-- IB-003: the thread need not be suspended. -/
+private def ib003_runningThread : IO Unit := do
+  match setBuffer (twoThreads (state := .Running) (current := some ⟨2⟩)) (some 3) 2048 with
+  | .ok st' => expect "set on a running thread succeeds" (bufferAddr st' == some 2048)
+  | .error e => throw <| IO.userError s!"must succeed on a running thread, got {repr e}"
 
--- ============================================================================
--- D3-J2: setIPCBufferOp error cases
--- ============================================================================
-
-/-- IB-004: Unaligned address returns alignmentError. -/
-private def ib004_unalignedAddress : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 100), ((SeLe4n.PAddr.ofNat 0x4000), writablePerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 100) with
-  | .ok _ => throw <| IO.userError "unaligned address should fail"
-  | .error e => expect "unaligned returns alignmentError" (e == .alignmentError)
-  -- 512-aligned but not 1024-aligned: a buffer there could cross its page,
-  -- which seL4's 64-bit alignment (`seL4_IPCBufferSizeBits = 10`) excludes.
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 0xE00) with
-  | .ok _ => throw <| IO.userError "512-aligned address past a page's last 1024 bytes should fail"
-  | .error e => expect "512-aligned address returns alignmentError" (e == .alignmentError)
-
-/-- IB-005: Unmapped address returns translationFault. -/
-private def ib005_unmappedAddress : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  -- VSpaceRoot with no mapping at address 1024
-  let vsRoot := mkVSpaceRoot []
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok _ => throw <| IO.userError "unmapped address should fail"
-  | .error e => expect "unmapped returns translationFault" (e == .translationFault)
-
-/-- IB-006: Address beyond canonical bound returns addressOutOfBounds. -/
-private def ib006_addressBeyondCanonical : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot []
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  -- 2^48 is beyond canonical bound (ARM64 48-bit VA space)
-  -- Must also be aligned to 1024
-  let beyondCanonical := VAddr.canonicalBound
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat beyondCanonical) with
-  | .ok _ => throw <| IO.userError "beyond canonical should fail"
-  | .error e => expect "beyond canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
-
-/-- IB-007: Read-only page returns translationFault. -/
-private def ib007_readOnlyPage : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x5000), readOnlyPerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok _ => throw <| IO.userError "read-only page should fail"
-  | .error e => expect "read-only returns translationFault" (e == .translationFault)
-
-/-- IB-008: Missing thread returns objectNotFound. -/
-private def ib008_missingThread : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x6000), writablePerms))]
-  let st := mkState [
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok _ => throw <| IO.userError "missing thread should fail"
-  | .error e => expect "missing thread returns objectNotFound" (e == .objectNotFound)
-
-/-- IB-009: Invalid VSpace root returns invalidArgument. -/
-private def ib009_invalidVSpaceRoot : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  -- VSpace root ObjId points to a non-VSpaceRoot object (endpoint)
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .endpoint {})
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok _ => throw <| IO.userError "invalid vspace root should fail"
-  | .error e => expect "invalid vspace returns invalidArgument" (e == (.invalidArgument 0))
+/-- IB-004: a second set replaces the slot's earlier capability. -/
+private def ib004_replacesEarlierCap : IO Unit := do
+  match setBuffer (twoThreads (bufferSlot := some (frameCap 50))) (some 3) 3072 with
+  | .ok st' =>
+    expect "replaced address" (bufferAddr st' == some 3072)
+    expect "slot still names the frame" (slotTarget st' == some (.object ⟨50⟩))
+  | .error e => throw <| IO.userError s!"a replacing set must succeed, got {repr e}"
 
 -- ============================================================================
--- D3-J3: Field preservation
+-- Refusals, in seL4's order
 -- ============================================================================
 
-/-- IB-010: setIPCBuffer preserves all other TCB fields. -/
+private def expectErr (label : String) (r : Except KernelError SystemState)
+    (ok : KernelError → Bool) : IO Unit :=
+  match r with
+  | .ok _ => throw <| IO.userError s!"ipc_buffer check failed [{label}]: admitted"
+  | .error e => expect s!"{label} ({repr e})" (ok e)
+
+/-- IB-005: no extra capability is a truncated message. -/
+private def ib005_noExtraCap : IO Unit :=
+  expectErr "no extra capability" (setBuffer twoThreads none 1024) (· == .truncatedMessage)
+
+/-- IB-006: an extra capability the caller's CSpace cannot resolve is a lookup
+failure. -/
+private def ib006_lookupFails : IO Unit := do
+  let st := mkState [(⟨1⟩, .tcb { mkTcb 1 with spaceCells := #v[none, none, none] }),
+    (⟨2⟩, .tcb (mkTcb 2))]
+  expectErr "unresolvable extra capability" (setBuffer st (some 3) 1024)
+    (fun e => match e with | .failedLookup _ _ => true | _ => false)
+
+/-- IB-007: an empty slot, an endpoint and a device frame are each seL4's
+IllegalOperation for a nonzero address. -/
+private def ib007_notAFrame : IO Unit := do
+  expectErr "empty slot" (setBuffer twoThreads (some 6) 1024) (· == .illegalState)
+  expectErr "endpoint capability" (setBuffer twoThreads (some 5) 1024) (· == .illegalState)
+  expectErr "device frame" (setBuffer twoThreads (some 4) 1024) (· == .illegalState)
+
+/-- IB-008: a misaligned address is an alignment error, checked after the
+capability. -/
+private def ib008_misaligned : IO Unit := do
+  expectErr "misaligned" (setBuffer twoThreads (some 3) 100) (· == .alignmentError)
+  -- 512-aligned but not 1024-aligned: a buffer there could cross its page.
+  expectErr "512-aligned" (setBuffer twoThreads (some 3) 0xE00) (· == .alignmentError)
+  expectErr "misaligned with no frame is IllegalOperation first"
+    (setBuffer twoThreads (some 6) 100) (· == .illegalState)
+
+/-- IB-009: a missing target thread is objectNotFound. -/
+private def ib009_missingThread : IO Unit :=
+  expectErr "missing thread" (setBuffer (mkState [(⟨1⟩, .tcb (mkTcb 1))]) (some 3) 1024)
+    (· == .objectNotFound)
+
+-- ============================================================================
+-- Field preservation and the frozen phase
+-- ============================================================================
+
+/-- IB-010: the set keeps every other field of the thread. -/
 private def ib010_fieldPreservation : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let origTcb := mkTcb 1 (buf := 0)
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x7000), writablePerms))]
-  let st := mkState [
-    (⟨1⟩, .tcb origTcb),
-    (⟨100⟩, .vspaceRoot vsRoot)
-  ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
-  | .ok st' =>
-    match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) => do
-      expect "priority preserved" (tcb.priority == origTcb.priority)
-      expect "domain preserved" (tcb.domain == origTcb.domain)
-      expect "vspaceRoot preserved" (tcb.vspaceRoot == origTcb.vspaceRoot)
-      expect "cspaceRoot preserved" (tcb.cspaceRoot == origTcb.cspaceRoot)
-      expect "threadState preserved" (tcb.threadState == origTcb.threadState)
-      expect "ipcState preserved" (tcb.ipcState == origTcb.ipcState)
-      expect "ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 1024))
-    | _ => throw <| IO.userError "TCB not found"
-  | .error e => throw <| IO.userError s!"should succeed, got {repr e}"
+  let st := twoThreads
+  match setBuffer st (some 3) 1024, st.getTcb? ⟨2⟩ with
+  | .ok st', some orig =>
+    match st'.getTcb? ⟨2⟩ with
+    | some t =>
+      expect "priority preserved" (t.priority == orig.priority)
+      expect "domain preserved" (t.domain == orig.domain)
+      expect "vspaceRoot preserved" (t.vspaceRoot == orig.vspaceRoot)
+      expect "cspaceRoot preserved" (t.cspaceRoot == orig.cspaceRoot)
+      expect "threadState preserved" (t.threadState == orig.threadState)
+      expect "ipcState preserved" (t.ipcState == orig.ipcState)
+    | none => throw <| IO.userError "TCB not found"
+  | _, _ => throw <| IO.userError "the set must succeed"
 
--- ============================================================================
--- D3-J4: Frozen operations
--- ============================================================================
-
-/-- Helper: construct a minimal empty FrozenSystemState. -/
-private def emptyFrozenState : FrozenSystemState :=
-  SeLe4n.Testing.emptyFrozenSystemState
-
-/-- Helper: build a minimal FrozenSystemState with given objects. -/
-private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
-    : FrozenSystemState :=
-  SeLe4n.Testing.frozenStateOf objs
-
-/-- Helper: create frozen VSpaceRoot with mappings. -/
-private def mkFrozenVSpaceRoot (mappings : List (VAddr × (PAddr × PagePermissions)))
-    (asid : Nat := 1) : FrozenVSpaceRoot :=
-  let table := mappings.foldl (fun acc (va, entry) => acc.insert va entry) (RHTable.empty 16)
-  { asid := ⟨asid⟩, mappings := freezeMap table }
-
-/-- IB-011: Frozen setIPCBuffer with valid address succeeds. -/
-private def ib011_frozenSetIPCBuffer : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x8000), writablePerms))]
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot fvs)
-  ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
-  | .ok ((), fst') =>
-    match fst'.objects.get? ⟨1⟩ with
-    | some (.tcb tcb) =>
-      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 1024))
-    | _ => throw <| IO.userError "frozen TCB not found"
-  | .error e => throw <| IO.userError s!"frozen setIPCBuffer should succeed, got {repr e}"
-
-/-- IB-012: Frozen setIPCBuffer with unaligned address fails. -/
-private def ib012_frozenUnaligned : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 100), ((SeLe4n.PAddr.ofNat 0x9000), writablePerms))]
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot fvs)
-  ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 100) fst with
-  | .ok _ => throw <| IO.userError "frozen unaligned should fail"
-  | .error e => expect "frozen unaligned returns alignmentError" (e == .alignmentError)
-
-/-- IB-013: Frozen setIPCBuffer with read-only page fails. -/
-private def ib013_frozenReadOnly : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0xA000), readOnlyPerms))]
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot fvs)
-  ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
-  | .ok _ => throw <| IO.userError "frozen read-only should fail"
-  | .error e => expect "frozen read-only returns translationFault" (e == .translationFault)
-
-/-- IB-014: Frozen setIPCBuffer with unmapped address fails. -/
-private def ib014_frozenUnmapped : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot []  -- empty mappings
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot fvs)
-  ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
-  | .ok _ => throw <| IO.userError "frozen unmapped should fail"
-  | .error e => expect "frozen unmapped returns translationFault" (e == .translationFault)
-
-/-- IB-015: Frozen setIPCBuffer with missing thread fails. -/
-private def ib015_frozenMissingThread : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
-  let fst := mkFrozenState []
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
-  | .ok _ => throw <| IO.userError "frozen missing thread should fail"
-  | .error e => expect "frozen missing thread returns objectNotFound" (e == .objectNotFound)
-
-/-- IB-016: Frozen setIPCBuffer with non-canonical address fails. -/
-private def ib016_frozenNonCanonical : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot []
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .vspaceRoot fvs)
-  ]
-  let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 1024
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat beyondCanonical) fst with
-  | .ok _ => throw <| IO.userError "frozen non-canonical should fail"
-  | .error e => expect "frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
-
-/-- IB-017: Frozen setIPCBuffer with invalid VSpace root fails. -/
-private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fst := mkFrozenState [
-    (⟨1⟩, .tcb (mkTcb 1)),
-    (⟨100⟩, .endpoint {})  -- Not a VSpaceRoot
-  ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
-  | .ok _ => throw <| IO.userError "frozen invalid vspace root should fail"
-  | .error e => expect "frozen invalid vspace returns invalidArgument" (e == (.invalidArgument 0))
+/-- IB-011: the frozen phase has no buffer set: it would write the derivation
+tree, which the frozen phase does not model. -/
+private def ib011_noFrozenSet : IO Unit :=
+  expect "tcbSetIPCBuffer has no frozen operation" (frozenOpCoverage .tcbSetIPCBuffer == false)
 
 end SeLe4n.Testing.IpcBufferSuite
 
 open SeLe4n.Testing.IpcBufferSuite in
 def main : IO Unit := do
-  IO.println "=== D3 IPC Buffer Configuration Test Suite ==="
-  IO.println "--- D3-J1: setIPCBuffer success cases ---"
-  ib001_setIPCBufferValidAddress
-  ib002_setIPCBufferZeroAddress
-  ib003_setIPCBufferRunningThread
-  IO.println "--- D3-J2: setIPCBuffer error cases ---"
-  ib004_unalignedAddress
-  ib005_unmappedAddress
-  ib006_addressBeyondCanonical
-  ib007_readOnlyPage
-  ib008_missingThread
-  ib009_invalidVSpaceRoot
-  IO.println "--- D3-J3: Field preservation ---"
+  IO.println "=== IPC Buffer Configuration Test Suite ==="
+  ib001_frameCapInstalled
+  ib002_zeroAddressEmptiesSlot
+  ib003_runningThread
+  ib004_replacesEarlierCap
+  ib005_noExtraCap
+  ib006_lookupFails
+  ib007_notAFrame
+  ib008_misaligned
+  ib009_missingThread
   ib010_fieldPreservation
-  IO.println "--- D3-J4: Frozen operations ---"
-  ib011_frozenSetIPCBuffer
-  ib012_frozenUnaligned
-  ib013_frozenReadOnly
-  ib014_frozenUnmapped
-  ib015_frozenMissingThread
-  ib016_frozenNonCanonical
-  ib017_frozenInvalidVSpaceRoot
-  IO.println "=== All D3 IPC buffer tests passed (17 tests) ==="
+  ib011_noFrozenSet
+  IO.println "=== All IPC buffer tests passed (11 tests) ==="

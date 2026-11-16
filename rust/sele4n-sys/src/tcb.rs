@@ -7,7 +7,7 @@
 //! target TCB capability.
 
 use sele4n_abi::args::tcb::*;
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Suspend a thread (transition to Inactive state).
@@ -72,17 +72,31 @@ pub fn tcb_set_mcp(tcb_cap: CPtr, new_mcp: u64) -> KernelResult<SyscallResponse>
     })
 }
 
-/// Set a thread's IPC buffer address.
+/// Set a thread's IPC buffer — seL4's `seL4_TCB_SetIPCBuffer`.
 ///
-/// Lean: `setIPCBufferOp` (Architecture/IpcBufferValidation.lean) — requires
-/// `.write` right. Address must be aligned to 512 bytes (seL4 convention).
+/// `buffer_frame` is a capability address **in the caller's CSpace** naming
+/// the buffer's frame; it is the message's extra capability 0
+/// (`caps_or_badges[0]`).  For a nonzero `buffer_addr` the kernel derives it,
+/// refuses anything but a non-device frame (`IllegalOperation`) and an address
+/// not aligned to `IPC_BUFFER_ALIGNMENT` (`AlignmentError`), and installs the
+/// derived capability in the thread's buffer slot; a zero `buffer_addr`
+/// empties the slot.  The thread need not be suspended.  Requires `.write`
+/// on `tcb_cap`.
+///
+/// Lean: `setIPCBufferOp` (Architecture/IpcBufferValidation.lean).
 #[inline]
-pub fn tcb_set_ipc_buffer(tcb_cap: CPtr, buffer_addr: u64) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_ipc_buffer(
+    tcb_cap: CPtr,
+    buffer_addr: u64,
+    buffer_frame: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
     let args = SetIPCBufferArgs { buffer_addr };
     let encoded = args.encode();
+    buf.caps_or_badges[0] = buffer_frame.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetIPCBuffer,
     })

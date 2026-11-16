@@ -103,6 +103,23 @@ theorem copyThreadSpacesZombie_kernelRecordsSound (ec : Concurrency.CoreId) {st 
   · exact (hChain n _ hR).1
   · exact copyThreadSpaces_kernelRecordsSound ec (hChain n s hR).1 (hChain n s hR).2.1 h2
 
+/-- WS-SX SX6.6: **a buffer change carries the records**: the buffer slot's set
+does (`threadSlotSet_kernelRecordsSound`), and the address write is a thread
+rewrite keeping its record view. -/
+theorem setIPCBufferOp_kernelRecordsSound (ec : Concurrency.CoreId) {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (h : st.kernelRecordsSound) (hR : ipcReachable st)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : st'.kernelRecordsSound := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  have h1 := threadSlotSet_kernelRecordsSound ec h hR hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  exact (RecordsFrame.updateTcb _ vtid.val (KernelRecords.objects_invExt h1) (fun _ => rfl)
+    (f := fun t => { t with ipcBuffer := addr })).preserves h1
+
 /-- **The handler bind carries the records**: the node slot's zombie delete,
 then the copy of a notification capability. -/
 theorem irqHandlerSetNotification_kernelRecordsSound {ec : Concurrency.CoreId} {line : Nat}

@@ -2027,11 +2027,9 @@ fn tcb_args_errors() {
         Err(KernelError::InvalidMessageInfo)
     );
 
-    // D3: Unaligned address
-    assert_eq!(
-        SetIPCBufferArgs::decode(&[513]),
-        Err(KernelError::AlignmentError)
-    );
+    // D3: an unaligned address decodes; the kernel refuses it with
+    // AlignmentError after the frame capability (seL4's checkValidIPCBuffer).
+    assert_eq!(SetIPCBufferArgs::decode(&[513]).unwrap().buffer_addr, 513);
     assert_eq!(
         SetIPCBufferArgs::decode(&[]),
         Err(KernelError::InvalidMessageInfo)
@@ -2049,7 +2047,7 @@ fn sys_tcb_module_exports() {
     let _set_prio: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_priority;
     let _set_mcp: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_mcp;
-    let _set_buf: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+    let _set_buf: fn(CPtr, u64, CPtr, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_ipc_buffer;
 }
 
@@ -2960,7 +2958,7 @@ fn wrappers_name_their_syscalls() {
     assert_names("tcb_set_priority", SyscallId::TcbSetPriority);
     let _ = sele4n_sys::tcb::tcb_set_mcp(cap, 1);
     assert_names("tcb_set_mcp", SyscallId::TcbSetMCPriority);
-    let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000);
+    let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000, cap, &mut buf);
     assert_names("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
     assert_names("tcb_set_affinity", SyscallId::TcbSetAffinity);

@@ -4458,6 +4458,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | _ => fun _ => .error (.invalidCapability 0)
   -- AE1-B: D3-H TCB setIPCBuffer — buffer address from message register, target from capability
   -- Moved here from duplicate arms in both dispatch paths (U-06 fix).
+  -- WS-SX SX6.6: the buffer's frame capability is the caller's extra capability
+  -- 0, derived into the thread's buffer slot (seL4's `decodeSetIPCBuffer`).
   | .tcbSetIPCBuffer =>
     some <| match cap.target with
     | .object objId =>
@@ -4469,8 +4471,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Architecture.IpcBufferValidation.setIPCBufferOp st
-                vtid args.bufferAddr with
+            match Architecture.IpcBufferValidation.setIPCBufferOp executingCore st vtid tid
+                (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.bufferAddr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -5034,14 +5036,15 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp st vtid
+              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp executingCore st
+                  vtid tid (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                   args.bufferAddr with
               | error e => simp only [hSet] at hStep; cases hStep
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact setIPCBufferOp_preserves_ipcInvariantFull st st' vtid _
-                    hObjInv hInv hSet
+                  exact setIPCBufferOp_preserves_ipcInvariantFull executingCore st st' vtid _ _ _
+                    hObjInv hInv hPack.schedContextLinks.budgets hSet
     all_goals try cases hStep
   case tcbSetAffinity =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -8111,6 +8114,24 @@ theorem dispatchWithCapChecked_tcbSetSpace_delegates
        | .error e => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hValid, hResolve]
 
+/-- WS-SX SX6.6: **the live `.tcbSetIPCBuffer` arm routes to `setIPCBufferOp`**
+with the buffer's frame capability as extra capability 0. -/
+theorem dispatchWithCapChecked_tcbSetIPCBuffer_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.SetIPCBufferArgs) (vtid : SeLe4n.ValidThreadId)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbSetIPCBuffer)
+    (hTarget : cap.target = .object objId)
+    (hDecode : Architecture.SyscallArgDecode.decodeSetIPCBufferArgs decoded = .ok args)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      (match Architecture.IpcBufferValidation.setIPCBufferOp executingCore st vtid tid
+          (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.bufferAddr with
+       | .ok st' => .ok ((), st')
+       | .error e => .error e) := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hValid]
+
 /-- **The live `.tcbResume` arm routes to `resumeThreadOnCore`.**
 
 Round 10 of the PR #861 review found this arm still calling the boot-pinned
@@ -8552,6 +8573,22 @@ def syscallDelegates : SyscallId → Prop
           (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
+  -- WS-SX SX6.6: the buffer change, which replaces the thread's buffer slot
+  -- and retires what its old capability took with it at the invoking core.
+  | .tcbSetIPCBuffer =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.SetIPCBufferArgs) (vtid : SeLe4n.ValidThreadId)
+        (st : SystemState),
+        decoded.syscallId = .tcbSetIPCBuffer →
+        cap.target = .object objId →
+        Architecture.SyscallArgDecode.decodeSetIPCBufferArgs decoded = .ok args →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+          (match Architecture.IpcBufferValidation.setIPCBufferOp executingCore st vtid tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.bufferAddr with
+           | .ok st' => .ok ((), st')
+           | .error e => .error e)
   -- WS-ZA ZA4.3: the capability-free yield.  The dispatcher runs it from the
   -- guard ahead of the caller's CSpace lookup, so the obligation is stated
   -- over the dispatcher itself: once the caller is current on the executing
@@ -8752,6 +8789,13 @@ theorem syscallDelegates_tcbSetSpace : syscallDelegates .tcbSetSpace := by
     hValid hResolve
   exact dispatchWithCapChecked_tcbSetSpace_delegates ctx decoded tid executingCore gate cap objId args vtid
     cnSrc vrSrc st hSyscall hTarget hDecode hValid hResolve
+
+/-- WS-SX SX6.6: the `.tcbSetIPCBuffer` obligation, discharged — the buffer
+change's cross-core inventory entry rests on it. -/
+theorem syscallDelegates_tcbSetIPCBuffer : syscallDelegates .tcbSetIPCBuffer := by
+  intro ctx decoded tid executingCore gate cap objId args vtid st hSyscall hTarget hDecode hValid
+  exact dispatchWithCapChecked_tcbSetIPCBuffer_delegates ctx decoded tid executingCore gate cap objId args vtid
+    st hSyscall hTarget hDecode hValid
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

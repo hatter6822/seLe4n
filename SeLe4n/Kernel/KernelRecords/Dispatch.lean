@@ -598,13 +598,14 @@ theorem dispatchCapabilityOnly_recordsStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp st vtid
+              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp executingCore st
+                  vtid tid (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                   args.bufferAddr with
               | error e => simp only [hSet] at hStep; cases hStep
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact .of_frameK fun hI => RecordsFrame.setIPCBufferOp hI hSet
+                  exact fun h => setIPCBufferOp_kernelRecordsSound executingCore h P.deletes.1 hSet
     all_goals try cases hStep
   case tcbSetAffinity =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

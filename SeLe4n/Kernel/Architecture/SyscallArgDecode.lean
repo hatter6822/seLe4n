@@ -1893,15 +1893,15 @@ structure SetIPCBufferArgs where
   deriving Repr, DecidableEq
 
 /-- D3-B: Decode setIPCBuffer arguments from message registers.
-    Requires 1 message register (bufferAddr). Validates alignment:
-    `bufferAddr.toNat % ipcBufferAlignment = 0`. -/
+    Requires 1 message register (bufferAddr).  The address is checked where
+    seL4's `checkValidIPCBuffer` checks it, after the frame capability is
+    derived (WS-SX SX6.6, `IpcBufferValidation.setIPCBufferFrom`); a zero
+    address is seL4's null buffer. -/
 def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetIPCBufferArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetIPCBuffer)
   let r0 ← requireMsgReg decoded.msgRegs 0
-  let addr := SeLe4n.VAddr.ofNat r0.val
-  if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
-  else pure { bufferAddr := addr }
+  pure { bufferAddr := SeLe4n.VAddr.ofNat r0.val }
 
 /-- D3-B: Encode setIPCBuffer arguments into message registers. -/
 @[inline] def encodeSetIPCBufferArgs (args : SetIPCBufferArgs) : Array RegValue :=
@@ -1911,15 +1911,14 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
 -- D3-B: IPC buffer configuration round-trip theorem
 -- ============================================================================
 
-/-- D3-B: SetIPCBufferArgs decode round-trip for aligned addresses. -/
+/-- D3-B: SetIPCBufferArgs decode round-trip. -/
 theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
-    (hAligned : args.bufferAddr.toNat % SeLe4n.ipcBufferAlignment = 0)
     (hWord : args.bufferAddr.toNat < 2 ^ 64) :
     decodeSetIPCBufferArgs (stubDecoded (encodeSetIPCBufferArgs args)) = .ok args := by
   simp only [requireMessageLength, truncationMinimum, decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
-  simp [hAligned, RegValue.val_ofNat, Nat.mod_eq_of_lt hWord]
+  simp [RegValue.val_ofNat, Nat.mod_eq_of_lt hWord]
 
 -- ============================================================================
 -- WS-SM SM5.H.4: CPU-affinity configuration decode (`tcbSetAffinity`)
@@ -2727,9 +2726,7 @@ theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 @[inline] def decodeSetIPCBufferArgsBy (get : MsgRegReader)
     : Except KernelError SetIPCBufferArgs := do
   let r0 ← get 0
-  let addr := SeLe4n.VAddr.ofNat r0.toNat
-  if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
-  else pure { bufferAddr := addr }
+  pure { bufferAddr := SeLe4n.VAddr.ofNat r0.toNat }
 
 theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

@@ -31,24 +31,6 @@ theorem storeObject_tcbView {st st' : SystemState} {k : SeLe4n.ObjId} {x y : TCB
     RecordsFrame st st' :=
   storeObject hInv h (by rw [hOld]; simp [hv]) (fun _ h => by cases h)
 
-theorem setIPCBufferOp {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {addr : SeLe4n.VAddr} (hInv : st.objects.invExt)
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    RecordsFrame st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  split at h
-  · cases h
-  · split at h
-    · rename_i tcb hTcb
-      dsimp only at h
-      split at h
-      · rename_i hStore
-        cases h
-        exact storeObject_tcbView hInv ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcb)
-          hStore rfl
-      · cases h
-    · cases h
-
 theorem setThreadFaultHandlerOp {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {cptr : SeLe4n.CPtr} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.setThreadFaultHandlerOp st vtid cptr = .ok st') :

@@ -3057,7 +3057,7 @@ private def runRustXvalVectors : IO Unit := do
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
-      msgInfo := { length := ibEncoded.size, extraCaps := 0, label := 0 },
+      msgInfo := { length := ibEncoded.size, extraCaps := 1, label := 0 },
       syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
   | .ok decoded =>

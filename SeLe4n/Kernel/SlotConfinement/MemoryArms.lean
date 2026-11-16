@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.SlotConfinement.PriorityArms
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
+import SeLe4n.Kernel.Architecture.IpcBufferValidation
 
 /-!
 # Per-core slot confinement — the live memory and lifecycle arms
@@ -629,6 +630,25 @@ theorem copyThreadSpacesZombie_confinedToCores (ec : CoreId) (st st' : SystemSta
       · exact hStep
     exact copyThreadSpaces_confinedToCores ec st st' vtid cnSrc vrSrc cnData hInv hPlain
   · exact observableSlotsConfinedToCores_allCores st st'
+
+/-- WS-SX SX6.6: **the live `.tcbSetIPCBuffer` arm writes no core.**  The
+buffer slot's set copies the frame capability into the thread's slot and
+retires what the old capability took with it (the object store, the CDT), and
+the address is a TCB field: no scheduler slot and no register bank. -/
+theorem setIPCBufferOp_confinedToCores (ec : CoreId) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (callerTid : SeLe4n.ThreadId) (bufferCap? : Option SeLe4n.CPtr)
+    (addr : SeLe4n.VAddr)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  obtain ⟨hs, hm⟩ := threadSlotSet_framed ec hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  exact observableSlotsConfinedToCores_nil_of_framed
+    ⟨(SystemState.updateTcb_scheduler _ _ _).trans hs, (SystemState.updateTcb_machine _ _ _).trans hm⟩
 
 -- ============================================================================
 -- §5k The live `.untypedRetype` arm, and the destroy path's cleanup

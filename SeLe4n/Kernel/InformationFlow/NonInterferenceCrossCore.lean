@@ -474,6 +474,20 @@ theorem copyThreadSpacesZombie_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer hne
     (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc cnData hInv hStep) hShared
 
+/-- WS-SX SX6.6 (**the live `.tcbSetIPCBuffer` arm, cross-core**): invisible
+on every core — the buffer slot's set and the address write touch the object
+store and the CDT alone (`setIPCBufferOp_confinedToCores`). -/
+theorem setIPCBufferOp_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (vtid : SeLe4n.ValidThreadId) (callerTid : SeLe4n.ThreadId) (bufferCap? : Option SeLe4n.CPtr)
+    (addr : SeLe4n.VAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp executingCore st vtid callerTid
+      bufferCap? addr = .ok st')
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (setIPCBufferOp_confinedToCores executingCore st st' vtid callerTid bufferCap? addr hStep) hShared
+
 /-- WS-ZA ZA6.32: **the bind's copy writes no core** — the node slot's capability
 and its derivation edge are the object store and the CDT. -/
 theorem cspaceCopy_confinedToCores {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState}
@@ -1361,6 +1375,11 @@ inductive CrossCoreTransition where
   it (a root with its acknowledged ASID round), and writes no core: the slot
   copies and the retire are the object store, the CDT and the TLB state. -/
   | tcbSetSpaceDispatch
+  /-- WS-SX SX6.6 — the **live** `.tcbSetIPCBuffer` arm.  Takes an executing
+  core since the buffer slot's replace retires what its old capability took
+  with it, and writes no core: the slot copy, the retire and the address are
+  the object store and the CDT. -/
+  | setIPCBufferDispatch
   /-- SM8.C.9 — the **live** `.declassify` arm. Takes an executing core (to
   resolve the running subject whose domain the downgrade is attributed to) and
   writes **no** core: its whole state effect is one entry appended to the
@@ -1418,6 +1437,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .setPriorityDispatch, .setMCPriorityDispatch,
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
    .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch, .tcbSetSpaceDispatch,
+   .setIPCBufferDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch, .schedContextConsumedDispatch,
    .schedContextYieldToDispatch, .irqHandlerSetNotificationDispatch, .irqHandlerClearDispatch]
@@ -1483,6 +1503,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
   | .tcbSetSpaceDispatch => niName! copyThreadSpacesZombie_crossCoreNonInterference
+  | .setIPCBufferDispatch => niName! setIPCBufferOp_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
   -- SM9.C.6: the DISPATCH-level composition, for the round-4 reason and one
@@ -1510,7 +1531,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! irqHandlerSetNotificationFromCap_crossCoreNonInterference
   | .irqHandlerClearDispatch => niName! irqHandlerClear_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 38 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 39 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1585,6 +1606,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .auditDrainDispatch => true
   | .untypedRetypeDispatch => true
   | .tcbSetSpaceDispatch => true
+  | .setIPCBufferDispatch => true
   | .yieldDispatch => true
   | .schedContextConsumedDispatch => true
   | .schedContextYieldToDispatch => true
@@ -1592,7 +1614,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 31 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 32 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1690,6 +1712,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .auditDrainDispatch => some .auditDrain
   | .untypedRetypeDispatch => some .untypedRetype
   | .tcbSetSpaceDispatch => some .tcbSetSpace
+  | .setIPCBufferDispatch => some .tcbSetIPCBuffer
   | .yieldDispatch => some .yield
   | .schedContextConsumedDispatch => some .schedContextConsumed
   | .schedContextYieldToDispatch => some .schedContextYieldTo
@@ -1745,6 +1768,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .untypedRetypeDispatch =>
       .delegationProof .untypedRetype syscallDelegates_untypedRetype
   | .tcbSetSpaceDispatch => .delegationProof .tcbSetSpace syscallDelegates_tcbSetSpace
+  | .setIPCBufferDispatch =>
+      .delegationProof .tcbSetIPCBuffer syscallDelegates_tcbSetIPCBuffer
   | .yieldDispatch => .delegationProof .yield syscallDelegates_yield
   | .schedContextConsumedDispatch =>
       .delegationProof .schedContextConsumed syscallDelegates_schedContextConsumed
@@ -1790,7 +1815,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 23 := by decide
+    crossCoreLiveArmDelegationBacked.length = 24 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1845,6 +1870,9 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   -- is the last capability to a CNode holding capabilities, is deleted by the
   -- zombie loop, whose finalisations wake waiters on their own cores
   | .tcbSetSpaceDispatch => true
+  -- WS-SX SX6.6: and the buffer change, whose old capability is a frame's,
+  -- whose retire wakes no waiter
+  | .setIPCBufferDispatch => false
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all
   | .declassifyDispatch => false

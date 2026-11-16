@@ -2697,10 +2697,10 @@ theorem queueOwnership_respected_by_tcbSetMCPriority (callerTid : SeLe4n.ThreadI
 
 theorem queueOwnership_respected_by_tcbSetIPCBuffer (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
-    (targetVSpaceRootObjId : Option SeLe4n.ObjId)
+    (bufferFrameObjId : Option SeLe4n.ObjId)
     (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
     queueOwnershipRespectedBy
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer callerTid cnodeRootObjId neighbourTid targetVSpaceRootObjId (some o)) neighbourTid o :=
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer callerTid cnodeRootObjId neighbourTid bufferFrameObjId (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
 theorem queueOwnership_respected_by_tcbSetAffinity (callerTid : SeLe4n.ThreadId)

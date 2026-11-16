@@ -510,19 +510,18 @@ private def sad022_setMCPriority : IO Unit := do
   let resultOver := decodeSetMCPriorityArgs stubOver
   expect "SAD-022b setMCPriority overflow" (!resultOver.isOk)
 
-/-- SAD-023: decodeSetIPCBufferArgs — valid (aligned) and invalid (misaligned). -/
+/-- SAD-023: decodeSetIPCBufferArgs carries the address as given.  seL4's
+`decodeSetIPCBuffer` checks the alignment in `checkValidIPCBuffer`, after the
+frame capability, so the decode refuses nothing but a short message. -/
 private def sad023_setIPCBuffer : IO Unit := do
-  -- Valid: 1024-byte aligned address
-  let stub := mkStub #[⟨1024 * 5⟩]
-  let result := decodeSetIPCBufferArgs stub
-  expect "SAD-023a setIPCBuffer aligned ok" result.isOk
-  -- Invalid: misaligned address
-  let stubBad := mkStub #[⟨1024 * 5 + 1⟩]
-  let resultBad := decodeSetIPCBufferArgs stubBad
-  expect "SAD-023b setIPCBuffer misaligned err" (!resultBad.isOk)
-  -- Invalid: 512-aligned but not 1024-aligned (could cross a page)
-  let stubHalf := mkStub #[⟨1024 * 5 + 512⟩]
-  expect "SAD-023c setIPCBuffer half-aligned err" (!(decodeSetIPCBufferArgs stubHalf).isOk)
+  let aligned := decodeSetIPCBufferArgs (mkStub #[⟨1024 * 5⟩])
+  expect "SAD-023a setIPCBuffer aligned decodes"
+    (match aligned with | .ok a => a.bufferAddr.toNat == 1024 * 5 | .error _ => false)
+  let misaligned := decodeSetIPCBufferArgs (mkStub #[⟨1024 * 5 + 1⟩])
+  expect "SAD-023b setIPCBuffer misaligned decodes (the operation refuses it)"
+    (match misaligned with | .ok a => a.bufferAddr.toNat == 1024 * 5 + 1 | .error _ => false)
+  expect "SAD-023c setIPCBuffer empty message is truncated"
+    (!(decodeSetIPCBufferArgs (mkStub #[])).isOk)
 
 -- Service family ---------------------------------------------------------------
 
