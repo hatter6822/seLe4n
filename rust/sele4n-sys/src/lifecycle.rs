@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Lifecycle operations — carving objects out of an untyped, and resetting it.
+//! Lifecycle operations — carving objects out of an untyped.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — the `.untypedRetype` arm
-//! (`untypedRetypeFromCap`) and the `.untypedReset` arm (`untypedReset`).
+//! (`untypedRetypeFromCap`).  As in seL4, a carve through a capability with
+//! no derivation child resets the untyped first, so there is no separate
+//! reset call (WS-SX SX6.1).
 //! WS-ZA ZA5.4 part 14 retired the in-place `lifecycle_retype` (syscall 8):
 //! every object is carved from an untyped.
 

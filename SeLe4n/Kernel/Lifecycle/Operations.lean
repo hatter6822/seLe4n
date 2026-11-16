@@ -24,7 +24,7 @@ A thin re-export hub over the lifecycle child modules:
 | `Operations.ScrubAndUntyped`                 | the object-identifier address-space guard, the carve (`CarveRequest`, `retypeFromUntyped`) + capacity / alignment / freshness / atomicity / error-path theorems |
 | `Operations.RetypeWrappers`                  | A released ASID's shootdown round, and the carve-scrub discharge |
 | `Operations.CarvedObjectErase`               | The store's erase of a carved object (`retireCarvedObject`), which the final-delete retire runs |
-| `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset (seL4's `resetUntypedCap`), the carve's dispatch-level entry, and the space-slot write |
+| `Operations.RetypePerform`, `SetSpace`       | The carve's dispatch-level entry (which resets a childless untyped first, as seL4's `resetUntypedCap` does), and the space-slot write |
 
 **WS-ZA ZA5.4 part 14**: there is no in-place retype.  Every kernel object is
 carved from an untyped at its free index (`untypedRetypeObject`), so the
