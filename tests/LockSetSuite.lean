@@ -1085,18 +1085,28 @@ private def runPerTransitionShapeChecks : IO Unit := do
               (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
-  -- (caller TCB read, CNode read, target TCB write — no SC).
+  -- (caller TCB read, CNode read, target TCB write — no SC; the caller is
+  -- its own authority).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetPriority with bound SC = 4 locks.
   assertBool "tcbSetPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+  -- WS-SX SX6.4 (D11): an authority other than the caller adds its TCB read
+  -- (the self-authority sets above dedupe it into the caller's).
+  assertBool "tcbSetPriority size (unbound target, another authority) = 4"
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  assertBool "tcbSetMCPriority size (unbound target, another authority) = 4"
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  assertBool "tcbSetPriority(authority 2) contains tcbLock 2 as read"
+    ((lockSet_tcbSetPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).pairs.any (fun p =>
+      decide (p = (.object ⟨.tcb, ObjId.ofNat 2⟩, .read))))
   -- Audit-pass-6 P1: tcbSetMCPriority with unbound target = 3 locks.
   assertBool "tcbSetMCPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetMCPriority with bound SC = 4 locks.
   assertBool "tcbSetMCPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
   -- tcbSetIPCBuffer with no frame read (lookup failed, or a zero address) = 4 locks:
   -- the base three plus the state-level write the buffer slot's copy takes.
   assertBool "tcbSetIPCBuffer size (no frame) = 4"
@@ -1527,13 +1537,13 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
     allOk_replyDon
   -- Audit-pass-6 P1: .tcbSetPriority with bound SC — every kind permitted.
-  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setPriBound := setPriBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
   assertBool "lockSet_tcbSetPriority (.bound binding, SC included): all kinds permitted"
     allOk_setPriBound
   -- Audit-pass-6 P1: .tcbSetMCPriority with bound SC.
-  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setMcpBound := setMcpBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetMCPriority))
   assertBool "lockSet_tcbSetMCPriority (.bound binding, SC included): all kinds permitted"
@@ -1564,9 +1574,9 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
   IO.println "--- §18 WS-RR RR7.38 queue-owner footprint member ---"
   let ep : QueueOwner := .endpoint (ObjId.ofNat 20)
   let ntfn : QueueOwner := .notification (ObjId.ofNat 21)
-  let bare := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
-  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
-  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
+  let bare := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
+  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
   assertBool "a queued target adds exactly one member"
     (decide (queuedEp.size = bare.size + 1))
   assertBool "…and that member is the endpoint's WRITE lock, not a read"
@@ -1639,15 +1649,15 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   IO.println "--- §17 Audit-pass-6 footprint completeness (P1+P2 closure) ---"
   -- P1 (tcbSetPriority): with unbound target, no SC lock — but the
   -- bound case adds (schedContextLock scId, .write).
-  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+  let boundPri := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetPriority(.bound) has one more lock than .unbound"
     (decide (boundPri.size = unboundPri.size + 1))
   assertBool "P1: tcbSetPriority(.bound 50) contains schedContextLock ⟨50⟩ as write"
     (boundPri.pairs.any (fun p =>
       decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetMCPriority): same shape.
-  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
       decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))

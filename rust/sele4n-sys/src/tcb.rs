@@ -40,33 +40,55 @@ pub fn tcb_resume(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
     })
 }
 
-/// Set a thread's scheduling priority.
+/// Set a thread's scheduling priority — seL4's `seL4_TCB_SetPriority`.
 ///
-/// Lean: `setPriorityOp` (SchedContext/PriorityManagement.lean) — requires
-/// `.write` right. Priority must be ≤ 255 and bounded by the caller's MCP.
+/// `authority` is a thread capability address **in the caller's CSpace**; it is
+/// the message's extra capability 0 (`caps_or_badges[0]`), and the new priority
+/// must not exceed that thread's maximum controlled priority.  No extra
+/// capability is `TruncatedMessage`; one that is not a thread capability is
+/// `InvalidCapability` (cap number 1).  Requires `.write` on `tcb_cap`.
+///
+/// Lean: `setPriorityOnCore` (SchedContext/PriorityManagementPerCore.lean),
+/// with the authority resolved by `resolvePriorityAuthority` (API.lean).
 #[inline]
-pub fn tcb_set_priority(tcb_cap: CPtr, new_priority: u64) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_priority(
+    tcb_cap: CPtr,
+    authority: CPtr,
+    new_priority: u64,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
     let args = SetPriorityArgs { new_priority };
     let encoded = args.encode();
+    buf.caps_or_badges[0] = authority.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetPriority,
     })
 }
 
-/// Set a thread's maximum controlled priority (MCP).
+/// Set a thread's maximum controlled priority (MCP) — seL4's
+/// `seL4_TCB_SetMCPriority`.
 ///
-/// Lean: `setMCPriorityOp` (SchedContext/PriorityManagement.lean) — requires
-/// `.write` right. MCP must be ≤ 255.
+/// `authority` is a thread capability address in the caller's CSpace, the
+/// message's extra capability 0, whose maximum controlled priority bounds the
+/// new one, as for [`tcb_set_priority`].  Requires `.write` on `tcb_cap`.
+///
+/// Lean: `setMCPriorityOnCore` (SchedContext/PriorityManagementPerCore.lean).
 #[inline]
-pub fn tcb_set_mcp(tcb_cap: CPtr, new_mcp: u64) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_mcp(
+    tcb_cap: CPtr,
+    authority: CPtr,
+    new_mcp: u64,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
     let args = SetMCPriorityArgs { new_mcp };
     let encoded = args.encode();
+    buf.caps_or_badges[0] = authority.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetMCPriority,
     })

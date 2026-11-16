@@ -2044,9 +2044,10 @@ fn sys_tcb_module_exports() {
     // function signatures exist by referencing them as fn pointers.
     let _suspend: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_suspend;
     let _resume: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_resume;
-    let _set_prio: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+    let _set_prio: fn(CPtr, CPtr, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_priority;
-    let _set_mcp: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_mcp;
+    let _set_mcp: fn(CPtr, CPtr, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
+        sele4n_sys::tcb::tcb_set_mcp;
     let _set_buf: fn(CPtr, u64, CPtr, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_ipc_buffer;
 }
@@ -2954,9 +2955,9 @@ fn wrappers_name_their_syscalls() {
     assert_names("tcb_suspend", SyscallId::TcbSuspend);
     let _ = sele4n_sys::tcb::tcb_resume(cap);
     assert_names("tcb_resume", SyscallId::TcbResume);
-    let _ = sele4n_sys::tcb::tcb_set_priority(cap, 1);
+    let _ = sele4n_sys::tcb::tcb_set_priority(cap, cap, 1, &mut buf);
     assert_names("tcb_set_priority", SyscallId::TcbSetPriority);
-    let _ = sele4n_sys::tcb::tcb_set_mcp(cap, 1);
+    let _ = sele4n_sys::tcb::tcb_set_mcp(cap, cap, 1, &mut buf);
     assert_names("tcb_set_mcp", SyscallId::TcbSetMCPriority);
     let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000, cap, &mut buf);
     assert_names("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);

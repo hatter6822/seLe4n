@@ -1868,6 +1868,27 @@ const fn set_ipc_buffer(
     }
 }
 
+/// **The priority settings** (seL4's `seL4_TCB_SetPriority` and
+/// `seL4_TCB_SetMCPriority`): the value in MR0, and the root task's thread
+/// capability as the authority (`decodeSetPriority`'s `authCap`), extra
+/// capability 0, which the kernel reads from the caller's IPC buffer at
+/// `buffer`.  The new value must not exceed the authority's maximum controlled
+/// priority.
+#[cfg(feature = "hw_target")]
+const fn set_priority(
+    name: &'static str,
+    syscall: u64,
+    tcb: u64,
+    value: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [ROOT_TCB_CAP, 0, 0], None)),
+        ..invocation(name, syscall, tcb, [value, 0, 0, 0])
+    }
+}
+
 /// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
 /// rights mask, the fifth word, which the kernel reads from the caller's IPC
 /// buffer at `buffer` ([`RoundTrip::overflow`]).
@@ -3174,17 +3195,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
     ],
     &[
-        invocation(
+        set_priority(
             "tcb-set-priority",
             TCB_SET_PRIORITY,
             PARTNER_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_priority(
             "tcb-set-mc-priority",
             TCB_SET_MC_PRIORITY,
             PARTNER_TCB_CAP,
-            [255, 0, 0, 0],
+            255,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "tcb-set-affinity",
@@ -4011,12 +4034,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             returns: None,
         },
         RoundTrip {
-            msg_len: 5,
-            ..invocation(
+            msg_len: ONE_EXTRA_CAP | 5,
+            ..set_priority(
                 "invocation-long-message",
                 TCB_SET_MC_PRIORITY,
                 PARTNER_TCB_CAP,
-                [255, 0, 0, 0],
+                255,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
@@ -6497,11 +6521,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "chain-tcb-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-chain-reply",
@@ -6786,11 +6811,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "third-tcb-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-third-reply",
@@ -6953,11 +6979,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "unheld-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-unheld-caps-reply",
@@ -7109,11 +7136,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "orphan-recv-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-orphan-recv-reply",
@@ -7246,11 +7274,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "unheld-recv-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-unheld-recv-caps-reply",
@@ -7410,11 +7439,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "unheld-long-recv-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-unheld-long-recv-reply",
@@ -7538,11 +7568,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "unheld-long-recv-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-unheld-long-recv-caps-reply",
@@ -7718,11 +7749,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "queued-sender-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "queued-sender-resume-partner",
@@ -7917,11 +7949,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "busy-reply-sender-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "busy-reply-resume-partner",
@@ -8031,11 +8064,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "queued-caller-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "queued-caller-bind",
@@ -8116,11 +8150,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_priority(
             "queued-caller-root-lowers-self",
             TCB_SET_PRIORITY,
             ROOT_TCB_CAP,
-            [PARTNER_PRIORITY - 1, 0, 0, 0],
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
         ),
         partner_step(
             "queued-caller-caller-waits",
@@ -8130,11 +8165,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [0, 0],
             true,
         ),
-        invocation(
+        set_priority(
             "queued-caller-root-raises-self",
             TCB_SET_PRIORITY,
             ROOT_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         signal("queued-caller-root-wakes-caller"),
         invocation(
@@ -8171,17 +8207,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_priority(
             "queued-caller-lower-ready",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY - 1, 0, 0, 0],
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "queued-caller-raise-ready",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         partner_step(
             "queued-caller-root-waits-again",
@@ -8280,11 +8318,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "stack-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-stack-top",
@@ -8303,11 +8342,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             STACK_TOP_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "stack-top-set-priority",
             TCB_SET_PRIORITY,
             STACK_TOP_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-stack-server-reply",
@@ -8795,11 +8835,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             STACK_TOP_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "orphan-top-set-priority",
             TCB_SET_PRIORITY,
             STACK_TOP_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "stack-server-delete",
@@ -10687,11 +10728,12 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         LOW_THREAD_CAP,
         [CNODE_CAP, VSPACE_CAP, 0, 0],
     ),
-    invocation(
+    set_priority(
         "low-thread-set-priority",
         TCB_SET_PRIORITY,
         LOW_THREAD_CAP,
-        [PARTNER_PRIORITY, 0, 0, 0],
+        PARTNER_PRIORITY,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "untyped-retype-low-endpoint",
@@ -11073,11 +11115,12 @@ const YIELD_TO_SETUP: [RoundTrip; 3] = [
         SCHED_CONTEXT_CAP,
         [PARTNER_TCB_CAP, 0, 0, 0],
     ),
-    invocation(
+    set_priority(
         "yield-to-lower-partner",
         TCB_SET_PRIORITY,
         PARTNER_TCB_CAP,
-        [PARTNER_PRIORITY - 1, 0, 0, 0],
+        PARTNER_PRIORITY - 1,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "yield-to-resume-partner",
@@ -11093,11 +11136,12 @@ const YIELD_TO_REQUEUE: RoundTrip = yield_to("sched-context-yield-to-requeue");
 /// The partner raised to the root task's priority while it is ready and
 /// queued, measured.
 #[cfg(feature = "hw_target")]
-const YIELD_TO_RAISE: RoundTrip = invocation(
+const YIELD_TO_RAISE: RoundTrip = set_priority(
     "yield-to-raise-partner",
     TCB_SET_PRIORITY,
     PARTNER_TCB_CAP,
-    [PARTNER_PRIORITY, 0, 0, 0],
+    PARTNER_PRIORITY,
+    ROOT_IPC_BUFFER,
 );
 /// The linked branch's first half: the partner ranks with the caller on the
 /// caller's core, so the yield is linked and core 0 switches to the partner.
@@ -14167,11 +14211,12 @@ fn fault_entries() -> Option<bool> {
             RESTORER_TCB_CAP,
             [CNODE_CAP, VSPACE_CAP, 0, 0],
         ),
-        invocation(
+        set_priority(
             "fault-long-restorer-set-priority",
             TCB_SET_PRIORITY,
             RESTORER_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         set_ipc_buffer(
             "fault-long-restorer-ipc-buffer",

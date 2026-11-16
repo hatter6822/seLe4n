@@ -2080,6 +2080,59 @@ theorem validateThreadIdArg_ok_toValid? (tid : SeLe4n.ThreadId)
       injection h with h
       rw [h]
 
+/-- **WS-SX SX6.4 (D11): the priority authority** — seL4's `authCap`
+(`decodeSetPriority` / `decodeSetMCPriority`, `tcb.c:1217`): the capability in
+the slot the caller's extra capability 0 resolved to must be a thread
+capability, else `seL4_InvalidCapability` with cap number 1; the thread it names
+is the authority whose maximum controlled priority bounds the new value. -/
+@[inline] def priorityAuthorityAt (st : SystemState) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) : Except KernelError SeLe4n.ValidThreadId :=
+  match st.lookupSlotCap { cnode := cnode, slot := slot } with
+  | none => .error (.invalidCapability 1)
+  | some authCap =>
+    match authCap.target with
+    | .object id =>
+      match st.getTcb? (SeLe4n.ThreadId.ofNat id.toNat) with
+      | none => .error (.invalidCapability 1)
+      | some _ => validateThreadIdArg (SeLe4n.ThreadId.ofNat id.toNat)
+    | _ => .error (.invalidCapability 1)
+
+/-- **WS-SX SX6.4 (D11)**: the authority of a SetPriority or SetMCPriority —
+the caller's extra capability 0 (`authCap?`, seL4's `excaprefs[0]`; none is
+`truncatedMessage`), resolved as a slot through the caller's CSpace, then
+`priorityAuthorityAt` on that slot. -/
+@[inline] def resolvePriorityAuthority (st : SystemState) (callerTid : SeLe4n.ThreadId)
+    (authCap? : Option SeLe4n.CPtr) : Except KernelError SeLe4n.ValidThreadId :=
+  match authCap? with
+  | none => .error .truncatedMessage
+  | some cptr =>
+    match st.getTcb? callerTid with
+    | none => .error .objectNotFound
+    | some callerTcb =>
+      match lookupSlot callerTcb cptr st with
+      | .error f => .error (.failedLookup false f)
+      | .ok src => priorityAuthorityAt st src.cnode src.slot
+
+/-- A resolved authority is a stored thread. -/
+theorem resolvePriorityAuthority_ok_tcb {st : SystemState} {callerTid : SeLe4n.ThreadId}
+    {authCap? : Option SeLe4n.CPtr} {vAuth : SeLe4n.ValidThreadId}
+    (h : resolvePriorityAuthority st callerTid authCap? = .ok vAuth) :
+    (st.getTcb? vAuth.val).isSome := by
+  unfold resolvePriorityAuthority at h
+  split at h; · cases h
+  split at h; · cases h
+  split at h; · cases h
+  unfold priorityAuthorityAt at h
+  split at h; · cases h
+  split at h
+  · split at h
+    · cases h
+    · rename_i hT
+      have hV := SeLe4n.ThreadId.toValid?_some_val_eq _ _
+        (validateThreadIdArg_ok_toValid? _ _ h)
+      rw [hV, hT]; rfl
+  · cases h
+
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
 `validateThreadIdArg`; rejects `SchedContextId.sentinel`. -/
@@ -4411,7 +4464,10 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       | .ok args =>
         -- AL7-D / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
         -- via ValidThreadId signature on setPriorityOp.
-        match validateThreadIdArg tid with
+        -- WS-SX SX6.4 (D11): the authority is the thread capability the
+        -- caller names as extra capability 0 (seL4's `authCap`).
+        match resolvePriorityAuthority st tid
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
         | .error e => .error e
         | .ok vCallerTid =>
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
@@ -4440,7 +4496,10 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       | .ok args =>
         -- AL7-E / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
         -- via ValidThreadId signature on setMCPriorityOp.
-        match validateThreadIdArg tid with
+        -- WS-SX SX6.4 (D11): the authority is the thread capability the
+        -- caller names as extra capability 0 (seL4's `authCap`).
+        match resolvePriorityAuthority st tid
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
         | .error e => .error e
         | .ok vCallerTid =>
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
@@ -4978,7 +5037,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep
@@ -5005,7 +5065,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep
@@ -8233,7 +8294,8 @@ theorem dispatchWithCapChecked_tcbSetPriority_delegates
     (hSyscall : decoded.syscallId = .tcbSetPriority)
     (hTarget : cap.target = .object objId)
     (hDecode : decodeSetPriorityArgs decoded = .ok args)
-    (hCaller : validateThreadIdArg tid = .ok vCallerTid)
+    (hCaller : resolvePriorityAuthority st tid
+      (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) = .ok vCallerTid)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
@@ -8277,7 +8339,8 @@ theorem dispatchWithCapChecked_tcbSetMCPriority_delegates
     (hSyscall : decoded.syscallId = .tcbSetMCPriority)
     (hTarget : cap.target = .object objId)
     (hDecode : decodeSetMCPriorityArgs decoded = .ok args)
-    (hCaller : validateThreadIdArg tid = .ok vCallerTid)
+    (hCaller : resolvePriorityAuthority st tid
+      (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) = .ok vCallerTid)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
@@ -8326,7 +8389,8 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .tcbSetPriority →
         cap.target = .object objId →
         decodeSetPriorityArgs decoded = .ok args →
-        validateThreadIdArg tid = .ok vCallerTid →
+        resolvePriorityAuthority st tid
+          (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) = .ok vCallerTid →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
@@ -8341,7 +8405,8 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .tcbSetMCPriority →
         cap.target = .object objId →
         decodeSetMCPriorityArgs decoded = .ok args →
-        validateThreadIdArg tid = .ok vCallerTid →
+        resolvePriorityAuthority st tid
+          (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) = .ok vCallerTid →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid

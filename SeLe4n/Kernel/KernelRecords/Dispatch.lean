@@ -542,7 +542,8 @@ theorem dispatchCapabilityOnly_recordsStage
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep
@@ -568,7 +569,8 @@ theorem dispatchCapabilityOnly_recordsStage
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep

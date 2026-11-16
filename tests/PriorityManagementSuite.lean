@@ -1618,6 +1618,77 @@ private def pm_pip_02_configureReboostsServer : IO Unit := do
       (serverBoost st1 serverTid == some ⟨90⟩)
 
 
+
+-- ============================================================================
+-- WS-SX SX6.4 (D11): the authority is extra capability 0
+-- ============================================================================
+
+/-- The caller's CSpace root: CNode 10, radix 3, behind a 61-bit guard so a
+64-bit CPtr names its slot by its low three bits. -/
+private def authRootCap : Capability :=
+  { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read, .write, .grant],
+    cnodeGuardSize := 61 }
+
+private def authTcb (tid : Nat) (mcp : Nat) (spaces : Bool := true) : TCB :=
+  { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩, maxControlledPriority := ⟨mcp⟩,
+    spaceCells := if spaces then #v[some authRootCap, none, none] else #v[none, none, none],
+    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+/-- CNode 10's slots: 1 the caller's own thread, 2 a second thread, 3 an
+endpoint; 4 empty. -/
+private def authCNode : CNode :=
+  CNode.ofList 3
+    [(SeLe4n.Slot.ofNat 1, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.write] }),
+     (SeLe4n.Slot.ofNat 2, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] }),
+     (SeLe4n.Slot.ofNat 3, { target := .object ⟨60⟩, rights := AccessRightSet.ofList [.read] })]
+
+private def authState (callerSpaces : Bool := true) : SystemState :=
+  let builder : SeLe4n.Testing.BootstrapBuilder := {
+    objects :=
+      [(⟨1⟩, .tcb (authTcb 1 200 callerSpaces)), (⟨2⟩, .tcb (authTcb 2 40)),
+       (⟨10⟩, .cnode authCNode), (⟨60⟩, .endpoint {})] }
+  builder.buildChecked
+
+private def authorityOf (st : SystemState) (cap? : Option Nat) :
+    Except KernelError SeLe4n.ThreadId :=
+  (resolvePriorityAuthority st ⟨1⟩ (cap?.map SeLe4n.CPtr.ofNat)).map (·.val)
+
+/-- PM-AUTH-01: the thread capability named as extra capability 0 is the
+authority, the caller's own or another thread's. -/
+private def pm_auth_01_threadCapabilityIsTheAuthority : IO Unit := do
+  expect "own thread capability is the authority"
+    (match authorityOf authState (some 1) with | .ok t => t == ⟨1⟩ | .error _ => false)
+  expect "another thread's capability is the authority"
+    (match authorityOf authState (some 2) with | .ok t => t == ⟨2⟩ | .error _ => false)
+
+/-- PM-AUTH-02: no extra capability is a truncated message; an empty slot or a
+capability that is not a thread capability is invalid capability 1; an
+unresolvable address is a lookup failure. -/
+private def pm_auth_02_refusals : IO Unit := do
+  expect "no extra capability is truncatedMessage"
+    (match authorityOf authState none with | .error .truncatedMessage => true | _ => false)
+  expect "an endpoint capability is invalidCapability 1"
+    (match authorityOf authState (some 3) with | .error (.invalidCapability 1) => true | _ => false)
+  expect "an empty slot is invalidCapability 1"
+    (match authorityOf authState (some 4) with | .error (.invalidCapability 1) => true | _ => false)
+  expect "an unresolvable address is a lookup failure"
+    (match authorityOf (authState false) (some 2) with
+     | .error (.failedLookup _ _) => true | _ => false)
+
+/-- PM-AUTH-03: the authority's ceiling bounds the new priority, not the
+caller's: thread 2's ceiling (40) refuses 100, which the caller's (200) admits. -/
+private def pm_auth_03_authorityCeilingBounds : IO Unit := do
+  let st := authState
+  let target : SeLe4n.ValidThreadId := ⟨⟨2⟩, by decide⟩
+  let viaCaller := match resolvePriorityAuthority st ⟨1⟩ (some (SeLe4n.CPtr.ofNat 1)) with
+    | .ok a => (setPriorityOnCore st a target ⟨100⟩ bootCoreId).toBool
+    | .error _ => false
+  let viaOther := match resolvePriorityAuthority st ⟨1⟩ (some (SeLe4n.CPtr.ofNat 2)) with
+    | .ok a => (setPriorityOnCore st a target ⟨100⟩ bootCoreId).toBool
+    | .error _ => true
+  expect "the caller's ceiling admits 100" viaCaller
+  expect "the other thread's ceiling refuses 100" (!viaOther)
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
@@ -1692,4 +1763,8 @@ def main : IO Unit := do
   IO.println "--- A reply-blocked waiter's priority change re-walks its server's boost ---"
   pm_pip_01_setPriorityReboostsServer
   pm_pip_02_configureReboostsServer
-  IO.println "=== All D2 priority management tests passed (47 tests) ==="
+  IO.println "--- WS-SX SX6.4: the priority authority is extra capability 0 ---"
+  pm_auth_01_threadCapabilityIsTheAuthority
+  pm_auth_02_refusals
+  pm_auth_03_authorityCeilingBounds
+  IO.println "=== All D2 priority management tests passed (50 tests) ==="

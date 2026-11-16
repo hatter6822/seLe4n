@@ -4530,8 +4530,14 @@ priority is its own, so the operation no longer writes the donor's
 reservation and declaring a write lock on it would be a footprint wider than
 its transition — sound, but carrying contention (SM8.D's CC-5 channel) that
 says nothing about the operation.  `.tcbSetAffinity` keeps `scId?`: a
-thread's home core *is* a property of the reservation it runs on. -/
-def lockSet_tcbSetPriority (callerTid : ThreadId)
+thread's home core *is* a property of the reservation it runs on.
+
+WS-SX SX6.4 (D11): the authority whose maximum controlled priority bounds the
+new value is the thread capability the caller names as extra capability 0
+(seL4's `authCap`), so its TCB is read beside the caller's (whose CSpace
+resolves the capability); `authorityTid` may equal `callerTid`.  The same
+holds for `lockSet_tcbSetMCPriority`. -/
+def lockSet_tcbSetPriority (callerTid authorityTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)
     (queueOwner : Option QueueOwner) : LockSet :=
@@ -4539,6 +4545,7 @@ def lockSet_tcbSetPriority (callerTid : ThreadId)
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
+         (tcbLock authorityTid, .read),
          (cnodeLock cnodeRootObjId, .read),
          (tcbLock targetTcbTid, .write)])
       (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
@@ -4559,7 +4566,7 @@ otherwise.  It also *reads* the priority source through
 
 The caller pre-resolves `targetTcb.schedContextBinding.ownScId?`
 identically to `lockSet_tcbSetPriority`. -/
-def lockSet_tcbSetMCPriority (callerTid : ThreadId)
+def lockSet_tcbSetMCPriority (callerTid authorityTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)
     (queueOwner : Option QueueOwner) : LockSet :=
@@ -4567,6 +4574,7 @@ def lockSet_tcbSetMCPriority (callerTid : ThreadId)
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
+         (tcbLock authorityTid, .read),
          (cnodeLock cnodeRootObjId, .read),
          (tcbLock targetTcbTid, .write)])
       (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
@@ -7189,14 +7197,16 @@ theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
 
 Audit-pass-6: the bound-SC write lock is now an `lockSetExtendOpt`
 extension on top of the base list.  Uses `base_plus_opt`. -/
-theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
+theorem lockSet_consistent_tcbSetPriority (callerTid authorityTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetPriority callerTid authorityTid cnRoot targetTcb boundSc queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetPriority :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
       (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
@@ -7213,14 +7223,16 @@ theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
 /-- WS-SM SM3.B.4 for `.tcbSetMCPriority`.
 
 Audit-pass-6: same shape as `.tcbSetPriority`. -/
-theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
+theorem lockSet_consistent_tcbSetMCPriority (callerTid authorityTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid authorityTid cnRoot targetTcb boundSc queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetMCPriority :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
       (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem

@@ -1722,15 +1722,15 @@ theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) (q :
   unfold lockSet_tcbResume maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-theorem lockSet_tcbSetPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_tcbSetPriority_size_le (a a' : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (q : Option QueueOwner) :
-    (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize := by
+    (lockSet_tcbSetPriority a a' b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetPriority maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
-theorem lockSet_tcbSetMCPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_tcbSetMCPriority_size_le (a a' : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (q : Option QueueOwner) :
-    (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize := by
+    (lockSet_tcbSetMCPriority a a' b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetMCPriority maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
@@ -1869,8 +1869,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d y, (lockSet_schedContextYieldTo a b c d y).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_irqHandlerAck a b).size ≤ maxLockSetSize) ∧
     (∀ a b c q, (lockSet_tcbResume a b c q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d q, (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a a' b c d q, (lockSet_tcbSetPriority a a' b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a a' b c d q, (lockSet_tcbSetMCPriority a a' b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetIPCBuffer a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d e q, (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize) ∧
     (∀ a b c d e q, (lockSet_tcbSetSpace a b c d e q).size ≤ maxLockSetSize) ∧

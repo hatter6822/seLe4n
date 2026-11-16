@@ -2627,12 +2627,12 @@ eleven arms — two kinds, fixed by `QueueOwner.lock_kind`, rather than the
 the domain's own entry costed: the alternative was to let the suspend name both
 neighbours' `tcbLock`s, which raises `maxLockSetSize` and so moves the WCRT
 ceiling (`admissibleCriticalSection`) for every syscall. -/
-theorem queueOwnership_respected_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
+theorem queueOwnership_respected_by_tcbSetPriority (callerTid authorityTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
     (boundSchedContextId : Option SeLe4n.SchedContextId)
     (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
     queueOwnershipRespectedBy
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid authorityTid cnodeRootObjId
         neighbourTid boundSchedContextId (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
@@ -2687,12 +2687,12 @@ theorem queueOwnership_respected_by_tcbResume (callerTid : SeLe4n.ThreadId)
       (SeLe4n.Kernel.Concurrency.lockSet_tcbResume callerTid cnodeRootObjId neighbourTid (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
-theorem queueOwnership_respected_by_tcbSetMCPriority (callerTid : SeLe4n.ThreadId)
+theorem queueOwnership_respected_by_tcbSetMCPriority (callerTid authorityTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
     (boundSchedContextId : Option SeLe4n.SchedContextId)
     (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
     queueOwnershipRespectedBy
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority callerTid authorityTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
 theorem queueOwnership_respected_by_tcbSetIPCBuffer (callerTid : SeLe4n.ThreadId)

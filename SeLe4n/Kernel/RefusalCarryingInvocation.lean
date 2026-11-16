@@ -338,7 +338,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
       match decodeSetPriorityArgsBy (msgRegOfFile layout regs) with
       | .error e => .error e
       | .ok args =>
-        match validateThreadIdArg tid with
+        match resolvePriorityAuthority st tid (callerExtraCapAddr? st tid xc 0) with
         | .error e => .error e
         | .ok vCallerTid =>
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
@@ -356,7 +356,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
       match decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) with
       | .error e => .error e
       | .ok args =>
-        match validateThreadIdArg tid with
+        match resolvePriorityAuthority st tid (callerExtraCapAddr? st tid xc 0) with
         | .error e => .error e
         | .ok vCallerTid =>
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
@@ -566,20 +566,29 @@ refusal is read where it is, never rebuilt. -/
       match decodeSetPriorityArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        match validateThreadIdArg tid with
-        | .error e => .error (e, st)
-        | .ok vCallerTid =>
-          match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | .error e => .error (e, st)
-          | .ok vTargetTid =>
-            RefusalCarrying.ofCheckedThen
-              (SchedContext.PriorityManagement.setPriorityAdmitted st vCallerTid vTargetTid
-                (Priority.ofNat args.newPriority) executingCore)
-              (fun st => SchedContext.PriorityManagement.setPriorityPerform st vTargetTid.val
-                (Priority.ofNat args.newPriority) executingCore)
-              (fun st => SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid
-                vTargetTid (Priority.ofNat args.newPriority) executingCore)
-              (fun r => .ok ((), r.1)) st
+        -- WS-SX SX6.4 (D11): the authority is the thread capability the caller
+        -- names as extra capability 0, read and resolved in continuation form.
+        callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun cptr =>
+          match st.getTcb? tid with
+          | none => .error (.objectNotFound, st)
+          | some callerTcb =>
+            lookupSlotK callerTcb cptr st
+              (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
+              fun cnode slot =>
+                match priorityAuthorityAt st cnode slot with
+                | .error e => .error (e, st)
+                | .ok vCallerTid =>
+                  match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+                  | .error e => .error (e, st)
+                  | .ok vTargetTid =>
+                    RefusalCarrying.ofCheckedThen
+                      (SchedContext.PriorityManagement.setPriorityAdmitted st vCallerTid vTargetTid
+                        (Priority.ofNat args.newPriority) executingCore)
+                      (fun st => SchedContext.PriorityManagement.setPriorityPerform st vTargetTid.val
+                        (Priority.ofNat args.newPriority) executingCore)
+                      (fun st => SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid
+                        vTargetTid (Priority.ofNat args.newPriority) executingCore)
+                      (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability 0, st)
   | .tcbSetMCPriority =>
     match cap.target with
@@ -587,20 +596,29 @@ refusal is read where it is, never rebuilt. -/
       match decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        match validateThreadIdArg tid with
-        | .error e => .error (e, st)
-        | .ok vCallerTid =>
-          match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | .error e => .error (e, st)
-          | .ok vTargetTid =>
-            RefusalCarrying.ofCheckedThen
-              (SchedContext.PriorityManagement.setMCPriorityAdmitted st vCallerTid vTargetTid
-                (Priority.ofNat args.newMCP))
-              (fun st => st.updateTcb vTargetTid.val
-                (fun t => { t with maxControlledPriority := Priority.ofNat args.newMCP }))
-              (fun st => SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid
-                vTargetTid (Priority.ofNat args.newMCP) executingCore)
-              (fun r => .ok ((), r.1)) st
+        -- WS-SX SX6.4 (D11): the authority is the thread capability the caller
+        -- names as extra capability 0, read and resolved in continuation form.
+        callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun cptr =>
+          match st.getTcb? tid with
+          | none => .error (.objectNotFound, st)
+          | some callerTcb =>
+            lookupSlotK callerTcb cptr st
+              (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
+              fun cnode slot =>
+                match priorityAuthorityAt st cnode slot with
+                | .error e => .error (e, st)
+                | .ok vCallerTid =>
+                  match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+                  | .error e => .error (e, st)
+                  | .ok vTargetTid =>
+                    RefusalCarrying.ofCheckedThen
+                      (SchedContext.PriorityManagement.setMCPriorityAdmitted st vCallerTid vTargetTid
+                        (Priority.ofNat args.newMCP))
+                      (fun st => st.updateTcb vTargetTid.val
+                        (fun t => { t with maxControlledPriority := Priority.ofNat args.newMCP }))
+                      (fun st => SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid
+                        vTargetTid (Priority.ofNat args.newMCP) executingCore)
+                      (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability 0, st)
   | .tcbSetIPCBuffer =>
     match cap.target with
@@ -1093,20 +1111,42 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeSetPriorityArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        cases hC : validateThreadIdArg tid with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
-        | ok vC =>
-          cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
-          | ok vT =>
+        dsimp only
+        rw [callerExtraCapAddrK_eq]
+        cases hX : callerExtraCapAddr? st tid xc 0 with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, resolvePriorityAuthority]
+        | some cptr =>
+          dsimp only
+          cases hCT : st.getTcb? tid with
+          | none =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hCT, resolvePriorityAuthority]
+          | some callerTcb =>
             dsimp only
-            refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-            · simp only [dispatchInvocationBy, hD, hC, hT]
-              split <;> simp_all
-            intro hA
-            obtain ⟨sgi, hS⟩ :=
-              SchedContext.PriorityManagement.setPriorityOnCore_of_admitted _ _ _ _ _ hA
-            simp only [dispatchInvocationBy, hD, hC, hT, hS]
+            rw [lookupSlotK_eq]
+            cases hL : lookupSlot callerTcb cptr st with
+            | error f =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hCT, hL,
+                resolvePriorityAuthority, LookupFault.ofWords_word]
+            | ok ref =>
+              dsimp only
+              have hR : resolvePriorityAuthority st tid (callerExtraCapAddr? st tid xc 0) =
+                  priorityAuthorityAt st ref.cnode ref.slot := by
+                simp [resolvePriorityAuthority, hX, hCT, hL]
+              cases hC : priorityAuthorityAt st ref.cnode ref.slot with
+              | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR, hC]
+              | ok vC =>
+                dsimp only
+                cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+                | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR, hC, hT]
+                | ok vT =>
+                  dsimp only
+                  refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+                  · simp only [dispatchInvocationBy, hD, hR, hC, hT]
+                    split <;> simp_all
+                  intro hA
+                  obtain ⟨sgi, hS⟩ :=
+                    SchedContext.PriorityManagement.setPriorityOnCore_of_admitted _ _ _ _ _ hA
+                  simp only [dispatchInvocationBy, hD, hR, hC, hT, hS]
     all_goals rfl
   case tcbSetMCPriority =>
     cases target
@@ -1115,19 +1155,41 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        cases hC : validateThreadIdArg tid with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
-        | ok vC =>
-          cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
-          | ok vT =>
+        dsimp only
+        rw [callerExtraCapAddrK_eq]
+        cases hX : callerExtraCapAddr? st tid xc 0 with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, resolvePriorityAuthority]
+        | some cptr =>
+          dsimp only
+          cases hCT : st.getTcb? tid with
+          | none =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hCT, resolvePriorityAuthority]
+          | some callerTcb =>
             dsimp only
-            refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-            · simp only [dispatchInvocationBy, hD, hC, hT]
-              split <;> simp_all
-            intro hA
-            simp only [dispatchInvocationBy, hD, hC, hT,
-              SchedContext.PriorityManagement.setMCPriorityOnCore_of_admitted _ _ _ _ _ hA]
+            rw [lookupSlotK_eq]
+            cases hL : lookupSlot callerTcb cptr st with
+            | error f =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hCT, hL,
+                resolvePriorityAuthority, LookupFault.ofWords_word]
+            | ok ref =>
+              dsimp only
+              have hR : resolvePriorityAuthority st tid (callerExtraCapAddr? st tid xc 0) =
+                  priorityAuthorityAt st ref.cnode ref.slot := by
+                simp [resolvePriorityAuthority, hX, hCT, hL]
+              cases hC : priorityAuthorityAt st ref.cnode ref.slot with
+              | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR, hC]
+              | ok vC =>
+                dsimp only
+                cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+                | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hR, hC, hT]
+                | ok vT =>
+                  dsimp only
+                  refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+                  · simp only [dispatchInvocationBy, hD, hR, hC, hT]
+                    split <;> simp_all
+                  intro hA
+                  simp only [dispatchInvocationBy, hD, hR, hC, hT,
+                    SchedContext.PriorityManagement.setMCPriorityOnCore_of_admitted _ _ _ _ _ hA]
     all_goals rfl
   case tcbSetIPCBuffer =>
     cases target
