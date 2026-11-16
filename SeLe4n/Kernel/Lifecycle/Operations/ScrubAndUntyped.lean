@@ -951,19 +951,6 @@ theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDep
 `seL4_MinSchedContextBits` (7) to the largest untyped. -/
 def minSchedContextSizeBits : Nat := 7
 
-/-- WS-ZA ZA5.4 part 26: **a record of its own for each of a carved thread's two
-space slots**, made with the thread as seL4's TCB CTEs are made at the retype,
-so the thread's first space set writes over them rather than allocating.  Each
-record targets an object named by its slot number, so the compiler cannot share
-one record between the slots; the carve gives the thread its own copies
-(`KernelObject.unshareFresh`).  The array is built at exactly two entries
-(`Array.ofFn` pushes onto an array it owns, allocated at capacity two): a
-literal is built by pushes onto a shared array, which over-expands it, and the
-carve copies the array at its capacity. -/
-def carvedTcbSpareCells : Array (Option Capability) :=
-  Array.ofFn (n := 2) fun i =>
-    some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
-
 /-- **WS-ZA ZA5.4 part 14: the thread a carve makes** — seL4's `createObject`
 for `seL4_TCBObject`: inactive, at priority 0 with maximum controlled priority 0,
 in the creating core's current domain (`ksCurDomain`) and with the creating

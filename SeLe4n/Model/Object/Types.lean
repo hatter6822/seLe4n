@@ -1753,6 +1753,19 @@ def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
 
 end SpareCells
 
+/-- **A record of its own for each of a thread's three space slots** (seL4's TCB
+CTEs, `tcbCTable`, `tcbVTable` and `tcbBuffer`, which exist from the thread's
+creation), so the thread's first space or buffer set writes over its slot's record
+rather than allocating one.  Each record targets an object named by its slot
+number, so the compiler cannot share one record between the slots; a carved or
+boot thread gets its own copies (`KernelObject.unshareFresh`).  The array is
+built at exactly three entries (`Array.ofFn` pushes onto an array it owns,
+allocated at capacity three): a literal is built by pushes onto a shared array,
+which over-expands it, and the carve copies the array at its capacity. -/
+def carvedTcbSpareCells : Array (Option Capability) :=
+  Array.ofFn (n := 3) fun i =>
+    some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -2083,15 +2096,15 @@ structure TCB where
       `0`, so an id reused after a thread is destroyed is the origin of no
       context, whatever a context still records.  -/
   originScCode : Nat := 0
-  /-- WS-ZA ZA5.4 part 26: **the records the CSpace and VSpace root slots
-      keep while empty**, as a CNode's slots keep theirs (`CNode.spare`):
-      entry `i` is the capability cell slot `i` last held, or the one the
-      carve made with the thread (seL4's TCB CTEs, which exist from the
-      retype), so the next capability written there overwrites it in place.
-      The IPC-buffer slot (`TCB.ipcBufferSlot`) has no entry: only the boot
-      writes it, building the root task's buffer capability.  Logically one
-      value (`SpareCells`), so no theorem reads it. -/
-  spaceSpare : SpareCells := Squash.mk #[none, none]
+  /-- WS-ZA ZA5.4 part 26, WS-SX SX6.6: **the records the three space slots
+      keep while empty** (the CSpace root, the VSpace root and the IPC-buffer
+      slot), as a CNode's slots keep theirs (`CNode.spare`): entry `i` is the
+      capability cell slot `i` last held, or the one made with the thread
+      (seL4's TCB CTEs, which exist from the retype; `carvedTcbSpareCells`),
+      so the next capability written there, by a space set or a buffer set,
+      overwrites it in place.  Logically one value (`SpareCells`), so no
+      theorem reads it. -/
+  spaceSpare : SpareCells := Squash.mk carvedTcbSpareCells
   /-- WS-ZA ZA5.11: **the thread's declassification provenance**, as plain
       words: eight tag words, the count of those in use and the saturated bit,
       read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
