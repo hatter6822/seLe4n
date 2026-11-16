@@ -68,20 +68,20 @@ continuations are compiled once. -/
       | .yield => finish .yield 0 (yieldRoutedArm executingCore st)
       | .send capAddr msgInfo =>
         finish .send capAddr.word
-          (sendRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .send tcb.registerContext) msgInfo.length st)
+          (sendRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .send msgInfo.extraCaps) msgInfo.length st)
       | .call capAddr msgInfo =>
         finish .call capAddr.word
-          (callRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .call tcb.registerContext) msgInfo.length st)
+          (callRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .call msgInfo.extraCaps) msgInfo.length st)
       | .reply capAddr msgInfo =>
         finish .reply capAddr.word
-          (replyRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .reply tcb.registerContext) msgInfo.length msgInfo.extraCaps
+          (replyRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .reply msgInfo.extraCaps) msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
       | .receive capAddr len replyAddr =>
         finish .receive capAddr.word
           (receiveRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .receive tcb.registerContext) len replyAddr.word st)
       | .replyRecv capAddr msgInfo =>
         finish .replyRecv capAddr.word
-          (replyRecvRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .replyRecv tcb.registerContext) msgInfo.length
+          (replyRecvRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .replyRecv msgInfo.extraCaps) msgInfo.length
             msgInfo.extraCaps msgInfo.label st)
       | .invoke sid capAddr =>
         finish sid capAddr.word (invocationRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
@@ -89,21 +89,21 @@ continuations are compiled once. -/
         finish sid capAddr.word (overflowOneRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .sendLong capAddr msgInfo =>
         finish .send capAddr.word
-          (sendLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .send tcb.registerContext) msgInfo.length st)
+          (sendLongRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .send msgInfo.extraCaps) msgInfo.length st)
       | .callLong capAddr msgInfo =>
         finish .call capAddr.word
-          (callLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .call tcb.registerContext) msgInfo.length st)
+          (callLongRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .call msgInfo.extraCaps) msgInfo.length st)
       | .replyLong capAddr msgInfo =>
         finish .reply capAddr.word
-          (replyLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .reply tcb.registerContext) msgInfo.length msgInfo.extraCaps
+          (replyLongRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .reply msgInfo.extraCaps) msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
       | .replyRecvLong capAddr msgInfo =>
         finish .replyRecv capAddr.word
-          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .replyRecv tcb.registerContext) msgInfo.length
+          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .replyRecv msgInfo.extraCaps) msgInfo.length
             msgInfo.extraCaps msgInfo.label st)
       | .transferring sid capAddr msgInfo =>
         finish sid capAddr.word
-          (transferringRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) msgInfo.length st)
+          (transferringRoutedArm ctx executingCore tid sid capAddr.word (syscallExtraCapCount sid msgInfo.extraCaps) msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .overflowed sid capAddr len =>
@@ -312,14 +312,17 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       cases yieldOnCoreR st executingCore <;> rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [sendRoutedArm, dispatchOperandCheckedKW_report,
         hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [callRoutedArm, dispatchOperandCheckedKW_report,
         hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [replyRoutedArm, dispatchOperandCheckedKW_report,
         hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr len replyAddr hRt =>
@@ -328,6 +331,7 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
         finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [replyRecvRoutedArm, dispatchOperandCheckedKW_reportReply,
         hO, finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl
     next sid capAddr hRt =>
@@ -345,24 +349,28 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [sendLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         sendRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [callLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         callRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [replyLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         replyRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [replyRecvLongRoutedArm, dispatchOperandCheckedKW_reportReply,
         longOperandKW_reportReply, replyRecvRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
         finish_operandReply finish kGen kRes kLook hG hR hL hRL,
@@ -370,6 +378,7 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rfl
     next sid capAddr msgInfo hRt =>
       rw [hRt]; symm
+      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       by_cases hS : msgInfo.length ≤ 4
       · simp only [transferringRoutedArm, dispatchOperandCheckedKW_report,
         hO, hS, ↓reduceIte, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl

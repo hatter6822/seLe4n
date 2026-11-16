@@ -864,6 +864,51 @@ theorem registerRoutedSyscall_call_length
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
 
+/-- The message info a route carries, if any. -/
+private def routeMsgInfo? : RegisterRoutedSyscall → Option MessageInfo
+  | .send _ mi | .call _ mi | .reply _ mi | .replyRecv _ mi | .sendLong _ mi
+  | .callLong _ mi | .replyLong _ mi | .replyRecvLong _ mi | .transferring _ _ mi => some mi
+  | _ => none
+
+private theorem routedShortTail_msgInfo (capAddr : CPtr) (len n : Nat) :
+    routeMsgInfo? (routedShortTail capAddr len n) = none := by
+  unfold routedShortTail
+  split <;> (repeat' split) <;> rfl
+
+private theorem routedLongTail_msgInfo (capAddr : CPtr) (len size n : Nat) :
+    routeMsgInfo? (routedLongTail capAddr len size n) = none := by
+  unfold routedLongTail
+  split <;> (repeat' split) <;> rfl
+
+/-- **A route's message info is the message-info register's decode**: every
+route that carries a message info carries the one `decodeMsgInfoWord` reads off
+the message-info register, so an arm reads its fields (the extra-capability
+count among them) off the route rather than off the register again. -/
+theorem registerRoutedSyscall_msgInfo_decode
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    {r : RegisterRoutedSyscall} {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall layout regs regCount = r)
+    (hr : r = .send capAddr msgInfo ∨ r = .call capAddr msgInfo ∨ r = .reply capAddr msgInfo ∨
+      r = .replyRecv capAddr msgInfo ∨ r = .sendLong capAddr msgInfo ∨
+      r = .callLong capAddr msgInfo ∨ r = .replyLong capAddr msgInfo ∨
+      r = .replyRecvLong capAddr msgInfo ∨ ∃ sid, r = .transferring sid capAddr msgInfo) :
+    decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) = .ok msgInfo := by
+  have hK : routeMsgInfo? r = some msgInfo := by
+    rcases hr with h | h | h | h | h | h | h | h | ⟨_, h⟩ <;> rw [h] <;> rfl
+  subst h
+  unfold registerRoutedSyscall registerRoutedSyscallOf at hK
+  split at hK
+  · rcases hM : decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with e | mi <;>
+      simp only [hM] at hK
+    · cases hK
+    · repeat' split at hK
+      all_goals first
+        | (rw [routedShortTail_msgInfo] at hK; cases hK)
+        | (rw [routedLongTail_msgInfo] at hK; cases hK)
+        | (cases hK; rfl)
+        | cases hK
+  · cases hK
+
 /-- What an overflowed route pins about the decode: the syscall is one
 `routedOverflowOne` admits, at `capAddr`, and the message info the register
 decodes to runs `len` words, past the layout's message registers, to at most

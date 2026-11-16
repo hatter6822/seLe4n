@@ -13480,9 +13480,11 @@ fn partner_restarts_send(name: &str, cptr: u64, handler_waits_again: &RoundTrip)
 /// - `cancelled-send-restarts`: the partner blocked sending on an endpoint
 ///   carved into an empty slot; the endpoint's only capability deleted, which
 ///   cancels the send and sets the partner to restart; the partner, switched
-///   in, resumes at its `SVC` with its own arguments and re-issues the send,
-///   which faults on the now-empty slot (measured), delivered to the root
-///   task waiting as its handler;
+///   in, resumes at its `SVC` with its own arguments and re-issues the send
+///   (measured): its slot now empty, the lookup finds a null capability,
+///   which `decodeInvocation` refuses with `seL4_InvalidCapability` (an
+///   error frame back to the partner, no fault); the partner then wakes the
+///   root task still waiting on the exerciser endpoint;
 /// - `suspend-resume-restarts`: the partner blocked sending on the exerciser
 ///   endpoint; suspended, which leaves it `Inactive`, then resumed (measured),
 ///   which sets it to restart; switched in, it resumes at its `SVC` with its
@@ -13512,14 +13514,6 @@ fn cancelled_ipc_restarts(
         CNODE_CAP,
         [EMPTY_DEST_SLOT, 0, 0, 0],
     );
-    let reply = partner_step(
-        "restart-fault-reply",
-        REPLY,
-        REPLY_CAP,
-        1,
-        [FAULT_REPLY_WORD, 0],
-        false,
-    );
     let suspend = invocation("restart-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
     let resume = invocation(
         "suspend-resume-restarts",
@@ -13535,20 +13529,18 @@ fn cancelled_ipc_restarts(
             || !unmeasured(&delete, "the blocked-on endpoint was not deleted")
             || !partner_restarts_send(name, carved, handler_waits_again)
             || heap_allocations_trap(&partner_send_trap(name, carved), which) != Some(true)
-            || !fault_delivered(name)
+            || !fault_not_delivered(name)
         {
             return false;
         }
-        let addr = TRAP_RESTORED_X3.load(Ordering::SeqCst);
-        if addr != carved {
+        let label = TRAP_RESTORED_X1.load(Ordering::SeqCst) >> 12;
+        if label != crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_CAPABILITY {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the fault names {addr:#x}, the send's address is {carved:#x}"
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the re-issued send returned label {label:#x}, not the invalid-capability error"
             );
             return false;
         }
-        if !unmeasured(&reply, "the handler's reply did not return")
-            || !partner_restarts_send(name, carved, handler_waits_again)
-            || !unmeasured(wake_handler, "the waiting handler was not woken")
+        if !unmeasured(wake_handler, "the waiting root task was not woken")
             || !suspend_partner()
         {
             return false;

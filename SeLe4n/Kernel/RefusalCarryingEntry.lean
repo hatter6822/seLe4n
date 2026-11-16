@@ -64,6 +64,23 @@ theorem routedExtraCapCount_eq {st : SystemState} {tid : SeLe4n.ThreadId}
   rw [hSid, hX, decodeMsgInfoWord_extraCaps hM]
   rfl
 
+/-- A route that carries a message info counts its extra capabilities as the
+routed frame does: the arm reads the count off the route's message info, the
+entry's specification off the register word. -/
+theorem routedExtraCapCount_of_route {rf : SeLe4n.RegisterFile}
+    {r : SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall} {capAddr : SeLe4n.CPtr}
+    {msgInfo : MessageInfo} (sid : SyscallId)
+    (h : SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
+      SeLe4n.arm64DefaultLayout rf 32 = r)
+    (hr : r = .send capAddr msgInfo ∨ r = .call capAddr msgInfo ∨ r = .reply capAddr msgInfo ∨
+      r = .replyRecv capAddr msgInfo ∨ r = .sendLong capAddr msgInfo ∨
+      r = .callLong capAddr msgInfo ∨ r = .replyLong capAddr msgInfo ∨
+      r = .replyRecvLong capAddr msgInfo ∨ ∃ sid, r = .transferring sid capAddr msgInfo) :
+    syscallExtraCapCount sid msgInfo.extraCaps = routedExtraCapCount sid rf := by
+  unfold routedExtraCapCount
+  rw [decodeMsgInfoWord_extraCaps
+    (SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_msgInfo_decode _ _ _ h hr)]
+
 /-- A receive looks no extra capability up. -/
 theorem routedExtraCapCount_receive (rf : SeLe4n.RegisterFile) :
     routedExtraCapCount .receive rf = 0 := rfl
