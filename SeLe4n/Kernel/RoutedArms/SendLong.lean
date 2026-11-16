@@ -40,21 +40,21 @@ translations, a refusal handing back the TLB the entry held; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
 @[noinline] def sendLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (length : Nat) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => sendRoutedArm ctx executingCore tid capWord 4 st)
+        (fun _ => sendRoutedArm ctx executingCore tid capWord xc 4 st)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => sendRoutedArm ctx executingCore tid capWord 4 st)
-            (fun _ => longOperandKW .send (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => sendRoutedArm ctx executingCore tid capWord xc 4 st)
+            (fun _ => longOperandKW .send (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                     length tid executingCore (syscallRequiredRight .send))
                   (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-                  entryReportLookup entryReportLookupW))
+                  entryReportLookup entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

@@ -419,7 +419,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   -- its type before its right (spec §8.10.5b); the missing grant right is the
   -- lookup's refusal above.
   expectErr "chain9: grandchild cannot mint via syscall gate without grant"
-    (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } none (fun cap =>
       if cap.target ≠ .object grandSlot.cnode then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) }
         (AccessRightSet.ofList [.read]) none) st2)

@@ -31,15 +31,15 @@ open SeLe4n.Model
 audited call's arm (`auditedOperandArmR`) over the caller's registers, its
 results reported. -/
 @[noinline] def auditedRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (xc : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
       (auditedOperandArmR ctx sid tcb.registerContext (SeLe4n.CPtr.ofWord capWord) tid
         executingCore)
       st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-      entryReportLookup entryReportLookupW
+      entryReportLookup entryReportLookupAtW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

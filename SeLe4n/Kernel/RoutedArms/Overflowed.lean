@@ -42,46 +42,46 @@ the caller's registers) on the state whose TLB holds the buffer's
 translations, a refusal handing back the TLB the entry held; a slot that does
 not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
 @[inline] def overflowedLongArmWith (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (length : Nat) (capWord : UInt64)
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (length : Nat) (capWord : UInt64) (xc : Nat)
     (arm : UInt64 → SeLe4n.RegisterFile → Option Capability → RefusalCarrying Unit)
     (st : SystemState) : SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
+        (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
         (fun w =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
-            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
+            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
               (arm w tcb.registerContext) (length - 4) st entryReportGeneral
               (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
-              entryReportLookupW))
+              entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 /-- **The overflowed arm**: the configure's, the service register's or the CNode
 mint's, its fifth word slot 0's. -/
 @[noinline] def overflowedRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
-    (capWord : UInt64) (length : Nat) (st : SystemState) : SystemState :=
+    (capWord : UInt64) (xc : Nat) (length : Nat) (st : SystemState) : SystemState :=
   match sid with
   | .schedContextConfigure =>
-    overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
+    overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       configureOperandArmR rf w tid) st
   | .cspaceMint =>
-    overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
+    overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       mintOperandArmR ctx tid rf w) st
   | _ =>
-    overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
+    overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       serviceRegisterOperandArmR ctx tid rf w) st
 
 /-- The overflowed arm is the long operand dispatch of the route's arm
 (`overflowedArmOf`). -/
 theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (length : Nat)
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (xc : Nat) (length : Nat)
     (st : SystemState) (hOv : Architecture.RegisterDecode.routedOverflowOne sid = true) :
-    overflowedRoutedArm ctx executingCore tid sid capWord length st =
-      overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
+    overflowedRoutedArm ctx executingCore tid sid capWord xc length st =
+      overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
         overflowedArmOf ctx sid rf w tid) st := by
   rcases routedOverflowOne_cases hOv with rfl | rfl | rfl <;> rfl
 

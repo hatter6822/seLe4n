@@ -1360,7 +1360,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       cases obj with
       | tcb tcb =>
           simp only [hT] at hStep
-          cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+          cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (decodedExtraCapsFault? st tid decoded) (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }) st with
           | error e => rw [hInvk] at hStep; cases hStep
           | ok pair =>
               obtain ⟨u, stPost⟩ := pair; cases u

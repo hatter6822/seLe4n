@@ -1176,9 +1176,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.entryReportResolved
   -- The reply capability's failed lookup as a report, in the specification
   -- form (`replyLookupRefusal`): the entry pushes it from the lookup's words
-  -- (`entryReportPushReplyW` through `replyLookupRefusalW`), equal to it by
+  -- (`entryReportPushLookupAtW` through `replyLookupRefusalW`), equal to it by
   -- `liftReport_replyLookupRefusalW`.
-  , `SeLe4n.Kernel.entryReportReplyLookup
+  , `SeLe4n.Kernel.entryReportLookupAt
+  -- The operand dispatch's report of a failed lookup, in the specification
+  -- form (`dispatchOperandCheckedK`'s lookup continuation): every routed arm
+  -- pushes it from the lookup's address and words (`entryReportLookupAtW`) or
+  -- the empty slot's refusal (`entryReportLookup`), equal to it by
+  -- `dispatchOperandCheckedKW_report`.
+  , `SeLe4n.Kernel.entryReportLookupFor
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD

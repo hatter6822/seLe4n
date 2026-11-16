@@ -34,36 +34,36 @@ open SeLe4n.Model
 the transferring arm, its results reported; past the inline words, read and
 filled first as the long send's. -/
 @[noinline] def transferringRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (length : Nat)
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (xc : Nat) (length : Nat)
     (st : SystemState) : SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     if length ≤ 4 then
-      dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+      dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
         (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid executingCore
           (syscallRequiredRight sid))
         st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-        entryReportLookup entryReportLookupW
+        entryReportLookup entryReportLookupAtW
     else
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+        (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
           (transferringOperandArmThenTaintR ctx sid tcb.registerContext 4 tid executingCore
             (syscallRequiredRight sid))
           st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-          entryReportLookup entryReportLookupW)
+          entryReportLookup entryReportLookupAtW)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
           (transferringOperandArmThenTaintR ctx sid tcb.registerContext 4 tid executingCore
             (syscallRequiredRight sid))
           st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-          entryReportLookup entryReportLookupW)
-            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+          entryReportLookup entryReportLookupAtW)
+            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
                     executingCore (syscallRequiredRight sid))
                   (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-                  entryReportLookup entryReportLookupW))
+                  entryReportLookup entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

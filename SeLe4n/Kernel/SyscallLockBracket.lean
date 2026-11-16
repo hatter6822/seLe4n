@@ -449,6 +449,11 @@ makes. -/
 def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (s : SystemState) : Option SyscallLockOperands :=
   if decoded.syscallId = .yield then some { caller := tid } else
+  -- an extra capability whose lookup fails faults before the invocation's
+  -- decode (seL4 `lookupExtraCaps`), so it declares no operands, as a failed
+  -- lookup of the operand does
+  if (callerExtraCapsFault? s tid
+      (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)).isSome then none else
   match abiEntryGate decoded tid s with
   | none => none
   | some (_, gate) =>
@@ -628,6 +633,8 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
     t ≠ SeLe4n.ThreadId.sentinel := by
   unfold abiEntryLockOperands at h
   rw [if_neg (by rw [hSid]; decide)] at h
+  split at h
+  · exact absurd h (by simp)
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>
@@ -678,6 +685,8 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
   unfold abiEntryLockOperands at h
   split at h
   · rw [← Option.some.inj h]
+  split at h
+  · exact absurd h (by simp)
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>
@@ -713,6 +722,8 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
       receiveReplyFault? gate decoded s = none := by
   unfold abiEntryLockOperands at h
   rw [if_neg hNotYield] at h
+  split at h
+  · exact absurd h (by simp)
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>
@@ -749,6 +760,22 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
               (by assumption)
       · rw [hG] at h; exact absurd h (by simp)
 
+/-- **Declared operands mean the extra capabilities resolved**: every syscall
+but the yield declares operands only when none of its extra capabilities'
+lookups fails (`callerExtraCapsFault?`), the failure seL4's `lookupExtraCaps`
+raises as a fault before the invocation's decode. -/
+theorem abiEntryLockOperands_extraCaps (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
+    (hNotYield : decoded.syscallId ≠ .yield)
+    (h : abiEntryLockOperands decoded tid s = some ops) :
+    callerExtraCapsFault? s tid
+      (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) = none := by
+  unfold abiEntryLockOperands at h
+  rw [if_neg hNotYield] at h
+  split at h
+  · exact absurd h (by simp)
+  · next hX => simpa using hX
+
 /-- **A receive whose named reply is busy declares the busy operands**: the
 gate's lookup and the receive's type gate passed (the operands exist), the
 reply's resolution refused on the busy reply, so the operands name the reply the
@@ -764,7 +791,10 @@ theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
       { caller := tid, targetObject := some epId,
         targetReply := recvReplyLookup? gate decoded s } := by
   unfold abiEntryLockOperands at h
-  rw [if_neg (by rw [hRecv]; decide), hGate] at h
+  rw [if_neg (by rw [hRecv]; decide)] at h
+  split at h
+  · exact absurd h (by simp)
+  rw [hGate] at h
   simp only at h
   cases hLk : syscallLookupCap gate s with
   | error e => rw [hLk] at h; exact absurd h (by simp)

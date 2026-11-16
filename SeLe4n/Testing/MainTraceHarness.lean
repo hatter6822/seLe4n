@@ -1134,7 +1134,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   -- S2-J: the typed gate directly instead of deprecated apiEndpointSend
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
-    SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write }
+    SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write } none
       (fun cap => if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
         else SeLe4n.Kernel.endpointSendDual epId gate.callerId (.frame msg.badge false)) st
   match sendViaGate goodGate stLocal with
@@ -1172,7 +1172,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   }
   let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
-  match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype }
+  match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype } none
       (fun cap => match cap.target with
         | .object _ => SeLe4n.Kernel.untypedRetypeObject authSlot ⟨60⟩ dstSlot .endpoint
         | _ => fun _ => .error (.invalidCapability 0)) stLocal with

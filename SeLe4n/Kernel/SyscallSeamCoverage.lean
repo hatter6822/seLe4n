@@ -248,6 +248,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   unfold abiEntryLockOperands at hOps
   rw [if_neg hY] at hOps
+  split at hOps
+  · exact absurd hOps (by simp)
   rw [hGate] at hOps
   simp only at hOps
   rw [hLk] at hOps
@@ -999,7 +1001,10 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           simp only [callerCspaceRoot, hTcbRegs]
         exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ _ tid
           ke tcb decoded inRecv hTcbRegs' hDec hPhase
-          (by simp [syscallOperandLookup, hResolve, hRecv'])
+          (by
+            have hX := abiEntryLockOperands_extraCaps decoded tid stFilled ops hY hOps
+            rw [hFilled, ht, callerExtraCapsFault?_perCoreTlb] at hX
+            simp [syscallOperandLookup, hResolve, hRecv', hX])
           (by
             rw [hFrameR.1, hRoot, receiveReplyFault?_congr_getCNode? _ decoded _ _ hFrameR.2,
               ← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]

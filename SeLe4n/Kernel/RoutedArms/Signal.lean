@@ -26,10 +26,10 @@ open SeLe4n.Model
 /-- **The signal arm**: `dispatchOperandCheckedK` on the operand, the signal's
 gate, arm and taint step (`signalOperandArmThenTaintR`), its results reported. -/
 @[noinline] def signalRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedKW .notificationSignal (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (st : SystemState) : SystemState :=
+  dispatchOperandCheckedKW .notificationSignal (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
     (signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal))
     st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-    entryReportLookup entryReportLookupW
+    entryReportLookup entryReportLookupAtW
 
 end SeLe4n.Kernel

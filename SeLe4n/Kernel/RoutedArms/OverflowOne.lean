@@ -35,10 +35,10 @@ it, and so does a five-word invocation whose overflow slot does not read: its
 message clamped to the inline words, as seL4's `handleInvocation` clamps a
 message with no IPC buffer, it is short of its fifth argument. -/
 @[noinline] def shortArgsRoutedArm (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
-    (sid : SyscallId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    (sid : SyscallId) (capWord : UInt64) (xc : Nat) (st : SystemState) : SystemState :=
+  dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
     (shortArgsOperandArmR sid) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-    entryReportLookup entryReportLookupW
+    entryReportLookup entryReportLookupAtW
 
 /-- **The one-overflow-word arm**: the overflow word read, then
 `dispatchOverflowOneCheckedR` on the state with this core's TLB holding the
@@ -46,16 +46,16 @@ buffer's translation, a refusal handing back the TLB the entry held; its
 refusal reported under the entry's resolved or lookup continuation as the
 dispatch told them apart, a result under the first. -/
 @[noinline] def overflowOneRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (xc : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-      (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
-      (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+      (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
+      (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
         (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
         (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
-        entryReportLookupW)
+        entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

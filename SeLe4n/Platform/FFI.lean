@@ -3178,8 +3178,11 @@ theorem capFaultReceivePhase?_none_iff_records_or_capabilityFree (sid : SyscallI
   cases sid <;> rfl
 
 /-- **The capability fault a refusal raises, its lookups read where they
-ran** (WS-SX SX4): the decode and the operand's resolution on the state the
-entry was handed, `st`, which is where the entry ran them; the reply
+ran** (WS-SX SX4, SX6.1): the decode, the operand's resolution and, on a
+syscall that does not receive on its capability, its extra capabilities'
+lookups (seL4's `lookupExtraCaps`), on the state the entry was handed, `st`,
+which is where the entry ran them, the fault raised at the address whose
+lookup failed (`syscallOperandLookup`); the reply
 capability's lookup on the state the refusal hands back, `s`, from that state's
 own CSpace root, which is where the receive re-reads it once its busy reply's
 cancel is committed (`replyLookupRefusal`).  A refusal that writes nothing
@@ -3202,9 +3205,10 @@ def syscallCapFaultAt (layout : SeLe4n.SyscallRegisterLayout) (st s : SystemStat
               decoded s ke with
           | some (replyAddr, lf) => some (.capFault replyAddr.word true lf)
           | none => none
-        match syscallOperandLookup decoded.syscallId gate st with
-        | .error e =>
-            if e = ke then some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
+        match syscallOperandLookup decoded.syscallId gate
+            (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st with
+        | .error (a, e) =>
+            if e = ke then some (.capFault a.word inRecv e.capFaultLookup)
             else replyFault
         | .ok _ => replyFault
   | _ => none
@@ -3222,7 +3226,10 @@ the syscall's required right), and run the lookup a fault reads,
 `syscallOperandLookup`: the **resolution half** of the lookup,
 `syscallResolveCap`, and, on a syscall that receives on its capability, the
 capability's type and its right, as seL4's `handleRecv` checks them before it
-raises the fault.  The fault is produced only when that lookup fails **with the
+raises the fault, and on every other syscall the extra capabilities' lookups
+seL4's `handleInvocation` runs before the invocation's decode
+(`lookupExtraCaps`), a failure raised at the failing extra capability's
+address.  The fault is produced only when that lookup fails **with the
 very error the dispatcher returned**: seL4 raises the `CapFault` from
 `lookupCapAndSlot` and from `handleRecv`, and on every other syscall a
 capability that resolved but lacks the right (seL4's `decodeInvocation`
@@ -3273,10 +3280,11 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
           match receiveReplyFaultsW gate decoded st d w0 w1 w2 w3 w4 with
           | some (replyAddr, lf) => some (.capFault replyAddr.word true lf)
           | none => none
-        match syscallOperandLookup decoded.syscallId gate st with
-        | .error e =>
+        match syscallOperandLookup decoded.syscallId gate
+            (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st with
+        | .error (a, e) =>
             if e.matchesWords d w0 w1 w2 w3 w4 then
-              some (.capFault decoded.capAddr.word inRecv e.capFaultLookup)
+              some (.capFault a.word inRecv e.capFaultLookup)
             else replyFault
         | .ok _ => replyFault
   | _ => none
@@ -3357,7 +3365,7 @@ theorem syscallCapFaultAt_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayo
     (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
     (hLookup : syscallOperandLookup decoded.syscallId
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
-        st = .ok ())
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st = .ok ())
     (hReply : receiveReplyFault?
         { callerId := tid, cspaceRootCap := callerCspaceRoot s tid, capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
         decoded s = none) :
@@ -3598,7 +3606,7 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
       rfl
   rw [hCur] at hCur'
   cases hCur'
-  rcases h with ⟨hK, hNe⟩ | ⟨e, s, hK, hE, hRes⟩ | ⟨ke, s, replyAddr, lf, hK, hE, hNe, hRF⟩
+  rcases h with ⟨hK, hNe⟩ | ⟨a, e, s, hK, hE, hRes⟩ | ⟨ke, s, replyAddr, lf, hK, hE, hNe, hRF⟩
   · rw [hK]
     cases hR : syscallEntryCheckedR ctx executingCore st with
     | ok v => obtain ⟨⟨⟩, st'⟩ := v; rfl
@@ -3613,9 +3621,12 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
         | some inRecv =>
           simp only []
           cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0],
-              decoded.capAddr, syscallRequiredRight decoded.syscallId⟩ st with
+              decoded.capAddr, syscallRequiredRight decoded.syscallId⟩
+              (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st with
           | ok _ => simp only [hRF]
-          | error e => simp only [hNe' e hG, ↓reduceIte, hRF]
+          | error p =>
+            obtain ⟨a, e⟩ := p
+            simp only [hNe' a e hG, ↓reduceIte, hRF]
       simp only [syscallArmOutcome, syscallRefusalOutcomeAt, hNone]
   · rw [hK, hE]
     simp only [syscallLookupOutcome, syscallRefusalOutcomeAt]
@@ -3630,9 +3641,12 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
     unfold syscallCapFaultAt
     simp only [hObj, hDec, hPhase]
     cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.spaceCells[0],
-        decoded.capAddr, syscallRequiredRight decoded.syscallId⟩ st with
+        decoded.capAddr, syscallRequiredRight decoded.syscallId⟩
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st with
     | ok _ => simp only [hRF, hF]; rfl
-    | error e => simp only [hNe e hG, ↓reduceIte, hRF, hF]; rfl
+    | error p =>
+      obtain ⟨a, e⟩ := p
+      simp only [hNe a e hG, ↓reduceIte, hRF, hF]; rfl
 
 /-- WS-ZA ZA6.31: a capability fault the entry's own resolution raised,
 delivered from its words: the operand's address word, the syscall's phase and
@@ -3878,7 +3892,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
     | none => simp only [errorRefusalWordsW_eq]
   · intro sid w rw lf s
     unfold abiEntryFinishW
-    rw [SeLe4n.Kernel.entryReportReplyLookup, SeLe4n.Kernel.entryReportOutcomeW_reply]
+    rw [SeLe4n.Kernel.entryReportLookupAt, SeLe4n.Kernel.entryReportOutcomeW_lookupAt]
     unfold syscallLookupOutcome
     cases capFaultReceivePhase? sid with
     | some inRecv =>

@@ -36,24 +36,24 @@ translations, a refusal handing back the TLB the entry held; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
 @[noinline] def replyRecvLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (length extraCaps label : Nat) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length extraCaps label : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st)
+        (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st)
-            (fun _ => longOperandKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
+            (fun _ => longOperandKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))
                   (length - 4) st entryReportGeneral (entryReportPushOk 1)
                   (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
                     (entryReportPushErrorW 1)
-                    (entryReportPushReplyW (replyRecvReplyAddr tcb.registerContext).word))
-                  entryReportLookup entryReportLookupW))
+                    (entryReportPushLookupAtW (replyRecvReplyAddr tcb.registerContext).word))
+                  entryReportLookup entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

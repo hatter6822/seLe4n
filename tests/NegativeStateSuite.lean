@@ -2150,7 +2150,7 @@ private def runWSH15Checks : IO Unit := do
   -- `InvalidCapability` (`syscallMissingRightError .send`).
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   expectErr "H15 syscall endpoint send insufficient rights"
-    (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } none (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
     (.invalidCapability 0)

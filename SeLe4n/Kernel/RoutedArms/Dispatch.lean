@@ -62,55 +62,55 @@ continuations are compiled once. -/
               SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
       | .signal capAddr =>
         finish .notificationSignal capAddr.word
-          (signalRoutedArm ctx executingCore tid capAddr.word st)
+          (signalRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .notificationSignal tcb.registerContext) st)
       | .wait capAddr =>
-        finish .notificationWait capAddr.word (waitRoutedArm ctx executingCore tid capAddr.word st)
+        finish .notificationWait capAddr.word (waitRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .notificationWait tcb.registerContext) st)
       | .yield => finish .yield 0 (yieldRoutedArm executingCore st)
       | .send capAddr msgInfo =>
         finish .send capAddr.word
-          (sendRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+          (sendRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .send tcb.registerContext) msgInfo.length st)
       | .call capAddr msgInfo =>
         finish .call capAddr.word
-          (callRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+          (callRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .call tcb.registerContext) msgInfo.length st)
       | .reply capAddr msgInfo =>
         finish .reply capAddr.word
-          (replyRoutedArm ctx executingCore tid capAddr.word msgInfo.length msgInfo.extraCaps
+          (replyRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .reply tcb.registerContext) msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
       | .receive capAddr len replyAddr =>
         finish .receive capAddr.word
-          (receiveRoutedArm ctx executingCore tid capAddr.word len replyAddr.word st)
+          (receiveRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .receive tcb.registerContext) len replyAddr.word st)
       | .replyRecv capAddr msgInfo =>
         finish .replyRecv capAddr.word
-          (replyRecvRoutedArm ctx executingCore tid capAddr.word msgInfo.length
+          (replyRecvRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .replyRecv tcb.registerContext) msgInfo.length
             msgInfo.extraCaps msgInfo.label st)
       | .invoke sid capAddr =>
-        finish sid capAddr.word (invocationRoutedArm ctx executingCore tid sid capAddr.word st)
+        finish sid capAddr.word (invocationRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .overflowOne sid capAddr =>
-        finish sid capAddr.word (overflowOneRoutedArm ctx executingCore tid sid capAddr.word st)
+        finish sid capAddr.word (overflowOneRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .sendLong capAddr msgInfo =>
         finish .send capAddr.word
-          (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+          (sendLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .send tcb.registerContext) msgInfo.length st)
       | .callLong capAddr msgInfo =>
         finish .call capAddr.word
-          (callLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+          (callLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .call tcb.registerContext) msgInfo.length st)
       | .replyLong capAddr msgInfo =>
         finish .reply capAddr.word
-          (replyLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length msgInfo.extraCaps
+          (replyLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .reply tcb.registerContext) msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
       | .replyRecvLong capAddr msgInfo =>
         finish .replyRecv capAddr.word
-          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length
+          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .replyRecv tcb.registerContext) msgInfo.length
             msgInfo.extraCaps msgInfo.label st)
       | .transferring sid capAddr msgInfo =>
         finish sid capAddr.word
-          (transferringRoutedArm ctx executingCore tid sid capAddr.word msgInfo.length st)
+          (transferringRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) msgInfo.length st)
       | .audited sid capAddr =>
-        finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
+        finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .overflowed sid capAddr len =>
         finish sid capAddr.word
-          (overflowedRoutedArm ctx executingCore tid sid capAddr.word len st)
+          (overflowedRoutedArm ctx executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) len st)
       | .shortArgs sid capAddr =>
-        finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word st)
+        finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word (routedExtraCapCount sid tcb.registerContext) st)
       | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
       | .viaDecode =>
         absurd hRt (SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode _)
@@ -127,6 +127,21 @@ continuations on results. -/
     entryReportOutcome kGen kRes (kLook sid (SeLe4n.CPtr.ofWord capWord))
       (fun w e s => kLook sid (SeLe4n.CPtr.ofWord w) e s) s
 
+/-- The lookup report handed on by a `finish` that hands each report to its
+continuation answers the operand dispatch's two lookup questions as the lookup
+continuation at the address it names does (`dispatchOperandCheckedK_congr_lookup`). -/
+private theorem finish_lookupFor {β : Type} (finish : SyscallId → UInt64 → SystemState → β)
+    (kLook : SyscallId → SeLe4n.CPtr → KernelError → SystemState → β)
+    (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (sid : SyscallId) (w : UInt64) :
+    (∀ s, finish sid w (entryReportLookupFor (SeLe4n.CPtr.ofWord w) (.invalidCapability 0) s) =
+      kLook sid (SeLe4n.CPtr.ofWord w) (.invalidCapability 0) s) ∧
+    (∀ a lf s, finish sid w (entryReportLookupFor a (.failedLookup false lf) s) =
+      kLook sid a (.failedLookup false lf) s) :=
+  ⟨fun s => hL sid w _ s, fun a lf s => hRL sid w a.word lf s⟩
+
 /-- An operand route's arm, reported and handed on by any `finish` that hands
 each report to its continuation, is the continued entry's operand dispatch into
 those continuations. -/
@@ -136,16 +151,20 @@ private theorem finish_operand {β : Type} (finish : SyscallId → UInt64 → Sy
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (sid sid' : SyscallId) (w : UInt64) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
-    (st : SystemState) :
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (sid sid' : SyscallId) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
+    (arm : Option Capability → RefusalCarrying Unit) (st : SystemState) :
     finish sid w
-        (dispatchOperandCheckedK sid' capAddr tid executingCore arm st entryReportGeneral
-          entryReportResolved entryReportLookup) =
-      dispatchOperandCheckedK sid' capAddr tid executingCore arm st kGen kRes
-        (kLook sid (SeLe4n.CPtr.ofWord w)) := by
+        (dispatchOperandCheckedK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st
+          entryReportGeneral entryReportResolved entryReportLookupFor) =
+      dispatchOperandCheckedK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st kGen kRes
+        (kLook sid) := by
   rw [dispatchOperandCheckedK_map (finish sid w)]
-  simp only [hG, hR, hL]
+  simp only [hG, hR]
+  exact dispatchOperandCheckedK_congr_lookup _ _ _ _ _ _ _ _ _ _ _
+    (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
 /-- A receive route's arm, its reply capability's failed lookup reported under
 kind `3`, reported and handed on, is the continued entry's operand dispatch with
@@ -157,21 +176,25 @@ private theorem finish_operandReply {β : Type} (finish : SyscallId → UInt64 �
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (hRL : ∀ sid w rw lf s, finish sid w (entryReportReplyLookup rw lf s) =
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
       kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
-    (sid sid' : SyscallId) (w : UInt64) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
+    (sid sid' : SyscallId) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
+    (arm : Option Capability → RefusalCarrying Unit)
     (st : SystemState) (names : Bool) (replyAddr : SeLe4n.CPtr) (replyWord : UInt64) :
     finish sid w
-        (dispatchOperandCheckedK sid' capAddr tid executingCore arm st entryReportGeneral
-          (replyLookupRefusal names tid replyAddr entryReportResolved (entryReportReplyLookup replyWord))
-          entryReportLookup) =
-      dispatchOperandCheckedK sid' capAddr tid executingCore arm st kGen
+        (dispatchOperandCheckedK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st
+          entryReportGeneral
+          (replyLookupRefusal names tid replyAddr entryReportResolved (entryReportLookupAt replyWord))
+          entryReportLookupFor) =
+      dispatchOperandCheckedK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st kGen
         (replyLookupRefusal names tid replyAddr kRes
           (fun lf s => kLook sid (SeLe4n.CPtr.ofWord replyWord) (.failedLookup false lf) s))
-        (kLook sid (SeLe4n.CPtr.ofWord w)) := by
+        (kLook sid) := by
   rw [dispatchOperandCheckedK_map (finish sid w)]
-  simp only [hG, hL, replyLookupRefusal_map, hR, hRL]
+  simp only [hG, replyLookupRefusal_map, hR, hRL]
+  exact dispatchOperandCheckedK_congr_lookup _ _ _ _ _ _ _ _ _ _ _
+    (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
 /-- …and so is the reply-receive's long route's arm. -/
 private theorem finish_longReply {β : Type} (finish : SyscallId → UInt64 → SystemState → β)
@@ -180,21 +203,24 @@ private theorem finish_longReply {β : Type} (finish : SyscallId → UInt64 → 
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (hRL : ∀ sid w rw lf s, finish sid w (entryReportReplyLookup rw lf s) =
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
       kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
-    (sid sid' : SyscallId) (w : UInt64) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
+    (sid sid' : SyscallId) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
+    (arm : Option Capability → RefusalCarrying Unit)
     (n : Nat) (st : SystemState) (names : Bool) (replyAddr : SeLe4n.CPtr) (replyWord : UInt64) :
     finish sid w
-        (longOperandK sid' capAddr tid executingCore arm n st entryReportGeneral
-          (replyLookupRefusal names tid replyAddr entryReportResolved (entryReportReplyLookup replyWord))
-          entryReportLookup) =
-      longOperandK sid' capAddr tid executingCore arm n st kGen
+        (longOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm n st entryReportGeneral
+          (replyLookupRefusal names tid replyAddr entryReportResolved (entryReportLookupAt replyWord))
+          entryReportLookupFor) =
+      longOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm n st kGen
         (replyLookupRefusal names tid replyAddr kRes
           (fun lf s => kLook sid (SeLe4n.CPtr.ofWord replyWord) (.failedLookup false lf) s))
-        (kLook sid (SeLe4n.CPtr.ofWord w)) := by
+        (kLook sid) := by
   rw [longOperandK_map (finish sid w)]
-  simp only [hG, hL, replyLookupRefusal_map, hR, hRL]
+  simp only [hG, replyLookupRefusal_map, hR, hRL]
+  exact longOperandK_congr_lookup _ _ _ _ _ _ _ _ _ _ _ _
+    (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
 /-- A long route's arm, reported and handed on, is the continued entry's
 filled operand dispatch into its own continuations. -/
@@ -204,16 +230,20 @@ private theorem finish_long {β : Type} (finish : SyscallId → UInt64 → Syste
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (sid sid' : SyscallId) (w : UInt64) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
-    (n : Nat) (st : SystemState) :
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (sid sid' : SyscallId) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
+    (arm : Option Capability → RefusalCarrying Unit) (n : Nat) (st : SystemState) :
     finish sid w
-        (longOperandK sid' capAddr tid executingCore arm n st entryReportGeneral
-          entryReportResolved entryReportLookup) =
-      longOperandK sid' capAddr tid executingCore arm n st kGen kRes
-        (kLook sid (SeLe4n.CPtr.ofWord w)) := by
+        (longOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm n st entryReportGeneral
+          entryReportResolved entryReportLookupFor) =
+      longOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm n st kGen kRes
+        (kLook sid) := by
   rw [longOperandK_map (finish sid w)]
-  simp only [hG, hR, hL]
+  simp only [hG, hR]
+  exact longOperandK_congr_lookup _ _ _ _ _ _ _ _ _ _ _ _
+    (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
 private theorem finish_overflowOne {β : Type} (finish : SyscallId → UInt64 → SystemState → β)
     (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
@@ -221,16 +251,20 @@ private theorem finish_overflowOne {β : Type} (finish : SyscallId → UInt64 �
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (sid sid' : SyscallId) (w : UInt64) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
-    (st : SystemState) :
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (sid sid' : SyscallId) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
+    (arm : Option Capability → RefusalCarrying Unit) (st : SystemState) :
     finish sid w
-        (overflowOneOperandK sid' capAddr tid executingCore arm st entryReportGeneral
-          entryReportResolved entryReportLookup) =
-      overflowOneOperandK sid' capAddr tid executingCore arm st kGen kRes
-        (kLook sid (SeLe4n.CPtr.ofWord w)) := by
+        (overflowOneOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st
+          entryReportGeneral entryReportResolved entryReportLookupFor) =
+      overflowOneOperandK sid' (SeLe4n.CPtr.ofWord w) tid executingCore xc arm st kGen kRes
+        (kLook sid) := by
   rw [overflowOneOperandK_map (finish sid w)]
-  simp only [hG, hR, hL]
+  simp only [hG, hR]
+  exact overflowOneOperandK_congr_lookup _ _ _ _ _ _ _ _ _ _ _
+    (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
 /-- **The routed entry is the continued entry**, for every `finish` that hands
 each report to its continuation: the routed dispatch with its reports handed on
@@ -243,7 +277,7 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
     (hG : ∀ sid w r, finish sid w (entryReportGeneral r) = kGen r)
     (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
     (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
-    (hRL : ∀ sid w rw lf s, finish sid w (entryReportReplyLookup rw lf s) =
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
       kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s) :
     syscallEntryRoutedWith ctx executingCore st finish =
       syscallEntryCheckedK ctx executingCore st kGen kRes kLook := by
@@ -267,11 +301,11 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
     next capAddr hRt =>
       rw [hRt]; symm
       simp only [signalRoutedArm, dispatchOperandCheckedKW_report,
-        finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr hRt =>
       rw [hRt]; symm
       simp only [waitRoutedArm, dispatchOperandCheckedKW_report,
-        finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next hRt =>
       rw [hRt]; symm
       simp only [yieldRoutedArm, hG]
@@ -279,15 +313,15 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [sendRoutedArm, dispatchOperandCheckedKW_report,
-        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [callRoutedArm, dispatchOperandCheckedKW_report,
-        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [replyRoutedArm, dispatchOperandCheckedKW_report,
-        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr len replyAddr hRt =>
       rw [hRt]; symm
       simp only [receiveRoutedArm, dispatchOperandCheckedKW_reportReply,
@@ -300,32 +334,32 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rw [hRt]; symm
       simp only [invocationRoutedArm, dispatchOperandCheckedKW_report,
         hO,
-        finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next sid capAddr hRt =>
       rw [hRt]; symm
       simp only [overflowOneRoutedArm,
         overflowOneOperandKW_report, hO]
       rw [ipcBufferReadMrK_comp (finish _ _)]
       simp only [shortArgsRoutedArm, dispatchOperandCheckedKW_report,
-        finish_operand finish kGen kRes kLook hG hR hL, finish_overflowOne finish kGen kRes kLook hG hR hL]
+        finish_operand finish kGen kRes kLook hG hR hL hRL, finish_overflowOne finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [sendLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         sendRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
-        finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
+        finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [callLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         callRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
-        finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
+        finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
       simp only [replyLongRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         replyRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
-        finish_operand finish kGen kRes kLook hG hR hL, finish_long finish kGen kRes kLook hG hR hL]
+        finish_operand finish kGen kRes kLook hG hR hL hRL, finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
@@ -338,32 +372,32 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rw [hRt]; symm
       by_cases hS : msgInfo.length ≤ 4
       · simp only [transferringRoutedArm, dispatchOperandCheckedKW_report,
-        hO, hS, ↓reduceIte, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        hO, hS, ↓reduceIte, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
       · simp only [transferringRoutedArm, dispatchOperandCheckedKW_report, longOperandKW_report,
         hO, hS, ↓reduceIte,
-          ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
-          finish_long finish kGen kRes kLook hG hR hL]
+          ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL hRL,
+          finish_long finish kGen kRes kLook hG hR hL hRL]
         rfl
     next sid capAddr hRt =>
       rw [hRt]; symm
       simp only [auditedRoutedArm, dispatchOperandCheckedKW_report,
-        hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next sid capAddr len hRt =>
       rw [hRt]; symm
       obtain ⟨-, -, -, -, -, hOv, -⟩ :=
         Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed st tid _ _ 32
           sid capAddr len hRt
       dsimp only
-      rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word len st hOv]
+      rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word _ len st hOv]
       simp only [overflowedLongArmWith, dispatchOperandCheckedKW_report, longOperandKW_report,
         shortArgsRoutedArm, hO,
-        ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
-        finish_long finish kGen kRes kLook hG hR hL]
+        ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL hRL,
+        finish_long finish kGen kRes kLook hG hR hL hRL]
       rfl
     next sid capAddr hRt =>
       rw [hRt]; symm
       simp only [shortArgsRoutedArm, dispatchOperandCheckedKW_report,
-        finish_operand finish kGen kRes kLook hG hR hL]; rfl
+        finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
     next e hRt =>
       rw [hRt]; symm
       simp only [hG]
@@ -381,6 +415,6 @@ compiled form `syscallEntryCheckedK` runs as. -/
     (fun _ _ r => entryReportOutcome_general _ _ _ _ r)
     (fun _ _ r => entryReportOutcome_resolved _ _ _ _ r)
     (fun _ _ e s => entryReportOutcome_lookup _ _ _ _ e s)
-    (fun _ _ rw lf s => entryReportOutcome_reply _ _ _ _ rw lf s)).symm
+    (fun _ _ rw lf s => entryReportOutcome_lookupAt _ _ _ _ rw lf s)).symm
 
 end SeLe4n.Kernel
