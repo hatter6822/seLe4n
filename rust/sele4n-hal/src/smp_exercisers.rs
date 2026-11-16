@@ -11765,6 +11765,15 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     // two lines raised above every other line's priority.
     crate::gic::set_interrupt_line_priority(IRQ_BOUND_LINE, IRQ_EXERCISER_PRIORITY);
     crate::gic::set_interrupt_line_priority(IRQ_UNBOUND_LINE, IRQ_EXERCISER_PRIORITY);
+    // The lane's binds name their notification as extra capability 0, read
+    // from the caller's IPC buffer, and a step here may leave either thread
+    // current.  So the partner shares the root task's buffer for the lane:
+    // suspended (the root task current), its buffer set to the root task's
+    // frame at `ROOT_IPC_BUFFER`, resumed; whichever thread issues a bind, the
+    // kernel reads the words the driver wrote.  Its buffer is emptied after.
+    if !share_root_ipc_buffer_with_partner() {
+        return Some(false);
+    }
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         if !interrupt_handlers_issued(which)
@@ -11775,6 +11784,18 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         {
             return Some(false);
         }
+    }
+    if !unmeasured(
+        &set_ipc_buffer(
+            "partner-ipc-buffer-unshared",
+            PARTNER_TCB_CAP,
+            0,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner's buffer was not emptied",
+    ) {
+        return Some(false);
     }
     // WS-ZA ZA5.13: the declassification scenario, the partner runnable.
     for first in [true, false] {
@@ -13557,6 +13578,31 @@ const CAP_FAULT_GUARD_MISMATCH_INFO: u64 = (1 << 12) | 7;
 /// none.
 #[cfg(feature = "hw_target")]
 static TRAP_LOADED_FP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// The partner given the root task's IPC buffer, unmeasured: suspended
+/// ([`suspend_partner`]), so the root task issues the set; its buffer set to
+/// the root task's frame at `ROOT_IPC_BUFFER`; resumed.
+#[cfg(feature = "hw_target")]
+fn share_root_ipc_buffer_with_partner() -> bool {
+    let share = set_ipc_buffer(
+        "partner-ipc-buffer-shared",
+        PARTNER_TCB_CAP,
+        ROOT_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let resume = partner_step(
+        "resume-partner-shared-buffer",
+        TCB_RESUME,
+        PARTNER_TCB_CAP,
+        0,
+        [0, 0],
+        false,
+    );
+    suspend_partner()
+        && unmeasured(&share, "the partner was not given the root task's buffer")
+        && unmeasured(&resume, "the partner was not resumed")
+}
 
 /// The partner suspended, unmeasured, which leaves the root task current:
 /// by the root task, or by the partner itself when a step left it current
