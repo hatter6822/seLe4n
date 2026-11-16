@@ -166,8 +166,11 @@ made a number past it.  The rights word is read as seL4's `rightsFromWord`
 reads it: its rights bits, the others ignored (`cnodeRightsOfWord`). -/
 
 /-- A CNode operation's depth from its word: the word itself up to 64, and 65,
-a depth `lookupSlotForCNodeOp` refuses as every depth past 64, above it. -/
-@[inline] def cnodeDepthOfWord (w : UInt64) : Nat := if w ≤ 64 then w.toNat else 65
+a depth `lookupSlotForCNodeOp` refuses as every depth past 64, above it.
+Called out of line, so the decode that reads it has no branch on the word: an
+inlined branch makes the compiler build the decoded arguments in each arm and
+hand the record to a join point, a heap cell per CNode operation. -/
+@[noinline] def cnodeDepthOfWord (w : UInt64) : Nat := if w ≤ 64 then w.toNat else 65
 
 /-- A depth up to 64 is its word. -/
 theorem cnodeDepthOfWord_of_le {w : UInt64} (h : w.toNat ≤ 64) : cnodeDepthOfWord w = w.toNat := by

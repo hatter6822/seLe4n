@@ -39,6 +39,85 @@ open SeLe4n.Model
 open Architecture.SyscallArgDecode
 open Architecture.RegisterDecode (routedInvocation)
 
+/-- `callerExtraCapAddr?` in continuation form: the address goes to `kSome`
+and its absence to `kNone`, so no `Option` is built (`callerExtraCapAddrK_eq`).
+The buffer word is resolved as `ipcBufferWordPAddr?` resolves it, read-only. -/
+@[inline] def callerExtraCapAddrK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (n i : Nat) (kNone : Unit → α) (kSome : SeLe4n.CPtr → α) : α :=
+  if i < min n maxExtraCaps then
+    match st.getObject? tid.toObjId with
+    | some (.tcb tcb) =>
+      let idx := Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i
+      if idx < Architecture.IpcBufferRead.ipcBufferWords then
+        match st.getVSpaceRoot? tcb.vspaceRoot with
+        | some root =>
+          match root.lookup (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
+          | some (paddr, perms) =>
+            let pa := PAddr.ofNat (paddr.toNat +
+              (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)
+            if pa.toNat % 8 == 0 && st.machine.addrInRange pa && (!false || perms.write) then
+              kSome (SeLe4n.CPtr.ofWord (Architecture.IpcBufferRead.userWordAt st.machine pa))
+            else kNone ()
+          | none => kNone ()
+        | none => kNone ()
+      else kNone ()
+    | _ => kNone ()
+  else kNone ()
+
+theorem callerExtraCapAddrK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (n i : Nat) (kNone : Unit → α) (kSome : SeLe4n.CPtr → α) :
+    callerExtraCapAddrK st tid n i kNone kSome =
+      match callerExtraCapAddr? st tid n i with
+      | none => kNone ()
+      | some a => kSome a := by
+  unfold callerExtraCapAddrK callerExtraCapAddr? senderExtraCapAddr?
+    Architecture.IpcBufferRead.ipcBufferWordPAddr?
+  by_cases h1 : i < min n maxExtraCaps
+  · simp only [h1, ↓reduceIte]
+    rcases st.getObject? tid.toObjId with _ | o
+    · rfl
+    cases o <;> try rfl
+    rename_i tcb
+    dsimp only
+    by_cases h2 : Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i <
+        Architecture.IpcBufferRead.ipcBufferWords
+    · simp only [h2, ↓reduceIte]
+      rcases st.getVSpaceRoot? tcb.vspaceRoot with _ | root
+      · rfl
+      dsimp only
+      rcases root.lookup _ with _ | ⟨paddr, perms⟩
+      · rfl
+      dsimp only
+      split <;> rfl
+    · simp only [h2, ↓reduceIte]; rfl
+  · simp only [h1, ↓reduceIte]
+
+/-- **A CNode operation's two slots, its source root the caller's extra
+capability 0** (seL4's `excaprefs[0]`): `resolveCNodeOpSlotsK` on the address
+`callerExtraCapAddr?` reads, each case handed a known constructor, so the
+compiled walk builds no `Option` (`resolveCallerCNodeOpSlotsK_eq`). -/
+@[inline] def resolveCallerCNodeOpSlotsK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (destRoot : Capability) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  callerExtraCapAddrK st tid xc 0
+    (fun _ => resolveCNodeOpSlotsK tid destRoot destIndex destDepth none srcIndex srcDepth st
+      onErr onOk)
+    (fun srcRoot => resolveCNodeOpSlotsK tid destRoot destIndex destDepth (some srcRoot)
+      srcIndex srcDepth st onErr onOk)
+
+theorem resolveCallerCNodeOpSlotsK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (destRoot : Capability) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCallerCNodeOpSlotsK st tid xc destRoot destIndex destDepth srcIndex srcDepth onErr
+        onOk =
+      resolveCNodeOpSlotsK tid destRoot destIndex destDepth (callerExtraCapAddr? st tid xc 0)
+        srcIndex srcDepth st onErr onOk := by
+  unfold resolveCallerCNodeOpSlotsK
+  rw [callerExtraCapAddrK_eq]
+  cases callerExtraCapAddr? st tid xc 0 <;> rfl
+
 /-- `dispatchWithCapChecked`'s arm for a routed invocation, its arguments read
 from the register file `regs` through `layout` and its operand address given
 (`dispatchWithCapChecked_eq_invocationBy`).  Each decode reads the file at its
@@ -793,8 +872,8 @@ refusal is read where it is, never rebuilt. -/
       | .error e => .error (e, st)
       | .ok args =>
         if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
-        resolveCNodeOpSlotsK tid cap args.destIndex args.destDepth
-          (callerExtraCapAddr? st tid xc 0) args.srcIndex args.srcDepth st
+        resolveCallerCNodeOpSlotsK st tid xc cap args.destIndex args.destDepth
+          args.srcIndex args.srcDepth
           (fun e => .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
@@ -1393,7 +1472,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
         dsimp only
-        rw [resolveCNodeOpSlotsK_eq]
+        rw [resolveCallerCNodeOpSlotsK_eq, resolveCNodeOpSlotsK_eq]
         cases hR : resolveCNodeOpSlots tid
             ⟨.object cnodeId, rights, badge, mapping, mAsid, mVaddr, mEpoch, mapped, freeIndex,
               cnGuard, cnGuardSize⟩ args.destIndex args.destDepth
@@ -2276,8 +2355,8 @@ write alone (`cspaceCopyPerformAt`); a refusal is in the state handed in
     | .error e => .error (e, st)
     | .ok args =>
       if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
-      resolveCNodeOpSlotsK tid cap args.destIndex args.destDepth
-        (callerExtraCapAddr? st tid xc 0) args.srcIndex args.srcDepth st
+      resolveCallerCNodeOpSlotsK st tid xc cap args.destIndex args.destDepth
+        args.srcIndex args.srcDepth
         (fun e => .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
           RefusalCarrying.ofChecked
@@ -2300,7 +2379,7 @@ theorem dispatchCopyByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc :
     | error e => simp [RefusalCarrying.ofKernel, dispatchCopyBy, hT, hD]
     | ok args =>
       dsimp only
-      rw [resolveCNodeOpSlotsK_eq]
+      rw [resolveCallerCNodeOpSlotsK_eq, resolveCNodeOpSlotsK_eq]
       cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
           (callerExtraCapAddr? st tid xc 0) args.srcIndex args.srcDepth st with
       | error e =>
@@ -2456,8 +2535,8 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
     | .error e => .error (e, st)
     | .ok args =>
       if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
-      resolveCNodeOpSlotsK tid cap args.destIndex args.destDepth
-        (callerExtraCapAddr? st tid xc 0) args.srcIndex args.srcDepth st
+      resolveCallerCNodeOpSlotsK st tid xc cap args.destIndex args.destDepth
+        args.srcIndex args.srcDepth
         (fun e => .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
           if securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -2486,7 +2565,7 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc :
     | error e => simp [RefusalCarrying.ofKernel, dispatchMintBy, hT, hD]
     | ok args =>
       dsimp only
-      rw [resolveCNodeOpSlotsK_eq]
+      rw [resolveCallerCNodeOpSlotsK_eq, resolveCNodeOpSlotsK_eq]
       cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
           (callerExtraCapAddr? st tid xc 0) args.srcIndex args.srcDepth st with
       | error e =>

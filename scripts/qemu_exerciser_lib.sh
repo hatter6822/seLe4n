@@ -322,7 +322,7 @@ for driver in drivers:
             "receive-reply-cap-guard-mismatch", "reply-recv-reply-cap-guard-mismatch",
             "configure-sched-context-guard-mismatch", "set-space-root-guard-mismatch",
             "bind-notification-guard-mismatch", "set-fault-handler-guard-mismatch",
-            "cnode-mint-guard", "cnode-mint-guardless",
+            "cnode-mint-guard", "cnode-mint-guardless", "cnode-copy-no-source-root",
             "cnode-multi-level-copy", "cnode-multi-level-copy-delete",
             "lookup-stops-at-non-cnode", "cnode-mint-guardless-delete",
             "cnode-mint-guard-delete", "cnode-mint-badged-endpoint",
