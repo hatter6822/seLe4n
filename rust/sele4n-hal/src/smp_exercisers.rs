@@ -4814,7 +4814,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        // The same with three capabilities, the most a message carries.
+        // The same with three capabilities, the most a message carries, each
+        // naming the notification, so all three addresses resolve at the send
+        // (seL4's `lookupExtraCaps`) and the transfer stops at the first, as
+        // the receiver names no receive slot.
         invocation(
             "caps-three-send-rendezvous-resume",
             TCB_RESUME,
@@ -4839,7 +4842,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 false,
             ),
             TAIL_IPC_BUFFER,
-            [NOTIFICATION_CAP, 0, 0],
+            [NOTIFICATION_CAP, NOTIFICATION_CAP, NOTIFICATION_CAP],
         ),
         kernel_step("caps-three-send-rendezvous-yield", YIELD),
         invocation(
@@ -4908,7 +4911,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [NOTIFICATION_CAP, 0, 0],
+            [NOTIFICATION_CAP, NOTIFICATION_CAP, NOTIFICATION_CAP],
         ),
         invocation(
             "caps-three-call-rendezvous-suspend",
