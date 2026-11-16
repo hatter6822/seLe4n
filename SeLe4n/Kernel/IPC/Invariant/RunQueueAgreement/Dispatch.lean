@@ -359,7 +359,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqControl =>
-      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ _ hStep
       exact RunQueueStage.entry (irqControlGet_runQueueStage hG)
     all_goals try cases hStep
   case irqHandlerSetNotification =>

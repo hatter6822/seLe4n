@@ -63,9 +63,10 @@ theorem irqControlGet_mappingStage {control dst : CSpaceAddr} {line : Nat}
           (cspaceInsertSlot_preserves_bookkeepingAgrees hI0 hB hI)
 
 theorem irqControlGetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+    {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError IrqControlGetArgs} {st st' : SystemState}
-    (h : irqControlGetFromCap tid srcAddr args? st = .ok ((), st')) : MappingStage st st' := by
-  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr args? st st' h
+    (h : irqControlGetFromCap tid srcAddr root? args? st = .ok ((), st')) : MappingStage st st' := by
+  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr root? args? st st' h
   exact irqControlGet_mappingStage hG
 
 /-- WS-ZA ZA6.32: **the handler bind keeps the mappings recorded**: the node

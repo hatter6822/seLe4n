@@ -809,7 +809,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqControl =>
-      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ _ hStep
       exact readyKeptStage.of_stage (irqControlGet_runQueueStage hG)
     all_goals try cases hStep
   case irqHandlerSetNotification =>

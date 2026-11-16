@@ -94,11 +94,12 @@ theorem irqControlGet {control dst : CSpaceAddr} {line : Nat} {st st' : SystemSt
       exact F1.trans (cdtAddChild st1 control dst .mint F1.invExt)
 
 theorem irqControlGetFromCap {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+    {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError Architecture.SyscallArgDecode.IrqControlGetArgs} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.irqControlGetFromCap tid srcAddr args? st = .ok ((), st')) :
+    (h : _root_.SeLe4n.Kernel.irqControlGetFromCap tid srcAddr root? args? st = .ok ((), st')) :
     RecordsFrame st st' := by
-  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr args? st st' h
+  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr root? args? st st' h
   exact irqControlGet hInv hG
 
 end RecordsFrame

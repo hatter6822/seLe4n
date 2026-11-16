@@ -2570,6 +2570,28 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
        kNum (resolveIssuingSlotsK caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st some
          (fun _ _ _ _ => none)) == some 1)
       "an issue's destination CNode argument is refused invalidCapability 1 on the spec and K forms"
+  -- A handler issue's destination (WS-SX SX6.3, D10): the root CNode is extra
+  -- capability 0 and the slot its index and depth (seL4's `lookupTargetSlot`):
+  -- the CNode capability at slot 3 names slot 5 by index 5 at depth 4; a root
+  -- that is no CNode capability, or an empty root slot, is
+  -- `failedLookup invalidRoot`; a depth past 64 is `rangeError`.
+  let issueAt (root index depth : Nat) :=
+    resolveIssuingSlotsAt caller (cptr 3) (cptr root) (cptr index) depth st
+  let issueAtK (root index depth : Nat) : Option (Option KernelError) :=
+    resolveIssuingSlotsAtK caller (cptr 3) (cptr root) (cptr index) depth st
+      (fun e => some (some e)) (fun _ _ c sl => if c == cnId && sl == SeLe4n.Slot.ofNat 5
+        then some none else none)
+  expect "issuing_slots_at_root_index_depth"
+    ((match issueAt 3 5 4 with
+      | .ok (_, dst) => dst.cnode == cnId && dst.slot == SeLe4n.Slot.ofNat 5
+      | .error _ => false) && issueAtK 3 5 4 == some none)
+    "a handler issue's destination is the slot the root names by index and depth"
+  expect "issuing_slots_at_refusals"
+    ((match issueAt 0 5 4 with | .error (.failedLookup false .invalidRoot) => true | _ => false) &&
+     (match issueAt 9 5 4 with | .error (.failedLookup false .invalidRoot) => true | _ => false) &&
+     (match issueAt 3 5 65 with | .error (.rangeError 1 64) => true | _ => false) &&
+     issueAtK 0 5 4 == some (some (.failedLookup false .invalidRoot)))
+    "a non-CNode or empty root is invalidRoot and a depth past 64 rangeError"
   -- An IRQ handler's notification is extra capability 0 (WS-SX SX6.4): a
   -- message naming none is truncatedMessage, one naming slot 3 reads it.
   expect "argcap_irqHandler_notification_extra_cap"

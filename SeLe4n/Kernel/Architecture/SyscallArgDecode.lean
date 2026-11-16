@@ -1500,12 +1500,16 @@ structure TcbUnbindNotificationArgs where
 
 /-- WS-ZA ZA6.32: arguments for `irqControlGet` (seL4's
     `seL4_IRQControl_Get`): `msgRegs[0]` the interrupt line, `msgRegs[1]` the
-    capability address of the CNode the handler capability is issued into, and
-    `msgRegs[2]` the slot in it. -/
+    index and `msgRegs[2]` the depth of the slot the handler capability is
+    issued into, both read from the CNode capability the caller names as extra
+    capability 0 (WS-SX SX6.3, D10: seL4's `lookupTargetSlot`;
+    `Kernel.resolveIssuingSlotsAt`).  A depth word above 64 is held at 65
+    (`cnodeDepthOfWord`), which the slot lookup refuses as seL4's
+    `rangeCheck` does. -/
 structure IrqControlGetArgs where
   line     : Nat
-  dstCNode : CPtr
-  dstSlot  : Slot
+  dstIndex : CPtr
+  dstDepth : Nat
   deriving Repr, DecidableEq
 
 /-- WS-ZA ZA6.32: decode `irqControlGet` arguments (3 registers). -/
@@ -1515,7 +1519,7 @@ def decodeIrqControlGetArgs (decoded : SyscallDecodeResult)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
-  pure { line := r0.val, dstCNode := CPtr.ofNat r1.val, dstSlot := Slot.ofNat r2.val }
+  pure { line := r0.val, dstIndex := CPtr.ofWord r1.word, dstDepth := cnodeDepthOfWord r2.word }
 
 /-- WS-ZA ZA6.32: arguments for `irqHandlerSetNotification` (seL4's
     `seL4_IRQHandler_SetNotification`): the capability address of the
@@ -2555,7 +2559,7 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
   let r0 ← get 0
   let r1 ← get 1
   let r2 ← get 2
-  pure { line := r0.toNat, dstCNode := CPtr.ofWord r1, dstSlot := Slot.ofNat r2.toNat }
+  pure { line := r0.toNat, dstIndex := CPtr.ofWord r1, dstDepth := cnodeDepthOfWord r2 }
 
 theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

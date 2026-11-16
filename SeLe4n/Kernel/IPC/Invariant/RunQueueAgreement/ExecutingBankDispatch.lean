@@ -278,9 +278,9 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
     | exact hO (cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB (irqHandlerClear_ok h).2).1
         (cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB (irqHandlerClear_ok h).2)
     | exact hF (irqControlGet_savedRegsKept hInv
-          (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+          (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
         (irqControlGet_stepCovers (e := e') hInv
-          (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+          (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
     | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
         (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)

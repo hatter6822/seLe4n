@@ -1401,7 +1401,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact irqHandlerAck_stepCovers hInv h
     | exact irqHandlerClear_stepCovers hB h
     | exact irqControlGet_stepCovers hInv
-        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2
+        (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2
     | exact irqHandlerSetNotification_stepCovers hB
         (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h

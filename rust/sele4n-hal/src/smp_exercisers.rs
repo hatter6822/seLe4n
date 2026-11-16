@@ -1909,6 +1909,25 @@ const fn cap_argument(
     }
 }
 
+/// **The handler issue** (seL4's `seL4_IRQControl_Get`) on the interrupt
+/// control: the line in MR0, and the destination as seL4's `lookupTargetSlot`
+/// reads it — the root CNode capability named as extra capability 0 (from the
+/// root task's IPC buffer at `ROOT_IPC_BUFFER`), the slot's index and depth in
+/// MR1 and MR2.
+#[cfg(feature = "hw_target")]
+const fn irq_control_get(name: &'static str, line: u64, slot: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 3,
+        caps_or_badges: Some((ROOT_IPC_BUFFER, [CNODE_CAP, 0, 0], None)),
+        ..invocation(
+            name,
+            IRQ_CONTROL_GET,
+            IRQ_CONTROL_CAP,
+            [line, cap_address(slot), ROOT_DEPTH, 0],
+        )
+    }
+}
+
 /// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
 /// rights mask, the fifth word, which the kernel reads from the caller's IPC
 /// buffer at `buffer` ([`RoundTrip::overflow`]).
@@ -10805,11 +10824,10 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         MOVE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    irq_control_get(
         "bound-irq-control-get",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [IRQ_BOUND_LINE as u64, CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
+        IRQ_BOUND_LINE as u64,
+        IRQ_BOUND_HANDLER_SLOT,
     ),
     cap_argument(
         "bound-irq-handler-set-notification",
@@ -12288,27 +12306,15 @@ fn heap_allocations_interrupt(entry: &KernelEntry, which: &str) -> bool {
 /// interrupt notification bound to the first (`seL4_IRQHandler_SetNotification`).
 #[cfg(feature = "hw_target")]
 fn interrupt_handlers_issued(which: &str) -> bool {
-    let get_bound = invocation(
+    let get_bound = irq_control_get(
         "irq-control-get",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [
-            u64::from(IRQ_BOUND_LINE),
-            CNODE_CAP,
-            IRQ_BOUND_HANDLER_SLOT,
-            0,
-        ],
+        u64::from(IRQ_BOUND_LINE),
+        IRQ_BOUND_HANDLER_SLOT,
     );
-    let get_unbound = invocation(
+    let get_unbound = irq_control_get(
         "irq-control-get-unbound",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [
-            u64::from(IRQ_UNBOUND_LINE),
-            CNODE_CAP,
-            IRQ_UNBOUND_HANDLER_SLOT,
-            0,
-        ],
+        u64::from(IRQ_UNBOUND_LINE),
+        IRQ_UNBOUND_HANDLER_SLOT,
     );
     let bind = cap_argument(
         "irq-handler-set-notification",

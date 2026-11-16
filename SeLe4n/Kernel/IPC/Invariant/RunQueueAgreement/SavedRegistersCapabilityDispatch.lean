@@ -1737,7 +1737,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (irqHandlerAck_savedRegsKept h)
     | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB (irqHandlerClear_ok h).2
     | exact hF (irqControlGet_savedRegsKept hInv
-        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+        (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
     | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)

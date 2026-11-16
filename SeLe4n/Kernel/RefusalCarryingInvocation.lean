@@ -269,7 +269,8 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .irqControlGet =>
     match cap.target with
     | .irqControl _ =>
-        irqControlGetFromCap tid capAddr (decodeIrqControlGetArgsBy (msgRegOfFile layout regs)) st
+        irqControlGetFromCap tid capAddr (callerExtraCapAddr? st tid xc 0)
+          (decodeIrqControlGetArgsBy (msgRegOfFile layout regs)) st
     | _ => .error (.invalidCapability 0)
   | .irqHandlerSetNotification =>
     match cap.target with
@@ -813,10 +814,14 @@ refusal is read where it is, never rebuilt. -/
       match decodeIrqControlGetArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
+        -- WS-SX SX6.3 (D10): the destination root is extra capability 0, read
+        -- in continuation form, so no `Option` is built.
+        callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun rootAddr =>
         match irqControlLineRefusal st args.line with
         | some e => .error (e, st)
         | none =>
-          resolveIssuingSlotsK tid capAddr args.dstCNode args.dstSlot st (fun e => .error (e, st))
+          resolveIssuingSlotsAtK tid capAddr rootAddr args.dstIndex args.dstDepth st
+            (fun e => .error (e, st))
             (fun srcCnode srcSlot dstCnode dstSlot =>
               RefusalCarrying.ofChecked (irqControlGetAdmittedAt dstCnode dstSlot args.line st)
                 (fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args.line st)
@@ -1454,21 +1459,27 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD]
       | ok args =>
         dsimp only
+        rw [callerExtraCapAddrK_eq]
+        cases hX : callerExtraCapAddr? st tid xc 0 with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD, hX]
+        | some rootAddr =>
+        dsimp only
         cases hL : irqControlLineRefusal st args.line with
         | some e =>
-          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD, hL]
+          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD, hX, hL]
         | none =>
           dsimp only
-          rw [resolveIssuingSlotsK_eq]
-          cases hR : resolveIssuingSlots tid capAddr args.dstCNode args.dstSlot st with
+          rw [resolveIssuingSlotsAtK_eq]
+          cases hR : resolveIssuingSlotsAt tid capAddr rootAddr args.dstIndex args.dstDepth st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD, hL, hR]
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqControlGetFromCap, hD, hX, hL,
+              hR]
           | ok pr =>
             obtain ⟨src, dst⟩ := pr
             dsimp only
             apply RefusalCarrying.ofChecked_eq
             intro hA
-            simp only [dispatchInvocationBy, irqControlGetFromCap, hD, hL, hR,
+            simp only [dispatchInvocationBy, irqControlGetFromCap, hD, hX, hL, hR,
               irqControlGet_of_admitted hA]
             all_goals rfl
     all_goals rfl

@@ -2871,7 +2871,7 @@ fn wrappers_name_their_syscalls() {
     assert_names("sched_context_yield_to", SyscallId::SchedContextYieldTo);
     let _ = sele4n_sys::irq::irq_handler_ack(cap);
     assert_names("irq_handler_ack", SyscallId::IrqHandlerAck);
-    let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, Slot::from(0u64));
+    let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, cap, 64, &mut buf);
     assert_names("irq_control_get", SyscallId::IrqControlGet);
     let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap, &mut buf);
     assert_names(

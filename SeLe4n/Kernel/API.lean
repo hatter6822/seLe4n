@@ -3072,14 +3072,15 @@ theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
       rw [hB] at h; cases h
 
 /-- **WS-BP BP7.1 (`v0.36.5`): the two slots an issuing invocation names,
-resolved through the caller's own CSpace** — a carve's (`seL4_Untyped_Retype`)
-and, since WS-ZA ZA6.32, a handler issue's (`seL4_IRQControl_Get`).
+resolved through the caller's own CSpace** — a carve's (`seL4_Untyped_Retype`).
+A handler issue (`seL4_IRQControl_Get`) names its destination as seL4 does since
+WS-SX SX6.3 (`resolveIssuingSlotsAt`).
 
 The *source* is the slot the syscall's own capability was resolved from — the
 caller's CSpace root, the invoked address, the root's depth, which is exactly the
 resolution `syscallResolveCap` performed — so the capability the invocation
 checks and records the derivation from is the one the caller presented.  The
-*destination* CNode (a carve's MR2, a handler issue's MR1) is resolved with
+*destination* CNode (a carve's MR2) is resolved with
 `.write`, as `resolveVSpaceMapFrame` resolves its frame: issuing installs a
 capability, and installing into a CNode is writing it, so a caller can deposit
 the new capability only in a CNode it holds a writable capability to.  The
@@ -3170,6 +3171,85 @@ theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
                 cases st.getCNode? cnodeId <;> rfl
               | _ => rfl
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+
+/-- **WS-SX SX6.3 (D10): the two slots of a handler issue** (seL4's
+`decodeIRQControlInvocation`).  The *source* is the slot the invoked capability
+was resolved from (`lookupSlot` at `srcAddr`, as `resolveIssuingSlots`).  The
+*destination* is seL4's `lookupTargetSlot`: the CNode capability the caller
+names as extra capability 0 (`rootAddr`, its address in the caller's CSpace,
+looked up as the dispatch prologue's `lookupExtraCaps` looks it up — a failed
+walk is `seL4_FailedLookup`, an empty slot `invalidRoot`), then
+`lookupSlotForCNodeOp` on it by `index` and `depth`, seL4's order and answers.
+No right is required of the root: seL4's `lookupTargetSlot` checks none. -/
+def resolveIssuingSlotsAt (callerTid : SeLe4n.ThreadId) (srcAddr rootAddr index : SeLe4n.CPtr)
+    (depth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match lookupSlot callerTcb srcAddr st with
+    | .error f => .error (.failedLookup false f)
+    | .ok src =>
+      match lookupSlot callerTcb rootAddr st with
+      | .error f => .error (.failedLookup false f)
+      | .ok rootRef =>
+        match SystemState.lookupSlotCap st rootRef with
+        | none => .error (.failedLookup false .invalidRoot)
+        | some rootCap =>
+          match lookupSlotForCNodeOp false rootCap index depth st with
+          | .error e => .error e
+          | .ok dst => .ok (src, dst)
+
+/-- `resolveIssuingSlotsAt` in continuation form: the walks are `lookupSlotK`'s
+and `lookupSlotForCNodeOpK`'s, each slot handed on as words, so no slot
+reference or pair is built (`resolveIssuingSlotsAtK_eq`). -/
+@[inline] def resolveIssuingSlotsAtK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr rootAddr index : SeLe4n.CPtr) (depth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    lookupSlotK callerTcb srcAddr st
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+      (fun srcCnode srcSlot =>
+        lookupSlotK callerTcb rootAddr st
+          (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+          (fun rCn rSlot =>
+            match SystemState.lookupSlotCap st { cnode := rCn, slot := rSlot } with
+            | none => onErr (.failedLookup false .invalidRoot)
+            | some rootCap =>
+              lookupSlotForCNodeOpK false rootCap index depth st onErr
+                (fun dCn dSlot => onOk srcCnode srcSlot dCn dSlot)))
+
+theorem resolveIssuingSlotsAtK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr rootAddr index : SeLe4n.CPtr) (depth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveIssuingSlotsAtK callerTid srcAddr rootAddr index depth st onErr onOk =
+      match resolveIssuingSlotsAt callerTid srcAddr rootAddr index depth st with
+      | .error e => onErr e
+      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
+  unfold resolveIssuingSlotsAtK resolveIssuingSlotsAt
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    simp only []
+    rw [lookupSlotK_eq]
+    cases lookupSlot callerTcb srcAddr st with
+    | error f => simp only [LookupFault.ofWords_word]
+    | ok src =>
+      simp only []
+      rw [lookupSlotK_eq]
+      cases lookupSlot callerTcb rootAddr st with
+      | error f => simp only [LookupFault.ofWords_word]
+      | ok rootRef =>
+        simp only []
+        cases SystemState.lookupSlotCap st rootRef with
+        | none => rfl
+        | some rootCap =>
+          simp only []
+          rw [lookupSlotForCNodeOpK_eq]
+          cases lookupSlotForCNodeOp false rootCap index depth st <;> rfl
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14: the
 carve a decoded `.untypedRetype` requests.**  A kind of fixed size — a frame, a
@@ -3376,22 +3456,28 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.Co
           | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
 
 /-- **WS-ZA ZA6.32: the live `.irqControlGet` arm's transition** — seL4's
-`seL4_IRQControl_Get`.  The decode, then the line checks
-(`irqControlLineRefusal`: a device line of the board with its node, held by no
-handler — seL4's `Arch_checkIRQ` and `isIRQActive`, read before the slots as
-seL4's `decodeIRQControlInvocation` reads them), then the two slots
-(`resolveIssuingSlots`: the invoked interrupt-control capability's own slot and a
-slot of a CNode the caller can write), then `irqControlGet`. -/
+`seL4_IRQControl_Get`.  The decode, then the destination root, the caller's
+extra capability 0 (`root?`; none is `seL4_TruncatedMessage`, checked with the
+length as seL4's `decodeIRQControlInvocation` checks it — WS-SX SX6.3, D10),
+then the line checks (`irqControlLineRefusal`: a device line of the board with
+its node, held by no handler — seL4's `Arch_checkIRQ` and `isIRQActive`, read
+before the slots as seL4 reads them), then the two slots
+(`resolveIssuingSlotsAt`: the invoked interrupt-control capability's own slot
+and the slot the root names by the index and depth words, seL4's
+`lookupTargetSlot`), then `irqControlGet`. -/
 def irqControlGetFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (args? : Except KernelError IrqControlGetArgs) : Kernel Unit :=
+    (root? : Option SeLe4n.CPtr) (args? : Except KernelError IrqControlGetArgs) : Kernel Unit :=
   fun st =>
     match args? with
     | .error e => .error e
     | .ok args =>
+      match root? with
+      | none => .error .truncatedMessage
+      | some rootAddr =>
       match irqControlLineRefusal st args.line with
       | some e => .error e
       | none =>
-        match resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+        match resolveIssuingSlotsAt tid srcAddr rootAddr args.dstIndex args.dstDepth st with
         | .error e => .error e
         | .ok (control, dst) => irqControlGet control dst args.line st
 
@@ -3414,11 +3500,14 @@ def irqHandlerSetNotificationFromCap (tid : SeLe4n.ThreadId)
 /-- **WS-ZA ZA6.32**: what a successful `.irqControlGet` consists of — the
 decode, the line checks, the resolved slots, and the issue. -/
 theorem irqControlGetFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError IrqControlGetArgs) (st st' : SystemState)
-    (h : irqControlGetFromCap tid srcAddr args? st = .ok ((), st')) :
+    (h : irqControlGetFromCap tid srcAddr root? args? st = .ok ((), st')) :
     ∃ (args : IrqControlGetArgs) (control dst : CSpaceAddr),
       args? = .ok args ∧ irqControlLineRefusal st args.line = none ∧
-      resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st = .ok (control, dst) ∧
+      (∃ rootAddr, root? = some rootAddr ∧
+        resolveIssuingSlotsAt tid srcAddr rootAddr args.dstIndex args.dstDepth st
+          = .ok (control, dst)) ∧
       irqControlGet control dst args.line st = .ok ((), st') := by
   unfold irqControlGetFromCap at h
   cases hD : args? with
@@ -3426,17 +3515,22 @@ theorem irqControlGetFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
   | ok args =>
     rw [hD] at h
     simp only at h
+    cases hRt : root? with
+    | none => rw [hRt] at h; cases h
+    | some rootAddr =>
+    rw [hRt] at h
+    simp only at h
     cases hR : irqControlLineRefusal st args.line with
     | some e => rw [hR] at h; cases h
     | none =>
       rw [hR] at h
       simp only at h
-      cases hS : resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+      cases hS : resolveIssuingSlotsAt tid srcAddr rootAddr args.dstIndex args.dstDepth st with
       | error e => rw [hS] at h; cases h
       | ok pr =>
         obtain ⟨control, dst⟩ := pr
         rw [hS] at h
-        exact ⟨args, control, dst, rfl, hR, hS, h⟩
+        exact ⟨args, control, dst, rfl, hR, ⟨rootAddr, rfl, hS⟩, h⟩
 
 /-- **WS-ZA ZA6.32**: what a successful `.irqHandlerSetNotification` consists
 of — the decode, the notification capability's slot, and the bind. -/
@@ -4355,11 +4449,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .irqHandler line => Architecture.irqHandlerAck line
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQControl_Get` — the interrupt-control
-  -- capability issues line MR0's handler capability into slot MR2 of the CNode
-  -- MR1 names, as a derivation child of the invoked slot (`irqControlGetFromCap`).
+  -- capability issues line MR0's handler capability into the slot the CNode
+  -- named as extra capability 0 names by MR1 (index) and MR2 (depth) (WS-SX
+  -- SX6.3, D10), as a derivation child of the invoked slot
+  -- (`irqControlGetFromCap`).
   | .irqControlGet =>
     some <| match cap.target with
-    | .irqControl _ => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
+    | .irqControl _ => fun st =>
+        irqControlGetFromCap tid decoded.capAddr
+          (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
+          (decodeIrqControlGetArgs decoded) st
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_SetNotification` — the notification
   -- capability named as extra capability 0 (WS-SX SX6.4) bound to the
@@ -4957,7 +5056,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqControl =>
-      obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid _ _ st st' hStep
+      obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid _ _ _ st st' hStep
       exact irqControlGet_preserves_ipcInvariantFull hObjInv hInv hG
     all_goals try cases hStep
   case irqHandlerSetNotification =>
@@ -8742,7 +8841,9 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .irqControlGet →
         cap.target = .irqControl code →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-          irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
+          fun st => irqControlGetFromCap tid decoded.capAddr
+            (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
+            (decodeIrqControlGetArgs decoded) st
   -- WS-ZA ZA6.32: the bind arm IS the bind of the line the capability names.
   | .irqHandlerSetNotification =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
