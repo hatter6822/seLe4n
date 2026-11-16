@@ -3899,9 +3899,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // one per arm that resolves one (seL4's `lookupCap` of an argument,
         // `seL4_FailedLookup` with the guard-mismatch words): the configure's
         // scheduling context (the `.overflowOne` route), and the SetSpace
-        // CSpace root and the bound notification an invocation resolves.
-        // Each is refused before anything changes, its fifth word in the
-        // buffer as above.  A receive's reply capability is not here: its
+        // CSpace root an invocation resolves.  Each is refused before
+        // anything changes, its fifth word in the buffer as above.  A bound
+        // notification is extra capability 0, so its failed lookup is the
+        // invocation's capability fault (seL4's `handleInvocation` after
+        // `lookupExtraCaps`), which `bind_notification_guard_mismatch`
+        // reaches in the fault lane.  A receive's reply capability is not here: its
         // failed lookup is the receive's capability fault (seL4-MCS
         // `lookupReply`), which `receive_side_faults` reaches.
         guard_mismatch_refusal(configure(
@@ -3918,13 +3921,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             TCB_SET_SPACE,
             PARTNER_TCB_CAP,
             [CNODE_SLOT, VSPACE_CAP, 0, 0],
-        )),
-        guard_mismatch_refusal(cap_argument(
-            "bind-notification-guard-mismatch",
-            TCB_BIND_NOTIFICATION,
-            PARTNER_TCB_CAP,
-            NOTIFICATION_SLOT,
-            FRAME_VADDR,
         )),
         // The fault handler a fault-handler set names
         // (`setThreadFaultHandlerOpK`): resolved, like the bound
@@ -13653,6 +13649,76 @@ const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) ->
     }
 }
 
+/// **A bound notification whose address misses the root CNode's guard**,
+/// measured: the partner's `seL4_TCB_BindNotification` naming it as extra
+/// capability 0 (in the shared buffer at `FRAME_VADDR`).  seL4 looks the extra
+/// capabilities up before the invocation decodes (`handleInvocation`'s
+/// `lookupExtraCaps`), so the failed lookup is the bind's capability fault, not
+/// a decode error: delivered to the handler with the guard-mismatch words,
+/// answered, and the bind restarted at its `SVC`.
+#[cfg(feature = "hw_target")]
+fn bind_notification_guard_mismatch(
+    handler_waits: &RoundTrip,
+    handler_waits_again: &RoundTrip,
+    wake_handler: &RoundTrip,
+    which: &str,
+) -> bool {
+    let name = "bind-notification-guard-mismatch";
+    let bind = TrapTrip {
+        x0: PARTNER_TCB_CAP,
+        x1: ONE_EXTRA_CAP,
+        x7: TCB_BIND_NOTIFICATION,
+        ..cap_fault(name)
+    };
+    let reply = partner_step(
+        "bind-notification-guard-mismatch-reply",
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+        || !unmeasured(handler_waits, "the handler did not wait on the endpoint")
+        || !write_caps_or_badges(FRAME_VADDR, [NOTIFICATION_SLOT, 0, 0])
+        || heap_allocations_trap(&bind, which) != Some(true)
+    {
+        return false;
+    }
+    let info = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+    let lookup_type = TRAP_RESTORED_X5.load(Ordering::SeqCst);
+    if info != CAP_FAULT_GUARD_MISMATCH_INFO || lookup_type != 4 {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler received x1={:#x} x5={:#x}",
+            info,
+            lookup_type
+        );
+        return false;
+    }
+    if !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0])
+        || !write_caps_or_badges(FRAME_VADDR, [0, 0, 0])
+        || !unmeasured(&reply, "the handler's reply did not return")
+    {
+        return false;
+    }
+    let (waited, _, _, resumed) = dispatch_round_trip(handler_waits_again);
+    if !matches!(waited, Dispatched::Blocked) {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler did not wait again"
+        );
+        return false;
+    }
+    // The fault restarts the bind at its `SVC`, its registers as it trapped.
+    let restart = FaultRestart {
+        pc: FAULT_PC,
+        x0: PARTNER_TCB_CAP,
+        x1: ONE_EXTRA_CAP,
+    };
+    restarted_as(name, &resumed, restart)
+        && unmeasured(wake_handler, "the waiting handler was not woken")
+        && suspend_partner()
+}
+
 /// **The receive side's capability faults** (seL4-MCS `handleRecv`,
 /// `lookupReply`): a receive and a reply-receive whose reply capability's
 /// address misses the root CNode's guard, each fault carrying the reply
@@ -14454,6 +14520,14 @@ fn fault_entries() -> Option<bool> {
             || !unmeasured(&wake_handler, "the waiting handler was not woken")
             || !suspend_partner()
         {
+            return Some(false);
+        }
+        if !bind_notification_guard_mismatch(
+            &handler_waits,
+            &handler_waits_again,
+            &wake_handler,
+            which,
+        ) {
             return Some(false);
         }
     }
