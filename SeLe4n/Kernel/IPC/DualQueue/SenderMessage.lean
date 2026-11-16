@@ -491,6 +491,16 @@ def callerExtraCapsFault? (st : SystemState) (tid : SeLe4n.ThreadId) (n : Nat) :
   | some (.tcb tcb) => extraCapsLookupFault? st tcb n
   | _ => none
 
+/-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
+a `.replyRecv` whose message names an extra capability that does not look up
+(seL4-MCS `SysReplyRecv`: `handleInvocation` with `isBlocking = false` skips the
+reply with no fault, and `handleRecv` still runs). -/
+def receivesWithoutReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Prop :=
+  decoded.syscallId = .receive ∨
+    (decoded.syscallId = .replyRecv ∧
+      (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome)
+
 /-- **Whether a caller's extra capabilities fail, in continuation form**
 (`callerExtraCapsFault?`, `callerExtraCapsFailK_eq`): `onFail` when one of the
 `n` the caller's message names does not look up, `onOk` otherwise, through the

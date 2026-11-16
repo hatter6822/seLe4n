@@ -357,16 +357,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
 -- §4  The dispatch payoff's pre-state pack
 -- ============================================================================
 
-/-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
-a `.replyRecv` whose message names an extra capability that does not look up
-(seL4-MCS `SysReplyRecv`: `handleInvocation` with `isBlocking = false` skips the
-reply with no fault, and `handleRecv` still runs). -/
-def receivesWithoutReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (st : SystemState) : Prop :=
-  decoded.syscallId = .receive ∨
-    (decoded.syscallId = .replyRecv ∧
-      (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome)
-
 /-- The pre-state quiescence facts the dispatcher's own arms consume, on
 top of the capability-only tier's pack.  Every field is a pre-state fact —
 several quantify over a stage's committed state, which is a pre-state-computable
