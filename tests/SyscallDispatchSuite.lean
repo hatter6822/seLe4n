@@ -906,8 +906,9 @@ private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := 
 
 /-- WS-SM SM6.B (review #1 dispatch coverage): `.tcbBindNotification` resolves the
 notification through a CAPABILITY in the caller's CSpace.  A caller holding a TCB
-cap binds only if it ALSO holds a notification cap (with `.write`) at the address
-it names as extra capability 0 (WS-SX SX6.4; seL4's `excaprefs[0]`) — otherwise
+cap binds only if it ALSO holds a notification cap that may receive (`.read`,
+seL4's `CanReceive`) at the address it names as extra capability 0 (WS-SX
+SX6.4; seL4's `excaprefs[0]`) — otherwise
 it is rejected fail-closed, and a message naming no extra capability is
 `.truncatedMessage`.  Single-level CSpace: `depth=4, radixWidth=4, guard=0` ⇒
 `CPtr.ofNat k` resolves to slot `k`. -/
@@ -917,8 +918,8 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨60⟩
   let tgtTcb : SeLe4n.ObjId := ⟨70⟩
   let tcbCap    : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
-  let ntfnCap   : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
-  let ntfnCapRO : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
+  let ntfnCap   : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
+  let ntfnCapWO : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
   let mkSt (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
     withSenderCapAddrs (mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
@@ -944,11 +945,12 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   expect "sd050_bindNtfn_no_cap_rejected"
     (match rNoCap with | .error (.invalidCapability 1) => true | _ => false)
     "bind without a held notification cap should fail with invalidCapability 1 (the notification operand)"
-  -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
-  let rRO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
-  expect "sd050_bindNtfn_readonly_cap_rejected"
-    (match rRO with | .error .illegalAuthority => true | _ => false)
-    "bind with a read-only notification cap should fail with illegalAuthority"
+  -- Negative 2: notification cap present but signal-only (`.write`, no
+  -- `.read`: seL4's `CanReceive` clear) → illegalAuthority.
+  let rWO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapWO)])
+  expect "sd050_bindNtfn_signal_only_cap_rejected"
+    (match rWO with | .error .illegalAuthority => true | _ => false)
+    "bind with a notification cap that cannot receive should fail with illegalAuthority"
   -- Negative 3: no extra capability named → truncatedMessage (seL4's
   -- `decodeBindNotification` on a null `excaprefs[0]`).
   let rNoExtra := dispatchSyscallAsCurrent { decoded with msgInfo := { length := 0, extraCaps := 0, label := 0 } }
@@ -961,7 +963,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   -- invalidCapability 1.
   let rIrq := dispatchSyscallAsCurrent decoded caller bootCoreId
     (withSenderCapAddrs (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap),
-      (SeLe4n.Slot.ofNat 2, { target := .irqHandler 3, rights := AccessRightSet.ofList [.write] })])
+      (SeLe4n.Slot.ofNat 2, { target := .irqHandler 3, rights := AccessRightSet.ofList [.read, .write] })])
       caller #[SeLe4n.CPtr.ofNat 2])
   expect "sd050_bindNtfn_non_object_cap_rejected"
     (match rIrq with | .error (.invalidCapability 1) => true | _ => false)
@@ -979,7 +981,7 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
   let cnId   : SeLe4n.ObjId := ⟨50⟩
   let ntfnId : SeLe4n.ObjId := ⟨60⟩
   let tcbCap  : Capability := { target := .object other.toObjId, rights := AccessRightSet.ofList [.write] }
-  let ntfnCap : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
+  let ntfnCap : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
   let base : SystemState :=
     withSenderCapAddrs (mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),

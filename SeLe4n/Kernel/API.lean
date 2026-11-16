@@ -4596,7 +4596,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
           -- the caller's CSpace (seL4 BindNotification takes a notification cap), not a
           -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
-          -- (Write) to redirect that notification's signals — otherwise it could hijack
+          -- that may receive (Read: seL4's `CanReceive`, checked by
+          -- `decodeBindNotification`) to redirect that notification's signals — otherwise it could hijack
           -- or deny any notification merely by naming its ObjId.  `bindNotification`
           -- still rejects a resolved cap whose target is not a notification object.
           -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
@@ -4607,7 +4608,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               callerId      := tid
               cspaceRootCap := callerTcb.spaceCells[0]
               capAddr       := args.notificationCPtr
-              requiredRight := .write
+              requiredRight := .read
             }
             match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
             | .error e => .error e
@@ -5200,7 +5201,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               simp only [hCaller] at hStep
               try dsimp only [] at hStep
               simp only [syscallLookupArgumentCap] at hStep
-              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
+              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨ntfnCap, stL⟩ := pair

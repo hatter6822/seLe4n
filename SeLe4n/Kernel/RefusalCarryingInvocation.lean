@@ -290,7 +290,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               callerId      := tid
               cspaceRootCap := callerTcb.spaceCells[0]
               capAddr       := args.notificationCPtr
-              requiredRight := .write
+              requiredRight := .read
             }
             match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
             | .error e => .error e
@@ -869,7 +869,7 @@ refusal is read where it is, never rebuilt. -/
               | some ntfnCap =>
                 if SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap then
                   .error (.invalidCapability bindNotificationCapNumber, st)
-                else if ntfnCap.hasRight .write then
+                else if ntfnCap.hasRight .read then
                   match ntfnCap.target with
                   | .object notifId =>
                     RefusalCarrying.ofChecked
@@ -1525,7 +1525,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap = true
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                   syscallLookupCap, syscallResolveCap, hRes, hL, hIdle]
-              · by_cases hRight : ntfnCap.hasRight .write = true
+              · by_cases hRight : ntfnCap.hasRight .read = true
                 · cases hTg : ntfnCap.target with
                   | object notifId =>
                     simp only [hIdle, hRight, hTg, Bool.false_eq_true, ↓reduceIte]

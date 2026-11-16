@@ -12698,6 +12698,11 @@ run_negative_check "INVARIANT" rg -n 'threadId : Nat' SeLe4n/Kernel/Architecture
 run_check "INVARIANT" bash -lc 'rg -U -n "^pub fn sched_context_bind\(\n    sc_cap: CPtr,\n    tcb_cap: CPtr,\n    buf: &mut IpcBuffer,\n\) -> KernelResult<SyscallResponse> \{\n    buf\.caps_or_badges\[0\] = tcb_cap\.raw\(\);" rust/sele4n-sys/src/sched_context.rs'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage\n  \| some cptr => \.ok \{ tcbCPtr := cptr \}" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def tcbBindNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
+# WS-SX SX6.4: a bind asks the notification capability to receive (seL4's
+# `CanReceive`, `.read`), on the specification arm and the compiled arm alike.
+run_check "INVARIANT" rg -n -U '^            let ntfnGate : SyscallGate := \{\n              callerId      := tid\n              cspaceRootCap := callerTcb\.spaceCells\[0\]\n              capAddr       := args\.notificationCPtr\n              requiredRight := \.read\n            \}$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^                else if ntfnCap\.hasRight \.read then$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_negative_check "INVARIANT" rg -n 'ntfnCap\.hasRight \.write|notificationCPtr, requiredRight := \.write' SeLe4n
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def irqHandlerSetNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" rg -n 'pub struct SchedContextBindArgs' rust/sele4n-abi/src/args/sched_context.rs
 run_negative_check "INVARIANT" rg -n 'thread_id' rust/sele4n-abi/src/args/sched_context.rs

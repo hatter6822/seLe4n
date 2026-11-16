@@ -568,7 +568,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
               simp only [hCaller] at hStep
               try dsimp only [] at hStep
               simp only [syscallLookupArgumentCap] at hStep
-              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
+              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨ntfnCap, stL⟩ := pair
