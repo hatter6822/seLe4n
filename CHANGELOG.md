@@ -77,12 +77,16 @@ invocations.
     `root-ipc-buffer-cap` (an Unmap through the frame capability, a remap, then
     the same overflow read). Its pinned set gains them and their unmap and
     remap steps.
-  - The `tcb/0` carve pin moves from 19 / 2056 to 19 / 2136: the same cells,
-    two of them larger. Read from the generated C, the carve copies the
+  - The `tcb/0` carve pin moves from 19 / 2056 to 19 / 2064: the same cells,
+    three of them resized. Read from the generated C, the carve copies the
     thread's `spaceLinks` (`lean_mk_array(24, 0)`, eight words for each of
-    three slots), 216 bytes where it was 152, and its `spaceCells`, whose
-    closed term grows by `lean_array_push` on shared arrays to capacity 8
-    (88 bytes) where two slots grew it to 6 (72 bytes).
+    three slots), 216 bytes where it was 152 (+64). Its `spaceCells` and its
+    two spare space records were literals, built by `lean_array_push` onto
+    shared closed-term arrays, which over-expands them: three cells would
+    sit at capacity 8 (88 bytes), and two at capacity 6 (72 bytes, as both
+    arrays did before). They are now built at exact capacity
+    (`Vector.replicate`, compiled to `lean_mk_array(3, none)`, 48 bytes, −24;
+    `Array.ofFn`, 40 bytes, −32), and the carve's copy keeps that capacity.
   - The host entry refuses a boot that owes writes, and installs nothing.
 - **Fixed along the way.**
   - `rootServerTaskPlaced` read the CNode through `CNode.lookup`, which is
