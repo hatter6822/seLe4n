@@ -83,9 +83,11 @@ def labelledOperationTakes (sid : SyscallId) : CapType → Bool
   | .object (some .pageTable) => sid == .pageTableMap || sid == .pageTableUnmap ||
       sid == .declassify
   | .object (some .reply) | .object (some .frame) => sid == .declassify
-  | .object (some .endpoint) => sid == .serviceRegister || sid == .serviceRevoke ||
-      sid == .serviceQuery || sid == .declassify
-  | .object (some .notification) => sid == .declassifySignal || sid == .declassify
+  -- seL4: Send or Call on an endpoint is IPC and Send on a notification
+  -- signals, whatever the label; the label is the receiver's data.  No label
+  -- selects an operation on either (`invocationOperation_endpoint`,
+  -- `invocationOperation_notification`).
+  | .object (some .endpoint) | .object (some .notification) => false
   | .object none => true
   | .replyCap => false
   | .auditTrail => sid == .auditRead || sid == .auditDrain
@@ -97,8 +99,8 @@ def labelledOperationTakes (sid : SyscallId) : CapType → Bool
 
 /-- **seL4's `decodeInvocation` switch** for an invoking syscall whose IPC
 operation is `base` (`.send` or `.call`): an endpoint is sent to and a
-notification signalled, unless the label names a model-only operation that
-capability takes (the service calls and the declassifications); a reply
+notification signalled, whatever the label, which is message data the
+receiver reads; a reply
 capability is replied through; a failed lookup, an empty slot and a slot
 capability select `base`, whose gate refuses them; every other type is decoded
 by the label. -/
@@ -107,20 +109,31 @@ def invocationOperation (base : SyscallId) (ty : Option CapType) (label : Nat) :
   match ty with
   | none | some .cnodeSlot => some base
   | some .replyCap => some .reply
-  | some (.object (some .endpoint)) =>
-      match SyscallId.ofLabel? label with
-      | some op => if labelledOperationTakes op (.object (some .endpoint)) then some op else some base
-      | none => some base
-  | some (.object (some .notification)) =>
-      match SyscallId.ofLabel? label with
-      | some op =>
-          if labelledOperationTakes op (.object (some .notification)) then some op
-          else some .notificationSignal
-      | none => some .notificationSignal
+  | some (.object (some .endpoint)) => some base
+  | some (.object (some .notification)) => some .notificationSignal
   | some t =>
       match SyscallId.ofLabel? label with
       | some op => if labelledOperationTakes op t then some op else none
       | none => none
+
+/-- **The label selects nothing on an endpoint**: Send, NBSend and Call on an
+endpoint capability are IPC whatever the label (seL4's `decodeInvocation`,
+`performInvocation_Endpoint`), so a message cannot be turned into a kernel
+operation by its label. -/
+theorem invocationOperation_endpoint (base : SyscallId) (label : Nat) :
+    invocationOperation base (some (.object (some .endpoint))) label = some base := rfl
+
+/-- **The label selects nothing on a notification**: Send, NBSend and Call on a
+notification capability signal it whatever the label (`sendSignal`). -/
+theorem invocationOperation_notification (base : SyscallId) (label : Nat) :
+    invocationOperation base (some (.object (some .notification))) label =
+      some .notificationSignal := rfl
+
+/-- `labelledOperationTakes` answers `false` on both IPC object kinds, so no
+labelled operation (model-only ones included) is ever selected on them. -/
+theorem labelledOperationTakes_ipc (sid : SyscallId) :
+    labelledOperationTakes sid (.object (some .endpoint)) = false ∧
+      labelledOperationTakes sid (.object (some .notification)) = false := ⟨rfl, rfl⟩
 
 /-- **seL4's `handleRecv` switch**: a notification is waited on; every other
 type, a failed lookup and an empty slot select the receive, whose gate faults
@@ -149,6 +162,15 @@ def Syscall.selectOperation (sys : Syscall) (ty : Option CapType) (label : Nat) 
       match receiveOperation ty with
       | .receive => some .replyRecv
       | op => some op
+
+/-- On an endpoint or a notification capability the operation every syscall
+selects is independent of the label: Send/NBSend/Call send IPC, Send on a
+notification signals, and the receiving syscalls receive or wait. -/
+theorem selectOperation_label_independent_ipc (sys : Syscall) (k : KernelObjectType)
+    (hk : k = .endpoint ∨ k = .notification) (l₁ l₂ : Nat) :
+    sys.selectOperation (some (.object (some k))) l₁ =
+      sys.selectOperation (some (.object (some k))) l₂ := by
+  rcases hk with rfl | rfl <;> cases sys <;> rfl
 
 /-- **The capability type an address names** for the thread `tcb`: seL4's
 `lookupSlot` at 64 bits from the thread's CSpace root, then the slot's
