@@ -730,6 +730,48 @@ theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadI
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
   .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
 
+/-- A receive run on its busy-reply-cancelled state keeps the records: the
+`.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
+theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st st' : SystemState) (P : RecordsArmPremises st) (hCaller : CallerReady st tid)
+    (h : receiveResolvedArm decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
+    RecordsStage st st' := by
+  unfold receiveResolvedArm at h
+  have hInv := P.deletes.2.1.2.1
+  have hIpc := P.deletes.2.1.1
+  have hSC : RecordsStage st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).objects.invExt ∧
+      queueHeadBlockedConsistent (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      CallerReady (cancelRecvBusyReply ctx tid gate decoded executingCore st) tid := by
+    rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+      rw [e]
+    · exact ⟨.refl _, hInv, hIpc.queueHeadBlockedConsistent, hCaller⟩
+    · exact ⟨RecordsStage.cancelReplyHolder st hd executingCore,
+        cancelReplyHolder_objects_invExt st hd executingCore hInv,
+        cancelReplyHolder_queueHeadBlockedConsistent st hd executingCore hInv
+          (.of_ipcInvariantFull hIpc),
+        hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
+  obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
+  generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    exact hS.trans ((RecordsStage.of_fst_eq
+      (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
+      (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the records**, the
 capability-only arms it delegates, the IPC arms, the audit read and drain and
 the declassification included.  The IPC arms read the reachable state the
@@ -781,38 +823,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    have hInv := P.deletes.2.1.2.1
-    have hIpc := P.deletes.2.1.1
-    have hSC : RecordsStage st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).objects.invExt ∧
-        queueHeadBlockedConsistent (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        CallerReady (cancelRecvBusyReply ctx tid gate decoded executingCore st) tid := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
-        rw [e]
-      · exact ⟨.refl _, hInv, hIpc.queueHeadBlockedConsistent, hCaller⟩
-      · exact ⟨RecordsStage.cancelReplyHolder st hd executingCore,
-          cancelReplyHolder_objects_invExt st hd executingCore hInv,
-          cancelReplyHolder_queueHeadBlockedConsistent st hd executingCore hInv
-            (.of_ipcInvariantFull hIpc),
-          hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
-    obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
-    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      exact hS.trans ((RecordsStage.of_fst_eq
-        (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
-        (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-          (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
-          (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
-    · cases h
+    exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -826,6 +837,12 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     exact RecordsStage.replyTransferOnCoreChecked h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hX

@@ -976,6 +976,59 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
+/-- A receive run on its busy-reply-cancelled state keeps the run queues in
+agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
+arm whose reply is skipped. -/
+theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : receiveResolvedArm decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' := by
+  unfold receiveResolvedArm at h
+  -- WS-SX SX4: the busy reply's holder is cancelled first; the receive then
+  -- runs from the cancelled state, which keeps every premise it reads.
+  have hSC : SystemState.RunQueueEntryStage st
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
+        executingCore = some tid ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
+    rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+      rw [e]
+    · exact ⟨(RunQueueStage.refl _).entry, P.endpointHeads, P.current, P.currentActive⟩
+    · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
+        cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
+          P.toEntryPremises.queueHeadCancelFacts,
+        by rw [cancelReplyHolder_currentOnCore]; exact P.current,
+        cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
+  obtain ⟨hS, hHC, hCurC, hActC⟩ := hSC
+  obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
+  have hDC := hS.2 P.objInv P.refined hRC P.dequeued
+  generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
+    at h hS hHC hCurC hActC hIC hRC hDC
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    have E := runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
+        hCurC P.notIdle hActC) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
+    exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
+      (((applyReceiveRendezvousHandoff_runQueueStage
+          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+        (stageWokenSendCompletion_runQueueStage _ _)).trans
+        (stageDeliveredMessage_runQueueStage _ _ _)).entry
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes but the yieldTo keeps the run
 queues in agreement with the threads' links**, the capability-only arms it
 delegates included. -/
@@ -1032,47 +1085,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    -- WS-SX SX4: the busy reply's holder is cancelled first; the receive then
-    -- runs from the cancelled state, which keeps every premise it reads.
-    have hSC : SystemState.RunQueueEntryStage st
-          (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
-          executingCore = some tid ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
-        rw [e]
-      · exact ⟨(RunQueueStage.refl _).entry, P.endpointHeads, P.current, P.currentActive⟩
-      · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
-          cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
-            P.toEntryPremises.queueHeadCancelFacts,
-          by rw [cancelReplyHolder_currentOnCore]; exact P.current,
-          cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
-    obtain ⟨hS, hHC, hCurC, hActC⟩ := hSC
-    obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
-    have hDC := hS.2 P.objInv P.refined hRC P.dequeued
-    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
-      at h hS hHC hCurC hActC hIC hRC hDC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      have E := runQueueStage_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-          hCurC P.notIdle hActC) hRecv
-      obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-      exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
-        (((applyReceiveRendezvousHandoff_runQueueStage
-            ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-          (stageWokenSendCompletion_runQueueStage _ _)).trans
-          (stageDeliveredMessage_runQueueStage _ _ _)).entry
-    · cases h
+    exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1143,6 +1156,12 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
         (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
