@@ -105,6 +105,7 @@ private def buildAbiState
       |>.withLifecycleObjectType tid.toObjId .tcb
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType vsId .vspaceRoot
+      |>.withIpcBufferFrame tid ⟨903⟩ ipcBufferPA
       |>.withRunnable []
       |>.withCurrent (some tid)
     let st := builder.build

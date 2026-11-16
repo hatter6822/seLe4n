@@ -1546,8 +1546,24 @@ private def mappedBuffersState (rxWrite : Bool) : SystemState :=
         [(SeLe4n.VAddr.ofNat 4096, (SeLe4n.PAddr.ofNat rxBufferPA, { read := true, write := rxWrite })),
          (SeLe4n.VAddr.ofNat 8192, (SeLe4n.PAddr.ofNat txBufferPA, { read := true, write := true }))] }
   let st := twoThreadState
+  -- WS-SX SX6.6: each thread's buffer is in a frame of its own, found through
+  -- the frame capability in its buffer slot (seL4's `lookupIPCBuffer`); the
+  -- receiver's capability lets the kernel write only when `rxWrite`.
+  let rxFrame : SeLe4n.ObjId := ⟨0x7FF1⟩
+  let txFrame : SeLe4n.ObjId := ⟨0x7FF2⟩
+  let bufCap (fr : SeLe4n.ObjId) (w : Bool) : Capability :=
+    { target := .object fr,
+      rights := SeLe4n.Model.AccessRightSet.ofList (if w then [.read, .write] else [.read]) }
+  let withCap (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+      (t : SeLe4n.ThreadId) (c : Capability) :=
+    match objs.get? t.toObjId with
+    | some (.tcb tcb) => objs.insert t.toObjId (.tcb { tcb with spaceCells := tcb.spaceCells.set 2 (some c) })
+    | _ => objs
+  let objs := withCap (withCap st.objects callerTid (bufCap rxFrame rxWrite)) peerTid (bufCap txFrame true)
   { st with
-      objects := st.objects.insert callerVsp (.vspaceRoot root),
+      objects := ((objs.insert callerVsp (.vspaceRoot root)).insert rxFrame
+        (.frame { base := SeLe4n.PAddr.ofNat rxBufferPA })).insert txFrame
+        (.frame { base := SeLe4n.PAddr.ofNat txBufferPA }),
       machine := { st.machine with
         memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x10_0000, size := 0x10_0000, kind := .ram }] } }
 

@@ -15,10 +15,9 @@ import SeLe4n.Kernel.RoutedArms.Reply
 
 The routed entry's `.replyLong` arm (`syscallEntryCheckedK`): a reply of more
 than the inline words, as its own function, read and filled as the long send's
-(`replyLongRoutedArm`).  Its overflow words lie on the
-page of the replier's IPC buffer that holds slot 0 and at most the next
-(`firstPageSlots`): slot 0 and the next page's first slot read (slot 0 again
-when the words fit one page), the reply is dispatched through the long reply's arm
+(`replyLongRoutedArm`).  Its overflow words lie in the
+frame of the replier's IPC buffer (`lookupIPCBuffer`), so they all read when
+slot 0 reads (`ipcBufferOverflowReadable`): slot 0 read, the reply is dispatched through the long reply's arm
 (`replyLongOperandArmThenTaintR`) on the state it is handed.  The
 operand's address and the
 message info's fields cross as words, the state owned, and the result is the state
@@ -34,7 +33,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **The long-reply arm**: slot 0 and the next page's first slot read, then the
+/-- **The long-reply arm**: slot 0 read, then the
 reply's operand dispatch on the state it is handed; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
@@ -45,15 +44,11 @@ apart, a result under the first. -/
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => replyRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
-        (fun _ =>
-          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
-            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => replyRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
-            (fun _ => dispatchOperandCheckedKW .reply (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+        (fun _ => dispatchOperandCheckedKW .reply (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (replyLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .reply))
                   st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-                  entryReportLookup entryReportLookupAtW))
+                  entryReportLookup entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

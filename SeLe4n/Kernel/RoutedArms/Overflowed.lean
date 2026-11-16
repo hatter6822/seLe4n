@@ -19,7 +19,7 @@ CNode copy, or a CNode mint, whose sixth word is slot 1's, read off the state
 the arm is handed) whose message runs past them, as its own function.  Only a syscall that
 reads its overflow words is routed past the inline registers
 (`syscallReadsOverflow`), so no other kind reaches this arm.  Its overflow
-words read as the long send's are (slot 0 and the next page's first slot), the
+words read as the long send's are (slot 0, the buffer in one frame), the
 call runs the operand dispatch (`dispatchOperandCheckedK`) on the state it is
 handed, so a refusal reaches the entry's resolved or lookup
 continuation as the dispatch told them apart and the operand is never resolved
@@ -35,7 +35,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **The overflowed arm's body**: slot 0 and the next page's first slot read,
+/-- **The overflowed arm's body**: slot 0 read,
 then the long route's operand dispatch of `arm` (handed the overflow word and
 the caller's registers) on the state it is handed; a slot that does
 not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
@@ -47,14 +47,10 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
-        (fun w =>
-          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
-            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
-            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+        (fun w => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
               (arm w tcb.registerContext) st entryReportGeneral
               (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
-              entryReportLookupAtW))
+              entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 /-- **The overflowed arm**: the configure's, the service register's, the CNode

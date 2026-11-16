@@ -343,34 +343,22 @@ theorem blockedSender_of_routedLong (st : SystemState) (s : SeLe4n.ThreadId) (sT
       List.size_toArray, overflowRegsFrom_length]
     omega
 
-/-- **Every overflow slot of `n` reads**, asked of slot 0 and the slot
-`overflowSecondRead` names, each read as the entry reads it
-(`ipcBufferReadMrK`), so the answer builds no `Except` cell
+/-- **Every overflow slot reads**, asked of slot 0: the buffer is in one frame,
+so every slot reads where slot 0 does (`ipcBufferOverflowReadable`).  Read as
+the entry reads it (`ipcBufferReadMrK`), so the answer builds no `Except` cell
 (`overflowWordsRead_spec`). -/
-@[inline] def overflowWordsRead (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (n : Nat) : Bool :=
-  Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0 (fun _ => false) (fun _ =>
-    Architecture.IpcBufferRead.ipcBufferReadMrK st tid
-      (Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer n)
-      (fun _ => false) (fun _ => true))
+@[inline] def overflowWordsRead (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0 (fun _ => false) (fun _ => true)
 
-theorem overflowWordsRead_spec {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB} {n : Nat}
-    (hT : st.getTcb? tid = some tcb) (hn : n ≤ Architecture.IpcBufferRead.maxOverflowSlots)
-    (h : overflowWordsRead st tid tcb n = true) :
+theorem overflowWordsRead_spec {st : SystemState} {tid : SeLe4n.ThreadId} {n : Nat}
+    (hn : n ≤ Architecture.IpcBufferRead.maxOverflowSlots)
+    (h : overflowWordsRead st tid = true) :
     ∀ j, j < n → ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w := by
   unfold overflowWordsRead at h
   rw [Architecture.IpcBufferRead.ipcBufferReadMrK_eq] at h
   cases h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 with
   | error e => rw [h0] at h; cases h
-  | ok w0 =>
-    rw [h0] at h
-    dsimp only at h
-    rw [Architecture.IpcBufferRead.ipcBufferReadMrK_eq] at h
-    cases h1 : Architecture.IpcBufferRead.ipcBufferReadMr st tid
-        (Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer n) with
-    | error e => rw [h1] at h; cases h
-    | ok w1 =>
-      exact Architecture.IpcBufferRead.ipcBufferOverflowReadable hT hn ⟨w0, h0⟩ ⟨w1, h1⟩
+  | ok w0 => exact Architecture.IpcBufferRead.ipcBufferOverflowReadable hn ⟨w0, h0⟩
 
 /-! ## A receive taking a blocked long caller -/
 

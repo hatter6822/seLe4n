@@ -594,22 +594,22 @@ write.  Any other takes the specification's path (`replyRecvCapsArmR_eq`). -/
                   if replyRecvBlocksFast st epId tid c rid then
                     .ok ((), performReplyRecvBlockCapsDelivered st c tid rid epId
                       (receiveQueueTailCode st epId) layout rf len badge executingCore
-                      stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-                      (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer
+                      stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+                      (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer
                       ct.spaceCells[0])
                   else if replyRecvDonatedBlocks st epId tid c rid then
                     .ok ((), performReplyRecvDonatedCapsDelivered st c tid rid
                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
                       (receiveQueueTailCode st epId) layout rf len badge executingCore
-                      stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-                      (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer
+                      stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+                      (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer
                       ct.spaceCells[0])
                   else if replyRecvUnheldBlocks st epId tid c rid then
                     .ok ((), performReplyRecvUnheldCapsDelivered st c tid rid
                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
                       (receiveQueueTailCode st epId) layout rf len badge executingCore
-                      stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-                      (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer
+                      stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+                      (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer
                       ct.spaceCells[0])
                   else replyRecvRendezvousR epId tid c rid badge grant layout rf len label
                     executingCore st
@@ -715,8 +715,8 @@ theorem replyRecvCapsArmR_blocks_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.T
     (hB : replyRecvBlocksFast st epId tid c rid = true) :
     replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
       .ok ((), performReplyRecvBlockCapsDelivered st c tid rid epId
-        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+        (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
   unfold replyRecvCapsArmR
   simp only [hS, hR, hC, hAdm, hB, if_true]
 
@@ -737,8 +737,8 @@ theorem replyRecvCapsArmR_donated_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.
     replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
       .ok ((), performReplyRecvDonatedCapsDelivered st c tid rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
-        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+        (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
   unfold replyRecvCapsArmR
   simp only [hS, hR, hC, hAdm, hB, hD, if_true, Bool.false_eq_true, if_false]
 
@@ -760,8 +760,8 @@ theorem replyRecvCapsArmR_unheld_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.T
     replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
       .ok ((), performReplyRecvUnheldCapsDelivered st c tid rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
-        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
-        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0]) := by
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+        (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
   unfold replyRecvCapsArmR
   simp only [hS, hR, hC, hAdm, hB, hD, hU, if_true, Bool.false_eq_true, if_false]
 
@@ -1042,8 +1042,8 @@ caller queued by a `Call` and is donated its context, the call-take arm
                           sTcb.ipcBadged
                         .ok ((), performReplyRecvTakeCapsDelivered st c tid rid epId s
                           sTcb.queueNextCode executingCore layout rf len badge
-                          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 stcb.vspaceRoot stcb.ipcBuffer
-                          stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) ct.vspaceRoot
+                          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 stcb.spaceCells[2] stcb.ipcBuffer
+                          stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) ct.spaceCells[2]
                           ct.ipcBuffer ct.spaceCells[0])
                       else replyRecvRendezvousR epId tid c rid badge grant layout rf len label
                         executingCore st
@@ -1988,8 +1988,8 @@ builds. -/
           match st.getTcb? c with
           | some ct =>
               .ok ((), performReplyRecvBlockCapsDeliveredLong st c tid rid epId
-                (receiveQueueTailCode st epId) rf len badge executingCore stcb.vspaceRoot
-                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer
+                (receiveQueueTailCode st epId) rf len badge executingCore stcb.spaceCells[2]
+                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.spaceCells[2] ct.ipcBuffer
                 ct.spaceCells[0])
           | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
       | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
@@ -2000,8 +2000,8 @@ builds. -/
           | some ct =>
               .ok ((), performReplyRecvDonatedCapsDeliveredLong st c tid rid
                 ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
-                (receiveQueueTailCode st epId) rf len badge executingCore stcb.vspaceRoot
-                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer
+                (receiveQueueTailCode st epId) rf len badge executingCore stcb.spaceCells[2]
+                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.spaceCells[2] ct.ipcBuffer
                 ct.spaceCells[0])
           | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
       | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
@@ -2012,8 +2012,8 @@ builds. -/
           | some ct =>
               .ok ((), performReplyRecvUnheldCapsDeliveredLong st c tid rid
                 ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
-                (receiveQueueTailCode st epId) rf len badge executingCore stcb.vspaceRoot
-                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer
+                (receiveQueueTailCode st epId) rf len badge executingCore stcb.spaceCells[2]
+                stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps rf) ct.spaceCells[2] ct.ipcBuffer
                 ct.spaceCells[0])
           | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
       | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st

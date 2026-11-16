@@ -598,18 +598,24 @@ private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
 -- ============================================================================
 
 /-- Helper: build a minimal SystemState with a TCB whose registers encode the
-    given syscall and whose IPC buffer resolves to PA=0 in a well-formed
-    VSpaceRoot. Memory is the default (zero-initialized).
-    When `mapIpcBuffer = false`, the VSpaceRoot contains no mapping, so
-    `ipcBufferReadMr` returns `.ipcBufferVAddrUnmapped`. -/
+    given syscall and whose IPC buffer is in the frame at `ipcBufferPA`, its
+    capability in the thread's buffer slot (where seL4's `lookupIPCBuffer`
+    finds it). Memory is the default (zero-initialized).
+    When `mapIpcBuffer = false`, the buffer slot is empty, so
+    `ipcBufferReadMr` returns `.noIpcBuffer`; `deviceFrame` makes the frame
+    device memory, which the lookup refuses too. -/
 private def buildIpcDecodeState
     (syscallNum : Nat) (msgLen : Nat) (msgRegs : Array SeLe4n.RegValue)
     (ipcBufferVA : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x10000))
     (ipcBufferPA : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x20000))
-    (mapIpcBuffer : Bool := true) : SeLe4n.Model.SystemState :=
+    (mapIpcBuffer : Bool := true) (deviceFrame : Bool := false) : SeLe4n.Model.SystemState :=
   let tid : SeLe4n.ThreadId := ⟨800⟩
   let cnodeId : SeLe4n.ObjId := ⟨801⟩
   let vsId : SeLe4n.ObjId := ⟨802⟩
+  let frameId : SeLe4n.ObjId := ⟨803⟩
+  let bufCap : SeLe4n.Model.Capability :=
+    { target := .object frameId,
+      rights := SeLe4n.Model.AccessRightSet.ofList [.read, .write] }
   -- Construct MessageInfo word: bits 0..6 = length, bits 7..8 = extraCaps, bits 9+ = label
   let msgInfoRaw := msgLen
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
@@ -638,15 +644,18 @@ private def buildIpcDecodeState
   let builder := BootstrapBuilder.empty
     |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId,
+        spaceCells := (SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId).set 2
+          (if mapIpcBuffer then some bufCap else none),
         ipcBuffer := ipcBufferVA,
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
     |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject vsId (.vspaceRoot vsRoot)
+    |>.withObject frameId (.frame { base := ipcBufferPA, isDevice := deviceFrame })
     |>.withLifecycleObjectType tid.toObjId .tcb
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType vsId .vspaceRoot
+    |>.withLifecycleObjectType frameId .frame
     |>.withRunnable []
     |>.withCurrent (some tid)
   builder.build
@@ -878,14 +887,14 @@ private def ipcBufferReadCarriesIntraPageOffset : IO Unit := do
   | .ok _ => expect "a non-page-aligned IPC buffer resolves through its page" true
   | .error _ =>
     expect "a non-page-aligned IPC buffer resolves through its page" false
-  -- And a buffer whose slot crosses into an unmapped page still fails closed.
-  let stEdge := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
-      (SeLe4n.VAddr.ofNat 0x10FF8) (SeLe4n.PAddr.ofNat 0x20000) true
-  match ipcBufferReadMr stEdge ⟨800⟩ 1 with
-  | .ok _ => expect "a slot crossing into an unmapped page fails closed" false
+  -- A buffer in a device frame is no IPC buffer (seL4's `lookupIPCBuffer`
+  -- refuses a device frame capability), and the read fails closed.
+  let stDev := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+      (SeLe4n.VAddr.ofNat 0x10000) (SeLe4n.PAddr.ofNat 0x20000) true (deviceFrame := true)
+  match ipcBufferReadMr stDev ⟨800⟩ 1 with
+  | .ok _ => expect "a device-frame IPC buffer fails closed" false
   | .error e =>
-    expect "a slot crossing into an unmapped page fails closed"
-      (e == .ipcBufferVAddrUnmapped)
+    expect "a device-frame IPC buffer fails closed" (e == .noIpcBuffer)
 
 /-- SAD-029: a sender's extra capability addresses are its IPC buffer's
 `caps_or_badges` words (seL4's `lookupExtraCaps`), never message registers;

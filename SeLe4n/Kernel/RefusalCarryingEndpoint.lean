@@ -529,9 +529,9 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3)
-          sTcb.vspaceRoot sTcb.ipcBuffer
+          sTcb.spaceCells[2] sTcb.ipcBuffer
           sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
+          rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
   intro P W S4
   obtain ⟨hTake, h2, -⟩ := receiveTake_delivered_of_message st endpointId ep receiver replyId
     core s sTcb mi hE hH hT hG
@@ -678,9 +678,9 @@ theorem receiveCallTakeCapsTransfer_delivered (st : SystemState) (endpointId : S
           (applyReceiverPipHandoff st'' receiver core) (some s)) receiver summary.capInfo =
         performCallTakeCapsDelivered st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot sTcb.ipcBuffer
+          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2] sTcb.ipcBuffer
           sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
+          rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
     receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
   have hG' := hG
@@ -817,9 +817,9 @@ theorem receiveTakeCapsTransferLong_delivered (st : SystemState) (endpointId : S
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3)
-          sTcb.vspaceRoot sTcb.ipcBuffer
+          sTcb.spaceCells[2] sTcb.ipcBuffer
           sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
+          rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
   intro P W
   have hTake := receiveTake_inPlace st endpointId ep receiver replyId core s sTcb hE hH hT hG
   have hSnd : receiveRendezvousSender? st endpointId = some s := by
@@ -974,9 +974,9 @@ theorem receiveCallTakeCapsTransferLong_delivered (st : SystemState)
           (applyReceiverPipHandoff st'' receiver core) (some s)) receiver summary.capInfo =
         performCallTakeCapsDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot sTcb.ipcBuffer
+          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2] sTcb.ipcBuffer
           sTcb.spaceCells[0] (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] := by
+          rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
     receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
   have hG' := hG
@@ -2269,7 +2269,7 @@ transfer reads (`rv`, `rb`, `rroot`); any other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match st.getTcb? tid with
     | some stcb =>
@@ -2278,7 +2278,7 @@ transfer reads (`rv`, `rb`, `rroot`); any other takes the general arm. -/
         | .reply _ _ =>
             if Architecture.regMessageLength layout len ≤ 4 then
               .ok ((), performReplyCapsDelivered st c server rid layout rf len cap.badgeWord
-                cap.badged executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+                cap.badged executingCore stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
             else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2304,7 +2304,7 @@ theorem endpointReplyCapsArmR_eq (ctx : LabelingContext)
     (hNoF : ct.faultWords.isFault = false)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyCapsArmR ctx layout rf len extraCaps label tid executingCore cap c server rid
-        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
+        ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2342,7 +2342,7 @@ other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cBinding : Nat) (cFault : Bool)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then
       match st.getTcb? tid with
@@ -2352,7 +2352,7 @@ other takes the general arm. -/
           | .reply _ _ =>
               .ok ((), performReplyDonatedCapsDelivered st c server rid
                 ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) layout rf len
-                cap.badgeWord cap.badged executingCore stcb.vspaceRoot stcb.ipcBuffer
+                cap.badgeWord cap.badged executingCore stcb.spaceCells[2] stcb.ipcBuffer
                 stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2371,7 +2371,7 @@ theorem endpointReplyDonatedCapsArmR_eq (ctx : LabelingContext)
     (hRO : ct.replyObject = some rid)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyDonatedCapsArmR ctx layout rf len extraCaps label tid executingCore cap c server
-        rid ct.scBindingScCode ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
+        rid ct.scBindingScCode ct.faultWords.isFault ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2411,7 +2411,7 @@ any other takes the general arm. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     if replyUnheldAdmits ctx layout len tid c rid cFault st then
       match st.getTcb? tid with
@@ -2421,7 +2421,7 @@ any other takes the general arm. -/
           | .reply _ _ =>
               .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
                 (determineTargetCore st c) layout rf len cap.badgeWord cap.badged
-                stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+                stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2440,7 +2440,7 @@ theorem endpointReplyUnheldCapsArmR_eq (ctx : LabelingContext)
     (hRO : ct.replyObject = some rid)
     (hNI : replyTransferInertW st tid ct (cap.rights.mem .grant) = false) :
     endpointReplyUnheldCapsArmR ctx layout rf len extraCaps label tid executingCore cap c rid
-        ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st =
+        ct.faultWords.isFault ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] st =
       endpointReplyCheckedArmGeneralR ctx
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs layout rf) tid executingCore cap st := by
@@ -2513,7 +2513,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                                   .ok ((), replyRendezvousDelivered st c server rid
                                     layout rf len cap.badgeWord cap.badged executingCore)
                                 else endpointReplyCapsArmR ctx layout rf len extraCaps label tid
-                                  executingCore cap c server rid ct.vspaceRoot ct.ipcBuffer
+                                  executingCore cap c server rid ct.spaceCells[2] ct.ipcBuffer
                                   ct.spaceCells[0] st
                               else
                                 .ok ((), performFaultReplyAnswer st c server rid executingCore
@@ -2531,7 +2531,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                                 ct.faultWords.isFault st
                             else endpointReplyDonatedCapsArmR ctx layout rf len extraCaps label
                               tid executingCore cap c server rid ct.scBindingScCode
-                              ct.faultWords.isFault ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0] st
+                              ct.faultWords.isFault ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | .blockedOnReply _ none =>
@@ -2546,7 +2546,7 @@ reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
                               endpointReplyUnheldArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c rid ct.faultWords.isFault st
                             else endpointReplyUnheldCapsArmR ctx layout rf len extraCaps label
-                              tid executingCore cap c rid ct.faultWords.isFault ct.vspaceRoot
+                              tid executingCore cap c rid ct.faultWords.isFault ct.spaceCells[2]
                               ct.ipcBuffer ct.spaceCells[0] st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
@@ -2906,18 +2906,18 @@ into the receiver's (`performSendCapsDeliveredLong`). -/
                         | some stcb =>
                           .ok ((), performSendCapsDelivered st epId r rt.queueNextCode
                             SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore
-                            stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+                            stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                             (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                            rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                            rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                         | none => endpointSendCapsGeneralR ctx tid executingCore cap st
                       else
                       match st.getTcb? tid with
                       | some stcb =>
                         .ok ((), performSendCapsDeliveredLong st epId r rt.queueNextCode
                           SeLe4n.arm64DefaultLayout rf len tid cap.badgeWord cap.badged executingCore
-                          stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+                          stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                           (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                          rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                          rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                       | none => endpointSendCapsGeneralR ctx tid executingCore cap st
                     else endpointSendCapsGeneralR ctx tid executingCore cap st
                 | none => endpointSendCapsGeneralR ctx tid executingCore cap st
@@ -3124,18 +3124,18 @@ write. -/
                               | some ctcb =>
                                 .ok ((), performCallCapsDelivered st epId tid r rt.queueNextCode
                                   rid SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
-                                  executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0]
+                                  executingCore ctcb.spaceCells[2] ctcb.ipcBuffer ctcb.spaceCells[0]
                                   (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                  rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                                  rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                               | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                           else
                             match st.getTcb? tid with
                             | some ctcb =>
                               .ok ((), performCallCapsDeliveredLong st epId tid r rt.queueNextCode
                                 rid SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
-                                executingCore ctcb.vspaceRoot ctcb.ipcBuffer ctcb.spaceCells[0]
+                                executingCore ctcb.spaceCells[2] ctcb.ipcBuffer ctcb.spaceCells[0]
                                 (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                                rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                             | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -3504,10 +3504,10 @@ makes, takes the general arm. -/
                                   match st.getTcb? tid with
                                   | some stcb =>
                                       .ok ((), performReplyCapsDeliveredLong st c server rid rf len
-                                        tid cap.badgeWord cap.badged executingCore stcb.vspaceRoot
+                                        tid cap.badgeWord cap.badged executingCore stcb.spaceCells[2]
                                         stcb.ipcBuffer stcb.spaceCells[0]
                                         (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                        ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
+                                        ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
                                   | none => endpointReplyLongGeneralR ctx rf len extraCaps label
                                       tid executingCore cap st
                               else if replyPopsInPlace st c ct.scBindingScCode server rid then
@@ -3516,9 +3516,9 @@ makes, takes the general arm. -/
                                     .ok ((), performReplyDonatedCapsDeliveredLong st c server rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
                                       rf len tid cap.badgeWord cap.badged executingCore
-                                      stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0]
+                                      stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                      ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
+                                      ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
                                 | none => endpointReplyLongGeneralR ctx rf len extraCaps label
                                     tid executingCore cap st
                               else endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -3543,10 +3543,10 @@ makes, takes the general arm. -/
                                 | some stcb =>
                                     .ok ((), performReplyUnheldCapsDeliveredLong st c rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
-                                      rf len tid cap.badgeWord cap.badged stcb.vspaceRoot
+                                      rf len tid cap.badgeWord cap.badged stcb.spaceCells[2]
                                       stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                      ct.vspaceRoot ct.ipcBuffer ct.spaceCells[0])
+                                      ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
                                 | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
                                     executingCore cap st
                             else endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -4045,7 +4045,7 @@ other rendezvous goes through the specification
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
           | .sendLong _ mi =>
             if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb &&
-                overflowWordsRead st s sTcb (mi.length - 4) then
+                overflowWordsRead st s then
               let rf := sTcb.registerContext
               .ok ((), performReceiveDeliveredLong st epId s sTcb.queueNextCode tid executingCore
                 mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -4058,7 +4058,7 @@ other rendezvous goes through the specification
             match SeLe4n.ReplyId.ofOptCode replyCode with
             | some rid =>
               if !sTcb.ipcFaultSend && receiveCallTakesInPlace st epId tid s sTcb rid &&
-                  overflowWordsRead st s sTcb (mi.length - 4) then
+                  overflowWordsRead st s then
                 .ok ((), performReceiveCallDeliveredLong st epId s sTcb.queueNextCode tid rid
                   executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
                   sTcb.ipcBadged)
@@ -4099,11 +4099,11 @@ other rendezvous goes through the specification
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 1)
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 2)
                       (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 3)
-                      sTcb.vspaceRoot sTcb.ipcBuffer sTcb.spaceCells[0]
+                      sTcb.spaceCells[2] sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                      rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                   | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
-              else if overflowWordsRead st s sTcb (len - 4) then
+              else if overflowWordsRead st s then
                 match st.getTcb? tid with
                 | some rt =>
                   let rf := sTcb.registerContext
@@ -4113,9 +4113,9 @@ other rendezvous goes through the specification
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 1)
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 2)
                     (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 3)
-                    sTcb.vspaceRoot sTcb.ipcBuffer sTcb.spaceCells[0]
+                    sTcb.spaceCells[2] sTcb.ipcBuffer sTcb.spaceCells[0]
                     (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                    rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                    rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -4129,17 +4129,17 @@ other rendezvous goes through the specification
                   if decide (len ≤ 4) then
                     .ok ((), performCallTakeCapsDelivered st epId s sTcb.queueNextCode tid rid
                       executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext len
-                      (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
+                      (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2]
                       sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
-                  else if overflowWordsRead st s sTcb (len - 4) then
+                      rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
+                  else if overflowWordsRead st s then
                     .ok ((), performCallTakeCapsDeliveredLong st epId s sTcb.queueNextCode tid rid
                       executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext len
-                      (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
+                      (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2]
                       sTcb.ipcBuffer sTcb.spaceCells[0]
                       (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
-                      rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0])
+                      rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
                   else endpointReceiveRendezvousR epId tid replyCode executingCore st
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -4219,7 +4219,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
               (SeLe4n.ReplyId.ofOptCode replyCode)
               executingCore s sTcb capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
               hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR
-              (overflowWordsRead_spec hTs hn hOk) hF
+              (overflowWordsRead_spec hn hOk) hF
             unfold endpointReceiveRendezvousR
             simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.capInfo_empty]
             rw [h3]
@@ -4242,7 +4242,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
                 executingCore s sTcb capAddr mi
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
-                (overflowWordsRead_spec hTs hn hOk)
+                (overflowWordsRead_spec hn hOk)
               unfold endpointReceiveRendezvousR
               simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
                 CapTransferSummary.capInfo_empty]
@@ -4326,7 +4326,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
                     epId ep tid (SeLe4n.ReplyId.ofOptCode replyCode) executingCore s sTcb rt capAddr
                     mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRT hG hR hGt
-                    (overflowWordsRead_spec hTs hn hOk) hF
+                    (overflowWordsRead_spec hn hOk) hF
                   unfold endpointReceiveRendezvousR
                   simp only [hEp, Option.bind_some, hH, h1, h2]
                   rw [h3]
@@ -4368,7 +4368,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
                       st epId ep tid rid executingCore s sTcb rt capAddr mi
                       ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
                       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRT hG hR hGt
-                      (overflowWordsRead_spec hTs hn hOk) hF
+                      (overflowWordsRead_spec hn hOk) hF
                     unfold endpointReceiveRendezvousR
                     simp only [hEp, Option.bind_some, hH, hRid, h1, h2]
                     rw [h3]

@@ -44,49 +44,40 @@ root.  No thread record is held across the writes, so each write finds the
 record it rewrites unshared.
 -/
 
-/-- `ipcBufferWordPAddr?` of the thread whose VSpace root is `vroot` and whose
-buffer is at `buf` (`ipcBufferWordPAddr?_eq_of`). -/
-@[inline] def bufferWordPAddrOf? (st : SystemState) (vroot : SeLe4n.ObjId) (buf : SeLe4n.VAddr)
-    (idx : Nat) (needWrite : Bool) : Option SeLe4n.PAddr :=
-  if idx < ipcBufferWords then
-    match st.getVSpaceRoot? vroot with
-    | some root =>
-      match root.lookup (ipcBufferSlotPage buf idx) with
-      | some (paddr, perms) =>
-        let pa := SeLe4n.PAddr.ofNat (paddr.toNat + (ipcBufferSlotAddr buf idx).pageOffset)
-        if pa.toNat % 8 == 0 && st.machine.addrInRange pa && (!needWrite || perms.write) then
-          some pa
-        else none
-      | none => none
-    | none => none
-  else none
+/-- Word `idx` of the buffer of the thread whose buffer slot holds `cell` and
+whose buffer is at `buf`: `lookupIPCBuffer` on those two words, then the word's
+address in the frame (`ipcBufferWordPAddrIn?`, `bufferWordPAddrOf?_eq`). -/
+@[inline] def bufferWordPAddrOf? (st : SystemState) (cell : Option Capability) (buf : SeLe4n.VAddr)
+    (idx : Nat) (isReceiver : Bool) : Option SeLe4n.PAddr :=
+  ipcBufferWordPAddrIn? st (bufferFrameBase? st isReceiver cell buf) idx
 
-theorem ipcBufferWordPAddr?_eq_of (st : SystemState) (tcb : TCB) (idx : Nat) (w : Bool) :
-    ipcBufferWordPAddr? st tcb idx w = bufferWordPAddrOf? st tcb.vspaceRoot tcb.ipcBuffer idx w :=
+theorem bufferWordPAddrOf?_eq (st : SystemState) (tcb : TCB) (idx : Nat) (w : Bool) :
+    ipcBufferWordPAddrIn? st (lookupIPCBuffer w st tcb) idx =
+      bufferWordPAddrOf? st tcb.spaceCells[2] tcb.ipcBuffer idx w :=
   rfl
 
 /-- `receiverBufferWord?` of a thread named by its two buffer words. -/
-@[inline] def bufferWordOf? (st : SystemState) (vroot : SeLe4n.ObjId) (buf : SeLe4n.VAddr)
+@[inline] def bufferWordOf? (st : SystemState) (cell : Option Capability) (buf : SeLe4n.VAddr)
     (idx : Nat) : Option UInt64 :=
-  (bufferWordPAddrOf? st vroot buf idx false).map (userWordAt st.machine)
+  (bufferWordPAddrOf? st cell buf idx true).map (userWordAt st.machine)
 
 /-- `receiverHasBuffer` of a thread named by its two buffer words. -/
-@[inline] def hasBufferOf (st : SystemState) (vroot : SeLe4n.ObjId) (buf : SeLe4n.VAddr) : Bool :=
-  (bufferWordPAddrOf? st vroot buf 0 true).isSome
+@[inline] def hasBufferOf (st : SystemState) (cell : Option Capability) (buf : SeLe4n.VAddr) : Bool :=
+  (bufferWordPAddrOf? st cell buf 0 true).isSome
 
 /-- `recordUnwrappedBadge` of a receiver named by its two buffer words. -/
-@[inline] def recordBadgeOf (st : SystemState) (vroot : SeLe4n.ObjId) (buf : SeLe4n.VAddr)
+@[inline] def recordBadgeOf (st : SystemState) (cell : Option Capability) (buf : SeLe4n.VAddr)
     (i : Nat) (badge : SeLe4n.Badge) : SystemState :=
-  match bufferWordPAddrOf? st vroot buf (ipcBufferCapsOrBadgesWord i) true with
+  match bufferWordPAddrOf? st cell buf (ipcBufferCapsOrBadgesWord i) true with
   | some pa => Architecture.recordPhysicalWrites st [.storeUserWord pa badge.word]
   | none => st
 
 theorem recordUnwrappedBadge_eq_of (st : SystemState) (tcb : TCB) (i : Nat) (b : SeLe4n.Badge) :
-    recordUnwrappedBadge st tcb i b = recordBadgeOf st tcb.vspaceRoot tcb.ipcBuffer i b := rfl
+    recordUnwrappedBadge st tcb i b = recordBadgeOf st tcb.spaceCells[2] tcb.ipcBuffer i b := rfl
 
 /-- **The sender's extra capability address `i`, read in place**:
 `senderExtraCapAddr?` with its answer handed to a continuation. -/
-@[inline] def senderCapAddrK {α : Type} (st : SystemState) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr)
+@[inline] def senderCapAddrK {α : Type} (st : SystemState) (sv : Option Capability) (sb : SeLe4n.VAddr)
     (i : Nat) (kNone : Unit → α) (k : SeLe4n.CPtr → α) : α :=
   match bufferWordPAddrOf? st sv sb (ipcBufferCapsOrBadgesWord i) false with
   | none => kNone ()
@@ -94,19 +85,19 @@ theorem recordUnwrappedBadge_eq_of (st : SystemState) (tcb : TCB) (i : Nat) (b :
 
 theorem senderCapAddrK_eq {α : Type} (st : SystemState) (stcb : TCB) (i : Nat)
     (kNone : Unit → α) (k : SeLe4n.CPtr → α) :
-    senderCapAddrK st stcb.vspaceRoot stcb.ipcBuffer i kNone k =
+    senderCapAddrK st stcb.spaceCells[2] stcb.ipcBuffer i kNone k =
       match senderExtraCapAddr? st stcb i with
       | none => kNone ()
       | some a => k a := by
   unfold senderCapAddrK senderExtraCapAddr?
-  rw [ipcBufferWordPAddr?_eq_of]
-  cases bufferWordPAddrOf? st stcb.vspaceRoot stcb.ipcBuffer (ipcBufferCapsOrBadgesWord i) false <;>
+  rw [bufferWordPAddrOf?_eq]
+  cases bufferWordPAddrOf? st stcb.spaceCells[2] stcb.ipcBuffer (ipcBufferCapsOrBadgesWord i) false <;>
     rfl
 
 /-- **The slot the sender's extra capability address `i` names**, read and
 resolved in place from the sender's CSpace root capability `root` at 64 bits
 (`lookupSlotFromK`). -/
-@[inline] def extraCapRefK {α : Type} (st : SystemState) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr)
+@[inline] def extraCapRefK {α : Type} (st : SystemState) (sv : Option Capability) (sb : SeLe4n.VAddr)
     (root : Capability) (i : Nat) (kFail : Unit → α) (k : SeLe4n.ObjId → SeLe4n.Slot → α) :
     α :=
   senderCapAddrK st sv sb i kFail fun a =>
@@ -114,7 +105,7 @@ resolved in place from the sender's CSpace root capability `root` at 64 bits
 
 theorem extraCapRefK_eq {α : Type} (st : SystemState) (stcb : TCB) (root : Capability)
     (i : Nat) (kFail : Unit → α) (k : SeLe4n.ObjId → SeLe4n.Slot → α) :
-    extraCapRefK st stcb.vspaceRoot stcb.ipcBuffer root i kFail k =
+    extraCapRefK st stcb.spaceCells[2] stcb.ipcBuffer root i kFail k =
       match senderExtraCapAddr? st stcb i with
       | none => kFail ()
       | some a =>
@@ -180,7 +171,7 @@ theorem receivePathSlotK_eq {α : Type} (st : SystemState) (tcb : TCB) (c i d : 
           cases SystemState.lookupSlotCap st ⟨ref'.cnode, ref'.slot⟩ <;> rfl
 
 /-- **The receiver's receive slot, in place** (`receiveSlot?`). -/
-@[inline] def receiveSlotK {α : Type} (st : SystemState) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr)
+@[inline] def receiveSlotK {α : Type} (st : SystemState) (rv : Option Capability) (rb : SeLe4n.VAddr)
     (croot : Option Capability) (kNone : Unit → α) (k : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
   match bufferWordOf? st rv rb ipcBufferReceiveCNodeWord,
       bufferWordOf? st rv rb ipcBufferReceiveIndexWord,
@@ -190,17 +181,17 @@ theorem receivePathSlotK_eq {α : Type} (st : SystemState) (tcb : TCB) (c i d : 
 
 theorem receiveSlotK_eq {α : Type} (st : SystemState) (tcb : TCB)
     (kNone : Unit → α) (k : SeLe4n.ObjId → SeLe4n.Slot → α) :
-    receiveSlotK st tcb.vspaceRoot tcb.ipcBuffer tcb.spaceCells[0] kNone k =
+    receiveSlotK st tcb.spaceCells[2] tcb.ipcBuffer tcb.spaceCells[0] kNone k =
       match receiveSlot? st tcb with
       | none => kNone ()
       | some dst => k dst.cnode dst.slot := by
   unfold receiveSlotK receiveSlot?
-  have hw : ∀ idx, receiverBufferWord? st tcb idx = bufferWordOf? st tcb.vspaceRoot tcb.ipcBuffer idx :=
+  have hw : ∀ idx, receiverBufferWord? st tcb idx = bufferWordOf? st tcb.spaceCells[2] tcb.ipcBuffer idx :=
     fun _ => rfl
   simp only [hw]
-  cases bufferWordOf? st tcb.vspaceRoot tcb.ipcBuffer ipcBufferReceiveCNodeWord <;>
-    cases bufferWordOf? st tcb.vspaceRoot tcb.ipcBuffer ipcBufferReceiveIndexWord <;>
-    cases bufferWordOf? st tcb.vspaceRoot tcb.ipcBuffer ipcBufferReceiveDepthWord <;>
+  cases bufferWordOf? st tcb.spaceCells[2] tcb.ipcBuffer ipcBufferReceiveCNodeWord <;>
+    cases bufferWordOf? st tcb.spaceCells[2] tcb.ipcBuffer ipcBufferReceiveIndexWord <;>
+    cases bufferWordOf? st tcb.spaceCells[2] tcb.ipcBuffer ipcBufferReceiveDepthWord <;>
     first | rfl | exact receivePathSlotK_eq _ _ _ _ _ _ _
 
 /-! ### One capability's install, in place -/
@@ -335,7 +326,7 @@ from index `idx`, a capability to the endpoint unwraps (its badge to the
 receiver's buffer) when the message was sent on one (`unw`); any other is installed in the receive slot `(dcn, dsl)` if
 it is still free and the install's checks pass, and the slot is used up; or
 the loop stops. -/
-def capStepsApply (ep : SeLe4n.ObjId) (unw : Bool) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability)
+def capStepsApply (ep : SeLe4n.ObjId) (unw : Bool) (rv : Option Capability) (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability)
     (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot)
     (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) :
     (idx fuel : Nat) → (free : Bool) → SystemState → SystemState
@@ -415,7 +406,7 @@ theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB
       (free = true → LedgerOnly Zs Z) →
       ∃ s : CapTransferSummary,
         ipcUnwrapCapsLoop caps (transferEndpoint? unw ep) rt idx (if free then some ⟨dcn, dsl⟩ else none) acc fuel Z =
-          .ok (s, capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl idx fuel free Z) ∧
+          .ok (s, capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl idx fuel free Z) ∧
         s.capInfo = capStepsInfo ep unw c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl Zs idx fuel free
           (capInfoCounts acc).1 (capInfoCounts acc).2
   | 0, idx, free, acc, Z, _, _ => ⟨{ results := acc }, rfl, rfl⟩
@@ -497,7 +488,7 @@ one repeated past `n` (never read there). -/
 (`senderExtraCapAddrs`, then `resolveExtraCaps`'s lookup): each of the first
 `count` addresses (at most three) read from the sender's buffer and resolved in
 its CSpace; any that does not read or resolve fails the whole request. -/
-@[inline] def transferRefsK {α : Type} (st : SystemState) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr)
+@[inline] def transferRefsK {α : Type} (st : SystemState) (sv : Option Capability) (sb : SeLe4n.VAddr)
     (root : Capability)
     (count : Nat) (kFail : Unit → α)
     (k : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
@@ -517,8 +508,8 @@ the receive slot is free and where it is, how many capabilities there are, the
 capabilities and the slots they were read from.  A request that transfers
 nothing hands over no capability. -/
 @[inline] def capTransferK {α : Type} (st : SystemState) (ep : SeLe4n.ObjId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability)
     (kRun : Bool → SeLe4n.ObjId → SeLe4n.Slot → Nat → Capability → Capability → Capability →
       SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
     α :=
@@ -559,11 +550,11 @@ theorem ipcUnwrapCaps_eq_run {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) 
     (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId) (b2 : SeLe4n.Slot)
     (hSize : caps.size = n)
     (hAt : ∀ j, j < n → caps[j]? = some (transferCapAt x0 x1 x2 a0 b0 a1 b1 a2 b2 j)) :
-    receiveSlotK st rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0]
+    receiveSlotK st rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0]
         (fun _ => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
-          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
+          (capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
         (fun dcn dsl => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
-          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st)) =
+          (capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st)) =
       match ipcUnwrapCaps caps (transferEndpoint? unw ep) rt (receiveSlot? st rt) st with
       | .ok (s, st') => K s.capInfo st'
       | .error _ => K 0 st := by
@@ -642,11 +633,11 @@ abbrev capRunFinish {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bo
     (K : Nat → SystemState → α) (n : Nat) (x0 x1 x2 : Capability) (a0 : SeLe4n.ObjId)
     (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId) (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId)
     (b2 : SeLe4n.Slot) : α :=
-  receiveSlotK st rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0]
+  receiveSlotK st rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0]
     (fun _ => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
-      (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
+      (capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
     (fun dcn dsl => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
-      (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st))
+      (capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st))
 
 /-- The specification's transfer over the capabilities `caps` resolved, to a
 receiver with a buffer, its answer handed to `K`. -/
@@ -790,16 +781,16 @@ summary's report and the state the specification's transfer answers, for a
 message sent on `ep` (`unw`) or on no endpoint. -/
 theorem capTransferK_eq_at {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (stcb : TCB)
     (count : Nat) (rt : TCB) (K : Nat → SystemState → α) :
-    capTransferK st ep stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count rt.vspaceRoot
+    capTransferK st ep stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count rt.spaceCells[2]
         rt.ipcBuffer rt.spaceCells[0] (fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
         K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n free 0 0)
-          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free st)) =
+          (capStepsApply ep unw rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free st)) =
       match receiveTransferCaps (frameCapRequestOf st stcb count) (transferEndpoint? unw ep)
           (capTargetOf st rt) st with
       | .ok (s, st') => K s.capInfo st'
       | .error _ => K 0 st := by
   unfold capTransferK capTargetOf
-  rw [show hasBufferOf st rt.vspaceRoot rt.ipcBuffer = receiverHasBuffer st rt from rfl]
+  rw [show hasBufferOf st rt.spaceCells[2] rt.ipcBuffer = receiverHasBuffer st rt from rfl]
   cases hB : receiverHasBuffer st rt with
   | false =>
     simp only [Bool.false_eq_true, ↓reduceIte, receiveTransferCaps_no_target]
@@ -890,10 +881,10 @@ theorem capTransferK_eq_at {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (u
 sent on `ep` (`capTransferK_eq_at`). -/
 theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb : TCB)
     (count : Nat) (rt : TCB) (K : Nat → SystemState → α) :
-    capTransferK st ep stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count rt.vspaceRoot
+    capTransferK st ep stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count rt.spaceCells[2]
         rt.ipcBuffer rt.spaceCells[0] (fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
         K (capStepsInfo ep true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n free 0 0)
-          (capStepsApply ep true rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n
+          (capStepsApply ep true rt.spaceCells[2] rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n
             free st)) =
       match receiveTransferCaps (frameCapRequestOf st stcb count) (some ep)
           (capTargetOf st rt) st with

@@ -35,12 +35,12 @@ open SeLe4n.Model
 /-! ## Writes of a call rendezvous that keep every read -/
 
 theorem ipcBufferReadsAgree_mapTcbInPlace_of (X : SystemState) (r : SeLe4n.ThreadId)
-    (g : TCB → TCB) (hg : ∀ t, (g t).vspaceRoot = t.vspaceRoot ∧ (g t).ipcBuffer = t.ipcBuffer) :
+    (g : TCB → TCB) (hg : ∀ t, (g t).spaceCells[2] = t.spaceCells[2] ∧ (g t).ipcBuffer = t.ipcBuffer) :
     ipcBufferReadsAgree (X.mapTcbInPlace r g) X :=
   ipcBufferReadsAgree_mapTcbInPlace X r g hg
 
 theorem ipcBufferReadsAgree_updateTcbAtCode (X : SystemState) (k : Nat) (g : TCB → TCB)
-    (hg : ∀ t, (g t).vspaceRoot = t.vspaceRoot ∧ (g t).ipcBuffer = t.ipcBuffer) :
+    (hg : ∀ t, (g t).spaceCells[2] = t.spaceCells[2] ∧ (g t).ipcBuffer = t.ipcBuffer) :
     ipcBufferReadsAgree (X.updateTcbAtCode k g) X := by
   unfold SystemState.updateTcbAtCode
   split
@@ -202,8 +202,8 @@ theorem ipcBufferReadsAgree_storeCallRendezvousReady (st : SystemState)
   have a5 := ipcBufferReadsAgree_modifyObject s4 rid.toObjId (replyWithCaller caller)
     (fun o => by cases o <;> rfl) h4
   generalize s4.modifyObject rid.toObjId (replyWithCaller caller) = s5 at h5 a5
-  have g6 : ∀ t : TCB, ({ t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } : TCB).vspaceRoot =
-      t.vspaceRoot ∧ ({ t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } : TCB).ipcBuffer =
+  have g6 : ∀ t : TCB, ({ t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } : TCB).spaceCells[2] =
+      t.spaceCells[2] ∧ ({ t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } : TCB).ipcBuffer =
       t.ipcBuffer := fun _ => ⟨rfl, rfl⟩
   have h6 := updateTcb_noResizeDue s5 caller
     (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) h5

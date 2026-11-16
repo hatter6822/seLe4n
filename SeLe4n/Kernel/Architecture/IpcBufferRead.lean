@@ -17,8 +17,8 @@ On ARM64 the default syscall register layout (`arm64DefaultLayout`) reserves
 four inline message registers (x2–x5). Syscalls whose `MessageInfo.length > 4`
 must spill the remaining message registers into the caller's IPC buffer
 (seL4 convention). This module provides `ipcBufferReadMr`, a pure, read-only
-helper that resolves the caller's IPC-buffer virtual address through the
-thread's VSpace and returns the `UInt64` stored at overflow slot `idx`.
+helper that finds the caller's IPC buffer through the frame capability in
+its buffer slot (`lookupIPCBuffer`) and returns the `UInt64` stored at overflow slot `idx`.
 
 **Key properties:**
 - `ipcBufferReadMr : SystemState → ThreadId → Nat → Except IpcBufferReadError UInt64`
@@ -39,15 +39,13 @@ thread's VSpace and returns the `UInt64` stored at overflow slot `idx`.
 - Message register `i` is `msg[i]`, word `1 + i`; overflow slot `j`
   (0-indexed, MR[j+4] for the ARM64 4-inline-regs layout) occupies bytes
   `[(5+j)*8, (5+j)*8+8)` from that base (`ipcBufferOverflowBaseWord`).
-- A buffer the validator admits is aligned to `ipcBufferAlignment` (1024 B,
-  the buffer's size), so all 116 overflow slots lie on the buffer's page
-  (`maxOverflowSlots_le_firstPageSlots`).  The reads do not assume it:
-  `root.lookup` is called per slot, at the slot's own page, so a buffer
-  address no validator checked (a state built some other way) whose slots
-  straddle a page reads the next page through its own mapping, and an
-  unmapped page in that range is rejected.
+- The buffer is found as seL4's `lookupIPCBuffer` finds it, through the frame
+  capability in the thread's buffer slot (WS-SX SX6.6): the frame's base plus
+  the buffer's offset in its page.  A buffer the validator admits is aligned
+  to `ipcBufferAlignment` (1024 B, the buffer's size), so every word lies in
+  that one frame; no word is translated through the thread's address space.
 
-**Dependencies:** `Model.State` (TCB + VSpaceRoot) and `Architecture.PageTable`
+**Dependencies:** `Model.State` (TCB + FrameObject) and `Architecture.PageTable`
 (for the little-endian `readUInt64` byte assembly).
 -/
 
@@ -67,10 +65,9 @@ open SeLe4n.Model
 inductive IpcBufferReadError where
   /-- The caller TCB was not found in the object store. -/
   | threadNotFound
-  /-- The TCB's `vspaceRoot` ObjId does not resolve to a VSpaceRoot object. -/
-  | vspaceRootInvalid
-  /-- The IPC-buffer VAddr is not mapped in the thread's VSpace. -/
-  | ipcBufferVAddrUnmapped
+  /-- The thread's buffer slot holds no frame capability the read may use
+      (`lookupIPCBuffer`). -/
+  | noIpcBuffer
   /-- The overflow index lies outside `[0, maxOverflowSlots)`. -/
   | overflowIndexOutOfRange
   deriving Repr, DecidableEq
@@ -121,36 +118,94 @@ theorem ipcBufferWords_within_alignment :
     (ipcBufferOverflowBaseWord + ipcBufferWords) * 8 = ipcBufferAlignment := by decide
 
 -- ============================================================================
--- AK4-A.1: Pure IPC-buffer word read helper
+-- WS-SX SX6.6: seL4's `lookupIPCBuffer`
 -- ============================================================================
 
-/-- The virtual address of overflow slot `idx` in a thread's IPC buffer.
+/-- **Where a buffer slot's capability puts the buffer** — seL4's
+`lookupIPCBuffer` (`tcb.c`) on the content `cell` of a thread's buffer slot
+(`TCB.ipcBufferSlot`, seL4's `tcbBuffer`) and its buffer address `buf`
+(`tcbIPCBuffer`): the physical address of the buffer's `tag` word, the base of
+the frame the capability names plus the buffer's offset in its page.  `none`
+when the slot holds no frame capability, when the frame is device memory, or
+when the capability lacks the right the access needs: a receiver, which the
+kernel writes, needs `.write`; a sender, which the kernel reads, needs
+`.read` (seL4's `VMReadWrite`, or `VMReadOnly` for a sender).
 
-    The single source for this arithmetic: the read below resolves it, and
-    the SM7.F access-time TLB fill caches the page it resolves through.  Two
-    copies could drift apart, and a fill that cached a different page than the
-    read walked would be a fill of an entry hardware never loaded. -/
-def ipcBufferSlotAddr (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
-  VAddr.ofNat (ipcBuffer.toNat + (ipcBufferOverflowBaseWord + idx) * 8)
+The buffer lies in the one frame: a buffer address the validator admits is
+aligned to the buffer's size (`ipcBufferWords_within_alignment`), so every
+word of it is at a fixed offset from this address, and no word is looked up
+through the thread's address space. -/
+@[inline] def bufferFrameBase? (st : SystemState) (isReceiver : Bool)
+    (cell : Option Capability) (buf : VAddr) : Option PAddr :=
+  match cell with
+  | some cap =>
+    match cap.target with
+    | .object id =>
+      match st.getFrame? id with
+      | some f =>
+        if !f.isDevice && cap.rights.mem (if isReceiver then .write else .read) then
+          some (PAddr.ofNat (f.base.toNat + buf.pageOffset))
+        else none
+      | none => none
+    | _ => none
+  | none => none
 
-/-- The page through which overflow slot `idx` resolves.
+/-- **seL4's `lookupIPCBuffer`**: where thread `tcb`'s IPC buffer is, read
+through the frame capability in its buffer slot (`bufferFrameBase?`). -/
+@[inline] def lookupIPCBuffer (isReceiver : Bool) (st : SystemState)
+    (tcb : SeLe4n.Model.TCB) : Option PAddr :=
+  bufferFrameBase? st isReceiver tcb.spaceCells[2] tcb.ipcBuffer
 
-    The single source shared by `ipcBufferReadMr` below (which looks the page
-    up) and the SM7.F access-time TLB fill (which caches it): the fill must
-    cache *the page the read walked*, and stating that arithmetic twice is how
-    the two would drift.  Being a page base is what makes an entry keyed here
-    reachable by a page invalidation — `tlbEntryMatches` compares virtual
-    addresses for equality, not containment, so an entry keyed at an unaligned
-    byte address would survive the shootdown that is supposed to evict it. -/
-def ipcBufferSlotPage (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
-  (ipcBufferSlotAddr ipcBuffer idx).pageBase
+/-- `bufferFrameBase?` handing its answer to a continuation, so a compiled
+caller builds no `Option` (`bufferFrameBaseK_eq`). -/
+@[inline] def bufferFrameBaseK {α : Type} (st : SystemState) (isReceiver : Bool)
+    (cell : Option Capability) (buf : VAddr) (kNone : Unit → α) (k : PAddr → α) : α :=
+  match cell with
+  | some cap =>
+    match cap.target with
+    | .object id =>
+      match st.getFrame? id with
+      | some f =>
+        if !f.isDevice && cap.rights.mem (if isReceiver then .write else .read) then
+          k (PAddr.ofNat (f.base.toNat + buf.pageOffset))
+        else kNone ()
+      | none => kNone ()
+    | _ => kNone ()
+  | none => kNone ()
 
-/-- The page a slot resolves through is page-aligned. -/
-theorem ipcBufferSlotPage_aligned (ipcBuffer : VAddr) (idx : Nat) :
-    (ipcBufferSlotPage ipcBuffer idx).toNat % pageBytes = 0 :=
-  VAddr.pageBase_aligned _
+theorem bufferFrameBaseK_eq {α : Type} (st : SystemState) (isReceiver : Bool)
+    (cell : Option Capability) (buf : VAddr) (kNone : Unit → α) (k : PAddr → α) :
+    bufferFrameBaseK st isReceiver cell buf kNone k =
+      match bufferFrameBase? st isReceiver cell buf with
+      | none => kNone ()
+      | some b => k b := by
+  unfold bufferFrameBaseK bufferFrameBase?
+  rcases cell with _ | cap
+  · rfl
+  dsimp only
+  cases cap.target <;> try rfl
+  rename_i id
+  dsimp only
+  rcases st.getFrame? id with _ | f
+  · rfl
+  dsimp only
+  split <;> split <;> rfl
 
-/-- WS-ZA ZA5.2: the address of an entry's `i`-th word pair
+/-- The lookup reads nothing of a state but its frames. -/
+theorem bufferFrameBase?_congr {st st' : SystemState}
+    (hF : ∀ id, st'.getFrame? id = st.getFrame? id) (isReceiver : Bool)
+    (cell : Option Capability) (buf : VAddr) :
+    bufferFrameBase? st' isReceiver cell buf = bufferFrameBase? st isReceiver cell buf := by
+  unfold bufferFrameBase?
+  simp only [hF]
+
+/-- The physical address of overflow slot `idx` (buffer word
+`ipcBufferOverflowBaseWord + idx`) of the buffer whose `tag` word is at
+`base`. -/
+@[inline] def ipcBufferWordAt (base : PAddr) (idx : Nat) : PAddr :=
+  PAddr.ofNat (base.toNat + (ipcBufferOverflowBaseWord + idx) * 8)
+
+/-- **WS-ZA ZA5.2: the address of an entry's `i`-th word pair**
 (`MachineState.entryWordBytes`). -/
 @[inline] def pairAddr (b : ByteArray) (i : Nat) : Nat := (le64At b (16 * i)).toNat
 
@@ -213,56 +268,36 @@ recursion over the pairs' bytes, so no `Option`, list or closure is built. -/
 
 /-- Read a single overflow message register from a thread's IPC buffer.
 
-    **Layout convention:** The thread's IPC buffer starts at VAddr
-    `tcb.ipcBuffer`; overflow slot `i` (0-indexed) lives at byte offset
-    `(ipcBufferOverflowBaseWord + i) * 8`, seL4's `msg[4 + i]`. The corresponding virtual address resolves through the
-    thread's VSpace to a physical address, from which `readUInt64`
-    assembles an 8-byte little-endian word.
+    **Layout convention:** overflow slot `i` (0-indexed) is seL4's
+    `msg[4 + i]`, at byte offset `(ipcBufferOverflowBaseWord + i) * 8` from
+    the buffer's `tag` word (`ipcBufferWordAt`).
 
-    **Translation is page-granular.** `VSpaceRoot.mappings` is an exact-key
-    table whose keys are page bases (`VSpaceRoot.mapPage` installs no other
-    key), so the slot's *byte* address must be split: the containing page is
-    looked up, and the intra-page offset is carried through to the physical
-    address.  Handing the raw byte address to `lookup` — as this function did
-    before v0.32.150 — misses for every slot but the zeroth, so a syscall
-    carrying two or more overflow registers failed with
-    `ipcBufferVAddrUnmapped` against a correctly mapped buffer, and slot zero
-    resolved only because its offset happens to be zero.  seL4 routinely
-    carries many message registers through the IPC buffer; the truncation was
-    a model-fidelity defect, fail-closed but real.
+    **WS-SX SX6.6: the buffer is found as seL4 finds it**, through the frame
+    capability in the thread's buffer slot (`lookupIPCBuffer`, a sender's
+    read): no word is translated through the thread's address space, so a
+    read consults no page table and no TLB, and every slot lies in the one
+    frame the capability names.
 
     **Failure modes (each clamps the message to its inline words at the
     decode boundary, `clampToInline`, as seL4 clamps a message with no IPC
     buffer):**
     - Missing TCB → `threadNotFound`.
-    - Missing VSpaceRoot object → `vspaceRootInvalid`.
-    - Unmapped IPC-buffer VAddr → `ipcBufferVAddrUnmapped`.
+    - No readable buffer frame (`lookupIPCBuffer`) → `noIpcBuffer`.
     - `idx ≥ maxOverflowSlots` → `overflowIndexOutOfRange`.
 
     **Read-only:** structural — return type contains no `SystemState`, so
     Lean's type system forbids state modification. See
     `ipcBufferReadMr_reads_only_caller_tcb` for the NI witness. -/
 def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
-    : Except IpcBufferReadError UInt64 := do
+    : Except IpcBufferReadError UInt64 :=
   if idx ≥ maxOverflowSlots then
     .error .overflowIndexOutOfRange
   else
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration on
-    -- both the TCB and VSpaceRoot lookups. Both `_` arms in the
-    -- pre-AN10 form collapsed wrong-variant and absent into the same
-    -- error code, so migration is semantics-preserving.
     match st.getTcb? tid with
     | some tcb =>
-      match st.getVSpaceRoot? tcb.vspaceRoot with
-      | some root =>
-        let slotVA : VAddr := ipcBufferSlotAddr tcb.ipcBuffer idx
-        -- Page-granular translation: resolve the containing page, then carry
-        -- the intra-page offset through to the physical address.
-        match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
-        | some (paddr, _perms) =>
-          .ok (userWordAt st.machine (PAddr.ofNat (paddr.toNat + slotVA.pageOffset)))
-        | none => .error .ipcBufferVAddrUnmapped
-      | none => .error .vspaceRootInvalid
+      match lookupIPCBuffer false st tcb with
+      | some base => .ok (userWordAt st.machine (ipcBufferWordAt base idx))
+      | none => .error .noIpcBuffer
     | none => .error .threadNotFound
 
 /-- WS-ZA ZA5.2: `ipcBufferReadMr` handing its word to a continuation
@@ -274,14 +309,8 @@ arm as a machine word: no `Except` cell boxes it. -/
   else
     match st.getTcb? tid with
     | some tcb =>
-      match st.getVSpaceRoot? tcb.vspaceRoot with
-      | some root =>
-        match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
-        | some (paddr, _perms) =>
-          ok (userWordAt st.machine
-            (PAddr.ofNat (paddr.toNat + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
-        | none => err .ipcBufferVAddrUnmapped
-      | none => err .vspaceRootInvalid
+      bufferFrameBaseK st false tcb.spaceCells[2] tcb.ipcBuffer (fun _ => err .noIpcBuffer)
+        (fun base => ok (userWordAt st.machine (ipcBufferWordAt base idx)))
     | none => err .threadNotFound
 
 theorem ipcBufferReadMrK_eq {α : Type} (st : SystemState) (tid : ThreadId) (idx : Nat)
@@ -298,160 +327,44 @@ theorem ipcBufferReadMrK_eq {α : Type} (st : SystemState) (tid : ThreadId) (idx
     | none => rfl
     | some tcb =>
       dsimp only
-      cases st.getVSpaceRoot? tcb.vspaceRoot with
-      | none => rfl
-      | some root =>
-        dsimp only
-        cases root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
-        | none => rfl
-        | some p => rfl
+      rw [bufferFrameBaseK_eq]
+      unfold lookupIPCBuffer
+      cases bufferFrameBase? st false tcb.spaceCells[2] tcb.ipcBuffer <;> rfl
 
-/-- A slot on the page of slot `i0` reads wherever slot `i0` reads: the page is
-looked up once for both, and only the offset into it differs. -/
-theorem ipcBufferReadMr_of_samePage {st : SystemState} {tid : ThreadId}
-    {tcb : SeLe4n.Model.TCB} {i i0 : Nat} (hT : st.getTcb? tid = some tcb)
-    (hP : ipcBufferSlotPage tcb.ipcBuffer i = ipcBufferSlotPage tcb.ipcBuffer i0)
-    (hi : i < maxOverflowSlots) (h0 : ∃ w, ipcBufferReadMr st tid i0 = .ok w) :
-    ∃ w, ipcBufferReadMr st tid i = .ok w := by
-  obtain ⟨w0, h0⟩ := h0
-  have hilt : ¬ (i ≥ maxOverflowSlots) := by omega
-  unfold ipcBufferReadMr at h0 ⊢
-  have h0lt : ¬ (i0 ≥ maxOverflowSlots) := by
-    intro h; simp only [h, ↓reduceIte] at h0; cases h0
-  simp only [h0lt, hilt, ↓reduceIte, hT] at h0 ⊢
-  cases hR : st.getVSpaceRoot? tcb.vspaceRoot with
-  | none => simp only [hR] at h0; cases h0
-  | some root =>
-    simp only [hR] at h0 ⊢
-    rw [hP]
-    cases hL : root.lookup (ipcBufferSlotPage tcb.ipcBuffer i0) with
-    | none => simp only [hL] at h0; cases h0
-    | some p => exact ⟨_, rfl⟩
-
-/-- How many overflow slots of the buffer at `buf` lie on the page of slot 0:
-the slots before the first whose eight bytes start on the next page.  The
-overflow region, `maxOverflowSlots` words (928 bytes), is shorter than a page,
-so every slot from this one on lies on the next page
-(`ipcBufferSlotPage_of_firstPageSlots_le`). -/
-@[inline] def firstPageSlots (buf : VAddr) : Nat :=
-  (SeLe4n.pageBytes - (buf.toNat + ipcBufferOverflowBaseWord * 8) % SeLe4n.pageBytes + 7) / 8
-
-private theorem slotPage_eq_ofNat (buf : VAddr) (j : Nat) :
-    ipcBufferSlotPage buf j =
-      VAddr.ofNat ((buf.toNat + 40 + j * 8) / SeLe4n.pageBytes * SeLe4n.pageBytes) := by
-  unfold ipcBufferSlotPage ipcBufferSlotAddr VAddr.pageBase
-  have h : buf.toNat + (ipcBufferOverflowBaseWord + j) * 8 = buf.toNat + 40 + j * 8 := by
-    simp only [ipcBufferOverflowBaseWord]; omega
-  simp only [VAddr.toNat, VAddr.ofNat] at h ⊢
-  rw [h]
-
-/-- A slot before `firstPageSlots` is on slot 0's page… -/
-theorem ipcBufferSlotPage_of_lt_firstPageSlots {buf : VAddr} {j : Nat}
-    (h : j < firstPageSlots buf) : ipcBufferSlotPage buf j = ipcBufferSlotPage buf 0 := by
-  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
-  apply congrArg VAddr.ofNat
-  unfold firstPageSlots at h
-  simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
-  omega
-
-/-- The buffer's words fit the buffer: from the `tag` word through the
-receive path (`rust/sele4n-abi/src/ipc_buffer.rs`'s `IpcBuffer`, 128 words)
-they span at most `ipcBufferAlignment` bytes, so the validator's physical-end
-bound covers every word the kernel reads or writes there
-(`IpcBufferValidation.validateIpcBufferAddress`, step 7). -/
-theorem ipcBufferWords_within_buffer :
-    (ipcBufferOverflowBaseWord + ipcBufferWords) * 8 ≤ SeLe4n.ipcBufferAlignment := by
-  decide
-
-/-- A buffer aligned to `ipcBufferAlignment`, as the validator admits it, holds
-every overflow slot on slot 0's page: its first page holds all
-`maxOverflowSlots`, so no overflow region of a validated buffer crosses a page
-(`ipcBufferSlotPage_of_lt_firstPageSlots`). -/
-theorem maxOverflowSlots_le_firstPageSlots {buf : VAddr}
-    (h : buf.toNat % SeLe4n.ipcBufferAlignment = 0) :
-    maxOverflowSlots ≤ firstPageSlots buf := by
-  unfold firstPageSlots
-  simp only [maxOverflowSlots, SeLe4n.Model.maxMessageRegisters, SeLe4n.ipcBufferAlignment,
-    SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
-  omega
-
-/-- …every slot from it to the last overflow slot is on the next… -/
-theorem ipcBufferSlotPage_of_firstPageSlots_le {buf : VAddr} {j : Nat}
-    (h : firstPageSlots buf ≤ j) (hj : j < maxOverflowSlots) :
-    ipcBufferSlotPage buf j = ipcBufferSlotPage buf (firstPageSlots buf) := by
-  have h116 : maxOverflowSlots = 116 := rfl
-  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
-  apply congrArg VAddr.ofNat
-  unfold firstPageSlots at h ⊢
-  simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
-  omega
-
-/-- …and the two pages differ. -/
-theorem ipcBufferSlotPage_firstPageSlots_ne (buf : VAddr) :
-    ipcBufferSlotPage buf (firstPageSlots buf) ≠ ipcBufferSlotPage buf 0 := by
-  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
-  intro hEq
-  have h := congrArg VAddr.toNat hEq
-  simp only [VAddr.ofNat, VAddr.toNat] at h
-  unfold firstPageSlots at h
-  simp only [SeLe4n.pageBytes, VAddr.toNat, ipcBufferOverflowBaseWord] at h
-  omega
-
-theorem firstPageSlots_pos (buf : VAddr) : 0 < firstPageSlots buf := by
-  unfold firstPageSlots; simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord]; omega
-
-/-- The overflow slot read after slot 0 to show every overflow slot of `n`
-reads: the first slot of the next page when the slots cross into it, and slot
-0 again when they do not (`ipcBufferOverflowReadable`). -/
-@[inline] def overflowSecondRead (buf : VAddr) (n : Nat) : Nat :=
-  if n ≤ firstPageSlots buf then 0 else firstPageSlots buf
-
-theorem overflowSecondRead_lt {buf : VAddr} {n : Nat} (hn : 0 < n) :
-    overflowSecondRead buf n < n := by
-  unfold overflowSecondRead; split <;> omega
-
-/-- Where slot 0 and `overflowSecondRead` read, every overflow slot of `n`
-reads: the slots span two pages at most, each looked up once for all its
-slots. -/
-theorem ipcBufferOverflowReadable {st : SystemState} {tid : ThreadId} {tcb : SeLe4n.Model.TCB}
-    {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : n ≤ maxOverflowSlots)
-    (h0 : ∃ w, ipcBufferReadMr st tid 0 = .ok w)
-    (h1 : ∃ w, ipcBufferReadMr st tid (overflowSecondRead tcb.ipcBuffer n) = .ok w) :
+/-- **Every overflow slot reads where slot 0 reads**: the buffer is looked up
+once, through its frame capability, and only the offset into it differs
+(WS-SX SX6.6). -/
+theorem ipcBufferOverflowReadable {st : SystemState} {tid : ThreadId} {n : Nat}
+    (hn : n ≤ maxOverflowSlots) (h0 : ∃ w, ipcBufferReadMr st tid 0 = .ok w) :
     ∀ j, j < n → ∃ w, ipcBufferReadMr st tid j = .ok w := by
-  intro j hj
-  by_cases hk : j < firstPageSlots tcb.ipcBuffer
-  · exact ipcBufferReadMr_of_samePage hT (ipcBufferSlotPage_of_lt_firstPageSlots hk)
-      (by omega) h0
-  · have hNot : ¬ n ≤ firstPageSlots tcb.ipcBuffer := by omega
-    simp only [overflowSecondRead, hNot, ↓reduceIte] at h1
-    exact ipcBufferReadMr_of_samePage hT
-      (ipcBufferSlotPage_of_firstPageSlots_le (by omega) (by omega)) (by omega) h1
+  intro j hj'
+  have hj : j < maxOverflowSlots := Nat.lt_of_lt_of_le hj' hn
+  obtain ⟨w0, h0⟩ := h0
+  have hilt : ¬ (j ≥ maxOverflowSlots) := by omega
+  have h0lt : ¬ (0 ≥ maxOverflowSlots) := by decide
+  unfold ipcBufferReadMr at h0 ⊢
+  simp only [h0lt, hilt, ↓reduceIte] at h0 ⊢
+  cases hT : st.getTcb? tid with
+  | none => simp only [hT] at h0; cases h0
+  | some tcb =>
+    simp only [hT] at h0 ⊢
+    cases hB : lookupIPCBuffer false st tcb with
+    | none => simp only [hB] at h0; cases h0
+    | some b => exact ⟨_, rfl⟩
 
 /-- **WS-SM SM7.F.5**: the positive characterisation — what a *successful*
-    read resolves to.  The failure-mode theorems below say when the read
-    fails; this one pins the physical address it reads from when it succeeds,
-    which is what the access-time TLB fill must agree with.
-
-    Note the shape: the page comes from `ipcBufferSlotPage` and the offset
-    from `ipcBufferSlotAddr`, so the address read is
-    `page's physical base + the slot's offset within the page`. -/
-theorem ipcBufferReadMr_ok_of_mapped
-    (st : SystemState) (tid : ThreadId) (tcb : SeLe4n.Model.TCB)
-    (root : SeLe4n.Model.VSpaceRoot) (idx : Nat)
-    (pa : SeLe4n.PAddr) (perms : SeLe4n.Model.PagePermissions)
+    read resolves to: the word at the slot's offset from the buffer base
+    `lookupIPCBuffer` answers. -/
+theorem ipcBufferReadMr_ok_of_lookup
+    (st : SystemState) (tid : ThreadId) (tcb : SeLe4n.Model.TCB) (idx : Nat) (base : PAddr)
     (hBound : idx < maxOverflowSlots)
     (hTcb : st.getTcb? tid = some tcb)
-    (hRoot : st.getVSpaceRoot? tcb.vspaceRoot = some root)
-    (hMapped : root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx)
-                 = some (pa, perms)) :
-    ipcBufferReadMr st tid idx
-      = .ok (userWordAt st.machine
-               (PAddr.ofNat
-                 (pa.toNat + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset))) := by
+    (hBase : lookupIPCBuffer false st tcb = some base) :
+    ipcBufferReadMr st tid idx = .ok (userWordAt st.machine (ipcBufferWordAt base idx)) := by
   unfold ipcBufferReadMr
   split
   · next hGe => exact absurd hGe (by omega)
-  · simp only [hTcb, hRoot, hMapped]
+  · simp only [hTcb, hBase]
 
 /-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
 theorem ipcBufferReadMr_out_of_range
@@ -490,42 +403,47 @@ theorem ipcBufferReadMr_ok_implies_tcb
     · simp at hOk
 
 /-- AK4-A.5 (NI): The read scope is exclusively the caller's own state.
-    Formally, replacing any other thread's state (its TCB, or any object
-    that is neither the caller's TCB nor the caller's VSpaceRoot) does not
-    change the read result. This is the substantive NI property of
-    `ipcBufferReadMr` — the decode path has no cross-thread information
-    channel. -/
+    Formally, replacing any other object (one that is neither the caller's
+    TCB nor the frame its buffer slot names) does not change the read result.
+    This is the substantive NI property of `ipcBufferReadMr` — the decode path
+    has no cross-thread information channel. -/
 theorem ipcBufferReadMr_reads_only_caller_tcb
     (st st' : SystemState) (tid : ThreadId) (idx : Nat)
     (hTcb  : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?)
-    (hVs   : ∀ vs : SeLe4n.ObjId,
+    (hFrame : ∀ fr : SeLe4n.ObjId,
               (st.objects[tid.toObjId]?).bind
-                 (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
-                 = some vs →
-              st'.objects[vs]? = st.objects[vs]?)
+                 (fun o => match o with
+                   | .tcb t => some (TCB.spaceCellObject t.spaceCells[2]) | _ => none)
+                 = some fr →
+              st'.objects[fr]? = st.objects[fr]?)
     (hMem  : st'.machine.memory = st.machine.memory)
     (hBytes : st'.machine.entryWordBytes = st.machine.entryWordBytes)
     (hCount : st'.machine.entryWordCount = st.machine.entryWordCount) :
     ipcBufferReadMr st' tid idx = ipcBufferReadMr st tid idx := by
-  -- AN10-B: unfold both `getTcb?` and `getVSpaceRoot?` so the framing
-  -- hypotheses (stated against the raw object-store lookup) line up
-  -- with what `ipcBufferReadMr` now reads via the typed helpers.
-  unfold ipcBufferReadMr SystemState.getTcb? SystemState.getVSpaceRoot?
+  unfold ipcBufferReadMr SystemState.getTcb?
   by_cases hBound : idx ≥ maxOverflowSlots
   · simp [hBound]
   · simp only [hBound, ↓reduceIte]
     rw [hTcb]
-    -- After rewriting the TCB lookup, case-split on the result.
     cases hT : st.objects[tid.toObjId]? with
     | none => rfl
     | some obj =>
       cases obj with
       | tcb tcb =>
-        -- The VSpaceRoot lookup must also agree; supply witness via hVs.
-        have hVsEq : st'.objects[tcb.vspaceRoot]? = st.objects[tcb.vspaceRoot]? := by
-          apply hVs
-          simp [hT]
-        simp only [hVsEq, userWordAt, hMem, hBytes, hCount]
+        have hB : lookupIPCBuffer false st' tcb = lookupIPCBuffer false st tcb := by
+          unfold lookupIPCBuffer bufferFrameBase?
+          rcases hc : tcb.spaceCells[2] with _ | cap
+          · rfl
+          dsimp only
+          cases hTg : cap.target <;> try rfl
+          rename_i id
+          have hId : TCB.spaceCellObject tcb.spaceCells[2] = id := by
+            simp only [TCB.spaceCellObject, hc, hTg]
+          have hEq : st'.objects[id]? = st.objects[id]? := hFrame id (by simp [hT, hId])
+          simp only [SystemState.getFrame?, hEq]
+        dsimp only
+        rw [hB]
+        simp only [userWordAt, hMem, hBytes, hCount]
       | endpoint _ => rfl
       | notification _ => rfl
       | cnode _ => rfl
@@ -538,129 +456,123 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
 -- WS-BP BP7.8: the slot resolver both directions share, and the RAM sync
 -- ============================================================================
 
-/-- **WS-BP BP7.8: where overflow slot `idx` of a thread's IPC buffer lives in
-RAM, as the kernel may touch it for that thread** — `none` unless the slot's
-page resolves through the thread's own VSpace, the word is eight-byte aligned
-(so it lies in one page), and the address is declared RAM (`addrInRange`, never
-a device region).  `needWrite` additionally requires a writable mapping: a
-delivered message register is written only where the receiver may write, which
-is the permission check `ipcBufferReadMr` does not make and a write path must
-(`AuditRead`'s stated non-goal, discharged).
-
-It is the **one** resolver the two directions share: the entry reads a sender's
-words from RAM at the addresses it answers (`callerOverflowAddrs`), and a
-delivery writes a receiver's at the addresses it answers
-(`Architecture.overflowDeliveryWrites`), so the kernel can name no address in
-either direction that this function did not.  Since the HAL admits exactly an
+/-- **WS-BP BP7.8: where word `idx` of the buffer at `base` lives in RAM, as
+the kernel may touch it** — `none` unless the word is one of the buffer's
+(`ipcBufferWords`), eight-byte aligned (so it lies in one page), and declared
+RAM (`addrInRange`, never a device region).  Since the HAL admits exactly an
 eight-byte aligned word of RAM past the kernel's reserved extent
-(`user_translation::user_word_admissible`), every address it answers is one the
-HAL performs: a mapped frame is carved from an untyped, and the boot refuses an
-untyped over the kernel's extent. -/
-@[inline] def ipcBufferWordPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
-    (needWrite : Bool) : Option PAddr :=
+(`user_translation::user_word_admissible`), every address it answers is one
+the HAL performs. -/
+@[inline] def ipcBufferWordIn? (st : SystemState) (base : PAddr) (idx : Nat) : Option PAddr :=
   if idx < ipcBufferWords then
-    match st.getVSpaceRoot? tcb.vspaceRoot with
-    | some root =>
-      match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
-      | some (paddr, perms) =>
-        let pa := PAddr.ofNat (paddr.toNat + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)
-        if pa.toNat % 8 == 0 && st.machine.addrInRange pa && (!needWrite || perms.write) then
-          some pa
-        else none
-      | none => none
-    | none => none
+    let pa := ipcBufferWordAt base idx
+    if pa.toNat % 8 == 0 && st.machine.addrInRange pa then some pa else none
   else none
 
-/-- **Where overflow slot `idx` lives**: word `idx` of the buffer, for a slot
-of the message's overflow (`ipcBufferWordPAddr?`); the words past the message
-are not message registers. -/
-@[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
-    (needWrite : Bool) : Option PAddr :=
-  if idx < maxOverflowSlots then ipcBufferWordPAddr? st tcb idx needWrite else none
+/-- The word resolver reads nothing of a state but its machine. -/
+theorem ipcBufferWordIn?_congr {st st' : SystemState} (hM : st'.machine = st.machine)
+    (base : PAddr) (idx : Nat) : ipcBufferWordIn? st' base idx = ipcBufferWordIn? st base idx := by
+  unfold ipcBufferWordIn?
+  rw [hM]
 
-/-- **WS-BP BP7.8**: where the resolver answers, the read reads exactly that
-word — so the entry's RAM sync and the decode's read name one address. -/
+/-- **Word `idx` of a buffer `lookupIPCBuffer` answered**: the one resolver
+both directions share.  The entry reads a sender's words from RAM at the
+addresses it answers on the sender's buffer (`callerOverflowAddrs`, a lookup
+with `isReceiver = false`), and a delivery writes a receiver's at the
+addresses it answers on the receiver's (`isReceiver = true`), so the kernel
+names no address in either direction that this function did not. -/
+@[inline] def ipcBufferWordPAddrIn? (st : SystemState) (base? : Option PAddr) (idx : Nat) :
+    Option PAddr :=
+  match base? with
+  | some base => ipcBufferWordIn? st base idx
+  | none => none
+
+/-- **Where overflow slot `idx` lives**: word `idx` of the thread's buffer,
+for a slot of the message's overflow; the words past the message are not
+message registers. -/
+@[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
+    (isReceiver : Bool) : Option PAddr :=
+  if idx < maxOverflowSlots then
+    ipcBufferWordPAddrIn? st (lookupIPCBuffer isReceiver st tcb) idx
+  else none
+
+/-- **WS-BP BP7.8**: where the sender's resolver answers, the read reads
+exactly that word — so the entry's RAM sync and the decode's read name one
+address. -/
 theorem ipcBufferReadMr_of_slotPAddr? (st : SystemState) (tid : ThreadId)
-    (tcb : SeLe4n.Model.TCB) (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (tcb : SeLe4n.Model.TCB) (idx : Nat) (pa : PAddr)
     (hTcb : st.getTcb? tid = some tcb)
-    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    (hPa : ipcBufferSlotPAddr? st tcb idx false = some pa) :
     ipcBufferReadMr st tid idx = .ok (userWordAt st.machine pa) := by
   unfold ipcBufferSlotPAddr? at hPa
   split at hPa
   · rename_i hBound
-    unfold ipcBufferWordPAddr? at hPa
+    unfold ipcBufferWordPAddrIn? at hPa
     split at hPa
-    · split at hPa
-      · rename_i root hRoot
+    · rename_i base hBase
+      unfold ipcBufferWordIn? at hPa
+      split at hPa
+      · dsimp only at hPa
         split at hPa
-        · rename_i paddr perms hMapped
-          dsimp only at hPa
-          split at hPa
-          · cases hPa
-            exact ipcBufferReadMr_ok_of_mapped st tid tcb root idx paddr perms hBound hTcb
-              hRoot hMapped
-          · cases hPa
+        · cases hPa
+          exact ipcBufferReadMr_ok_of_lookup st tid tcb idx base hBound hTcb hBase
         · cases hPa
       · cases hPa
     · cases hPa
   · cases hPa
 
 /-- An answered word is eight-byte aligned. -/
-theorem ipcBufferWordPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
-    (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferWordPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
-  unfold ipcBufferWordPAddr? at hPa
+theorem ipcBufferWordPAddrIn?_aligned (st : SystemState) (base? : Option PAddr)
+    (idx : Nat) (pa : PAddr)
+    (hPa : ipcBufferWordPAddrIn? st base? idx = some pa) : pa.toNat % 8 = 0 := by
+  unfold ipcBufferWordPAddrIn? ipcBufferWordIn? at hPa
   split at hPa
   · split at hPa
-    · split at hPa
-      · dsimp only at hPa
-        split at hPa
-        · rename_i hOk
-          cases hPa
-          simp only [Bool.and_eq_true, beq_iff_eq] at hOk
-          exact hOk.1.1
-        · cases hPa
+    · dsimp only at hPa
+      split at hPa
+      · rename_i hOk
+        cases hPa
+        simp only [Bool.and_eq_true, beq_iff_eq] at hOk
+        exact hOk.1
       · cases hPa
     · cases hPa
   · cases hPa
 
 /-- An answered word is declared RAM. -/
-theorem ipcBufferWordPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
-    (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferWordPAddr? st tcb idx needWrite = some pa) :
+theorem ipcBufferWordPAddrIn?_ram (st : SystemState) (base? : Option PAddr)
+    (idx : Nat) (pa : PAddr)
+    (hPa : ipcBufferWordPAddrIn? st base? idx = some pa) :
     st.machine.addrInRange pa = true := by
-  unfold ipcBufferWordPAddr? at hPa
+  unfold ipcBufferWordPAddrIn? ipcBufferWordIn? at hPa
   split at hPa
   · split at hPa
-    · split at hPa
-      · dsimp only at hPa
-        split at hPa
-        · rename_i hOk
-          cases hPa
-          simp only [Bool.and_eq_true] at hOk
-          exact hOk.1.2
-        · cases hPa
+    · dsimp only at hPa
+      split at hPa
+      · rename_i hOk
+        cases hPa
+        simp only [Bool.and_eq_true] at hOk
+        exact hOk.2
       · cases hPa
     · cases hPa
   · cases hPa
 
 /-- An answered slot is eight-byte aligned. -/
 theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
-    (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
+    (idx : Nat) (isReceiver : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx isReceiver = some pa) : pa.toNat % 8 = 0 := by
   unfold ipcBufferSlotPAddr? at hPa
   split at hPa
-  · exact ipcBufferWordPAddr?_aligned st tcb idx needWrite pa hPa
+  · exact ipcBufferWordPAddrIn?_aligned st _ idx pa hPa
   · cases hPa
 
 /-- An answered slot is declared RAM. -/
 theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
-    (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    (idx : Nat) (isReceiver : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx isReceiver = some pa) :
     st.machine.addrInRange pa = true := by
   unfold ipcBufferSlotPAddr? at hPa
   split at hPa
-  · exact ipcBufferWordPAddr?_ram st tcb idx needWrite pa hPa
+  · exact ipcBufferWordPAddrIn?_ram st _ idx pa hPa
   · cases hPa
 
 /-- **How many overflow slots a `MessageInfo` word asks the decode to read**:
@@ -845,8 +757,9 @@ theorem ipcBufferReadMr_syncUserWord (st : SystemState) (tid : ThreadId)
   have hTcb' : (syncUserWords st bytes n).getTcb? tid = some tcb := by
     rw [hEq]; simpa [SystemState.getTcb?] using hTcb
   have hPa' : ipcBufferSlotPAddr? (syncUserWords st bytes n) tcb idx false = some pa := by
-    rw [hEq]; simpa [ipcBufferSlotPAddr?, SystemState.getVSpaceRoot?] using hPa
-  rw [ipcBufferReadMr_of_slotPAddr? _ tid tcb idx false pa hTcb' hPa']
+    rw [hEq]; simpa [ipcBufferSlotPAddr?, ipcBufferWordPAddrIn?, ipcBufferWordIn?,
+      lookupIPCBuffer, bufferFrameBase?, SystemState.getFrame?] using hPa
+  rw [ipcBufferReadMr_of_slotPAddr? _ tid tcb idx pa hTcb' hPa']
   obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
   simp only [syncUserWords, Nat.add_one_ne_zero, ↓reduceIte, userWordAt, syncedWordAt,
     syncedWordFrom, hAddr, hWord]
@@ -865,7 +778,7 @@ def encodeWordPairs (entries : List (PAddr × UInt64)) : ByteArray :=
 
 /-- The page the HAL bounds a run against: its `PAGE_BYTES`
 (`rust/sele4n-hal/src/user_translation.rs`), the 4 KiB page `pageOffset` and
-`ipcBufferSlotPage` already assume. -/
+`ipcBufferWordIn?` already assume. -/
 def wordRunPageBytes : Nat := 4096
 
 /-- The addresses a run names, in order. -/

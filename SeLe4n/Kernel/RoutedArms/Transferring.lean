@@ -16,7 +16,7 @@ The routed entry's `.transferring` arm (`syscallEntryCheckedK`): a send or a
 call whose message carries capabilities, as its own function
 (`transferringRoutedArm`).  Within the inline words it is the operand
 dispatch over the transferring arm (`transferringOperandArmThenTaintR`);
-past them, slot 0 and the next page's first slot are read and the dispatch
+past them, slot 0 is read and the dispatch
 runs on the state it is handed, as the long send's.  The
 caller's TCB is read here, off the state the arm is handed.
 
@@ -50,19 +50,11 @@ filled first as the long send's. -/
             (syscallRequiredRight sid))
           st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
           entryReportLookup entryReportLookupAtW)
-        (fun _ =>
-          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
-            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-          (transferringOperandArmThenTaintR ctx sid tcb.registerContext 4 tid executingCore
-            (syscallRequiredRight sid))
-          st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-          entryReportLookup entryReportLookupAtW)
-            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+        (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
                     executingCore (syscallRequiredRight sid))
                   st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-                  entryReportLookup entryReportLookupAtW))
+                  entryReportLookup entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

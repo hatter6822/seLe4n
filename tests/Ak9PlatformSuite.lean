@@ -2863,8 +2863,8 @@ def root_server_builds_the_ipc_buffer_at_boot : IO Unit := do
               | _ => false)
           expect s!"SX5.3 {name}: the first overflow word resolves, writable, into the reservation's frame"
             (decide (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? st t 0 true
-              = some (SeLe4n.PAddr.ofNat ((rs.pageAddr 0).toNat +
-                  (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr rs.bufferVAddr 0).pageOffset))))
+              = some (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordAt
+                  (SeLe4n.PAddr.ofNat ((rs.pageAddr 0).toNat + rs.bufferVAddr.pageOffset)) 0)))
           -- Four page scrubs, the three tables' descriptors and the buffer's
           -- page descriptor (`rootServerWrites`): the count the HAL prints
           -- at Phase 5 (`qemu_lean_boot_expected.txt`'s `BOOT_WRITES`).

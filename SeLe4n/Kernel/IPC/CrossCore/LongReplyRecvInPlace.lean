@@ -260,7 +260,7 @@ theorem ipcBufferReadsAgree_storeEndpointEnqueue (st : SystemState) (epId : SeLe
       | _ => rfl) hNo
   generalize st.modifyObject epId (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?)) = s1
     at h1 a1
-  have hL : ∀ t, (enqueueLinks tail? t).vspaceRoot = t.vspaceRoot ∧
+  have hL : ∀ t, (enqueueLinks tail? t).spaceCells[2] = t.spaceCells[2] ∧
       (enqueueLinks tail? t).ipcBuffer = t.ipcBuffer := fun t => by
     unfold enqueueLinks; split <;> exact ⟨rfl, rfl⟩
   cases tail? with

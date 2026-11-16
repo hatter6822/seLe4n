@@ -41,7 +41,8 @@ open Architecture.RegisterDecode (routedInvocation)
 
 /-- `callerExtraCapAddr?` in continuation form: the address goes to `kSome`
 and its absence to `kNone`, so no `Option` is built (`callerExtraCapAddrK_eq`).
-The buffer word is resolved as `ipcBufferWordPAddr?` resolves it, read-only. -/
+The buffer is looked up as a sender's (`lookupIPCBuffer`, `bufferFrameBaseK`)
+and the word resolved in it as `ipcBufferWordIn?` resolves it, read-only. -/
 @[inline] def callerExtraCapAddrK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (n i : Nat) (kNone : Unit → α) (kSome : SeLe4n.CPtr → α) : α :=
   if i < min n maxExtraCaps then
@@ -49,17 +50,12 @@ The buffer word is resolved as `ipcBufferWordPAddr?` resolves it, read-only. -/
     | some (.tcb tcb) =>
       let idx := Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i
       if idx < Architecture.IpcBufferRead.ipcBufferWords then
-        match st.getVSpaceRoot? tcb.vspaceRoot with
-        | some root =>
-          match root.lookup (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
-          | some (paddr, perms) =>
-            let pa := PAddr.ofNat (paddr.toNat +
-              (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)
-            if pa.toNat % 8 == 0 && st.machine.addrInRange pa && (!false || perms.write) then
+        Architecture.IpcBufferRead.bufferFrameBaseK st false tcb.spaceCells[2] tcb.ipcBuffer kNone
+          (fun base =>
+            let pa := Architecture.IpcBufferRead.ipcBufferWordAt base idx
+            if pa.toNat % 8 == 0 && st.machine.addrInRange pa then
               kSome (SeLe4n.CPtr.ofWord (Architecture.IpcBufferRead.userWordAt st.machine pa))
-            else kNone ()
-          | none => kNone ()
-        | none => kNone ()
+            else kNone ())
       else kNone ()
     | _ => kNone ()
   else kNone ()
@@ -71,7 +67,7 @@ theorem callerExtraCapAddrK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thre
       | none => kNone ()
       | some a => kSome a := by
   unfold callerExtraCapAddrK callerExtraCapAddr? senderExtraCapAddr?
-    Architecture.IpcBufferRead.ipcBufferWordPAddr?
+    Architecture.IpcBufferRead.ipcBufferWordPAddrIn? Architecture.IpcBufferRead.ipcBufferWordIn?
   by_cases h1 : i < min n maxExtraCaps
   · simp only [h1, ↓reduceIte]
     rcases st.getObject? tid.toObjId with _ | o
@@ -82,14 +78,15 @@ theorem callerExtraCapAddrK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thre
     by_cases h2 : Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i <
         Architecture.IpcBufferRead.ipcBufferWords
     · simp only [h2, ↓reduceIte]
-      rcases st.getVSpaceRoot? tcb.vspaceRoot with _ | root
-      · rfl
-      dsimp only
-      rcases root.lookup _ with _ | ⟨paddr, perms⟩
+      rw [Architecture.IpcBufferRead.bufferFrameBaseK_eq]
+      unfold Architecture.IpcBufferRead.lookupIPCBuffer
+      rcases Architecture.IpcBufferRead.bufferFrameBase? st false tcb.spaceCells[2] tcb.ipcBuffer
+        with _ | base
       · rfl
       dsimp only
       split <;> rfl
-    · simp only [h2, ↓reduceIte]; rfl
+    · simp only [h2, ↓reduceIte]
+      rcases Architecture.IpcBufferRead.lookupIPCBuffer false st tcb with _ | base <;> rfl
   · simp only [h1, ↓reduceIte]
 
 /-- **A CNode operation's two slots, its source root the caller's extra

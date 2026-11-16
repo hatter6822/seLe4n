@@ -425,9 +425,9 @@ theorem faultFrameW_eq (f : Fault) (ctx : FaultContext) (overflow : Nat)
 -- §2b  The words past the fourth, written into the handler's IPC buffer
 -- ============================================================================
 
-theorem getVSpaceRoot?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId) (g : TCB → TCB)
-    (id : SeLe4n.ObjId) : (X.mapTcbInPlace r g).getVSpaceRoot? id = X.getVSpaceRoot? id := by
-  unfold SystemState.getVSpaceRoot?
+theorem getFrame?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId) (g : TCB → TCB)
+    (id : SeLe4n.ObjId) : (X.mapTcbInPlace r g).getFrame? id = X.getFrame? id := by
+  unfold SystemState.getFrame?
   rw [SystemState.objects_mapTcbInPlace]
   by_cases h : (r.toObjId == id) = true
   · rw [if_pos h]
@@ -437,21 +437,20 @@ theorem getVSpaceRoot?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId) (g 
   · rw [if_neg h]
 
 /-- **A slot's address is the thread's space's, not its registers'**: a TCB
-write that keeps the thread's VSpace root and IPC buffer resolves every slot
+write that keeps the thread's buffer slot and IPC buffer resolves every slot
 where it was. -/
 theorem ipcBufferSlotPAddr?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId)
     (g : TCB → TCB) (t t' : TCB) (idx : Nat) (needWrite : Bool)
-    (hV : t'.vspaceRoot = t.vspaceRoot) (hB : t'.ipcBuffer = t.ipcBuffer) :
+    (hV : t'.spaceCells[2] = t.spaceCells[2]) (hB : t'.ipcBuffer = t.ipcBuffer) :
     Architecture.IpcBufferRead.ipcBufferSlotPAddr? (X.mapTcbInPlace r g) t' idx needWrite =
       Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t idx needWrite := by
-  unfold Architecture.IpcBufferRead.ipcBufferSlotPAddr?
-    Architecture.IpcBufferRead.ipcBufferWordPAddr?
-  rw [hV, hB, getVSpaceRoot?_mapTcbInPlace]
+  unfold Architecture.IpcBufferRead.ipcBufferSlotPAddr? Architecture.IpcBufferRead.lookupIPCBuffer
+  rw [hV, hB, Architecture.IpcBufferRead.bufferFrameBase?_congr (getFrame?_mapTcbInPlace X r g)]
   rfl
 
 /-- …so a delivery's overflow writes are where they were. -/
 theorem overflowDeliveryWrites_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId)
-    (g : TCB → TCB) (t t' : TCB) (hV : t'.vspaceRoot = t.vspaceRoot)
+    (g : TCB → TCB) (t t' : TCB) (hV : t'.spaceCells[2] = t.spaceCells[2])
     (hB : t'.ipcBuffer = t.ipcBuffer) :
     ∀ (ws : List SeLe4n.RegValue) (i : Nat),
       Architecture.overflowDeliveryWrites (X.mapTcbInPlace r g) t' ws i =
