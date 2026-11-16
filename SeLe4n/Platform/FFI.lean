@@ -3127,7 +3127,6 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .cspaceDelete           => some false
   | .cspaceRevoke           => some false
   | .untypedRetype          => some false
-  | .untypedReset           => some false
   | .vspaceMap              => some false
   | .vspaceUnmap            => some false
   | .serviceRegister        => some false

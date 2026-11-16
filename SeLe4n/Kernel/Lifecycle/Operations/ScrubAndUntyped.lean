@@ -224,11 +224,12 @@ carve then rounds it up to its boundary (`alignedCarveIndex`). -/
     Nat :=
   if hasCdtChildren st authority then cap.freeIndex else 0
 
-/-- WS-ZA ZA5.4 part 41: **the reset's own refusal, asked by the carve** — a carve
-through a capability with no derivation child resets the untyped, and the reset
-refuses while the untyped's child list still records a carved object
-(`untypedResetSlot`): an object can outlive its last capability, and a carve from
-0 would hand its memory out again. -/
+/-- WS-ZA ZA5.4 part 41: **the reset's refusal, asked by the carve** — a carve
+through a capability with no derivation child resets the untyped (seL4 resets
+inside `Untyped_Retype`; the model has no separate reset since WS-SX SX6.1), and
+the reset refuses while the untyped's child list still records a carved object:
+an object can outlive its last capability, and a carve from 0 would hand its
+memory out again. -/
 @[inline] def retypeResetAdmitted (st : SystemState) (authority : CSpaceAddr)
     (ut : UntypedObject) : Bool :=
   hasCdtChildren st authority || ut.children.isEmpty
@@ -861,8 +862,8 @@ page's base or kind builds no frame record (WS-ZA ZA5.4). -/
 write and grant — the rights a frame capability's holder can exercise (map
 readable, map writable, hand the frame on).  `.retype` is absent because a
 frame is not retyped; its memory returns to its untyped once its last
-capability is deleted and the untyped's capability is reset
-(`untypedResetFromCap`). -/
+capability is deleted, and the next carve through the then childless untyped
+capability resets it (`retypeFreeIndex`). -/
 def frameCapability (frameId : SeLe4n.ObjId) : Capability :=
   { target := .object frameId
     rights := AccessRightSet.ofList [.read, .write, .grant] }

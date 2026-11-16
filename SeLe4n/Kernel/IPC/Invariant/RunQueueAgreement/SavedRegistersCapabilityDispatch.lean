@@ -1699,7 +1699,6 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h
     | exact cspaceRevokeCdtFinalising_savedRegsKeptOffCore B hB h
     | exact hF (mintReplyCapWithCdt_savedRegsKept hInv h)
-    | exact hF (untypedResetFromCap_savedRegsKept hInv h)
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
     | exact hF (vspaceMapOrRemapFromFrameCap_savedRegsKept hInv h)
     | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)

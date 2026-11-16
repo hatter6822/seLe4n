@@ -250,11 +250,6 @@ theorem dispatchCapabilityOnly_recordsStage
     case object _ =>
       exact RecordsStage.untypedRetypeFromCap hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      exact .of_frameK fun hI => RecordsFrame.untypedResetFromCap hI hStep
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>

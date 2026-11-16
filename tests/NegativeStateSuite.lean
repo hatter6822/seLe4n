@@ -2627,8 +2627,8 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (36 = untypedRetype)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨36⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (37 = untypedReset)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨37⟩)
+  expectErr "J1 decodeSyscallId retired code (37, the untyped reset)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨37⟩) .invalidSyscallNumber
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (38 = tcbSetSpace)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨38⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (40 = pageTableUnmap)"

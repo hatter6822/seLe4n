@@ -438,7 +438,7 @@ for driver in drivers:
             "third-tcb-set-priority", "third-tcb-set-space", "third-unbind", "timer-tick",
             "unbound-tcb-delete", "unknown-syscall-delivered",
             "unknown-syscall-delivered-to-reply", "unknown-syscall-plain-reply", "unknown-syscall-reply",
-            "unknown-syscall-resume", "unknown-syscall-suspends", "untyped-reset",
+            "unknown-syscall-resume", "unknown-syscall-suspends",
             "untyped-retype-bound-notification", "untyped-retype-bound-tcb",
             "untyped-retype-busy-endpoint", "untyped-retype-busy-notification",
             "untyped-retype-busy-reply", "untyped-retype-chain-reply",
@@ -700,7 +700,7 @@ for driver in drivers:
             # callers, and notifications whose last capability is a handler's;
             # the refusals and the empty unmaps beside them.
             "untyped-retype-parent-untyped", "child-retype-endpoint",
-            "child-untyped-reset-refused", "child-untyped-revoke",
+            "child-untyped-revoke",
             "child-retype-notification", "childless-revoke", "parent-untyped-delete",
             "adopted-notification-delete", "untyped-retype-moved-parent",
             "moved-parent-copy", "parent-cap-move", "moved-parent-child-delete",
@@ -736,7 +736,7 @@ for driver in drivers:
             "tabled-root-frame-other-asid", "tabled-root-delete",
             "orphaned-table-unmap-3", "orphaned-table-delete-3",
             "orphaned-table-delete-2", "orphaned-table-delete-1",
-            "orphaned-frame-delete", "lifecycle-untyped-reset",
+            "orphaned-frame-delete",
             "untyped-retype-send-endpoint", "send-on-carved", "sender-endpoint-delete",
             "untyped-retype-call-endpoint", "call-on-carved", "caller-endpoint-delete",
             "untyped-retype-registered-endpoint", "registered-endpoint-register",
@@ -844,7 +844,7 @@ for driver in drivers:
             "overflowed-irq-control-get", "overflowed-irq-handler-set-notification",
             "overflowed-irq-handler-clear", "overflowed-page-table-map",
             "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
-            "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
+            "overflowed-service-register", "overflowed-declassify",
             "long-declassify-signal", "overflowed-untyped-retype",
             # Every invocation with a truncation minimum, one word short of
             # its arguments: refused TruncatedMessage before any argument read.
@@ -862,7 +862,7 @@ for driver in drivers:
             # it, the CNode retired while the copy lives on.
             "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",
             "owned-cnode-slot-delete", "owned-cnode-delete", "owned-cnode-escaped-move",
-            "owned-cnode-escaped-delete", "owned-cnode-untyped-reset",
+            "owned-cnode-escaped-delete",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

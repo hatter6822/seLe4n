@@ -80,9 +80,9 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-BP BP7.1: untypedRetype=36 (`seL4_Untyped_Retype`, frames)
   let r36 := decodeSyscallId ⟨36⟩
   expect "untypedRetype=36" (isOkEq r36 .untypedRetype)
-  -- WS-BP BP7.1: untypedReset=37 (seL4's `resetUntypedCap`)
+  -- WS-SX SX6.1: 37, the untyped reset, is retired (seL4 resets inside Retype)
   let r37 := decodeSyscallId ⟨37⟩
-  expect "untypedReset=37" (isOkEq r37 .untypedReset)
+  expect "retired=37" (isErrEq r37 .invalidSyscallNumber)
   -- WS-BP BP7.1: tcbSetSpace=38 (seL4's `TCB_SetSpace`)
   let r38 := decodeSyscallId ⟨38⟩
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
@@ -107,7 +107,7 @@ private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- irqControlGet, irqHandlerSetNotification and irqHandlerClear at 45 to 47, ZA6.29
   -- schedContextYieldTo at 43, ZA6.9
   -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
-  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38, untypedReset at 37
+  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38 (37, the untyped reset, retired at WS-SX SX6.1)
   -- and untypedRetype at 36, on top of
   -- WS-RR RR8.16's cspaceRevoke at 35, the
   -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's

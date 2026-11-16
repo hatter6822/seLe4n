@@ -141,11 +141,6 @@ theorem dispatchCapabilityOnly_mappingStage
     case object _ =>
       exact untypedRetypeFromCap_mappingStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      exact untypedResetFromCap_mappingStage hStep
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>

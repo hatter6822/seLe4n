@@ -4891,10 +4891,6 @@ inductive SyscallId where
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
                            -- (`v0.36.8`) a child untyped — out of an untyped the caller
                            -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`
-  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): write 0 to the invoked untyped
-                           -- capability's free index once nothing carved from it
-                           -- survives (seL4's resetUntypedCap), through
-                           -- `untypedResetFromCap`
   | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
                            -- VSpace roots (seL4_TCB_SetSpace), through `copyThreadSpaces`
   | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table
@@ -4926,8 +4922,12 @@ inductive SyscallId where
 
 namespace SyscallId
 
-/-- Encode a syscall identifier to its numeric value for the syscall number
-    register. The encoding matches the canonical ordering and is injective. -/
+/-- **The operation's internal code.**  WS-SX SX6.1: no register holds it.  The
+    syscall number register holds one of seL4-MCS's eleven syscalls
+    (`Syscall`), and the kernel selects the operation from that syscall, the
+    invoked capability's type and the message label (`Syscall.selectOperation`),
+    as seL4's `handleInvocation`, `decodeInvocation` and `handleRecv` do.  The
+    code is what the entry's router branches on.  Injective. -/
 @[inline] def toNat : SyscallId → Nat
   | .send            => 0
   | .receive         => 1
@@ -4965,7 +4965,6 @@ namespace SyscallId
   | .tcbSetFaultHandler    => 34
   | .cspaceRevoke          => 35
   | .untypedRetype         => 36
-  | .untypedReset          => 37
   | .tcbSetSpace           => 38
   | .pageTableMap          => 39
   | .pageTableUnmap        => 40
@@ -4978,15 +4977,17 @@ namespace SyscallId
   | .irqHandlerClear       => 47
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 47
+def count : Nat := 46
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
 def encodingBound : Nat := 48
 
-/-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
-    lifecycle retype (WS-ZA ZA5.4 part 14). -/
-def retiredNumbers : List Nat := [8]
+/-- Retired operation codes, never reassigned: `8`, the in-place lifecycle
+    retype (WS-ZA ZA5.4 part 14); and `37`, the untyped reset, which seL4
+    performs inside `Untyped_Retype` (`resetUntypedCap`), as the carve does
+    (`retypeFreeIndex`) (WS-SX SX6.1). -/
+def retiredNumbers : List Nat := [8, 37]
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -5027,7 +5028,6 @@ def retiredNumbers : List Nat := [8]
   | 34 => some .tcbSetFaultHandler
   | 35 => some .cspaceRevoke
   | 36 => some .untypedRetype
-  | 37 => some .untypedReset
   | 38 => some .tcbSetSpace
   | 39 => some .pageTableMap
   | 40 => some .pageTableUnmap
@@ -5078,7 +5078,6 @@ instance : ToString SyscallId where
     | .tcbSetFaultHandler    => "tcbSetFaultHandler"
     | .cspaceRevoke          => "cspaceRevoke"
     | .untypedRetype         => "untypedRetype"
-    | .untypedReset          => "untypedReset"
     | .tcbSetSpace           => "tcbSetSpace"
     | .pageTableMap          => "pageTableMap"
     | .pageTableUnmap        => "pageTableUnmap"
@@ -5106,7 +5105,7 @@ def all : List SyscallId :=
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
-  , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
+  , .cspaceRevoke, .untypedRetype, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
   , .schedContextYieldTo, .irqHandlerAck, .irqControlGet
   , .irqHandlerSetNotification, .irqHandlerClear ]
@@ -5170,6 +5169,215 @@ theorem ofNat?_isSome_iff (n : Nat) :
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl
+
+end SyscallId
+
+/-- **seL4-MCS's eleven syscalls** (`libsel4/include/api/syscall.xml`, the
+`api-mcs` set, in its order).  WS-SX SX6.2: the syscall number register (`x7`)
+holds one of these as seL4 numbers them, `-1` (`Call`) to `-11` (`Yield`) as a
+two's-complement word (`Syscall.word`).  The operation a syscall performs is
+selected from it, the invoked capability's type and the message label
+(`Syscall.selectOperation`). -/
+inductive Syscall where
+  | call
+  | replyRecv
+  | nbSendRecv
+  | nbSendWait
+  | send
+  | nbSend
+  | recv
+  | nbRecv
+  | wait
+  | nbWait
+  | yield
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Syscall
+
+/-- The syscall's number negated: `Call` is 1, `Yield` 11, so the register holds
+`2 ^ 64 - number` (`word`). -/
+@[inline] def number : Syscall → Nat
+  | .call => 1
+  | .replyRecv => 2
+  | .nbSendRecv => 3
+  | .nbSendWait => 4
+  | .send => 5
+  | .nbSend => 6
+  | .recv => 7
+  | .nbRecv => 8
+  | .wait => 9
+  | .nbWait => 10
+  | .yield => 11
+
+/-- The syscall a negated number names. -/
+@[inline] def ofNumber? : Nat → Option Syscall
+  | 1 => some .call
+  | 2 => some .replyRecv
+  | 3 => some .nbSendRecv
+  | 4 => some .nbSendWait
+  | 5 => some .send
+  | 6 => some .nbSend
+  | 7 => some .recv
+  | 8 => some .nbRecv
+  | 9 => some .wait
+  | 10 => some .nbWait
+  | 11 => some .yield
+  | _ => none
+
+/-- The register word seL4 numbers the syscall with: `-number`. -/
+@[inline] def word (s : Syscall) : UInt64 := 0 - s.number.toUInt64
+
+/-- The syscall a register word names: the word negated, read as a number
+only below `2 ^ 32`, so a full-width word builds no heap number. -/
+@[inline] def ofWord? (w : UInt64) : Option Syscall :=
+  if (0 - w) < 0x100000000 then ofNumber? (0 - w).toNat else none
+
+theorem ofNumber?_number (s : Syscall) : ofNumber? s.number = some s := by
+  cases s <;> rfl
+
+theorem ofWord?_word (s : Syscall) : ofWord? s.word = some s := by
+  cases s <;> decide
+
+theorem number_injective {a b : Syscall} (h : a.number = b.number) : a = b := by
+  have ha := ofNumber?_number a
+  rw [h, ofNumber?_number b] at ha
+  exact (Option.some.inj ha).symm
+
+/-- seL4's `handleInvocation` with `isCall`: only a `Call` is answered with an
+error (`syscall.c`, `if (isCall) replyFromKernel_error`). -/
+@[inline] def isCall : Syscall → Bool
+  | .call => true
+  | _ => false
+
+/-- The syscalls that invoke a capability first (`handleInvocation`). -/
+@[inline] def invokes : Syscall → Bool
+  | .call | .send | .nbSend | .replyRecv | .nbSendRecv | .nbSendWait => true
+  | _ => false
+
+/-- The invocations seL4 runs with `isBlocking`: a failed lookup of the invoked
+capability is delivered as a capability fault only on these
+(`handleInvocation`, `if (isBlocking) handleFault`). -/
+@[inline] def invocationBlocks : Syscall → Bool
+  | .call | .send => true
+  | _ => false
+
+/-- The receives seL4 runs with `isBlocking` (`handleRecv`). -/
+@[inline] def receiveBlocks : Syscall → Bool
+  | .recv | .wait | .replyRecv | .nbSendRecv | .nbSendWait => true
+  | _ => false
+
+/-- The receives seL4 runs with `canReply` (`handleRecv(_, true)`): the reply
+capability is read from `replyRegister`. -/
+@[inline] def receiveCanReply : Syscall → Bool
+  | .recv | .nbRecv | .replyRecv | .nbSendRecv => true
+  | _ => false
+
+end Syscall
+
+namespace SyscallId
+
+/-- **The invocation label of an operation**, seL4's generated
+`invocation_label` for aarch64 with MCS and SMP (no hardware debug API, no
+hypervisor, no SMMU), from `object-api.xml`, `object-api-sel4-arch.xml` and
+`object-api-arch.xml` as `invocation_header_gen.py` numbers them.  The
+model-only operations take labels after seL4's last (56,
+`ARMIRQIssueIRQHandlerTriggerCore`).  `none` for the operations no label
+selects: the IPC operations, which the capability's type selects, and the
+yield, a syscall of its own.  Until WS-SX SX7.2 the VSpace map and unmap are
+invoked on the VSpace root, under seL4's `ARMPageMap` and `ARMPageUnmap`. -/
+def label? : SyscallId → Option Nat
+  | .untypedRetype => some 1
+  | .tcbSetPriority => some 6
+  | .tcbSetMCPriority => some 7
+  | .tcbSetIPCBuffer => some 10
+  | .tcbSetSpace => some 11
+  | .tcbSuspend => some 12
+  | .tcbResume => some 13
+  | .tcbBindNotification => some 14
+  | .tcbUnbindNotification => some 15
+  | .cspaceRevoke => some 18
+  | .cspaceDelete => some 19
+  | .cspaceCopy => some 21
+  | .cspaceMint => some 22
+  | .cspaceMove => some 23
+  | .irqControlGet => some 26
+  | .irqHandlerAck => some 27
+  | .irqHandlerSetNotification => some 28
+  | .irqHandlerClear => some 29
+  | .schedContextConfigure => some 33
+  | .schedContextBind => some 34
+  | .schedContextUnbind => some 35
+  | .schedContextConsumed => some 37
+  | .schedContextYieldTo => some 38
+  | .vspaceUnifyInstruction => some 42
+  | .pageTableMap => some 44
+  | .pageTableUnmap => some 45
+  | .vspaceMap => some 46
+  | .vspaceUnmap => some 47
+  | .serviceRegister => some 57
+  | .serviceRevoke => some 58
+  | .serviceQuery => some 59
+  | .mintReplyCap => some 60
+  | .declassify => some 61
+  | .auditRead => some 62
+  | .auditDrain => some 63
+  | .declassifySignal => some 64
+  | .tcbSetFaultHandler => some 65
+  | .tcbSetAffinity => some 66
+  | .send | .receive | .call | .reply | .notificationSignal | .notificationWait
+  | .replyRecv | .yield => none
+
+/-- The operation an invocation label names, `label?`'s inverse. -/
+def ofLabel? : Nat → Option SyscallId
+  | 1 => some .untypedRetype
+  | 6 => some .tcbSetPriority
+  | 7 => some .tcbSetMCPriority
+  | 10 => some .tcbSetIPCBuffer
+  | 11 => some .tcbSetSpace
+  | 12 => some .tcbSuspend
+  | 13 => some .tcbResume
+  | 14 => some .tcbBindNotification
+  | 15 => some .tcbUnbindNotification
+  | 18 => some .cspaceRevoke
+  | 19 => some .cspaceDelete
+  | 21 => some .cspaceCopy
+  | 22 => some .cspaceMint
+  | 23 => some .cspaceMove
+  | 26 => some .irqControlGet
+  | 27 => some .irqHandlerAck
+  | 28 => some .irqHandlerSetNotification
+  | 29 => some .irqHandlerClear
+  | 33 => some .schedContextConfigure
+  | 34 => some .schedContextBind
+  | 35 => some .schedContextUnbind
+  | 37 => some .schedContextConsumed
+  | 38 => some .schedContextYieldTo
+  | 42 => some .vspaceUnifyInstruction
+  | 44 => some .pageTableMap
+  | 45 => some .pageTableUnmap
+  | 46 => some .vspaceMap
+  | 47 => some .vspaceUnmap
+  | 57 => some .serviceRegister
+  | 58 => some .serviceRevoke
+  | 59 => some .serviceQuery
+  | 60 => some .mintReplyCap
+  | 61 => some .declassify
+  | 62 => some .auditRead
+  | 63 => some .auditDrain
+  | 64 => some .declassifySignal
+  | 65 => some .tcbSetFaultHandler
+  | 66 => some .tcbSetAffinity
+  | _ => none
+
+/-- The label round trip. -/
+theorem ofLabel?_label? {sid : SyscallId} {l : Nat} (h : sid.label? = some l) :
+    ofLabel? l = some sid := by
+  cases sid <;> simp [label?] at h <;> subst h <;> rfl
+
+theorem label?_ofLabel? {l : Nat} {sid : SyscallId} (h : ofLabel? l = some sid) :
+    sid.label? = some l := by
+  unfold ofLabel? at h
+  split at h <;> (try simp at h) <;> (subst h; rfl)
 
 end SyscallId
 

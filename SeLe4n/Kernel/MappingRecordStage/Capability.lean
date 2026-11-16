@@ -120,17 +120,6 @@ theorem mintReplyCapWithCdt_mappingStage {src dst : CSpaceAddr} {st st' : System
     (fun hI hL => mintReplyCapWithCdt_preserves_liveMappingsRecorded hI hL h)
     fun hI hB => mintReplyCapWithCdt_preserves_bookkeepingAgrees hI hB h
 
-/-- The reset writes the invoked capability's free index alone. -/
-theorem untypedResetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
-    {st st' : SystemState} (h : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    MappingStage st st' := by
-  obtain ⟨_, _, _, _, _, hR⟩ := untypedResetFromCap_ok tid srcAddr st st' h
-  refine MappingStage.of_preserves (fun hI => ?_)
-    (fun hI hL => untypedResetFromCap_preserves_liveMappingsRecorded tid srcAddr hI hL h)
-    fun hI hB => ?_
-  · rw [untypedResetSlot_ok_frame hR]; exact setCapFreeIndex_preserves_objects_invExt hI
-  · rw [untypedResetSlot_ok_frame hR]; exact setCapFreeIndex_preserves_bookkeepingAgrees hI hB
-
 /-! ### The VSpace and page-table arms -/
 
 /-- The map writes the root, tags the frame and the root's epoch, and records

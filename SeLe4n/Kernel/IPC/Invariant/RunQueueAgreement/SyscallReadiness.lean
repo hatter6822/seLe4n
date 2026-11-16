@@ -870,13 +870,6 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       refine readyKeptStage.of_stage ?_
       exact untypedRetypeFromCap_runQueueStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      refine readyKeptStage.of_stage ?_
-      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ hStep
-      exact untypedResetSlot_runQueueStage hS
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>

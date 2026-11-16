@@ -1260,9 +1260,6 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- so it takes the retype right — the one `lifecycleRetypeAuthority` checks
   -- inside `retypeFromUntyped` too, so the gate and the primitive agree.
   | .untypedRetype   => .retype
-  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset hands the untyped's memory back to it,
-  -- which is authority over that memory — the retype right, as for the carve.
-  | .untypedReset    => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
@@ -1362,7 +1359,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .notificationSignal | .notificationWait | .declassifySignal => some .notification
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap => some .cnode
-  | .untypedRetype | .untypedReset => some .untyped
+  | .untypedRetype => some .untyped
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => some .vspaceRoot
   | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
@@ -1412,7 +1409,7 @@ def syscallMissingRightError : SyscallId → KernelError
   | .send | .call | .notificationSignal | .declassifySignal => (.invalidCapability 0)
   | .receive | .notificationWait | .replyRecv => (.invalidCapability 0)
   | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .untypedRetype | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .declassify | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
   | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
@@ -1442,7 +1439,7 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
 @[inline] def syscallReceivesOnCap : SyscallId → Bool
   | .receive | .notificationWait | .replyRecv => true
   | .send | .call | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
-  | .cspaceRevoke | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap
+  | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
@@ -1691,7 +1688,7 @@ receive and the reply-receive.  No wildcard: a new syscall states its answer. -/
 def syscallNamesReply : SyscallId → Bool
   | .receive | .replyRecv => true
   | .send | .call | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
-  | .cspaceRevoke | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap
+  | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
   | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -3301,45 +3298,6 @@ theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle (tid : SeLe4n.T
   obtain ⟨_, req, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
   exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st' hInv hCarve
 
-/-- WS-ZA ZA5.4: **`.untypedReset` on the invoked slot.**  The free index is in
-the invoked capability, so the arm resolves the capability address to its slot
-again (the dispatcher's lookup returns the capability, not where it sits), with
-the right the dispatcher demanded, and resets through that slot
-(`untypedResetSlot`, seL4's `resetUntypedCap` behind `ensureNoChildren`).  The
-resolution reads the state the dispatcher's lookup read, so it finds the same
-slot and capability. -/
-def untypedResetFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr) : Kernel Unit :=
-  fun st =>
-    resolveCallerCapSlotK tid srcAddr .retype st (fun e => .error e)
-      (fun srcCnode srcSlot _ _ => untypedResetSlot srcCnode srcSlot st)
-
-/-- **What a successful `.untypedReset` consists of**: the resolved slot holds a
-capability, and the slot reset succeeded on it. -/
-theorem untypedResetFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (st st' : SystemState) (h : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    ∃ (src : CSpaceAddr) (cap : Capability) (cn : CNode),
-      st.objects[src.cnode]? = some (.cnode cn) ∧ cn.lookup src.slot = some cap ∧
-      untypedResetSlot src.cnode src.slot st = .ok ((), st') := by
-  unfold untypedResetFromCap at h
-  rw [resolveCallerCapSlotK_eq] at h
-  cases hR : resolveCallerCapSlot tid srcAddr .retype st with
-  | error e => rw [hR] at h; cases h
-  | ok r =>
-    obtain ⟨src, cap, oid⟩ := r
-    rw [hR] at h
-    obtain ⟨-, -, -, hLk, -, -⟩ := resolveCallerCapSlot_ok tid srcAddr .retype st src cap oid hR
-    obtain ⟨cn, hO, hL⟩ := SystemState.lookupSlotCap_cnode hLk
-    exact ⟨src, cap, cn, hO, hL, h⟩
-
-/-- WS-ZA ZA5.4 part 36: **the live `.untypedReset` arm preserves the capability
-bundle** — the slot reset's (`untypedResetSlot_preserves_capabilityInvariantBundle`). -/
-theorem untypedResetFromCap_preserves_capabilityInvariantBundle (tid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (st st' : SystemState) (hInv : capabilityInvariantBundle st)
-    (h : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok tid srcAddr st st' h
-  exact untypedResetSlot_preserves_capabilityInvariantBundle hInv hS
-
 /-- **WS-BP BP7.1 (the authority fact)**: a frame the resolver answers is one the
 caller holds a **readable capability** to, found at MR2's address in the caller's
 own CSpace, and it is a frame the store holds at the capability's target.  The
@@ -3907,16 +3865,6 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object _ =>
         untypedRetypeFromCap tid executingCore decoded.capAddr (decodeUntypedRetypeArgs decoded)
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap`.  The free index is the
-  -- invoked capability's, so the arm resets through the invoked slot
-  -- (`untypedResetFromCap`): refused while that slot has a derivation child or
-  -- its untyped records a carved object, and otherwise its free index is
-  -- rewound to 0.  Takes no message registers: the capability is the whole
-  -- operand.
-  | .untypedReset =>
-    some <| match cap.target with
-    | .object _ => untypedResetFromCap tid decoded.capAddr
     | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceMap =>
     some <| match cap.target with
@@ -4551,12 +4499,6 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     case object _ =>
       obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ st st' hStep
       exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
-    all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-      exact untypedResetSlot_preserves_ipcInvariantFull hObjInv hInv hS
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6157,7 +6099,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
+            .cspaceRevoke, .untypedRetype, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
             .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
             .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
@@ -6396,18 +6338,6 @@ theorem dispatchWithCapChecked_untypedRetype_delegates
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       untypedRetypeFromCap tid executingCore decoded.capAddr
         (decodeUntypedRetypeArgs decoded) st := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
-
-/-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* the reset, through
-the invoked slot (`untypedResetFromCap`), for a capability naming an object.  The
-arm decodes no message register: the capability is the whole operand. -/
-theorem dispatchWithCapChecked_untypedReset_delegates
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .untypedReset)
-    (hTarget : cap.target = .object untypedId) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      untypedResetFromCap tid decoded.capAddr st := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 -- ============================================================================
@@ -8389,9 +8319,6 @@ def syscallDelegates : SyscallId → Prop
            | .ok (n, st') =>
                .ok ((), Architecture.writeReturnFrameToTcb st' tid
                  (Architecture.returnFrameOfWord n.toUInt64)))
-  -- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm.  No decode and no
-  -- authority conjunct beyond the dispatcher's own `.retype` right check: the
-  -- reset's refusals are its own, and the conclusion names the whole operation.
   -- WS-ZA ZA5.4 part 14: the carve, the one way a kernel object is made.
   | .untypedRetype =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
@@ -8401,13 +8328,6 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           untypedRetypeFromCap tid executingCore decoded.capAddr
             (decodeUntypedRetypeArgs decoded) st
-  | .untypedReset =>
-      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-        (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
-        decoded.syscallId = .untypedReset →
-        cap.target = .object untypedId →
-        dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          untypedResetFromCap tid decoded.capAddr st
   -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
   -- composite — the delete or the revocation, then the removal of every mapping a
   -- destroyed frame capability recorded — at the invoking thread's core.
@@ -8622,12 +8542,6 @@ carve's cross-core inventory entry rests on it. -/
 theorem syscallDelegates_untypedRetype : syscallDelegates .untypedRetype := by
   intro ctx decoded tid executingCore gate cap untypedId st hSyscall hTarget
   exact dispatchWithCapChecked_untypedRetype_delegates ctx decoded tid executingCore gate cap untypedId st
-    hSyscall hTarget
-
-/-- WS-BP BP7.1 (slice 3): the `.untypedReset` obligation, discharged. -/
-theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by
-  intro ctx decoded tid executingCore gate cap untypedId st hSyscall hTarget
-  exact dispatchWithCapChecked_untypedReset_delegates ctx decoded tid executingCore gate cap untypedId st
     hSyscall hTarget
 
 /-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceDelete` obligation, discharged. -/

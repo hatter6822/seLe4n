@@ -150,10 +150,7 @@ pub enum SyscallId {
     /// capability, x2..x5 = type tag, child object id, destination CNode
     /// capability address, destination slot.
     UntypedRetype = 36,
-    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it once no
-    /// capability names a carved child (seL4's `resetUntypedCap`); invoked on
-    /// the untyped capability, with no message registers.
-    UntypedReset = 37,
+    // 37: retired (WS-SX SX6.1, the untyped reset); reserved.
     /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
     /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
     /// roots in the caller's CSpace, x4 = the CSpace root data word.
@@ -191,14 +188,15 @@ pub enum SyscallId {
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 47;
+    pub const COUNT: u32 = 46;
 
     /// One past the largest syscall number (must match `sele4n-types`).
     pub const ENCODING_BOUND: u32 = 48;
 
     /// Retired syscall numbers, reserved and never reassigned (must match
-    /// `sele4n-types`): `8`, the in-place lifecycle retype.
-    pub const RETIRED: [u32; 1] = [8];
+    /// `sele4n-types`): `8`, the in-place lifecycle retype, and `37`, the
+    /// untyped reset.
+    pub const RETIRED: [u32; 2] = [8, 37];
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// at or past `ENCODING_BOUND` and the retired numbers with `None`.
@@ -240,7 +238,6 @@ impl SyscallId {
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
-            37 => Some(Self::UntypedReset),
             38 => Some(Self::TcbSetSpace),
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
@@ -970,7 +967,7 @@ mod tests {
         assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
         assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
         assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
-        assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));
+        assert_eq!(SyscallId::from_u32(37), None);
         assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
         assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
         assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));

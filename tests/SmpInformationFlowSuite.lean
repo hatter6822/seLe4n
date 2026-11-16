@@ -4638,21 +4638,21 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-eight cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 38))
-  assertBool "twenty-eight of the thirty-eight can name a core other than the executing one"
+  assertBool "thirty-seven cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 37))
+  assertBool "twenty-eight of the thirty-seven can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 28))
-  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the declassification, the two audit readers, the yield and the Consumed invocation are the ten that cannot"
+  assertBool "…and the wait, the two VSpace arms, the carve, the declassification, the two audit readers, the yield and the Consumed invocation are the nine that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
-      .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+      .vspaceMapDispatch, .vspaceUnmapDispatch,
       .untypedRetypeDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "thirty-one of the thirty-eight are the arms the live syscall dispatch reaches"
+  assertBool "thirty of the thirty-seven are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 31))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 30))
   -- WS-ZA ZA6.32: the interrupt handler's bind and clear empty the line's node
   -- slot by the zombie delete, so they are live, delegation-backed arms naming
   -- their own syscalls that may write remote cores, as the delete does.
@@ -4701,14 +4701,6 @@ private def runCoreSetAlgebraChecks : IO Unit := do
                    = some SeLe4n.Model.SyscallId.cspaceDelete)
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceRevokeDispatch
                    = some SeLe4n.Model.SyscallId.cspaceRevoke))
-  -- WS-BP BP7.1 slice 3: the untyped reset is a live arm, delegation-backed,
-  -- naming its own syscall, and writing no core — the `.vspaceUnmap` arm's shape.
-  assertBool "the untyped reset is a live, delegation-backed arm that writes no core"
-    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .untypedResetDispatch
-      && (SeLe4n.Kernel.crossCoreLiveArmEvidence .untypedResetDispatch).isDelegationBacked
-      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .untypedResetDispatch
-                   = some SeLe4n.Model.SyscallId.untypedReset)
-      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .untypedResetDispatch)
   -- Round 35: the entries that emptied the per-core routing allowlist, with the
   -- carve that replaced the in-place retype (WS-ZA ZA5.4 part 14).  All three
   -- are live arms, all three arrive delegation-backed, and all three carry an
@@ -4762,8 +4754,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "twenty-three live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 23))
+  assertBool "twenty-two live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 22))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"

@@ -1231,15 +1231,15 @@ fn kernel_error_variant_count() {
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
-/// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
+/// 36, UntypedReset at 37 (retired at WS-SX SX6.1), TcbSetSpace at 38, and PageTableMap / PageTableUnmap
 /// at 39 and 40; WS-ZA ZA4.3 added Yield at 41; WS-ZA ZA5.4 part 14 retired
 /// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42; WS-ZA
 /// ZA6.29 added SchedContextYieldTo at 43; WS-ZA ZA6.32 added IrqHandlerAck at
 /// 44 and IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to
-/// 47, leaving 47 variants under an encoding bound of 48).
+/// 47, leaving 46 variants under an encoding bound of 48).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 47;
+    const SYSCALL_COUNT: u64 = 46;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     assert_eq!(SyscallId::ENCODING_BOUND, 48);
     for i in live_syscall_numbers() {
@@ -1401,7 +1401,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 47);
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1742,17 +1742,6 @@ fn untyped_retype_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Retype);
 }
 
-/// WS-BP BP7.1: UntypedReset roundtrip (discriminant 37) — the reset takes the
-/// retype right, authority over the untyped's memory.
-#[test]
-fn untyped_reset_roundtrip() {
-    use sele4n_types::rights::AccessRight;
-    let sid = SyscallId::from_u64(37).expect("UntypedReset must exist");
-    assert_eq!(sid, SyscallId::UntypedReset);
-    assert_eq!(sid.to_u64(), 37);
-    assert_eq!(sid.required_right(), AccessRight::Retype);
-}
-
 /// WS-BP BP7.1: TcbSetSpace roundtrip (discriminant 38) — setting a thread's
 /// roots configures the thread, so it takes the write right on its TCB.
 #[test]
@@ -1849,7 +1838,8 @@ fn syscall_boundary() {
     assert!(SyscallId::from_u64(47).is_some()); // Last valid
     assert!(SyscallId::from_u64(48).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
-    assert_eq!(SyscallId::COUNT, 47);
+    assert!(SyscallId::from_u64(37).is_none()); // Retired (WS-SX SX6.1)
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -2232,9 +2222,6 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         // WS-BP BP7.1: a carve returns nothing — what it produced is the
         // capability it installed at the slot the caller named.
         | SyscallId::UntypedRetype
-        // WS-BP BP7.1: a reset returns nothing — what it produced is the
-        // untyped's memory, which the next carve hands out.
-        | SyscallId::UntypedReset
         // WS-BP BP7.1: a space change returns nothing.
         | SyscallId::TcbSetSpace
         // WS-BP BP7.1: installing or removing a page table returns nothing.
@@ -2880,8 +2867,6 @@ fn wrappers_name_their_syscalls() {
         "untyped_retype (untyped_retype_vspace_root)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_reset(cap);
-    assert_names("untyped_reset", SyscallId::UntypedReset);
     let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, 0);
     assert_names("tcb_set_space", SyscallId::TcbSetSpace);
     let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64));

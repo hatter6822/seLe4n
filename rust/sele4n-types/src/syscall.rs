@@ -8,8 +8,9 @@ use crate::rights::AccessRight;
 /// Syscall identifier. 42 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
-/// Number 8, the retired in-place `lifecycleRetype`, is reserved: no variant
-/// carries it and it is never reassigned (see [`SyscallId::RETIRED`]).
+/// Numbers 8, the retired in-place `lifecycleRetype`, and 37, the retired
+/// untyped reset, are reserved: no variant carries them and they are never
+/// reassigned (see [`SyscallId::RETIRED`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 pub enum SyscallId {
@@ -120,17 +121,7 @@ pub enum SyscallId {
     /// yields a device frame, and a RAM page is zeroed before the capability
     /// exists.  The only way a frame — and so mappable memory — comes to exist.
     UntypedRetype = 36,
-    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it — seL4's
-    /// `resetUntypedCap`.
-    ///
-    /// Invoked on the **untyped** capability (`Retype` right), with no message
-    /// registers.  Refused unless every object carved from the untyped is a
-    /// frame and no capability anywhere — in a CNode or in a blocked sender's
-    /// message — names one: revoke the untyped capability first.  Every mapping
-    /// of a page in the untyped's region is then removed (with the TLB and
-    /// instruction-cache maintenance `VSpaceUnmap` performs), the carved frames
-    /// cease to exist, and the watermark returns to zero.
-    UntypedReset = 37,
+    // 37: retired (WS-SX SX6.1, the untyped reset); reserved.
     /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
     /// roots — seL4's `TCB_SetSpace`.
     ///
@@ -199,7 +190,7 @@ pub enum SyscallId {
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 47;
+    pub const COUNT: usize = 46;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
@@ -207,8 +198,10 @@ impl SyscallId {
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
-    /// carved from an untyped by `UntypedRetype` (36), as in seL4.
-    pub const RETIRED: [u64; 1] = [8];
+    /// carved from an untyped by `UntypedRetype` (36), as in seL4.  `37` was
+    /// the untyped reset; seL4 resets inside `Untyped_Retype`, as the carve
+    /// does (WS-SX SX6.1).
+    pub const RETIRED: [u64; 2] = [8, 37];
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -250,7 +243,6 @@ impl SyscallId {
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
-            37 => Some(Self::UntypedReset),
             38 => Some(Self::TcbSetSpace),
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
@@ -271,6 +263,77 @@ impl SyscallId {
         self as u64
     }
 
+    /// **The invocation label that selects this operation** on a capability
+    /// of the type it takes (seL4's `invocation_label`, aarch64 with MCS and
+    /// SMP; the model-only operations after seL4's last, 56).  `None` for the
+    /// operations the capability's type selects (the IPC operations) and the
+    /// yield.  Lean: `SyscallId.label?`.
+    pub const fn label(self) -> Option<u64> {
+        match self {
+            Self::UntypedRetype => Some(1),
+            Self::TcbSetPriority => Some(6),
+            Self::TcbSetMCPriority => Some(7),
+            Self::TcbSetIPCBuffer => Some(10),
+            Self::TcbSetSpace => Some(11),
+            Self::TcbSuspend => Some(12),
+            Self::TcbResume => Some(13),
+            Self::TcbBindNotification => Some(14),
+            Self::TcbUnbindNotification => Some(15),
+            Self::CspaceRevoke => Some(18),
+            Self::CSpaceDelete => Some(19),
+            Self::CSpaceCopy => Some(21),
+            Self::CSpaceMint => Some(22),
+            Self::CSpaceMove => Some(23),
+            Self::IrqControlGet => Some(26),
+            Self::IrqHandlerAck => Some(27),
+            Self::IrqHandlerSetNotification => Some(28),
+            Self::IrqHandlerClear => Some(29),
+            Self::SchedContextConfigure => Some(33),
+            Self::SchedContextBind => Some(34),
+            Self::SchedContextUnbind => Some(35),
+            Self::SchedContextConsumed => Some(37),
+            Self::SchedContextYieldTo => Some(38),
+            Self::VSpaceUnifyInstruction => Some(42),
+            Self::PageTableMap => Some(44),
+            Self::PageTableUnmap => Some(45),
+            Self::VSpaceMap => Some(46),
+            Self::VSpaceUnmap => Some(47),
+            Self::ServiceRegister => Some(57),
+            Self::ServiceRevoke => Some(58),
+            Self::ServiceQuery => Some(59),
+            Self::MintReplyCap => Some(60),
+            Self::Declassify => Some(61),
+            Self::AuditRead => Some(62),
+            Self::AuditDrain => Some(63),
+            Self::DeclassifySignal => Some(64),
+            Self::TcbSetFaultHandler => Some(65),
+            Self::TcbSetAffinity => Some(66),
+            Self::Send
+            | Self::Receive
+            | Self::Call
+            | Self::Reply
+            | Self::NotificationSignal
+            | Self::NotificationWait
+            | Self::ReplyRecv
+            | Self::Yield => None,
+        }
+    }
+
+    /// **The syscall a wrapper issues for this operation**: an invocation is
+    /// a `Call` (its result and its error come back, as libsel4's invocation
+    /// stubs issue it); a send, a signal and a reply through a reply
+    /// capability are a `Send`; a wait is a `Wait`, a receive a `Recv`.
+    pub const fn syscall(self) -> Syscall {
+        match self {
+            Self::Send | Self::Reply | Self::NotificationSignal => Syscall::Send,
+            Self::Receive => Syscall::Recv,
+            Self::NotificationWait => Syscall::Wait,
+            Self::ReplyRecv => Syscall::ReplyRecv,
+            Self::Yield => Syscall::Yield,
+            _ => Syscall::Call,
+        }
+    }
+
     /// Required access right for this syscall.
     ///
     /// Matches the `SyscallGate.requiredRight` usage in `SeLe4n/Kernel/API.lean`.
@@ -287,8 +350,6 @@ impl SyscallId {
             Self::CspaceRevoke => AccessRight::Write,
             // WS-BP BP7.1: a carve is a retype of the untyped's memory.
             Self::UntypedRetype => AccessRight::Retype,
-            // WS-BP BP7.1: a reset is authority over the untyped's memory.
-            Self::UntypedReset => AccessRight::Retype,
             // WS-BP BP7.1: setting a thread's roots configures the thread.
             Self::TcbSetSpace => AccessRight::Write,
             // WS-BP BP7.1: installing or removing a table changes the table.
@@ -355,6 +416,108 @@ impl SyscallId {
     }
 }
 
+/// **seL4's system calls** (`syscall.xml`, `api-mcs`): the number the trap
+/// carries, negated, in `x7`.  An operation is not a syscall: an invocation is
+/// a `Call` (or `Send`) on a capability with the operation's label in the
+/// message-info word, and the kernel selects the operation from the syscall,
+/// the invoked capability's type and the label (WS-SX SX6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Syscall {
+    /// `seL4_SysCall`, -1.
+    Call,
+    /// `seL4_SysReplyRecv`, -2.
+    ReplyRecv,
+    /// `seL4_SysNBSendRecv`, -3.
+    NBSendRecv,
+    /// `seL4_SysNBSendWait`, -4.
+    NBSendWait,
+    /// `seL4_SysSend`, -5.
+    Send,
+    /// `seL4_SysNBSend`, -6.
+    NBSend,
+    /// `seL4_SysRecv`, -7.
+    Recv,
+    /// `seL4_SysNBRecv`, -8.
+    NBRecv,
+    /// `seL4_SysWait`, -9.
+    Wait,
+    /// `seL4_SysNBWait`, -10.
+    NBWait,
+    /// `seL4_SysYield`, -11.
+    Yield,
+}
+
+impl Syscall {
+    /// Every syscall, in seL4's numbering order.
+    pub const ALL: [Syscall; 11] = [
+        Self::Call,
+        Self::ReplyRecv,
+        Self::NBSendRecv,
+        Self::NBSendWait,
+        Self::Send,
+        Self::NBSend,
+        Self::Recv,
+        Self::NBRecv,
+        Self::Wait,
+        Self::NBWait,
+        Self::Yield,
+    ];
+
+    /// The syscall's number, the negation of the word in `x7` (1 to 11).
+    /// Lean: `Syscall.number`.
+    pub const fn number(self) -> u32 {
+        match self {
+            Self::Call => 1,
+            Self::ReplyRecv => 2,
+            Self::NBSendRecv => 3,
+            Self::NBSendWait => 4,
+            Self::Send => 5,
+            Self::NBSend => 6,
+            Self::Recv => 7,
+            Self::NBRecv => 8,
+            Self::Wait => 9,
+            Self::NBWait => 10,
+            Self::Yield => 11,
+        }
+    }
+
+    /// The word the trap carries in `x7`: the number negated, two's
+    /// complement.  Lean: `Syscall.word`.
+    pub const fn word(self) -> u64 {
+        0u64.wrapping_sub(self.number() as u64)
+    }
+
+    /// The syscall a number names.  Lean: `Syscall.ofNumber?`.
+    pub const fn from_number(n: u32) -> Option<Self> {
+        match n {
+            1 => Some(Self::Call),
+            2 => Some(Self::ReplyRecv),
+            3 => Some(Self::NBSendRecv),
+            4 => Some(Self::NBSendWait),
+            5 => Some(Self::Send),
+            6 => Some(Self::NBSend),
+            7 => Some(Self::Recv),
+            8 => Some(Self::NBRecv),
+            9 => Some(Self::Wait),
+            10 => Some(Self::NBWait),
+            11 => Some(Self::Yield),
+            _ => None,
+        }
+    }
+
+    /// The syscall an `x7` word names: its negation, when that fits 32 bits.
+    /// Lean: `Syscall.ofWord?`.
+    pub const fn from_word(w: u64) -> Option<Self> {
+        let n = w.wrapping_neg();
+        if n < (1u64 << 32) {
+            Self::from_number(n as u32)
+        } else {
+            None
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,7 +545,7 @@ mod tests {
 
     #[test]
     fn retired_lifecycle_retype_number_is_reserved() {
-        assert_eq!(SyscallId::RETIRED, [8]);
+        assert_eq!(SyscallId::RETIRED, [8, 37]);
         assert!(SyscallId::from_u64(8).is_none());
     }
 
@@ -534,11 +697,10 @@ mod tests {
     }
 
     #[test]
-    fn untyped_reset_discriminant() {
-        // WS-BP BP7.1 (`v0.36.6`): the untyped reset, appended so every earlier
-        // discriminant is unchanged.
-        assert_eq!(SyscallId::UntypedReset.to_u64(), 37);
-        assert_eq!(SyscallId::from_u64(37), Some(SyscallId::UntypedReset));
+    fn retired_reset_discriminant() {
+        // WS-SX SX6.1: 37, the untyped reset, is retired (seL4 resets inside
+        // Untyped_Retype); every other discriminant is unchanged.
+        assert_eq!(SyscallId::from_u64(37), None);
         assert_eq!(SyscallId::from_u64(38), Some(SyscallId::TcbSetSpace));
         assert_eq!(SyscallId::from_u64(39), Some(SyscallId::PageTableMap));
         assert_eq!(SyscallId::from_u64(40), Some(SyscallId::PageTableUnmap));
@@ -575,12 +737,8 @@ mod tests {
             assert_eq!(sid.required_right(), AccessRight::Write);
         }
         assert_eq!(SyscallId::from_u64(48), None);
-        assert_eq!(SyscallId::COUNT, 47);
+        assert_eq!(SyscallId::COUNT, 46);
         assert_eq!(SyscallId::ENCODING_BOUND, 48);
-        assert_eq!(
-            SyscallId::UntypedReset.required_right(),
-            AccessRight::Retype
-        );
     }
 
     #[test]

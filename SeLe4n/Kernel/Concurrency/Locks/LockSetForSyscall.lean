@@ -354,7 +354,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- revocation one is a cut of its own.
   | .cspaceRevoke
   | .mintReplyCap
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
@@ -1291,7 +1291,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   -- revocation one is a cut of its own.
   | .cspaceRevoke
   | .mintReplyCap
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed

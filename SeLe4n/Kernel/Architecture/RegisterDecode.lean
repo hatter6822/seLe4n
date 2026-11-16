@@ -224,7 +224,7 @@ def syscallReadsOverflow : SyscallId → Bool
   | .cspaceMint => true
   | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
   | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
-  | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
@@ -996,7 +996,7 @@ declassification and audit calls, whose taint steps are not the identity or
 whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
   | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .mintReplyCap | .untypedRetype | .untypedReset
+  | .mintReplyCap | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear

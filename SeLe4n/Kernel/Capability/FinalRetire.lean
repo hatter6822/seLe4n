@@ -67,7 +67,7 @@ splices a deleted node's children into its parent: the recorder records each
 child in place of the untyped, its offset rebased onto the untyped's
 (`childListAdopt`), and each child untyped names the recorder as its parent
 (`reparentChildren`).  A child keeps its record, so the recorder's reset still
-refuses while it lives (`untypedResetSlot`) and no carve is handed its memory; "carved from" only shrinks, since a
+refuses while it lives (`retypeResetAdmitted`) and no carve is handed its memory; "carved from" only shrinks, since a
 record moved up a level was carved from the recorder through the retired
 untyped.  An untyped no untyped records (a boot untyped) leaves its children
 recorded by none; its region is then covered by no untyped, so nothing carves

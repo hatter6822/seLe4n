@@ -111,14 +111,6 @@ theorem mintReplyCapWithCdt {src dst : CSpaceAddr} {st st' : SystemState}
         · contradiction
     exact F.trans (cdtAddChild stM src dst .mint F.invExt)
 
-theorem untypedResetFromCap {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr} {st st' : SystemState}
-    (hInv : st.objects.invExt)
-    (hStep : _root_.SeLe4n.Kernel.untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    RecordsFrame st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact setCapFreeIndex _ _ _ hInv
-
 end RecordsFrame
 
 end SeLe4n.Kernel

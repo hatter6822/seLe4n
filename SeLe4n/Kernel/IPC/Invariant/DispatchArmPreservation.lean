@@ -1548,18 +1548,6 @@ theorem setCapFreeIndex_preserves_ipcInvariantFull
   exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st _ hObjInv hInv hPre hLk
     (Capability.withFreeIndex_badge _ _) hS
 
-/-- WS-ZA ZA5.4: **the `.untypedReset` arm preserves `ipcInvariantFull`.**  The
-reset rewinds the invoked slot's free index, a capability rewrite that keeps the
-badge (`setCapFreeIndex_preserves_ipcInvariantFull`), and writes nothing else. -/
-theorem untypedResetSlot_preserves_ipcInvariantFull {srcCnode : SeLe4n.ObjId}
-    {srcSlot : SeLe4n.Slot} {st st' : SystemState}
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨cap, -, -, -, hL, -, -, -, rfl⟩ := untypedResetSlot_ok hStep
-  obtain ⟨cn, hO, hLk⟩ := SystemState.lookupSlotCap_cnode hL
-  exact (setCapFreeIndex_preserves_ipcInvariantFull _ cn cap 0 st hObjInv hInv hO hLk).1
-
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
 bundle**, given the source still holds a capability. -/
 theorem untypedSourceSetFull_preserves_ipcInvariantFull

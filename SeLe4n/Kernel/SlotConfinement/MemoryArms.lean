@@ -365,17 +365,6 @@ theorem unmapLivePages_framed (executingCore : CoreId) :
           exact ⟨hs2.trans hs1, hm2.trans hm1⟩
       · exact unmapLivePages_framed executingCore rest st st' h
 
-/-- **The live `.untypedReset` arm writes no core** (WS-ZA ZA5.4).  The reset
-writes `0` to the invoked capability's free index — one CNode store — and
-nothing else, so it writes neither the scheduler nor the machine. -/
-theorem untypedResetSlot_confinedToCores
-    (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (st st' : SystemState)
-    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' [] := by
-  apply observableSlotsConfinedToCores_nil_of_framed
-  rw [untypedResetSlot_ok_frame hStep]
-  exact ⟨setCapFreeIndex_scheduler _ _ _, setCapFreeIndex_machine _ _ _⟩
-
 /-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
 operation owes — the page-table detach, stores to VSpace roots, and the page
 teardown, the `.vspaceUnmap` arm's own transition — writes no scheduler and no

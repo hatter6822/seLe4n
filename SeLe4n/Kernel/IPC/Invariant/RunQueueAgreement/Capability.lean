@@ -410,13 +410,6 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
 
-/-- WS-ZA ZA5.4: the untyped reset is one free-index write
-(`untypedResetSlot_ok_frame`). -/
-theorem untypedResetSlot_runQueueStage {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
-    {st st' : SystemState} (h : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    RunQueueStage st st' := by
-  rw [untypedResetSlot_ok_frame h]; exact setCapFreeIndex_runQueueStage _ _ _
-
 /-- The registry's one object write — an endpoint's `serviceRegistered` — moves no
 run-queue link: the endpoint holds none, before or after. -/
 theorem serviceRecordRewrite_runQueueStage {st st' : SystemState}

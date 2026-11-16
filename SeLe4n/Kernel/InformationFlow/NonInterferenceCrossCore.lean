@@ -382,19 +382,6 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores executingCore asid vaddr
       st st' hStep) hShared
 
-/-- **The live `.untypedReset` arm, cross-core** (WS-BP BP7.1, WS-ZA ZA5.4) —
-invisible on every core: the reset writes the invoked capability's free index
-and nothing else. -/
-theorem untypedResetFromCap_crossCoreNonInterference
-    (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (st st' : SystemState) (c : CoreId)
-    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st'))
-    (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
-  obtain ⟨src, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  exact crossCoreNonInterference_ofCores ctx observer (by simp)
-    (untypedResetSlot_confinedToCores src.cnode src.slot st st' hS) hShared
-
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceDelete`
 arm, cross-core**): a finalising delete is invisible on every core outside
 `cspaceDeleteSlotFinalisingCores` — on every core when it destroys no final
@@ -1338,10 +1325,6 @@ inductive CrossCoreTransition where
   | vspaceMapDispatch
   /-- SM8.B — the **live** `.vspaceUnmap` arm. Empty write set, same reasons. -/
   | vspaceUnmapDispatch
-  /-- WS-BP BP7.1, WS-ZA ZA5.4 — the **live** `.untypedReset` arm.  Writes no
-  core: it writes `0` to the invoked capability's free index, one CNode store
-  (`untypedResetFromCap`). -/
-  | untypedResetDispatch
   /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceDelete` arm.  Takes an
   executing core since the delete finalises a frame capability — its recorded
   mapping is removed through the `.vspaceUnmap` arm's own transition — and writes
@@ -1416,7 +1399,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .endpointReplyRecvDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
-   .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+   .vspaceMapDispatch, .vspaceUnmapDispatch,
    .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch, .tcbSetSpaceDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch, .schedContextConsumedDispatch,
@@ -1478,7 +1461,6 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! vspaceMapOrRemapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
-  | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference
   | .cspaceDeleteDispatch => niName! cspaceDeleteSlotZombie_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
@@ -1510,7 +1492,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! irqHandlerSetNotificationFromCap_crossCoreNonInterference
   | .irqHandlerClearDispatch => niName! irqHandlerClear_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 38 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 37 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1576,7 +1558,6 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .setMCPriorityDispatch => true
   | .vspaceMapDispatch => true
   | .vspaceUnmapDispatch => true
-  | .untypedResetDispatch => true
   | .cspaceDeleteDispatch => true
   | .cspaceRevokeDispatch => true
   | .declassifyDispatch => true
@@ -1592,7 +1573,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 31 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 30 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1681,7 +1662,6 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .setMCPriorityDispatch => some .tcbSetMCPriority
   | .vspaceMapDispatch => some .vspaceMap
   | .vspaceUnmapDispatch => some .vspaceUnmap
-  | .untypedResetDispatch => some .untypedReset
   | .cspaceDeleteDispatch => some .cspaceDelete
   | .cspaceRevokeDispatch => some .cspaceRevoke
   | .declassifyDispatch => some .declassify
@@ -1734,7 +1714,6 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .tcbSetMCPriority syscallDelegates_tcbSetMCPriority
   | .vspaceMapDispatch => .delegationProof .vspaceMap syscallDelegates_vspaceMap
   | .vspaceUnmapDispatch => .delegationProof .vspaceUnmap syscallDelegates_vspaceUnmap
-  | .untypedResetDispatch => .delegationProof .untypedReset syscallDelegates_untypedReset
   | .cspaceDeleteDispatch => .delegationProof .cspaceDelete syscallDelegates_cspaceDelete
   | .cspaceRevokeDispatch => .delegationProof .cspaceRevoke syscallDelegates_cspaceRevoke
   | .declassifyDispatch => .delegationProof .declassify syscallDelegates_declassify
@@ -1790,7 +1769,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 23 := by decide
+    crossCoreLiveArmDelegationBacked.length = 22 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1832,7 +1811,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .vspaceMapDispatch => false
   | .vspaceUnmapDispatch => false
   -- WS-ZA ZA5.4: and the reset, which writes one capability's free index
-  | .untypedResetDispatch => false
   -- WS-BP BP7.1 (`v0.36.7`): the two finalising destroyers' teardown is the
   -- unmap's own transition, but (WS-ZA ZA5.4 part 23) the finalisation of a
   -- final capability's endpoint or notification wakes each waiter it cancels

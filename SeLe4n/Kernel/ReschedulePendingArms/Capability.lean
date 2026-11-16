@@ -377,16 +377,6 @@ theorem untypedRetypeObject_keyFrameOffChild (src dst : CSpaceAddr) (childId : S
     cases req <;> simp [CarveRequest.object, carvedTcb]
   · rw [kR.2.1, storeObject_scheduler_eq _ _ _ _ hStCh, k1.2.1]
 
-/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind,
-a CNode store, which feeds no key, and nothing else. -/
-theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact setCapFreeIndex_keyFrame _ _ _ hObjInv
-
 /-! ### One-field TCB rewrites and registry writes -/
 
 /-- A store of a TCB over a TCB with the same four key fields. -/

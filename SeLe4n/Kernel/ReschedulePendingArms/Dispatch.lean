@@ -245,12 +245,6 @@ theorem mintReplyCapWithCdt_machine_eq {st st' : SystemState} {src dst : CSpaceA
         · contradiction
       · contradiction
 
-theorem untypedResetFromCap_machine_eq {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
-    {st st' : SystemState} (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    st'.machine = st.machine := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS, setCapFreeIndex_machine]
-
 theorem releaseFinalRegistration_machine (target : Nat) (st : SystemState) :
     (releaseFinalRegistration target st).machine = st.machine := by
   unfold releaseFinalRegistration
@@ -1377,8 +1371,6 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [mintReplyCapWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h]))
-    | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [untypedResetFromCap_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h]))
     | exact (vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv

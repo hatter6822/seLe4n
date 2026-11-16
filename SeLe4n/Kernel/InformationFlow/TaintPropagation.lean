@@ -167,14 +167,6 @@ def contentFlowClass : SyscallId → ContentFlowClass
   -- content-tracked field — and a RAM frame's page is
   -- zeroed, which moves no principal's bytes anywhere.
   | .untypedRetype => .inert
-  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset is inert too.  Since WS-ZA
-  -- ZA5.4 it writes `0` to the invoked capability's free index and nothing
-  -- else, and only once nothing carved from the untyped survives, so it removes
-  -- no id and owes no provenance clear: every carved id has already left
-  -- through a final delete's retire, which clears it (`withTaintCleared`).  No
-  -- principal's bytes move anywhere: a RAM page it hands back is zeroed by the
-  -- carve that next hands it out, before any capability exists.
-  | .untypedReset => .inert
   -- CSpace: both slots live in the capability's own CNode (verified at the
   -- arms), so any edge would be a self-loop.
   | .cspaceCopy => .inert
@@ -280,7 +272,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .cspaceCopy | .cspaceMove | .cspaceMint | .cspaceDelete | .mintReplyCap => false
   | .cspaceRevoke => false
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
-  | .untypedRetype | .untypedReset => false
+  | .untypedRetype => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
@@ -782,7 +774,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => waitTaintEdges tid nid
         | _ => []
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
@@ -964,7 +956,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait | .declassifySignal
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
@@ -1001,7 +993,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv | .notificationWait
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
@@ -1075,7 +1067,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear

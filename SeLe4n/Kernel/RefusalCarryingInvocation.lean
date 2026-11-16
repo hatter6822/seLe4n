@@ -108,10 +108,6 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     match cap.target with
     | .object _ => untypedRetypeFromCap tid executingCore capAddr (decodeUntypedRetypeArgsBy (msgRegOfFile layout regs)) st
     | _ => .error (.invalidCapability 0)
-  | .untypedReset =>
-    match cap.target with
-    | .object _ => untypedResetFromCap tid capAddr st
-    | _ => .error (.invalidCapability 0)
   | .vspaceMap =>
     match cap.target with
     | .object _ =>
@@ -978,15 +974,6 @@ refusal is read where it is, never rebuilt. -/
                   .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
                     vChild.val k n asid, st)))
     | _ => .error (.invalidCapability 0, st)
-  | .untypedReset =>
-    match cap.target with
-    | .object _ =>
-      resolveCallerCapSlotK tid capAddr .retype st (fun e => .error (e, st))
-        (fun srcCnode srcSlot _ _ =>
-          RefusalCarrying.ofChecked (untypedResetAdmittedAt st srcCnode srcSlot)
-            (fun st => untypedResetPerformAt srcCnode srcSlot st)
-            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
-    | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA5.5: the revoke and the query through the endpoint read its
   -- recorded registration first and then write in place.
   | .serviceRevoke =>
@@ -1667,23 +1654,6 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                     untypedRetypeObject_refused hA]
                 · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchInvocationBy,
                     untypedRetypeFromCap, hD, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
-    all_goals rfl
-  case untypedReset =>
-    cases target
-    case object _ =>
-      dsimp only
-      rw [resolveCallerCapSlotK_eq]
-      cases hR : resolveCallerCapSlot tid capAddr .retype st with
-      | error e =>
-        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedResetFromCap,
-          resolveCallerCapSlotK_eq, hR]
-      | ok r =>
-        obtain ⟨src, c, oid⟩ := r
-        dsimp only
-        apply RefusalCarrying.ofChecked_eq
-        intro hA
-        simp only [dispatchInvocationBy, untypedResetFromCap, resolveCallerCapSlotK_eq, hR,
-          untypedResetSlot_of_admitted hA]
     all_goals rfl
   case serviceRevoke =>
     cases target

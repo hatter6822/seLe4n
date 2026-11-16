@@ -214,14 +214,6 @@ theorem mintReplyCapWithCdt_savedRegsKept {st st' : SystemState} {src dst : CSpa
         · contradiction
     exact hM.1.trans (savedRegsKept.cdtAddChild stM src dst .mint hM.2)
 
-/-- **The untyped reset**: the invoked slot's free-index rewind. -/
-theorem untypedResetFromCap_savedRegsKept {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) : savedRegsKept st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact savedRegsKept.setCapFreeIndex _ _ _ hInv
-
 /-- **The carve**: the untyped object's store, the child's store into a slot that
 was empty, the free-index store into the authority's CNode, the scrub (memory
 alone), the capability insert and the derivation edge.  The child may be a TCB;

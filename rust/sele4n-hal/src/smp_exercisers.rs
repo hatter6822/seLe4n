@@ -1624,8 +1624,6 @@ const CSPACE_REVOKE: u64 = 35;
 #[cfg(feature = "hw_target")]
 const UNTYPED_RETYPE: u64 = 36;
 #[cfg(feature = "hw_target")]
-const UNTYPED_RESET: u64 = 37;
-#[cfg(feature = "hw_target")]
 const TCB_SET_SPACE: u64 = 38;
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_MAP: u64 = 39;
@@ -4166,13 +4164,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             NOTIFICATION_CAP,
             6,
             INVALID_CAPABILITY,
-        ),
-        overflowed(
-            "overflowed-untyped-reset",
-            UNTYPED_RESET,
-            UNTYPED_CAP,
-            5,
-            REVOCATION_REQUIRED,
         ),
         overflowed(
             "overflowed-declassify",
@@ -8945,7 +8936,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
     &LIFECYCLE_SCENARIO,
 ];
@@ -9016,12 +9006,6 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
         CSPACE_DELETE,
         CNODE_CAP,
         [MINT_SLOT, 0, 0, 0],
-    ),
-    invocation(
-        "owned-cnode-untyped-reset",
-        UNTYPED_RESET,
-        UNTYPED_CAP,
-        [0; 4],
     ),
 ];
 
@@ -9118,15 +9102,6 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         FRAME_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MOVE_SLOT],
     ),
-    RoundTrip {
-        returns: refused(REVOCATION_REQUIRED),
-        ..invocation(
-            "child-untyped-reset-refused",
-            UNTYPED_RESET,
-            FRAME_CAP,
-            [0, 0, 0, 0],
-        )
-    },
     invocation(
         "child-untyped-revoke",
         CSPACE_REVOKE,
@@ -9694,14 +9669,6 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CSPACE_DELETE,
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
-    ),
-    // The boot untyped rewound, every object carved from it retired, so the
-    // steady-state run carves where the first did.
-    invocation(
-        "lifecycle-untyped-reset",
-        UNTYPED_RESET,
-        UNTYPED_CAP,
-        [0, 0, 0, 0],
     ),
 ];
 

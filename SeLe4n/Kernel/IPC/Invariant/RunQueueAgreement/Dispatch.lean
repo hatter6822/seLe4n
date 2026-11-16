@@ -416,13 +416,6 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       refine RunQueueStage.entry ?_
       exact untypedRetypeFromCap_runQueueStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      refine RunQueueStage.entry ?_
-      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ hStep
-      exact untypedResetSlot_runQueueStage hS
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>

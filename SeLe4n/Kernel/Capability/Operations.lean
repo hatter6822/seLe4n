@@ -1432,7 +1432,8 @@ Returns `true` if the slot has any children in the tree, read off its first-chil
 link (`SystemState.linkHasChild`, equal to the tree's read under the links'
 agreement: `hasCdtChildren_eq_tree`).  It is seL4's `ensureNoChildren`: since
 WS-ZA ZA5.4 part 13 a derivation of an untyped capability
-(`untypedDeriveRefused`) and the reset (`untypedResetSlot`) refuse on it.  A
+(`untypedDeriveRefused`) refuses on it, and the carve resets only a capability
+without one (`retypeFreeIndex`).  A
 delete does not: it splices the slot's node out and its children are re-derived
 from its parent (`spliceDeletedCdtNode`).  Inlined, so a caller that names the
 slot by its two words builds no slot reference. -/

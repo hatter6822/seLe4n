@@ -243,23 +243,3 @@ pub fn untyped_retype_sched_context(
         dst_slot,
     )
 }
-
-/// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
-///
-/// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.
-/// Requires the `Retype` right on `untyped_cap`.  Refused with
-/// `RevocationRequired` while any capability anywhere still names an object
-/// carved from the untyped — at any depth, since a child untyped's own carves
-/// are the untyped's memory too — so revoke the untyped capability first.  On
-/// success every mapping of a page in the untyped's region is gone, every
-/// carved frame and child untyped no longer exists, and the next
-/// [`untyped_retype`] carves from the start of the region again.
-#[inline]
-pub fn untyped_reset(untyped_cap: CPtr) -> KernelResult<SyscallResponse> {
-    invoke_syscall(SyscallRequest {
-        cap_addr: untyped_cap,
-        msg_info: MessageInfo::new_const(0, 0, 0),
-        msg_regs: [0; 4],
-        syscall_id: SyscallId::UntypedReset,
-    })
-}

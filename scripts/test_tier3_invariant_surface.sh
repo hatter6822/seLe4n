@@ -4188,40 +4188,20 @@ run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/life
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
-run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the revocation retires the child untyped and the grandchild frame' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'an untyped recording a child is retired with its capability, its parent adopting the child' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
-# WS-BP BP7.1 slice 3, seL4's reset since WS-ZA ZA5.4 part 36: the live
-# `.untypedReset` arm resolves the invoked slot and runs `untypedResetSlot`,
-# which refuses while that slot has a derivation child or the untyped records a
-# carved object, every refusal before the one write, and otherwise writes 0 to
-# the slot's free index -- no scan, no erase.  The objects carved from it left
-# through their final deletes (`retireCarvedObject`, the erase that moved out of
-# the reset into its own module).
-run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object _ => untypedResetFromCap tid decoded\.capAddr' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetFromCap[^\n]*(\n([ \t][^\n]*)?)*      \(fun srcCnode srcSlot _ _ => untypedResetSlot srcCnode srcSlot st\)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*\n  fun st =>\n    if hasCdtChildren st \{ cnode := srcCnode, slot := srcSlot \} then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*(\n([ \t][^\n]*)?)*            if ut\.children\.isEmpty then\n              \.ok \(\(\), setCapFreeIndex st \{ cnode := srcCnode, slot := srcSlot \} 0\)\n            else \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_negative_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*(\n([ \t][^\n]*)?)*(retireCarvedObject|unmapLivePages|storeObject|objects\.fold)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_freeIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_uncarved($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# WS-SX SX6.1: seL4 has no reset invocation; it resets inside Untyped_Retype,
+# as the carve does (`retypeFreeIndex`), so the model's `.untypedReset` and its
+# transition are gone.  The objects carved from an untyped leave through their
+# final deletes (`retireCarvedObject`).
+run_negative_check "INVARIANT" rg -n '\buntypedReset(FromCap|Slot|AdmittedAt|PerformAt)?\b|\bUntypedReset\b|\buntyped_reset\b' SeLe4n tests rust
 run_negative_check "INVARIANT" rg -n '\buntypedResetWithShootdown|\buntypedResetShootdownAsids\b|\bretireCarvedObjects\b|\bcarvedSubtree[A-Z][A-Za-z]*\b|\buntypedCarvedSubtree\b|\bobjectNamesListed\b|\bretypeAsidRoundFold\b|\buntypedReset_ok_[a-z]' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean
 run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean
 run_check "INVARIANT" rg -n '^theorem of_inertOrAbsentWrites($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n -U 'case untypedReset =>(\n([ \t][^\n]*)?)*      exact untypedResetSlot_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^  \| \.untypedReset    => \.retype$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^  \| \.untypedReset          => 37$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^    UntypedReset = 37,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/sele4n-sys/src/lifecycle.rs
 # Every live mapping is recorded on a capability to its frame: the invariant,
 # its place in the bundle, boot's establishment and the arms proven to keep it.
 run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
@@ -4251,7 +4231,6 @@ run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroad
 run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 # The arms' own steps keep the mappings recorded, each a `MappingStage`.
 run_check "INVARIANT" rg -n '^def MappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Basic.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_mappingFactsKept($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
@@ -5355,22 +5334,12 @@ run_check "INVARIANT" rg -n 'RETIRED: the non-finalising delete left the deleted
 run_check "INVARIANT" rg -n 'a stale record removes nothing: the other frame.s mapping survives' tests/VSpaceCapabilityBindingSuite.lean
 run_negative_check "INVARIANT" rg -n 'untypedResetUnmap' SeLe4n tests
 run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke => false$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# WS-BP BP7.1 slice 3: the reset arm is in the cross-core inventory, writes no core,
-# and its live-arm claim is backed by a delegation proof rather than a reading.
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_untypedReset_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_untypedReset($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetSlot_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n -U '^theorem untypedResetSlot_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*    observableSlotsConfinedToCores st st. \[\] :=' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => \.delegationProof \.untypedReset syscallDelegates_untypedReset$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # v0.36.37: a retired ASID gets an ACKNOWLEDGED `.aside1` round, and a PE
 # servicing one leaves that address space before it acknowledges.  The ledger's
 # broadcast TLBI empties TLBs and leaves every TTBR0_EL1 alone, so the HAL
 # eviction must precede the local invalidation on both servicing paths.  The
 # round is posted by a root's final delete (`asidReleaseRound`); the reset
 # retires nothing since WS-ZA ZA5.4 part 36.
-run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^  \| \.untypedReset => "untypedResetFromCap"$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n -U '                    Some\(decoded\) => \{(\n([ \t][^\n]*)?)*?                        if let crate::tlb::TlbInvalidation::Aside1 \{ asid \} = decoded \{\n                            evict_retired_translation\(asid\);\n                        \}\n                        crate::tlb::tlbi_local\(decoded\)' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n -U '                if op\.op_tag == ASIDE1_OP_TAG \{\n                    evict_retired_translation\(op\.asid\);\n                \}\n            \}\n        \}\n        _ => evict_user_translation\(\),\n    \}\n    crate::tlb::tlbi_vmalle1\(\);' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub const fn translation_retired_by\(ttbr0: u64, retired: u16\) -> bool \{$' rust/sele4n-hal/src/shootdown.rs
@@ -5455,7 +5424,7 @@ run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_tcbSetSpace($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'runSetSpaceChecks$' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'a reset through a derivation-free DUPLICATE is still refused' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a carve through a childless duplicate over recorded objects is refused' tests/VSpaceCapabilityBindingSuite.lean
 # WS-ZA ZA5.4 part 13 (v0.36.124): an untyped capability is derived by seL4's
 # rule on every path — refused with children, the source set full otherwise —
 # and the free-index write is declared as a write of the source's CNode.
@@ -5474,7 +5443,7 @@ run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^@\[inline\] def hasCdtChildren \(st : SystemState\) \(addr : CSpaceAddr\) : Bool :=$' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^      cells := c\.cells\.map unshareSlotCell$' SeLe4n/Model/Object/Unshare.lean
 run_negative_check "INVARIANT" rg -n 'cells := c\.cells\.map opaqueId' SeLe4n/Model/Object/Unshare.lean
-run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'and it leaves the mapping of a page no destroyed capability recorded alone' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
 # shallowest missing level, writes BOTH sides of the install, and a carved root
 # maps a frame only where its walk is complete.  The reset retires a page table
@@ -5492,7 +5461,7 @@ run_check "INVARIANT" rg -n '^  \| \.pageTableUnmap        => 40$' SeLe4n/Model/
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_pageTableMap($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_pageTableUnmap_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n 'runPageTableChecks$' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'a reset of the child while its root.s capability lives is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'while its root.s capability lives the next carve through the child does not reset' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): destroying a table's LAST capability takes it out of
 # its address space (seL4's finaliseCap -> unmapPageTable).  Both destroying
 # arms run the one finalisation; the orphan set is "named by a destroyed
@@ -7589,7 +7558,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 69' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -7713,7 +7682,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 37' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -8003,7 +7972,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 37' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -8337,7 +8306,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 55' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 54' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -9009,12 +8978,12 @@ run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
 # WS-ZA ZA5.4 part 14 retired number 8, leaving 41 variants under a bound of 42.
-run_check "INVARIANT" rg -n '^def count : Nat := 47' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 47;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 46;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 48;' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 1\] = \[8\];' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 2\] = \[8, 37\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
 # IPC invariant preservation, the reschedule flags, the own-core lock footprint,
@@ -9116,7 +9085,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 69' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -10370,7 +10339,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 47' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
