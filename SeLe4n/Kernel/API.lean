@@ -1262,7 +1262,12 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- **WS-BP BP7.1 (`v0.36.6`)**: a reset hands the untyped's memory back to it,
   -- which is authority over that memory — the retype right, as for the carve.
   | .untypedReset    => .retype
-  | .vspaceMap       => .write
+  -- **WS-SX SX6.3 (D6)**: `seL4_ARM_Page_Map` is invoked on the frame
+  -- capability, and every mapping grants at least read access to the page, so
+  -- the frame capability is held with `.read` (`resolveVSpaceMapFrame` asks the
+  -- same right of it); a writable mapping needs `.write` on it as well
+  -- (`frameMappingAdmissible`).
+  | .vspaceMap       => .read
   | .vspaceUnmap     => .write
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
   -- on the page's capability.  seL4's `Page_Unify_Instruction` needs only the
@@ -1362,7 +1367,8 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap => some .cnode
   | .untypedRetype | .untypedReset => some .untyped
-  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => some .vspaceRoot
+  | .vspaceMap => some .frame
+  | .vspaceUnmap | .vspaceUnifyInstruction => some .vspaceRoot
   | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
@@ -2292,8 +2298,16 @@ capability `0`
 (seL4's `decodeSchedContext_Bind`, `invalidCapNumber = 1`). -/
 def bindThreadCapNumber : UInt64 := 1
 
-/-- The frame a `.vspaceMap` names at MR2: its argument capability `0`. -/
-def vspaceMapFrameCapNumber : UInt64 := 1
+/-- The frame a `.vspaceMap` maps: the invoked capability, number `0`
+(WS-SX SX6.3, D6: `seL4_ARM_Page_Map` is an invocation of the frame
+capability). -/
+def vspaceMapFrameCapNumber : UInt64 := 0
+
+/-- The address space a `.vspaceMap` maps into, extra capability 0: its
+argument capability `0` (seL4's `decodeARMFrameInvocation` answers a root that
+is not a valid native root, or not the one its ASID names, and a remap whose
+recorded ASID is another's, `invalidCapNumber = 1`). -/
+def pageMapVSpaceCapNumber : UInt64 := 1
 
 /-- The notification a `.tcbBindNotification` names as extra capability 0:
 its argument capability `0`. -/
@@ -3824,8 +3838,8 @@ theorem resolveVSpaceMapFrame_ok_authorised
 /-- **WS-BP BP7.1: what a frame capability authorises a mapping to do.**
 
 Two refusals, each the fact a hardware mapping of this frame would otherwise
-violate.  (W^X needs no third: the decode already refuses a writable-and-
-executable request, through `PagePermissions.ofNat?`.)  A **writable** mapping needs a frame capability carrying `.write` —
+violate.  (W^X needs no third: the front already refuses a writable-and-
+executable request, through `vspaceMapArgsOfWords`.)  A **writable** mapping needs a frame capability carrying `.write` —
 the capability bounds the access the mapping grants, as seL4's `maskVMRights`
 bounds it; here an over-reaching request is refused rather than silently
 narrowed, so a caller learns the mapping it asked for is not the one it holds
@@ -3915,7 +3929,7 @@ def frameCapObjId (cap : Capability) : SeLe4n.ObjId :=
 
 /-- **WS-BP BP7.1: the `.vspaceMap` arm past its address-space check, named.**
 
-Resolve the frame MR2's capability names (`resolveVSpaceMapFrame`), check what
+Resolve the invoked frame capability (`resolveVSpaceMapFrame`), check what
 that capability authorises the mapping to be (`frameMappingAdmissible`), check
 the frame's address against the platform memory map
 (`validateVSpaceMapPermsForMemoryKind`), and install the frame's own `base`
@@ -4140,8 +4154,8 @@ a remap that passes these is refused by nothing the unmap leaves behind. -/
   | none => .error .asidNotBound
   | some (_, root) =>
     if !Architecture.pageMappingAligned args.vaddr frame.base then .error .alignmentError
-    else if frameCap.mapAsid != args.asid then .error (.invalidCapability vspaceMapFrameCapNumber)
-    else if frameCap.mapVaddr != args.vaddr then .error (.invalidArgument 1)
+    else if frameCap.mapAsid != args.asid then .error (.invalidCapability pageMapVSpaceCapNumber)
+    else if frameCap.mapVaddr != args.vaddr then .error (.invalidArgument 0)
     else if !root.translationReady args.vaddr then .error .translationFault
     else
       match frameMappingAdmissible frameCap frame args.perms with
@@ -4157,6 +4171,131 @@ a remap that passes these is refused by nothing the unmap leaves behind. -/
               .error .addressOutOfBounds
             else if !args.perms.wxCompliant then .error .policyDenied
             else .ok ()
+
+/-- **WS-SX SX6.3 (D6): `seL4_ARM_Page_Map`'s address space and operands.**
+The address space is extra capability 0 (`vspaceRootCap =
+current_extra_caps.excaprefs[0]->cap`), resolved through the caller's own
+CSpace with `.write` as `PageTable_Map`'s is (a lookup refusal numbered as
+argument capability 0, `pageMapVSpaceCapNumber`).  In
+`decodeARMFrameInvocation`'s order: a capability naming no address space is
+`isValidNativeRoot`'s refusal, `invalidCapability 1`; the root's own ASID
+(`capVSMappedASID`) must resolve (`findVSpaceForASID`, `.asidNotBound`) and to
+this root (`find_ret.vspace_root != vspaceRoot`, `invalidCapability 1`); then
+the address is tested (`vspaceMapArgsOfWords`).  The answer is the root and
+the operands the map arm acts on, its ASID the root's own and its frame the
+invoked capability `frameCPtr`. -/
+def resolvePageMapOperands (tid : SeLe4n.ThreadId) (frameCPtr rootCPtr : SeLe4n.CPtr)
+    (words : PageMapArgs) (st : SystemState) :
+    Except KernelError (SeLe4n.ObjId × VSpaceMapArgs) :=
+  match resolveCallerCapObject tid rootCPtr .write st with
+  | .error e => .error (e.forArgumentCap pageMapVSpaceCapNumber)
+  | .ok (_, rootId) =>
+    match st.getVSpaceRoot? rootId with
+    | none => .error (.invalidCapability pageMapVSpaceCapNumber)
+    | some root =>
+      match Architecture.resolveAsidRoot st root.asid with
+      | none => .error .asidNotBound
+      | some (boundId, _) =>
+        if boundId != rootId then .error (.invalidCapability pageMapVSpaceCapNumber)
+        else
+          match vspaceMapArgsOfWords words root.asid frameCPtr with
+          | .error e => .error e
+          | .ok args => .ok (rootId, args)
+
+/-- `resolvePageMapOperands` in continuation form, through
+`resolveCallerCapObjectK`: no capability pair, root pair or result pair is
+built (`resolvePageMapOperandsK_eq`). -/
+@[inline] def resolvePageMapOperandsK {α : Type} (tid : SeLe4n.ThreadId)
+    (frameCPtr rootCPtr : SeLe4n.CPtr) (words : PageMapArgs) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → VSpaceMapArgs → α) : α :=
+  resolveCallerCapObjectK tid rootCPtr .write st
+    (KernelError.argumentCapRefusal pageMapVSpaceCapNumber onErr)
+    (fun _ rootId =>
+      match st.getVSpaceRoot? rootId with
+      | none => onErr (.invalidCapability pageMapVSpaceCapNumber)
+      | some root =>
+        match Architecture.resolveAsidRoot st root.asid with
+        | none => onErr .asidNotBound
+        | some (boundId, _) =>
+          if boundId != rootId then onErr (.invalidCapability pageMapVSpaceCapNumber)
+          else
+            match vspaceMapArgsOfWords words root.asid frameCPtr with
+            | .error e => onErr e
+            | .ok args => onOk rootId args)
+
+theorem resolvePageMapOperandsK_eq {α : Type} (tid : SeLe4n.ThreadId)
+    (frameCPtr rootCPtr : SeLe4n.CPtr) (words : PageMapArgs) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → VSpaceMapArgs → α) :
+    resolvePageMapOperandsK tid frameCPtr rootCPtr words st onErr onOk =
+      match resolvePageMapOperands tid frameCPtr rootCPtr words st with
+      | .error e => onErr e
+      | .ok (rootId, args) => onOk rootId args := by
+  unfold resolvePageMapOperandsK resolvePageMapOperands
+  rw [resolveCallerCapObjectK_eq]
+  cases resolveCallerCapObject tid rootCPtr .write st with
+  | error e => rfl
+  | ok p =>
+    obtain ⟨_, rootId⟩ := p
+    simp only []
+    cases st.getVSpaceRoot? rootId with
+    | none => rfl
+    | some root =>
+      simp only []
+      cases Architecture.resolveAsidRoot st root.asid with
+      | none => rfl
+      | some pr =>
+        obtain ⟨boundId, _⟩ := pr
+        simp only []
+        split
+        · rfl
+        · cases vspaceMapArgsOfWords words root.asid frameCPtr <;> rfl
+
+/-- **What an admitted `seL4_ARM_Page_Map` front answers**: the root is one the
+caller holds a writable capability to, a VSpace root in the store, the one its
+own ASID resolves to (`vspaceCapAuthorizesAsid` holds of that capability and
+the operands' ASID), and the operands name the invoked frame capability. -/
+theorem resolvePageMapOperands_ok {tid : SeLe4n.ThreadId} {frameCPtr rootCPtr : SeLe4n.CPtr}
+    {words : PageMapArgs} {st : SystemState} {rootId : SeLe4n.ObjId} {args : VSpaceMapArgs}
+    (h : resolvePageMapOperands tid frameCPtr rootCPtr words st = .ok (rootId, args)) :
+    ∃ rootCap root,
+      resolveCallerCapObject tid rootCPtr .write st = .ok (rootCap, rootId) ∧
+      st.getVSpaceRoot? rootId = some root ∧ args.asid = root.asid ∧
+      args.frame = frameCPtr ∧
+      ∃ r, Architecture.resolveAsidRoot st args.asid = some (rootId, r) := by
+  unfold resolvePageMapOperands at h
+  cases hR : resolveCallerCapObject tid rootCPtr .write st with
+  | error e => rw [hR] at h; cases h
+  | ok p =>
+    obtain ⟨rootCap, rid⟩ := p
+    rw [hR] at h
+    simp only at h
+    cases hV : st.getVSpaceRoot? rid with
+    | none => rw [hV] at h; cases h
+    | some root =>
+      rw [hV] at h
+      simp only at h
+      cases hA : Architecture.resolveAsidRoot st root.asid with
+      | none => rw [hA] at h; cases h
+      | some pr =>
+        obtain ⟨boundId, r⟩ := pr
+        rw [hA] at h
+        simp only at h
+        split at h
+        · cases h
+        · rename_i hB
+          have hEq : boundId = rid := by simpa using hB
+          cases hW : vspaceMapArgsOfWords words root.asid frameCPtr with
+          | error e => rw [hW] at h; cases h
+          | ok a =>
+            rw [hW] at h
+            cases h
+            unfold vspaceMapArgsOfWords at hW
+            split at hW
+            · cases hW
+            · split at hW
+              · cases hW
+              · cases hW
+                exact ⟨rootCap, root, rfl, hV, rfl, rfl, r, by rw [hA, hEq]⟩
 
 /-- **`seL4_ARM_Page_Map` on a frame capability: a fresh mapping, or a remap.**
 seL4's `decodeARMFrameInvocation` takes a capability whose recorded mapping is
@@ -4332,32 +4471,28 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object _ => untypedResetFromCap tid decoded.capAddr
     | _ => fun _ => .error (.invalidCapability 0)
+  -- **WS-SX SX6.3 (D6)**: `seL4_ARM_Page_Map` is an invocation of the frame
+  -- capability: the words are the address, the rights and the attributes
+  -- (`decodePageMapArgs`), and the address space is extra capability 0, a
+  -- message naming none refused `.truncatedMessage` as seL4 refuses a null
+  -- `excaprefs[0]`.  The root must be the one its own ASID resolves to
+  -- (`resolvePageMapOperands`), so the mapping's address space is the
+  -- capability's, never a name the caller chose (the confused deputy PR #845
+  -- closed); the page mapped is the invoked frame's, its address the frame's
+  -- own `base`.
   | .vspaceMap =>
     some <| match cap.target with
     | .object _ =>
-        -- AH3-C (L-14): Pass platform-configured maxASID to decode.
-        -- WS-BP BP7.1: MR2 is a frame capability address, so there is no
-        -- decode-time physical address to bound (AK3-E's checked decode is
-        -- retired); the physical-address bound applies to the resolved frame's
-        -- `base` inside `vspaceMapPageCheckedWithFlushFromState`.
         fun st =>
-          match decodeVSpaceMapArgs decoded st.machine.maxASID with
+          match decodePageMapArgs decoded with
           | .error e => .error e
-          | .ok args =>
-            -- PR #845 review (P1): bind the capability to the operand address
-            -- space.  `syscallLookupCap` proved only that the caller holds
-            -- *some* capability carrying `.write`; the ASID arrives in a
-            -- message register, so without this a holder of any writable object
-            -- capability could map into an arbitrary address space.  Checked
-            -- before the permission validation so an unauthorized caller does
-            -- no further work and learns nothing about the target.
-            if !vspaceCapAuthorizesAsid cap args.asid st then
-              .error .illegalAuthority
-            else
-              -- WS-BP BP7.1: the page mapped is the frame MR2's capability names,
-              -- resolved through the caller's own CSpace; its address is the
-              -- frame's own `base`, never a register value.
-              vspaceMapOrRemapFromFrameCap tid executingCore args st
+          | .ok words =>
+            match callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+            | none => .error .truncatedMessage
+            | some rootCPtr =>
+              match resolvePageMapOperands tid decoded.capAddr rootCPtr words st with
+              | .error e => .error e
+              | .ok (_, args) => vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceUnmap =>
     some <| match cap.target with
@@ -5000,12 +5135,19 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceMapArgs decoded st.machine.maxASID with
+      cases hDec : decodePageMapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
+      | ok words =>
           simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+          simp only [hX] at hStep
+          cases hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st with
+          | error e => simp only [hOps] at hStep; cases hStep
+          | ok p =>
+          obtain ⟨_, args⟩ := p
+          simp only [hOps] at hStep
           · have hFresh : ∀ s s', s.objects.invExt → ipcInvariantFull s →
                 vspaceMapFromFrameCap tid executingCore args s = .ok ((), s') →
                 ipcInvariantFull s' := by
@@ -6730,7 +6872,7 @@ theorem dispatchWithCapChecked_cspaceRevoke_delegates
 /-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii) / WS-BP
 BP7.1: When vspaceMap dispatch passes its address-space check it is exactly
 `vspaceMapOrRemapFromFrameCap`: seL4's remap of a capability whose mapping is in
-place, or the fresh mapping `vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
+place, or the fresh mapping `vspaceMapFromFrameCap` — resolve the invoked frame capability, admit the
 requested permissions against that capability and the frame's memory kind, and
 invoke `vspaceMapPageCheckedWithShootdownFromStatePerCore` with the caller's
 executing core, the decoded ASID and vaddr, the **frame's own `base`**, and the
@@ -6746,20 +6888,22 @@ WS-BP BP7.1 retired AK3-E's decode-time PA bound with the physical-address
 operand it bounded. -/
 theorem dispatchWithCapChecked_vspaceMap_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (rootCPtr : SeLe4n.CPtr)
+    (rootId : SeLe4n.ObjId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
-    -- PR #845 review (P1): the capability must name the operand ASID's VSpace
-    -- root.  Without this premise the delegation is *false*, because an
-    -- unauthorized caller is now rejected with `.illegalAuthority` before the
-    -- transition runs.
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
+    (hDecode : decodePageMapArgs decoded = .ok words)
+    (hRoot : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = some rootCPtr)
+    -- PR #845 review (P1), WS-SX SX6.3 (D6): the address space is the one
+    -- extra capability 0 names, and that root is the one its own ASID
+    -- resolves to; without this premise the delegation is *false*, because
+    -- such a call is refused before the transition runs.
+    (hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st = .ok (rootId, args)) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       vspaceMapOrRemapFromFrameCap tid executingCore args st := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall,
+    hTarget, hDecode, hRoot, hOps]
 
 /-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
 `vspaceUnifyInstructionPage` is invoked with the decoded ASID and vaddr.
@@ -6861,41 +7005,73 @@ theorem dispatchWithCapChecked_untypedReset_delegates
 -- break these.
 -- ============================================================================
 
-/-- **Fail-closed**: `.vspaceMap` dispatch rejects a capability that does not
-name the operand ASID's VSpace root, without running the transition. -/
+/-- **Fail-closed**: `.vspaceMap` dispatch refuses an address space its front
+does not admit — extra capability 0 names no VSpace root, or one its own ASID
+does not resolve to — without running the transition. -/
 theorem dispatchWithCapChecked_vspaceMap_unauthorized
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
-    (st : SystemState)
-    (hSyscall : decoded.syscallId = .vspaceMap)
-    (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
-
-/-- **WS-BP BP7.1 (fail-closed, the vulnerability's closure)**: authority over
-the address space is not authority over the memory.  A caller whose capability
-*does* name the operand ASID's VSpace root — the full address-space authority
-PR #845's binding asks for — still maps nothing unless MR2 resolves, through the
-caller's own CSpace with `.read`, to a capability naming a frame the store
-holds: the resolver's error is returned and no page table is touched.  Before
-this version the arm mapped a raw physical address from MR2, so that VSpace
-capability alone was authority over every page of physical memory. -/
-theorem dispatchWithCapChecked_vspaceMap_requires_frame_cap
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (rootCPtr : SeLe4n.CPtr)
     (st : SystemState) (e : KernelError)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
+    (hDecode : decodePageMapArgs decoded = .ok words)
+    (hRoot : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = some rootCPtr)
+    (hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st = .error e) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error e := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall,
+    hTarget, hDecode, hRoot, hOps]
+
+/-- **WS-SX SX6.3 (D6)**: a root its own ASID does not resolve to — the ASID
+bound to another root, the `storeObject` rebinding SM7.F.4 names — is refused
+`invalidCapability 1`, seL4's `find_ret.vspace_root != vspaceRoot`: holding a
+capability to the *shadowed* root authorises nothing on the bound one. -/
+theorem resolvePageMapOperands_shadowed_root (tid : SeLe4n.ThreadId)
+    (frameCPtr rootCPtr : SeLe4n.CPtr) (words : PageMapArgs) (st : SystemState)
+    (rootCap : Capability) (rootId boundId : SeLe4n.ObjId) (root bound : VSpaceRoot)
+    (hR : resolveCallerCapObject tid rootCPtr .write st = .ok (rootCap, rootId))
+    (hV : st.getVSpaceRoot? rootId = some root)
+    (hA : Architecture.resolveAsidRoot st root.asid = some (boundId, bound))
+    (hNe : boundId ≠ rootId) :
+    resolvePageMapOperands tid frameCPtr rootCPtr words st =
+      .error (.invalidCapability pageMapVSpaceCapNumber) := by
+  simp [resolvePageMapOperands, hR, hV, hA, hNe]
+
+/-- **No extra capability, no mapping**: a `.vspaceMap` whose message names no
+address space is refused `.truncatedMessage`, as seL4 refuses a null
+`excaprefs[0]`. -/
+theorem dispatchWithCapChecked_vspaceMap_no_root
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodePageMapArgs decoded = .ok words)
+    (hRoot : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = none) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .truncatedMessage := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall,
+    hTarget, hDecode, hRoot]
+
+/-- **WS-BP BP7.1 (fail-closed, the vulnerability's closure)**: authority over
+the address space is not authority over the memory.  A caller whose extra
+capability names the address space still maps nothing unless the invoked
+capability resolves, through the caller's own CSpace with `.read`, to a
+capability naming a frame the store holds: the resolver's error is returned
+and no page table is touched.  Before `v0.36.4` the arm mapped a raw physical
+address from a message register, so a VSpace capability alone was authority
+over every page of physical memory. -/
+theorem dispatchWithCapChecked_vspaceMap_requires_frame_cap
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (rootCPtr : SeLe4n.CPtr)
+    (rootId : SeLe4n.ObjId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState) (e : KernelError)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodePageMapArgs decoded = .ok words)
+    (hRoot : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = some rootCPtr)
+    (hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st = .ok (rootId, args))
     (hNoFrame : resolveVSpaceMapFrame tid args st = .error e) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error e := by
-  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
-    hSyscall hTarget hDecode hAuth]
+  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId
+    words rootCPtr rootId args st hSyscall hTarget hDecode hRoot hOps]
   simp [vspaceMapOrRemapFromFrameCap, hNoFrame]
 
 /-- **WS-BP BP7.1**: and a successful `.vspaceMap` installs the frame the caller
@@ -6905,13 +7081,14 @@ first takes the capability's own mapping down (`st0`), and the frame is
 resolved and installed from the state that leaves. -/
 theorem dispatchWithCapChecked_vspaceMap_maps_frame_base
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (rootCPtr : SeLe4n.CPtr)
+    (rootId : SeLe4n.ObjId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st st' : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
+    (hDecode : decodePageMapArgs decoded = .ok words)
+    (hRoot : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = some rootCPtr)
+    (hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st = .ok (rootId, args))
     (hOk : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     ∃ (st0 : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
       (st1 : SystemState),
@@ -6925,8 +7102,8 @@ theorem dispatchWithCapChecked_vspaceMap_maps_frame_base
         tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
         cspaceRecordFrameMapping frameSlot
           { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
-  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
-    hSyscall hTarget hDecode hAuth] at hOk
+  rw [dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId
+    words rootCPtr rootId args st hSyscall hTarget hDecode hRoot hOps] at hOk
   have hFresh : ∀ s, vspaceMapFromFrameCap tid executingCore args s = .ok ((), st') →
       ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
         (st1 : SystemState),
@@ -7475,13 +7652,14 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     (decodeCSpaceCopyArgs d₁ = decodeCSpaceCopyArgs d₂) ∧
     (decodeCSpaceMoveArgs d₁ = decodeCSpaceMoveArgs d₂) ∧
     (decodeCSpaceDeleteArgs d₁ = decodeCSpaceDeleteArgs d₂) ∧
-    -- AH3-C: These are now function equalities (parameterized by maxASID)
-    (decodeVSpaceMapArgs d₁ = decodeVSpaceMapArgs d₂) ∧
+    (decodePageMapArgs d₁ = decodePageMapArgs d₂) ∧
+    -- AH3-C: a function equality (parameterized by maxASID)
     (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (try simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
-      decodeCSpaceDeleteArgs, requireMessageLength, requireMsgReg, hRegs, hLen]) <;>
-    (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
+      decodeCSpaceDeleteArgs, decodePageMapArgs, requireMessageLength, requireMsgReg, hRegs,
+      hLen]) <;>
+    (try funext maxASID; simp only [decodeVSpaceUnmapArgs,
       requireMessageLength, requireMsgReg, hRegs, hLen])
 
 -- ============================================================================
@@ -8742,12 +8920,14 @@ def syscallDelegates : SyscallId → Prop
            | .error e => .error e)
   | .vspaceMap =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-        (cap : Capability) (objId : SeLe4n.ObjId)
-        (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st : SystemState),
+        (cap : Capability) (objId : SeLe4n.ObjId) (words : PageMapArgs) (rootCPtr : SeLe4n.CPtr)
+        (rootId : SeLe4n.ObjId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+        (st : SystemState),
         decoded.syscallId = .vspaceMap →
         cap.target = .object objId →
-        decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args →
-        vspaceCapAuthorizesAsid cap args.asid st = true →
+        decodePageMapArgs decoded = .ok words →
+        callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 = some rootCPtr →
+        resolvePageMapOperands tid decoded.capAddr rootCPtr words st = .ok (rootId, args) →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st = vspaceMapOrRemapFromFrameCap tid executingCore args st
   | .vspaceUnmap =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
@@ -9045,9 +9225,10 @@ theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
 
 /-- WS-SM SM8.B: the `.vspaceMap` obligation, discharged. -/
 theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
-  intro ctx decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
-  exact dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId args st
-    hSyscall hTarget hDecode hAuth
+  intro ctx decoded tid executingCore gate cap objId words rootCPtr rootId args st hSyscall hTarget
+    hDecode hRoot hOps
+  exact dispatchWithCapChecked_vspaceMap_delegates ctx decoded tid executingCore gate cap objId
+    words rootCPtr rootId args st hSyscall hTarget hDecode hRoot hOps
 
 /-- WS-SM SM8.C.9: the `.declassify` obligation, discharged. -/
 theorem syscallDelegates_declassify : syscallDelegates .declassify := by

@@ -2883,15 +2883,15 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.untypedRetypeObject (carveAt 2) ⟨510⟩ (carveAt 3) .endpoint carveState)
     (.invalidCapability 0)
 
-  -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
-  let threeRegDecode : SyscallDecodeResult := {
+  -- K-G-NEG-11: decodePageMapArgs with insufficient msgRegs (< 3) → invalidMessageInfo
+  let twoRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 3, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
+    msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
   }
   expectErr "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
-    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode 65536)
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs twoRegDecode)
     .invalidMessageInfo
 
   -- K-G-NEG-12: vspaceMapPageChecked with W^X violation (perms = write+execute)
@@ -2984,10 +2984,10 @@ private def runWSKGDeterminismChecks : IO Unit := do
     let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs d1
     unless lr1 == lr2 do
       throw <| IO.userError "K-G-DET-01: decodeUntypedRetypeArgs not deterministic"
-    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
-    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
+    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
+    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
     unless vm1 == vm2 do
-      throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
+      throw <| IO.userError "K-G-DET-01: decodePageMapArgs not deterministic"
     let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
     let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
     unless vu1 == vu2 do

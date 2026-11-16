@@ -273,29 +273,28 @@ fn xval_009_untyped_retype_kernel_object() {
 // VSpace syscalls (RUST-XVAL-010 through RUST-XVAL-011)
 // ============================================================================
 
-/// RUST-XVAL-010: VSpace map register layout.
+/// RUST-XVAL-010: VSpace map register layout (WS-SX SX6.3, D6: seL4's
+/// `Page_Map` words; the frame is the invoked capability and the address
+/// space is extra capability 0).
 #[test]
 fn xval_010_vspace_map() {
-    let args = vspace::VSpaceMapArgs {
-        asid: Asid::from(1u64),
-        vaddr: VAddr::from(0x1000u64),
-        frame: CPtr::from(0x2000u64), // WS-BP BP7.1: a frame capability address
-        perms: PagePerms::try_from(0x05u64).unwrap(), // read|execute
-    };
+    let args = vspace::VSpaceMapArgs::from_perms(
+        VAddr::from(0x1000u64),
+        PagePerms::try_from(0x15u64).unwrap(), // read|execute|cacheable
+    );
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1000u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new(3, 1, 0).unwrap(),
+        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
     };
     verify_regs(
         &req,
         &[
-            (2, 1, "x2=asid"),
-            (3, 0x1000, "x3=vaddr"),
-            (4, 0x2000, "x4=frame capability address"),
-            (5, 0x05, "x5=perms"),
+            (2, 0x1000, "x2=vaddr"),
+            (3, 2, "x3=rights (CanRead)"),
+            (4, 1, "x4=attr (PageCacheable)"),
             (6, 9, "x7=SyscallId::VSpaceMap"),
         ],
     );
@@ -744,50 +743,30 @@ fn message_info_new_rejects_oversized_label() {
     );
 }
 
-/// T3-D/M-NEW-10: VSpaceMapArgs perms validation at decode boundary.
-///
-/// Verify valid permission values roundtrip correctly and invalid values
-/// are rejected at decode.
+/// WS-SX SX6.3 (D6): every permission set reaches seL4's two words and back:
+/// read and write are the rights word's `CanRead` and `CanWrite`, execute is
+/// `ExecuteNever` clear and cacheable is `PageCacheable`.
 #[test]
-fn vspace_map_args_perms_roundtrip() {
-    // All valid 5-bit values (0x00 through 0x1F) roundtrip correctly
+fn vspace_map_args_perms_words() {
     for perm_val in 0..=0x1Fu64 {
-        let args = vspace::VSpaceMapArgs {
-            asid: Asid::from(1u64),
-            vaddr: VAddr::from(0x1000u64),
-            frame: CPtr::from(3u64),
-            perms: PagePerms::try_from(perm_val).unwrap(),
-        };
-        let decoded = vspace::VSpaceMapArgs::decode(&args.encode()).unwrap();
-        assert_eq!(
-            decoded, args,
-            "Roundtrip failed for perms=0x{:02x}",
-            perm_val
-        );
+        let perms = PagePerms::try_from(perm_val).unwrap();
+        let args = vspace::VSpaceMapArgs::from_perms(VAddr::from(0x1000u64), perms);
+        assert_eq!(args.rights & 2 != 0, perms.contains(PagePerms::READ));
+        assert_eq!(args.rights & 1 != 0, perms.contains(PagePerms::WRITE));
+        assert_eq!(args.attr & 4 == 0, perms.contains(PagePerms::EXECUTE));
+        assert_eq!(args.attr & 1 != 0, perms.contains(PagePerms::CACHEABLE));
+        assert_eq!(vspace::VSpaceMapArgs::decode(&args.encode()).unwrap(), args);
     }
 }
 
-/// T3-D: Invalid permission values are rejected at decode.
-/// V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
-/// because the message structure is correct — the argument value is invalid.
+/// WS-SX SX6.3 (D6): the words are total, as seL4's `rightsFromWord` and
+/// `vmAttributesFromWord` are; only a short message is refused.
 #[test]
-fn vspace_map_args_invalid_perms_rejected() {
-    // 0x20 — first value outside 5-bit range
+fn vspace_map_args_words_total() {
+    assert!(vspace::VSpaceMapArgs::decode(&[0x1000, 0xFF, u64::MAX]).is_ok());
     assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-        Err(KernelError::InvalidArgument)
-    );
-
-    // 0xFF — common garbage value
-    assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-        Err(KernelError::InvalidArgument)
-    );
-
-    // u64::MAX — extreme case
-    assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-        Err(KernelError::InvalidArgument)
+        vspace::VSpaceMapArgs::decode(&[0x1000, 2]),
+        Err(KernelError::InvalidMessageInfo)
     );
 }
 
@@ -2853,9 +2832,9 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,
-        Asid::from(1u64),
-        VAddr::from(0x1000u64),
         CPtr::from(2u64),
+        VAddr::from(0x1000u64),
+        &mut buf,
     );
     assert_names("vspace_map", SyscallId::VSpaceMap);
     let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));

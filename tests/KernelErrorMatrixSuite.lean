@@ -12,6 +12,7 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Model.State
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.RefusalCarryingDeclassification
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
@@ -395,17 +396,19 @@ private def row_revocationRequired_retype_inUse_reply : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.lifecyclePreRetypeCleanup (default : SystemState) target inUse
         (.reply { replyId := ⟨999⟩ })) }
 
-/-- Row: `decodeVSpaceMapArgs` rejects ASID at or above maxASID with
-`.asidNotBound`. -/
-private def row_asidNotBound_vspaceMap : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+/-- Row: `decodeVSpaceUnmapArgs` rejects ASID at or above maxASID with
+`.asidNotBound`.  (WS-SX SX6.3, D6: a map names its address space as extra
+capability 0 and takes that root's own ASID, so the unmap is the decode that
+still reads an ASID word.) -/
+private def row_asidNotBound_vspaceUnmap : KernelErrorRejection :=
+  { syscall       := "decodeVSpaceUnmapArgs"
     expectedError := .asidNotBound
     scenarioTag   := "AN11A.3.asidNotBound.over_maxASID"
-    scenarioDesc  := "U2-G/U-H08: decode of vspaceMap rejects ASID ≥" ++
+    scenarioDesc  := "U2-G/U-H08: decode of vspaceUnmap rejects ASID ≥" ++
                      " platform-configured maxASID with .asidNotBound"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 65536, rv 0, rv 0, rv 0]) 65536) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+        (mkDecoded #[rv 65536, rv 0]) 65536) }
 
 /-- Row: `bootScheduleChecked` rejects when the current TCB is missing with
 `.schedulerInvariantViolation`. -/
@@ -647,29 +650,31 @@ private def row_invalidTypeTag : KernelErrorRejection :=
 -- AN11-A.5 — Architecture / Capability / Service residual variants
 -- ============================================================================
 
-/-- Row: `decodeVSpaceMapArgs` rejects non-canonical VAddr (≥ 2^48) with
+/-- Row: `decodeVSpaceUnmapArgs` rejects non-canonical VAddr (≥ 2^48) with
 `.addressOutOfBounds`. -/
 private def row_addressOutOfBounds_vaddr : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+  { syscall       := "decodeVSpaceUnmapArgs"
     expectedError := .addressOutOfBounds
     scenarioTag   := "AN11A.5.addressOutOfBounds.non_canonical_vaddr"
-    scenarioDesc  := "U2-B/U-H06: vspaceMap rejects VAddr ≥ 2^48 (outside" ++
+    scenarioDesc  := "U2-B/U-H06: vspaceUnmap rejects VAddr ≥ 2^48 (outside" ++
                      " ARM64 48-bit canonical range)"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 0, rv (2^48), rv 0, rv 0]) 65536) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+        (mkDecoded #[rv 0, rv (2^48)]) 65536) }
 
-/-- Row: `decodeVSpaceMapArgs` rejects invalid permission bits with
-`.invalidSyscallArgument` (X5-E / M-11). -/
-private def row_invalidSyscallArgument_perms : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+/-- Row: an audit read whose opcode names no read is refused
+`.invalidSyscallArgument` (X5-E / M-11), as `decodeAuditReadOp` refuses it.
+(WS-SX SX6.3, D6 retired the map's permissions-word refusal: seL4's rights and
+attributes words are total.) -/
+private def row_invalidSyscallArgument_auditOpcode : KernelErrorRejection :=
+  { syscall       := "auditReadFastRefusal"
     expectedError := .invalidSyscallArgument
-    scenarioTag   := "AN11A.5.invalidSyscallArgument.bad_perms"
-    scenarioDesc  := "U5-E/U-M07/X5-E: undefined permission bits (≥ 32)" ++
-                     " yield .invalidSyscallArgument from the vspace decode"
+    scenarioTag   := "AN11A.5.invalidSyscallArgument.bad_audit_opcode"
+    scenarioDesc  := "X5-E: an audit-read opcode from 30 names no read and" ++
+                     " yields .invalidSyscallArgument"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 0, rv 0x1000, rv 0, rv 64]) 65536) }
+      .error (SeLe4n.Kernel.auditReadFastRefusal SeLe4n.Kernel.defaultLabelingContext
+        default (default : SystemState) 30 0 0) }
 
 /-- Row: the production map wrapper rejects a physical address at or above the
 platform's PA window with `.addressOutOfBounds`.  WS-BP BP7.1 retired AK3-E's
@@ -1014,7 +1019,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_nullCapability_mint,
     -- AN11-A.3 security-priority
     row_revocationRequired_retype_inUse_reply,
-    row_asidNotBound_vspaceMap,
+    row_asidNotBound_vspaceUnmap,
     row_schedulerInvariantViolation,
     row_alignmentError_security,
     row_targetSlotOccupied,
@@ -1033,7 +1038,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_invalidTypeTag,
     -- AN11-A.5 architecture / residual
     row_addressOutOfBounds_vaddr,
-    row_invalidSyscallArgument_perms,
+    row_invalidSyscallArgument_auditOpcode,
     row_addressOutOfBounds_paddr,
     row_notSupported_fiq,
     row_hardwareFault_serror,

@@ -366,36 +366,42 @@ private def sad007_untypedRetypeInvalidType : IO Unit := do
 
 -- VSpace family ----------------------------------------------------------------
 
-/-- SAD-008: decodeVSpaceMapArgs — valid decode. -/
+/-- SAD-008: decodePageMapArgs — seL4's three words, carried verbatim
+(WS-SX SX6.3, D6: the frame is the invoked capability and the address space
+extra capability 0, so no word names either). -/
 private def sad008_vspaceMap : IO Unit := do
-  -- ASID < 65536, VAddr < 2^48, frame CPtr arbitrary, perms valid (< 32)
-  -- AH3-C: Pass ARM64 default maxASID (65536) to parameterized decode
-  -- WS-BP BP7.1: MR2 decodes as a frame capability address, carried verbatim.
-  let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-008a vspace map ok" result.isOk
-  expect "SAD-008b MR2 is the frame capability address"
+  let stub := mkStub #[⟨0x1000⟩, ⟨3⟩, ⟨5⟩]
+  let result := decodePageMapArgs stub
+  expect "SAD-008a page map ok" result.isOk
+  expect "SAD-008b MR0..MR2 are the address, rights and attributes words"
     (match result with
-     | .ok args => args.frame == SeLe4n.CPtr.ofNat 0x2000
+     | .ok args => args.vaddr == 0x1000 && args.rights == 3 && args.attr == 5
      | .error _ => false)
 
-/-- SAD-009: decodeVSpaceMapArgs — invalid ASID (>= 65536). -/
+/-- SAD-009: decodePageMapArgs — a message of two words is truncated. -/
 private def sad009_vspaceMapInvalidAsid : IO Unit := do
-  let stub := mkStub #[⟨65536⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-009a vspace map invalid ASID" (!result.isOk)
+  let stub := mkStub #[⟨0x1000⟩, ⟨3⟩]
+  let result := decodePageMapArgs stub
+  expect "SAD-009a page map two words truncated" (!result.isOk)
 
-/-- SAD-010: decodeVSpaceMapArgs — non-canonical VAddr (>= 2^48). -/
+/-- SAD-010: vspaceMapArgsOfWords — non-canonical VAddr (>= 2^48) is seL4's
+`InvalidArgument 0`. -/
 private def sad010_vspaceMapNonCanonical : IO Unit := do
-  let stub := mkStub #[⟨1⟩, ⟨2^48⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-010a vspace map non-canonical" (!result.isOk)
+  let result := vspaceMapArgsOfWords ⟨(2^48 : Nat).toUInt64, 3, 5⟩ ⟨1⟩ (SeLe4n.CPtr.ofNat 2)
+  expect "SAD-010a page map non-canonical"
+    (match result with
+     | .error (.invalidArgument 0) => true
+     | _ => false)
 
-/-- SAD-011: decodeVSpaceMapArgs — invalid permissions (>= 32). -/
+/-- SAD-011: pagePermissionsOfWords — the words are total; read/write come from
+the rights word and execute/cacheable from the attributes word. -/
 private def sad011_vspaceMapInvalidPerms : IO Unit := do
-  let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨32⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-011a vspace map invalid perms" (!result.isOk)
+  let p := pagePermissionsOfWords 0xFFFF 0
+  expect "SAD-011a wide rights word read as CanRead|CanWrite"
+    (p.read && p.write && p.execute && p.user && !p.cacheable)
+  let q := pagePermissionsOfWords 2 5
+  expect "SAD-011b read-only, cacheable, never executable"
+    (q.read && !q.write && !q.execute && q.user && q.cacheable)
 
 /-- SAD-012: decodeVSpaceUnmapArgs — valid and invalid ASID. -/
 private def sad012_vspaceUnmap : IO Unit := do

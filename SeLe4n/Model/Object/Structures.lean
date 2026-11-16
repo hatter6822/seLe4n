@@ -69,13 +69,10 @@ downstream in `vspaceMapPage`.
 **AK7-J (F-M08 / MEDIUM) — masked-to-5-bits semantics:** `ofNat` is total
 and silently masks any bits ≥ 5 (e.g., `ofNat (2^10)` produces
 all-`false` permissions). This is intentional for proof ergonomics — the
-underlying bitfield layout defines only 5 permission bits. Callers that
-need to reject raw permission words with reserved bits set (bit ≥ 5)
-should use the validating companion `PagePermissions.ofNat?`, which
-returns `none` for `n ≥ 32` and for W^X-violating inputs. Production
-syscall decoders (e.g., `decodeVSpaceMapArgs`) route through `ofNat?` at
-the ABI boundary to surface `.invalidArgument` rather than producing a
-surprising silent downgrade. -/
+underlying bitfield layout defines only 5 permission bits.  The VSpace map
+reads seL4's rights and attributes words (WS-SX SX6.3), which are total as
+seL4's are, into an index below 32 (`pagePermissionsOfWords`) and refuses a
+writable and executable request there. -/
 def PagePermissions.ofNat (n : Nat) : PagePermissions :=
   { read      := n &&& 1 != 0
     write     := n &&& 2 != 0
@@ -92,22 +89,9 @@ def PagePermissions.toNat (p : PagePermissions) : Nat :=
   (if p.user then 8 else 0) |||
   (if p.cacheable then 16 else 0)
 
-/-- T6-C/M-ARCH-1: Validating decode — returns `none` for permission values outside the
-5-bit valid range (bits 0–4: read, write, execute, user, cacheable). Values ≥ 32 contain
-undefined permission bits and are rejected at the ABI decode boundary.
-
-V4-K/L-FND-2: Also rejects W^X-violating inputs (both write and execute set).
-This moves W^X enforcement to the earliest possible decode point, preventing
-W^X-violating `PagePermissions` values from ever being constructed via `ofNat?`. -/
-def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
-  if n < 32 then
-    let p := PagePermissions.ofNat n
-    if p.wxCompliant then some p else none
-  else none
-
 /-- WS-ZA ZA5.4: the permissions of every 5-bit word, in word order — built
 once, when the kernel initialises, so a decode hands out a shared value rather
-than building one. -/
+than building one (`pagePermissionsOfWordsShared`). -/
 def PagePermissions.table : Array PagePermissions :=
   ((List.range 32).map PagePermissions.ofNat).toArray
 
@@ -117,52 +101,6 @@ theorem PagePermissions.table_size : PagePermissions.table.size = 32 := by
 theorem PagePermissions.table_get (n : Nat) (h : n < PagePermissions.table.size) :
     PagePermissions.table[n] = PagePermissions.ofNat n := by
   simp [PagePermissions.table]
-
-/-- WS-ZA ZA5.4: `ofNat?` as compiled — the range and W^X checks read off the
-word's bits, inlined, so a decoder's `match` meets the `some`, and the
-permissions are the shared entry of `table`, so none is built. -/
-@[inline] def PagePermissions.ofNatChecked (n : Nat) : Option PagePermissions :=
-  if h : n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
-    some (PagePermissions.table[n]'(by
-      rw [PagePermissions.table_size]
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-      exact h.1))
-  else none
-
-@[csimp] theorem PagePermissions.ofNat?_eq_checked :
-    @PagePermissions.ofNat? = @PagePermissions.ofNatChecked := by
-  funext n
-  unfold PagePermissions.ofNat? PagePermissions.ofNatChecked PagePermissions.wxCompliant
-  by_cases h : n < 32
-  · simp only [h, PagePermissions.table_get]
-    unfold PagePermissions.ofNat
-    simp
-  · simp [h]
-
-/-- T6-C/V4-K: `ofNat?` returns `some` for valid, W^X-compliant permission values. -/
-theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32)
-    (hWx : (PagePermissions.ofNat n).wxCompliant = true) :
-    PagePermissions.ofNat? n = some (PagePermissions.ofNat n) := by
-  simp [PagePermissions.ofNat?, h, hWx]
-
-/-- T6-C: `ofNat?` returns `none` for values outside the valid range. -/
-theorem PagePermissions.ofNat?_invalid (n : Nat) (h : ¬(n < 32)) :
-    PagePermissions.ofNat? n = none := by
-  simp [PagePermissions.ofNat?, h]
-
-/-- V4-K: `ofNat?` returns `none` for W^X-violating values (both write and execute). -/
-theorem PagePermissions.ofNat?_wxViolation (n : Nat) (h : n < 32)
-    (hWx : (PagePermissions.ofNat n).wxCompliant = false) :
-    PagePermissions.ofNat? n = none := by
-  simp [PagePermissions.ofNat?, h, hWx]
-
-/-- V4-K: Any `PagePermissions` returned by `ofNat?` is guaranteed W^X compliant. -/
-theorem PagePermissions.ofNat?_wxSafe (n : Nat) (p : PagePermissions)
-    (h : PagePermissions.ofNat? n = some p) :
-    p.wxCompliant = true := by
-  simp [PagePermissions.ofNat?] at h
-  obtain ⟨_, hWx, hEq⟩ := h
-  rw [← hEq]; exact hWx
 
 /-- WS-K-D: Round-trip: encoding then decoding recovers the original. -/
 theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
@@ -178,8 +116,7 @@ range. This completes the permission-encoding round-trip surface: the
 forward direction (`ofNat_toNat_roundtrip`) is already machine-checked,
 and this reverse lemma covers the opposite direction under the
 validity precondition. Values `n ≥ 32` lose their upper bits through
-`ofNat`'s masking (see `PagePermissions.ofNat?` for the strict reject
-variant). -/
+`ofNat`'s masking. -/
 theorem PagePermissions.toNat_ofNat_roundtrip (n : Nat) (h : n < 32) :
     PagePermissions.toNat (PagePermissions.ofNat n) = n := by
   -- 5-bit exhaustive case analysis: enumerate n ∈ {0, 1, ..., 31}

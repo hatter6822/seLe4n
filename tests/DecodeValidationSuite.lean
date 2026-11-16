@@ -17,10 +17,11 @@ open SeLe4n.Model
 Focused coverage for the decode-time validation introduced in AK3:
 
 - the VSpace map decode (AK3-E / A-M01).  WS-BP BP7.1 retired AK3-E's
-  `decodeVSpaceMapArgsChecked`: MR2 is a frame capability address now, so
-  there is no decoded physical address to bound — the bound applies to the
-  resolved frame's `base` inside the production map wrapper.  T01–T03 pin the
-  decode's new contract.
+  decode-time physical-address bound, and WS-SX SX6.3 (D6) made the words
+  seL4's `Page_Map` words (address, rights, attributes): there is no decoded
+  physical address to bound — the bound applies to the resolved frame's
+  `base` inside the production map wrapper.  T01–T03 pin the decode's
+  contract.
 - `decodeSchedContextConfigureArgsChecked` (AK3-J / A-M07) — priority,
   domain, budget, period validation
 
@@ -42,41 +43,37 @@ def stubOf (vals : Array Nat) : SyscallDecodeResult :=
     syscallId := .send
     msgRegs := vals.map (fun v => SeLe4n.RegValue.ofNat v) }
 
-/-- T01: WS-BP BP7.1 — a value in MR2 above the physical-address window is a
-    frame **capability address**, so the decode carries it rather than refusing
-    it: the retired decode-time PA bound would have read it as an address. -/
+/-- T01: WS-SX SX6.3 (D6) — the map's words are seL4's address, rights and
+    attributes, read verbatim: a word above the physical-address window is no
+    address the decode reads, and none is refused at decode. -/
 def test_t01_high_mr2_is_a_capability_address : IO Unit := do
-  let maxASID := 65536
-  let stub := stubOf #[1, 0x1000, (2^44) + 1, 1]
-  match decodeVSpaceMapArgs stub maxASID with
+  let stub := stubOf #[0x1000, 2, (2^44) + 1]
+  match decodePageMapArgs stub with
   | .ok args =>
-    expectCond "decode-validation" "MR2 carried as a frame capability address"
-      (args.frame == SeLe4n.CPtr.ofNat ((2^44) + 1))
+    expectCond "decode-validation" "MR2 carried as the attributes word"
+      (args.attr == ((2^44) + 1 : Nat).toUInt64)
   | .error e =>
     throw <| IO.userError s!"T01: expected ok, got {toString e}"
 
-/-- T02: WS-BP BP7.1 — the decode carries MR2 verbatim as the frame capability
-    address, beside the ASID, virtual address and permissions. -/
+/-- T02: the operands carry the invoked frame capability and the root's ASID
+    beside the address (`vspaceMapArgsOfWords`). -/
 def test_t02_decode_carries_frame_cptr : IO Unit := do
-  let maxASID := 65536
-  let stub := stubOf #[1, 0x1000, 3, 1]
-  match decodeVSpaceMapArgs stub maxASID with
+  match vspaceMapArgsOfWords ⟨0x1000, 2, 5⟩ ⟨1⟩ (SeLe4n.CPtr.ofNat 3) with
   | .ok args =>
-    expectCond "decode-validation" "frame cptr = MR2" (args.frame == SeLe4n.CPtr.ofNat 3)
-    expectCond "decode-validation" "vaddr = MR1" (args.vaddr.toNat == 0x1000)
+    expectCond "decode-validation" "frame cptr = the invoked capability"
+      (args.frame == SeLe4n.CPtr.ofNat 3)
+    expectCond "decode-validation" "vaddr = MR0" (args.vaddr.toNat == 0x1000)
   | .error e =>
     throw <| IO.userError s!"T02: expected ok, got {toString e}"
 
-/-- T03: the bound the decode still owns — a virtual address at exactly 2^48 is
-    non-canonical and rejected with `.addressOutOfBounds`. -/
+/-- T03: a virtual address at exactly 2^48 is non-canonical and refused as
+    seL4 refuses `vtop > USER_TOP`, `.invalidArgument 0`. -/
 def test_t03_noncanonical_vaddr_boundary_rejected : IO Unit := do
-  let maxASID := 65536
-  let stub := stubOf #[1, 2^48, 3, 1]
-  match decodeVSpaceMapArgs stub maxASID with
-  | .error .addressOutOfBounds =>
+  match vspaceMapArgsOfWords ⟨(2^48 : Nat).toUInt64, 2, 5⟩ ⟨1⟩ (SeLe4n.CPtr.ofNat 3) with
+  | .error (.invalidArgument 0) =>
     IO.println "check passed [VAddr = 2^48 rejected (non-canonical)]"
   | _ =>
-    throw <| IO.userError "T03: expected addressOutOfBounds at the canonical boundary"
+    throw <| IO.userError "T03: expected invalidArgument 0 at the canonical boundary"
 
 /-- T04: AK3-J — checked schedContextConfigure rejects a priority-and-domain
 word with a bit above the domain's (WS-ZA ZA6.4: priority is bits 0–7 and the

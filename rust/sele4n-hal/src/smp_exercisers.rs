@@ -1932,6 +1932,43 @@ const fn page_table_map(name: &'static str, table: u64, root: u64, buffer: u64) 
     }
 }
 
+/// **The page map** (seL4's `seL4_ARM_Page_Map`) on the frame capability
+/// `frame`: the address, the rights word and the attributes word in MR0–MR2,
+/// the address space `root` named as extra capability 0, which the kernel
+/// reads from the caller's IPC buffer at `buffer` (WS-SX SX6.3, D6).
+#[cfg(feature = "hw_target")]
+const fn page_map_words(
+    name: &'static str,
+    frame: u64,
+    root: u64,
+    words: [u64; 3],
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 3,
+        caps_or_badges: Some((buffer, [root, 0, 0], None)),
+        ..invocation(name, VSPACE_MAP, frame, [words[0], words[1], words[2], 0])
+    }
+}
+
+/// `page_map_words` for a permission set in the model's five bits (read 0,
+/// write 1, execute 2, user 3, cacheable 4): read and write go to seL4's
+/// rights word (`CanRead` bit 1, `CanWrite` bit 0), execute and cacheable to
+/// its attributes word (`ExecuteNever` bit 2 clear, `PageCacheable` bit 0).
+#[cfg(feature = "hw_target")]
+const fn page_map(
+    name: &'static str,
+    frame: u64,
+    root: u64,
+    vaddr: u64,
+    perms: u64,
+    buffer: u64,
+) -> RoundTrip {
+    let rights = ((perms & 1) << 1) | ((perms >> 1) & 1);
+    let attr = ((perms >> 4) & 1) | (if perms & 4 == 0 { 4 } else { 0 });
+    page_map_words(name, frame, root, [vaddr, rights, attr], buffer)
+}
+
 /// **The handler issue** (seL4's `seL4_IRQControl_Get`) on the interrupt
 /// control: the line in MR0, and the destination as seL4's `lookupTargetSlot`
 /// reads it — the root CNode capability named as extra capability 0 (from the
@@ -2284,16 +2321,13 @@ const ROOT_IPC_BUFFER_CAP: [RoundTrip; 3] = [
         VSPACE_CAP,
         [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
     ),
-    invocation(
+    page_map(
         "root-ipc-buffer-cap-remap",
-        VSPACE_MAP,
+        ROOT_IPC_BUFFER_FRAME_CAP,
         VSPACE_CAP,
-        [
-            ROOT_ASID,
-            ROOT_IPC_BUFFER,
-            ROOT_IPC_BUFFER_FRAME_CAP,
-            FRAME_PERMS,
-        ],
+        ROOT_IPC_BUFFER,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     mint(
         "root-ipc-buffer-cap",
@@ -3651,11 +3685,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_map(
             "vspace-map",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         // The first page unmap after boot, before any teardown has retired a
         // shootdown round: the round writes over the spares the boot seeded.
@@ -3666,11 +3702,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
         ),
-        invocation(
+        page_map(
             "vspace-map-again",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-unify-instruction",
@@ -3691,11 +3729,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             MOVE_SLOT,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_map(
             "vspace-map-copy",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "frame-revoke",
@@ -3979,37 +4019,43 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [ENDPOINT_SLOT, 0, 0, 0],
         )),
-        // Argument words at or above `2^63`, each refused on the word before
-        // it is made a number: an ASID past the configured bound
-        // (`AsidNotBound`), an address past the canonical bound
-        // (`AddressOutOfBounds`), a permission word past five bits
-        // (`InvalidSyscallArgument`), and an affinity past the cores and the
-        // unbind marker (`InvalidArgument 0`).
+        // Argument words at or above `2^63`, each read as a word: a
+        // `Page_Map` rights or attributes word (WS-SX SX6.3, D6: seL4's
+        // `rightsFromWord` and `vmAttributesFromWord` are total, so the wide
+        // word is read, not refused, and the map is refused later for a RAM
+        // frame asked to be uncached, `PolicyDenied`), a map address past the
+        // canonical bound (seL4's `vtop > USER_TOP`, `InvalidArgument 0`), an
+        // unmap address past it (`AddressOutOfBounds`), and an affinity past
+        // the cores and the unbind marker (`InvalidArgument 0`).
         RoundTrip {
-            returns: refused(ASID_NOT_BOUND),
-            ..invocation(
-                "vspace-map-wide-asid",
-                VSPACE_MAP,
+            returns: refused(POLICY_DENIED),
+            ..page_map_words(
+                "vspace-map-wide-rights",
+                FRAME_CAP,
                 VSPACE_CAP,
-                [WIDE_WORD, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+                [FRAME_VADDR, WIDE_WORD, 0],
+                ROOT_IPC_BUFFER,
             )
         },
         RoundTrip {
-            returns: refused(ADDRESS_OUT_OF_BOUNDS),
-            ..invocation(
+            returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+            ..page_map(
                 "vspace-map-wide-vaddr",
-                VSPACE_MAP,
+                FRAME_CAP,
                 VSPACE_CAP,
-                [ROOT_ASID, WIDE_WORD, FRAME_CAP, FRAME_PERMS],
+                WIDE_WORD,
+                FRAME_PERMS,
+                ROOT_IPC_BUFFER,
             )
         },
         RoundTrip {
-            returns: refused(INVALID_SYSCALL_ARGUMENT),
-            ..invocation(
-                "vspace-map-wide-perms",
-                VSPACE_MAP,
+            returns: refused(POLICY_DENIED),
+            ..page_map_words(
+                "vspace-map-wide-attr",
+                FRAME_CAP,
                 VSPACE_CAP,
-                [ROOT_ASID, FRAME_VADDR, FRAME_CAP, WIDE_WORD],
+                [FRAME_VADDR, 3, WIDE_WORD],
+                ROOT_IPC_BUFFER,
             )
         },
         RoundTrip {
@@ -4040,7 +4086,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // Five words, one overflow word: the retype's `overflowOne` route
         // (seven words long, it reads three), still short of its seven.
         truncated("untyped-retype-five-words", UNTYPED_RETYPE, UNTYPED_CAP, 5),
-        truncated("vspace-map-short", VSPACE_MAP, VSPACE_CAP, 3),
+        truncated("vspace-map-short", VSPACE_MAP, FRAME_CAP, 2),
         truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
         truncated(
             "vspace-unify-instruction-short",
@@ -8992,11 +9038,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // copy's page, which the revoke unmapped), so the map writes over the
         // translation and epoch cells the unmap took out rather than over an
         // entry left at its own address; then unmapped again.
-        invocation(
+        page_map(
             "vspace-map-moved",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-unmap-moved",
@@ -9798,25 +9846,31 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_map(
         "mapped-frame-map",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_map(
         "mapped-frame-remap",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, CODE_PERMS],
+        FRAME_VADDR,
+        CODE_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(INVALID_ARGUMENT),
-        ..invocation(
+        ..page_map(
             "mapped-frame-remap-other-vaddr",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         )
     },
     invocation(
@@ -9831,11 +9885,13 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         VSPACE_CAP,
         [ROOT_ASID, FRAME_VADDR, 0, 0],
     ),
-    invocation(
+    page_map(
         "mapped-frame-map-again",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(TRANSLATION_FAULT),
@@ -9971,21 +10027,27 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    // The frame mapped into the carved root (its capability in the frame
+    // capability's slot), under that root's own ASID (WS-SX SX6.3, D6).
+    page_map(
         "tabled-root-map",
-        VSPACE_MAP,
+        MOVE_CAP,
         FRAME_CAP,
-        [CARVED_ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     // The frame mapped in the carved root's address space, mapped through the
     // root task's own: refused, the capability's mapping is in another ASID.
     RoundTrip {
         returns: refused(INVALID_CAPABILITY),
-        ..invocation(
+        ..page_map(
             "tabled-root-frame-other-asid",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         )
     },
     invocation(
@@ -10086,14 +10148,15 @@ const WIDE_PERIOD: u64 = 1 << 63;
 /// a heap number.
 #[cfg(feature = "hw_target")]
 const WIDE_WORD: u64 = 1 << 63;
-/// `KernelError.asidNotBound`, `.addressOutOfBounds` and
-/// `.invalidSyscallArgument`'s discriminants (`sele4n-types`).
-#[cfg(feature = "hw_target")]
-const ASID_NOT_BOUND: u64 = 9;
+/// `KernelError.addressOutOfBounds` and `.invalidSyscallArgument`'s
+/// discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const ADDRESS_OUT_OF_BOUNDS: u64 = 26;
 #[cfg(feature = "hw_target")]
 const INVALID_SYSCALL_ARGUMENT: u64 = 41;
+/// `KernelError.policyDenied`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const POLICY_DENIED: u64 = 4;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -10106,11 +10169,6 @@ const TARGET_SLOT_OCCUPIED: u64 = 18;
 const REVOCATION_REQUIRED: u64 = 38;
 #[cfg(feature = "hw_target")]
 const INVALID_ARGUMENT: u64 = 39;
-/// The ASID a carved VSpace root is given (`freshAsid?`, the least free one
-/// from 1): the root task's space holds ASID 1 and the untrusted partition's
-/// ASID 2, so the first carved root takes 3.
-#[cfg(feature = "hw_target")]
-const CARVED_ROOT_ASID: u64 = 3;
 
 /// **WS-ZA ZA5.4 part 25: the final delete of a reply whose caller still waits
 /// on it**, run as the root task once the partner is suspended (so the roles
@@ -14373,11 +14431,13 @@ fn fault_entries() -> Option<bool> {
     // mapped there for the run (unmeasured) and taken down after it.  The
     // faulted thread restarts as the fault reply says (seL4's
     // `handleFaultReply`).
-    let map_buffer_page = invocation(
+    let map_buffer_page = page_map(
         "fault-long-map-buffer",
-        VSPACE_MAP,
+        FRAME_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     );
     let root_buffer = set_ipc_buffer(
         "fault-long-root-ipc-buffer",
@@ -14973,11 +15033,13 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
 ];
 /// The frame mapped user-executable, after its code is written.
 #[cfg(feature = "hw_target")]
-const MOVE_MAP_CODE: RoundTrip = invocation(
+const MOVE_MAP_CODE: RoundTrip = page_map(
     "move-map-code",
-    VSPACE_MAP,
+    FRAME_CAP,
     VSPACE_CAP,
-    [ROOT_ASID, FRAME_VADDR, FRAME_CAP, CODE_PERMS],
+    FRAME_VADDR,
+    CODE_PERMS,
+    ROOT_IPC_BUFFER,
 );
 /// The written code published to instruction fetch.
 #[cfg(feature = "hw_target")]
@@ -15500,11 +15562,13 @@ const REMOTE_COPY: RoundTrip = root_copy(
     ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
-const REMOTE_MAP: RoundTrip = invocation(
+const REMOTE_MAP: RoundTrip = page_map(
     "remote-asid-map",
-    VSPACE_MAP,
+    MOVE_CAP,
     VSPACE_CAP,
-    [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+    FRAME_COPY_VADDR,
+    FRAME_PERMS,
+    ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
 const REMOTE_UNMAP: RoundTrip = invocation(

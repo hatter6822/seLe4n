@@ -39,7 +39,7 @@ minimum 0, as seL4 checks no length for an IPC or a signal. -/
   (.cspaceMint, decodeCSpaceMintArgs), (.cspaceCopy, decodeCSpaceCopyArgs),
   (.cspaceMove, decodeCSpaceMoveArgs), (.cspaceDelete, decodeCSpaceDeleteArgs),
   (.cspaceRevoke, decodeCSpaceDeleteArgs), (.mintReplyCap, decodeMintReplyCapArgs),
-  (.untypedRetype, decodeUntypedRetypeArgs), (.vspaceMap, decodeVSpaceMapArgs),
+  (.untypedRetype, decodeUntypedRetypeArgs), (.vspaceMap, decodePageMapArgs),
   (.vspaceUnmap, decodeVSpaceUnmapArgs),
   (.vspaceUnifyInstruction, decodeVSpaceUnifyInstructionArgs),
   (.serviceRegister, decodeServiceRegisterArgs),

@@ -1476,7 +1476,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
             IO.println s!"[KSD-004] untyped carve via decoded regs new type: {reprStr objKind}"
 
   -- KSD-005: VSpace map via decoded registers — success path.
-  -- WS-BP BP7.1: MR2 is a frame CAPABILITY address, not a physical address.
+  -- WS-BP BP7.1: the frame is named by CAPABILITY, not by a physical address
+  -- (WS-SX SX6.3: the invoked capability).
   -- The caller's CSpace holds a readable capability to a frame at slot 0, and
   -- the mapping installs that frame's own `base` (8192) — the printed address
   -- is the frame's, reached through the arm's own resolution
@@ -1504,17 +1505,22 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.buildChecked)
   let vspaceDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 3, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    -- asid=10, vaddr=one page into the user window (WS-BP BP7.2), frame cap at
-    -- slot 0, perms=17 (read | cacheable): a RAM frame maps cacheable or not at
-    -- all since v0.36.32 (`frameMappingAdmissible_cacheable_iff_ram`)
-    msgRegs := #[⟨10⟩, SeLe4n.RegValue.ofNat (fixtureUserVAddr 4096).toNat, ⟨0⟩, ⟨17⟩]
+    -- WS-SX SX6.3 (D6): seL4's words — vaddr one page into the user window
+    -- (WS-BP BP7.2), rights CanRead (2), attributes PageCacheable |
+    -- ExecuteNever (5): a RAM frame maps cacheable or not at all since
+    -- v0.36.32 (`frameMappingAdmissible_cacheable_iff_ram`).  The frame is the
+    -- invoked capability (slot 0) and the address space's ASID is its root's.
+    msgRegs := #[SeLe4n.RegValue.ofNat (fixtureUserVAddr 4096).toNat, ⟨2⟩, ⟨5⟩]
   }
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs vspaceDecoded with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
-  | .ok mapArgs =>
-    -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)
+  | .ok words =>
+    match SeLe4n.Kernel.Architecture.SyscallArgDecode.vspaceMapArgsOfWords words ksdAsid
+        vspaceDecoded.capAddr with
+    | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
+    | .ok mapArgs =>
     match SeLe4n.Kernel.vspaceMapFromFrameCap ksdMapCaller bootCoreId mapArgs stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>

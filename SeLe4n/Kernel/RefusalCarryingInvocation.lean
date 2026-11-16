@@ -175,13 +175,15 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .vspaceMap =>
     match cap.target with
     | .object _ =>
-          match decodeVSpaceMapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+          match decodePageMapArgsBy (msgRegOfFile layout regs) with
           | .error e => .error e
-          | .ok args =>
-            if !vspaceCapAuthorizesAsid cap args.asid st then
-              .error .illegalAuthority
-            else
-              vspaceMapOrRemapFromFrameCap tid executingCore args st
+          | .ok words =>
+            match callerExtraCapAddr? st tid xc 0 with
+            | none => .error .truncatedMessage
+            | some rootCPtr =>
+              match resolvePageMapOperands tid capAddr rootCPtr words st with
+              | .error e => .error e
+              | .ok (_, args) => vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => .error (.invalidCapability 0)
   | .vspaceUnmap =>
     match cap.target with
@@ -483,7 +485,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hMove := decodeCSpaceMoveArgs_eq_by layout regs decoded hRegs
   have hReply := decodeMintReplyCapArgs_eq_by layout regs decoded hRegs
   have hDelete := decodeCSpaceDeleteArgs_eq_by layout regs decoded hRegs
-  have hMap := decodeVSpaceMapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
+  have hMap := decodePageMapArgs_eq_by layout regs decoded hRegs
   have hUnmap := decodeVSpaceUnmapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hPrio := decodeSetPriorityArgs_eq_by layout regs decoded hRegs
   have hMcp := decodeSetMCPriorityArgs_eq_by layout regs decoded hRegs
@@ -945,12 +947,16 @@ refusal is read where it is, never rebuilt. -/
     | _ => .error (.invalidCapability 0, st)
   | .vspaceMap =>
     match cap.target with
-    | .object rootId =>
-      match decodeVSpaceMapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+    | .object _ =>
+      match decodePageMapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
-      | .ok args =>
-        if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
-        else
+      | .ok words =>
+        -- WS-SX SX6.3 (D6): the address space is extra capability 0, read in
+        -- continuation form, so no `Option` is built; the root and the
+        -- operands are handed on as they resolve (`resolvePageMapOperandsK`).
+        callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun rootCPtr =>
+        resolvePageMapOperandsK tid capAddr rootCPtr words st (fun e => .error (e, st))
+          fun rootId args =>
           resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
             (fun frameCnode frameSlot frameCap frame =>
               -- seL4's `Page_Map` on a capability whose mapping is in place:
@@ -1617,19 +1623,27 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     all_goals rfl
   case vspaceMap =>
     cases target
-    case object rootId =>
+    case object _ =>
       dsimp only
-      cases hD : decodeVSpaceMapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      cases hD : decodePageMapArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
-      | ok args =>
+      | ok words =>
         dsimp only
-        split
-        · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
-        · next hAu =>
+        rw [callerExtraCapAddrK_eq]
+        cases hX : callerExtraCapAddr? st tid xc 0 with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX]
+        | some rootCPtr =>
+        dsimp only
+        rw [resolvePageMapOperandsK_eq]
+        cases hO : resolvePageMapOperands tid capAddr rootCPtr words st with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hO]
+        | ok pr =>
+          obtain ⟨rootId, args⟩ := pr
+          dsimp only
           rw [resolveVSpaceMapFrameK_eq]
           cases hRs : resolveVSpaceMapFrame tid args st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hO,
               vspaceMapOrRemapFromFrameCap, hRs]
           | ok triple =>
             obtain ⟨frameSlot, frameCap, frame⟩ := triple
@@ -1638,16 +1652,15 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             · next hLive =>
               cases hRf : vspaceRemapRefusal st args frameCap frame with
               | error e =>
-                simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
-                  ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_remapRefused tid executingCore args st
+                simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hO,
+                  vspaceMapOrRemapFromFrameCap_of_remapRefused tid executingCore args st
                     frameSlot frameCap frame e hRs hLive hRf]
               | ok u =>
                 cases u
                 dsimp only
                 split
                 · next hIn =>
-                  simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
-                    Bool.false_eq_true, ↓reduceIte,
+                  simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hO,
                     vspaceMapOrRemapFromFrameCap_of_remapAdmitted tid executingCore args st
                       frameSlot frameCap frame rootId hRs hLive hRf hIn]
                 · apply RefusalCarrying.ofChecked_eq
@@ -1655,7 +1668,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                   cases h
             · apply RefusalCarrying.ofChecked_eq
               intro hA
-              simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+              simp only [dispatchInvocationBy, hD, hX, hO,
                 vspaceMapOrRemapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap
                   frame rootId hRs hA]
     all_goals rfl

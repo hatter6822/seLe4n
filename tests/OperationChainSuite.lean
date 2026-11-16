@@ -2428,7 +2428,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     (lifecycleTypes : List (SeLe4n.ObjId × SeLe4n.Model.KernelObjectType) := [])
     -- WS-BP BP7.1: further capabilities in the caller's CNode, beside the one at
     -- `capAddr` — an extra operand an arm resolves through the caller's CSpace
-    -- (a `.vspaceMap`'s frame capability, MR2) must be *held* there.
+    -- (a `.vspaceMap`'s VSpace root, its extra capability 0) must be *held* there.
     (extraSlots : List (Nat × Capability) := [])
     -- The words past the fourth, in the caller's IPC buffer's overflow slots
     -- (a mint's badge): when given, the buffer's page is mapped and the
@@ -2643,21 +2643,22 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
   let vsRoot : SeLe4n.Model.VSpaceRoot := fixtureMappableRoot chainAsid
-  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(user window + 0x2000, WS-BP BP7.2), x4=frame cap(slot 1), x5=perms(17=read|cacheable) ===
-  -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
-  -- the page mapped is that frame's own `base` (0x3000), not a register value.
-  -- A RAM frame must be mapped cacheable (`frameMappingAdmissible`, v0.36.32):
-  -- an uncached alias of RAM the kernel writes through its cacheable identity
-  -- map is refused `.policyDenied`, so the request is read (1) | cacheable (16).
+  -- === vspaceMap (syscallId=9), seL4's `ARMPageMap` shape: the invoked
+  -- capability (x0, slot 0) is the frame; x2 = vaddr (user window + 0x2000),
+  -- x3 = rights (2 = CanRead), x4 = VM attributes (5 = cacheable | execute-never);
+  -- the VSpace root is extra capability 0 (slot 1), whose own ASID names the
+  -- address space.  The page mapped is the frame's own `base` (0x3000).  A RAM
+  -- frame must be mapped cacheable (`frameMappingAdmissible`).
   let frameId : SeLe4n.ObjId := ⟨701⟩
-  let frameCap : Capability :=
-    { target := .object frameId, rights := AccessRightSet.ofList [.read] }
-  let stMap := buildSyscallState 9 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
-    [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 17)]
+  let rootCap : Capability :=
+    { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] }
+  let stMap := buildSyscallState 9 0 frameId
+    (AccessRightSet.ofList [.read])
+    [(frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 }), (vsId, .vspaceRoot vsRoot)]
+    [(2, (fixtureUserVAddr 0x2000).toNat), (3, 2), (4, 5)]
     [(vsId, .vspaceRoot), (frameId, .frame)]
-    [(1, frameCap)]
+    [(1, rootCap)]
+    (extraCapWords := [1])
   match syscallEntryOnBoot stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created

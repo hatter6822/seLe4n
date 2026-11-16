@@ -1501,7 +1501,7 @@ def lockSet_untypedReset (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`.
 
 **WS-BP BP7.1 (`v0.36.7`)**: the arm is `vspaceMapFromFrameCap`, which reads the
-**frame** the MR2 capability names (its `base` and device flag) and writes that
+**frame** the invoked capability names (its `base` and device flag) and writes that
 capability's **mapping record** into the CNode holding it — so the frame
 capability's CNode is a write member.  On a single-level CSpace the frame
 capability's CNode *is* the caller's root, and `insertOrMerge` lubs the two

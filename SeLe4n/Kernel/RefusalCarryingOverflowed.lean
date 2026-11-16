@@ -80,7 +80,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
     simp only [hS, truncationTarget, ↓reduceIte, Bool.false_eq_true, Option.some.injEq,
       decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeMintReplyCapArgs,
       decodeCSpaceDeleteArgs,
-      decodeUntypedRetypeArgs, decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
+      decodeUntypedRetypeArgs, decodePageMapArgs, decodeVSpaceUnmapArgs,
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
       decodeIrqControlGetArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,

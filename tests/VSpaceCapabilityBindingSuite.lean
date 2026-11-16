@@ -266,16 +266,33 @@ private def permsRWUC : Nat := 27  -- read + write + user + cacheable
 private def permsRXU  : Nat := 13  -- read + execute + user (uncached)
 private def permsRU   : Nat := 9   -- read + user (uncached, non-executable)
 
-/-- Four-register decode (asid, vaddr, frame capability address, perms) — the
-`.vspaceMap` shape.  WS-BP BP7.1: MR2 is the address of a **frame capability**
-in the caller's CSpace, never a physical address. -/
-private def decodeMap (asid vaddr frameSlot : Nat) (perms : Nat := permsRUC) :
+/-- seL4's `Page_Map` words for a permission set in the model's five bits: the
+address, the rights word (`CanRead` bit 1, `CanWrite` bit 0) and the
+attributes word (`PageCacheable` bit 0, `ExecuteNever` bit 2) — WS-SX SX6.3
+(D6). -/
+private def pageMapRegs (vaddr perms : Nat) : Array SeLe4n.RegValue :=
+  #[SeLe4n.RegValue.ofNat vaddr,
+    SeLe4n.RegValue.ofNat ((perms % 2) * 2 + (perms / 2) % 2),
+    SeLe4n.RegValue.ofNat ((perms / 16) % 2 + (if (perms / 4) % 2 == 0 then 4 else 0))]
+
+/-- `.vspaceMap` invoked on the frame capability at `frameSlot` (WS-SX SX6.3,
+D6: seL4's `Page_Map` is an invocation of the frame capability, never a
+physical address), the address space named as extra capability 0 — staged by
+`mapAs` from slot 0, the capability under test. -/
+private def decodeMap (vaddr frameSlot : Nat) (perms : Nat := permsRUC) :
     SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat 0
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  { capAddr   := SeLe4n.CPtr.ofNat frameSlot
+  , msgInfo   := { length := 3, extraCaps := 1, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
-                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+  , msgRegs   := pageMapRegs (SeLe4n.VAddr.userWindowBase + vaddr) perms }
+
+/-- The attacker's map `d`, its address space the capability at `rootSlot`
+(slot 0, the capability under test, unless named), staged as extra
+capability 0 of its IPC buffer. -/
+private def mapAs (d : SyscallDecodeResult) (st : SystemState) (rootSlot : Nat := 0) :
+    Except KernelError (Unit × SystemState) :=
+  dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId
+    (SeLe4n.Testing.withSenderCapAddrs st attacker #[SeLe4n.CPtr.ofNat rootSlot])
 
 /-- The physical address `vaddr` translates to in the address space bound to
 `asid`, if any. -/
@@ -408,29 +425,36 @@ private def runUnifyBindingChecks : IO Unit := do
 
 private def runMapBindingChecks : IO Unit := do
   IO.println "-- §5 `.vspaceMap` capability binding"
-  let d := decodeMap 7 0x50000 slotFrameRO
+  let d := decodeMap 0x50000 slotFrameRO
   match scenario unrelatedCap with
   | none => assertBool "the exploit scenario builds" false
   | some st => do
     assertBool "the target vaddr is unmapped in the victim's AS beforehand"
       (!(stillMapped st victimAsid freshVaddr))
-    let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
-      (isInvalidCapability r)
+    let r := mapAs d st
+    assertBool "an unrelated writable cap as the address space is REFUSED on its type (invalidCapability 1)"
+      (match r with | .error (.invalidCapability 1) => true | _ => false)
     assertBool "and NO mapping is installed in the victim's address space"
       (match r with
         | .error _ => !(stillMapped st victimAsid freshVaddr)
         | .ok ((), st') => !(stillMapped st' victimAsid freshVaddr))
+  -- WS-SX SX6.3 (D6): no word names an ASID; the address space is the one the
+  -- extra capability names, under that root's own ASID.  A capability to the
+  -- caller's own root maps into the caller's own space, never another.
   match scenario ownRootCap with
   | none => assertBool "the wrong-root scenario builds" false
   | some st =>
-    assertBool "a cap to the caller's OWN VSpace root is refused for another ASID"
-      (isIllegalAuthority (dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st))
+    assertBool "a cap to the caller's OWN VSpace root maps only into the caller's own AS"
+      (match mapAs d st with
+        | .ok ((), st') => stillMapped st' attackerAsid freshVaddr &&
+            !(stillMapped st' victimAsid freshVaddr)
+        | .error _ => false)
   match scenario victimRootCap with
-  | none => assertBool "the unbound-ASID scenario builds" false
+  | none => assertBool "the empty-root scenario builds" false
   | some st =>
-    assertBool "an UNBOUND ASID is refused with illegalAuthority (no oracle)"
-      (isIllegalAuthority (dispatchSyscallAsCurrent (decodeMap 9 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st))
+    assertBool "an extra capability naming an empty slot is refused (invalidCapability 1)"
+      (match mapAs d st slotEmpty with
+        | .error (.invalidCapability 1) => true | _ => false)
 
 -- ============================================================================
 -- §6  The authorized paths still work — the gate is not a blanket denial
@@ -456,7 +480,7 @@ private def runAlignmentChecks : IO Unit := do
   | none => assertBool "the alignment scenario builds" false
   | some st => do
     -- One byte past a page boundary: rejected, and nothing is installed.
-    let r := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameOdd) attacker Concurrency.bootCoreId st
+    let r := mapAs (decodeMap 0x50000 slotFrameOdd) st
     assertBool "an unaligned PA is refused (alignmentError)"
       (match r with | .error .alignmentError => true | _ => false)
     assertBool "and no mapping is installed for it"
@@ -466,7 +490,7 @@ private def runAlignmentChecks : IO Unit := do
     -- The aligned neighbour of the same page succeeds, so the guard rejects
     -- exactly misalignment rather than the address range.
     assertBool "the page-aligned base of the same page is accepted"
-      (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
+      (match mapAs (decodeMap 0x50000 slotFrameRO) st with
         | .ok ((), st') => stillMapped st' victimAsid freshVaddr
         | .error _ => false)
     -- The guard is authority-independent: a capability of the wrong type is
@@ -475,7 +499,7 @@ private def runAlignmentChecks : IO Unit := do
     | none => assertBool "the unauthorized-alignment scenario builds" false
     | some stU =>
       assertBool "the capability's type is checked before alignment (invalidCapability wins)"
-        (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameOdd) attacker Concurrency.bootCoreId stU with
+        (match mapAs (decodeMap 0x50000 slotFrameOdd) stU with
           | .error (.invalidCapability _) => true | _ => false)
 
 -- ============================================================================
@@ -513,37 +537,37 @@ private def runFrameCapabilityChecks : IO Unit := do
     -- `0xA0000` is a CSpace *address* now; its bits above the root CNode's
     -- 4-bit radix fail the root capability's zero guard, so the lookup itself
     -- refuses it (seL4 `resolveAddressBits`), and nothing is mapped.
-    let rRaw := dispatchSyscallAsCurrent (decodeMap 7 0x50000 frameABase) attacker Concurrency.bootCoreId st
+    let rRaw := mapAs (decodeMap 0x50000 frameABase) st
     assertBool "the RETIRED reading (MR2 = a raw physical address) maps nothing"
       ((match rRaw with | .error (.failedLookup false (.guardMismatch _ _ _)) => true | _ => false)
         && nothingMapped rRaw)
     -- Naming memory without holding a frame capability, every other way.
-    let rNotFrame := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotNotFrame) attacker Concurrency.bootCoreId st
-    assertBool "a capability to a non-frame object is refused (invalidCapability 1, the frame operand)"
-      (isErr (.invalidCapability 1) rNotFrame && nothingMapped rNotFrame)
-    let rEmpty := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotEmpty) attacker Concurrency.bootCoreId st
-    assertBool "an empty CSpace slot is refused (invalidCapability 1, the frame operand)"
-      (isErr (.invalidCapability 1) rEmpty && nothingMapped rEmpty)
-    let rNoRead := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameNoRead) attacker Concurrency.bootCoreId st
+    let rNotFrame := mapAs (decodeMap 0x50000 slotNotFrame) st
+    assertBool "a capability to a non-frame object is refused (invalidCapability 0, the invoked frame)"
+      (isErr (.invalidCapability 0) rNotFrame && nothingMapped rNotFrame)
+    let rEmpty := mapAs (decodeMap 0x50000 slotEmpty) st
+    assertBool "an empty CSpace slot is refused (invalidCapability 0, the invoked frame)"
+      (isErr (.invalidCapability 0) rEmpty && nothingMapped rEmpty)
+    let rNoRead := mapAs (decodeMap 0x50000 slotFrameNoRead) st
     assertBool "a frame capability without `.read` is refused (illegalAuthority)"
       (isErr .illegalAuthority rNoRead && nothingMapped rNoRead)
     -- The capability bounds the mapping's access.
-    let rWriteRO := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO permsRWUC) attacker Concurrency.bootCoreId st
+    let rWriteRO := mapAs (decodeMap 0x50000 slotFrameRO permsRWUC) st
     assertBool "a WRITABLE mapping through a read-only frame cap is refused (illegalAuthority)"
       (isErr .illegalAuthority rWriteRO && nothingMapped rWriteRO)
     assertBool "a writable mapping through a read-write frame cap is installed"
-      (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRW permsRWUC) attacker Concurrency.bootCoreId st with
+      (match mapAs (decodeMap 0x50000 slotFrameRW permsRWUC) st with
         | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some frameABase
         | .error _ => false)
     -- A device frame is mapped neither executable nor cacheable.
-    let rDevX := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameDev permsRXU) attacker Concurrency.bootCoreId st
+    let rDevX := mapAs (decodeMap 0x50000 slotFrameDev permsRXU) st
     assertBool "an EXECUTABLE mapping of a device frame is refused (policyDenied)"
       (isErr .policyDenied rDevX && nothingMapped rDevX)
-    let rDevC := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameDev permsRUC) attacker Concurrency.bootCoreId st
+    let rDevC := mapAs (decodeMap 0x50000 slotFrameDev permsRUC) st
     assertBool "a CACHEABLE mapping of a device frame is refused (policyDenied)"
       (isErr .policyDenied rDevC && nothingMapped rDevC)
     assertBool "an uncached, non-executable mapping of a device frame is installed"
-      (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameDev permsRU) attacker Concurrency.bootCoreId st with
+      (match mapAs (decodeMap 0x50000 slotFrameDev permsRU) st with
         | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some 0xB0000
         | .error _ => false)
     -- A RAM frame is mapped cacheable or not at all (v0.36.32): an uncached
@@ -551,7 +575,7 @@ private def runFrameCapabilityChecks : IO Unit := do
     -- is a mismatched-attribute alias (ARM ARM B2.8), so the carve's zeroes
     -- could reach the thread late and the page's previous owner's bytes early.
     -- The retired guard is computed beside the live one on the same request.
-    let rRamU := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO permsRU) attacker Concurrency.bootCoreId st
+    let rRamU := mapAs (decodeMap 0x50000 slotFrameRO permsRU) st
     assertBool "an UNCACHED mapping of a RAM frame is refused (policyDenied)"
       (isErr .policyDenied rRamU && nothingMapped rRamU)
     match st.getFrame? frameA with
@@ -568,7 +592,7 @@ private def runFrameCapabilityChecks : IO Unit := do
                (SeLe4n.Kernel.frameMappingAdmissible (frameCapTo frameA [.read]) fA uncached))
     -- The address mapped is the frame's own, and nothing the caller wrote.
     assertBool "the page mapped is the frame's `base`, not a register value"
-      (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
+      (match mapAs (decodeMap 0x50000 slotFrameRO) st with
         | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some frameABase
         | .error _ => false)
   -- The capability's type is still checked first: an unrelated (TCB)
@@ -577,7 +601,7 @@ private def runFrameCapabilityChecks : IO Unit := do
   | none => assertBool "the unrelated-cap frame scenario builds" false
   | some stU =>
     assertBool "a held frame does not substitute for address-space authority"
-      (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId stU with
+      (match mapAs (decodeMap 0x50000 slotFrameRO) stU with
         | .error (.invalidCapability _) => true | _ => false)
 
 -- ============================================================================
@@ -676,13 +700,24 @@ private def freeIndexAt (st : SystemState) (slot : Nat) : Option Nat :=
   (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).map
     (·.freeIndex)
 
-/-- Four-register `.vspaceMap` decode invoked on the owner's VSpace root. -/
+/-- `.vspaceMap` invoked on the owner's frame capability at `frameSlot`, the
+address space extra capability 0 (WS-SX SX6.3, D6), staged by `ownerStaged`. -/
 private def decodeOwnMap (vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  { capAddr   := SeLe4n.CPtr.ofNat frameSlot
+  , msgInfo   := { length := 3, extraCaps := 1, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
-                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+  , msgRegs   := pageMapRegs (SeLe4n.VAddr.userWindowBase + vaddr) perms }
+
+/-- The owner's invocation `d` run with the capability at `rootSlot` staged as
+extra capability 0 of its IPC buffer, which names the source root
+`slotOwnCnGrant` again after (as `bindStep`). -/
+private def ownerStaged (d : SyscallDecodeResult) (rootSlot : Nat) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId
+      (SeLe4n.Testing.withSenderCapAddrs st carveOwner #[SeLe4n.CPtr.ofNat rootSlot]) with
+  | .error e => .error e
+  | .ok ((), st') =>
+    .ok ((), SeLe4n.Testing.withSenderCapAddrs st' carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant])
 
 /-- The address of a machine state's memory value.  The same address before and
 after a transition means the transition left the model's memory as it was:
@@ -726,7 +761,7 @@ private def runCarveChecks : IO Unit := do
       (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotCarved }
         == some (frameCapability (SeLe4n.ObjId.ofNat 950)))
     -- The capability the carve handed back is authority over exactly that page.
-    match dispatchSyscallAsCurrent (decodeOwnMap 0x60000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st1 with
+    match ownerStaged (decodeOwnMap 0x60000 slotCarved permsRWUC) slotOwnVsp st1 with
     | .error e => assertBool s!"the carved frame maps (got {repr e})" false
     | .ok ((), st2) =>
       assertBool "and `.vspaceMap` maps the CARVED page, writable"
@@ -861,7 +896,13 @@ private def decodeCopy (src dst : Nat) : SyscallDecodeResult := decodeCopyAt 4 s
 private def runAll (st : SystemState) :
     List SyscallDecodeResult → Except KernelError SystemState
   | [] => .ok st
-  | d :: ds => match dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId st with
+  | d :: ds =>
+    -- WS-SX SX6.3 (D6): a map names the owner's address space as extra
+    -- capability 0.
+    let r := match d.syscallId with
+      | .vspaceMap => ownerStaged d slotOwnVsp st
+      | _ => dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId st
+    match r with
     | .error e => .error e
     | .ok ((), st') => runAll st' ds
 
@@ -1247,13 +1288,12 @@ private def retiredRecordLive (st : SystemState) (slot : Nat) : Bool :=
 /-- The VSpace-root tag. -/
 private def vspaceRootTag : Nat := 4
 
-/-- `.vspaceMap` through the root capability at `rootSlot`, under `asid`. -/
-private def decodeMapVia (rootSlot asid vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
-  , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
-                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+/-- `.vspaceMap` of the frame at `frameSlot` into the address space at
+`rootSlot` (extra capability 0, under that root's own ASID: WS-SX SX6.3, D6),
+at `vaddr` past the user window's base. -/
+private def mapVia (rootSlot vaddr frameSlot perms : Nat) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  ownerStaged (decodeOwnMap vaddr frameSlot perms) rootSlot st
 
 /-- The root stored at `oid`, if one is. -/
 private def rootAt (st : SystemState) (oid : Nat) : Option VSpaceRoot :=
@@ -1293,8 +1333,7 @@ private def runCarvedRootChecks : IO Unit := do
     -- `v0.36.12`: a carved address space holds no table below its root until
     -- one is installed (§5k), so the frame has no walk to hang from.
     assertBool "the frame is refused in a carved address space with no tables (translationFault)"
-      (isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia 12 1 0x70000 14 permsRWUC)
-        carveOwner Concurrency.bootCoreId st1))
+      (isErr .translationFault (mapVia 12 0x70000 14 permsRWUC st1))
     assertBool "a reset while the roots' capabilities live is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st1))
     -- WS-ZA ZA5.4 part 21: the live revocation retires each carved object with
@@ -1347,11 +1386,11 @@ private def runFrameFinaliseChecks : IO Unit := do
     -- seL4's `Page_Map` on a capability whose mapping is live: another
     -- address is refused (`InvalidArgument`); its own address is a remap with
     -- the new rights, the record unchanged.
-    assertBool "a capability whose mapping is live cannot map at another address (invalidArgument 1, the address word)"
-      (isErr (.invalidArgument 1)
-        (dispatchSyscallAsCurrent (decodeOwnMap 0x61000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st))
+    assertBool "a capability whose mapping is live cannot map at another address (invalidArgument 0, the address word)"
+      (isErr (.invalidArgument 0)
+        (ownerStaged (decodeOwnMap 0x61000 slotCarved permsRWUC) slotOwnVsp st))
     let va := SeLe4n.Testing.fixtureUserVAddr 0x60000
-    match dispatchSyscallAsCurrent (decodeOwnMap 0x60000 slotCarved permsRUC) carveOwner Concurrency.bootCoreId st with
+    match ownerStaged (decodeOwnMap 0x60000 slotCarved permsRUC) slotOwnVsp st with
     | .error e => assertBool s!"a remap at the capability's own address succeeds (got {repr e})" false
     | .ok ((), stR) =>
       assertBool "the remap keeps the page, now read-only, recorded live at the same ASID and address"
@@ -1363,7 +1402,7 @@ private def runFrameFinaliseChecks : IO Unit := do
          recordLive stR slotCarved)
     -- The copy maps the same frame a second time, and deleting the COPY removes
     -- exactly the mapping the copy made.
-    match dispatchSyscallAsCurrent (decodeOwnMap 0x61000 12 permsRWUC) carveOwner Concurrency.bootCoreId st with
+    match ownerStaged (decodeOwnMap 0x61000 12 permsRWUC) slotOwnVsp st with
     | .error e => assertBool s!"the copy maps the frame again (got {repr e})" false
     | .ok ((), st2) => do
       assertBool "setup: the frame is mapped twice"
@@ -1405,7 +1444,7 @@ private def runFrameFinaliseChecks : IO Unit := do
         (mappedPaddr st5 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
           == some (carveUtBase + SeLe4n.pageBytes))
     -- A stale record does not block a fresh map of its capability.
-    match dispatchSyscallAsCurrent (decodeOwnMap 0x62000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st4 with
+    match ownerStaged (decodeOwnMap 0x62000 slotCarved permsRWUC) slotOwnVsp st4 with
     | .error e => assertBool s!"a capability with a stale record maps again (got {repr e})" false
     | .ok ((), st6) =>
       assertBool "and the new mapping replaces the stale record (the frame's second: epoch 1)"
@@ -1501,7 +1540,7 @@ private def runAuthorizedChecks : IO Unit := do
       assertBool "and records the unify operand for the victim's page"
         (st'.pendingIcacheMaintenance == [ICacheInvalidation.unifyPage victimPaddr])
     -- `.vspaceMap` into the address space the capability names.
-    match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
+    match mapAs (decodeMap 0x50000 slotFrameRO) st with
     | .error _ => assertBool "authorized `.vspaceMap` succeeds" false
     | .ok ((), st') => do
       assertBool "authorized `.vspaceMap` succeeds" true
@@ -1521,7 +1560,7 @@ private def runAuthorizedChecks : IO Unit := do
   | none => assertBool "the own-AS scenario builds" false
   | some st =>
     assertBool "a caller may map into its OWN address space with its own root cap"
-      (match dispatchSyscallAsCurrent (decodeMap 5 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
+      (match mapAs (decodeMap 0x50000 slotFrameRO) st with
         | .ok ((), st') => stillMapped st' attackerAsid freshVaddr
         | .error _ => false)
 
@@ -1713,22 +1752,22 @@ private def tableScenario : SystemState :=
 
 /-- `.pageTableMap` on the table capability at `tableSlot`: MR0 the virtual
 address, MR1 the attributes word; the address space is extra capability 0
-(WS-SX SX6.3), staged by `tableMapStaged`. -/
+(WS-SX SX6.3), staged by `ownerStaged`. -/
 private def decodeTableMap (tableSlot vaddr : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat tableSlot
   , msgInfo   := { length := 2, extraCaps := 1, label := 0 }
   , syscallId := .pageTableMap
   , msgRegs   := #[SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr), SeLe4n.RegValue.ofNat 0] }
 
-/-- WS-BP BP7.2: `.vspaceMap` through the root at `rootSlot` naming the raw
+/-- WS-BP BP7.2: `.vspaceMap` of the frame at `frameSlot` naming the raw
 virtual address `rawVaddr` — no user-window offset, so a scenario can name an
-address below the window, or an unaligned one. -/
-private def decodeRawMapVia (rootSlot asid rawVaddr frameSlot perms : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
-  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+address below the window, or an unaligned one; the address space is staged by
+`ownerStaged`. -/
+private def decodeRawMap (rawVaddr frameSlot perms : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat frameSlot
+  , msgInfo   := { length := 3, extraCaps := 1, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat rawVaddr,
-                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+  , msgRegs   := pageMapRegs rawVaddr perms }
 
 /-- WS-BP BP7.2: `.pageTableMap` naming the raw virtual address `rawVaddr`. -/
 private def decodeRawTableMap (tableSlot rawVaddr : Nat) : SyscallDecodeResult :=
@@ -1737,22 +1776,11 @@ private def decodeRawTableMap (tableSlot rawVaddr : Nat) : SyscallDecodeResult :
   , syscallId := .pageTableMap
   , msgRegs   := #[SeLe4n.RegValue.ofNat rawVaddr, SeLe4n.RegValue.ofNat 0] }
 
-/-- A table install `d` run with the address space at `rootSlot` staged as
-extra capability 0 of the caller's IPC buffer, which names the source root
-`slotOwnCnGrant` again after (as `bindStep`). -/
-private def tableMapStaged (d : SyscallDecodeResult) (rootSlot : Nat) (st : SystemState) :
-    Except KernelError (Unit × SystemState) :=
-  match dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId
-      (SeLe4n.Testing.withSenderCapAddrs st carveOwner #[SeLe4n.CPtr.ofNat rootSlot]) with
-  | .error e => .error e
-  | .ok ((), st') =>
-    .ok ((), SeLe4n.Testing.withSenderCapAddrs st' carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant])
-
 /-- `.pageTableMap` of the table at `tableSlot` into the address space at
 `rootSlot`, at `vaddr` past the user window's base. -/
 private def tableMap (tableSlot rootSlot vaddr : Nat) (st : SystemState) :
     Except KernelError (Unit × SystemState) :=
-  tableMapStaged (decodeTableMap tableSlot vaddr) rootSlot st
+  ownerStaged (decodeTableMap tableSlot vaddr) rootSlot st
 
 /-- `tableMap`, keeping the state. -/
 private def tableMapSt (tableSlot rootSlot vaddr : Nat) (st : SystemState) :
@@ -1811,7 +1839,7 @@ private def runPageTableChecks : IO Unit := do
       (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 15 }
         == some (pageTableCapability (SeLe4n.ObjId.ofNat 983)))
     assertBool "a frame is refused where the walk has no tables (translationFault)"
-      (isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st1))
+      (isErr .translationFault (mapVia 12 va 14 permsRWUC st1))
     -- A root with no table page — the kernel's own boot root is the one such
     -- root a booted kernel holds — has nowhere for a table to hang from.
     assertBool "a table is refused in a root that owns no page (invalidArgument)"
@@ -1820,7 +1848,7 @@ private def runPageTableChecks : IO Unit := do
        | .error _ => false)
     assertBool "...and a frame is refused there too (translationFault): no table, no walk"
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
-       | .ok ((), s) => isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia slotOwnVsp 3 va 14 permsRWUC) carveOwner Concurrency.bootCoreId s)
+       | .ok ((), s) => isErr .translationFault (mapVia slotOwnVsp va 14 permsRWUC s)
        | .error _ => false)
     assertBool "an address outside the 48-bit space has no walk (addressOutOfBounds)"
       (isErr .addressOutOfBounds (tableMap 15 12 (2 ^ 48) st1))
@@ -1836,8 +1864,8 @@ private def runPageTableChecks : IO Unit := do
       assertBool "a table already installed is refused a second install (invalidCapability)"
         (isErr (.invalidCapability 0) (tableMap 15 12 va st2))
       assertBool "two levels are not a walk: the frame is still refused (translationFault)"
-        (isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st2))
-      match (tableMapSt 17 12 va st2).bind (runAll · [decodeMapVia 12 1 va 14 permsRWUC]) with
+        (isErr .translationFault (mapVia 12 va 14 permsRWUC st2))
+      match (tableMapSt 17 12 va st2).bind (fun s => (mapVia 12 va 14 permsRWUC s).map (·.2)) with
       | .error e => assertBool s!"the third table completes the walk and the frame maps (got {repr e})" false
       | .ok st3 => do
         assertBool "the third table is at level 3, and the frame maps"
@@ -1855,23 +1883,23 @@ private def runPageTableChecks : IO Unit := do
            (SeLe4n.VAddr.ofNat (2 ^ 48 - SeLe4n.pageBytes)).inUserWindow &&
            !(SeLe4n.VAddr.ofNat (2 ^ 48)).inUserWindow)
         assertBool "a table below the user window is refused (addressOutOfBounds)"
-          (isErr .addressOutOfBounds (tableMapStaged (decodeRawTableMap 18 va) 12 st3))
+          (isErr .addressOutOfBounds (ownerStaged (decodeRawTableMap 18 va) 12 st3))
         assertBool "a frame below the user window is refused (addressOutOfBounds)"
           (isErr .addressOutOfBounds
-            (dispatchSyscallAsCurrent (decodeRawMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st2))
+            (ownerStaged (decodeRawMap va 14 permsRWUC) 12 st2))
         -- A copy carries no mapping record, so it may map the frame again;
         -- only the address is wrong.
         assertBool "an unaligned virtual address inside a complete walk is refused (alignmentError)"
           (match runAll st3 [decodeCopyAt 5 14 22] with
            | .ok sCopy =>
                isErr .alignmentError
-                 (dispatchSyscallAsCurrent
-                   (decodeRawMapVia 12 1 (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes + 8) 22
-                     permsRWUC) carveOwner Concurrency.bootCoreId sCopy) &&
+                 (ownerStaged
+                   (decodeRawMap (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes + 8) 22
+                     permsRWUC) 12 sCopy) &&
                -- CONTROL: the same copy at the aligned page beside it maps.
-               (dispatchSyscallAsCurrent
-                   (decodeRawMapVia 12 1 (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes) 22
-                     permsRWUC) carveOwner Concurrency.bootCoreId sCopy).isOk
+               (ownerStaged
+                   (decodeRawMap (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes) 22
+                     permsRWUC) 12 sCopy).isOk
            | .error _ => false)
         assertBool "a table a mapping still passes through is not unmapped (revocationRequired)"
           (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeTableUnmap 17) carveOwner Concurrency.bootCoreId st3))
@@ -2071,7 +2099,7 @@ private def runPhysicalWriteChecks : IO Unit := do
       | .ok st3 => do
         assertBool "levels 2 and 3 store at entry 0 of the table above each"
           (recordedBy st2 st3 == [tstore l1 (tableDesc l2), tstore l2 (tableDesc l3)])
-        match dispatchSyscallAsCurrent (decodeMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st3 with
+        match mapVia 12 va 14 permsRWUC st3 with
         | .error e => assertBool s!"mapping the frame succeeds (got {repr e})" false
         | .ok ((), st4) => do
           -- The page descriptor, bit by bit: the frame's address; valid page

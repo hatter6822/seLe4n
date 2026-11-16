@@ -881,14 +881,21 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceMapArgs decoded st.machine.maxASID with
+      cases hDec : decodePageMapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
+      | ok words =>
           simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · refine readyKeptStage.of_stage ?_
-            exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+            simp only [hX] at hStep
+            cases hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st with
+            | error e => simp only [hOps] at hStep; cases hStep
+            | ok p =>
+              obtain ⟨_, args⟩ := p
+              simp only [hOps] at hStep
+              refine readyKeptStage.of_stage ?_
+              exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

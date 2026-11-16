@@ -385,9 +385,9 @@ for driver in drivers:
             "receive-for-call", "receive-from-badged-sender", "receive-from-sender",
             "receive-on-carved", "receive-queued-fault", "receive-stashing-reply",
             "range-error-payload",
-            # Argument words at or above 2^63, each refused on the word, and
+            # Argument words at or above 2^63, each read as a word, and
             # the measured mint of a badge at 2^63.
-            "vspace-map-wide-asid", "vspace-map-wide-vaddr", "vspace-map-wide-perms",
+            "vspace-map-wide-rights", "vspace-map-wide-vaddr", "vspace-map-wide-attr",
             "vspace-unmap-wide-vaddr", "tcb-set-affinity-wide",
             "mint-wide-badged-notification",
             "receive-tainted", "receive-with-carved-reply", "refill-bind-root",

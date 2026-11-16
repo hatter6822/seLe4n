@@ -7232,6 +7232,19 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **ABI**: MR2 is the address of a frame capability in the caller's CSpace
   (`VSpaceMapArgs.frame : CPtr`), resolved with `.read`
   (`resolveVSpaceMapFrame`); the page installed is the frame's own `base`.
+  Since WS-SX SX6.3 the call has seL4's `ARMPageMap` shape: the *invoked*
+  capability is the frame, the words are vaddr, rights (`CanWrite` bit 0,
+  `CanRead` bit 1) and VM attributes (`PageCacheable` bit 0, `ExecuteNever`
+  bit 2) (`decodePageMapArgs`, `pagePermissionsOfWords`), and the VSpace root
+  is extra capability 0, whose own ASID names the address space — there is no
+  ASID word.  `resolvePageMapOperands` follows seL4's order: a missing extra
+  capability is `.truncatedMessage`, a root slot that is empty or holds no
+  VSpace root is `.invalidCapability 1`, an unbound ASID `.asidNotBound`, a
+  root that is not the ASID's bound root `.invalidCapability 1`, an address
+  past the user window `.invalidArgument 0`; a W^X request is refused
+  `.policyDenied` (`vspaceMapArgsOfWords`).  A remap on a frame capability
+  whose mapping is live answers `.invalidCapability 1` for another address
+  space and `.invalidArgument 0` for another address (`vspaceRemapRefusal`).
 - **Rights**: a writable mapping needs `.write` on the frame capability
   (`.illegalAuthority`), a device frame maps neither executable nor
   cacheable, and a RAM frame maps cacheable or not at all (`.policyDenied`) —
@@ -8248,7 +8261,7 @@ capability plus an index-and-depth pair, where this ABI passes one word.
 | `cspaceCopy`, `cspaceMove` | 4 | `decodeCNodeInvocation`, `length < 4` (the CNode operation word, below) |
 | `cspaceDelete`, `cspaceRevoke` | 1 | `decodeCNodeInvocation`, `length < 2` |
 | `untypedRetype` | 4 | `decodeUntypedInvocation`, `length < 6` |
-| `vspaceMap` | 4 | `decodeARMFrameInvocation`, Map `length < 3` |
+| `vspaceMap` | 3 | `decodeARMFrameInvocation`, Map `length < 3` or no extra capability |
 | `vspaceUnmap`, `vspaceUnifyInstruction` | 2 | `decodeARMFrameInvocation`, Unify `length < 2` |
 | `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` |
 | `tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity` | 1 | `decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`, `length < 1` |

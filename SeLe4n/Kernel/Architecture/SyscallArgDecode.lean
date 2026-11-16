@@ -87,7 +87,10 @@ already extra capability 0).  The seL4 counterparts, and their checks:
   count, then the model's object id word after seL4's six; the root is extra
   capability 0, a missing one refused `.truncatedMessage` as seL4 refuses a
   null `excaprefs[0]`);
-* `vspaceMap` 4 (`decodeARMFrameInvocation`, Map `length < 3`),
+* `vspaceMap` 3 (`decodeARMFrameInvocation`, Map `length < 3`: the address,
+  the rights word and the attributes word; the frame is the invoked capability
+  and the address space is extra capability 0, a missing one refused
+  `.truncatedMessage` in the same check),
   `vspaceUnmap` `vspaceUnifyInstruction` 2 (Unify `length < 2`);
 * `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`: the address
   and the attributes word; the address space is extra capability 0, a missing
@@ -118,9 +121,8 @@ Every other syscall reads no argument word, or is an IPC or a signal, for
 which seL4 checks no length (`notificationSignal` included). -/
 def truncationMinimum : SyscallId → Nat
   | .untypedRetype => 7
-  | .vspaceMap => 4
   | .cspaceMove => 4
-  | .irqControlGet | .auditRead | .tcbSetSpace => 3
+  | .vspaceMap | .irqControlGet | .auditRead | .tcbSetSpace => 3
   | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
   | .pageTableMap => 2
   | .cspaceDelete | .cspaceRevoke
@@ -306,28 +308,87 @@ theorem windowWordOf_of_lt {w : UInt64} (h : w.toNat < windowWordBound) :
   unfold windowWordOf
   rw [if_pos (UInt64.lt_iff_toNat_lt.mpr (by simpa [windowWordBound] using h))]
 
-/-- Per-syscall argument structure for `vspaceMap`.
-    Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
-    T6-C/M-ARCH-1: `perms` is typed as `PagePermissions` instead of raw `Nat`.
-    Validation occurs at decode time via `PagePermissions.ofNat?`, rejecting
-    values outside the valid 5-bit range (0–31).
+/-- **The operands of a `.vspaceMap`**: the address space's ASID, the address,
+    the frame capability's address and the permissions — what the map arm
+    (`vspaceMapOrRemapFromFrameCap`) acts on.  **WS-SX SX6.3 (D6)**: no word
+    carries the ASID or the frame any longer.  seL4's `seL4_ARM_Page_Map` is an
+    invocation *of the frame capability* (`frame` is the invoked capability's
+    address, resolved through the caller's own CSpace by
+    `resolveVSpaceMapFrame`, and the mapping installs the resolved frame's
+    `base`), the address space is extra capability 0 (`asid` is that root's
+    own, `cap_vspace_cap_get_capVSMappedASID`), and the words are the address,
+    the rights and the attributes (`PageMapArgs`), from which
+    `vspaceMapArgsOfWords` builds this.
 
-    **WS-BP BP7.1: MR2 names a frame capability, not a physical address.**  It
-    was `paddr : PAddr`, a raw number the arm mapped after checking only that it
+    **WS-BP BP7.1: the frame is a capability, not a physical address.**  It was
+    `paddr : PAddr`, a raw number the arm mapped after checking only that it
     was in range and page-aligned — so any holder of a writable VSpace
-    capability could map *any* physical memory, the kernel's own image and
-    every other domain's pages included.  seL4's `seL4_ARM_Page_Map` is invoked
-    on a frame capability: the address comes from the object the capability
-    names, and holding the capability is the authority over that memory.  This
-    is that: `frame` is resolved through the caller's own CSpace
-    (`resolveVSpaceMapFrame`) and the mapping installs the resolved frame's
-    `base`. -/
+    capability could map *any* physical memory. -/
 structure VSpaceMapArgs where
   asid  : ASID
   vaddr : VAddr
   frame : CPtr
   perms : PagePermissions
   deriving Repr, DecidableEq
+
+/-- **WS-SX SX6.3 (D6): `seL4_ARM_Page_Map`'s words**, in seL4's order: the
+    address (MR0), the rights word (MR1, `rightsFromWord`) and the attributes
+    word (MR2, `vmAttributesFromWord`), each kept as its word. -/
+structure PageMapArgs where
+  vaddr  : UInt64
+  rights : UInt64
+  attr   : UInt64
+  deriving Repr, DecidableEq
+
+/-- The index into `PagePermissions.table` that seL4's two words select: read
+    is the rights word's `CanRead` bit (bit 1), write its `CanWrite` bit
+    (bit 0); execute is the attributes word's `ExecuteNever` bit (bit 2)
+    clear, cacheable its `PageCacheable` bit (bit 0); and the mapping is a
+    user mapping, as every `Page_Map` mapping is.  Every other bit of either
+    word is ignored, as seL4 ignores it. -/
+@[inline] def pageMapPermissionIndex (rights attr : UInt64) : Nat :=
+  (if rights &&& 2 != 0 then 1 else 0) + (if rights &&& 1 != 0 then 2 else 0) +
+    (if attr &&& 4 == 0 then 4 else 0) + 8 + (if attr &&& 1 != 0 then 16 else 0)
+
+theorem pageMapPermissionIndex_lt (rights attr : UInt64) :
+    pageMapPermissionIndex rights attr < 32 := by
+  unfold pageMapPermissionIndex
+  split <;> split <;> split <;> split <;> omega
+
+/-- **The permissions seL4's rights and attributes words ask for** — total, as
+    `rightsFromWord` and `vmAttributesFromWord` are.  A writable and executable
+    request is refused by `vspaceMapArgsOfWords` (`.policyDenied`), and a right
+    the frame capability does not carry by `frameMappingAdmissible`. -/
+def pagePermissionsOfWords (rights attr : UInt64) : PagePermissions :=
+  PagePermissions.ofNat (pageMapPermissionIndex rights attr)
+
+/-- `pagePermissionsOfWords` as compiled: the shared entry of
+    `PagePermissions.table`, so no permissions value is built. -/
+@[inline] def pagePermissionsOfWordsShared (rights attr : UInt64) : PagePermissions :=
+  PagePermissions.table[pageMapPermissionIndex rights attr]'(by
+    rw [PagePermissions.table_size]; exact pageMapPermissionIndex_lt rights attr)
+
+@[csimp] theorem pagePermissionsOfWords_eq_shared :
+    @pagePermissionsOfWords = @pagePermissionsOfWordsShared := by
+  funext rights attr
+  unfold pagePermissionsOfWords pagePermissionsOfWordsShared
+  rw [PagePermissions.table_get]
+
+/-- **The `.vspaceMap` operands from seL4's words**, once the address space has
+    resolved to `asid`: an address at or above the canonical bound is seL4's
+    `vtop > USER_TOP` refusal, `seL4_InvalidArgument` naming argument 0, tested
+    on the word before it is made a number.  Then this kernel's W^X layer at
+    the ABI (`VSpaceBoot`'s first layer): a writable and executable request is
+    refused `.policyDenied` before any capability is resolved for the frame,
+    the answer `vspaceMapPage`'s own layer gives. -/
+@[inline] def vspaceMapArgsOfWords (words : PageMapArgs) (asid : ASID) (frame : CPtr)
+    : Except KernelError VSpaceMapArgs :=
+  if !wordLtNat words.vaddr VAddr.canonicalBound then .error (.invalidArgument 0)
+  else if !(pagePermissionsOfWords words.rights words.attr).wxCompliant then .error .policyDenied
+  else .ok { asid  := asid
+             vaddr := VAddr.ofNat words.vaddr.toNat
+             frame := frame
+             perms := pagePermissionsOfWords words.rights words.attr }
 
 /-- Per-syscall argument structure for `vspaceUnmap`.
     Register mapping: x2=asid, x3=vaddr. -/
@@ -440,50 +501,23 @@ def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
            childId    := ObjId.ofNat r6.val }
   | none => .error .invalidTypeTag
 
-/-- Decode VSpace map arguments from message registers.
-    Requires 4 message registers (asid, vaddr, frame capability address,
-    perms word).
-    T6-C/M-ARCH-1: Validates the permissions word at decode time via
-    `PagePermissions.ofNat?`. Returns `invalidArgument` for values ≥ 32
-    (undefined permission bits set — U5-E/U-M07: decode error, not policy).
-    U2-B/U-H06: Validates VAddr lies within ARM64 48-bit canonical range.
-    Returns `addressOutOfBounds` for VAddr ≥ 2^48. -/
-def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
-    : Except KernelError VSpaceMapArgs := do
+/-- **WS-SX SX6.3 (D6): decode `seL4_ARM_Page_Map`'s three words** — the
+    address (MR0), seL4's rights word (MR1) and its attributes word (MR2), in
+    `decodeARMFrameInvocation`'s order.  The frame is the invoked capability
+    and the address space is extra capability 0, so no word names either, and
+    no ASID word is read: the address space's own ASID is used.  The words are
+    read as seL4 reads them, before any value is tested: the address is tested
+    after the address space resolves (`vspaceMapArgsOfWords`), as seL4 tests
+    `vtop` after `findVSpaceForASID`, and the rights and attributes words are
+    total (`pagePermissionsOfWords`), as `rightsFromWord` and
+    `vmAttributesFromWord` are. -/
+def decodePageMapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError PageMapArgs := do
   requireMessageLength decoded (truncationMinimum .vspaceMap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
-  let r3 ← requireMsgReg decoded.msgRegs 3
-  -- U2-G/U-H08: Validate ASID within platform-configured range
-  -- AH3-C (L-14): Parameterized — callers pass `st.machine.maxASID`
-  let asid := ASID.ofNat r0.val
-  if !asid.isValidForConfig maxASID then .error .asidNotBound
-  else
-  -- U2-B/U-H06: Validate VAddr lies within ARM64 48-bit canonical address range
-  let vaddr := VAddr.ofNat r1.val
-  if !vaddr.isCanonical then .error .addressOutOfBounds
-  else
-    match PagePermissions.ofNat? r3.val with
-    | some perms =>
-      pure { asid  := asid
-             vaddr := vaddr
-             frame := CPtr.ofNat r2.val
-             perms := perms }
-    -- U5-E/U-M07: Invalid permission bits are a decode error, not a policy violation.
-    -- Prior to U5-E this incorrectly returned `.policyDenied`.
-    -- X5-E/M-11: Use `invalidSyscallArgument` for syscall-specific decode context.
-    | none => .error .invalidSyscallArgument
-
--- **WS-BP BP7.1: `decodeVSpaceMapArgsChecked` and its two theorems
--- (`decodeVSpaceMapArgsChecked_paddr_bounded`,
--- `decodeVSpaceMapArgsChecked_eq_of_bounded`) are DELETED.**  AK3-E's
--- decode-time physical-address bound had a subject only while MR2 carried a
--- physical address; it carries a frame capability address now, so the address
--- the arm maps is the resolved frame's own `base`, and the downstream
--- `vspaceMapPageCheckedWithFlushFromState` bound — which AK3-E already named as
--- the production check — is the one that applies to it.  The arm calls
--- `decodeVSpaceMapArgs` directly.
+  pure { vaddr := r0.word, rights := r1.word, attr := r2.word }
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -644,10 +678,10 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
     RegValue.ofNat args.nodeDepth, RegValue.ofNat args.nodeOffset,
     RegValue.ofNat args.numObjects, RegValue.ofNat args.childId.toNat]
 
-/-- Encode VSpace map arguments into message registers.
-    Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
-@[inline] def encodeVSpaceMapArgs (args : VSpaceMapArgs) : Array RegValue :=
-  #[RegValue.ofNat (args.asid.toNat), RegValue.ofNat (args.vaddr.toNat), RegValue.ofNat (args.frame.toNat), RegValue.ofNat (args.perms.toNat)]
+/-- Encode `seL4_ARM_Page_Map`'s three words.  Inverse of `decodePageMapArgs`. -/
+@[inline] def encodePageMapArgs (args : PageMapArgs) : Array RegValue :=
+  #[⟨args.vaddr⟩, ⟨args.rights⟩, ⟨args.attr⟩]
+
 
 /-- Encode VSpace unmap arguments into message registers.
     Inverse of `decodeVSpaceUnmapArgs`. -/
@@ -745,131 +779,6 @@ theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeRes
       · rw [key 2 (by omega) h2]
     · rw [key 1 (by omega) h1]
   · rw [key 0 (by omega) h0]
-
-/-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
-theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
-    (h : d.msgRegs.size < 4) :
-    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
-  have hL := requireMessageLength_of_le hLen
-  refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind]
-  by_cases h0 : 0 < d.msgRegs.size
-  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-    by_cases h1 : 1 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-      by_cases h2 : 2 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
-        rw [requireMsgReg_unfold_err _ _ (by omega)]
-      · rw [requireMsgReg_unfold_err _ _ h2]
-    · rw [requireMsgReg_unfold_err _ _ h1]
-  · rw [requireMsgReg_unfold_err _ _ h0]
-
-/-- U2-B: VSpace map decode fails if VAddr is non-canonical (≥ 2^48). -/
-theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
-    (hSize : 4 ≤ d.msgRegs.size)
-    (hVAddr : (VAddr.ofNat d.msgRegs[1].val).isCanonical = false) :
-    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
-  have hL := requireMessageLength_of_le hLen
-  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
-    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-    dif_pos (show 1 < d.msgRegs.size by omega),
-    dif_pos (show 2 < d.msgRegs.size by omega),
-    dif_pos (show 3 < d.msgRegs.size by omega)]
-  split
-  · -- ASID invalid → error (asidNotBound)
-    exact ⟨.asidNotBound, rfl⟩
-  · -- ASID valid → VAddr check fails
-    exact ⟨.addressOutOfBounds, by simp [hVAddr]⟩
-
-/-- T6-D/M-ARCH-1: VSpace map decode fails if the permissions word is invalid (≥ 32). -/
-theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
-    (hSize : 4 ≤ d.msgRegs.size)
-    (hPerms : PagePermissions.ofNat? d.msgRegs[3].val = none) :
-    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
-  have hL := requireMessageLength_of_le hLen
-  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
-    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-    dif_pos (show 1 < d.msgRegs.size by omega),
-    dif_pos (show 2 < d.msgRegs.size by omega),
-    dif_pos (show 3 < d.msgRegs.size by omega)]
-  split
-  · -- ASID invalid → error
-    exact ⟨.asidNotBound, rfl⟩
-  · -- ASID valid → check VAddr
-    split
-    · -- VAddr not canonical → error
-      exact ⟨.addressOutOfBounds, rfl⟩
-    · -- VAddr canonical → perms check fails
-      exact ⟨.invalidSyscallArgument, by simp [hPerms]⟩
-
-/-- VSpace map decode fails iff fewer than 4 message registers,
-    ASID is invalid, VAddr is non-canonical, or the permissions word is invalid.
-    Four failure modes:
-    1. `msgRegs.size < 4` → `requireMsgReg` returns error
-    2. ASID (msgRegs[0]) ≥ maxASID → asidNotBound
-    3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
-    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidSyscallArgument (X5-E) -/
-theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length) :
-    (∃ e, decodeVSpaceMapArgs d maxASID = .error e) ↔
-    (d.msgRegs.size < 4 ∨
-     (∃ (h : 3 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
-     (∃ (h : 3 < d.msgRegs.size), (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false) ∨
-     (∃ (h : 3 < d.msgRegs.size), PagePermissions.ofNat? (d.msgRegs[3]'h).val = none)) := by
-  have hL := requireMessageLength_of_le hLen
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 4
-    · exact .inl hlt
-    · have h3 : 3 < d.msgRegs.size := by omega
-      simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        dif_pos (show 2 < d.msgRegs.size by omega),
-        dif_pos (show 3 < d.msgRegs.size by omega)] at he
-      split at he
-      · -- ASID invalid
-        rename_i hAsidInvalid
-        right; left
-        exact ⟨h3, by
-          simp only [Bool.not_eq_true'] at hAsidInvalid
-          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID
-          · rfl
-          · rw [hc] at hAsidInvalid; simp at hAsidInvalid⟩
-      · -- ASID valid → check VAddr
-        split at he
-        · -- VAddr not canonical
-          rename_i hNotCanon
-          right; right; left
-          exact ⟨h3, by
-            simp only [Bool.not_eq_true'] at hNotCanon
-            cases hc : (VAddr.ofNat d.msgRegs[1].val).isCanonical
-            · rfl
-            · rw [hc] at hNotCanon; simp at hNotCanon⟩
-        · -- VAddr canonical → check perms
-          right; right; right
-          exact ⟨h3, by
-            split at he
-            · -- some perms case: decode succeeded → contradicts error assumption
-              nomatch he
-            · -- none case: perms invalid
-              assumption⟩
-  · intro h
-    match h with
-    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d maxASID hLen hLt
-    | .inr (.inl ⟨h3, hAsid⟩) =>
-      exact ⟨.asidNotBound, by
-        simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
-          requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-          dif_pos (show 1 < d.msgRegs.size by omega),
-          dif_pos (show 2 < d.msgRegs.size by omega),
-          dif_pos (show 3 < d.msgRegs.size by omega)]
-        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = true := by
-          rw [hAsid]; rfl
-        simp [this]⟩
-    | .inr (.inr (.inl ⟨h3, hVAddr⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d maxASID hLen (by omega) hVAddr
-    | .inr (.inr (.inr ⟨h3, hPerms⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_invalid_perms d maxASID hLen (by omega) hPerms
 
 /-- AE4-B: VSpace unmap decode fails iff fewer than 2 message registers,
     ASID invalid, or VAddr non-canonical. -/
@@ -1085,57 +994,13 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
     RegValue.val_ofNat_of_lt hChild, ObjId.ofNat_toNat]
   rfl
 
-/-- T6-C: Round-trip requires that the permissions encode to a valid range.
-    `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
-private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
-    p.toNat < 32 := by
-  rcases p with ⟨r, w, e, u, c⟩
-  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
-
-private theorem pagePermissions_ofNat?_toNat (p : PagePermissions)
-    (hWx : p.wxCompliant = true) :
-    PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by
-  have hLt := pagePermissions_toNat_lt_32 p
-  have hWxRt : (PagePermissions.ofNat p.toNat).wxCompliant = true := by
-    rw [PagePermissions.ofNat_toNat_roundtrip]; exact hWx
-  simp [PagePermissions.ofNat?, hLt, hWxRt]
-
-/-- U2-B/U2-G/V4-K: Round-trip requires VAddr is canonical (within 48-bit range),
-    ASID is valid for the platform-configured maxASID, and permissions are W^X compliant.
-    V4-K: W^X compliance is now enforced at decode time by `ofNat?`. -/
-theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
-    (hAsid : args.asid.isValidForConfig maxASID = true)
-    (hVAddr : args.vaddr.isCanonical = true)
-    (hWx : args.perms.wxCompliant = true) (hAsidWord : args.asid.toNat < 2 ^ 64) :
-    decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args := by
-  rcases args with ⟨a, v, p, perms⟩
-  have hVW : v.toNat < 2 ^ 64 :=
-    Nat.lt_trans (show v.toNat < VAddr.canonicalBound from of_decide_eq_true hVAddr) (by decide)
-  simp only at hAsidWord
-  have hPW : p.toNat < 2 ^ 64 := CPtr.toNat_lt p
-  have hPermsW : perms.toNat < 2 ^ 64 := Nat.lt_trans (pagePermissions_toNat_lt_32 perms) (by decide)
-  show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) maxASID = .ok ⟨a, v, p, perms⟩
-  -- U2-G: The ASID validity check needs to pass; derive that from hAsid
-  have hAsidValid : (ASID.ofNat a.toNat).isValidForConfig maxASID = true := by
-    simp only [ASID.ofNat, ASID.toNat]; exact hAsid
-  have hAsidNotFalse : (!(ASID.ofNat a.toNat).isValidForConfig maxASID) = false := by
-    rw [hAsidValid]; rfl
-  -- U2-B: The VAddr canonical check needs to pass; derive that from hVAddr
-  have hCanon : (VAddr.ofNat v.toNat).isCanonical = true := by
-    simp only [VAddr.ofNat, VAddr.toNat]; exact hVAddr
-  have hNotCanonFalse : (!(VAddr.ofNat v.toNat).isCanonical) = false := by
-    rw [hCanon]; rfl
-  rcases perms with ⟨r, w, e, u, c⟩
-  have hA : a.isValidForConfig maxASID = true := hAsid
-  have hV : v.isCanonical = true := hVAddr
-  -- V4-K: W^X cases (write=true, execute=true) are excluded by hWx
-  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
-    simp_all [requireMessageLength, truncationMinimum, decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
-      bind, Except.bind, requireMsgReg, PagePermissions.wxCompliant,
-      PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
-      ASID.ofNat_toNat, VAddr.ofNat_toNat, CPtr.ofNat_toNat, pure, Except.pure,
-      RegValue.val_ofNat_of_lt hAsidWord, RegValue.val_ofNat_of_lt hVW,
-      RegValue.val_ofNat_of_lt hPW, RegValue.val_ofNat]
+/-- `decodePageMapArgs` reads back the words `encodePageMapArgs` wrote: the
+    decode tests no value. -/
+theorem decodePageMapArgs_roundtrip (args : PageMapArgs) :
+    decodePageMapArgs (stubDecoded (encodePageMapArgs args)) = .ok args := by
+  rcases args with ⟨v, r, a⟩
+  simp [requireMessageLength, truncationMinimum, decodePageMapArgs, encodePageMapArgs,
+    stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
     U2-G: Requires ASID is valid for the platform-configured maxASID.
@@ -1684,9 +1549,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       args.nodeOffset < windowWordBound → args.numObjects < windowWordBound →
       args.childId.toNat < 2 ^ 64 →
       decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
-    (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
-      args.perms.wxCompliant = true → args.asid.toNat < 2 ^ 64 →
-      decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args) ∧
+    (∀ args, decodePageMapArgs (stubDecoded (encodePageMapArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.asid.toNat < 2 ^ 64 →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args) ∧
@@ -1708,7 +1571,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeUntypedRetypeArgs_roundtrip,
-   fun args hA hV hWx hW => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx hW,
+   decodePageMapArgs_roundtrip,
    fun args hA hV hW => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV hW,
    fun args hMc hMms hMrs hI => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs hI,
    decodeNotificationWaitArgs_roundtrip,
@@ -2299,19 +2162,6 @@ theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
 
-/-- `PagePermissions.ofNat?` of a word, its range tested on the word first, so a
-full-width word is refused without being made a `Nat` (WS-SX SX1.3). -/
-@[inline] def pagePermissionsOfWord? (w : UInt64) : Option PagePermissions :=
-  if w < 32 then PagePermissions.ofNat? w.toNat else none
-
-theorem pagePermissionsOfWord?_eq (w : UInt64) :
-    pagePermissionsOfWord? w = PagePermissions.ofNat? w.toNat := by
-  unfold pagePermissionsOfWord?
-  split
-  · rfl
-  · rename_i h
-    exact (PagePermissions.ofNat?_invalid _ (fun h' => h (UInt64.lt_iff_toNat_lt.mpr h'))).symm
-
 /-- The VSpace decodes' range tests, read on the word (`wordLtNat`): an ASID
 below the configured bound, an address below the canonical bound. -/
 theorem asid_isValidForConfig_ofWord (w : UInt64) (maxASID : Nat) :
@@ -2322,41 +2172,26 @@ theorem vaddr_isCanonical_ofWord (w : UInt64) :
     (VAddr.ofNat w.toNat).isCanonical = wordLtNat w VAddr.canonicalBound := by
   rw [wordLtNat_eq_decide]; rfl
 
-@[inline] def decodeVSpaceMapArgsBy (get : MsgRegReader) (maxASID : Nat)
-    : Except KernelError VSpaceMapArgs := do
+@[inline] def decodePageMapArgsBy (get : MsgRegReader)
+    : Except KernelError PageMapArgs := do
   let r0 ← get 0
   let r1 ← get 1
   let r2 ← get 2
-  let r3 ← get 3
-  if !wordLtNat r0 maxASID then .error .asidNotBound
-  else
-  let asid := ASID.ofNat r0.toNat
-  if !wordLtNat r1 VAddr.canonicalBound then .error .addressOutOfBounds
-  else
-  let vaddr := VAddr.ofNat r1.toNat
-  match pagePermissionsOfWord? r3 with
-  | some perms =>
-    pure { asid  := asid
-           vaddr := vaddr
-           frame := CPtr.ofWord r2
-           perms := perms }
-  | none => .error .invalidSyscallArgument
+  pure { vaddr := r0, rights := r1, attr := r2 }
 
-theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult) (maxASID : Nat)
+theorem decodePageMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
     (hLen : truncationMinimum .vspaceMap ≤ decoded.msgInfo.length) :
-    decodeVSpaceMapArgs decoded maxASID = decodeVSpaceMapArgsBy (msgRegOfFile layout regs) maxASID := by
-  unfold decodeVSpaceMapArgs decodeVSpaceMapArgsBy
+    decodePageMapArgs decoded = decodePageMapArgsBy (msgRegOfFile layout regs) := by
+  unfold decodePageMapArgs decodePageMapArgsBy
   rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
-      pagePermissionsOfWord?_eq, asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
+  cases g 0 <;> cases g 1 <;> cases g 2 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
 @[inline] def decodeVSpaceUnmapArgsBy (get : MsgRegReader) (maxASID : Nat)
     : Except KernelError VSpaceUnmapArgs := do
@@ -2385,7 +2220,7 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
-      pagePermissionsOfWord?_eq, asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
+      asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
 
 /-- WS-ZA ZA5.2: message register `i`'s word for a call whose one overflow word
 `w` follows the layout's registers: the file's registers, then `w`, refusing any

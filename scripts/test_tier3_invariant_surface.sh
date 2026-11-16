@@ -4030,7 +4030,7 @@ run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*executingCore args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              \| \.ok \(_, args\) => vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
 # seL4's Page_Map remap: a live mapping on the frame capability is remapped
 # only at the ASID and address it records — a different ASID is refused as an
 # invalid capability, a different address as an invalid argument — and every
@@ -4038,7 +4038,7 @@ run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid exe
 # the record's ASID, its address, the walk) before the unmap writes; a refused
 # map half no longer leaves the unmap standing.
 run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability vspaceMapFrameCapNumber\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 1\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability pageMapVSpaceCapNumber\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 0\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*      if capabilityMappingLive st frameCap then\n        match vspaceRemapRefusal st args frameCap frame with\n        \| \.error e => \.error e\n        \| \.ok \(\) =>\n          match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore\n              args\.asid args\.vaddr st with\n          \| \.error e => \.error e\n          \| \.ok \(\(\), st0\) => vspaceMapFromFrameCap tid executingCore args st0$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'vspaceRemapChecks|vspaceRemapMapFallback|vspaceRemapAdmittedAt' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapRefused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4189,7 +4189,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.vspaceMap \| \.irqControlGet \| \.auditRead \| \.tcbSetSpace => 3$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -7216,6 +7216,12 @@ run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_ne($|[ ({
 run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_object($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolvePageMapOperands_shadowed_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolvePageMapOperandsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_no_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.vspaceMap => some \.frame\n' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '              match resolvePageMapOperands tid decoded\.capAddr rootCPtr words st with' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'PagePermissions\.ofNat\?|pagePermissionsOfWord\?' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnmap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate must be present in all three live arms.  That is guaranteed by the
@@ -12330,9 +12336,9 @@ run_check "INVARIANT" rg -n '^structure CSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^structure VSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodePageMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodePageMapArgs_eq_by($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-Q1-D: Service syscall argument decode structures and roundtrip proofs.
@@ -12366,7 +12372,7 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_reply_populates_msg
 
 # WS-K-F1: Per-syscall encode functions (layer 2).
 run_check "INVARIANT" rg -n 'def encodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodePageMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-K-F2: Layer 2 round-trip proofs.
 run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
@@ -14189,13 +14195,13 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_error_iff
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_eq_by
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
@@ -14218,7 +14224,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodePageMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
 -- WS-K-F2: Layer 2 round-trip proofs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_roundtrip
@@ -14226,7 +14232,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs_roundtrip
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
 -- WS-K-F3: Layer 1 extraction round-trip
