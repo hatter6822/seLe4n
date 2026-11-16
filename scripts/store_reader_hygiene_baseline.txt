@@ -22,7 +22,7 @@ store_write_spec         = 491 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 4662
+gettcb_adoption          = 4669
 getschedctx_adoption     = 1253
 getendpoint_adoption     = 362
 getnotification_adoption = 174
@@ -36,7 +36,7 @@ storeobjectchecked_adoption = 16
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
-sentinel_check_dispatch  = 77
+sentinel_check_dispatch  = 71
 
 ## Regression test counts (should-grow)
 
@@ -3711,7 +3711,7 @@ STORE_READ_CODE=0
 STORE_READ_SPEC=8574
 STORE_WRITE_CODE=0
 STORE_WRITE_SPEC=491
-GETTCB_ADOPTION=4662
+GETTCB_ADOPTION=4669
 GETSCHEDCTX_ADOPTION=1253
 GETENDPOINT_ADOPTION=362
 GETNOTIFICATION_ADOPTION=174
@@ -3719,7 +3719,7 @@ GETUNTYPED_ADOPTION=163
 GETCNODE_ADOPTION=203
 GETVSPACEROOT_ADOPTION=104
 STOREOBJECTCHECKED_ADOPTION=16
-SENTINEL_CHECK_DISPATCH=77
+SENTINEL_CHECK_DISPATCH=71
 READER_HYGIENE_SUITE_TESTS=42
 KERRORMATRIX_ROWS=47
 SORRY_COUNT=0
