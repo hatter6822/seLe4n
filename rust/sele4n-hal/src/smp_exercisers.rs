@@ -2313,22 +2313,36 @@ const ROOT_IPC_BUFFER_AT_BOOT: RoundTrip = mint(
 /// mapped again through the frame capability the boot put in
 /// [`ROOT_IPC_BUFFER_FRAME_SLOT`], with the buffer's own permissions, and a
 /// mint then reads its badge from the remapped buffer.
+///
+/// The remap is seL4's `Page_Map`, whose VSpace root is extra capability 0,
+/// read from the caller's buffer — which is unmapped then.  The kernel reads
+/// the buffer through the frame capability in the thread's buffer slot
+/// (seL4's `lookupIPCBuffer`), not through the thread's tables, so the word
+/// is written while the page is still mapped: the unmap writes it (and names
+/// no extra capability, so reads none), and the remap writes nothing, as a
+/// thread whose buffer is unmapped can write nothing there.
 #[cfg(feature = "hw_target")]
 const ROOT_IPC_BUFFER_CAP: [RoundTrip; 3] = [
-    invocation(
-        "root-ipc-buffer-cap-unmap",
-        VSPACE_UNMAP,
-        VSPACE_CAP,
-        [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
-    ),
-    page_map(
-        "root-ipc-buffer-cap-remap",
-        ROOT_IPC_BUFFER_FRAME_CAP,
-        VSPACE_CAP,
-        ROOT_IPC_BUFFER,
-        FRAME_PERMS,
-        ROOT_IPC_BUFFER,
-    ),
+    RoundTrip {
+        caps_or_badges: Some((ROOT_IPC_BUFFER, [VSPACE_CAP, 0, 0], None)),
+        ..invocation(
+            "root-ipc-buffer-cap-unmap",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
+        )
+    },
+    RoundTrip {
+        caps_or_badges: None,
+        ..page_map(
+            "root-ipc-buffer-cap-remap",
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
+        )
+    },
     mint(
         "root-ipc-buffer-cap",
         NOTIFICATION_SLOT,
