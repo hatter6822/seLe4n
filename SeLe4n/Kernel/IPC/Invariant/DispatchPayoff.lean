@@ -2098,23 +2098,17 @@ private theorem witnessSt3_getTcb_seven :
       (SeLe4n.ObjId.ofNat 7).toNat).toObjId = SeLe4n.ObjId.ofNat 7 from rfl,
     witnessSt3_lookup_seven]
 
-/-- The capability-only pack against any register-free decode and the absent
-endpoint capability: the decoders refuse on the empty register file, and the
-object-target fields discharge on the empty slot. -/
+/-- The capability-only pack against any register-free decode other than a
+SchedContext bind and the absent endpoint capability: the bind field is about
+another syscall, and the object-target fields discharge on the empty slot. -/
 private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
-    (hRegs : decoded.msgRegs = #[]) :
+    (hSid : decoded.syscallId ≠ .schedContextBind) :
     capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
     ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ _ hRes
-    have hErr : ∃ e, decodeSchedContextBindArgs decoded = .error e := by
-      simp only [decodeSchedContextBindArgs, hRegs, requireMessageLength, requireMsgReg, bind,
-        Except.bind]
-      split <;> simp
-    obtain ⟨e, he⟩ := hErr
-    simp only [resolveSchedContextBindThread, he] at hRes
-    cases hRes
+  · intro _ _ hSy
+    exact absurd hSy hSid
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj
@@ -2133,7 +2127,7 @@ the state whose invariant is already proven. -/
 theorem syscallDispatchQuiescence_inhabited_send :
     syscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded (by simp [witnessDecoded]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
@@ -2180,7 +2174,7 @@ state. -/
 theorem syscallDispatchQuiescence_inhabited_receive :
     syscallDispatchQuiescence witnessDecodedRecv witnessTid Concurrency.bootCoreId witnessGateRecv
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv (by simp [witnessDecodedRecv]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
@@ -2241,7 +2235,7 @@ the rendezvous field on the computed absent-endpoint lookup. -/
 theorem syscallDispatchQuiescence_inhabited_call :
     syscallDispatchQuiescence witnessDecodedCall witnessTid Concurrency.bootCoreId witnessGateCall
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall (by simp [witnessDecodedCall]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec

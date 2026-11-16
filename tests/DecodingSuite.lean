@@ -458,15 +458,6 @@ private def sad017_schedContextConfigureInsufficient : IO Unit := do
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-017a scConfigure insufficient" (!result.isOk)
 
-/-- SAD-018: decodeSchedContextBindArgs — valid and insufficient. -/
-private def sad018_schedContextBind : IO Unit := do
-  let stub := mkStub #[⟨5⟩]
-  let result := decodeSchedContextBindArgs stub
-  expect "SAD-018a scBind ok" result.isOk
-  let stubEmpty := mkStub #[]
-  let resultEmpty := decodeSchedContextBindArgs stubEmpty
-  expect "SAD-018b scBind empty err" (!resultEmpty.isOk)
-
 /-- SAD-019: decodeSchedContextUnbindArgs — always succeeds. -/
 private def sad019_schedContextUnbind : IO Unit := do
   let stub := mkStub #[]
@@ -958,7 +949,6 @@ private def runSyscallArgDecodeTests : IO Unit := do
   -- SchedContext
   sad016_schedContextConfigure
   sad017_schedContextConfigureInsufficient
-  sad018_schedContextBind
   sad019_schedContextUnbind
   -- TCB
   sad020_suspendResume

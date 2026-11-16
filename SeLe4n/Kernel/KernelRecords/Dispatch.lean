@@ -333,7 +333,7 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
+      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
       | error e => simp only [hRes] at hStep; cases hStep
       | ok vThreadId =>
           simp only [hRes] at hStep
@@ -420,7 +420,7 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>
       try dsimp only [] at hStep
-      cases hDec : decodeTcbBindNotificationArgs decoded with
+      cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep

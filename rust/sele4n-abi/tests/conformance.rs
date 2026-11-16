@@ -1434,20 +1434,6 @@ fn sched_context_configure_roundtrip() {
     assert_eq!(decoded, args);
 }
 
-/// AA1-F-2: SchedContextBindArgs encode/decode roundtrip.
-#[test]
-fn sched_context_bind_roundtrip() {
-    use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    // `v0.35.204`: the operand is the TCB capability's address (`CPtr`), no
-    // longer a raw `ThreadId` — see `resolveSchedContextBindThread`.
-    let args = SchedContextBindArgs {
-        tcb_cap: CPtr::from(42u64),
-    };
-    let encoded = args.encode();
-    let decoded = SchedContextBindArgs::decode(&encoded).unwrap();
-    assert_eq!(decoded, args);
-}
-
 /// AA1-F-3: SchedContextUnbindArgs encode/decode roundtrip.
 #[test]
 fn sched_context_unbind_roundtrip() {
@@ -1507,16 +1493,6 @@ fn sched_context_configure_encode_refuses_out_of_range() {
         ..valid
     };
     assert_eq!(domain_16.encode(), Err(KernelError::InvalidSyscallArgument));
-}
-
-/// AA1-F-6: SchedContextBindArgs boundary — empty registers.
-#[test]
-fn sched_context_bind_insufficient_regs() {
-    use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    assert_eq!(
-        SchedContextBindArgs::decode(&[]),
-        Err(KernelError::InvalidMessageInfo)
-    );
 }
 
 /// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain.
@@ -2120,8 +2096,9 @@ fn sys_sched_context_module_exports() {
     // `v0.35.204`: `sched_context_bind` takes the TCB **capability** (`CPtr`),
     // matching the Lean `SchedContextBindArgs.tcbCPtr` operand; the typed
     // `ThreadId` it took until then was the raw operand the kernel no longer
-    // binds through.
-    let _bind: fn(CPtr, CPtr) -> KernelResult<SyscallResponse> =
+    // binds through.  WS-SX SX6.4: the capability is extra capability 0, so
+    // the wrapper takes the caller's IPC buffer.
+    let _bind: fn(CPtr, CPtr, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_bind;
     let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_unbind;
@@ -2896,7 +2873,7 @@ fn wrappers_name_their_syscalls() {
     assert_names("irq_handler_ack", SyscallId::IrqHandlerAck);
     let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, Slot::from(0u64));
     assert_names("irq_control_get", SyscallId::IrqControlGet);
-    let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap);
+    let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap, &mut buf);
     assert_names(
         "irq_handler_set_notification",
         SyscallId::IrqHandlerSetNotification,
@@ -2946,7 +2923,7 @@ fn wrappers_name_their_syscalls() {
         &mut buf,
     );
     assert_names("sched_context_configure", SyscallId::SchedContextConfigure);
-    let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64));
+    let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64), &mut buf);
     assert_names("sched_context_bind", SyscallId::SchedContextBind);
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
     assert_names("sched_context_unbind", SyscallId::SchedContextUnbind);
@@ -2965,7 +2942,7 @@ fn wrappers_name_their_syscalls() {
     assert_names("tcb_set_affinity", SyscallId::TcbSetAffinity);
     let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
     assert_names("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
-    let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
+    let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap, &mut buf);
     assert_names("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);
     assert_names("tcb_unbind_notification", SyscallId::TcbUnbindNotification);

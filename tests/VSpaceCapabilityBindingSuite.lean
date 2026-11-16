@@ -2191,13 +2191,25 @@ private def replyTag : Nat := 7
 /-- A CNode of `2 ^ radix` slots. -/
 private def cnodeTagOfRadix (radix : Nat) : Nat := 3 + radix * 256
 
-/-- `.tcbBindNotification` on the TCB capability at `tcbSlot`: MR0 the
-notification's capability address. -/
-private def decodeBindNotification (tcbSlot ntfnSlot : Nat) : SyscallDecodeResult :=
+/-- `.tcbBindNotification` on the TCB capability at `tcbSlot`; the
+notification's capability address is extra capability 0 (WS-SX SX6.4), named in
+the owner's IPC buffer by `bindStep`. -/
+private def decodeBindNotification (tcbSlot : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
-  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 0, extraCaps := 1, label := 0 }
   , syscallId := .tcbBindNotification
-  , msgRegs   := #[SeLe4n.RegValue.ofNat ntfnSlot] }
+  , msgRegs   := #[] }
+
+/-- Dispatch `d` with `extra` named as its extra capability 0 in the owner's IPC
+buffer, then name the grant-bearing root there again, the source root every
+copy reads (`carveScenario`). -/
+private def bindStep (d : SyscallDecodeResult) (extra : Nat) (st : SystemState) :
+    Except KernelError SystemState :=
+  match dispatchSyscallAsCurrent d carveOwner Concurrency.bootCoreId
+      (SeLe4n.Testing.withSenderCapAddrs st carveOwner #[SeLe4n.CPtr.ofNat extra]) with
+  | .error e => .error e
+  | .ok ((), st') =>
+    .ok (SeLe4n.Testing.withSenderCapAddrs st' carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant])
 
 /-- Is an object stored at `oid`? -/
 private def storedAt (st : SystemState) (oid : Nat) : Bool :=
@@ -2271,8 +2283,8 @@ private def runPassiveRetireChecks : IO Unit := do
   -- `unbindMaybeNotification`, `finaliseFinalObject`), and the then quiescent
   -- notification is retired (WS-ZA ZA5.4 part 23).
   match runAll spaceScenario
-      [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12,
-       decodeBindNotification slotWorkerTcb 12] with
+      [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12] >>=
+      bindStep (decodeBindNotification slotWorkerTcb) 12 with
   | .error e => assertBool s!"carving and binding a notification succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: the worker is bound to the carved notification"
@@ -2322,13 +2334,14 @@ private def tcbTag : Nat := 0
 (`minSchedContextSizeBits`). -/
 private def schedContextTag : Nat := 6 + 7 * 256
 
-/-- `.schedContextBind` on the scheduling-context capability at `scSlot`: MR0
-the thread's capability address. -/
-private def decodeBindSchedContext (scSlot tcbSlot : Nat) : SyscallDecodeResult :=
+/-- `.schedContextBind` on the scheduling-context capability at `scSlot`; the
+thread's capability address is extra capability 0 (WS-SX SX6.4), named in the
+owner's IPC buffer by `bindStep`. -/
+private def decodeBindSchedContext (scSlot : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat scSlot
-  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 0, extraCaps := 1, label := 0 }
   , syscallId := .schedContextBind
-  , msgRegs   := #[SeLe4n.RegValue.ofNat tcbSlot] }
+  , msgRegs   := #[] }
 
 /-- The scheduling-context code of the thread at `oid` (its id plus one, `0`
 when unbound). -/
@@ -2371,8 +2384,8 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- `unbindNotification`) before it is retired; the notification stays.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13,
-       decodeBindNotification 12 13] with
+       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13] >>=
+      bindStep (decodeBindNotification 12) 13 with
   | .error e => assertBool s!"carving a thread and a notification and binding them succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: the carved thread is bound to the carved notification"
@@ -2388,8 +2401,8 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- `unbindFromSC`) and retires only the destroyed side.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype schedContextTag 961 slotOwnCnRW 13,
-       decodeBindSchedContext 13 12] with
+       decodeCarve slotUtRetype schedContextTag 961 slotOwnCnRW 13] >>=
+      bindStep (decodeBindSchedContext 13) 12 with
   | .error e => assertBool s!"carving a thread and a scheduling context and binding them succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: the carved thread is bound to the carved scheduling context"

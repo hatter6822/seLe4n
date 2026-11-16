@@ -222,9 +222,8 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
 /-! ## An invocation short of its arguments (seL4's `seL4_TruncatedMessage`) -/
 
 /-- The target an invocation reads its arguments under: a core's scheduling
-control for the configure, the interrupt control for the handler issue, an
-interrupt handler for its notification binding, and an object for every other
-invocation.  Any other target is refused `.invalidCapability` before the
+control for the configure, the interrupt control for the handler issue, and an
+object for every other invocation.  Any other target is refused `.invalidCapability` before the
 arguments are read, as seL4's capability kind chooses the decode before the
 decode checks the length. -/
 @[inline] def truncationTarget (sid : SyscallId) (t : CapTarget) : Bool :=
@@ -233,8 +232,6 @@ decode checks the length. -/
   | .schedContextConfigure, _ => false
   | .irqControlGet, .irqControl _ => true
   | .irqControlGet, _ => false
-  | .irqHandlerSetNotification, .irqHandler _ => true
-  | .irqHandlerSetNotification, _ => false
   | _, .object _ => true
   | _, _ => false
 
@@ -263,8 +260,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
       decodeUntypedRetypeArgs, decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
-      decodeSchedContextBindArgs, decodeTcbBindNotificationArgs, decodeIrqControlGetArgs,
-      decodeIrqHandlerSetNotificationArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
+      decodeIrqControlGetArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
       decodeSetIPCBufferArgs, decodeSetAffinityArgs, decodeSetFaultHandlerArgs,
       decodeSetSpaceArgs, decodePageTableMapArgs, truncationMinimum, hL _ hT, bind,
       Except.bind, dispatchCapabilityOnlyChecked]

@@ -221,7 +221,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .schedContextBind =>
     match cap.target with
     | .object scId =>
-      match resolveSchedContextBindThread tid (decodeSchedContextBindArgsBy (msgRegOfFile layout regs)) st with
+      match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st with
       | .error e => .error e
       | .ok vThreadId =>
           match validateObjIdArg scId with
@@ -275,7 +275,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     match cap.target with
     | .irqHandler line =>
         irqHandlerSetNotificationFromCap tid executingCore line
-          (decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs)) st
+          (irqHandlerSetNotificationArgsOf st tid xc) st
     | _ => .error (.invalidCapability 0)
   | .irqHandlerClear =>
     match cap.target with
@@ -284,7 +284,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
-      match decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) with
+      match tcbBindNotificationArgsOf st tid xc with
       | .error e => .error e
       | .ok args =>
           match st.getTcb? tid with
@@ -301,7 +301,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               match ntfnCap.target with
               | .object notifId =>
                   bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-              | _ => .error .illegalState
+              | _ => .error (.invalidCapability bindNotificationCapNumber)
           | none => .error .objectNotFound
     | _ => .error (.invalidCapability 0)
   | .tcbUnbindNotification =>
@@ -486,8 +486,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hRetype := decodeUntypedRetypeArgs_eq_by layout regs decoded hRegs
   have hMap := decodeVSpaceMapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hUnmap := decodeVSpaceUnmapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
-  have hScBind := decodeSchedContextBindArgs_eq_by layout regs decoded hRegs
-  have hNtfn := decodeTcbBindNotificationArgs_eq_by layout regs decoded hRegs
   have hPrio := decodeSetPriorityArgs_eq_by layout regs decoded hRegs
   have hMcp := decodeSetMCPriorityArgs_eq_by layout regs decoded hRegs
   have hIpcBuf := decodeSetIPCBufferArgs_eq_by layout regs decoded hRegs
@@ -496,7 +494,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hSpace := decodeSetSpaceArgs_eq_by layout regs decoded hRegs
   have hPt := decodePageTableMapArgs_eq_by layout regs decoded hRegs
   have hIrqGet := decodeIrqControlGetArgs_eq_by layout regs decoded hRegs
-  have hIrqNtfn := decodeIrqHandlerSetNotificationArgs_eq_by layout regs decoded hRegs
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only [truncationMinimum] at *
@@ -505,8 +502,8 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
       hMove, hReply, hDelete, hRetype, hMap, hUnmap,
-      hScBind, hNtfn, hPrio, hMcp, hIpcBuf, hAff, hFault,
-      hSpace, hPt, hIrqGet, hIrqNtfn, decodeVSpaceUnifyInstructionArgs,
+      hPrio, hMcp, hIpcBuf, hAff, hFault,
+      hSpace, hPt, hIrqGet, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
   all_goals first | rfl | (split <;> rfl)
 
@@ -719,12 +716,12 @@ refusal is read where it is, never rebuilt. -/
   | .schedContextBind =>
     match cap.target with
     | .object scObjId =>
-      match decodeSchedContextBindArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
+      -- WS-SX SX6.4: the thread is extra capability 0, read in continuation
+      -- form, so no `Option` is built.
+      callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun tcbCPtr =>
         match st.getTcb? tid with
         | some callerTcb =>
-          lookupSlotK callerTcb args.tcbCPtr st
+          lookupSlotK callerTcb tcbCPtr st
             (fun t a b c => KernelError.argumentCapRefusal bindThreadCapNumber (fun e => .error (e, st))
               (.failedLookup false (LookupFault.ofWords t a b c)))
             (fun cnode slot =>
@@ -833,10 +830,10 @@ refusal is read where it is, never rebuilt. -/
   | .irqHandlerSetNotification =>
     match cap.target with
     | .irqHandler line =>
-      match decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
-        resolveCallerCapSlotK tid args.notificationCPtr .write st
+      -- WS-SX SX6.4: the notification is extra capability 0, read in
+      -- continuation form, so no `Option` is built.
+      callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun ntfnCPtr =>
+        resolveCallerCapSlotK tid ntfnCPtr .write st
           (KernelError.argumentCapRefusal irqHandlerNotificationCapNumber (fun e => .error (e, st)))
           (fun srcCnode srcSlot ncap _ =>
             RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
@@ -855,12 +852,12 @@ refusal is read where it is, never rebuilt. -/
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
-      match decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
+      -- WS-SX SX6.4: the notification is extra capability 0, read in
+      -- continuation form, so no `Option` is built.
+      callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun ntfnCPtr =>
         match st.getTcb? tid with
         | some callerTcb =>
-          lookupSlotK callerTcb args.notificationCPtr st
+          lookupSlotK callerTcb ntfnCPtr st
             (fun t a b c => KernelError.argumentCapRefusal bindNotificationCapNumber (fun e => .error (e, st))
               (.failedLookup false (LookupFault.ofWords t a b c)))
             (fun cnode slot =>
@@ -877,7 +874,7 @@ refusal is read where it is, never rebuilt. -/
                       (fun st => storeBindNotification st notifId
                         (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
                       (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
-                  | _ => .error (.illegalState, st)
+                  | _ => .error (.invalidCapability bindNotificationCapNumber, st)
                 else .error (.illegalAuthority, st))
         | none => .error (.objectNotFound, st)
     | _ => .error (.invalidCapability 0, st)
@@ -1327,10 +1324,15 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object objId =>
       dsimp only
-      cases hD : decodeSchedContextBindArgsBy (msgRegOfFile layout regs) with
-      | error e =>
-        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread, hD]
-      | ok args =>
+      rw [callerExtraCapAddrK_eq]
+      cases hX : callerExtraCapAddr? st tid xc 0 with
+      | none =>
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+          schedContextBindArgsOf, hX]
+      | some tcbCPtr =>
+        have hD : schedContextBindArgsOf st tid xc = .ok { tcbCPtr := tcbCPtr } := by
+          simp [schedContextBindArgsOf, hX]
+        dsimp only
         cases hC : st.getTcb? tid with
         | none =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
@@ -1338,7 +1340,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | some callerTcb =>
           dsimp only
           rw [lookupSlotK_eq]
-          cases hRes : lookupSlot callerTcb args.tcbCPtr st with
+          cases hRes : lookupSlot callerTcb tcbCPtr st with
           | error e =>
             simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
               hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes]
@@ -1474,20 +1476,24 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case irqHandler line =>
       dsimp only
-      cases hD : decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) with
-      | error e =>
-        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap, hD]
-      | ok args =>
+      rw [callerExtraCapAddrK_eq]
+      cases hX : callerExtraCapAddr? st tid xc 0 with
+      | none =>
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap,
+          irqHandlerSetNotificationArgsOf, hX]
+      | some ntfnCPtr =>
+        have hD : irqHandlerSetNotificationArgsOf st tid xc = .ok { notificationCPtr := ntfnCPtr } := by
+          simp [irqHandlerSetNotificationArgsOf, hX]
         dsimp only
         rw [resolveCallerCapSlotK_eq]
-        cases hR : resolveCallerCapSlot tid args.notificationCPtr .write st with
+        cases hR : resolveCallerCapSlot tid ntfnCPtr .write st with
         | error e =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap,
             hD, hR, KernelError.argumentCapRefusal]
         | ok r =>
           obtain ⟨src, ncap, oid⟩ := r
           obtain ⟨_, _, _, hLk, _, _⟩ :=
-            resolveCallerCapSlot_ok tid args.notificationCPtr .write st src ncap oid hR
+            resolveCallerCapSlot_ok tid ntfnCPtr .write st src ncap oid hR
           dsimp only
           apply RefusalCarrying.ofChecked_eq
           intro hA
@@ -1511,15 +1517,19 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object objId =>
       dsimp only
-      cases hD : decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) with
-      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
-      | ok args =>
+      rw [callerExtraCapAddrK_eq]
+      cases hX : callerExtraCapAddr? st tid xc 0 with
+      | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, tcbBindNotificationArgsOf, hX]
+      | some ntfnCPtr =>
+        have hD : tcbBindNotificationArgsOf st tid xc = .ok { notificationCPtr := ntfnCPtr } := by
+          simp [tcbBindNotificationArgsOf, hX]
+        dsimp only
         cases hC : st.getTcb? tid with
         | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
         | some callerTcb =>
           dsimp only
           rw [lookupSlotK_eq]
-          cases hRes : lookupSlot callerTcb args.notificationCPtr st with
+          cases hRes : lookupSlot callerTcb ntfnCPtr st with
           | error e =>
             simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word,
               syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, syscallResolveCap, hRes]

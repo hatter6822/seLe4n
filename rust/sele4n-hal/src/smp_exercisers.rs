@@ -1889,6 +1889,26 @@ const fn set_priority(
     }
 }
 
+/// **An invocation whose one argument is a capability** (seL4's
+/// `seL4_TCB_BindNotification`, `seL4_SchedContext_Bind` and
+/// `seL4_IRQHandler_SetNotification`): no message word, the argument named as
+/// extra capability 0, which the kernel reads from the caller's IPC buffer at
+/// `buffer`.
+#[cfg(feature = "hw_target")]
+const fn cap_argument(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    argument: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP,
+        caps_or_badges: Some((buffer, [argument, 0, 0], None)),
+        ..invocation(name, syscall, cptr, [0; 4])
+    }
+}
+
 /// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
 /// rights mask, the fifth word, which the kernel reads from the caller's IPC
 /// buffer at `buffer` ([`RoundTrip::overflow`]).
@@ -2592,11 +2612,12 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
                 FRAME_SLOT,
             ],
         ),
-        invocation(
+        cap_argument(
             "bind-carved-notification",
             TCB_BIND_NOTIFICATION,
             PARTNER_TCB_CAP,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-notification-delete",
@@ -3221,11 +3242,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [ENDPOINT_CAP, 0, 0, 0],
         ),
-        invocation(
+        cap_argument(
             "tcb-bind-notification",
             TCB_BIND_NOTIFICATION,
             PARTNER_TCB_CAP,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "tcb-unbind-notification",
@@ -3286,11 +3308,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
         ),
-        invocation(
+        cap_argument(
             "bind-carved-tcb",
             TCB_BIND_NOTIFICATION,
             FRAME_CAP,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-tcb-delete",
@@ -3315,11 +3338,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
         ),
-        invocation(
+        cap_argument(
             "bind-carved-sched-context",
             SCHED_CONTEXT_BIND,
             MINT_CAP,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-sched-context-delete",
@@ -3658,11 +3682,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "refill-bind-root",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [ROOT_TCB_CAP, 0, 0, 0],
+            ROOT_TCB_CAP,
+            FRAME_VADDR,
         ),
         RoundTrip {
             name: "refill-yield",
@@ -3875,11 +3900,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [CNODE_SLOT, VSPACE_CAP, 0, 0],
         )),
-        guard_mismatch_refusal(invocation(
+        guard_mismatch_refusal(cap_argument(
             "bind-notification-guard-mismatch",
             TCB_BIND_NOTIFICATION,
             PARTNER_TCB_CAP,
-            [NOTIFICATION_SLOT, 0, 0, 0],
+            NOTIFICATION_SLOT,
+            FRAME_VADDR,
         )),
         // The fault handler a fault-handler set names
         // (`setThreadFaultHandlerOpK`): resolved, like the bound
@@ -4344,11 +4370,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 INVALID_TYPE_TAG,
             )
         },
-        invocation(
+        cap_argument(
             "sched-context-bind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "sched-context-unbind",
@@ -4362,11 +4389,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // context unbound and nothing charged between them, must read 0.
         consumed("sched-context-consumed", None),
         consumed("sched-context-consumed-reset", Some(0)),
-        invocation(
+        cap_argument(
             "sched-context-rebind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         // WS-ZA ZA6.29: the yieldTo invocation on the context bound to the
         // partner, which is not yet resumed: the checks pass, the context's
@@ -4409,11 +4437,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "postpone-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "postpone-resume-partner",
@@ -4472,11 +4501,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "long-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "long-send-resume-partner",
@@ -6270,11 +6300,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "tail-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            TAIL_IPC_BUFFER,
         ),
         invocation(
             "tail-send-resume-partner",
@@ -6337,11 +6368,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "suspend-donated-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "suspend-donated-resume",
@@ -6395,11 +6427,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "donated-reply-caps-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         receive_path(
             "donated-reply-caps-receive-path",
@@ -6554,11 +6587,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "chain-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("chain-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("chain-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
@@ -6844,11 +6878,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "third-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("third-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
         partner_step("third-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
@@ -8071,11 +8106,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_PRIORITY,
             FRAME_VADDR,
         ),
-        invocation(
+        cap_argument(
             "queued-caller-bind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [CHAIN_TCB_CAP, 0, 0, 0],
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "queued-caller-resume-caller",
@@ -8392,11 +8428,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "stack-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("stack-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
         partner_step(
@@ -8498,11 +8535,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "stack-context-bind-partner",
             SCHED_CONTEXT_BIND,
             MOVE_SC_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "contextless-resume-server",
@@ -8668,11 +8706,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "orphan-stack-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "untyped-retype-orphan-server-reply",
@@ -9442,11 +9481,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
     ),
-    invocation(
+    cap_argument(
         "bind-context-thread",
         SCHED_CONTEXT_BIND,
         MINT_CAP,
-        [FRAME_CAP, 0, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "context-bound-tcb-delete",
@@ -10758,11 +10798,12 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         ],
     ),
     UPPER_NOTIFICATION_CARVE,
-    invocation(
+    cap_argument(
         "root-bind-boot-domain-notification",
         TCB_BIND_NOTIFICATION,
         ROOT_TCB_CAP,
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "bound-irq-control-get",
@@ -10770,11 +10811,12 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         IRQ_CONTROL_CAP,
         [IRQ_BOUND_LINE as u64, CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
     ),
-    invocation(
+    cap_argument(
         "bound-irq-handler-set-notification",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
 ];
@@ -10821,11 +10863,12 @@ const LOW_THREAD_RECEIVES: RoundTrip = partner_step(
 );
 /// The upper notification bound to the low thread, unmeasured.
 #[cfg(feature = "hw_target")]
-const BIND_UPPER_TO_LOW_THREAD: RoundTrip = invocation(
+const BIND_UPPER_TO_LOW_THREAD: RoundTrip = cap_argument(
     "low-thread-bind-upper-notification",
     TCB_BIND_NOTIFICATION,
     LOW_THREAD_CAP,
-    [FRAME_CAP, 0, 0, 0],
+    FRAME_CAP,
+    ROOT_IPC_BUFFER,
 );
 /// The root task's declassified signal on the upper notification, both hops
 /// downgrades.
@@ -10857,11 +10900,12 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
         ROOT_TCB_CAP,
         [0; 4],
     ),
-    invocation(
+    cap_argument(
         "low-thread-bind-boot-domain-notification",
         TCB_BIND_NOTIFICATION,
         LOW_THREAD_CAP,
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The root task's declassified signal refused at its second hop, measured.
@@ -11109,11 +11153,12 @@ fn bound_declassified_signals(which: &str) -> bool {
 /// it): the bind unmeasured, the priority change and the resume measured.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_SETUP: [RoundTrip; 3] = [
-    invocation(
+    cap_argument(
         "yield-to-bind-partner",
         SCHED_CONTEXT_BIND,
         SCHED_CONTEXT_CAP,
-        [PARTNER_TCB_CAP, 0, 0, 0],
+        PARTNER_TCB_CAP,
+        ROOT_IPC_BUFFER,
     ),
     set_priority(
         "yield-to-lower-partner",
@@ -12265,11 +12310,12 @@ fn interrupt_handlers_issued(which: &str) -> bool {
             0,
         ],
     );
-    let bind = invocation(
+    let bind = cap_argument(
         "irq-handler-set-notification",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        ROOT_IPC_BUFFER,
     );
     // Each one word shorter than its arguments, on the capability it reads
     // them under: refused `TruncatedMessage` once the capability is found.
@@ -12324,11 +12370,12 @@ fn interrupt_binding_revoked(which: &str) -> bool {
         [1, 0],
         false,
     );
-    let rebind = invocation(
+    let rebind = cap_argument(
         "irq-handler-set-notification-again",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        ROOT_IPC_BUFFER,
     );
     heap_allocations_round_trip(&revoke, which) == Some(true)
         && heap_allocations_interrupt(&revoked_line, which)
@@ -12365,11 +12412,12 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 FRAME_SLOT,
             ],
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-carved-notification",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-notification-cap-delete",
@@ -12377,11 +12425,12 @@ fn interrupt_notification_finalised(which: &str) -> bool {
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-notification-over-last",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "untyped-retype-irq-cleared-notification",
@@ -12394,11 +12443,12 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 FRAME_SLOT,
             ],
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-notification-over-copy",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-cleared-notification-cap-delete",
@@ -13628,11 +13678,12 @@ fn receive_side_faults(
             info: CAP_FAULT_MESSAGE_INFO,
         },
     ];
-    let bind_root = invocation(
+    let bind_root = cap_argument(
         "bind-root-notification",
         TCB_BIND_NOTIFICATION,
         ROOT_TCB_CAP,
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        FRAME_VADDR,
     );
     let unbind_root = invocation(
         "unbind-root-notification",
@@ -14122,11 +14173,12 @@ fn fault_entries() -> Option<bool> {
                 PARTNER_PRIORITY,
             ],
         ),
-        invocation(
+        cap_argument(
             "fault-donating-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation("fault-donating-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
     ];
@@ -14693,11 +14745,12 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
         CHAIN_TCB_CAP,
         [CNODE_CAP, VSPACE_CAP, 0, 0],
     ),
-    invocation(
+    cap_argument(
         "move-bind",
         SCHED_CONTEXT_BIND,
         MOVE_SC_CAP,
-        [CHAIN_TCB_CAP, 0, 0, 0],
+        CHAIN_TCB_CAP,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The code page: three tables completing the walk to the user window's

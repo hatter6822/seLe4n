@@ -91,41 +91,6 @@ impl SchedContextConfigureArgs {
     }
 }
 
-/// Arguments for `schedContextBind` (syscall 18).
-/// Register mapping: regs[0]=tcbCPtr — the **capability address**, in the
-/// caller's own CSpace, of the TCB to bind to the invoked SchedContext.
-///
-/// `v0.35.204`: this was `thread_id: ThreadId`, a raw thread id the kernel
-/// bound directly under the SchedContext capability alone — so a holder of one
-/// could bind it to any thread it could name and, through the bind's priority
-/// propagation, rewrite that thread's base priority.  seL4-MCS's
-/// `seL4_SchedContext_Bind` takes the TCB as a capability; the kernel's
-/// `resolveSchedContextBindThread` now resolves MR0 through the caller's CSpace
-/// requiring `.write`, exactly as `tcbBindNotification` resolves its
-/// notification.  Typed `CPtr` so the wrapper cannot be handed a thread id.
-///
-/// Lean: `SchedContextBindArgs` (`SyscallArgDecode.lean`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SchedContextBindArgs {
-    pub tcb_cap: CPtr,
-}
-
-impl SchedContextBindArgs {
-    pub const fn encode(&self) -> [u64; 1] {
-        [self.tcb_cap.raw()]
-    }
-
-    /// Decode from message registers. Requires 1 register.
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        Ok(Self {
-            tcb_cap: CPtr::from(regs[0]),
-        })
-    }
-}
-
 /// Arguments for `schedContextUnbind` (syscall 19).
 /// No additional arguments — the SchedContext is identified by the capability target.
 ///
@@ -257,22 +222,6 @@ mod tests {
             SchedContextConfigureArgs::decode(&[7, 1000, 5000, 255 | (15 << 8), 10000]).unwrap();
         assert_eq!(args.priority, 255);
         assert_eq!(args.domain, 15);
-    }
-
-    #[test]
-    fn bind_roundtrip() {
-        let args = SchedContextBindArgs {
-            tcb_cap: CPtr::from(42u64),
-        };
-        assert_eq!(SchedContextBindArgs::decode(&args.encode()).unwrap(), args);
-    }
-
-    #[test]
-    fn bind_insufficient_regs() {
-        assert_eq!(
-            SchedContextBindArgs::decode(&[]),
-            Err(KernelError::InvalidMessageInfo)
-        );
     }
 
     #[test]

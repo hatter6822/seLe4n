@@ -95,9 +95,9 @@ already extra capability 0).  The seL4 counterparts, and their checks:
 * `irqControlGet` 3 (`Arch_decodeIRQControlInvocation`, IssueIRQHandler
   `length < 3`);
 * `schedContextBind` `tcbBindNotification` `irqHandlerSetNotification`
-  1: seL4's `decodeSchedContext_Bind`, `decodeBindNotification` and
-  `IRQSetIRQHandler` check only for an extra capability, which this ABI
-  passes as a word;
+  read no word: seL4's `decodeSchedContext_Bind`, `decodeBindNotification` and
+  `decodeIRQHandlerInvocation` check only for an extra capability, and its
+  absence is `.truncatedMessage` where the arm reads it (WS-SX SX6.4);
 * `serviceRegister` 5, `mintReplyCap` 2, `auditRead` 3, `auditDrain` 1:
   model calls with no seL4 counterpart, held to their decodes' word counts as
   every invocation is.
@@ -116,9 +116,9 @@ def truncationMinimum : SyscallId → Nat
   | .irqControlGet | .auditRead | .tcbSetSpace => 3
   | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
   | .pageTableMap => 2
-  | .cspaceDelete | .cspaceRevoke | .schedContextBind | .tcbBindNotification
+  | .cspaceDelete | .cspaceRevoke
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .irqHandlerSetNotification | .auditDrain => 1
+  | .tcbSetFaultHandler | .auditDrain => 1
   | .schedContextConfigure | .serviceRegister | .cspaceCopy => 5
   | .cspaceMint => 6
   | _ => 0
@@ -1359,8 +1359,11 @@ structure SchedContextConfigureArgs where
   a.schedParams / 256
 
 /-- Z5-B: Per-syscall argument structure for `schedContextBind`.
-    Register mapping: msgRegs[0]=tcbCPtr — the **capability address**, in the
-    caller's own CSpace, of the TCB to bind to this SchedContext.
+    `tcbCPtr` — the **capability address**, in the caller's own CSpace, of the
+    TCB to bind to this SchedContext.  **WS-SX SX6.4**: it is the message's
+    extra capability 0 (seL4-MCS's `decodeSchedContext_Bind` reads
+    `excaprefs[0]`), read by `Kernel.schedContextBindArgsOf`; no message word
+    carries it.
 
     **`v0.35.204`**: this was `threadId : Nat`, a raw thread id the arm bound
     directly, so a holder of an ordinary SchedContext capability could bind that
@@ -1474,25 +1477,18 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
               · omega
               · omega
 
-/-- Z5-B: Decode schedContextBind arguments from message registers.
-    Requires 1 message register (`tcbCPtr`, the TCB capability's address in
-    the caller's CSpace — `v0.35.204`; a raw thread id until then). -/
-def decodeSchedContextBindArgs (decoded : SyscallDecodeResult)
-    : Except KernelError SchedContextBindArgs := do
-  requireMessageLength decoded (truncationMinimum .schedContextBind)
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { tcbCPtr := SeLe4n.CPtr.ofNat r0.val }
-
 /-- Z5-C: Decode schedContextUnbind arguments. No message registers needed. -/
 def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
     : Except KernelError SchedContextUnbindArgs :=
   pure {}
 
-/-- WS-SM SM6.B: arguments for `tcbBindNotification` — `msgRegs[0]` is the
-    **capability address** (CPtr) of the notification to bind to the
-    capability-target TCB.  Resolved through the caller's CSpace (review #1):
-    binding requires the caller to *hold* a notification capability, not merely
-    name a raw `ObjId`. -/
+/-- WS-SM SM6.B: arguments for `tcbBindNotification` — the **capability
+    address** (CPtr) of the notification to bind to the capability-target TCB.
+    Resolved through the caller's CSpace (review #1): binding requires the
+    caller to *hold* a notification capability, not merely name a raw `ObjId`.
+    **WS-SX SX6.4**: the address is the message's extra capability 0 (seL4's
+    `decodeBindNotification` reads `excaprefs[0]`), read by
+    `Kernel.tcbBindNotificationArgsOf`; no message word carries it. -/
 structure TcbBindNotificationArgs where
   notificationCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
@@ -1501,14 +1497,6 @@ structure TcbBindNotificationArgs where
     notification is recovered from the TCB). -/
 structure TcbUnbindNotificationArgs where
   deriving Repr, DecidableEq
-
-/-- WS-SM SM6.B: decode `tcbBindNotification` arguments (1 register: the
-    notification capability address). -/
-def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
-    : Except KernelError TcbBindNotificationArgs := do
-  requireMessageLength decoded (truncationMinimum .tcbBindNotification)
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 /-- WS-ZA ZA6.32: arguments for `irqControlGet` (seL4's
     `seL4_IRQControl_Get`): `msgRegs[0]` the interrupt line, `msgRegs[1]` the
@@ -1530,18 +1518,14 @@ def decodeIrqControlGetArgs (decoded : SyscallDecodeResult)
   pure { line := r0.val, dstCNode := CPtr.ofNat r1.val, dstSlot := Slot.ofNat r2.val }
 
 /-- WS-ZA ZA6.32: arguments for `irqHandlerSetNotification` (seL4's
-    `seL4_IRQHandler_SetNotification`): `msgRegs[0]` the capability address of
-    the notification the line is to signal. -/
+    `seL4_IRQHandler_SetNotification`): the capability address of the
+    notification the line is to signal.  **WS-SX SX6.4**: it is the message's
+    extra capability 0 (seL4's `decodeIRQHandlerInvocation` reads
+    `excaprefs[0]`), read by `Kernel.irqHandlerSetNotificationArgsOf`; no
+    message word carries it. -/
 structure IrqHandlerSetNotificationArgs where
   notificationCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
-
-/-- WS-ZA ZA6.32: decode `irqHandlerSetNotification` arguments (1 register). -/
-def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
-    : Except KernelError IrqHandlerSetNotificationArgs := do
-  requireMessageLength decoded (truncationMinimum .irqHandlerSetNotification)
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 -- ============================================================================
 -- Z5-A/B/C: SchedContext encode functions
@@ -1550,10 +1534,6 @@ def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
 /-- Z5-A: Encode schedContextConfigure arguments into message registers. -/
 @[inline] def encodeSchedContextConfigureArgs (args : SchedContextConfigureArgs) : Array RegValue :=
   #[⟨args.scCPtr.word⟩, RegValue.ofNat (args.budget), RegValue.ofNat (args.period), RegValue.ofNat (args.schedParams), RegValue.ofNat (args.deadline)]
-
-/-- Z5-B: Encode schedContextBind arguments into message registers. -/
-@[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
-  #[⟨args.tcbCPtr.word⟩]
 
 /-- Z5-C: Encode schedContextUnbind arguments (empty — no message registers). -/
 @[inline] def encodeSchedContextUnbindArgs (_args : SchedContextUnbindArgs) : Array RegValue :=
@@ -1570,12 +1550,6 @@ theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureA
     decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args := by
   simp [RegValue.val_ofNat_of_lt hBudget, RegValue.val_ofNat_of_lt hPeriod,
         RegValue.val_ofNat_of_lt hParams, RegValue.val_ofNat_of_lt hDeadline, requireMessageLength, truncationMinimum, decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
-
-/-- Z5-B: SchedContextBindArgs decode round-trip. -/
-theorem decodeSchedContextBindArgs_roundtrip (args : SchedContextBindArgs) :
-    decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodeSchedContextBindArgs, encodeSchedContextBindArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-C: SchedContextUnbindArgs decode round-trip (trivial). -/
@@ -1642,7 +1616,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
     (∀ args : SchedContextConfigureArgs, args.budget < 2 ^ 64 → args.period < 2 ^ 64 →
       args.schedParams < 2 ^ 64 → args.deadline < 2 ^ 64 →
       decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
-    (∀ args, decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
   ⟨decodeCSpaceMintArgs_roundtrip,
    decodeCSpaceCopyArgs_roundtrip,
@@ -1656,7 +1629,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeReplyRecvArgs_roundtrip,
    decodeRecvArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
-   decodeSchedContextBindArgs_roundtrip,
    decodeSchedContextUnbindArgs_roundtrip⟩
 
 /-- V2-I: ReplyRecvArgs error exclusivity. -/
@@ -1713,24 +1685,6 @@ theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) (hLe
         · rw [requireMsgReg_unfold_err _ _ h2]
       · rw [requireMsgReg_unfold_err _ _ h1]
     · rw [requireMsgReg_unfold_err _ _ h0]
-
-/-- Z8-B: SchedContextBindArgs decode fails iff fewer than 1 message register. -/
-theorem decodeSchedContextBindArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .schedContextBind ≤ d.msgInfo.length) :
-    (∃ e, decodeSchedContextBindArgs d = .error e) ↔ d.msgRegs.size < 1 := by
-  have hL := requireMessageLength_of_le hLen
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 1
-    · exact hlt
-    · exfalso
-      simp only [decodeSchedContextBindArgs, hL, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeSchedContextBindArgs, hL, bind, Except.bind]
-    rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 /-- Z8-B: SchedContextUnbindArgs decode never fails (no message registers required). -/
 theorem decodeSchedContextUnbindArgs_error_iff (d : SyscallDecodeResult) :
@@ -2376,26 +2330,6 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked,
       pagePermissionsOfWord?_eq, asid_isValidForConfig_ofWord, vaddr_isCanonical_ofWord]
 
-@[inline] def decodeSchedContextBindArgsBy (get : MsgRegReader)
-    : Except KernelError SchedContextBindArgs := do
-  let r0 ← get 0
-  pure { tcbCPtr := SeLe4n.CPtr.ofWord r0 }
-
-theorem decodeSchedContextBindArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .schedContextBind ≤ decoded.msgInfo.length) :
-    decodeSchedContextBindArgs decoded = decodeSchedContextBindArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeSchedContextBindArgs decodeSchedContextBindArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
 /-- WS-ZA ZA5.2: message register `i`'s word for a call whose one overflow word
 `w` follows the layout's registers: the file's registers, then `w`, refusing any
 later index as `requireMsgReg` does past a decode's registers. -/
@@ -2616,26 +2550,6 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
       UInt64.lt_iff_toNat_lt, UInt64.le_iff_toNat_le, serviceMaxMethodCount,
       serviceMaxMessageSize, Nat.toUInt64_eq]
 
-@[inline] def decodeTcbBindNotificationArgsBy (get : MsgRegReader)
-    : Except KernelError TcbBindNotificationArgs := do
-  let r0 ← get 0
-  pure { notificationCPtr := SeLe4n.CPtr.ofWord r0 }
-
-theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .tcbBindNotification ≤ decoded.msgInfo.length) :
-    decodeTcbBindNotificationArgs decoded = decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeTcbBindNotificationArgs decodeTcbBindNotificationArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
 @[inline] def decodeIrqControlGetArgsBy (get : MsgRegReader)
     : Except KernelError IrqControlGetArgs := do
   let r0 ← get 0
@@ -2649,27 +2563,6 @@ theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
     (hLen : truncationMinimum .irqControlGet ≤ decoded.msgInfo.length) :
     decodeIrqControlGetArgs decoded = decodeIrqControlGetArgsBy (msgRegOfFile layout regs) := by
   unfold decodeIrqControlGetArgs decodeIrqControlGetArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
-@[inline] def decodeIrqHandlerSetNotificationArgsBy (get : MsgRegReader)
-    : Except KernelError IrqHandlerSetNotificationArgs := do
-  let r0 ← get 0
-  pure { notificationCPtr := SeLe4n.CPtr.ofWord r0 }
-
-theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayout)
-    (regs : RegisterFile) (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .irqHandlerSetNotification ≤ decoded.msgInfo.length) :
-    decodeIrqHandlerSetNotificationArgs decoded =
-      decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeIrqHandlerSetNotificationArgs decodeIrqHandlerSetNotificationArgsBy
   rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]

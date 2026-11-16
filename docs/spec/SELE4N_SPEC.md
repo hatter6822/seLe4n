@@ -9047,8 +9047,9 @@ re-arms it, so the parked thread waits for its manager — the WS-CB residual in
 [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C.
 
 #### 8.12.5 API Surface & Syscall Wiring
-3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
-`decodeSchedContextBindArgs_error_iff`, `decodeSchedContextUnbindArgs_error_iff`).
+2 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
+`decodeSchedContextUnbindArgs_error_iff`); the bind's thread is extra capability 0
+(`schedContextBindArgsOf`, WS-SX SX6.4), read from no message word.
 4 frozen SchedContext operations (`frozenSchedContextConfigure`,
 `frozenSchedContextBind`, `frozenSchedContextUnbind`, `frozenTimerTickBudget`).
 

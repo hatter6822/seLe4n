@@ -211,18 +211,23 @@ pub fn tcb_set_space(
 ///
 /// Lean: the `.tcbBindNotification` arm (API.lean, WS-SM SM6.B) —
 /// requires `.write` on the target TCB capability, and the notification
-/// is resolved through a **capability** in the caller's own CSpace
-/// (`notification_cap`, MR\[0\]), not a raw object id: a TCB-cap holder
-/// must also hold `.write` on the notification to redirect its signals.
+/// is resolved through a **capability** in the caller's own CSpace, not a raw
+/// object id: a TCB-cap holder must also hold `.write` on the notification to
+/// redirect its signals.  `notification_cap` is the message's extra capability
+/// 0 (`caps_or_badges[0]` of `buf`, the caller's IPC buffer), as seL4's
+/// `seL4_TCB_BindNotification` passes it; no message word is sent, and no
+/// extra capability is `TruncatedMessage`.
 #[inline]
 pub fn tcb_bind_notification(
     tcb_cap: CPtr,
     notification_cap: CPtr,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = notification_cap.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [notification_cap.into(), 0, 0, 0],
+        msg_info: MessageInfo::new_const(0, 1, 0),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::TcbBindNotification,
     })
 }

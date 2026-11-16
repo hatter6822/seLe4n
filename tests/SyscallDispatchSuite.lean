@@ -906,9 +906,11 @@ private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := 
 
 /-- WS-SM SM6.B (review #1 dispatch coverage): `.tcbBindNotification` resolves the
 notification through a CAPABILITY in the caller's CSpace.  A caller holding a TCB
-cap binds only if it ALSO holds a notification cap (with `.write`) at `msgRegs[0]`'s
-CPtr — otherwise it is rejected fail-closed.  Single-level CSpace: `depth=4,
-radixWidth=4, guard=0` ⇒ `CPtr.ofNat k` resolves to slot `k`. -/
+cap binds only if it ALSO holds a notification cap (with `.write`) at the address
+it names as extra capability 0 (WS-SX SX6.4; seL4's `excaprefs[0]`) — otherwise
+it is rejected fail-closed, and a message naming no extra capability is
+`.truncatedMessage`.  Single-level CSpace: `depth=4, radixWidth=4, guard=0` ⇒
+`CPtr.ofNat k` resolves to slot `k`. -/
 private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
   let cnId   : SeLe4n.ObjId := ⟨50⟩
@@ -918,18 +920,17 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   let ntfnCap   : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
   let ntfnCapRO : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
   let mkSt (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
-    mkState [
+    withSenderCapAddrs (mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode (CNode.ofList 4 slots))
-    ]
+    ]) caller #[SeLe4n.CPtr.ofNat 1]                  -- extra capability 0 → slot 1
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,                 -- primary TCB cap at slot 0
-      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
       syscallId := .tcbBindNotification,
-      msgRegs := #[SeLe4n.RegValue.ofNat 1],          -- notification CPtr → slot 1
-      inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
   -- Positive: TCB cap (slot 0) + notification cap (slot 1) → bind succeeds, target bound.
   let rOk := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
   expect "sd050_bindNtfn_authorized_binds_target"
@@ -948,6 +949,23 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   expect "sd050_bindNtfn_readonly_cap_rejected"
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
+  -- Negative 3: no extra capability named → truncatedMessage (seL4's
+  -- `decodeBindNotification` on a null `excaprefs[0]`).
+  let rNoExtra := dispatchSyscallAsCurrent { decoded with msgInfo := { length := 0, extraCaps := 0, label := 0 } }
+    caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
+  expect "sd050_bindNtfn_no_extra_cap_truncated"
+    (match rNoExtra with | .error .truncatedMessage => true | _ => false)
+    "bind naming no extra capability should fail with truncatedMessage"
+  -- Negative 4: extra capability 0 names a capability that is no object's
+  -- (the CNode's own slot 0 holds the TCB cap; slot 2 an IRQ handler's) →
+  -- invalidCapability 1.
+  let rIrq := dispatchSyscallAsCurrent decoded caller bootCoreId
+    (withSenderCapAddrs (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap),
+      (SeLe4n.Slot.ofNat 2, { target := .irqHandler 3, rights := AccessRightSet.ofList [.write] })])
+      caller #[SeLe4n.CPtr.ofNat 2])
+  expect "sd050_bindNtfn_non_object_cap_rejected"
+    (match rIrq with | .error (.invalidCapability 1) => true | _ => false)
+    "bind naming a non-object capability should fail with invalidCapability 1"
 
 /-- **The caller and the executing core are one fact.**  The dispatcher refuses a
 pair whose `tid` is not the thread current on `executingCore` with `.illegalState`,
@@ -963,19 +981,18 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
   let tcbCap  : Capability := { target := .object other.toObjId, rights := AccessRightSet.ofList [.write] }
   let ntfnCap : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
   let base : SystemState :=
-    mkState [
+    withSenderCapAddrs (mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (other.toObjId, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])))
-    ]
+    ]) caller #[SeLe4n.CPtr.ofNat 1]
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
-      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
       syscallId := .tcbBindNotification,
-      msgRegs := #[SeLe4n.RegValue.ofNat 1],
-      inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
   let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
   let isIllegalState (r : Except KernelError (Unit × SystemState)) : Bool :=
     match r with | .error .illegalState => true | _ => false
@@ -1063,26 +1080,30 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
   let scObj : SeLe4n.ObjId := ⟨60⟩
   let scCap : Capability :=
     { target := .object scObj, rights := AccessRightSet.ofList [.write] }
-  let bindDecoded (tcbCPtr : Nat) : SyscallDecodeResult :=
+  -- WS-SX SX6.4: the thread is extra capability 0, its address in the
+  -- caller's IPC buffer.
+  let bindDecoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 2,
-      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let bindSt (tcbCPtr : Nat) : SystemState :=
+    withSenderCapAddrs st caller #[SeLe4n.CPtr.ofNat tcbCPtr]
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
   expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
-    (match dispatchCapabilityOnly (bindDecoded 0) scCap caller bootCoreId with
+    (match dispatchCapabilityOnly bindDecoded scCap caller bootCoreId with
      | some f =>
-       match f st with
+       match f (bindSt 0) with
        | .error (.invalidCapability _) => true
        | _ => false
      | none => false)
     "a schedContextBind whose TCB capability names an idle thread must be refused like an empty slot"
   -- The retired reading, computed beside the live one: the idle thread's raw
-  -- id in MR0 is an ADDRESS in the caller's CSpace now, and whatever slot it
-  -- masks to, the resolver never answers the idle thread.
+  -- id is an ADDRESS in the caller's CSpace now, and whatever slot it masks
+  -- to, the resolver never answers the idle thread.
   expect "sd054_raw_idle_id_in_mr0_never_resolves_the_idle_thread"
     (match resolveSchedContextBindThread caller
-      (Architecture.SyscallArgDecode.decodeSchedContextBindArgs (bindDecoded idle0Tid.toNat)) st with
+      (.ok { tcbCPtr := SeLe4n.CPtr.ofNat idle0Tid.toNat }) st with
      | .ok v => decide (v.val ≠ idle0Tid)
      | .error _ => true)
     "a raw idle id in MR0 is a capability address and must resolve to no idle thread"
@@ -1695,7 +1716,7 @@ capability at slot 1, a **read-only** one to the same TCB at slot 2 and a
 capability to the CNode itself at slot 3.  Through `dispatchSyscallChecked`: slot 1
 binds (the SchedContext names the thread and the thread names it back); slot 2
 is `.illegalAuthority`; slot 3 is `.invalidCapability` (not a TCB); and the
-RETIRED reading — the target's raw thread id in MR0 — is refused, because `70`
+RETIRED reading — the target's raw thread id as the address — is refused, because `70`
 is an address in the caller's CSpace that fails its root guard: *naming a
 thread is not holding it*. -/
 private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
@@ -1717,20 +1738,24 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
       (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
              (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)]))
     ]
-  let decoded (tcbCPtr : Nat) : SyscallDecodeResult :=
+  -- WS-SX SX6.4: the thread is extra capability 0, its address in the
+  -- caller's IPC buffer (`bindSt`).
+  let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,                 -- the SchedContext cap at slot 0
-      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let bindSt (tcbCPtr : Nat) : SystemState :=
+    withSenderCapAddrs st caller #[SeLe4n.CPtr.ofNat tcbCPtr]
   -- The resolver: slot 1 IS the target thread, answered as a promoted id.
   expect "sd060_resolver_answers_the_held_tcb"
     (match resolveSchedContextBindThread caller
-      (Architecture.SyscallArgDecode.decodeSchedContextBindArgs (decoded 1)) st with
+      (schedContextBindArgsOf (bindSt 1) caller 1) (bindSt 1) with
      | .ok v => decide (v.val = tgtTid)
      | .error _ => false)
-    "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
+    "extra capability 0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
   -- Positive: bound both ways, at the SchedContext's configured band.
-  match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId st with
+  match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt 1) with
   | .ok ((), st') =>
       expect "sd060_bind_through_tcb_capability_binds_the_target"
         ((st'.getTcb? tgtTid).any (fun t =>
@@ -1742,27 +1767,36 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
         s!"unexpected refusal: {repr e}"
   -- Negative 1: a read-only TCB capability -> illegalAuthority.
   expect "sd060_readonly_tcb_capability_rejected"
-    (match dispatchSyscallAsCurrent (decoded 2) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt 2) with
      | .error .illegalAuthority => true
      | _ => false)
     "a read-only TCB capability must fail with illegalAuthority"
   -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
   expect "sd060_non_tcb_capability_rejected"
-    (match dispatchSyscallAsCurrent (decoded 3) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt 3) with
      | .error (.invalidCapability _) => true
      | _ => false)
     "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
-  -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
+  -- Negative 3 — the retired reading: the target's raw thread id as the
+  -- extra capability's address.  `70`
   -- is an address, its bits above the 4-bit radix fail the root capability's
   -- 60-bit zero guard, and the lookup refuses it (seL4 `resolveAddressBits`).
   expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
-    (match dispatchSyscallAsCurrent (decoded tgtTid.toNat) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt tgtTid.toNat) with
      | .error (.failedLookup _ (.guardMismatch 64 0 60)) => true
      | _ => false)
     "naming the thread's id is not holding a capability to it"
+  -- Negative 5 (WS-SX SX6.4): no extra capability named → truncatedMessage
+  -- (seL4-MCS's `decodeSchedContext_Bind` on a null `excaprefs[0]`).
+  expect "sd060_no_extra_capability_truncated"
+    (match dispatchSyscallAsCurrent { decoded with msgInfo := { length := 0, extraCaps := 0, label := 0 } }
+        caller bootCoreId (bindSt 1) with
+     | .error .truncatedMessage => true
+     | _ => false)
+    "a bind naming no extra capability must fail with truncatedMessage"
   -- Negative 4: an empty slot beside the held ones.
   expect "sd060_empty_slot_rejected"
-    (match dispatchSyscallAsCurrent (decoded 9) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt 9) with
      | .error (.invalidCapability _) => true
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
@@ -2500,11 +2534,9 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     expect s!"replyRecv_reply_{what}_dispatch_missing"
       (isMissing (dispatchSyscallAsCurrent (decoded .replyRecv [w]) caller bootCoreId st))
       "a reply-receive through the dispatcher refuses its reply capability MissingCapability"
-    -- `.schedContextBind`'s thread (MR0).
+    -- `.schedContextBind`'s thread (extra capability 0).
     expect s!"argcap_schedContextBind_thread_{what}"
-      (capNum (resolveSchedContextBindThread caller
-        (Architecture.SyscallArgDecode.decodeSchedContextBindArgs
-          (decoded .schedContextBind [w])) st) == some 1)
+      (capNum (resolveSchedContextBindThread caller (.ok { tcbCPtr := cptr w }) st) == some 1)
       "a bind's thread argument is refused invalidCapability 1"
     -- `.schedContextConfigure`'s context (MR0).
     expect s!"argcap_configure_context_{what}"
@@ -2526,7 +2558,7 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
          kNum (resolveSetSpaceK caller { cspaceRoot := cptr 3, vspaceRoot := cptr w } st some
            (fun _ _ _ _ => none)) == some 2)
         "an empty VSpace root is refused invalidCapability 2"
-      -- An IRQ handler's notification (MR0).
+      -- An IRQ handler's notification (extra capability 0).
       expect "argcap_irqHandler_notification_empty"
         (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0
           (.ok { notificationCPtr := cptr w }) st) == some 1)
@@ -2538,6 +2570,14 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
        kNum (resolveIssuingSlotsK caller (cptr 3) (cptr w) (SeLe4n.Slot.ofNat 5) st some
          (fun _ _ _ _ => none)) == some 1)
       "an issue's destination CNode argument is refused invalidCapability 1 on the spec and K forms"
+  -- An IRQ handler's notification is extra capability 0 (WS-SX SX6.4): a
+  -- message naming none is truncatedMessage, one naming slot 3 reads it.
+  expect "argcap_irqHandler_notification_extra_cap"
+    ((match irqHandlerSetNotificationArgsOf st caller 0 with
+      | .error .truncatedMessage => true | _ => false) &&
+     (match irqHandlerSetNotificationArgsOf (withSenderCapAddrs st caller #[cptr 3]) caller 1 with
+      | .ok a => a.notificationCPtr == cptr 3 | _ => false))
+    "an IRQ handler's notification is read from extra capability 0"
   -- An IRQ handler's notification of the wrong kind (the CNode's capability).
   expect "argcap_irqHandler_notification_wrong_kind"
     (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0

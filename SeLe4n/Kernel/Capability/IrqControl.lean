@@ -208,7 +208,7 @@ def irqHandlerSetNotificationBindAt (executingCore : Concurrency.CoreId) (line :
     irqHandlerSetNotificationPerform line ⟨srcCnode, srcSlot⟩ st
   else irqHandlerSetNotificationOverFinalPerform executingCore line ⟨srcCnode, srcSlot⟩ st
 
-/-- The notification an `.irqHandlerSetNotification` names at MR0: its argument
+/-- The notification an `.irqHandlerSetNotification` names as extra capability 0: its argument
 capability `0` (seL4's `decodeIRQHandlerInvocation` answers a capability that is
 no notification capability with the send right `invalidCapNumber = 1`). -/
 def irqHandlerNotificationCapNumber : UInt64 := 1

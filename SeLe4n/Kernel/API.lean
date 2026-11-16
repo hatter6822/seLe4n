@@ -2025,8 +2025,9 @@ kernel's own scheduling reserve — no user operand may name one
 (`validateThreadIdArg_ok_not_reserved`).
 
 **`v0.35.204`: the bind takes no raw thread operand any more.**  The round-11
-narrative above describes `.schedContextBind` as it was.  MR0 is a TCB
-capability address now (`SchedContextBindArgs.tcbCPtr`), resolved through the
+narrative above describes `.schedContextBind` as it was.  Its operand is a TCB
+capability address now (`SchedContextBindArgs.tcbCPtr`, extra capability 0 since
+WS-SX SX6.4), resolved through the
 caller's own CSpace by `resolveSchedContextBindThread`, so the idle TCB is
 unreachable through the bind because the chokepoint refuses the *capability*
 (`resolveSchedContextBindThread_refuses_idle_capability`); the resolver runs
@@ -2286,16 +2287,44 @@ capability `0` (seL4's `decodeSchedControl_ConfigureFlags` answers a target
 that is no scheduling context `invalidCapNumber = 1`). -/
 def configureContextCapNumber : UInt64 := 1
 
-/-- The thread a `.schedContextBind` names at MR0: its argument capability `0`
+/-- The thread a `.schedContextBind` names as extra capability 0: its argument
+capability `0`
 (seL4's `decodeSchedContext_Bind`, `invalidCapNumber = 1`). -/
 def bindThreadCapNumber : UInt64 := 1
 
 /-- The frame a `.vspaceMap` names at MR2: its argument capability `0`. -/
 def vspaceMapFrameCapNumber : UInt64 := 1
 
-/-- The notification a `.tcbBindNotification` names at MR0: its argument
-capability `0`. -/
+/-- The notification a `.tcbBindNotification` names as extra capability 0:
+its argument capability `0`. -/
 def bindNotificationCapNumber : UInt64 := 1
+
+/-- **WS-SX SX6.4: the thread a `.schedContextBind` binds is extra capability
+0** — seL4-MCS's `decodeSchedContext_Bind` reads `excaprefs[0]` and refuses a
+message that names none `seL4_TruncatedMessage`; no message word carries it. -/
+@[inline] def schedContextBindArgsOf (st : SystemState) (tid : SeLe4n.ThreadId) (xc : Nat) :
+    Except KernelError SchedContextBindArgs :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => .error .truncatedMessage
+  | some cptr => .ok { tcbCPtr := cptr }
+
+/-- **WS-SX SX6.4: the notification a `.tcbBindNotification` binds is extra
+capability 0** — seL4's `decodeBindNotification` reads `excaprefs[0]` and
+refuses a message that names none `seL4_TruncatedMessage`. -/
+@[inline] def tcbBindNotificationArgsOf (st : SystemState) (tid : SeLe4n.ThreadId) (xc : Nat) :
+    Except KernelError TcbBindNotificationArgs :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => .error .truncatedMessage
+  | some cptr => .ok { notificationCPtr := cptr }
+
+/-- **WS-SX SX6.4: the notification an `.irqHandlerSetNotification` installs is
+extra capability 0** — seL4's `decodeIRQHandlerInvocation` reads
+`excaprefs[0]` and refuses a message that names none `seL4_TruncatedMessage`. -/
+@[inline] def irqHandlerSetNotificationArgsOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (xc : Nat) : Except KernelError IrqHandlerSetNotificationArgs :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => .error .truncatedMessage
+  | some cptr => .ok { notificationCPtr := cptr }
 
 /-- The destination CNode an issuing invocation names (a carve's MR2, a handler
 issue's MR1): its argument capability `0`. -/
@@ -2319,8 +2348,9 @@ notification through a capability *"not a raw ObjId — a TCB-cap holder must al
 hold a notification capability to redirect that notification's signals"*.  The
 rule was applied at one site and not at its sibling; this is the sibling.
 
-MR0 is `SchedContextBindArgs.tcbCPtr` now, resolved exactly as that arm resolves
-its extra capability: `syscallLookupCap` on a gate at the caller's CSpace root and
+The operand is `SchedContextBindArgs.tcbCPtr` now — extra capability 0 since
+WS-SX SX6.4 (`schedContextBindArgsOf`, seL4-MCS's `excaprefs[0]`) — resolved
+exactly as that arm resolves its notification: `syscallLookupCap` on a gate at the caller's CSpace root and
 depth, requiring `.write` — so the reserved-idle refusal is the chokepoint's own
 (`syscallResolveCap_ok_not_reserved`) rather than a second lift-point check — and
 the resolved capability must target a **TCB** the store holds (a capability to any
@@ -2360,8 +2390,8 @@ def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
         | _ => .error (.invalidCapability bindThreadCapNumber)
 
 /-- **`v0.35.204` (the authority fact)**: a thread the resolver answers is one
-the caller holds a **writable capability** to, found at MR0's address in the
-caller's own CSpace, and it is a TCB the store holds.  The read-only lookup
+the caller holds a **writable capability** to, found at the operand's address
+(extra capability 0) in the caller's own CSpace, and it is a TCB the store holds.  The read-only lookup
 returns the state it was given (`syscallLookupCap_preserves_state`), so the
 capability is exhibited at `st` itself. -/
 theorem resolveSchedContextBindThread_ok_authorised
@@ -4249,7 +4279,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .schedContextBind =>
     some <| match cap.target with
     | .object scId =>
-      fun st => match resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
+      fun st => match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
       | .error e => .error e
       | .ok vThreadId =>
           -- AL7-H / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
@@ -4332,13 +4362,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .irqControl _ => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_SetNotification` — the notification
-  -- capability at MR0's address bound to the handler's line
-  -- (`irqHandlerSetNotificationFromCap`).
+  -- capability named as extra capability 0 (WS-SX SX6.4) bound to the
+  -- handler's line (`irqHandlerSetNotificationFromCap`).
   | .irqHandlerSetNotification =>
     some <| match cap.target with
-    | .irqHandler line =>
+    | .irqHandler line => fun st =>
         irqHandlerSetNotificationFromCap tid executingCore line
-          (decodeIrqHandlerSetNotificationArgs decoded)
+          (irqHandlerSetNotificationArgsOf st tid decoded.msgInfo.extraCaps) st
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_Clear` — no arguments; the line's
   -- node slot emptied (`irqHandlerClear`).
@@ -4347,11 +4377,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .irqHandler line => irqHandlerClear executingCore line
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
-  -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
+  -- BindNotification).  Cap target = the TCB; the notification is the
+  -- capability named as extra capability 0 (WS-SX SX6.4,
+  -- `tcbBindNotificationArgsOf`).
   | .tcbBindNotification =>
     some <| match cap.target with
     | .object tcbObjId =>
-      fun st => match decodeTcbBindNotificationArgs decoded with
+      fun st => match tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | .error e => .error e
       | .ok args =>
           -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
@@ -4376,7 +4408,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               match ntfnCap.target with
               | .object notifId =>
                   bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-              | _ => .error .illegalState
+              | _ => .error (.invalidCapability bindNotificationCapNumber)
           | none => .error .objectNotFound
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
@@ -4639,11 +4671,13 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   schedContextLinks : schedContextLinkInvariant st
   /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
   over the caller — the pack carries no caller, and a fact about *every* thread
-  any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
+  any caller's CSpace resolves its extra capability 0 to is a pre-state fact
+  all the same. -/
   boundThreadNotDonationOwner : ∀ (callerTid : SeLe4n.ThreadId)
       (vThreadId : SeLe4n.ValidThreadId),
     decoded.syscallId = .schedContextBind →
-    resolveSchedContextBindThread callerTid (decodeSchedContextBindArgs decoded) st =
+    resolveSchedContextBindThread callerTid
+      (schedContextBindArgsOf st callerTid decoded.msgInfo.extraCaps) st =
       .ok vThreadId →
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
@@ -4846,7 +4880,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
+      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
       | error e => simp only [hRes] at hStep; cases hStep
       | ok vThreadId =>
           simp only [hRes] at hStep
@@ -4943,7 +4977,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>
       try dsimp only [] at hStep
-      cases hDec : decodeTcbBindNotificationArgs decoded with
+      cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
@@ -8715,9 +8749,9 @@ def syscallDelegates : SyscallId → Prop
         (gate : SyscallGate) (cap : Capability) (line : Nat),
         decoded.syscallId = .irqHandlerSetNotification →
         cap.target = .irqHandler line →
-        dispatchWithCapChecked ctx decoded tid executingCore gate cap =
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap = fun st =>
           irqHandlerSetNotificationFromCap tid executingCore line
-            (decodeIrqHandlerSetNotificationArgs decoded)
+            (irqHandlerSetNotificationArgsOf st tid decoded.msgInfo.extraCaps) st
   -- WS-ZA ZA6.32: the clear arm IS the clear of the line the capability names.
   | .irqHandlerClear =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -8888,7 +8922,8 @@ theorem syscallDelegates_schedContextUnbind : syscallDelegates .schedContextUnbi
     hSyscall hTarget hDecode hValid
 
 /-- **`v0.35.204`: the bind arm IS the resolved bind.**  Under a SchedContext
-capability and a thread the caller's CSpace resolves MR0 to, the arm's answer is
+capability and a thread the caller's CSpace resolves extra capability 0 to, the
+arm's answer is
 `schedContextBind` of exactly that pair — so what the arm binds is what
 `resolveSchedContextBindThread_ok_authorised` says the caller holds a writable
 TCB capability to.  Stated at the state, because the resolver reads it. -/
@@ -8898,7 +8933,7 @@ theorem dispatchCapabilityOnly_schedContextBind_eq
     (vThreadId : SeLe4n.ValidThreadId)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
-    (hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st =
+    (hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st =
       .ok vThreadId)
     (hSc : validateObjIdArg scId = .ok vScId) :
     (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st)
@@ -8919,7 +8954,7 @@ theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
     (st : SystemState) (scId : SeLe4n.ObjId) (e : KernelError)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
-    (hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st = .error e) :
+    (hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = .error e) :
     (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st) = some (.error e) := by
   unfold dispatchCapabilityOnly
   rw [hSyscall, hTarget]

@@ -63,23 +63,26 @@ pub fn sched_context_configure(
     })
 }
 
-/// Bind a scheduling context to a thread.
+/// Bind a scheduling context to a thread — seL4-MCS's `seL4_SchedContext_Bind`.
 ///
 /// Lean: the `.schedContextBind` arm (API.lean) — requires `.write` on the
 /// SchedContext capability **and** `.write` on a TCB capability the caller
-/// holds: `tcb_cap` (MR\[0\]) is the capability address, in the caller's own
-/// CSpace, of the thread to bind, resolved by the kernel through
-/// `resolveSchedContextBindThread` (`v0.35.204`; a raw `ThreadId` until then,
-/// which let a SchedContext-capability holder bind — and re-prioritise — any
-/// thread it could name).  Same shape as `tcb_bind_notification`.
+/// holds: `tcb_cap` is the capability address, in the caller's own CSpace, of
+/// the thread to bind, the message's extra capability 0 (`caps_or_badges[0]`
+/// of `buf`, the caller's IPC buffer), resolved by the kernel through
+/// `resolveSchedContextBindThread`.  No message word is sent; no extra
+/// capability is `TruncatedMessage`.  Same shape as `tcb_bind_notification`.
 #[inline]
-pub fn sched_context_bind(sc_cap: CPtr, tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
-    let args = SchedContextBindArgs { tcb_cap };
-    let encoded = args.encode();
+pub fn sched_context_bind(
+    sc_cap: CPtr,
+    tcb_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = tcb_cap.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: sc_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [encoded[0], 0, 0, 0],
+        msg_info: MessageInfo::new_const(0, 1, 0),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::SchedContextBind,
     })
 }

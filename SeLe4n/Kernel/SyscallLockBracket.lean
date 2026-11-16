@@ -605,7 +605,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- five TCB-directed ones, as a SchedContext for the two SchedContext ones
       -- that are directed at it, and `.schedContextBind`'s bound thread through
       -- the SAME resolver the live arm binds through
-      -- (`resolveSchedContextBindThread`, `v0.35.204`: a TCB capability at MR0
+      -- (`resolveSchedContextBindThread`, `v0.35.204`: a TCB capability, extra cap 0,
       -- in the caller's CSpace, where a raw thread id used to be read).
       -- `lockSetForSyscall` answers `none` at every one of them whatever these
       -- fields hold, so the object domain is untouched.
@@ -652,7 +652,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                      targetSlot := some args.targetSlot }
       | .schedContextBind, .object _ =>
           match resolveSchedContextBindThread tid
-              (Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded) s with
+              (schedContextBindArgsOf s tid decoded.msgInfo.extraCaps) s with
           | .error _ => none
           | .ok v => some (.ofThreadTarget tid v.val)
       | _, _ => none

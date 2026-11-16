@@ -12676,15 +12676,22 @@ run_negative_check "INVARIANT" rg -n 'dispatchCapabilityOnly_schedContextBind_id
 # (`args.threadId`) must not come back on either side of the ABI.
 run_check "INVARIANT" rg -n '^def resolveSchedContextBindThread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*        requiredRight := \.write" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(decodeSchedContextBindArgs decoded\) st with" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(schedContextBindArgsOf st tid decoded\.msgInfo\.extraCaps\) st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  tcbCPtr : SeLe4n\.CPtr$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/SyscallLockBracket.lean
 run_negative_check "INVARIANT" rg -n 'threadId : Nat' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^    pub tcb_cap: CPtr,$' rust/sele4n-abi/src/args/sched_context.rs
-run_check "INVARIANT" rg -n '^pub fn sched_context_bind\(sc_cap: CPtr, tcb_cap: CPtr\)' rust/sele4n-sys/src/sched_context.rs
+# WS-SX SX6.4: the thread is the message's extra capability 0 (seL4-MCS's
+# `excaprefs[0]`), so no message word carries it: the wrapper names the TCB
+# capability in the caller's IPC buffer, and the kernel reads it there
+# (`schedContextBindArgsOf`, and in continuation form in the compiled arm).
+run_check "INVARIANT" bash -lc 'rg -U -n "^pub fn sched_context_bind\(\n    sc_cap: CPtr,\n    tcb_cap: CPtr,\n    buf: &mut IpcBuffer,\n\) -> KernelResult<SyscallResponse> \{\n    buf\.caps_or_badges\[0\] = tcb_cap\.raw\(\);" rust/sele4n-sys/src/sched_context.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage\n  \| some cptr => \.ok \{ tcbCPtr := cptr \}" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def tcbBindNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def irqHandlerSetNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" rg -n 'pub struct SchedContextBindArgs' rust/sele4n-abi/src/args/sched_context.rs
 run_negative_check "INVARIANT" rg -n 'thread_id' rust/sele4n-abi/src/args/sched_context.rs
 run_check "INVARIANT" rg -n '^private def sd060_schedContextBind_requires_tcb_capability($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n '^  sd060_schedContextBind_requires_tcb_capability$' tests/SyscallDispatchSuite.lean
@@ -22528,7 +22535,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId
 # raw `threadId` argument until then), the retype through the decoded
 # `targetObj`.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(Architecture\.SyscallArgDecode\.decodeSchedContextBindArgs decoded\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(schedContextBindArgsOf s tid decoded\.msgInfo\.extraCaps\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 # The witness: both domains at ONE entry, the object domain's answer measured to
 # be unmoved by the five new operands, and the scheduler footprint read off the
 # STATE -- an inactive victim declares the object-store lock alone and an active
