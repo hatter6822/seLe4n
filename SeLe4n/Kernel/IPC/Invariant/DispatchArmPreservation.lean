@@ -401,9 +401,9 @@ theorem bindNotification_preserves_ipcInvariantFull
             have hNBR : notificationBindingReciprocal st' :=
               notificationBindingReciprocal.of_bindCodes hInv.notificationBindingReciprocal hNeIds
                 (by rw [hTraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
-                  TCB.boundNotificationCode_eq_zero hFree.2])
+                  TCB.boundNotificationCode_eq_zero hFree.1.2])
                 (by rw [hNraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
-                  Notification.boundTCBCode_eq_zero hFree.1])
+                  Notification.boundTCBCode_eq_zero hFree.1.1])
                 (by rw [hAt2]; rfl)
                 (by rw [hNe2 _ (Ne.symm hNeIds), hAt1]; rfl)
                 (fun k hk1 hk2 => by rw [hNe2 k hk1, hNe1 k hk2])

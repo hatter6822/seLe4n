@@ -2309,9 +2309,30 @@ is not a valid native root, or not the one its ASID names, and a remap whose
 recorded ASID is another's, `invalidCapNumber = 1`). -/
 def pageMapVSpaceCapNumber : UInt64 := 1
 
-/-- The notification a `.tcbBindNotification` names as extra capability 0:
-its argument capability `0`. -/
-def bindNotificationCapNumber : UInt64 := 1
+/-- **seL4's `decodeBindNotification` on extra capability 0** (`tcb.c`): the
+notification a `.tcbBindNotification` binds.  A lookup that fails answers its
+own lookup fault (seL4's `lookupExtraCaps`, before the decode).  The slot it
+names must hold a notification capability — an empty slot, a capability to a
+kernel-reserved object or one to any other kind is `seL4_IllegalOperation`
+(`.illegalState`, "Notification is invalid") — and that capability must carry
+`CanReceive` (`.read`; without it `seL4_IllegalOperation` too, "Insufficient
+access rights").  The type is checked before the right, seL4's order.  The
+resolution reads the state and changes nothing. -/
+def resolveBindNotificationCap (gate : SyscallGate) (st : SystemState) :
+    Except KernelError SeLe4n.ObjId :=
+  match gate.lookupSlot st with
+  | .error f => .error (.failedLookup false f)
+  | .ok ref =>
+    match SystemState.lookupSlotCap st ref with
+    | none => .error .illegalState
+    | some ntfnCap =>
+      if SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap then .error .illegalState
+      else match ntfnCap.target with
+        | .object notifId =>
+          match st.getNotification? notifId with
+          | none => .error .illegalState
+          | some _ => if ntfnCap.hasRight .read then .ok notifId else .error .illegalState
+        | _ => .error .illegalState
 
 /-- **WS-SX SX6.4: the thread a `.schedContextBind` binds is extra capability
 0** — seL4-MCS's `decodeSchedContext_Bind` reads `excaprefs[0]` and refuses a
@@ -4733,8 +4754,9 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
           -- that may receive (Read: seL4's `CanReceive`, checked by
           -- `decodeBindNotification`) to redirect that notification's signals — otherwise it could hijack
-          -- or deny any notification merely by naming its ObjId.  `bindNotification`
-          -- still rejects a resolved cap whose target is not a notification object.
+          -- or deny any notification merely by naming its ObjId.  The type is
+          -- checked before the right, each refusal seL4's `IllegalOperation`
+          -- (`resolveBindNotificationCap`).
           -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
           -- instead of raw `st.objects[…]?` matches.
           match st.getTcb? tid with
@@ -4745,13 +4767,9 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               capAddr       := args.notificationCPtr
               requiredRight := .read
             }
-            match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
+            match resolveBindNotificationCap ntfnGate st with
             | .error e => .error e
-            | .ok (ntfnCap, _) =>
-              match ntfnCap.target with
-              | .object notifId =>
-                  bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-              | _ => .error (.invalidCapability bindNotificationCapNumber)
+            | .ok notifId => bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
           | none => .error .objectNotFound
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
@@ -5342,18 +5360,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | some callerTcb =>
               simp only [hCaller] at hStep
               try dsimp only [] at hStep
-              simp only [syscallLookupArgumentCap] at hStep
-              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
+              cases hCap2 : resolveBindNotificationCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
               | error e => simp only [hCap2] at hStep; cases hStep
-              | ok pair =>
-                  obtain ⟨ntfnCap, stL⟩ := pair
+              | ok notifId =>
                   simp only [hCap2] at hStep
-                  cases hNT : ntfnCap.target with
-                  | object notifId =>
-                      simp only [hNT] at hStep
-                      exact bindNotification_preserves_ipcInvariantFull st st' notifId _
-                        hObjInv hInv hStep
-                  | _ => simp only [hNT] at hStep; cases hStep
+                  exact bindNotification_preserves_ipcInvariantFull st st' notifId _
+                    hObjInv hInv hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -1044,18 +1044,12 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | some callerTcb =>
               simp only [hCaller] at hStep
               try dsimp only [] at hStep
-              simp only [syscallLookupArgumentCap] at hStep
-              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
+              cases hCap2 : resolveBindNotificationCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
               | error e => simp only [hCap2] at hStep; cases hStep
-              | ok pair =>
-                  obtain ⟨ntfnCap, stL⟩ := pair
+              | ok notifId =>
                   simp only [hCap2] at hStep
-                  cases hNT : ntfnCap.target with
-                  | object notifId =>
-                      simp only [hNT] at hStep
-                      refine readyKeptStage.of_stage ?_
-                      exact bindNotification_runQueueStage hStep
-                  | _ => simp only [hNT] at hStep; cases hStep
+                  refine readyKeptStage.of_stage ?_
+                  exact bindNotification_runQueueStage hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -180,7 +180,9 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
 /-- WS-SM SM6.B (`NotificationBind`): bind notification `notificationId` to TCB
 `tcbId`, setting **both** directions of the relation (`Notification.boundTCB` and
 `TCB.boundNotification`).  Fails with `.illegalState` if either end is already
-bound (the seL4 single-binding discipline), and with `.illegalState` if the
+bound (the seL4 single-binding discipline) or if a thread waits on the
+notification (seL4's `decodeBindNotification`: "Notification cannot be bound"
+when its queue head or bound TCB is set), and with `.illegalState` if the
 object is not a notification (seL4's `decodeBindNotification` answers a
 capability that is not a notification capability `seL4_IllegalOperation`). -/
 def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
@@ -191,7 +193,7 @@ def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
         match lookupTcb st tcbId with
         | none => .error .objectNotFound
         | some tcb =>
-            if ntfn.boundTCB.isSome || tcb.boundNotification.isSome then
+            if ntfn.boundTCB.isSome || tcb.boundNotification.isSome || ntfn.waitHeadCode != 0 then
               .error .illegalState
             else
               match storeObject notificationId
@@ -258,7 +260,7 @@ after it still finds its slot. -/
     (tcbId : SeLe4n.ThreadId) : Bool :=
   !tcbId.isReserved &&
   (match st.getNotification? notificationId with
-   | some n => n.boundTCBCode == 0
+   | some n => n.boundTCBCode == 0 && n.waitHeadCode == 0
    | none => false) &&
   (match st.getTcb? tcbId with
    | some t => t.boundNotificationCode == 0
@@ -281,7 +283,9 @@ theorem bindNotification_of_inPlace (st : SystemState) (notificationId : SeLe4n.
   cases ht : st.getTcb? tcbId with
   | none => simp [ht] at hT
   | some t =>
-  simp only [hn, ht, beq_iff_eq] at hN hT
+  simp only [hn, ht, beq_iff_eq, Bool.and_eq_true] at hN hT
+  obtain ⟨hN, hW⟩ := hN
+  have hW' : (n.waitHeadCode != 0) = false := by simp [hW]
   have hnObj := (SystemState.getNotification?_eq_some_iff st _ n).mp hn
   have htObj := (SystemState.getTcb?_eq_some_iff st tcbId t).mp ht
   have hNe : notificationId ≠ tcbId.toObjId := by
@@ -296,8 +300,8 @@ theorem bindNotification_of_inPlace (st : SystemState) (notificationId : SeLe4n.
     (by simpa only [KernelObject.objectType] using hLN) hLT
   unfold bindNotification
   simp only [hn, lookupTcb, hR, Bool.false_eq_true, ↓reduceIte, ht, Notification.boundTCB,
-    TCB.boundNotification, hN, hT, SeLe4n.ThreadId.ofOptCode, SeLe4n.ObjId.ofOptCode,
-    Option.isSome_none, Bool.or_self, SeLe4n.ThreadId.optCode_some, SeLe4n.ObjId.optCode_some]
+    TCB.boundNotification, hN, hW', hT, SeLe4n.ThreadId.ofOptCode, SeLe4n.ObjId.ofOptCode,
+    Option.isSome_none, Bool.or_self, Bool.or_false, SeLe4n.ThreadId.optCode_some, SeLe4n.ObjId.optCode_some]
   rw [storeObject_eq_of_leaves (obj := .notification _) hLN]
   simp only []
   rw [storeObject_eq_of_leaves (obj := .tcb _) hLT1]

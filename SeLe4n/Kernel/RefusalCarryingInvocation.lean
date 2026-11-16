@@ -294,13 +294,9 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               capAddr       := args.notificationCPtr
               requiredRight := .read
             }
-            match syscallLookupArgumentCap bindNotificationCapNumber ntfnGate st with
+            match resolveBindNotificationCap ntfnGate st with
             | .error e => .error e
-            | .ok (ntfnCap, _) =>
-              match ntfnCap.target with
-              | .object notifId =>
-                  bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-              | _ => .error (.invalidCapability bindNotificationCapNumber)
+            | .ok notifId => bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
           | none => .error .objectNotFound
     | _ => .error (.invalidCapability 0)
   | .tcbUnbindNotification =>
@@ -862,25 +858,29 @@ refusal is read where it is, never rebuilt. -/
       callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun ntfnCPtr =>
         match st.getTcb? tid with
         | some callerTcb =>
+          -- seL4's `decodeBindNotification` order: the type, then `CanReceive`,
+          -- each refusal `IllegalOperation` (`resolveBindNotificationCap`).
           lookupSlotK callerTcb ntfnCPtr st
-            (fun t a b c => KernelError.argumentCapRefusal bindNotificationCapNumber (fun e => .error (e, st))
-              (.failedLookup false (LookupFault.ofWords t a b c)))
+            (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
             (fun cnode slot =>
               match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-              | none => .error (.invalidCapability bindNotificationCapNumber, st)
+              | none => .error (.illegalState, st)
               | some ntfnCap =>
                 if SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap then
-                  .error (.invalidCapability bindNotificationCapNumber, st)
-                else if ntfnCap.hasRight .read then
-                  match ntfnCap.target with
+                  .error (.illegalState, st)
+                else match ntfnCap.target with
                   | .object notifId =>
-                    RefusalCarrying.ofChecked
-                      (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                      (fun st => storeBindNotification st notifId
-                        (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                      (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
-                  | _ => .error (.invalidCapability bindNotificationCapNumber, st)
-                else .error (.illegalAuthority, st))
+                    match st.getNotification? notifId with
+                    | none => .error (.illegalState, st)
+                    | some _ =>
+                      if ntfnCap.hasRight .read then
+                        RefusalCarrying.ofChecked
+                          (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                          (fun st => storeBindNotification st notifId
+                            (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                          (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                      else .error (.illegalState, st)
+                  | _ => .error (.illegalState, st))
         | none => .error (.objectNotFound, st)
     | _ => .error (.invalidCapability 0, st)
   | .tcbUnbindNotification =>
@@ -1517,33 +1517,38 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           rw [lookupSlotK_eq]
           cases hRes : lookupSlot callerTcb ntfnCPtr st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word,
-              syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, syscallResolveCap, hRes]
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+              SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, hRes]
           | ok ref =>
             obtain ⟨cnode, slot⟩ := ref
             dsimp only
             cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
             | none =>
-              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                syscallResolveCap, hRes, hL]
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                SyscallGate.lookupSlot_mk, hRes, hL]
             | some ntfnCap =>
               dsimp only
               by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject ntfnCap = true
-              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                  syscallLookupCap, syscallResolveCap, hRes, hL, hIdle]
-              · by_cases hRight : ntfnCap.hasRight .read = true
-                · cases hTg : ntfnCap.target with
-                  | object notifId =>
-                    simp only [hIdle, hRight, hTg, Bool.false_eq_true, ↓reduceIte]
-                    apply RefusalCarrying.ofChecked_eq
-                    intro hA
-                    simp only [dispatchInvocationBy, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                      syscallResolveCap, hRes, hL, hIdle, hRight, hTg, Bool.false_eq_true,
-                      ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
-                  | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                    syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
-                · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                    syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight]
+              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                  SyscallGate.lookupSlot_mk, hRes, hL, hIdle]
+              · cases hTg : ntfnCap.target with
+                | object notifId =>
+                  cases hN : st.getNotification? notifId with
+                  | none =>
+                    simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                      SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN]
+                  | some ntfn =>
+                    by_cases hRight : ntfnCap.hasRight .read = true
+                    · simp only [hIdle, hRight, hTg, hN, Bool.false_eq_true, ↓reduceIte]
+                      apply RefusalCarrying.ofChecked_eq
+                      intro hA
+                      simp only [dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                        SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hRight, hTg, hN,
+                        Bool.false_eq_true, ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
+                    · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                        SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN, hRight]
+                | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                    SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg]
     all_goals rfl
   case tcbUnbindNotification =>
     cases target

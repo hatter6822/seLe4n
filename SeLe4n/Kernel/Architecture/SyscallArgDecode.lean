@@ -70,10 +70,10 @@ theorem requireMsgReg_ok_iff (regs : Array RegValue) (idx : Nat) :
 `seL4_TruncatedMessage` bound): a message whose length is below it is refused
 `.truncatedMessage` before any argument is read (`requireMessageLength`), as
 seL4's `decode*Invocation` refuses `length < n` once the capability's kind has
-chosen the decode.  The figure is the model's own word count: its ABI carries
-every argument as a word, where seL4 passes a capability argument as an extra
-capability and an index-and-depth pair (the CNode operations' source root is
-already extra capability 0).  The seL4 counterparts, and their checks:
+chosen the decode.  The figure is the model's own word count.  A capability
+argument is an extra capability, as in seL4, so the figure is seL4's own except
+where the model reads a word seL4 does not (the retype's object id).  The seL4
+counterparts, and their checks:
 
 * `cspaceCopy` 5 (`decodeCNodeInvocation`, Copy `length < 5`: the
   destination index and depth, the source index and depth, and the rights

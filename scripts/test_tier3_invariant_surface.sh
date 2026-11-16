@@ -12707,7 +12707,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def tcbBindNotificationAr
 # WS-SX SX6.4: a bind asks the notification capability to receive (seL4's
 # `CanReceive`, `.read`), on the specification arm and the compiled arm alike.
 run_check "INVARIANT" rg -n -U '^            let ntfnGate : SyscallGate := \{\n              callerId      := tid\n              cspaceRootCap := callerTcb\.spaceCells\[0\]\n              capAddr       := args\.notificationCPtr\n              requiredRight := \.read\n            \}$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^                else if ntfnCap\.hasRight \.read then$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# seL4's `decodeBindNotification` order: the notification's type, then
+# `CanReceive`, each refusal `IllegalOperation` (`.illegalState`), on the
+# specification's resolver and the compiled arm alike.
+run_check "INVARIANT" rg -n -U '      else match ntfnCap\.target with\n        \| \.object notifId =>\n          match st\.getNotification\? notifId with\n          \| none => \.error \.illegalState\n          \| some _ => if ntfnCap\.hasRight \.read then \.ok notifId else \.error \.illegalState\n        \| _ => \.error \.illegalState$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^            \| \.ok notifId => bindNotification notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) st$' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '                    match st\.getNotification\? notifId with\n                    \| none => \.error \(\.illegalState, st\)\n                    \| some _ =>\n                      if ntfnCap\.hasRight \.read then$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^            if ntfn\.boundTCB\.isSome \|\| tcb\.boundNotification\.isSome \|\| ntfn\.waitHeadCode != 0 then$' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
+run_negative_check "INVARIANT" rg -n 'bindNotificationCapNumber' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'ntfnCap\.hasRight \.write|notificationCPtr, requiredRight := \.write' SeLe4n
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def irqHandlerSetNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" rg -n 'pub struct SchedContextBindArgs' rust/sele4n-abi/src/args/sched_context.rs

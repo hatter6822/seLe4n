@@ -8251,25 +8251,28 @@ word's length (`routedLength`, `requireMessageLength`), never a decoded
 record, so the refusal allocates nothing.  The HAL's inline-argument prefilter
 is retired: every short message reaches the kernel.
 
-The minimum is the number of words the model's decode reads.  seL4's own
-figures differ because its ABI passes a capability argument as an extra
-capability plus an index-and-depth pair, where this ABI passes one word.
+The minimum is the number of words the model's decode reads.  A capability
+argument is an extra capability, as in seL4 (WS-SX SX6), so the figures are
+seL4's own except where the model reads a word seL4 does not (the retype's
+object id); a missing extra capability is `.truncatedMessage`, as seL4 refuses
+a null `excaprefs[0]`.
 
 | Syscall | Minimum | seL4 counterpart and its check |
 |---------|---------|--------------------------------|
-| `cspaceMint` | 4 | `decodeCNodeInvocation`, Mint `length < 6` |
-| `cspaceCopy`, `cspaceMove` | 4 | `decodeCNodeInvocation`, `length < 4` (the CNode operation word, below) |
+| `cspaceMint` | 6 | `decodeCNodeInvocation`, Mint `length < 6` |
+| `cspaceCopy` | 5 | `decodeCNodeInvocation`, Copy `length < 5` |
+| `cspaceMove` | 4 | `decodeCNodeInvocation`, Move `length < 4` |
 | `cspaceDelete`, `cspaceRevoke` | 1 | `decodeCNodeInvocation`, `length < 2` |
-| `untypedRetype` | 4 | `decodeUntypedInvocation`, `length < 6` |
+| `untypedRetype` | 7 | `decodeUntypedInvocation`, `length < 6`, then the model's object id word |
 | `vspaceMap` | 3 | `decodeARMFrameInvocation`, Map `length < 3` or no extra capability |
 | `vspaceUnmap`, `vspaceUnifyInstruction` | 2 | `decodeARMFrameInvocation`, Unify `length < 2` |
-| `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` |
+| `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` or no extra capability |
 | `tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity` | 1 | `decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`, `length < 1` |
-| `tcbSetSpace` | 2 | MCS `decodeSetSpace`, `length < 2` |
+| `tcbSetSpace` | 3 | MCS `decodeSetSpace`, `length < 3` |
 | `tcbSetFaultHandler` | 1 | the fault endpoint word |
 | `schedContextConfigure` | 5 | `decodeSchedControl_ConfigureFlags`, `length < 5` |
 | `irqControlGet` | 3 | `Arch_decodeIRQControlInvocation`, IssueIRQHandler `length < 3` |
-| `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 1 | none: seL4 checks only for the extra capability, which this ABI passes as a word |
+| `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 0 | none: seL4 checks only for the extra capability |
 | `serviceRegister` 5, `mintReplyCap` 2, `auditRead` 3, `auditDrain` 1 | | model calls with no seL4 counterpart |
 
 The IPC calls, the signal (`notificationSignal`) and the declassifications
@@ -8398,6 +8401,13 @@ seLe4n extension: it sits after the type and before the length.
 seL4's CNode, TCB, untyped, scheduling, page-table and IRQ capabilities carry
 no rights, so seL4 checks none of these rights; the model's are extensions.
 The yield invokes no capability and runs before any gate.
+
+A bind's notification, extra capability 0, is checked as seL4's
+`decodeBindNotification` checks it (`resolveBindNotificationCap`): a lookup
+that fails is its lookup fault; then the type (a slot that holds no
+notification capability) and then `CanReceive` (`.read`), each refused
+`IllegalOperation` (`.illegalState`); a notification already bound, or one a
+thread waits on, is refused the same (`bindNotification`).
 
 **Receive-phase capability faults.**  seL4's `handleRecv` raises a capability
 fault in the receive phase when the lookup fails, when the capability is not

@@ -939,18 +939,19 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
      | .ok ((), st') => (st'.getTcb? (SeLe4n.ThreadId.ofNat 70)).any (fun t => decide (t.boundNotification = some ntfnId))
      | .error _ => false)
     "authorized bind did not bind the target TCB"
-  -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability,
-  -- naming the notification: argument capability 0, so 1).
+  -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed.  seL4's
+  -- `decodeBindNotification` reads a null capability, no notification
+  -- capability: `IllegalOperation` (`.illegalState`).
   let rNoCap := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
   expect "sd050_bindNtfn_no_cap_rejected"
-    (match rNoCap with | .error (.invalidCapability 1) => true | _ => false)
-    "bind without a held notification cap should fail with invalidCapability 1 (the notification operand)"
+    (match rNoCap with | .error .illegalState => true | _ => false)
+    "bind without a held notification cap should fail with illegalState (seL4 IllegalOperation)"
   -- Negative 2: notification cap present but signal-only (`.write`, no
-  -- `.read`: seL4's `CanReceive` clear) → illegalAuthority.
+  -- `.read`: seL4's `CanReceive` clear) → `IllegalOperation` (`.illegalState`).
   let rWO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapWO)])
   expect "sd050_bindNtfn_signal_only_cap_rejected"
-    (match rWO with | .error .illegalAuthority => true | _ => false)
-    "bind with a notification cap that cannot receive should fail with illegalAuthority"
+    (match rWO with | .error .illegalState => true | _ => false)
+    "bind with a notification cap that cannot receive should fail with illegalState (seL4 IllegalOperation)"
   -- Negative 3: no extra capability named → truncatedMessage (seL4's
   -- `decodeBindNotification` on a null `excaprefs[0]`).
   let rNoExtra := dispatchSyscallAsCurrent { decoded with msgInfo := { length := 0, extraCaps := 0, label := 0 } }
@@ -960,14 +961,28 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     "bind naming no extra capability should fail with truncatedMessage"
   -- Negative 4: extra capability 0 names a capability that is no object's
   -- (the CNode's own slot 0 holds the TCB cap; slot 2 an IRQ handler's) →
-  -- invalidCapability 1.
+  -- no notification capability, seL4's `IllegalOperation` (`.illegalState`),
+  -- the type checked before the right: the capability carries `.read`.
   let rIrq := dispatchSyscallAsCurrent decoded caller bootCoreId
     (withSenderCapAddrs (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap),
       (SeLe4n.Slot.ofNat 2, { target := .irqHandler 3, rights := AccessRightSet.ofList [.read, .write] })])
       caller #[SeLe4n.CPtr.ofNat 2])
   expect "sd050_bindNtfn_non_object_cap_rejected"
-    (match rIrq with | .error (.invalidCapability 1) => true | _ => false)
-    "bind naming a non-object capability should fail with invalidCapability 1"
+    (match rIrq with | .error .illegalState => true | _ => false)
+    "bind naming a non-object capability should fail with illegalState (seL4 IllegalOperation)"
+  -- Negative 5: a notification a thread waits on cannot be bound (seL4's
+  -- `decodeBindNotification`: "Notification cannot be bound" when the queue
+  -- head is set) → `IllegalOperation` (`.illegalState`).
+  let waitedNtfn : Notification :=
+    { state := .waiting, waitHeadCode := 71, waitTailCode := 71,
+      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let waited : KernelObject := .notification waitedNtfn
+  let stBase := mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)]
+  let stWaiting : SystemState := { stBase with objects := stBase.objects.insert ntfnId waited }
+  expect "sd050_bindNtfn_waited_on_refused"
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId stWaiting with
+     | .error .illegalState => true | _ => false)
+    "bind of a notification with a waiting thread should fail with illegalState (seL4 IllegalOperation)"
 
 /-- **The caller and the executing core are one fact.**  The dispatcher refuses a
 pair whose `tid` is not the thread current on `executingCore` with `.illegalState`,
