@@ -99,8 +99,10 @@ invocations.
     a buffer page the core did not cache. It now fills in place
     (`tlbFillIpcBufferInOnCore`, as the long arm does; joined by
     `tlbFillIpcBufferInOnCore_eq`), writing over one of the core's spare
-    entries. The boot-built buffer exposed it: the root task's first syscall
-    is the first read of a page no kernel map put in core 0's TLB.
+    entries. A latent defect: any one-overflow syscall on a core whose TLB
+    lacked the buffer page allocated. The boot-built buffer exposed it: the
+    root task's first syscall is the first read of a page no kernel map put
+    in core 0's TLB.
   - The `virt` deployment's object table gave its untyped as reaching
     `0x8000_0000`, through the region map. It now stops at the root server.
   - The spec's RPi5 deployment table still listed the two fixed
