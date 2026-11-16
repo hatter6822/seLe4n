@@ -1803,6 +1803,15 @@ const fn cap_address(slot: u64) -> u64 {
 #[cfg(feature = "hw_target")]
 const ROOT_IPC_BUFFER: u64 = 2 << 39;
 
+/// The partner's IPC buffer while it is runnable beside the root task: the
+/// second 1 KiB of the root task's buffer page, through the same frame
+/// capability.  A step there is issued by whichever thread is current, so
+/// every word the driver writes into the root task's buffer is written here
+/// too ([`write_buffer_words`]): an extra capability, a receive path or an
+/// overflow word reads the same whichever thread issues the step.
+#[cfg(feature = "hw_target")]
+const PARTNER_IPC_BUFFER: u64 = ROOT_IPC_BUFFER + 0x400;
+
 /// The depth that resolves a root slot's address: the root CNode's whole
 /// depth, its 58-bit guard and its 6-bit radix.
 #[cfg(feature = "hw_target")]
@@ -11749,6 +11758,21 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             return Some(false);
         }
     }
+    // The partner, about to be resumed, gets its buffer beside the root
+    // task's ([`PARTNER_IPC_BUFFER`]) while the root task is the only thread
+    // core 0 can run; it is emptied once the partner is suspended again.
+    if !unmeasured(
+        &set_ipc_buffer(
+            "partner-ipc-buffer-runnable",
+            PARTNER_TCB_CAP,
+            PARTNER_IPC_BUFFER,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner was not given a buffer",
+    ) {
+        return Some(false);
+    }
     for step in PARTNER_SETUP.iter() {
         if !unmeasured(step, "the partner setup failed") {
             return Some(false);
@@ -11774,15 +11798,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     // two lines raised above every other line's priority.
     crate::gic::set_interrupt_line_priority(IRQ_BOUND_LINE, IRQ_EXERCISER_PRIORITY);
     crate::gic::set_interrupt_line_priority(IRQ_UNBOUND_LINE, IRQ_EXERCISER_PRIORITY);
-    // The lane's binds name their notification as extra capability 0, read
-    // from the caller's IPC buffer, and a step here may leave either thread
-    // current.  So the partner shares the root task's buffer for the lane:
-    // suspended (the root task current), its buffer set to the root task's
-    // frame at `ROOT_IPC_BUFFER`, resumed; whichever thread issues a bind, the
-    // kernel reads the words the driver wrote.  Its buffer is emptied after.
-    if !share_root_ipc_buffer_with_partner() {
-        return Some(false);
-    }
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         if !interrupt_handlers_issued(which)
@@ -11793,18 +11808,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         {
             return Some(false);
         }
-    }
-    if !unmeasured(
-        &set_ipc_buffer(
-            "partner-ipc-buffer-unshared",
-            PARTNER_TCB_CAP,
-            0,
-            ROOT_IPC_BUFFER_FRAME_CAP,
-            ROOT_IPC_BUFFER,
-        ),
-        "the partner's buffer was not emptied",
-    ) {
-        return Some(false);
     }
     // WS-ZA ZA5.13: the declassification scenario, the partner runnable.
     for first in [true, false] {
@@ -11843,6 +11846,18 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
         );
+        return Some(false);
+    }
+    if !unmeasured(
+        &set_ipc_buffer(
+            "partner-ipc-buffer-emptied",
+            PARTNER_TCB_CAP,
+            0,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner's buffer was not emptied",
+    ) {
         return Some(false);
     }
     // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
@@ -13588,31 +13603,6 @@ const CAP_FAULT_GUARD_MISMATCH_INFO: u64 = (1 << 12) | 7;
 #[cfg(feature = "hw_target")]
 static TRAP_LOADED_FP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-/// The partner given the root task's IPC buffer, unmeasured: suspended
-/// ([`suspend_partner`]), so the root task issues the set; its buffer set to
-/// the root task's frame at `ROOT_IPC_BUFFER`; resumed.
-#[cfg(feature = "hw_target")]
-fn share_root_ipc_buffer_with_partner() -> bool {
-    let share = set_ipc_buffer(
-        "partner-ipc-buffer-shared",
-        PARTNER_TCB_CAP,
-        ROOT_IPC_BUFFER,
-        ROOT_IPC_BUFFER_FRAME_CAP,
-        ROOT_IPC_BUFFER,
-    );
-    let resume = partner_step(
-        "resume-partner-shared-buffer",
-        TCB_RESUME,
-        PARTNER_TCB_CAP,
-        0,
-        [0, 0],
-        false,
-    );
-    suspend_partner()
-        && unmeasured(&share, "the partner was not given the root task's buffer")
-        && unmeasured(&resume, "the partner was not resumed")
-}
-
 /// The partner suspended, unmeasured, which leaves the root task current:
 /// by the root task, or by the partner itself when a step left it current
 /// (a resumed or restarted thread of its priority may be switched to).
@@ -15124,6 +15114,15 @@ fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
 /// message's first overflow word ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
 fn write_buffer_words(buffer: u64, first: u64, words: &[u64]) -> bool {
+    if buffer == ROOT_IPC_BUFFER && !write_buffer_words_at(PARTNER_IPC_BUFFER, first, words) {
+        return false;
+    }
+    write_buffer_words_at(buffer, first, words)
+}
+
+/// [`write_buffer_words`] into the one buffer at `buffer`.
+#[cfg(feature = "hw_target")]
+fn write_buffer_words_at(buffer: u64, first: u64, words: &[u64]) -> bool {
     if words.len() > 3 {
         return false;
     }
