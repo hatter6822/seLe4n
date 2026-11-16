@@ -16,7 +16,8 @@ import SeLe4n.Platform.RPi5.Deployment
 The Raspberry Pi 5 deployment's object layout (`RPi5/Deployment.lean`), on this
 board's RAM and table pool: two domains as the confined labeling declares them,
 each with one initial thread, its CSpace and its own empty address space, and
-the root task holding one untyped over all the RAM outside the kernel's extent.
+the root task holding one untyped over all the RAM outside the kernel's extent
+but the root server's four pages and the region map at its top.
 
 | Object | Id | Domain |
 |---|---|---|
@@ -24,11 +25,12 @@ the root task holding one untyped over all the RAM outside the kernel's extent.
 | root task CNode | `3` | boot |
 | root task VSpace (ASID 1, pool page 0) | `4` | boot |
 | interrupt notification (the root task binds handlers to it) | `5` | boot |
-| untyped over `[0x5000_0000, 0x8000_0000)` | `6` | boot |
+| untyped over `[0x5000_0000, 0x7FE7_C000)`, below the root server's pages and the region map | `6` | boot |
 | exerciser partner TCB (`.Inactive` until resumed) | `7` | boot |
 | exerciser endpoint | `8` | boot |
 | exerciser reply object | `9` | boot |
 | exerciser scheduling context (unconfigured, unbound) | `10` | boot |
+| root server (WS-SX SX5.1): the root task's IPC-buffer frame at `0x7FE7_C000` and its three page tables, built by the boot; the mapped frame capability at root CNode slot `10`, a derived copy in the TCB's buffer slot | `11`–`14` | boot |
 | untrusted initial TCB (the upper witness, pinned to core 1) | `0x10_0000` | untrusted |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, pool page 1) | `0x10_0002` | untrusted |
@@ -101,28 +103,33 @@ def qemuVirtInitialVSpace (asid : SeLe4n.ASID) (page : Nat) : VSpaceRoot :=
     tableBase := some (qemuVirtBootTablePage page) }
 
 /-- The root task's untyped — the one extension the boot maps, below the
-    region map's reservation at its top (WS-UC UC5, `untypedSizeOf`). -/
+    region map's reservation at its top (WS-UC UC5) and the root server's
+    reservation below that (WS-SX SX5.1): its part of `untypedExtentsOf`. -/
 def qemuVirtRootTaskUntyped : UntypedObject :=
   rpi5InitialUntyped qemuVirtKernelReservedEnd
-    (untypedSizeOf (qemuVirtRamTop - qemuVirtKernelReservedEnd))
+    (untypedSizeOf (qemuVirtRamTop - qemuVirtKernelReservedEnd) - rootServerReserveBytes)
 
 /-- The untyped's region is exactly the untyped part of the extension the boot
-    maps (`untypedExtentOf`). -/
+    maps (`untypedExtentsOf`). -/
 theorem qemuVirtRootTaskUntyped_region :
     [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)] =
-      qemuVirtBootRamExtensions.map untypedExtentOf := by
-  unfold qemuVirtBootRamExtensions untypedExtentOf
+      untypedExtentsOf qemuVirtBootRamExtensions := by
+  unfold qemuVirtBootRamExtensions untypedExtentsOf untypedExtentBelowRootServerOf
   rfl
 
-/-- **WS-UC UC5**: the extension holds its reservation, and the untyped ends
-    where the region map begins: `[0x5000_0000, 0x7FE8_0000)` for the
-    untyped, `[0x7FE8_0000, 0x8000_0000)` (1.5 MiB, 384 pages) for the map. -/
+/-- **WS-UC UC5, WS-SX SX5.1**: the extension holds the region map and the root
+    server's reservation, and the three tile it: `[0x5000_0000, 0x7FE7_C000)`
+    for the untyped, `[0x7FE7_C000, 0x7FE8_0000)` (four pages) for the root
+    server, `[0x7FE8_0000, 0x8000_0000)` (1.5 MiB, 384 pages) for the map. -/
 theorem qemuVirtRegionMap_layout :
-    qemuVirtBootRamExtensions.all regionMapFits = true ∧
+    qemuVirtBootRamExtensions.all rootServerFits = true ∧
       qemuVirtBootRamExtensions.map regionMapBaseOf = [0x7FE8_0000] ∧
       qemuVirtBootRamExtensions.map (fun e => regionMapReserveBytes e.2) = [0x18_0000] ∧
+      qemuVirtBootRamExtensions.map rootServerBaseOf = [0x7FE7_C000] ∧
       qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize =
-        0x7FE8_0000 := by
+        0x7FE7_C000 ∧
+      (qemuVirtRootServerAt qemuVirtRootServerFrameSlot).map (·.base.toNat) =
+        some 0x7FE7_C000 := by
   decide
 
 /-- The root CNode's 59-bit guard: its top bit set, so the root task's
@@ -267,7 +274,8 @@ def qemuVirtBoundPlatformConfig : PlatformConfig :=
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtPlatform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtPlatform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtPlatform)
+    rootServer := qemuVirtRootServerAt qemuVirtRootServerFrameSlot }
 
 /-- Binding any account yields the one bound configuration. -/
 theorem bindPlatformConfig_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :
@@ -361,7 +369,8 @@ noncomputable def qemuVirtDeploymentStartedState : IntermediateState :=
     linked into the derivation tree. -/
 noncomputable def qemuVirtDeploymentBootState : IntermediateState :=
   linkBootCapabilities qemuVirtBoundPlatformConfig
-    (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) qemuVirtDeploymentStartedState)
+    (installRootServer qemuVirtBoundPlatformConfig
+      (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) qemuVirtDeploymentStartedState))
 
 theorem qemuVirtBoundPlatformConfig_idleBoot :
     bootFromPlatformCheckedWithIdleThreadsFor
@@ -431,7 +440,8 @@ theorem qemuVirtBoundPlatformConfig_boot :
       .ok qemuVirtDeploymentBootState := by
   rw [bootFromPlatformCheckedStartedFor_of_idle _ _ _ qemuVirtBoundPlatformConfig_idleBoot]
   exact congrArg (Except.map fun started => linkBootCapabilities qemuVirtBoundPlatformConfig
-      (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) started))
+      (installRootServer qemuVirtBoundPlatformConfig
+        (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) started)))
     qemuVirtDeployment_startInitialThreads
 
 /-- The started state leaves every interrupt node's id free. -/
@@ -447,6 +457,7 @@ theorem qemuVirtDeploymentBootState_witnessesInstalled :
     declaredWitnessesInstalled qemuVirtDeploymentBootState.state
       (PlatformBinding.labeling (platform := QemuVirtPlatform)) = true := by
   rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled,
+    installRootServer_declaredWitnessesInstalled,
     installIrqNodes_declaredWitnessesInstalled qemuVirtDeploymentStartedState_irqNodesFresh]
   refine startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     qemuVirtDeployment_startInitialThreads _ ?_
@@ -476,9 +487,10 @@ theorem qemuVirtDeploymentBootState_initialThreadsStarted :
 theorem bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseQemuVirt (qemuVirtPlatformConfigFor board) =
       (do
-        initialiseKernelState qemuVirtDeploymentBootState.state
+        completePhysicalWrites qemuVirtDeploymentBootState.state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites qemuVirtDeploymentBootState).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := QemuVirtPlatform))
-        pure (Except.ok qemuVirtDeploymentBootState.state)) := by
+        pure (Except.ok (drainBootPhysicalWrites qemuVirtDeploymentBootState).state)) := by
   rw [bootAndInitialiseQemuVirt_eq, bootAndInitialisePlatform_eq_checked_boot]
   show (match bootFromPlatformCheckedStartedFor _
       (bindPlatformConfig QemuVirtPlatform (qemuVirtPlatformConfigFor board)) with
@@ -490,18 +502,20 @@ theorem bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor (board : SeLe4n.Mach
 theorem bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseQemuVirtOrHalt (qemuVirtPlatformConfigFor board) =
       (do
-        initialiseKernelState qemuVirtDeploymentBootState.state
+        completePhysicalWrites qemuVirtDeploymentBootState.state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites qemuVirtDeploymentBootState).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := QemuVirtPlatform))) := by
-  unfold bootAndInitialiseQemuVirtOrHalt
-  rw [bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor]
-  rfl
+  exact bootAndInitialiseQemuVirtOrHalt_of_ok (bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor board)
 
-/-- The installed state satisfies the proof-layer invariant bundle, and its
+/-- The installed state — the boot's, its physical-write ledger drained
+    (WS-SX SX5.3, D15) — satisfies the proof-layer invariant bundle, and its
     freeze the frozen one. -/
 theorem qemuVirtDeploymentBootState_invariantBridge :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle qemuVirtDeploymentBootState.state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze qemuVirtDeploymentBootState) :=
-  bootToRuntime_invariantBridge_started _ PlatformBinding.declaredCores_nodup _ _
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (drainBootPhysicalWrites qemuVirtDeploymentBootState).state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen
+      (SeLe4n.Model.freeze (drainBootPhysicalWrites qemuVirtDeploymentBootState)) :=
+  bootToRuntime_invariantBridge_installed _ PlatformBinding.declaredCores_nodup _ _
     qemuVirtBoundPlatformConfig_boot
 
 /-- The device-tree bridge, given this deployment's half, yields
@@ -519,6 +533,8 @@ theorem qemuVirtDeploymentBootState_untypedInstalled :
     qemuVirtDeploymentBootState.state.objects[qemuVirtRootTaskUntypedId]? =
       some (.untyped qemuVirtRootTaskUntyped) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  (fun h => installRootServer_objects_of_some h (fun _ e => by cases e) (fun _ e => by cases e)
+    (fun _ e => by cases e)) <|
   installIrqNodes_objects_of_some qemuVirtDeploymentStartedState_irqNodesFresh <|
   startInitialThreads_objects_of_nonTcb _ _ _
     qemuVirtDeployment_startInitialThreads _ _ (fun _ h => by cases h)

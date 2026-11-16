@@ -956,17 +956,20 @@ space slots**, made with the thread as seL4's TCB CTEs are made at the retype,
 so the thread's first space set writes over them rather than allocating.  Each
 record targets an object named by its slot number, so the compiler cannot share
 one record between the slots; the carve gives the thread its own copies
-(`KernelObject.unshareFresh`). -/
+(`KernelObject.unshareFresh`).  The array is built at exactly two entries
+(`Array.ofFn` pushes onto an array it owns, allocated at capacity two): a
+literal is built by pushes onto a shared array, which over-expands it, and the
+carve copies the array at its capacity. -/
 def carvedTcbSpareCells : Array (Option Capability) :=
-  #[some { target := .object ⟨0⟩, rights := AccessRightSet.empty },
-    some { target := .object ⟨1⟩, rights := AccessRightSet.empty }]
+  Array.ofFn (n := 2) fun i =>
+    some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
 
 /-- **WS-ZA ZA5.4 part 14: the thread a carve makes** — seL4's `createObject`
 for `seL4_TCBObject`: inactive, at priority 0 with maximum controlled priority 0,
 in the creating core's current domain (`ksCurDomain`) and with the creating
 core as its affinity (`getCurrentCPUIndex`), no fault handler, no bound
-notification, no scheduling context, and both space slots empty
-(`tcbCTable` and `tcbVTable` hold null capabilities).  Its identity is the id it
+notification, no scheduling context, and all three space slots empty
+(`tcbCTable`, `tcbVTable` and `tcbBuffer` hold null capabilities).  Its identity is the id it
 is stored at. -/
 def carvedTcb (childId : SeLe4n.ObjId) (domain : SeLe4n.DomainId)
     (core : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
@@ -2127,7 +2130,7 @@ theorem untypedRetypeObject_ok_tcb
       tcb.domain = dom ∧ tcb.cpuAffinity = some core ∧
       tcb.schedContextBinding = .unbound ∧ tcb.boundNotification = none ∧
       tcb.runCoreCode = 0 ∧ tcb.pendingMessage = none ∧
-      tcb.spaceCells = #v[none, none] := by
+      tcb.spaceCells = Vector.replicate 3 none := by
   obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.tcb dom core) st st' hObjInv hStep
   cases hO : st'.objects[childId]? with

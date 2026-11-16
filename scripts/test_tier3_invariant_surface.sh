@@ -3915,13 +3915,37 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config &&\n    rootServerPlaced config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 # WS-SX SX2 — every boot CNode capability's guard and its CNode's radix fit
 # the 64-bit address, a conjunct of `wellFormed` with its own row.
 run_check "INVARIANT" rg -n '^def bootCapabilitiesHaveCNodeGeometry \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesHaveCNodeGeometry($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
+# WS-SX SX5: the root server's reservation is a conjunct of `wellFormed` with
+# its own row; the binding supplies it on every board; the last untyped stops
+# below it; the boot builds the root task's IPC buffer after the interrupt
+# nodes; every boot entry performs and drains the owed writes (D15).
+run_check "INVARIANT" rg -n '^def rootServerPlaced \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  rootServerFor : SeLe4n\.MachineConfig → Option RootServerReservation := fun _ => none$' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^    rootServer := PlatformBinding\.rootServerFor \(platform := platform\) config\.machineConfig \}$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  rootServerFor := fun _ => qemuVirtRootServerAt qemuVirtRootServerFrameSlot$' SeLe4n/Platform/QemuVirt/Contract.lean
+run_check "INVARIANT" rg -n '^    rootServerFor := fun _ => Exerciser\.rootServer qemuVirtBootRamExtensions$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^    rootServerFor := fun board => Exerciser\.rootServer \(rpi5BootRamExtensions \(rpi5VariantFor board\)\)$' SeLe4n/Platform/RPi5/Exerciser.lean
+run_check "INVARIANT" rg -n -U '^def rootServer \(extensions : List \(Nat × Nat\)\) : Option RootServerReservation :=\n  rootServerReservationOf extensions ' SeLe4n/Platform/Exerciser/Deployment.lean
+run_check "INVARIANT" rg -n '^  rootServerFor := fun board => rpi5RootServerAt \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^def untypedExtentsOf : List \(Nat × Nat\) → List \(Nat × Nat\)$' SeLe4n/Platform/Boot/RegionMapReservation.lean
+run_check "INVARIANT" rg -n -U '^  \(extensions\.zip \(untypedExtentsOf extensions\)\)\.forM fun \(e, u\) => do\n    ffiExtendBootRamMap \(UInt64\.ofNat e\.1\) \(UInt64\.ofNat e\.2\)\n    ffiReserveRegionMap \(UInt64\.ofNat u\.1\) \(UInt64\.ofNat u\.2\)\n      \(UInt64\.ofNat \(regionMapBaseOf e\)\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^def installRootServer \(config : PlatformConfig\) \(ist : IntermediateState\) : IntermediateState :=\n  match config\.rootServer with\n  \| none => ist\n  \| some r => installRootServerAt r ist$' SeLe4n/Platform/Boot/RootServer.lean
+run_check "INVARIANT" rg -n -U '^        match machine with\n        \| some perform =>\n          perform ist\.state\.drainedPhysicalWrites\n          let st := \(drainBootPhysicalWrites ist\)\.state\n          initialiseKernelState st$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^        \| none =>\n          if ist\.state\.drainedPhysicalWrites\.count == 0 then\n            let st := \(drainBootPhysicalWrites ist\)\.state\n            initialiseKernelState st[^\n]*(\n([ \t][^\n]*)?)*?          else\n            pure \(Except\.error unperformedBootPhysicalWritesBootError\)$' SeLe4n/Platform/FFI.lean
+# Every hardware entry passes the HAL's performer; no entry a host or a simulation reaches does.
+run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform SeLe4n\.Platform\.RPi5\.RPi5Platform \(some completePhysicalWrites\) config$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform QemuVirtPlatform \(some completePhysicalWrites\) config$' SeLe4n/Platform/QemuVirt/BootEntry.lean
+run_check "INVARIANT" rg -n '^  match ← bootAndInitialisePlatform P \(some completePhysicalWrites\) config with$' SeLe4n/Platform/Exerciser/Deployment.lean
+# NEGATIVE: the exerciser's IPC-buffer workaround — an untyped the root task
+# retyped into its own buffer frame through boot-time invocations — is gone.
+run_negative_check "INVARIANT" rg -n '\b(rootInvoke|rootInvocation|rootIpcBufferInvocations|giveRootIpcBuffer|giveRootIpcBufferOrHalt|rootIpcBufferUntyped[A-Za-z]*|rootIpcBufferPages|qemuVirtExerciserRootInvoke|qemuVirtExerciserRootIpcBufferInvocations|qemuVirtExerciserGiveRootIpcBuffer[A-Za-z]*|qemuVirtExerciserIpcBufferUntyped[A-Za-z]*)\b' SeLe4n/ tests/ rust/ scripts/
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
 # hands out no device untyped over them: the clause is in the placement
 # conjunct, and each binding names the windows it programs.
@@ -3972,7 +3996,7 @@ run_check "INVARIANT" rg -n '^def bootQuiescentFields($|[ ({:\[\]])' SeLe4n/Plat
 run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_started _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_installed _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem PlatformBinding\.declaredCores_nodup($|[ ({:\[\]])' SeLe4n/Platform/Contract.lean
 run_check "INVARIANT" rg -n '^theorem RHTable\.fold_and_true_of_get\?($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
@@ -5124,7 +5148,7 @@ run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @rem
 run_check "INVARIANT" rg -n -U '  let o := spaceCellAt t\.spaceCells s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
 # The slot read is out of line and takes only the cells, so the clear hands the
 # thread to no call and the thread is rebuilt in its own cell.
-run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 2\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 3\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
 # The set reads the spare record, takes it out of the spares, then writes the
 # capability and its object target over it, before the one rebuild.
 run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights guard guardSize\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
@@ -6942,7 +6966,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_values($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_admissible($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -U -n '^@\[extern "ffi_extend_boot_ram_map"\]\nopaque ffiExtendBootRamMap \(base size : UInt64\) : BaseIO Unit$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^  \| \.ok config => do\n      extendBootRamMap \(SeLe4n\.Platform\.RPi5\.rpi5BootRamExtensionsFor config\.machineConfig\)\n      bootAndInitialiseRPi5OrHalt config$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -U -n '^theorem kernelMain_installs[^\n]*(\n([ \t][^\n]*)?)*?        Platform\.FFI\.extendBootRamMap\n          \(rpi5BootRamExtensions \(rpi5VariantFor config\.machineConfig\)\)\n        Platform\.FFI\.initialiseKernelState' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -U -n '^theorem kernelMain_installs[^\n]*(\n([ \t][^\n]*)?)*?        Platform\.FFI\.extendBootRamMap\n          \(rpi5BootRamExtensions \(rpi5VariantFor config\.machineConfig\)\)\n        Platform\.FFI\.completePhysicalWrites\n          \(rpi5DeploymentBootStateAt \(rpi5VariantFor config\.machineConfig\)\)\.state\.drainedPhysicalWrites\n        Platform\.FFI\.initialiseKernelState' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    boot_cacheable_range_for\(base, size, &extensions\[\.\.recorded\], &image_layout\(\)\)\n\}' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'pub const fn is_boot_cacheable_range' rust/sele4n-hal/src
 run_check "INVARIANT" rg -U -n '^pub fn extend_boot_ram_map\(base: u64, size: u64\) -> Result<\(\), RamExtensionRefusal> \{\n    if BOOT_MAP_SEALED\.load\(Ordering::Acquire\) \{\n        return Err\(RamExtensionRefusal::Sealed\);' rust/sele4n-hal/src/mmu.rs
@@ -6960,7 +6984,7 @@ run_check "INVARIANT" rg -U -n '^variant 0x200000000 lowRamTop 0x3fc00000\n(regi
 # from the same extensions BP4.6 maps, and the coverage and installation
 # theorems exist.  The retired variant-independent object list must not return.
 run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -U -n '^def rpi5RootTaskUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5RootTaskUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(untypedExtentsOf \(rpi5BootRamExtensions v\)\)\.mapIdx fun i u =>$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5RootTaskUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
@@ -9323,11 +9347,13 @@ run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadS
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config\n        \(installRootServer config \(installIrqNodes \(irqNodeLineCount config\) started\)\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_installed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# WS-SX SX5.3: the bridge on the undrained state no boot entry installs is gone.
+run_negative_check "INVARIANT" rg -n '\bbootToRuntime_invariantBridge_started\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_of_nil($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -9843,7 +9869,7 @@ run_check "INVARIANT" rg -n -U '^qemu_gate_boards "\$\{LEAN_KERNEL\}"\nfor board
 # log to the relations: the install allocated (more live allocations after it
 # than before), the heap's invariants hold at both points, and the install
 # precedes the release, which precedes every secondary's first line.
-run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::kprintln!\(\n\s+"\[boot\] Phase 5: \{\} owed boot physical write\(s\) performed",\n\s+crate::ffi::boot_physical_writes\(\)\n\s+\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n -F -- 'heap.check_invariants().map_err(|_| HeapFault::Corrupt)?;' rust/sele4n-hal/src/lean_heap.rs
 run_check "INVARIANT" rg -n -U 'let crate::lean_entry::SecondaryReleasePermit \{ \.\. \} = permit;\n\s+if !enabled\.load\(Ordering::Acquire\) \{\n\s+return 0;\n\s+\}\n(\s+//[^\n]*\n)*\s+crate::kprintln!\("\[smp\] releasing the secondaries under the install permit"\);' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -n -F -- 'RELEASE          | [smp] releasing the secondaries under the install permit' tests/fixtures/qemu_lean_boot_expected.txt
@@ -12377,7 +12403,7 @@ run_negative_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Pl
 run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Contract.lean
-run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # PR #889 review round 2: the idle slots are unreachable by user authority — a
 # capability naming one resolves like an empty slot at the single resolution
@@ -12446,8 +12472,8 @@ run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCoun
 # barrier rather than the per-PE park; and the assembly source fallback asks
 # the same section question the archive parser has asked since round 8.
 run_check "INVARIANT" rg -n '^def declaredCoresOfConfig($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
-run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn none (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn none SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs
@@ -23738,7 +23764,7 @@ run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide
 # v0.36.131: boot groups its root chains by the object a capability names
 # (seL4's sameObjectAs), not by its target, so one object's slots are one run.
 run_negative_check "INVARIANT" rg -n 'q\.2 = cap\.target|roots := a\.roots \+\+ \[\(r, cap\.target\)\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
-run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) \(extra : List SlotRef := \[\]\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+ extra \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 2⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.step($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem linkBootCapabilities_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -23750,8 +23776,8 @@ run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.foldl_done($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\b(bootFromPlatformUnchecked|proofLayerInvariantBundle_of_bootStartShape|bootFromPlatform_proofLayerInvariantBundle_general|bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle|bootToRuntime_invariantBridge_checked)\b' SeLe4n/ tests/
-run_check "INVARIANT" rg -n -U '^  linkBootCapabilities qemuVirtBoundPlatformConfig\n    \(installIrqNodes \(irqNodeLineCount qemuVirtBoundPlatformConfig\) qemuVirtDeploymentStartedState\)$' SeLe4n/Platform/QemuVirt/Deployment.lean
-run_check "INVARIANT" rg -n -U '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\)\n    \(installIrqNodes \(irqNodeLineCount \(rpi5BoundPlatformConfigAt v\)\) \(rpi5DeploymentStartedStateAt v\)\)$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n -U '^  linkBootCapabilities qemuVirtBoundPlatformConfig\n    \(installRootServer qemuVirtBoundPlatformConfig\n      \(installIrqNodes \(irqNodeLineCount qemuVirtBoundPlatformConfig\) qemuVirtDeploymentStartedState\)\)$' SeLe4n/Platform/QemuVirt/Deployment.lean
+run_check "INVARIANT" rg -n -U '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\)\n    \(installRootServer \(rpi5BoundPlatformConfigAt v\)\n      \(installIrqNodes \(irqNodeLineCount \(rpi5BoundPlatformConfigAt v\)\) \(rpi5DeploymentStartedStateAt v\)\)\)$' SeLe4n/Platform/RPi5/Deployment.lean
 # WS-ZA ZA5.4 part 18 (v0.36.129): the tree shape holds every capability to a
 # live object and every capability naming another object than its parent below
 # that parent; boot refuses a configured capability naming an object it does
@@ -23769,13 +23795,13 @@ run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bo
 # WS-ZA ZA5.5: the boot installs the configured service interfaces (the only
 # writer of the interface registry), the binding supplies them, and the twelfth
 # conjunct refuses a duplicate or sentinel id with its own diagnostic row.
-run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\),\n   \(bootCapabilitiesHaveCNodeGeometry config, bootCapabilityGeometryBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\),\n   \(bootCapabilitiesHaveCNodeGeometry config, bootCapabilityGeometryBootError\),\n   \(rootServerPlaced config, rootServerPlacementBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^   \(bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError\),\n   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootInterfacesWellFormed \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  let withInterfaces := foldInterfaces config\.initialInterfaces withObjects$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  applyMachineConfig withInterfaces config\.machineConfig$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  ifaces\.foldl registerInterface ist$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceInterfaces \(platform := platform\) \}$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceInterfaces \(platform := platform\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterface\]$' SeLe4n/Platform/QemuVirt/Contract.lean
 # WS-ZA ZA5.5: the service register is routed on the register file with the
 # configure, one overflow word read from the IPC buffer, and runs checks first.
@@ -23892,7 +23918,7 @@ run_check "INVARIANT" rg -n -U '^theorem threadSlotFilled_preserves_capabilityIn
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedsSole($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  obtain ⟨hListed, hLive, hUnique, hUncarved, hNamedU⟩ := installIrqNodes_linkInputs hFresh _' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  obtain ⟨hListed0, hLive0, hUnique0, hUncarved0, hNamedU0⟩ := installIrqNodes_linkInputs hFresh _' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 
 # --- The tables that named objects by id, and the objects' back-links to them ---
@@ -23909,11 +23935,11 @@ run_negative_check "INVARIANT" rg -n '\b(irqHandlers|irqBound|irqTable|registerI
 # --- The interrupt nodes (WS-ZA ZA6.32, seL4's interrupt_irq_node) ---
 # The started stage installs one node per board line before it links the boot
 # capabilities, so a node exists at every boot that comes up.
-run_check "INVARIANT" rg -n -U '^  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config\n        \(installRootServer config \(installIrqNodes \(irqNodeLineCount config\) started\)\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_irqNodesFresh($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 # The node ids are the kernel's: a wellFormed conjunct, and the budget counts them.
-run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U '^def objectBudgetRespected \(config : PlatformConfig\) : Bool :=\n  config\.initialObjects\.length \+ 1 \+ SeLe4n\.Kernel\.Concurrency\.numCores \+\n    InterruptLineSet\.capacity ≤ maxObjects$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config &&\n    rootServerPlaced config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def objectBudgetRespected \(config : PlatformConfig\) : Bool :=\n  config\.initialObjects\.length \+ 1 \+ SeLe4n\.Kernel\.Concurrency\.numCores \+\n    InterruptLineSet\.capacity \+ rootServerPages ≤ maxObjects$' SeLe4n/Platform/Boot.lean
 # No resolved capability reaches a node.
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_irqNode($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The projection labels a line by its node.
@@ -24070,7 +24096,7 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_checked_interrup
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5_bound_config_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem qemuVirtExerciser_bound_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Exerciser.lean
 run_check "INVARIANT" rg -n '^def bootIssuesNoInterruptHandler \(' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^    irqNodeIdsReserved config && bootCapabilitiesHaveCNodeGeometry config &&\n    rootServerPlaced config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootIssuesNoInterruptHandler($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]' tests/
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]' tests/

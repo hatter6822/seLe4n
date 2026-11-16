@@ -244,7 +244,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- The context the thread is the recorded origin of is
                        -- erased, as the context's own `donationOrigin` is.
                        originScCode := 0,
-                       -- The derivation links of the thread's two space slots
+                       -- The derivation links of the thread's three space slots
                        -- are cleared, as a CNode's are: the tree they encode is
                        -- not projected.  The space capabilities stay visible.
                        spaceLinks := Vector.replicate _ 0,

@@ -58,7 +58,9 @@ theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRef
 
 /-- **WS-BP BP4.4**: a device tree the bridge accepts installs the deployment's
 boot state on the variant the board's account selects, and the binding's
-labeling context, and nothing else — the halting boot's halt arm is never taken
+labeling context, and nothing else — the physical writes the boot owes performed
+first and the state installed with its ledger drained (WS-SX SX5.3, D15) — the
+halting boot's halt arm is never taken
 on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over every
 account).  **WS-BP BP4.6**: first it maps that configuration's RAM outside the
 kernel's reserved extent (since BP7.10, the first gigabyte's part the firmware
@@ -74,21 +76,27 @@ theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformCo
       (do
         Platform.FFI.extendBootRamMap
           (rpi5BootRamExtensions (rpi5VariantFor config.machineConfig))
+        Platform.FFI.completePhysicalWrites
+          (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state.drainedPhysicalWrites
         Platform.FFI.initialiseKernelState
-          (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state
+          (Platform.Boot.drainBootPhysicalWrites
+            (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig))).state
         Platform.FFI.initialiseKernelLabelingContext
           (PlatformBinding.labeling (platform := RPi5Platform))) := by
   unfold kernelMain
   rw [Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_accepted _ _ _ config h,
     rpi5PlatformConfigFromDtb_deployment_ok dtb config h,
     bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor]
+  have e : (rpi5PlatformConfigFor config.machineConfig).machineConfig = config.machineConfig := rfl
+  rw [e]
   rfl
 
 /-- **WS-BP BP4.4**: ...and the state it installs satisfies the proof-layer
 invariant bundle, whichever variant the device tree selected. -/
 theorem kernelMain_installs_invariantBundle (config : Platform.Boot.PlatformConfig) :
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
-      (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state :=
+      (Platform.Boot.drainBootPhysicalWrites
+        (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig))).state :=
   (rpi5DeploymentBootStateAt_invariantBridge _ (rpi5VariantFor_admissible _)).1
 
 end SeLe4n.Platform.RPi5

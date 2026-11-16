@@ -259,7 +259,7 @@ it unbind a destroyed thread's or scheduling context's reservation
 there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
 a page of machine memory — no scheduler field at all.  `.untypedReset` writes
 one capability's free index and nothing else (`untypedResetSlot_ok_frame`), so
-no run-queue or replenish-queue slot on any core.  `.tcbSetSpace` (`v0.36.11`) rewrote one suspended TCB's two space
+no run-queue or replenish-queue slot on any core.  `.tcbSetSpace` (`v0.36.11`) rewrote one suspended TCB's CSpace and VSpace
 slots and the derivation links alone (`copyThreadSpaces_ok`) until WS-ZA ZA5.4
 part 26 deleted an old CSpace root that is the last capability to a populated
 CNode through the zombie loop (`copyThreadSpacesZombie`), whose finalisations

@@ -328,7 +328,7 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   | .irqHandler _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's
-slots and a thread's two space slots, read as `KernelObject.slotCap` reads them. -/
+slots and a thread's three space slots, read as `KernelObject.slotCap` reads them. -/
 private def objectSlotChecks (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (check : SeLe4n.ObjId → SeLe4n.Slot → Capability → String × Bool) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
@@ -651,7 +651,7 @@ private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState
     [("notification waiters globally unique", !hasDuplicates)]
 
 /-- **Every slot whose links the store holds**: each CNode's slots (one per
-`slotLinkWords` link words) and each thread's two space slots.  It walks the
+`slotLinkWords` link words) and each thread's three space slots.  It walks the
 store itself rather than the object index, so an object the index does not list
 still counts. -/
 def objectLinkSlots (st : SystemState) : List SlotRef :=

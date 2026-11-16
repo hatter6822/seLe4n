@@ -7373,7 +7373,7 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
   · exact Or.inl (rewriteObject_objects_ne st id k new h hEq hInv)
 
-/-- A rewrite of a thread that keeps its two space slots and their links is a
+/-- A rewrite of a thread that keeps its three space slots and their links is a
 `kindPreservingWrite`. -/
 theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (h : st.getTcb? tid = some t) (t' : TCB) (hInv : st.objects.invExt)

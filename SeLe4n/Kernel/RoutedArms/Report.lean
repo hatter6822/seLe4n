@@ -728,7 +728,10 @@ theorem longOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
   unfold longOperandKW longOperandK
   exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW
 
-/-- `overflowOneOperandK` with its arm's result handed on as words. -/
+/-- `overflowOneOperandK` with its arm's result handed on as words, and its
+fill read in place (`tlbFillIpcBufferInOnCore`, equal to the specification's
+`tlbFillIpcBufferOnCore` for one slot), so a miss on this core's TLB builds no
+page list: the fill writes over one of the core's spare entries. -/
 @[inline] def overflowOneOperandKW {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
@@ -740,7 +743,7 @@ theorem longOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
   let held := SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
   let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
   dispatchOperandFilledKW sid capAddr tid executingCore arm held n0
-    (if held then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1)
+    (if held then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid 1)
     kPre kArmOk kArmErr onLookup onLookupW
 
 theorem overflowOneOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr)
@@ -758,6 +761,8 @@ theorem overflowOneOperandKW_eq {β : Type} (sid : SyscallId) (capAddr : SeLe4n.
       overflowOneOperandK sid capAddr tid executingCore arm st kPre (liftReport kArmOk kArmErr)
         onLookup := by
   unfold overflowOneOperandKW overflowOneOperandK
+  rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore_eq st executingCore tid
+    (by decide) (by decide)]
   exact dispatchOperandFilledKW_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW
 
 /-- **The reporting operand dispatch is the specification's**: the KW forms

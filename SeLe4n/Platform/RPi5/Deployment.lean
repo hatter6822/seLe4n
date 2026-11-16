@@ -36,9 +36,10 @@ initial thread, its CSpace and its own address space (BP3.2):
 |---|---|---|
 | root task TCB (the lower separation witness) | `2` | boot (`lowTrusted`) |
 | root task CNode | `3` | boot |
-| root task VSpace (ASID 1, empty) | `4` | boot |
+| root task VSpace (ASID 1; the boot maps the IPC buffer in it) | `4` | boot |
 | interrupt notification (every SPI signals it) | `5` | boot |
-| untypeds over the board's RAM outside the kernel's extent, one per BP4.6 extension: the first gigabyte's `[256 MiB, lowRamTop)` as the firmware reports it, then — on every board larger than 1 GiB — the DRAM above the gigabyte (the BCM2712's DRAM is contiguous from 0) | `6`, … | boot |
+| untypeds over the board's RAM outside the kernel's extent, one per BP4.6 extension: the first gigabyte's `[256 MiB, lowRamTop)` as the firmware reports it, then — on every board larger than 1 GiB — the DRAM above the gigabyte (the BCM2712's DRAM is contiguous from 0); each stops below its region map, the last below the root server's pages too | `6`, … | boot |
+| root server (WS-SX SX5.1): the root task's IPC-buffer frame and its three page tables, built by the boot in the four pages below the last region map; the mapped frame capability at root CNode slot `7`, a derived copy in the TCB's buffer slot | `8`–`11` | boot |
 | untrusted initial TCB (the upper separation witness) | `0x10_0000` | untrusted (`highUntrusted`) |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, empty) | `0x10_0002` | untrusted |
@@ -243,36 +244,35 @@ def rpi5InitialUntyped (base size : Nat) : UntypedObject :=
     list (`rpi5RootTaskUntypeds_regions`) — and since BP7.10 that list is all
     the RAM the configuration declares outside the kernel's extent, the first
     gigabyte's part cut where the board's firmware said it ends.  **WS-UC UC5**:
-    each untyped covers its extension below the region map's reservation
-    (`untypedSizeOf`), which the boot hands the HAL for the map
-    (`Platform.FFI.extendBootRamMap`), so no untyped covers the map. -/
+    each untyped covers its extension below the region map's reservation,
+    which the boot hands the HAL for the map (`Platform.FFI.extendBootRamMap`),
+    so no untyped covers the map; **WS-SX SX5.1**: and the last one stops below
+    the root server's reservation too (`untypedExtentsOf`). -/
 def rpi5RootTaskUntypeds (v : BCM2712Config) : List (SeLe4n.ObjId × UntypedObject) :=
-  (rpi5BootRamExtensions v).mapIdx fun i e =>
-    (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 (untypedSizeOf e.2))
+  (untypedExtentsOf (rpi5BootRamExtensions v)).mapIdx fun i u =>
+    (rpi5RootTaskUntypedId i, rpi5InitialUntyped u.1 u.2)
 
-/-- The untypeds built over any extension list have exactly its untyped
-    parts (`untypedExtentOf`) —
+/-- The untypeds built over any list of parts have exactly those parts —
     stated over the list, so no proof about a configuration's untypeds asks the
     kernel to evaluate that configuration's extensions: with the first region
     sized `lowRamTop - rpi5RamOrigin` (`v0.36.36`), `Nat.sub` would unfold once
     per unit of its literal second argument. -/
 private theorem untypedsOver_regions (l : List (Nat × Nat)) :
-    (l.mapIdx fun i e => (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 (untypedSizeOf e.2))).map
-        (fun u => (u.2.regionBase.toNat, u.2.regionSize)) = l.map untypedExtentOf := by
+    (l.mapIdx fun i u => (rpi5RootTaskUntypedId i, rpi5InitialUntyped u.1 u.2)).map
+        (fun u => (u.2.regionBase.toNat, u.2.regionSize)) = l := by
   apply List.ext_getElem
   · simp
   · intro i h₁ h₂
     simp only [List.getElem_map, List.getElem_mapIdx, rpi5InitialUntyped_base,
       rpi5InitialUntyped_size]
-    unfold untypedExtentOf
-    rfl
 
-/-- **WS-BP BP4.7, WS-UC UC5**: the untypeds' regions are exactly the untyped
-    parts of the extensions the boot maps, in order — on every configuration. -/
+/-- **WS-BP BP4.7, WS-UC UC5, WS-SX SX5.1**: the untypeds' regions are exactly
+    the untyped parts of the extensions the boot maps (`untypedExtentsOf`), in
+    order — on every configuration. -/
 theorem rpi5RootTaskUntypeds_regions (v : BCM2712Config) :
     (rpi5RootTaskUntypeds v).map (fun u => (u.2.regionBase.toNat, u.2.regionSize)) =
-      (rpi5BootRamExtensions v).map untypedExtentOf :=
-  untypedsOver_regions (rpi5BootRamExtensions v)
+      untypedExtentsOf (rpi5BootRamExtensions v) :=
+  untypedsOver_regions _
 
 /-- **WS-BP BP7.10**: how many extensions an admissible configuration has — the
     first gigabyte's, and the variant's RAM above it on every board larger than
@@ -410,7 +410,8 @@ def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
     machineConfig := rpi5MachineConfigForVariant v
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform)
     initialThreads := PlatformBinding.initialThreads (platform := RPi5Platform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := RPi5Platform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := RPi5Platform)
+    rootServer := rpi5RootServerAt v }
 
 /-- **WS-BP BP4.4**: binding a board account is choosing a variant — the bound
     configuration depends on the account only through `rpi5VariantFor`. -/
@@ -489,8 +490,11 @@ theorem rpi5BoundPlatformConfigAt_withoutExtents (v : BCM2712Config) (hv : v.Adm
       · simp [rpi5RootTaskUntypeds, untypedEntry_id]
       · simp [rpi5RootTaskUntypeds, ObjectEntry.withoutUntypedExtent, untypedEntry,
           objectWithoutUntypedExtent, untypedWithoutExtent, rpi5InitialUntyped]
+  have hRS : (rpi5RootServerAt v).map RootServerReservation.withoutMemory =
+      (rpi5RootServerAt v.uncut).map RootServerReservation.withoutMemory :=
+    rootServerReservationOf_withoutMemory _ _ hLen _ _ _ _
   unfold PlatformConfig.withoutExtents rpi5BoundPlatformConfigAt rpi5InitialObjectsFor
-  simp only [List.map_append, hUnt, hSlots]
+  simp only [List.map_append, hUnt, hSlots, hRS]
   rfl
 
 /-- **WS-BP BP7.10**: an entry of the deployment that is an untyped is the
@@ -498,10 +502,10 @@ theorem rpi5BoundPlatformConfigAt_withoutExtents (v : BCM2712Config) (hv : v.Adm
     seven objects is an untyped. -/
 private theorem untyped_of_mem (v : BCM2712Config) (e : ObjectEntry) (ut : UntypedObject)
     (he : e ∈ rpi5InitialObjectsFor v) (hObj : e.obj = .untyped ut) :
-    ∃ (i : Nat) (h : i < (rpi5BootRamExtensions v).length),
+    ∃ (i : Nat) (h : i < (untypedExtentsOf (rpi5BootRamExtensions v)).length),
       e.id = rpi5RootTaskUntypedId i ∧
-        ut = rpi5InitialUntyped (rpi5BootRamExtensions v)[i].1
-          (untypedSizeOf (rpi5BootRamExtensions v)[i].2) := by
+        ut = rpi5InitialUntyped (untypedExtentsOf (rpi5BootRamExtensions v))[i].1
+          (untypedExtentsOf (rpi5BootRamExtensions v))[i].2 := by
   unfold rpi5InitialObjectsFor at he
   rcases List.mem_append.mp he with hFixed | hUnt
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hFixed
@@ -538,12 +542,11 @@ private theorem extensions_pairwise_disjoint (v : BCM2712Config) (hv : v.Admissi
 private theorem extension_placed (mc : SeLe4n.MachineConfig)
     (hRes : mc.kernelReserved = rpi5KernelReserved)
     (hDev : ∀ r ∈ mc.memoryMap, r.kind = .ram → ∀ d ∈ mc.kernelDevices, r.endAddr ≤ d.base.toNat)
-    (x : Nat × Nat) (hx : x ∈ bootRamExtensionsOf mc.memoryMap) :
-    (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2)) &&
-      untypedClearOfKernel mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2)) &&
-      untypedClearOfKernelDevices mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2))) = true := by
+    (x : Nat × Nat) (hx : x ∈ bootRamExtensionsOf mc.memoryMap) (sz : Nat) (hle : sz ≤ x.2) :
+    (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 sz) &&
+      untypedClearOfKernel mc (rpi5InitialUntyped x.1 sz) &&
+      untypedClearOfKernelDevices mc (rpi5InitialUntyped x.1 sz)) = true := by
   obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ := mem_bootRamExtensionsOf _ _ hx
-  have hle := untypedSizeOf_le x.2
   simp only [Bool.and_eq_true]
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · unfold untypedWithinDeclaredRegion
@@ -571,13 +574,21 @@ private theorem extension_placed (mc : SeLe4n.MachineConfig)
 
 /-- Two untypeds over extensions that do not overlap do not overlap either
     (stated over the extensions, for the reason above). -/
-private theorem extensions_disjoint_untyped (a b : Nat × Nat) (h : a.1 + a.2 ≤ b.1) :
-    (rpi5InitialUntyped a.1 (untypedSizeOf a.2)).regionBase.val +
-        (rpi5InitialUntyped a.1 (untypedSizeOf a.2)).regionSize ≤
-      (rpi5InitialUntyped b.1 (untypedSizeOf b.2)).regionBase.val := by
-  have hle := untypedSizeOf_le a.2
+private theorem extensions_disjoint_untyped (a b : Nat × Nat) (sa sb : Nat) (hle : sa ≤ a.2)
+    (h : a.1 + a.2 ≤ b.1) :
+    (rpi5InitialUntyped a.1 sa).regionBase.val + (rpi5InitialUntyped a.1 sa).regionSize ≤
+      (rpi5InitialUntyped b.1 sb).regionBase.val := by
   simp only [rpi5InitialUntyped, SeLe4n.PAddr.ofNat]
   omega
+
+/-- The `i`-th untyped part of an extension list starts at the `i`-th
+    extension and lies inside it. -/
+private theorem untypedExtentsOf_within (l : List (Nat × Nat)) (i : Nat)
+    (h : i < (untypedExtentsOf l).length) :
+    (untypedExtentsOf l)[i].1 = (l[i]'(by simpa using h)).1 ∧
+      (untypedExtentsOf l)[i].2 ≤ (l[i]'(by simpa using h)).2 := by
+  obtain ⟨h1, h2⟩ := untypedExtentsOf_getElem l i h
+  exact ⟨h1, Nat.le_trans h2 (untypedSizeOf_le _)⟩
 
 /-- **WS-BP BP7.10**: the one gate the projection forgets, decided over the
     structure rather than by evaluation — every untyped is its extension, which
@@ -593,8 +604,10 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
     cases hObj : e.obj with
     | untyped ut =>
         obtain ⟨i, hi, _, rfl⟩ := untyped_of_mem v e ut he hObj
+        obtain ⟨hB, hS⟩ := untypedExtentsOf_within _ i hi
+        rw [hB]
         exact extension_placed (rpi5MachineConfigForVariant v) rfl
-          (rpi5MemoryMapForConfig_ram_below_devices v hv) _ (List.getElem_mem hi)
+          (rpi5MemoryMapForConfig_ram_below_devices v hv) _ (List.getElem_mem _) _ hS
     | _ => rfl
   · intro e₁ he₁ e₂ he₂
     unfold untypedEntriesDisjoint
@@ -604,28 +617,172 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
         | untyped u₂ =>
             obtain ⟨i, hi, hId₁, rfl⟩ := untyped_of_mem v e₁ u₁ he₁ hO₁
             obtain ⟨j, hj, hId₂, rfl⟩ := untyped_of_mem v e₂ u₂ he₂ hO₂
+            obtain ⟨hBi, hSi⟩ := untypedExtentsOf_within _ i hi
+            obtain ⟨hBj, hSj⟩ := untypedExtentsOf_within _ j hj
+            rw [hBi, hBj]
             simp only [Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq]
+            have hi' : i < (rpi5BootRamExtensions v).length := by simpa using hi
+            have hj' : j < (rpi5BootRamExtensions v).length := by simpa using hj
             by_cases hij : i = j
             · subst hij; exact Or.inl (Or.inl (hId₁.trans hId₂.symm))
             · have hP := List.pairwise_iff_getElem.mp (extensions_pairwise_disjoint v hv)
               rcases Nat.lt_or_gt_of_ne hij with hlt | hgt
-              · rcases hP i j hi hj hlt with h | h
-                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ h))
-                · exact Or.inr (extensions_disjoint_untyped _ _ h)
-              · rcases hP j i hj hi hgt with h | h
-                · exact Or.inr (extensions_disjoint_untyped _ _ h)
-                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ h))
+              · rcases hP i j hi' hj' hlt with h | h
+                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ _ _ hSi h))
+                · exact Or.inr (extensions_disjoint_untyped _ _ _ _ hSj h)
+              · rcases hP j i hj' hi' hgt with h | h
+                · exact Or.inr (extensions_disjoint_untyped _ _ _ _ hSj h)
+                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ _ _ hSi h))
         | _ => rfl
     | _ => rfl
 
+/-- **WS-SX SX5.1**: the last extension of an admissible configuration, with
+    the facts the root server's placement reads: its index, that it is RAM of
+    the bound map clear of the kernel's extent, that it holds the reservation,
+    and that it is whole 2 MiB blocks. -/
+private theorem lastExtension_facts (v : BCM2712Config) (hv : v.Admissible) (e : Nat × Nat)
+    (hL : (rpi5BootRamExtensions v).getLast? = some e) :
+    ∃ (n : Nat) (hn : n < (rpi5BootRamExtensions v).length),
+      n + 1 = (rpi5BootRamExtensions v).length ∧ (rpi5BootRamExtensions v)[n] = e ∧
+      e ∈ rpi5BootRamExtensions v ∧ rootServerFits e = true ∧
+      e.1 % 0x20_0000 = 0 ∧ (e.1 + e.2) % 0x20_0000 = 0 := by
+  rw [List.getLast?_eq_getElem?] at hL
+  have hlen : (rpi5BootRamExtensions v).length - 1 < (rpi5BootRamExtensions v).length := by
+    rcases Nat.eq_zero_or_pos (rpi5BootRamExtensions v).length with h0 | hpos
+    · rw [List.getElem?_eq_none (by omega)] at hL; cases hL
+    · omega
+  rw [List.getElem?_eq_getElem hlen] at hL
+  have hEq := Option.some.inj hL
+  have hMem : e ∈ rpi5BootRamExtensions v := hEq ▸ List.getElem_mem hlen
+  have hAcc := List.all_eq_true.mp (rpi5BootRamExtensions_admissible v hv) e hMem
+  have hFit := rootServerFits_of_accepted e hAcc
+  unfold rpi5BootRamExtensionAccepted at hAcc
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at hAcc
+  obtain ⟨⟨⟨⟨⟨_, hBase⟩, hEnd⟩, _⟩, _⟩, _⟩ := hAcc
+  exact ⟨_, hlen, by omega, hEq, hMem, hFit, hBase, hEnd⟩
+
+/-- **WS-SX SX5.1**: the root server's pages are placed on every admissible
+    configuration — whole pages inside the RAM region its extension was cut
+    from, directly above the last untyped and below that extension's region
+    map, so clear of every untyped (the others are other extensions, which do
+    not overlap), of the kernel's extent and devices, and of every region map.
+    Decided over the structure, as the untyped placement is. -/
+private theorem paddr_toNat_ofNat (n : Nat) : (SeLe4n.PAddr.ofNat n).toNat = n := rfl
+
+private theorem rootServerMemoryPlaced_over (v : BCM2712Config) (hv : v.Admissible)
+    (c : PlatformConfig) (hMap : c.machineConfig.memoryMap = rpi5MemoryMapForConfig v)
+    (hRes : c.machineConfig.kernelReserved = rpi5KernelReserved)
+    (hDevs : c.machineConfig.kernelDevices = mmioRegions)
+    (hObjs : c.initialObjects = rpi5InitialObjectsFor v) (rs : RootServerReservation) (e : Nat × Nat)
+    (hL : (rpi5BootRamExtensions v).getLast? = some e)
+    (hBase : rs.base.toNat = rootServerBaseOf e) (hExts : rs.ramExtensions = rpi5BootRamExtensions v) :
+    rootServerMemoryPlaced c rs = true := by
+    obtain ⟨n, hn, hn1, hEn, hMem, hFit, hB2, hE2⟩ := lastExtension_facts v hv e hL
+    obtain ⟨hU0, hUb, hRm, hTop⟩ := rootServer_tiles e hFit
+    have hPg := regionMapReserveBytes_pages e.2
+    obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ := mem_bootRamExtensionsOf _ _ hMem
+    have hDev := rpi5MemoryMapForConfig_ram_below_devices v hv r hr hk
+    have hRB : rootServerReserveBytes = 16384 := rfl
+    have hRmB : regionMapBaseOf e ≥ e.1 := by unfold regionMapBaseOf; omega
+    have hP := List.pairwise_iff_getElem.mp (extensions_pairwise_disjoint v hv)
+    -- every other extension lies wholly below or above `e`
+    have hOther : ∀ j (hj : j < (rpi5BootRamExtensions v).length), j ≠ n →
+        (rpi5BootRamExtensions v)[j].1 + (rpi5BootRamExtensions v)[j].2 ≤ e.1 ∨
+          e.1 + e.2 ≤ (rpi5BootRamExtensions v)[j].1 := by
+      intro j hj hjn
+      have hjlt : j < n := by omega
+      rcases hP j n hj hn hjlt with h | h
+      · rw [hEn] at h; exact Or.inl h
+      · rw [hEn] at h; exact Or.inr h
+    unfold rootServerMemoryPlaced
+    simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, beq_iff_eq,
+      decide_eq_true_eq, hMap, hRes, hDevs, hObjs, hBase, hExts]
+    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · -- page aligned
+      unfold SeLe4n.pageBytes at hPg ⊢
+      rw [hRB] at hRm
+      omega
+    · -- inside the RAM region the extension was cut from
+      refine ⟨r, hr, ⟨hk, ?_⟩, ?_⟩
+      · omega
+      · omega
+    · -- clear of every untyped
+      intro ent hent
+      cases hObj : ent.obj with
+      | untyped ut =>
+        simp only [Bool.or_eq_true, decide_eq_true_eq]
+        obtain ⟨i, hi, _, rfl⟩ := untyped_of_mem v ent ut hent hObj
+        have hi' : i < (rpi5BootRamExtensions v).length := by simpa using hi
+        -- `rw`, not `simp`: the two are `rfl` lemmas, and a `simp` by them is
+        -- checked by the kernel unfolding the extensions' closed form.
+        rw [rpi5InitialUntyped_base, rpi5InitialUntyped_size, untypedExtentsOf_getElem_eq _ i hi']
+        by_cases hin : i = n
+        · subst hin
+          rw [if_pos hn1, hEn]
+          right
+          unfold untypedExtentBelowRootServerOf at hUb ⊢
+          simp only at hUb ⊢
+          omega
+        · rw [if_neg (by omega)]
+          simp only [untypedExtentOf_fst, untypedExtentOf_snd]
+          have hle := untypedSizeOf_le (rpi5BootRamExtensions v)[i].2
+          rcases hOther i hi' hin with h | h
+          · right; omega
+          · left; omega
+      | _ => rfl
+    · -- clear of the kernel's reserved extent
+      intro k hk'
+      simp only [rpi5KernelReserved, List.mem_cons, List.not_mem_nil, or_false] at hk'
+      subst hk'
+      unfold rangeClearOfRegion
+      simp only [Bool.or_eq_true, decide_eq_true_eq, SeLe4n.MemoryRegion.endAddr,
+        SeLe4n.PAddr.toNat, SeLe4n.PAddr.ofNat]
+      right; omega
+    · -- clear of every device the kernel drives
+      intro d hd
+      unfold rangeClearOfRegion
+      simp only [Bool.or_eq_true, decide_eq_true_eq]
+      left
+      have := hDev d hd
+      omega
+    · -- clear of every region map
+      intro e' he'
+      simp only [Bool.or_eq_true, decide_eq_true_eq]
+      obtain ⟨j, hj, hj'⟩ := List.mem_iff_getElem.mp he'
+      subst hj'
+      by_cases hjn : j = n
+      · subst hjn; rw [hEn]; left; omega
+      · have hR' : regionMapBaseOf (rpi5BootRamExtensions v)[j] ≥ (rpi5BootRamExtensions v)[j].1 := by
+          unfold regionMapBaseOf; omega
+        rcases hOther j hj hjn with h | h
+        · right; omega
+        · left; omega
+
+theorem rpi5BoundPlatformConfigAt_rootServerMemoryPlaced (v : BCM2712Config) (hv : v.Admissible) :
+    (rpi5BoundPlatformConfigAt v).rootServer.all
+      (rootServerMemoryPlaced (rpi5BoundPlatformConfigAt v)) = true := by
+  unfold rpi5BoundPlatformConfigAt
+  cases h : rpi5RootServerAt v with
+  | none => rfl
+  | some rs =>
+    unfold rpi5RootServerAt rootServerReservationOf at h
+    cases hL : (rpi5BootRamExtensions v).getLast? with
+    | none => rw [hL] at h; cases h
+    | some e =>
+      rw [hL, Option.map_some] at h
+      have h' := Option.some.inj h
+      exact rootServerMemoryPlaced_over v hv _ rfl rfl rfl rfl rs e hL
+        (by rw [← h', paddr_toNat_ofNat]) (by rw [← h'])
+
 /-- **WS-BP BP3.3, BP7.10**: the bound configuration is well-formed on every
-    admissible configuration — the six extent-free conjuncts because the
+    admissible configuration — the extent-free conjuncts because the
     member's are (`PlatformConfig.wellFormed_of_withoutExtents`), the untyped
-    placement over the structure. -/
+    placement and (WS-SX SX5.1) the root server's pages over the structure. -/
 theorem rpi5BoundPlatformConfigAt_wellFormed (v : BCM2712Config) (hv : v.Admissible) :
     (rpi5BoundPlatformConfigAt v).wellFormed = true :=
   PlatformConfig.wellFormed_of_withoutExtents _ _ (rpi5BoundPlatformConfigAt_withoutExtents v hv)
     (member_wellFormed _ hv.1) (rpi5BoundPlatformConfigAt_placement v hv)
+    (rpi5BoundPlatformConfigAt_rootServerMemoryPlaced v hv)
 
 /-- **WS-BP BP3.3**: every configured object passes the boot-safety sweep. -/
 theorem rpi5BoundPlatformConfigAt_bootSafe (v : BCM2712Config) (hv : v.Admissible) :
@@ -741,10 +898,12 @@ def rpi5DeploymentStartedStateAt (v : BCM2712Config) : IntermediateState :=
     are its labeling's two separation witnesses — with the configuration's
     capabilities then linked into the derivation tree (WS-ZA ZA5.4,
     `linkBootCapabilities`), after the board's interrupt nodes are installed
-    (WS-ZA ZA6.32, `installIrqNodes`). -/
+    (WS-ZA ZA6.32, `installIrqNodes`) and the root task's IPC buffer built
+    (WS-SX SX5.3, `installRootServer`). -/
 def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
   linkBootCapabilities (rpi5BoundPlatformConfigAt v)
-    (installIrqNodes (irqNodeLineCount (rpi5BoundPlatformConfigAt v)) (rpi5DeploymentStartedStateAt v))
+    (installRootServer (rpi5BoundPlatformConfigAt v)
+      (installIrqNodes (irqNodeLineCount (rpi5BoundPlatformConfigAt v)) (rpi5DeploymentStartedStateAt v)))
 
 /-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds on
     every variant, and this is what it returns. -/
@@ -875,6 +1034,7 @@ theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
     declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
       (PlatformBinding.labeling (platform := RPi5Platform)) = true :=
   (linkBootCapabilities_declaredWitnessesInstalled _ _ _).trans <|
+  (installRootServer_declaredWitnessesInstalled _ _ _).trans <|
   (installIrqNodes_declaredWitnessesInstalled (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) _).trans <|
   startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     (rpi5Deployment_startInitialThreads v hv) _
@@ -908,9 +1068,11 @@ theorem rpi5DeploymentBootStateAt_initialThreadsStarted (v : BCM2712Config)
 theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseRPi5 (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
+        completePhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))
-        pure (Except.ok (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state)) := by
+        pure (Except.ok
+          (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state)) := by
   have hv := rpi5VariantFor_admissible board
   rw [bootAndInitialiseRPi5_eq, bootAndInitialisePlatform_eq_checked_boot]
   show (match bootFromPlatformCheckedStartedFor _
@@ -925,23 +1087,23 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
 theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
     bootAndInitialiseRPi5OrHalt (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
+        completePhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state.drainedPhysicalWrites
+        initialiseKernelState (drainBootPhysicalWrites (rpi5DeploymentBootStateAt (rpi5VariantFor board))).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))) := by
-  unfold bootAndInitialiseRPi5OrHalt
-  rw [bootAndInitialiseRPi5_rpi5PlatformConfigFor]
-  -- `BaseIO` carries no `LawfulMonad` instance to rewrite with, and needs
-  -- none: its bind reduces, so the two programs are the same term.
-  rfl
+  exact bootAndInitialiseRPi5OrHalt_of_ok (bootAndInitialiseRPi5_rpi5PlatformConfigFor board)
 
 /-- **WS-BP BP3.5**: the state the hardware boot installs for this deployment
     satisfies the proof-layer invariant bundle, and its freeze the frozen one —
-    `bootToRuntime_invariantBridge_started` at the binding's declared cores — on
-    every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs
+    `bootToRuntime_invariantBridge_installed` at the binding's declared cores — on
+    every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs,
+    its physical-write ledger drained (WS-SX SX5.3, D15)
     (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`), not of a model of it. -/
 theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v.Admissible) :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle (rpi5DeploymentBootStateAt v).state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze (rpi5DeploymentBootStateAt v)) :=
-  bootToRuntime_invariantBridge_started _ PlatformBinding.declaredCores_nodup _ _
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (drainBootPhysicalWrites (rpi5DeploymentBootStateAt v)).state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen
+      (SeLe4n.Model.freeze (drainBootPhysicalWrites (rpi5DeploymentBootStateAt v))) :=
+  bootToRuntime_invariantBridge_installed _ PlatformBinding.declaredCores_nodup _ _
     (rpi5BoundPlatformConfigAt_boot v hv)
 
 -- ============================================================================
@@ -972,27 +1134,57 @@ theorem rpi5PlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : Pla
     gigabyte needs no case of its own — and only the part of it the firmware
     reported is in the map to be covered.  **WS-UC UC5**: except the region
     map's reservation at the top of each extension (`regionMapBaseOf`), which
-    is the kernel's, as seL4's boot-time structures are. -/
+    is the kernel's, as seL4's boot-time structures are, and (**WS-SX SX5.1**)
+    the root server's pages below the last one (`rpi5RootServerAt`), which the
+    boot builds the root task's IPC buffer from, as seL4's rootserver region is
+    cut before any untyped is made. -/
 theorem rpi5InitialObjectsFor_covers_ram (v : BCM2712Config)
     (r : SeLe4n.MemoryRegion) (hr : r ∈ rpi5MemoryMapForConfig v) (hk : r.kind = .ram)
     (a : Nat) (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr)
     (hk' : rpi5KernelReservedEnd ≤ a)
-    (hMap : ∀ e ∈ rpi5BootRamExtensions v, e.1 ≤ a → a < regionMapBaseOf e) :
+    (hMap : ∀ e ∈ rpi5BootRamExtensions v, e.1 ≤ a → a < regionMapBaseOf e)
+    (hRoot : ∀ rs ∈ rpi5RootServerAt v,
+      ¬ (rs.base.toNat ≤ a ∧ a < rs.base.toNat + rootServerReserveBytes)) :
     ∃ e ∈ rpi5InitialObjectsFor v, ∃ ut, e.obj = .untyped ut ∧ ut.isDevice = false ∧
       ut.regionBase.toNat ≤ a ∧ a < ut.regionBase.toNat + ut.regionSize := by
   obtain ⟨ext, hExt, h1, h2⟩ := bootRamExtensionsOf_covers _ r hr hk a hlo hhi hk'
+  change ext ∈ rpi5BootRamExtensions v at hExt
   have hBelow := hMap ext hExt h1
   obtain ⟨i, hi, hEq⟩ := List.mem_iff_getElem.mp hExt
+  have hi' : i < (untypedExtentsOf (rpi5BootRamExtensions v)).length := by simpa using hi
   refine ⟨untypedEntry (rpi5RootTaskUntypedId i)
-      (rpi5InitialUntyped ext.1 (untypedSizeOf ext.2)), ?_, _, rfl, rfl, ?_, ?_⟩
+      (rpi5InitialUntyped (untypedExtentsOf (rpi5BootRamExtensions v))[i].1
+        (untypedExtentsOf (rpi5BootRamExtensions v))[i].2), ?_, _, rfl, rfl, ?_, ?_⟩
   · refine List.mem_append_right _ (List.mem_map.mpr ⟨(rpi5RootTaskUntypedId i,
-      rpi5InitialUntyped ext.1 (untypedSizeOf ext.2)), ?_, rfl⟩)
+      rpi5InitialUntyped (untypedExtentsOf (rpi5BootRamExtensions v))[i].1
+        (untypedExtentsOf (rpi5BootRamExtensions v))[i].2), ?_, rfl⟩)
     unfold rpi5RootTaskUntypeds
-    exact List.mem_mapIdx.mpr ⟨i, hi, by rw [← hEq]; rfl⟩
-  · simp only [rpi5InitialUntyped_base]; omega
-  · simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]
-    unfold regionMapBaseOf at hBelow
-    omega
+    exact List.mem_mapIdx.mpr ⟨i, hi', rfl⟩
+  · rw [rpi5InitialUntyped_base, (untypedExtentsOf_getElem _ i hi').1, hEq]; omega
+  · rw [rpi5InitialUntyped_base, rpi5InitialUntyped_size, untypedExtentsOf_getElem_eq _ i hi, hEq]
+    split
+    · rename_i hLast
+      -- the last extension: its untyped stops below the root server's pages
+      have hL : (rpi5BootRamExtensions v).getLast? = some ext := by
+        rw [List.getLast?_eq_getElem?, show (rpi5BootRamExtensions v).length - 1 = i by omega,
+          List.getElem?_eq_getElem hi, hEq]
+      have hRS : rpi5RootServerAt v = some
+          { thread := ⟨rpi5LowerWitnessIndex⟩, base := SeLe4n.PAddr.ofNat (rootServerBaseOf ext),
+            bufferVAddr := rpi5RootTaskIpcBufferVAddr, firstObjId := rpi5RootServerFirstObjId,
+            frameSlot := SeLe4n.Slot.ofNat rpi5RootServerFrameSlot,
+            ramExtensions := rpi5BootRamExtensions v } := by
+        unfold rpi5RootServerAt rootServerReservationOf
+        rw [hL, Option.map_some]
+      have hNot := hRoot _ (by rw [hRS]; exact rfl)
+      rw [paddr_toNat_ofNat] at hNot
+      unfold untypedExtentBelowRootServerOf rootServerBaseOf at *
+      unfold regionMapBaseOf at hBelow hNot
+      simp only at hNot ⊢
+      omega
+    · unfold untypedExtentOf
+      unfold regionMapBaseOf at hBelow
+      simp only
+      omega
 
 /-- An untyped over the `i`-th of pairwise-disjoint extensions ends at or
     before the `j`-th extension's reservation, or the `j`-th extension ends at
@@ -1000,13 +1192,14 @@ theorem rpi5InitialObjectsFor_covers_ram (v : BCM2712Config)
     the kernel never unfolds `untypedSizeOf`'s division. -/
 private theorem untyped_clear_of_reservation (l : List (Nat × Nat))
     (hP : l.Pairwise (fun a b => a.1 + a.2 ≤ b.1 ∨ b.1 + b.2 ≤ a.1))
-    (i j : Nat) (hi : i < l.length) (hj : j < l.length) :
-    l[i].1 + untypedSizeOf l[i].2 ≤ regionMapBaseOf l[j] ∨ l[j].1 + l[j].2 ≤ l[i].1 := by
+    (i j : Nat) (hi : i < l.length) (hj : j < l.length) (sz : Nat)
+    (hsz : sz ≤ untypedSizeOf l[i].2) :
+    l[i].1 + sz ≤ regionMapBaseOf l[j] ∨ l[j].1 + l[j].2 ≤ l[i].1 := by
   have hB : regionMapBaseOf l[j] = l[j].1 + untypedSizeOf l[j].2 := by
     unfold regionMapBaseOf; rfl
   rw [hB]
   by_cases hij : i = j
-  · subst hij; exact Or.inl (Nat.le_refl _)
+  · subst hij; exact Or.inl (by omega)
   · have hle := untypedSizeOf_le l[i].2
     have hP' := List.pairwise_iff_getElem.mp hP
     generalize untypedSizeOf l[i].2 = a at *
@@ -1030,15 +1223,14 @@ theorem rpi5RootTaskUntypeds_clear_of_regionMaps (v : BCM2712Config) (hv : v.Adm
     u.2.regionBase.toNat + u.2.regionSize ≤ regionMapBaseOf e ∨
       e.1 + e.2 ≤ u.2.regionBase.toNat := by
   unfold rpi5RootTaskUntypeds at hu
-  obtain ⟨i, hi, hEq⟩ := List.mem_mapIdx.mp hu
+  obtain ⟨i, hi, rfl⟩ := List.mem_mapIdx.mp hu
   obtain ⟨j, hj, hj'⟩ := List.mem_iff_getElem.mp he
-  have hBase : u.2.regionBase.toNat = (rpi5BootRamExtensions v)[i].1 := by
-    rw [← hEq]; exact rpi5InitialUntyped_base _ _
-  have hSize : u.2.regionSize = untypedSizeOf (rpi5BootRamExtensions v)[i].2 := by
-    rw [← hEq]; exact rpi5InitialUntyped_size _ _
-  have h := untyped_clear_of_reservation _ (extensions_pairwise_disjoint v hv) i j hi hj
-  rw [hj'] at h
-  rw [hBase, hSize]
+  obtain ⟨hB, hS⟩ := untypedExtentsOf_getElem _ i hi
+  have hi' : i < (rpi5BootRamExtensions v).length := by simpa using hi
+  have h := untyped_clear_of_reservation _ (extensions_pairwise_disjoint v hv) i j hi' hj _ hS
+  rw [hj', ← hB] at h
+  show (rpi5InitialUntyped _ _).regionBase.toNat + (rpi5InitialUntyped _ _).regionSize ≤ _ ∨ _
+  rw [rpi5InitialUntyped_base, rpi5InitialUntyped_size]
   exact h
 
 /-- **WS-BP BP4.7**: and every one of those untypeds is an object of the state
@@ -1051,6 +1243,8 @@ theorem rpi5DeploymentBootStateAt_untypedInstalled (v : BCM2712Config)
     (hu : u ∈ rpi5RootTaskUntypeds v) :
     (rpi5DeploymentBootStateAt v).state.objects[u.1]? = some (.untyped u.2) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  (fun h => installRootServer_objects_of_some h (fun _ e => by cases e) (fun _ e => by cases e)
+    (fun _ e => by cases e)) <|
   installIrqNodes_objects_of_some (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) <|
   startInitialThreads_objects_of_nonTcb _ _ _
     (rpi5Deployment_startInitialThreads v hv) _ _ (fun _ h => by cases h)

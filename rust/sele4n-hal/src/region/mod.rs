@@ -572,7 +572,7 @@ pub struct Reservation {
 }
 
 /// The reservation the boot names (`Platform.FFI.extendBootRamMap`, from
-/// `Platform.untypedExtentOf` and `Platform.regionMapBaseOf`), checked: the
+/// `Platform.untypedExtentsOf` and `Platform.regionMapBaseOf`), checked: the
 /// covered RAM is nonempty whole pages, the map starts on a page, the map and
 /// the covered RAM do not meet, and both lie in RAM that `mapped` says the
 /// boot map covers.  The layout is the Lean boot's; this only refuses one that
@@ -658,29 +658,56 @@ pub unsafe fn register_reserved_map(
     Ok(layout)
 }
 
-/// Whether `[base, base + len)` meets a registered map reservation.
-#[must_use]
-pub fn meets_reservation(base: usize, len: usize) -> bool {
+/// The registered map reservations, each as `(map_base, reserved_len)`.
+fn reservations() -> impl Iterator<Item = (usize, usize)> {
     let count = SEGMENT_COUNT.load(Ordering::Acquire).min(MAX_SEGMENTS);
-    (0..count).any(|i| {
+    (0..count).map(|i| {
         let s = &SEGMENTS[i];
-        meets(
-            base,
-            len,
+        (
             s.storage.load(Ordering::Relaxed),
             s.reserved_len.load(Ordering::Relaxed),
         )
     })
 }
 
+/// Whether `[base, base + len)` meets a registered map reservation.
+#[must_use]
+pub fn meets_reservation(base: usize, len: usize) -> bool {
+    reservations().any(|(map, reserved)| meets(base, len, map, reserved))
+}
+
+/// **What [`thread_ram_covered`] decides**, over its two inputs: `[base, base
+/// + size)` is RAM `mapped` covers and meets none of `reservations` (each a
+/// `(map_base, reserved_len)`).  Pure, so the Lean boot map's own layout is
+/// checked against the very predicate the decodes are given: the root
+/// server's pages, which the boot builds the root task's IPC buffer in
+/// (WS-SX SX5.1), are admitted, and every region map page is refused
+/// (`mmu`'s boot-map tests).
+#[must_use]
+pub fn thread_ram_admitted(
+    base: u64,
+    size: u64,
+    mapped: impl Fn(u64, u64) -> bool,
+    mut reservations: impl Iterator<Item = (usize, usize)>,
+) -> bool {
+    mapped(base, size)
+        && !reservations.any(|(map, reserved)| meets(base as usize, size as usize, map, reserved))
+}
+
 /// **RAM a thread's page may lie in**: RAM the boot map covers
 /// (`mmu::is_boot_cacheable_range`) that meets no region map reservation.
 /// The predicate every thread-memory decode is given, so no page descriptor,
-/// zeroing, user-word access or installed table can name the map.
+/// zeroing, user-word access or installed table can name the map.  The root
+/// server's pages (WS-SX SX5.1) lie in mapped RAM between the last untyped
+/// and its map, so it admits them.
 #[must_use]
 pub fn thread_ram_covered(base: u64, size: u64) -> bool {
-    crate::mmu::is_boot_cacheable_range(base, size)
-        && !meets_reservation(base as usize, size as usize)
+    thread_ram_admitted(
+        base,
+        size,
+        crate::mmu::is_boot_cacheable_range,
+        reservations(),
+    )
 }
 
 /// The backstop at a page's zeroing (`user_translation::apply_physical_write`):

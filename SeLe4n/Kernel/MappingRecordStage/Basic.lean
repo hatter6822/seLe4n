@@ -164,7 +164,7 @@ theorem rewriteObject (id : SeLe4n.ObjId) (new : KernelObject) (hA : st.rewriteA
   rw [hCn] at hNeutral
   exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
 
-/-- A thread rewritten in place, keeping its two space slots. -/
+/-- A thread rewritten in place, keeping its space slots. -/
 theorem rewriteObject_tcb {tid : SeLe4n.ThreadId} {t : TCB} (h : st.getTcb? tid = some t)
     (t' : TCB) (hS : t'.spaceCells = t.spaceCells ∧ t'.spaceLinks = t.spaceLinks := by exact ⟨rfl, rfl⟩)
     (hA : st.rewriteAdmissible tid.toObjId (.tcb t') := rewriteAdmissible_tcb h t') :

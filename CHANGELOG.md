@@ -1,3 +1,113 @@
+## v0.37.31 — the boot builds the root task's IPC buffer
+
+WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D13–D15). The boot now
+gives the root task an IPC buffer before it runs, as seL4's boot does
+(`create_ipcbuf_frame_cap`, `tcbBuffer`, `create_it_pt_cap`). Before, no
+thread had a buffer at boot, and the exerciser built its own: from an
+untyped carved out of the root task's RAM, retyped and mapped by boot-time
+invocations.
+
+- **The reservation (SX5.1).** `PlatformConfig.rootServer`, supplied by the
+  binding (`PlatformBinding.rootServerFor`, bound by `bindPlatformConfig`):
+  four pages directly below the last boot RAM extension's region map
+  (`rootServerBaseOf`, `rootServerReservationOf`). Page 0 is the buffer's
+  frame, pages 1–3 its tables. `virt` and its exerciser reserve
+  `[0x7FE7_C000, 0x7FE8_0000)`, and every RPi5 variant, shipped or exerciser,
+  the four pages below its top region map. The board-generic exerciser
+  deployment supplies its own (`Exerciser.rootServer`: objects 11–14, root
+  CNode slots 32–35), which both boards' exerciser bindings return.
+  - `rootServerPlaced` is the sixteenth `wellFormed` conjunct, with its own
+    diagnostic. It checks the memory (one `.ram` region, clear of every
+    untyped, the kernel's reserved extent, every driven device and every region
+    map), the thread (an empty buffer slot, four empty root CNode slots, a
+    VSpace root owning a table page), fresh ids and a page-aligned user buffer
+    address. The object budget counts the four objects.
+  - The last extension's untyped stops below the reservation
+    (`untypedExtentsOf`, `untypedExtentBelowRootServerOf`), and the boot hands
+    the HAL the same parts as the RAM each region map describes.
+  - `region::thread_ram_covered` decides through the new pure
+    `region::thread_ram_admitted`, which admits the reservation and refuses
+    every region map page. The HAL's boot-map tests check that on the shared
+    fixtures' new `untyped … regionMap …` and `rootServer …` lines.
+  - `PlatformConfig.withoutExtents` also erases the reservation's memory.
+- **The buffer slot (SX5.2).** A TCB has three space slots: the CSpace root,
+  the VSpace root and the buffer's frame (`TCB.ipcBufferSlot`). Every slot
+  reader, invariant and teardown covers the third.
+- **The stage (SX5.3).** `installRootServer` runs after the interrupt nodes
+  and before the capability links. It creates the frame and the three tables
+  and records the root's tables, mapping and epoch. It installs the mapped
+  frame capability in the root CNode and a derived copy in the buffer slot,
+  and sets `ipcBuffer` (`2^40`). It records eight owed writes: four page
+  scrubs, three table descriptors and the buffer's page descriptor. The bundle
+  is reproved over the new objects (`proofLayerInvariantBundle_of_bootShape`,
+  `bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle`).
+- **The writes are performed (D15).** The boot wrapper takes the machine's
+  write performer (`bootAndInitialiseFromPlatformOn machine`, inlined so each
+  caller's choice reduces at compile time). Every hardware entry passes the
+  HAL's (`completePhysicalWrites`), and the wrapper installs the drained state
+  (`drainBootPhysicalWrites`). The host and simulation entries pass none, and
+  refuse a boot that owes writes (`unperformedBootPhysicalWritesBootError`).
+  Under the RPi5 binding, which always reserves a root server, a config whose
+  root thread cannot take the buffer is refused by `rootServerPlaced`; the
+  dispatch suite's two binding tests now assert that refusal and check the
+  binding's root, witnesses and machine configuration on the bound config
+  without the reservation. The idle suite's object-budget boundary counts the
+  four root-server objects. `bootToRuntime_invariantBridge_installed` states
+  the bundle on that state; `bootToRuntime_invariantBridge_started`, on the
+  undrained state no entry installs, is deleted. The HAL counts the writes it
+  performs before the boot map is sealed and prints the count after the
+  install. `qemu_lean_boot_expected.txt` pins eight (`BOOT_WRITES`).
+- **The exerciser's workaround is deleted (SX5.4).** From the board-generic
+  exerciser deployment (`SeLe4n/Platform/Exerciser/Deployment.lean`):
+  `rootInvoke`, `rootInvocation`, `rootCapAddress`,
+  `rootIpcBufferInvocations`, `giveRootIpcBuffer(OrHalt)`, the IPC-buffer
+  untyped with its pages and slots, `firstExtension` and the tile theorems.
+  The root task's untyped is the first extension's part from
+  `untypedExtentsOf`, and `rootTaskUntyped_below_rootServer` states that on a
+  one-extension board it ends at the reservation.
+- **Tests.**
+  - `tests/Ak9PlatformSuite.lean` checks the boot-built buffer on `virt`, the
+    exerciser and all seven RPi5 configurations: `ipcBuffer`, the buffer slot,
+    the frame capability, the first overflow word resolving into the frame, and
+    the eight owed writes drained. Controls: a configuration without a
+    reservation boots bufferless and owes nothing, and a reservation outside
+    RAM is refused by `rootServerPlaced`.
+  - The QEMU heap gate gains `root-ipc-buffer-at-boot` (a mint whose badge is
+    the first overflow word, read from the boot-built buffer) and
+    `root-ipc-buffer-cap` (an Unmap through the frame capability, a remap, then
+    the same overflow read). Its pinned set gains them and their unmap and
+    remap steps.
+  - The `tcb/0` carve pin moves from 19 / 2056 to 19 / 2064: the same cells,
+    three of them resized. Read from the generated C, the carve copies the
+    thread's `spaceLinks` (`lean_mk_array(24, 0)`, eight words for each of
+    three slots), 216 bytes where it was 152 (+64). Its `spaceCells` and its
+    two spare space records were literals, built by `lean_array_push` onto
+    shared closed-term arrays, which over-expands them: three cells would
+    sit at capacity 8 (88 bytes), and two at capacity 6 (72 bytes, as both
+    arrays did before). They are now built at exact capacity
+    (`Vector.replicate`, compiled to `lean_mk_array(3, none)`, 48 bytes, −24;
+    `Array.ofFn`, 40 bytes, −32), and the carve's copy keeps that capacity.
+  - The host entry refuses a boot that owes writes, and installs nothing.
+- **Fixed along the way.**
+  - `rootServerTaskPlaced` read the CNode through `CNode.lookup`, which is
+    noncomputable, so `wellFormed` could not be decided. It reads
+    `CNode.lookupCells` now.
+  - Docstrings that counted a thread's two space slots now count three.
+  - The one-overflow-word arm's compiled form (`overflowOneOperandKW`) filled
+    a TLB miss through the specification's `tlbFillIpcBufferOnCore`, which
+    builds its walk plan as a list: four cells on the first overflow read of
+    a buffer page the core did not cache. It now fills in place
+    (`tlbFillIpcBufferInOnCore`, as the long arm does; joined by
+    `tlbFillIpcBufferInOnCore_eq`), writing over one of the core's spare
+    entries. A latent defect: any one-overflow syscall on a core whose TLB
+    lacked the buffer page allocated. The boot-built buffer exposed it: the
+    root task's first syscall is the first read of a page no kernel map put
+    in core 0's TLB.
+  - The `virt` deployment's object table gave its untyped as reaching
+    `0x8000_0000`, through the region map. It now stops at the root server.
+  - The spec's RPi5 deployment table still listed the two fixed
+    first-gigabyte untypeds that BP7.10 retired.
+
 ## v0.37.30 — WS-RB closes: every QEMU lane boots the emulated Raspberry Pi 5 first
 
 WS-RB RB5, the closure (the plan is archived; `WS-RB` in

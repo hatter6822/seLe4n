@@ -320,7 +320,8 @@ and writes no thread, queue, notification, untyped, ASID or tree. -/
 theorem installIrqNodes_bootStartShape {n : Nat} {ist : IntermediateState}
     (hFresh : irqNodesFresh n ist.state = true) (h : bootStartShape ist) :
     bootStartShape (installIrqNodes n ist) := by
-  obtain ⟨hShape, hFields, ⟨hAsid, hRoot⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩, hBind⟩ := h
+  obtain ⟨hShape, hFields, ⟨hAsid, hRoot⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩, hBind,
+    hMaps⟩ := h
   have hTcb := installIrqNodes_getTcb? hFresh
   refine ⟨fun oid obj hObj => ?_,
     installIrqNodes_induct (fun i => bootQuiescentFields i.state) n
@@ -333,7 +334,19 @@ theorem installIrqNodes_bootStartShape {n : Nat} {ist : IntermediateState}
       (congrArg SchedulerState.runQueue (installIrqNodes_scheduler n ist))
       (congrArg SchedulerState.runQueueEnds (installIrqNodes_scheduler n ist)) hRun,
     ⟨by rw [installIrqNodes_scheduler]; exact hNodup, fun tid hm => ?_⟩,
-    fun k => ?_⟩
+    fun k => ?_,
+    SystemState.liveMappingsRecorded.of_shrink
+      (fun rid r' hR => by
+        rcases installIrqNodes_objects_cases hFresh rid with e | ⟨-, e⟩
+        · exact ⟨r', e.symm.trans hR, rfl, fun _ _ h => h, fun _ _ h => h⟩
+        · rw [e] at hR; cases hR)
+      (SystemState.mappingRecordsKept.of_fwd
+        (fun r cap hc _ => ⟨r, cap, by rw [installIrqNodes_slotCapAt hFresh]; exact hc, rfl, rfl⟩)
+        (fun fid f hf => ⟨f, installIrqNodes_objects_of_some hFresh hf, rfl⟩))
+      (SystemState.threadSlotsDrawnFrom.of_tcbSlots fun k => by
+        rcases installIrqNodes_objects_cases hFresh k with e | ⟨e0, e⟩
+        · rw [e]
+        · rw [e, e0]; rfl) hMaps⟩
   · rcases installIrqNodes_objects_cases hFresh oid with e | ⟨-, e⟩
     · rw [e] at hObj; exact hShape oid obj hObj
     · rw [e] at hObj; cases hObj; exact irqNodeCNode_bootObjectShape

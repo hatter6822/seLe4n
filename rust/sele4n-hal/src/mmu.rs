@@ -1326,6 +1326,13 @@ pub fn seal_boot_map() {
     BOOT_MAP_SEALED.store(true, Ordering::Release);
 }
 
+/// Whether the boot map is sealed: `false` exactly while the boot core runs
+/// the install, before any secondary exists.
+#[must_use]
+pub fn boot_map_sealed() -> bool {
+    BOOT_MAP_SEALED.load(Ordering::Acquire)
+}
+
 /// **WS-BP BP4.6**: extend the live boot map over `[base, base + size)` and
 /// widen the cacheable window to match.
 ///
@@ -2723,6 +2730,8 @@ mod lean_linker_agreement_tests {
 #[cfg(test)]
 mod boot_table_walk {
     use super::*;
+    extern crate std;
+    use std::vec::Vec;
 
     /// An image shaped like `link.ld` produces: text from the load address
     /// across a block boundary, and read-only data ending in the same block as
@@ -2736,6 +2745,94 @@ mod boot_table_walk {
             KERNEL_RESERVED_BASE + 0x41_1000,
         ),
     };
+
+    /// **WS-SX SX5.1**: the Lean boot map's `untyped <base> <size> regionMap
+    /// <map>` lines (one per extension) and its `rootServer <base> <size>`
+    /// line tile each extension the way the boot hands them to the HAL: each
+    /// untyped starts at its extension, `region::reservation_layout` accepts
+    /// it with its map inside the extension, every untyped but the last ends
+    /// at its map, the last ends at the root server's four pages, and those
+    /// end at the last map.  The root server's pages are admitted by
+    /// `region::thread_ram_admitted` — the predicate every thread-memory decode
+    /// is given — over the registered maps, and every map's first and last
+    /// page is refused by it.
+    pub(super) fn assert_root_server_tiles(
+        what: &str,
+        extensions: &[(u64, u64)],
+        untypeds: &[(u64, u64, u64)],
+        root_server: Option<(u64, u64)>,
+    ) {
+        let page = crate::lean_heap::PAGE_SIZE as u64;
+        let ranges: Vec<(u64, u64)> = extensions.iter().map(|&(b, s)| (b, b + s)).collect();
+        let mapped = |b: u64, s: u64| ram_range_covered(b, s, &ranges);
+        assert_eq!(
+            untypeds.len(),
+            extensions.len(),
+            "{what}: one untyped line per extension"
+        );
+        let (rs_base, rs_len) = root_server.expect("the boot map names the root server's pages");
+        assert_eq!(rs_len, 4 * page, "{what}: the root server is four pages");
+        let mut maps: Vec<(usize, usize)> = Vec::new();
+        for (i, (&(e_base, e_size), &(u_base, u_len, map_base))) in
+            extensions.iter().zip(untypeds).enumerate()
+        {
+            assert_eq!(
+                u_base, e_base,
+                "{what}: untyped {i} starts at its extension"
+            );
+            let layout = crate::region::reservation_layout(
+                u_base as usize,
+                u_len as usize,
+                map_base as usize,
+                mapped,
+            )
+            .unwrap_or_else(|r| panic!("{what}: untyped {i}'s region map refused: {r:?}"));
+            assert!(
+                map_base + layout.reserved_len as u64 <= e_base + e_size,
+                "{what}: region map {i} lies inside its extension"
+            );
+            let top = if i + 1 == extensions.len() {
+                assert_eq!(
+                    rs_base + rs_len,
+                    map_base,
+                    "{what}: the root server's pages end at the last region map"
+                );
+                rs_base
+            } else {
+                map_base
+            };
+            assert_eq!(
+                u_base + u_len,
+                top,
+                "{what}: untyped {i} ends where the next owner begins"
+            );
+            maps.push((layout.map_base, layout.reserved_len));
+        }
+        for &(u_base, u_len, _) in untypeds {
+            assert!(
+                rs_base + rs_len <= u_base || u_base + u_len <= rs_base,
+                "{what}: the root server's pages meet no untyped"
+            );
+        }
+        assert!(
+            crate::region::thread_ram_admitted(rs_base, rs_len, mapped, maps.iter().copied()),
+            "{what}: thread memory admits the root server's pages"
+        );
+        for p in [rs_base, rs_base + rs_len - page] {
+            assert!(
+                crate::region::thread_ram_admitted(p, page, mapped, maps.iter().copied()),
+                "{what}: thread memory admits the root server's page {p:#x}"
+            );
+        }
+        for &(map, reserved) in &maps {
+            for p in [map as u64, (map + reserved) as u64 - page] {
+                assert!(
+                    !crate::region::thread_ram_admitted(p, page, mapped, maps.iter().copied()),
+                    "{what}: thread memory refuses the region map page {p:#x}"
+                );
+            }
+        }
+    }
 
     /// Every layout boundary in a block of its own: all four L3 tables used
     /// (the origin shares the text's block).
@@ -2856,11 +2953,20 @@ mod qemu_virt_boot_map_tests {
         let mut probes: Vec<(u64, &str)> = Vec::new();
         let mut extensions: Vec<(u64, u64)> = Vec::new();
         let mut reserved: Vec<(u64, u64)> = Vec::new();
+        let mut untypeds: Vec<(u64, u64, u64)> = Vec::new();
+        let mut root_server: Option<(u64, u64)> = None;
         for line in LEAN_BOOT_MAP.lines().filter(|l| !l.starts_with('#')) {
             match line.split_whitespace().collect::<Vec<_>>().as_slice() {
                 ["region", base, size, kind] => regions.push((hex(base), hex(size), kind)),
                 ["probe", addr, kind] => probes.push((hex(addr), kind)),
                 ["extend", base, size] => extensions.push((hex(base), hex(size))),
+                ["untyped", base, size, "regionMap", map] => {
+                    untypeds.push((hex(base), hex(size), hex(map)));
+                }
+                ["rootServer", base, size] => {
+                    assert!(root_server.is_none(), "one root server");
+                    root_server = Some((hex(base), hex(size)));
+                }
                 ["kernelReserved", base, end] => reserved.push((hex(base), hex(end))),
                 ["mmio", _, _, _]
                 | ["physicalAddressWidth", _]
@@ -2897,6 +3003,7 @@ mod qemu_virt_boot_map_tests {
             [(KERNEL_RESERVED_END, ram_end - KERNEL_RESERVED_END)],
             "the one extension is the RAM past the kernel's extent"
         );
+        assert_root_server_tiles("virt", &extensions, &untypeds, root_server);
         let lean_kind = |a: u64| -> &str {
             regions
                 .iter()
@@ -3043,6 +3150,8 @@ mod boot_map_tests {
             regions: Vec<(u64, u64, &'a str)>,
             probes: Vec<(u64, &'a str)>,
             extensions: Vec<(u64, u64)>,
+            untypeds: Vec<(u64, u64, u64)>,
+            root_server: Option<(u64, u64)>,
         }
         let mut variants: Vec<Variant> = Vec::new();
         let mut reserved: Vec<(u64, u64)> = Vec::new();
@@ -3055,6 +3164,8 @@ mod boot_map_tests {
                     regions: Vec::new(),
                     probes: Vec::new(),
                     extensions: Vec::new(),
+                    untypeds: Vec::new(),
+                    root_server: None,
                 }),
                 ["region", base, size, kind] => variants
                     .last_mut()
@@ -3073,6 +3184,20 @@ mod boot_map_tests {
                     .expect("an extension belongs to a variant")
                     .extensions
                     .push((hex(base), hex(size))),
+                // WS-SX SX5.1: each extension's untyped and region map base,
+                // then the root server's pages (`assert_root_server_tiles`).
+                ["untyped", base, size, "regionMap", map] => variants
+                    .last_mut()
+                    .expect("an untyped belongs to a variant")
+                    .untypeds
+                    .push((hex(base), hex(size), hex(map))),
+                ["rootServer", base, size] => {
+                    let v = variants
+                        .last_mut()
+                        .expect("a root server belongs to a variant");
+                    assert!(v.root_server.is_none(), "one root server per variant");
+                    v.root_server = Some((hex(base), hex(size)));
+                }
                 // WS-BP BP3.2: the reserved extent, which
                 // `the_kernel_reserved_extent_is_the_lean_and_linker_one` reads.
                 ["kernelReserved", base, end] => reserved.push((hex(base), hex(end))),
@@ -3131,6 +3256,12 @@ mod boot_map_tests {
                 "configuration {:#x}/{:#x}: the first extension starts where the extent ends",
                 v.ram_size,
                 v.low_ram_top
+            );
+            assert_root_server_tiles(
+                &std::format!("configuration {:#x}/{:#x}", v.ram_size, v.low_ram_top),
+                &v.extensions,
+                &v.untypeds,
+                v.root_server,
             );
         }
         assert!(

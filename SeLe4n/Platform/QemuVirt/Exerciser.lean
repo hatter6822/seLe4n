@@ -36,11 +36,14 @@ open SeLe4n.Platform.FFI
 /-- The allocation exerciser's `virt` deployment. -/
 structure QemuVirtExerciserPlatform where
 
-/-- The exerciser's binding: the `virt` binding with the exerciser's labeling. -/
+/-- The exerciser's binding: the `virt` binding with the exerciser's labeling
+    and its root server (`Exerciser.rootServer`, WS-SX SX5.1) over the one
+    extension the boot maps. -/
 instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPlatform :=
   { (qemuVirtPlatformBinding : PlatformBinding QemuVirtPlatform) with
     name := "QEMU virt allocation exerciser (GICv2 / Cortex-A76 / ARM64)"
     deploymentLabeling := Exerciser.deploymentLabeling
+    rootServerFor := fun _ => Exerciser.rootServer qemuVirtBootRamExtensions
     witnessesOffBootVSpaceRoot := by decide }
 
 /-- The exerciser's labeling partitions at the shipped boundary with the
@@ -60,7 +63,8 @@ def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtExerciserPlatform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtExerciserPlatform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtExerciserPlatform)
+    rootServer := Exerciser.rootServer qemuVirtBootRamExtensions }
 
 -- ============================================================================
 -- The boot, and the entry
@@ -130,16 +134,19 @@ theorem qemuVirtExerciser_bound_interruptLineCount (board : SeLe4n.MachineConfig
     (PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform)
       board).interruptLineCount = qemuVirtGicSpiCount + 32 := rfl
 
-/-- The root task's two untypeds tile the one extension's untyped part, which
-    ends at the region map's base (`qemuVirtRegionMap_layout`). -/
-theorem qemuVirtExerciserRootUntypeds_tile :
-    Exerciser.firstExtension qemuVirtBootRamExtensions =
-      (qemuVirtRootTaskUntyped.regionBase.toNat,
-        qemuVirtRamTop - qemuVirtKernelReservedEnd) ∧
-    (Exerciser.rootIpcBufferUntyped qemuVirtBootRamExtensions).regionBase.toNat +
-        (Exerciser.rootIpcBufferUntyped qemuVirtBootRamExtensions).regionSize =
-      qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize :=
-  ⟨rfl, ((Exerciser.rootUntypeds_tile _ (by decide)).2.2).trans (by decide)⟩
+/-- **WS-SX SX5.1**: on `virt` the root task's untyped runs from the kernel's
+    extent's end to the root server's four pages, which end at the region map's
+    base (`qemuVirtRegionMap_layout`); the frame's capability is at slot 32,
+    the objects from id 11, the buffer at `2 <<< 39`. -/
+theorem qemuVirtExerciserRootServer_layout :
+    (Exerciser.rootServer qemuVirtBootRamExtensions).map
+        (fun r => (r.base.toNat, r.frameSlot.toNat, r.firstObjId.toNat, r.bufferVAddr.toNat)) =
+      some (0x7FE7_C000, 32, 11, 2 <<< 39) ∧
+    (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionBase.toNat =
+      qemuVirtRootTaskUntyped.regionBase.toNat ∧
+    (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionBase.toNat +
+        (Exerciser.rootTaskUntyped qemuVirtBootRamExtensions).regionSize = 0x7FE7_C000 := by
+  decide
 
 -- ============================================================================
 -- Every gate of the exerciser's checked boot, decided

@@ -17,7 +17,11 @@
 # rust_boot_main): the banner, the entry level and its PSCI conduit, the early
 # per-core pointer, translation on, the vectors, the interrupt controller, the
 # timer, the Lean heap's census after the library initializer, the verified
-# device-tree boot installed (Phase 5) and the census after it, the boot core's
+# device-tree boot installed (Phase 5), the writes the boot owed performed --
+# the root server's four page scrubs, its three tables' descriptors and the IPC
+# buffer's page descriptor, eight on every deployment
+# (`tests/Ak9PlatformSuite.lean` pins the model's count; WS-SX SX5.3, D15) --
+# and the census after it, the boot core's
 # first reschedule, IRQs unmasked, the release of the secondaries and their
 # count (Phase 6), the handoff summary, and the topology check passed (Phase 7).
 #
@@ -40,6 +44,7 @@ TIMER_INIT       | [boot] Timer initialized
 PER_CPU_ID       | current_core_id_from_tpidr() = 0
 HEAP_AFTER_INIT  | [boot] Lean heap after the library initializer:
 KERNEL_INSTALLED | [boot] Phase 5: kernel state installed
+BOOT_WRITES      | [boot] Phase 5: 8 owed boot physical write(s) performed
 HEAP_AFTER_BOOT  | [boot] Lean heap after the install:
 FIRST_RESCHEDULE | [smp] core 0: kernel bring-up entry complete (first reschedule)
 IRQ_ENABLE       | [boot] IRQ delivery enabled

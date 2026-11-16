@@ -48,7 +48,7 @@ theorem bootFromPlatformCheckedStartedFor_physicalAddressWidthWithinBound
     ist.state.physicalAddressWidthWithinBound := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
   unfold SystemState.physicalAddressWidthWithinBound
-  rw [linkBootCapabilities_machine, installIrqNodes_machine,
+  rw [linkBootCapabilities_machine, installRootServer_machine, installIrqNodes_machine,
     startInitialThreads_machine _ _ _ hStart]
   unfold bootFromPlatformCheckedWithIdleThreadsFor at hBase
   cases hB : bootFromPlatformChecked config with

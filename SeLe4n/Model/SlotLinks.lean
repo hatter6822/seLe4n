@@ -357,7 +357,7 @@ theorem fields {st st' : SystemState} (h : linksOnlyWrite st st') :
 end linksOnlyWrite
 
 /-- **A slot of a live object**: a slot inside a live CNode's slot array, or
-one of a live thread's two space slots — a slot whose links can be written. -/
+one of a live thread's three space slots — a slot whose links can be written. -/
 def slotInObject (st : SystemState) (r : SlotRef) : Prop :=
   ∃ o, st.objects[r.cnode]? = some o ∧ o.hasSlot r.slot
 
@@ -2093,7 +2093,7 @@ theorem slotLinkWords_zero_of_not_slotInObject {st : SystemState} {o : SeLe4n.Ob
         have := Nat.mul_le_mul_left slotLinkWords (Nat.le_of_not_lt hs); omega
       | tcb t =>
         show t.spaceLinks.toArray.size ≤ _
-        have hs' : 2 ≤ s.toNat := Nat.le_of_not_lt hs
+        have hs' : 3 ≤ s.toNat := Nat.le_of_not_lt hs
         rw [Vector.size_toArray]; unfold CNode.linkBase slotLinkWords; omega
       | _ => exact Nat.zero_le _
     simp only [Array.getD_eq_getD_getElem?,

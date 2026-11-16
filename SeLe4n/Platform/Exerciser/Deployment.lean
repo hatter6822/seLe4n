@@ -22,8 +22,8 @@ the shipped one, on the Raspberry Pi 5 (`SeLe4n/Platform/RPi5/Exerciser.lean`,
 on rpi5_machine's `raspi5b`) and on QEMU `virt`
 (`SeLe4n/Platform/QemuVirt/Exerciser.lean`).  Everything the exerciser's
 scenarios name is here, once: the objects and their ids, the root CNode's
-slots, the labeling, and the boot's last step that gives the root task its IPC
-buffer.  A board supplies only its memory: the page its boot table pool
+slots, the labeling, and where the boot builds the root task's IPC buffer
+(`rootServer`, WS-SX SX5).  A board supplies only its memory: the page its boot table pool
 starts each address space's top-level table at (`tablePage`) and the RAM the
 boot maps outside the kernel's extent (`extensions`).  So the HAL drives one
 layout on both boards, and a count that differs between them is a finding
@@ -73,13 +73,18 @@ its scenarios need, and in nothing else.
 | root task CNode (64 slots, 58-bit guard) | `3` |
 | root task VSpace (ASID 1, pool page 0) | `4` |
 | interrupt notification | `5` |
-| root task untyped: the first extension's untyped part, its top four pages set aside | `6` |
+| root task untyped: the first extension's untyped part (`untypedExtentsOf`) | `6` |
 | partner TCB (`.Inactive` until resumed) | `7` |
 | endpoint | `8` |
 | reply object | `9` |
 | scheduling context (unconfigured, unbound) | `10` |
-| the root task's IPC-buffer untyped: those four pages | `11` |
+| the root task's IPC buffer frame and the three tables that reach it, which the boot builds (`rootServer`) | `11` to `14` |
 | one untyped per further extension (boards past their first gigabyte) | `0x4_0000`, … |
+
+The root server's four pages lie directly below the last extension's region
+map (`Platform.rootServerReservationOf`), and that extension's untyped stops
+below them (`Platform.untypedExtentsOf`), so on a board whose boot maps one
+extension the root task's untyped ends where the reservation begins.
 | untrusted initial TCB (the upper witness, pinned to core 1) | `0x10_0000` |
 | its CNode | `0x10_0001` |
 | its VSpace (ASID 2, pool page 1) | `0x10_0002` |
@@ -217,8 +222,9 @@ def replyId : SeLe4n.ObjId := ⟨9⟩
     the partner and unbinds, configured here because the root task cannot make
     one. -/
 def schedContextId : SeLe4n.ObjId := ⟨10⟩
-/-- The root task's IPC-buffer untyped, the first id above the boot objects. -/
-def rootIpcBufferUntypedId : SeLe4n.ObjId := ⟨11⟩
+/-- **WS-SX SX5.1**: the first of the root server's four object ids — its IPC
+    buffer frame's, then the three tables' — the first above the boot objects. -/
+def rootServerFirstObjId : SeLe4n.ObjId := ⟨11⟩
 /-- The first id of the untypeds over a board's further extensions: in the boot
     domain, below the low band, and clear of every id the exerciser carves. -/
 def extraUntypedIdBase : Nat := 0x4_0000
@@ -258,24 +264,17 @@ def irqControlSlot : Nat := 20
     next use is a copy rather than a carve. -/
 def auditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 
-/-- The root CNode slot of the IPC-buffer untyped's capability; the three
-    tables' capabilities follow it, and then the buffer frame's
-    (`rootIpcBufferFrameSlot`). -/
-def rootIpcBufferUntypedSlot : Nat := 32
-
-/-- The root CNode slot of the IPC buffer frame's capability, seL4's
-    `seL4_CapInitThreadIPCBuffer`. -/
-def rootIpcBufferFrameSlot : Nat := rootIpcBufferUntypedSlot + 4
+/-- **WS-SX SX5.1**: the root CNode slot of the root task's IPC buffer frame's
+    capability, which the boot installs mapped (seL4's
+    `seL4_CapInitThreadIPCBuffer`), the three tables' in the slots after it:
+    past the 32 slots the shipped root CNodes have, which the exerciser's
+    scenarios fill.  `rust/sele4n-hal/src/smp_exercisers.rs` names it
+    `ROOT_IPC_BUFFER_FRAME_SLOT`. -/
+def rootServerFrameSlot : Nat := 32
 
 /-- The first root CNode slot of the further extensions' untypeds: the top
     three, above every slot a scenario names. -/
 def extraUntypedSlotBase : Nat := 61
-
-/-- The root task's IPC buffer's pages: the buffer frame and the three tables
-    that complete the walk to it, carved at boot from their own untyped, so the
-    root task's untyped keeps no child the boot made and its reset scenarios
-    still find it empty. -/
-def rootIpcBufferPages : Nat := 4
 
 /-- **The root task's IPC buffer address**: the first page of the 512 GiB
     window under level-0 index 2 of its address space, a window no exerciser
@@ -290,9 +289,9 @@ def rootIpcBufferVAddr : Nat := 2 <<< 39
     context (slot 9 is left free for the reply capability the exerciser mints
     from slot 8, and slots 10 to 15 for what it copies and carves), the
     interrupt control, each core's scheduling control, the audit trail's
-    capability with read and write (`Capability.auditTrailManage`), the
-    IPC-buffer untyped's, and one per further extension's untyped
-    (`extraUntypeds`, `count` of them). -/
+    capability with read and write (`Capability.auditTrailManage`), and one
+    per further extension's untyped (`extraUntypeds`, `count` of them).  The
+    boot adds the root server's four (`rootServerFrameSlot`). -/
 def rootTaskCNodeSlots (count : Nat) : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rootTaskCNodeId [.read, .write, .grant, .grantReply]
@@ -306,9 +305,7 @@ def rootTaskCNodeSlots (count : Nat) : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 0, rpi5InitialCap schedContextId [.read, .write])
   , (SeLe4n.Slot.ofNat irqControlSlot, Capability.irqControl) ] ++
   schedControlBootSlots schedControlSlotBase ++
-  [ (auditSlot, Capability.auditTrailManage)
-  , (SeLe4n.Slot.ofNat rootIpcBufferUntypedSlot,
-      rpi5InitialCap rootIpcBufferUntypedId [.read, .write, .retype]) ] ++
+  [ (auditSlot, Capability.auditTrailManage) ] ++
   (List.range count).map fun i =>
     (SeLe4n.Slot.ofNat (extraUntypedSlotBase + i),
       rpi5InitialCap ⟨extraUntypedIdBase + i⟩ [.read, .write, .retype])
@@ -338,30 +335,28 @@ def initialVSpace (tablePage : Nat → SeLe4n.PAddr) (asid : SeLe4n.ASID) (page 
   { asid := asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     tableBase := some (tablePage page) }
 
-/-- The first extension the board's boot maps: the one the root task's two
-    untypeds tile. -/
-def firstExtension (extensions : List (Nat × Nat)) : Nat × Nat :=
-  extensions.headD (0, 0)
-
 /-- The root task's untyped: the first extension's untyped part
-    (`untypedExtentOf`, below the region map's reservation) less the IPC
-    buffer's pages at its top. -/
+    (`untypedExtentsOf`: below the region map's reservation, and below the root
+    server's when the first extension is the last). -/
 def rootTaskUntyped (extensions : List (Nat × Nat)) : UntypedObject :=
-  rpi5InitialUntyped (firstExtension extensions).1
-    (untypedSizeOf (firstExtension extensions).2 - rootIpcBufferPages * 4096)
+  rpi5InitialUntyped ((untypedExtentsOf extensions).headD (0, 0)).1
+    ((untypedExtentsOf extensions).headD (0, 0)).2
 
-/-- The root task's IPC-buffer untyped: the last `rootIpcBufferPages` pages of
-    the first extension's untyped part, directly below the region map. -/
-def rootIpcBufferUntyped (extensions : List (Nat × Nat)) : UntypedObject :=
-  rpi5InitialUntyped
-    (regionMapBaseOf (firstExtension extensions) - rootIpcBufferPages * 4096)
-    (rootIpcBufferPages * 4096)
-
-/-- One untyped per further extension, each over its untyped part, the `i`-th
-    at id `extraUntypedIdBase + i`. -/
+/-- One untyped per further extension, each over its untyped part
+    (`untypedExtentsOf`), the `i`-th at id `extraUntypedIdBase + i`. -/
 def extraUntypeds (extensions : List (Nat × Nat)) : List (SeLe4n.ObjId × UntypedObject) :=
-  extensions.tail.mapIdx fun i e =>
-    (⟨extraUntypedIdBase + i⟩, rpi5InitialUntyped e.1 (untypedSizeOf e.2))
+  (untypedExtentsOf extensions).tail.mapIdx fun i e =>
+    (⟨extraUntypedIdBase + i⟩, rpi5InitialUntyped e.1 e.2)
+
+/-- **WS-SX SX5.1 (D13, D14): where the boot builds the root task's IPC
+    buffer** on a board whose boot maps `extensions`: four pages directly below
+    the last extension's region map (`rootServerReservationOf`), the objects at
+    `rootServerFirstObjId` up, their capabilities at `rootServerFrameSlot` up,
+    and the buffer at `rootIpcBufferVAddr`.  What each board's exerciser
+    binding returns as its `rootServerFor`. -/
+def rootServer (extensions : List (Nat × Nat)) : Option RootServerReservation :=
+  rootServerReservationOf extensions ⟨lowerWitnessIndex⟩ (SeLe4n.VAddr.ofNat rootIpcBufferVAddr)
+    rootServerFirstObjId (SeLe4n.Slot.ofNat rootServerFrameSlot)
 
 private def tcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=
   { id := id, obj := .tcb tcb
@@ -435,28 +430,27 @@ def initialObjects (tablePage : Nat → SeLe4n.PAddr) (extensions : List (Nat ×
   , schedContextEntry schedContextId
   , tcbEntry untrustedTcbId untrustedThread
   , cnodeEntry untrustedCNodeId untrustedCNode
-  , vspaceEntry tablePage untrustedVSpaceId (SeLe4n.ASID.ofNat 2) 1
-  , untypedEntry rootIpcBufferUntypedId (rootIpcBufferUntyped extensions) ] ++
+  , vspaceEntry tablePage untrustedVSpaceId (SeLe4n.ASID.ofNat 2) 1 ] ++
   (extraUntypeds extensions).map fun u => untypedEntry u.1 u.2
 
-/-- The root task's two untypeds tile the first extension's untyped part: the
-    root task's from the extension's base up, the IPC buffer's directly above
-    it to the region map's base, so the exerciser hands the root task the
-    memory the shipped deployment does, one IPC buffer's pages set aside, and
-    none of the map's reserved pages. -/
-theorem rootUntypeds_tile (extensions : List (Nat × Nat))
-    (h : rootIpcBufferPages * 4096 ≤ untypedSizeOf (firstExtension extensions).2) :
-    (rootTaskUntyped extensions).regionBase.toNat = (firstExtension extensions).1 ∧
-    (rootTaskUntyped extensions).regionBase.toNat + (rootTaskUntyped extensions).regionSize =
-      (rootIpcBufferUntyped extensions).regionBase.toNat ∧
-    (rootIpcBufferUntyped extensions).regionBase.toNat +
-        (rootIpcBufferUntyped extensions).regionSize =
-      regionMapBaseOf (firstExtension extensions) := by
+/-- On a board whose boot maps one extension, the root task's untyped runs from
+    the extension's base to the root server's reservation, which ends at the
+    region map's base: the exerciser hands the root task the memory the
+    shipped deployment does, and none of the reservation's or the map's
+    pages. -/
+theorem rootTaskUntyped_below_rootServer (e : Nat × Nat)
+    (h : rootServerReserveBytes ≤ untypedSizeOf e.2) :
+    (rootTaskUntyped [e]).regionBase.toNat = e.1 ∧
+    (rootTaskUntyped [e]).regionBase.toNat + (rootTaskUntyped [e]).regionSize =
+      rootServerBaseOf e ∧
+    rootServerBaseOf e + rootServerReserveBytes = regionMapBaseOf e := by
   have hBase (b s : Nat) : (rpi5InitialUntyped b s).regionBase.toNat = b := rfl
   have hSize (b s : Nat) : (rpi5InitialUntyped b s).regionSize = s := rfl
-  unfold rootTaskUntyped rootIpcBufferUntyped regionMapBaseOf
-  rw [hBase, hBase, hSize, hSize]
-  exact ⟨rfl, by omega, by omega⟩
+  unfold rootTaskUntyped
+  simp only [untypedExtentsOf, List.isEmpty_nil, if_true, List.headD_cons,
+    untypedExtentBelowRootServerOf, hBase, hSize]
+  unfold rootServerBaseOf regionMapBaseOf untypedSizeOf at *
+  refine ⟨trivial, ?_, ?_⟩ <;> omega
 
 /-- The root task's IPC buffer is page aligned, canonical, and under a level-0
     entry of its own: not the scenarios' window (level-0 index 1). -/
@@ -465,114 +459,16 @@ theorem rootIpcBufferVAddr_placed :
     rootIpcBufferVAddr >>> 39 = 2 := by
   decide
 
--- ============================================================================
--- The root task's IPC buffer
--- ============================================================================
-
-/-- The root task's capability address for root CNode slot `slot`: the guard's
-    top bit and the slot (`rootTaskCNodeGuard`). -/
-def rootCapAddress (slot : Nat) : SeLe4n.CPtr :=
-  SeLe4n.CPtr.ofNat (2 ^ 63 + slot)
-
-/-- One invocation the boot makes for the root task: four message words, no
-    extra capability. -/
-def rootInvocation (syscallId : SyscallId) (slot : Nat) (words : List Nat) :
-    SyscallDecodeResult :=
-  { capAddr := rootCapAddress slot
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
-    syscallId := syscallId
-    msgRegs := (words.map SeLe4n.RegValue.ofNat).toArray
-    inlineCount := 4 }
-
-/-- **The invocations that give the root task its IPC buffer**, as seL4's boot
-    gives its initial thread one (`create_ipcbuf_frame_cap`, with the tables of
-    `create_it_address_space`): three page tables and a frame carved from the
-    IPC-buffer untyped into the slots after its own (`untypedRetype`, the tag
-    words 9 and 8), each table installed on the walk to `rootIpcBufferVAddr`
-    (`pageTableMap`), the frame mapped there read-write, user and cacheable
-    (`vspaceMap`, `PagePermissions` word `0b11011`), and the address set as the
-    root TCB's buffer (`tcbSetIPCBuffer`).  They are the kernel's own
-    transitions, invoked on the root task's capabilities: the untyped's
-    (slot 32), the root CNode's (slot 2), the address space's (slot 3) and the
-    TCB's (slot 1). -/
-def rootIpcBufferInvocations : List SyscallDecodeResult :=
-  let utSlot := rootIpcBufferUntypedSlot
-  let ut := rootIpcBufferUntypedId.toNat
-  let va := rootIpcBufferVAddr
-  let cnode := (rootCapAddress 2).toNat
-  let vspace := (rootCapAddress 3).toNat
-  let table (i : Nat) : List SyscallDecodeResult :=
-    [ rootInvocation .untypedRetype utSlot [9, ut + 1 + i, cnode, utSlot + 1 + i]
-    , rootInvocation .pageTableMap (utSlot + 1 + i) [vspace, va, 0, 0] ]
-  table 0 ++ table 1 ++ table 2 ++
-  [ rootInvocation .untypedRetype utSlot [8, ut + 4, cnode, rootIpcBufferFrameSlot]
-  , rootInvocation .vspaceMap 3
-      [1, va, (rootCapAddress rootIpcBufferFrameSlot).toNat, 0b11011]
-  , rootInvocation .tcbSetIPCBuffer 1 [va, 0, 0, 0] ]
-
-/-- **One invocation by the root task, made by the boot**, under platform
-    `P`'s labeling: the checked dispatcher's capability path for the root
-    thread on the boot core, as the compiled dispatcher runs it
-    (`SeLe4n.Kernel.dispatchSyscallCheckedImpl`) — its CSpace root, then the
-    capability resolved there with the syscall's right, the checked arm and
-    the taint step in one (`dispatchCheckedArmThenTaintFused`) — without that
-    dispatcher's first test, that the caller is the thread current on the
-    trapping core.  That test ties a trap to its caller; the boot is not a
-    trap, and no thread is current on any core until the first schedule. -/
-def rootInvoke (P : Type) [PlatformBinding P] (decoded : SyscallDecodeResult) :
-    SeLe4n.Model.Kernel Unit := fun st =>
-  let tid := SeLe4n.ThreadId.mk lowerWitnessIndex
-  let ctx := PlatformBinding.labeling (platform := P)
-  match st.getObject? tid.toObjId with
-  | some (.tcb tcb) =>
-    let gate : SeLe4n.Kernel.SyscallGate :=
-      { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr
-        requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
-    SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
-      SeLe4n.Kernel.Concurrency.bootCoreId gate st
-  | some _ => .error .illegalState
-  | none => .error .objectNotFound
-
-/-- **The boot's last step**: each of `rootIpcBufferInvocations` made in turn
-    for the root task (`rootInvoke`) on the state the boot installed.  The
-    first refusal stops it. -/
-def giveRootIpcBuffer (P : Type) [PlatformBinding P] (st : SystemState) :
-    Except KernelError SystemState :=
-  rootIpcBufferInvocations.foldlM
-    (fun st decoded =>
-      match rootInvoke P decoded st with
-      | .ok ((), st') => .ok st'
-      | .error e => .error e)
-    st
-
-/-- The step on the live kernel state, as a syscall seam commits one: the
-    state the dispatches leave, its physical-write and instruction-cache
-    ledgers read and cleared in the same step and then performed (the buffer
-    page and the tables scrubbed, the four descriptors stored).  A refusal
-    changes nothing and halts every PE. -/
-def giveRootIpcBufferOrHalt (P : Type) [PlatformBinding P] : BaseIO Unit := do
-  let owed ← Platform.FFI.modifyGetKernelState (fun st =>
-    match giveRootIpcBuffer P st with
-    | .ok post =>
-        (some (post.drainedPhysicalWrites, post.pendingIcacheMaintenance),
-          SeLe4n.Kernel.Architecture.clearIcacheMaintenance
-            (SeLe4n.Kernel.Architecture.clearPhysicalWrites post))
-    | .error _ => (none, st))
-  match owed with
-  | none => ffiFatalHaltAll
-  | some (writes, icache) => do
-      Platform.FFI.completePhysicalWrites writes
-      Platform.FFI.completeIcacheMaintenance icache
-
 /-- **The exerciser's boot at platform `P`**, its failure handled: the checked
-    platform boot of `config` at `P`'s binding, a refusal halting every PE.
-    An accepted boot ends by giving the root task its IPC buffer
-    (`giveRootIpcBufferOrHalt`), so the root task's first syscall finds it
-    mapped, as seL4's initial thread does. -/
+    platform boot of `config` at `P`'s binding, the machine performing the
+    writes the boot owes (`completePhysicalWrites`), a refusal halting every
+    PE.  The boot itself builds the root task's IPC buffer (WS-SX SX5.3,
+    `Boot.installRootServer`, at `P`'s `rootServerFor`), so the root task's
+    first syscall finds it mapped, as seL4's initial thread does. -/
 def bootAndInitialiseOrHalt (P : Type) [PlatformBinding P] (config : PlatformConfig) :
     BaseIO Unit := do
-  match ← bootAndInitialisePlatform P config with
-  | .ok _ => giveRootIpcBufferOrHalt P
+  match ← bootAndInitialisePlatform P (some completePhysicalWrites) config with
+  | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
 
 end SeLe4n.Platform.Exerciser

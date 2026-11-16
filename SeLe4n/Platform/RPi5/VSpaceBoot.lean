@@ -522,12 +522,26 @@ theorem rpi5BootVSpaceRoot_mappings_invExt :
     (`bootSafeVSpaceRoot_mappingsSafe`), a thread's because it maps nothing
     (`bootSafeUserVSpaceRoot_mappingsSafe`).  So the bundle's three
     per-mapping conjuncts are one argument over the boot state, not one per
-    kind of root. -/
+    kind of root.
+
+    **WS-SX SX5.3**: the tables' half asks the mapping table to have room and
+    the mapping-epoch table to be well formed (`RHTable.invExtK`), not vacant:
+    the root task's root, once the boot has built its IPC buffer, maps the
+    buffer under epoch 0 (`Boot.rootServerVSpace`).  A configured root's vacant
+    epoch table is a well-formed one (`VSpaceRootTableRoom.tablesWellFormed`). -/
 def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
   (∀ (v : VAddr) (p : PAddr) (perms : PagePermissions),
     root.mappings[v]? = some (p, perms) →
       perms.wxCompliant = true ∧ p.toNat < 2^52 ∧ v.isCanonical = true) ∧
-  VSpaceRootTableRoom root
+  root.mappings.size < root.mappings.capacity ∧ 4 ≤ root.mappings.capacity ∧
+    root.mappingEpochs.invExtK
+
+/-- A root whose tables have room and whose epoch table is vacant has the tables'
+    half of `bootVSpaceRootMappingsSafe`. -/
+theorem VSpaceRootTableRoom.tablesWellFormed {root : VSpaceRoot} (h : VSpaceRootTableRoom root) :
+    root.mappings.size < root.mappings.capacity ∧ 4 ≤ root.mappings.capacity ∧
+      root.mappingEpochs.invExtK :=
+  ⟨h.1, h.2.1, SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ h.2.2⟩
 
 /-- **WS-BP BP3.5**: the binding's boot root satisfies the per-mapping facts —
     each of its three mapping checks is a fold, read back per lookup by
@@ -536,7 +550,7 @@ def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
 theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     (h : bootSafeVSpaceRoot root) : bootVSpaceRootMappingsSafe root := by
   obtain ⟨_, hWx, _, hPa, hVa, hRoom⟩ := h
-  refine ⟨?_, hRoom⟩
+  refine ⟨?_, hRoom.tablesWellFormed⟩
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?] at hMap
   have hWx' := RHTable.fold_and_true_of_get? root.mappings
@@ -554,7 +568,8 @@ theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
 theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     (h : bootSafeUserVSpaceRoot root) (hExt : root.mappings.invExt) :
     bootVSpaceRootMappingsSafe root := by
-  refine ⟨?_, by rw [h.2.2.1]; exact root.mappings.hCapPos, h.2.2.2.2⟩
+  refine ⟨?_, by rw [h.2.2.1]; exact root.mappings.hCapPos, h.2.2.2.2.1,
+    SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ h.2.2.2.2.2⟩
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?,
     RHTable.get?_none_of_size_zero root.mappings hExt h.2.2.1 v] at hMap

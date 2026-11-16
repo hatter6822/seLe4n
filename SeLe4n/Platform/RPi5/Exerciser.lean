@@ -46,14 +46,17 @@ open SeLe4n.Platform.FFI
 /-- The allocation exerciser's Raspberry Pi 5 deployment. -/
 structure RPi5ExerciserPlatform where
 
-/-- The exerciser's binding: the RPi5 binding with the exerciser's labeling and
+/-- The exerciser's binding: the RPi5 binding with the exerciser's labeling,
     the service interface its registration scenarios name (the one the `virt`
-    binding installs, `qemuVirtExerciserInterface`). -/
+    binding installs, `qemuVirtExerciserInterface`), and its root server
+    (`Exerciser.rootServer`, WS-SX SX5.1) over the RAM the boot maps for the
+    variant the account selects. -/
 instance rpi5ExerciserPlatformBinding : PlatformBinding RPi5ExerciserPlatform :=
   { (rpi5PlatformBinding : PlatformBinding RPi5Platform) with
     name := "Raspberry Pi 5 allocation exerciser (BCM2712 / ARM64)"
     serviceInterfaces := [SeLe4n.Platform.QemuVirt.qemuVirtExerciserInterface]
     deploymentLabeling := Exerciser.deploymentLabeling
+    rootServerFor := fun board => Exerciser.rootServer (rpi5BootRamExtensions (rpi5VariantFor board))
     witnessesOffBootVSpaceRoot := by decide }
 
 /-- The exerciser's labeling partitions at the shipped boundary with the
@@ -73,7 +76,8 @@ def rpi5ExerciserBoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
     machineConfig := rpi5MachineConfigForVariant v
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5ExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := RPi5ExerciserPlatform)
-    initialInterfaces := PlatformBinding.serviceInterfaces (platform := RPi5ExerciserPlatform) }
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := RPi5ExerciserPlatform)
+    rootServer := Exerciser.rootServer (rpi5BootRamExtensions v) }
 
 /-- **The configuration the exerciser measures on**: rpi5_machine's `raspi5b`
     with `-m 1G` reports the first gigabyte less the VideoCore's 4 MiB, as a
@@ -155,27 +159,25 @@ theorem rpi5Exerciser_bound_interruptLineCount (board : SeLe4n.MachineConfig) :
 
 /-- On the measured board the boot maps one extension, the first gigabyte's
     part from the kernel's extent's end to the top the firmware reports, so the
-    root task's two untypeds tile all the RAM it maps below the region map
-    (`Exerciser.rootUntypeds_tile`), and no further untyped is made. -/
+    root task's untyped runs from the kernel's extent's end to the root
+    server's four pages, which end at the region map's base
+    (`Exerciser.rootTaskUntyped_below_rootServer`), and no further untyped is
+    made. -/
 theorem rpi5ExerciserMeasured_extensions :
     rpi5BootRamExtensions rpi5ExerciserMeasuredVariant =
       [(rpi5KernelReservedEnd, 0x3FC0_0000 - rpi5KernelReservedEnd)] := by
   decide
 
-theorem rpi5ExerciserMeasured_rootUntypeds_tile :
-    let ext := rpi5BootRamExtensions rpi5ExerciserMeasuredVariant
-    (Exerciser.rootTaskUntyped ext).regionBase.toNat = rpi5KernelReservedEnd ∧
-    (Exerciser.rootTaskUntyped ext).regionBase.toNat + (Exerciser.rootTaskUntyped ext).regionSize =
-      (Exerciser.rootIpcBufferUntyped ext).regionBase.toNat ∧
-    (Exerciser.rootIpcBufferUntyped ext).regionBase.toNat +
-        (Exerciser.rootIpcBufferUntyped ext).regionSize =
-      regionMapBaseOf (rpi5KernelReservedEnd, 0x3FC0_0000 - rpi5KernelReservedEnd) := by
+theorem rpi5ExerciserMeasured_rootTaskUntyped_below_rootServer :
+    let e := (rpi5KernelReservedEnd, 0x3FC0_0000 - rpi5KernelReservedEnd)
+    (Exerciser.rootTaskUntyped (rpi5BootRamExtensions rpi5ExerciserMeasuredVariant)).regionBase.toNat =
+      rpi5KernelReservedEnd ∧
+    (Exerciser.rootTaskUntyped (rpi5BootRamExtensions rpi5ExerciserMeasuredVariant)).regionBase.toNat +
+        (Exerciser.rootTaskUntyped (rpi5BootRamExtensions rpi5ExerciserMeasuredVariant)).regionSize =
+      rootServerBaseOf e ∧
+    rootServerBaseOf e + rootServerReserveBytes = regionMapBaseOf e := by
   rw [rpi5ExerciserMeasured_extensions]
-  exact Exerciser.rootUntypeds_tile _ (by decide)
-
--- ============================================================================
--- Every gate of the exerciser's checked boot, decided on the measured board
--- ============================================================================
+  exact Exerciser.rootTaskUntyped_below_rootServer _ (by decide)
 
 set_option maxRecDepth 8192 in
 theorem rpi5ExerciserMeasured_wellFormed :

@@ -1177,13 +1177,16 @@ private def runObjectBudgetChecks : IO Unit := do
   -- One object short of the reserved headroom is still refused: the boot root
   -- and every core's idle thread must fit.
   let justOver : SeLe4n.Platform.Boot.PlatformConfig :=
-    { initialObjects := filler (cap - cores - SeLe4n.InterruptLineSet.capacity) }
+    { initialObjects := filler (cap - cores - SeLe4n.InterruptLineSet.capacity -
+        SeLe4n.Platform.rootServerPages) }
   assertBool "NEGATIVE: a config leaving no room for the boot root is refused"
     (SeLe4n.Platform.Boot.objectBudgetRespected justOver == false)
-  -- The largest config that boots: the cap less the root, the idle threads and
-  -- the interrupt nodes (WS-ZA ZA6.32).
+  -- The largest config that boots: the cap less the root, the idle threads,
+  -- the interrupt nodes (WS-ZA ZA6.32) and the root server's four objects,
+  -- reserved model-wide because a binding may add the reservation (WS-SX SX5.1).
   let atBudget : SeLe4n.Platform.Boot.PlatformConfig :=
-    { initialObjects := filler (cap - cores - 1 - SeLe4n.InterruptLineSet.capacity) }
+    { initialObjects := filler (cap - cores - 1 - SeLe4n.InterruptLineSet.capacity -
+        SeLe4n.Platform.rootServerPages) }
   assertBool "the largest config that leaves room for the root and the idle threads is accepted"
     (SeLe4n.Platform.Boot.objectBudgetRespected atBudget == true)
   -- ...and the boot really lands inside the cap, idle threads included.
@@ -1192,7 +1195,8 @@ private def runObjectBudgetChecks : IO Unit := do
       assertBool "the boot state's object index is within maxObjects"
         (ist.state.objects.size <= cap)
       assertBool "...and it carries the config's objects plus one idle thread per core"
-        (ist.state.objects.size == cap - 1 - SeLe4n.InterruptLineSet.capacity)
+        (ist.state.objects.size ==
+          cap - 1 - SeLe4n.InterruptLineSet.capacity - SeLe4n.Platform.rootServerPages)
   | .error e =>
       assertBool s!"the budget-respecting config must boot (got: {e})" false
   -- PR #889 review round 19: the budget has its own diagnostic.  Round 18 added

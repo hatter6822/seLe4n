@@ -873,7 +873,7 @@ the confined production context, pinned by `rpi5_deploymentLabeling` and
 probed below at one id on each side of its boundary. -/
 private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := do
   let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
-  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform cfg with
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform none cfg with
   | Except.ok _ =>
       let installed ← getKernelLabelingContext
       let expected := SeLe4n.Kernel.harnessLabelingContext
@@ -1143,7 +1143,7 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
      | _, _ => false)
     "the predicate must hold of the witnessed boot state and fail of the empty one"
   -- The binding's cores bound the idle install.
-  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform none witnessedCfg with
   | Except.error e =>
       failLine "sd055_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
   | Except.ok _ =>
@@ -1159,7 +1159,7 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
         ((st.getTcb? (SeLe4n.Kernel.idleThreadId c1)).isNone &&
          (st.runQueueWalk c1).isEmpty)
         "the single-core binding must not install idle threads for cores it does not declare"
-  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform none witnessedCfg with
   | Except.error e =>
       failLine "sd055_four_core_unexpected_error" s!"the four-core binding should boot, got: {e}"
   | Except.ok _ =>
@@ -1203,11 +1203,28 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
     { initialObjects :=
         [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
       bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
-  match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform rpi5Cfg with
+  -- WS-SX SX5.1: the RPi5 binding builds the root task's IPC buffer
+  -- (`PlatformBinding.rootServerFor`), so a config whose root thread has no
+  -- CNode or address space to take one is refused by `rootServerPlaced`, before
+  -- anything is committed.  The binding's root and witnesses are then checked on
+  -- the checked boot of the bound config without the reservation.
+  match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform none rpi5Cfg with
   | Except.error e =>
+      expect "sd056_rpi5_witness_only_config_refused_by_rootServerPlaced"
+        (e == SeLe4n.Platform.Boot.rootServerPlacementBootError)
+        s!"a witness-only config under the RPi5 binding must be refused by rootServerPlaced, got: {e}"
+  | Except.ok _ =>
+      failLine "sd056_rpi5_witness_only_config_booted"
+        "a config whose root thread cannot take the IPC buffer must not boot under the RPi5 binding"
+  let rpi5Cores :=
+    SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.RPi5.RPi5Platform)
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor rpi5Cores
+      { bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform rpi5Cfg with rootServer := none } with
+  | .error e =>
       failLine "sd056_rpi5_canonical_root_boot_unexpected_error"
         s!"the RPi5 boot with its canonical root and witness TCBs must succeed, got: {e}"
-  | Except.ok st =>
+  | .ok ist =>
+      let st := ist.state
       expect "sd056_rpi5_canonical_root_installed"
         (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
         "the canonical boot VSpace root must be installed at its reserved id"
@@ -1215,11 +1232,15 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
         ((st.getTcb? ⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩).isSome &&
          (st.getTcb? ⟨rpi5Upper⟩).isSome)
         "both declared witnesses must be installed TCBs of the boot state"
-      let installed ← getKernelLabelingContext
-      expect "sd056_rpi5_installed_labeling_declares_its_witnesses"
-        (installed.separatedThreads ==
+      expect "sd056_rpi5_witnesses_installed_for_the_labeling"
+        (SeLe4n.Platform.Boot.declaredWitnessesInstalled st
+          (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.RPi5.RPi5Platform)))
+        "the RPi5 labeling's witness pair must be installed threads of the boot state"
+      expect "sd056_rpi5_labeling_declares_its_witnesses"
+        ((SeLe4n.Platform.PlatformBinding.labeling
+            (platform := SeLe4n.Platform.RPi5.RPi5Platform)).separatedThreads ==
           some (⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩, ⟨rpi5Upper⟩))
-        "the installed labeling must declare the RPi5 witness pair"
+        "the RPi5 labeling must declare the RPi5 witness pair"
   -- The round-4 shape: a labeling witnessed at thread 1 — the root's id — over
   -- a config carrying the root.  The root is a VSpace, not a TCB, so the
   -- witness can never be installed: refused, before anything is committed.
@@ -1277,7 +1298,7 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
       SeLe4n.Platform.PlatformBinding.declaredCores
         (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)))
     "the boot core embeds in the model and is a declared core"
-  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform none witnessedCfg with
   | Except.error e =>
       failLine "sd056_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
   | Except.ok st =>
@@ -1294,11 +1315,24 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
     { initialObjects :=
         [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
       machineConfig := SeLe4n.defaultMachineConfig, bootVSpaceRoot := none }
-  match ← bootAndInitialiseRPi5 bare with
+  -- WS-SX SX5.1: as above, the bare config's root thread cannot take the IPC
+  -- buffer the binding builds, so it is refused; the binding's root and machine
+  -- configuration are checked on the bound config without the reservation.
+  match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform none bare with
   | Except.error e =>
+      expect "sd056_rpi5_bare_config_refused_by_rootServerPlaced"
+        (e == SeLe4n.Platform.Boot.rootServerPlacementBootError)
+        s!"a bare config under the RPi5 binding must be refused by rootServerPlaced, got: {e}"
+  | Except.ok _ =>
+      failLine "sd056_rpi5_bare_config_booted"
+        "a bare config must not boot under the RPi5 binding"
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor rpi5Cores
+      { bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform bare with rootServer := none } with
+  | .error e =>
       failLine "sd056_rpi5_entry_unexpected_error"
-        s!"the hardware entry must boot a bare config under the binding's root and machine configuration, got: {e}"
-  | Except.ok st =>
+        s!"the bound bare config must boot under the binding's root and machine configuration, got: {e}"
+  | .ok ist =>
+      let st := ist.state
       expect "sd056_rpi5_entry_installs_the_canonical_root"
         (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
         "the binding's boot VSpace root must be installed even when the caller's config carries none"

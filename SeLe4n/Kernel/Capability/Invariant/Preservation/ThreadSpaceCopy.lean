@@ -81,7 +81,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     {src : SlotRef} {cap c : Capability}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
-    (hs : slot.toNat < 2) (hEmpty : t.spaceSlotCap slot = none)
+    (hs : slot.toNat < 3) (hEmpty : t.spaceSlotCap slot = none)
     (hSrc : SystemState.lookupSlotCap st src = some cap)
     (hBacked : capTargetKindBackedAt st c.target)
     (hGeo : cnodeCapGeometryAt st c)
@@ -250,7 +250,7 @@ slot empty, and the fill and edge keep it
 theorem threadSlotCopied_preserves_capabilityInvariantBundle
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
-    (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64)
     (hSrcNotUt : ∀ cap, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
       some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)
@@ -316,7 +316,7 @@ source names, a CNode slot, not the thread's.  What the retire of
 `threadSlotSet` reads. -/
 theorem threadSlotCopied_retireTargetUnnamed {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} {slot : SeLe4n.Slot} (hInv : capabilityInvariantBundle st)
-    (hT : st.getTcb? tid = some t) (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId)
+    (hT : st.getTcb? tid = some t) (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId)
     (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
     slotRetireTarget st tid.toObjId slot ≠ 0 → ∀ r, ¬ SystemState.namesAt
       (threadSlotCopied st tid slot srcCNode srcSlot rights data).slotCapAt r
@@ -358,7 +358,7 @@ untyped record. -/
 theorem threadSlotSet_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
-    (hs : slot.toNat < 2) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64)
     (hSrcNotUt : ∀ cap, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } =
       some cap → ∀ u, cap.target = .object u → st.getUntyped? u = none)

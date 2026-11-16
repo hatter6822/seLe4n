@@ -137,6 +137,32 @@ def qemuVirtExerciserInterface : SeLe4n.Model.InterfaceSpec :=
   { ifaceId := SeLe4n.InterfaceId.ofNat 1, methodCount := 1, maxMessageSize := 4,
     maxResponseSize := 4, requiresGrant := false }
 
+/-- **WS-SX SX5.1**: the root task's IPC buffer address — the first page of the
+    512 GiB window under level-0 index 2 of its address space, a window the
+    allocation exerciser's scenarios never map into (theirs is index 1, the
+    HAL's `FRAME_VADDR`).  `rust/sele4n-hal/src/smp_exercisers.rs` names it
+    `ROOT_IPC_BUFFER`. -/
+def qemuVirtRootTaskIpcBufferVAddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat (2 <<< 39)
+
+/-- **WS-SX SX5.1**: the first of the root server's four object ids, the first
+    above the boot objects. -/
+def qemuVirtRootServerFirstObjId : SeLe4n.ObjId := ⟨11⟩
+
+/-- **WS-SX SX5.1**: the root CNode slot of the root task's IPC buffer frame —
+    seL4's `seL4_CapInitThreadIPCBuffer`, slot 10 — the three tables' in the
+    slots after it. -/
+def qemuVirtRootServerFrameSlot : Nat := 10
+
+/-- **WS-SX SX5.1 (D13, D14)**: the root server's reservation with its frame
+    capability at root CNode slot `frameSlot`: the root task's four pages cut
+    from the one extension the boot maps, directly below its region map
+    (`rootServerReservationOf`), object ids from `qemuVirtRootServerFirstObjId`,
+    and the buffer at `qemuVirtRootTaskIpcBufferVAddr`. -/
+def qemuVirtRootServerAt (frameSlot : Nat) : Option SeLe4n.Platform.RootServerReservation :=
+  SeLe4n.Platform.rootServerReservationOf qemuVirtBootRamExtensions
+    ⟨qemuVirtLowerWitnessIndex⟩ qemuVirtRootTaskIpcBufferVAddr qemuVirtRootServerFirstObjId
+    (SeLe4n.Slot.ofNat frameSlot)
+
 /-- The QEMU `virt` platform binding. -/
 instance qemuVirtPlatformBinding : SeLe4n.Platform.PlatformBinding QemuVirtPlatform where
   name := "QEMU virt (GICv2 / Cortex-A76 / ARM64)"
@@ -146,6 +172,7 @@ instance qemuVirtPlatformBinding : SeLe4n.Platform.PlatformBinding QemuVirtPlatf
   interruptContract := qemuVirtInterruptContract
   bootVSpaceRoot := some qemuVirtBootVSpaceRootEntry
   serviceInterfaces := [qemuVirtExerciserInterface]
+  rootServerFor := fun _ => qemuVirtRootServerAt qemuVirtRootServerFrameSlot
   coreCount := 4
   coreCountPos := by decide
   coreCountLe := by decide

@@ -57,17 +57,27 @@ def qemuVirtPlatformConfigFromDtb (blob : ByteArray) (initialObjects : List Obje
 /-- The checked platform boot at the `virt` binding — the platform a
     definition, not an argument the exported entry could vary. -/
 def bootAndInitialiseQemuVirt (config : PlatformConfig) : BaseIO (Except String SeLe4n.Model.SystemState) :=
-  bootAndInitialisePlatform QemuVirtPlatform config
+  bootAndInitialisePlatform QemuVirtPlatform (some completePhysicalWrites) config
 
 /-- The `virt` boot is the generic one at this binding. -/
 theorem bootAndInitialiseQemuVirt_eq (config : PlatformConfig) :
-    bootAndInitialiseQemuVirt config = bootAndInitialisePlatform QemuVirtPlatform config := rfl
+    bootAndInitialiseQemuVirt config =
+      bootAndInitialisePlatform QemuVirtPlatform (some completePhysicalWrites) config := rfl
 
 /-- The `virt` boot with its failure handled: a refused boot halts every PE. -/
 def bootAndInitialiseQemuVirtOrHalt (config : PlatformConfig) : BaseIO Unit := do
   match ← bootAndInitialiseQemuVirt config with
   | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
+
+/-- **A boot that commits and returns `.ok` never halts**: the halting boot is
+    its commit (`Platform.FFI.bootAndInitialiseRPi5OrHalt_of_ok`). -/
+theorem bootAndInitialiseQemuVirtOrHalt_of_ok {config : PlatformConfig} {a b c : BaseIO Unit}
+    {z : SeLe4n.Model.SystemState} (h : bootAndInitialiseQemuVirt config = (do a; b; c; pure (Except.ok z))) :
+    bootAndInitialiseQemuVirtOrHalt config = (do a; b; c) := by
+  unfold bootAndInitialiseQemuVirtOrHalt
+  rw [h]
+  rfl
 
 /-- **The `virt` hardware boot's only correct call** — what
     `lean_kernel_main_qemu_virt` (`QemuVirt.kernelMain`) is, and what

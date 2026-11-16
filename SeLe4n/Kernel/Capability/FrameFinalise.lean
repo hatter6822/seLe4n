@@ -1611,7 +1611,8 @@ thread, card, 2026-10-25: "list order"). -/
     else cn.occHead
   | .tcb t =>
     if t.spaceCells[0].isSome && skip != 1 then 1
-    else if t.spaceCells[1].isSome && skip != 2 then 2 else 0
+    else if t.spaceCells[1].isSome && skip != 2 then 2
+    else if t.spaceCells[2].isSome && skip != 3 then 3 else 0
   | _ => 0
 
 /-- An object with a slot left to empty holds slots. -/
@@ -1661,11 +1662,11 @@ slots stands there (`cspaceDeleteFinalisingAdmitted`); nothing otherwise. -/
   else st
 
 /-- **How many slots of the object at `x` the loop may empty while it stands
-there**: a CNode's slot count, a thread's two. -/
+there**: a CNode's slot count, a thread's three. -/
 @[inline] def zombieObjectSlots (st : SystemState) (x : SeLe4n.ObjId) : Nat :=
   match st.getObject? x with
   | some (.cnode cn) => cn.cells.size
-  | some (.tcb _) => 2
+  | some (.tcb _) => 3
   | _ => 0
 
 /-- **One pass of the loop, standing at slot `slot` of `cnode`, whose class is

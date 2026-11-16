@@ -21,6 +21,7 @@ import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.QemuVirt.KernelMain
+import SeLe4n.Platform.QemuVirt.Exerciser
 import SeLe4n.Testing.Helpers
 
 /-! # AK9 Platform Regression Suite — Phase AK9 audit remediation
@@ -1894,13 +1895,16 @@ def realFirmwareAccountBindsTheReportedRam : IO Unit := do
           | some (.untyped ut) => some (ut.regionBase.toNat, ut.regionSize)
           | _ => none
       -- Each region's top pages hold its region map (`regionMapBaseOf`), so
-      -- each untyped stops where its map begins.
+      -- each untyped stops where its map begins — and the last region's
+      -- untyped stops four pages lower still, below the root server's
+      -- reservation (`untypedExtentsOf`, `rootServerBaseOf`).
       let reported : List (Nat × Nat) :=
         [(0x10000000, 0x3fc00000 - 0x10000000), (0x40000000, 0x200000000 - 0x40000000)]
-      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent and the region maps"
-        (decide (untypeds = reported.map SeLe4n.Platform.untypedExtentOf) &&
-          decide (untypeds = [(0x10000000, 0x2fa82000), (0x40000000, 0x1bf206000)]) &&
-          decide (reported.map SeLe4n.Platform.regionMapBaseOf = [0x3fa82000, 0x1ff206000]))
+      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent, the root server and the region maps"
+        (decide (untypeds = SeLe4n.Platform.untypedExtentsOf reported) &&
+          decide (untypeds = [(0x10000000, 0x2fa82000), (0x40000000, 0x1bf202000)]) &&
+          decide (reported.map SeLe4n.Platform.regionMapBaseOf = [0x3fa82000, 0x1ff206000]) &&
+          decide ((reported.getLast?.map SeLe4n.Platform.rootServerBaseOf) = some 0x1ff202000))
 
 /-- The number of RAM regions outside the kernel's reserved extent each fixture
 variant has, written by hand from `rpi5MemoryMapForConfig` rather than
@@ -1934,9 +1938,10 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
         -- WS-BP BP4.7, BP7.10: the RAM the boot maps outside the kernel's
         -- extent is the RAM the root task owns — one installed untyped per
         -- extension of the bound variant, over exactly that extension below
-        -- its region map (`untypedExtentOf`, ending at `regionMapBaseOf`),
-        -- named by the root CNode at slot `5 + i`, and no untyped id past the
-        -- last.
+        -- its region map (`untypedExtentsOf`: ending at `regionMapBaseOf`,
+        -- or, on the last extension, at the root server's reservation
+        -- `rootServerBaseOf` directly below it), named by the root CNode at
+        -- slot `5 + i`, and no untyped id past the last.
         let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
         expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) outside the kernel's extent"
           (decide (exts.length = ramUntypedCount gib))
@@ -1944,12 +1949,14 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           match ist.state.objects[rpi5RootTaskCNodeId]? with
           | some (.cnode cn) => cn.occupiedSlots
           | _ => []
-        for (e, i) in exts.zipIdx do
+        for ((e, u), i) in (exts.zip (SeLe4n.Platform.untypedExtentsOf exts)).zipIdx do
+          let top := if i + 1 = exts.length then SeLe4n.Platform.rootServerBaseOf e
+            else SeLe4n.Platform.regionMapBaseOf e
           let installed := match ist.state.objects[rpi5RootTaskUntypedId i]? with
             | some (.untyped ut) =>
                 decide (ut.regionBase.toNat = e.1) &&
-                  decide (ut.regionSize = (SeLe4n.Platform.untypedExtentOf e).2) &&
-                  decide (ut.regionBase.toNat + ut.regionSize = SeLe4n.Platform.regionMapBaseOf e) &&
+                  decide (ut.regionSize = u.2) &&
+                  decide (ut.regionBase.toNat + ut.regionSize = top) &&
                   SeLe4n.Platform.regionMapFits e && !ut.isDevice
             | _ => false
           expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i} below its region map" installed
@@ -2523,6 +2530,16 @@ private def bootMapTableLines : List String :=
         -- gigabyte unmapped.
         ++ (rpi5BootRamExtensions v).map (fun e =>
             s!"extend {bootMapHex e.1} {bootMapHex e.2}")
+        -- WS-SX SX5.1: what the root task's untypeds cover of each extension
+        -- (`untypedExtentsOf`) and where its region map begins, then the
+        -- root server's four pages — the HAL's test requires the untypeds,
+        -- the root server and the region maps to tile each extension, and
+        -- `region::thread_ram_admitted` to admit the root server's pages.
+        ++ ((rpi5BootRamExtensions v).zip
+              (SeLe4n.Platform.untypedExtentsOf (rpi5BootRamExtensions v))).map (fun (e, u) =>
+            s!"untyped {bootMapHex u.1} {bootMapHex u.2} regionMap {bootMapHex (SeLe4n.Platform.regionMapBaseOf e)}")
+        ++ (rpi5RootServerAt v).toList.map (fun rs =>
+            s!"rootServer {bootMapHex rs.base.toNat} {bootMapHex SeLe4n.Platform.rootServerReserveBytes}")
         ++ (bootMapProbes map).map fun a =>
             s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
 
@@ -2659,6 +2676,13 @@ private def qemuVirtBootMapTableLines : List String :=
     ++ map.map (fun r =>
         s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
     ++ qemuVirtBootRamExtensions.map (fun e => s!"extend {bootMapHex e.1} {bootMapHex e.2}")
+    -- WS-SX SX5.1: the untyped's cover and the region map's base per
+    -- extension, then the root server's four pages (see `bootMapTableLines`).
+    ++ (qemuVirtBootRamExtensions.zip
+          (SeLe4n.Platform.untypedExtentsOf qemuVirtBootRamExtensions)).map (fun (e, u) =>
+        s!"untyped {bootMapHex u.1} {bootMapHex u.2} regionMap {bootMapHex (SeLe4n.Platform.regionMapBaseOf e)}")
+    ++ (qemuVirtRootServerAt qemuVirtRootServerFrameSlot).toList.map (fun rs =>
+        s!"rootServer {bootMapHex rs.base.toNat} {bootMapHex SeLe4n.Platform.rootServerReserveBytes}")
     ++ (bootMapProbes map).map fun a =>
         s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
 
@@ -2776,18 +2800,105 @@ def qemuVirt_deployment_boots : IO Unit := do
       | other => throw <| IO.userError s!"the root CNode resolves 4 past its guard: {reprStr other}"
       IO.println "  PASS: the root task's capability addresses carry the root CNode's guard bit"
   unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]
-      == qemuVirtBootRamExtensions.map SeLe4n.Platform.untypedExtentOf do
-    throw <| IO.userError "the root task's untyped is not the RAM the boot maps below the region map"
-  IO.println "  PASS: the root task's untyped is the RAM the boot maps below the region map"
-  -- WS-UC UC5: the region map's reservation is the rest of the extension, and
-  -- the untyped meets none of it.
+      == SeLe4n.Platform.untypedExtentsOf qemuVirtBootRamExtensions do
+    throw <| IO.userError "the root task's untyped is not the RAM the boot maps below the root server"
+  IO.println "  PASS: the root task's untyped is the RAM the boot maps below the root server"
+  -- WS-UC UC5, WS-SX SX5.1: the root server's four pages and then the region
+  -- map's reservation are the rest of the extension, and the untyped meets
+  -- neither.
   for e in qemuVirtBootRamExtensions do
     let mapBase := SeLe4n.Platform.regionMapBaseOf e
+    let rsBase := SeLe4n.Platform.rootServerBaseOf e
     let untypedEnd := qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize
-    unless SeLe4n.Platform.regionMapFits e && untypedEnd == mapBase &&
+    unless SeLe4n.Platform.regionMapFits e && SeLe4n.Platform.rootServerFits e &&
+        untypedEnd == rsBase && rsBase + SeLe4n.Platform.rootServerReserveBytes == mapBase &&
         mapBase + SeLe4n.Platform.regionMapReserveBytes e.2 == e.1 + e.2 do
-      throw <| IO.userError s!"the region map's reservation at {mapBase} does not tile the extension"
-  IO.println "  PASS: the region map's reservation is the extension's top, outside the untyped"
+      throw <| IO.userError s!"the root server at {rsBase} and the region map at {mapBase} do not tile the extension"
+    unless (qemuVirtBoundPlatformConfig.rootServer.map (·.base.toNat)) == some rsBase do
+      throw <| IO.userError "the bound configuration does not reserve the root server's pages"
+  IO.println "  PASS: the root server's pages and the region map's reservation are the extension's top, outside the untyped"
+
+/-- **WS-SX SX5.3**: on every deployment the boot builds the root task's IPC
+buffer, as seL4's `create_ipcbuf_frame_cap` does: the root thread's
+`ipcBuffer` is the reservation's buffer address, its buffer slot
+(`TCB.ipcBufferSlot`, seL4's `tcbBuffer`) holds a capability to the
+reservation's frame, the root CNode holds the mapped frame capability at the
+reservation's frame slot, and the overflow words resolve — through the
+resolver the first system call's decode reads by — to the reservation's
+first page.  The boot owes the four pages' scrub and the descriptors, which
+the entry performs and drains (D15).  CONTROL: the same configuration without
+a reservation boots with no buffer; NEGATIVE: a reservation outside RAM is
+refused by `wellFormed`'s `rootServerPlaced`. -/
+def root_server_builds_the_ipc_buffer_at_boot : IO Unit := do
+  let deployments : List (String × List SeLe4n.Kernel.Concurrency.CoreId × PlatformConfig) :=
+    [ ("virt", PlatformBinding.declaredCores (platform := SeLe4n.Platform.QemuVirt.QemuVirtPlatform),
+        SeLe4n.Platform.QemuVirt.qemuVirtBoundPlatformConfig)
+    , ("the exerciser",
+        PlatformBinding.declaredCores (platform := SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform),
+        SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig) ]
+    ++ rpi5Variants.map fun v =>
+      (s!"RPi5 {v.ramSize}", PlatformBinding.declaredCores (platform := RPi5Platform),
+        rpi5BoundPlatformConfigAt v)
+  for (name, cores, config) in deployments do
+    match config.rootServer with
+    | none => expect s!"SX5.1 {name} reserves the root server's pages" false
+    | some rs =>
+      expect s!"SX5.1 {name} reserves the root server's pages" true
+      match bootFromPlatformCheckedStartedFor cores config with
+      | .error e => expect s!"SX5.3 {name} boots ({e})" false
+      | .ok ist =>
+        let st := ist.state
+        let frameCap? : Option Capability → Bool := fun c? =>
+          c?.any fun c => decide (c.target = .object (rs.objId 0))
+        match st.getTcb? rs.thread with
+        | none => expect s!"SX5.3 {name}: the root thread exists" false
+        | some t =>
+          expect s!"SX5.3 {name}: the root thread's ipcBuffer is the reservation's buffer address"
+            (decide (t.ipcBuffer = rs.bufferVAddr) && decide (t.ipcBuffer.toNat ≠ 0))
+          expect s!"SX5.3 {name}: the buffer slot holds a capability to the buffer's frame"
+            (frameCap? t.spaceCells[2])
+          expect s!"SX5.3 {name}: the root CNode holds the mapped frame capability at the frame slot"
+            (match st.objects[t.cspaceRoot]? with
+              | some (.cnode cn) => frameCap? (cn.lookupCells (rs.cnodeSlot 0))
+              | _ => false)
+          expect s!"SX5.3 {name}: the first overflow word resolves, writable, into the reservation's frame"
+            (decide (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? st t 0 true
+              = some (SeLe4n.PAddr.ofNat ((rs.pageAddr 0).toNat +
+                  (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr rs.bufferVAddr 0).pageOffset))))
+          -- Four page scrubs, the three tables' descriptors and the buffer's
+          -- page descriptor (`rootServerWrites`): the count the HAL prints
+          -- at Phase 5 (`qemu_lean_boot_expected.txt`'s `BOOT_WRITES`).
+          expect s!"SX5.3 {name}: the boot owes the root server's eight writes, which the drain clears"
+            (st.drainedPhysicalWrites.count == 8 &&
+              (drainBootPhysicalWrites ist).state.drainedPhysicalWrites.count == 0)
+      let bare := { config with rootServer := none }
+      match bootFromPlatformCheckedStartedFor cores bare with
+      | .error e => expect s!"SX5.3 CONTROL {name} without a reservation boots ({e})" false
+      | .ok ist =>
+        expect s!"SX5.3 CONTROL {name} without a reservation leaves the root thread bufferless and owes nothing"
+          (((ist.state.getTcb? rs.thread).any fun t =>
+              decide (t.ipcBuffer.toNat = 0) && t.spaceCells[2].isNone) &&
+            ist.state.drainedPhysicalWrites.count == 0)
+      let outside := { config with rootServer := some { rs with base := SeLe4n.PAddr.ofNat 0x1000 } }
+      expect s!"SX5.1 NEGATIVE {name}: a reservation outside RAM is refused by rootServerPlaced"
+        (match bootFromPlatformCheckedStartedFor cores outside with
+          | .error e => e == rootServerPlacementBootError
+          | .ok _ => false)
+  -- WS-SX SX5.3 (D15): a boot that owes writes on a machine that performs none
+  -- — the host entry, which no HAL backs — is refused and installs nothing,
+  -- never installed with its writes dropped.
+  let before ← SeLe4n.Platform.FFI.getKernelState
+  match ← SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
+      SeLe4n.Platform.QemuVirt.qemuVirtBoundPlatformConfig
+      (PlatformBinding.labeling (platform := SeLe4n.Platform.QemuVirt.QemuVirtPlatform)) with
+  | .error e =>
+      expect "SX5.3 NEGATIVE the host entry refuses a boot that owes physical writes"
+        (e == SeLe4n.Platform.FFI.unperformedBootPhysicalWritesBootError)
+  | .ok _ => expect "SX5.3 NEGATIVE the host entry refuses a boot that owes physical writes" false
+  let after ← SeLe4n.Platform.FFI.getKernelState
+  expect "SX5.3 NEGATIVE ...and installs nothing"
+    (after.objects.size == before.objects.size && (after.getTcb? ⟨2⟩).isNone == (before.getTcb? ⟨2⟩).isNone)
+  IO.println "the boot builds the root task's IPC buffer on every deployment: PASS"
 
 end SeLe4n.Testing.Ak9PlatformSuite
 
@@ -2795,6 +2906,7 @@ open SeLe4n.Testing.Ak9PlatformSuite in
 def main : IO Unit := do
   IO.println "=== AK9 Platform Regression Suite ==="
   ak9a_01_mmioRead32_rejects_unaligned
+  root_server_builds_the_ipc_buffer_at_boot
   ak9a_02_mmioRead64_rejects_unaligned
   ak9a_03_mmioRead32_rejects_ram
   ak9a_04_mmioRead32_accepts_gic

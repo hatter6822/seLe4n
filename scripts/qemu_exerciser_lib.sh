@@ -267,7 +267,7 @@ for driver in drivers:
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
             "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (19, 2056), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
+            "tcb/0": (19, 2064), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }
@@ -394,6 +394,10 @@ for driver in drivers:
             "reply-cap-mint-over-copy", "reply-cap-over-copy-delete", "reply-delete",
             "reply-queued-fault", "reply-recv", "reply-to-badged-call", "reschedule-sgi",
             "resume-carved-tcb", "resume-shared-tcb", "root-ipc-buffer-back", "root-set-ipc-buffer",
+            # WS-SX SX5: the first syscall reads the boot-built IPC buffer, and
+            # the boot's frame capability unmaps and remaps it.
+            "root-ipc-buffer-at-boot", "root-ipc-buffer-cap", "root-ipc-buffer-cap-unmap",
+            "root-ipc-buffer-cap-remap",
             "sched-context-bind", "sched-context-configure", "sched-context-consumed",
             "sched-context-consumed-reset", "sched-context-rebind", "sched-context-unbind",
             "sched-context-unbind-suspended", "sched-context-unbind-waiting",

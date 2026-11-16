@@ -41,14 +41,18 @@ theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRef
 
 /-- A device tree the bridge accepts maps the board's RAM outside the kernel's
     extent, then installs the deployment's boot state and the binding's
-    labeling, and nothing else — the halt arm is never taken on it. -/
+    labeling, and nothing else (the boot's owed physical writes are performed
+    first and the installed state is the drained one, design D15) — the halt arm is never taken on it. -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
     (h : qemuVirtPlatformConfigFromDtb dtb qemuVirtInitialObjects none =
       .ok config) :
     kernelMain dtb =
       (do
         Platform.FFI.extendBootRamMap qemuVirtBootRamExtensions
-        Platform.FFI.initialiseKernelState qemuVirtDeploymentBootState.state
+        Platform.FFI.completePhysicalWrites
+          qemuVirtDeploymentBootState.state.drainedPhysicalWrites
+        Platform.FFI.initialiseKernelState
+          (Platform.Boot.drainBootPhysicalWrites qemuVirtDeploymentBootState).state
         Platform.FFI.initialiseKernelLabelingContext
           (PlatformBinding.labeling (platform := QemuVirtPlatform))) := by
   unfold kernelMain
@@ -58,7 +62,8 @@ theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformCo
 
 /-- ...and the state it installs satisfies the proof-layer invariant bundle. -/
 theorem kernelMain_installs_invariantBundle :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle qemuVirtDeploymentBootState.state :=
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (Platform.Boot.drainBootPhysicalWrites qemuVirtDeploymentBootState).state :=
   qemuVirtDeploymentBootState_invariantBridge.1
 
 end SeLe4n.Platform.QemuVirt
