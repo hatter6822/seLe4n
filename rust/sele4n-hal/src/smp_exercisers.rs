@@ -12775,6 +12775,25 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 5;
 
+/// A capability fault received by the partner while its buffer slot is
+/// empty: the words past the fourth have nowhere to go, so the length is the
+/// four message registers (seL4's `setMR` with no buffer answers
+/// `n_msgRegisters`).
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_UNMAPPED_BUFFER_INFO: u64 = (1 << 12) | 4;
+
+/// The slot and the boot-domain id the fault lane carves its third core-0
+/// thread at: the donation-chain server's, free again by then.  The thread's
+/// buffer is the window's page, so it can set the root task's buffer back
+/// while neither the root task nor the partner has one
+/// ([`root_buffer_restored`]).
+#[cfg(feature = "hw_target")]
+const RESTORER_TCB_SLOT: u64 = CHAIN_TCB_SLOT;
+#[cfg(feature = "hw_target")]
+const RESTORER_CHILD_ID: u64 = CHAIN_CHILD_IDS[0];
+#[cfg(feature = "hw_target")]
+const RESTORER_TCB_CAP: u64 = cap_address(RESTORER_TCB_SLOT);
+
 /// One overflow capability fault queued and answered: the partner resumed,
 /// the root task's trap queued on its handler's endpoint, the partner's
 /// receive taking the fault and its reply restarting the root task, the
@@ -12816,19 +12835,29 @@ fn queued_overflow_cap_fault(
 /// routed arm and the entry's refusal seam reads it as the fault
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
-/// The root task's buffer slot is emptied first and set again after (between
-/// the two, the messages past the inline words are clamped to them, as seL4's
-/// `handleInvocation` clamps a message from a thread whose `tcbBuffer` holds no
-/// frame capability; unmapping the buffer's page would not, since seL4 reads
-/// the buffer through the frame, not the thread's page tables).  A thread with
-/// no buffer names no extra capability, so the root task cannot set its own
-/// buffer back: it blocks on the endpoint and the partner, whose buffer is the
-/// window's page, sets it and wakes it ([`root_buffer_restored`]).  With the
+/// The partner's buffer slot and then the root task's are emptied first and
+/// set again after (between the two, the messages past the inline words are
+/// clamped to them, as seL4's `handleInvocation` clamps a message from a
+/// thread whose `tcbBuffer` holds no frame capability, and the partner
+/// receives each fault in its four message registers, as seL4's `setMR` with
+/// no buffer does; unmapping the buffer's page would not, since seL4 reads the
+/// buffer through the frame, not the thread's page tables).  A thread with no
+/// buffer names no extra capability, so neither can set a buffer back: the
+/// root task blocks on the endpoint and a third thread, whose buffer is the
+/// window's page, sets it and wakes it ([`root_buffer_restored`]); the root
+/// task then sets the partner's.  With the
 /// buffer set, every configure, fault and refusal reads the words at their
 /// physical address, through the kernel's own mapping of RAM, and caches no
 /// user translation on any core.
 #[cfg(feature = "hw_target")]
 fn overflow_cap_faults(which: &str) -> bool {
+    let clear_partner_buffer = set_ipc_buffer(
+        "fault-long-clear-partner-buffer",
+        PARTNER_TCB_CAP,
+        0,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
     let clear_buffer = set_ipc_buffer(
         "fault-long-clear-buffer",
         ROOT_TCB_CAP,
@@ -12936,7 +12965,10 @@ fn overflow_cap_faults(which: &str) -> bool {
         returns: refused(TRUNCATED_MESSAGE),
         ..configure("configure-long-unmapped-buffer", admitted_args)
     };
-    unmeasured(&clear_buffer, "the root task's buffer slot was not emptied")
+    unmeasured(
+        &clear_partner_buffer,
+        "the partner's buffer slot was not emptied",
+    ) && unmeasured(&clear_buffer, "the root task's buffer slot was not emptied")
         && heap_allocations_round_trip(&clamped_one_word, which) == Some(true)
         && heap_allocations_round_trip(&clamped_long, which) == Some(true)
         && queued_overflow_cap_fault(
@@ -12947,7 +12979,7 @@ fn overflow_cap_faults(which: &str) -> bool {
             ),
             "receive-long-send-unmapped-buffer-cap-fault",
             "reply-long-send-unmapped-buffer-cap-fault",
-            CAP_FAULT_GUARD_MISMATCH_INFO,
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12958,7 +12990,7 @@ fn overflow_cap_faults(which: &str) -> bool {
             ),
             "receive-long-call-unmapped-buffer-cap-fault",
             "reply-long-call-unmapped-buffer-cap-fault",
-            CAP_FAULT_GUARD_MISMATCH_INFO,
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && queued_overflow_cap_fault(
@@ -12968,7 +13000,7 @@ fn overflow_cap_faults(which: &str) -> bool {
             },
             "receive-long-receive-unmapped-buffer-cap-fault",
             "reply-long-receive-unmapped-buffer-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
         && root_buffer_restored()
@@ -13024,13 +13056,21 @@ fn overflow_cap_faults(which: &str) -> bool {
         && receive_phase_cap_faults(which)
 }
 
-/// **The root task's buffer set back by the partner**: the partner resumed,
-/// the root task blocked receiving on the endpoint, the partner's buffer set of
-/// the root task (its extra capability, the window's frame capability, read
-/// from the partner's buffer on the window's page), the partner's send waking
-/// the root task, its yield giving the core back, and its suspend.  Unmeasured.
+/// **The root task's buffer set back by the third thread, and the
+/// partner's by the root task**: the third thread resumed, the root task
+/// blocked receiving on the endpoint, the third thread's buffer set of the
+/// root task (its extra capability, the window's frame capability, read from
+/// the third thread's buffer on the window's page), its send waking the root
+/// task, its yield giving the core back and its suspend by the root task; then
+/// the root task's buffer set of the partner.  Unmeasured.
 #[cfg(feature = "hw_target")]
 fn root_buffer_restored() -> bool {
+    let resume = invocation(
+        "fault-long-restorer-resume",
+        TCB_RESUME,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
     let root_waits = partner_step(
         "fault-long-root-waits",
         RECEIVE,
@@ -13047,20 +13087,40 @@ fn root_buffer_restored() -> bool {
         FRAME_VADDR,
     );
     let wake = partner_step(
-        "fault-long-partner-wakes-root",
+        "fault-long-restorer-wakes-root",
         SEND,
         ENDPOINT_CAP,
         0,
         [0, 0],
         false,
     );
-    let partner_yields = kernel_step("fault-long-partner-yield", YIELD);
-    unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+    let restorer_yields = kernel_step("fault-long-restorer-yield", YIELD);
+    let suspend = invocation(
+        "fault-long-restorer-suspend",
+        TCB_SUSPEND,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
+    let partner_buffer = set_ipc_buffer(
+        "fault-long-partner-buffer-restore",
+        PARTNER_TCB_CAP,
+        FRAME_VADDR,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
+    unmeasured(&resume, "the third thread was not resumed")
         && unmeasured(&root_waits, "the root task did not block on the endpoint")
-        && unmeasured(&restore, "the partner did not set the root task's buffer")
-        && unmeasured(&wake, "the partner's send did not wake the root task")
-        && unmeasured(&partner_yields, "the partner did not yield")
-        && suspend_partner()
+        && unmeasured(
+            &restore,
+            "the third thread did not set the root task's buffer",
+        )
+        && unmeasured(&wake, "the third thread's send did not wake the root task")
+        && unmeasured(&restorer_yields, "the third thread did not yield")
+        && unmeasured(&suspend, "the third thread was not suspended")
+        && unmeasured(
+            &partner_buffer,
+            "the root task did not set the partner's buffer",
+        )
 }
 
 /// A receive-phase trap: the root task's `SVC` with `x7` the syscall, `x0`
@@ -14083,8 +14143,10 @@ fn fault_entries() -> Option<bool> {
         ROOT_IPC_BUFFER,
     );
     // The partner answers the faults below from a buffer on the window's page
-    // too (its buffer slot is empty when the lane starts), and sets the root task's buffer back after the window
-    // in which the root task has none (`root_buffer_restored`).
+    // too (its buffer slot is empty when the lane starts).  A third thread on
+    // core 0, at the partner's priority and with its buffer on the window's
+    // page too, sets the root task's buffer back after the window in which
+    // neither the root task nor the partner has one (`root_buffer_restored`).
     let partner_buffer = set_ipc_buffer(
         "fault-long-partner-ipc-buffer",
         PARTNER_TCB_CAP,
@@ -14092,6 +14154,33 @@ fn fault_entries() -> Option<bool> {
         FRAME_CAP,
         FRAME_VADDR,
     );
+    let restorer_setup = [
+        invocation(
+            "fault-long-restorer-carve",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, RESTORER_CHILD_ID, CNODE_CAP, RESTORER_TCB_SLOT],
+        ),
+        invocation(
+            "fault-long-restorer-set-space",
+            TCB_SET_SPACE,
+            RESTORER_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "fault-long-restorer-set-priority",
+            TCB_SET_PRIORITY,
+            RESTORER_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        set_ipc_buffer(
+            "fault-long-restorer-ipc-buffer",
+            RESTORER_TCB_CAP,
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
+        ),
+    ];
     if !unmeasured_all(&MOVE_SETUP_PAGE, "the long fault reply's page setup failed")
         || !unmeasured(
             &map_buffer_page,
@@ -14099,6 +14188,7 @@ fn fault_entries() -> Option<bool> {
         )
         || !unmeasured(&root_buffer, "the handler's IPC buffer was not set")
         || !unmeasured(&partner_buffer, "the partner's IPC buffer was not set")
+        || !unmeasured_all(&restorer_setup, "the third thread's setup failed")
     {
         return Some(false);
     }
@@ -14242,16 +14332,24 @@ fn fault_entries() -> Option<bool> {
         FRAME_CAP,
         ROOT_IPC_BUFFER,
     );
+    let restorer_delete = invocation(
+        "fault-long-restorer-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [RESTORER_TCB_SLOT, 0, 0, 0],
+    );
     if !unmeasured(
         &root_buffer_back,
         "the root task's IPC buffer was not set back",
     ) || !unmeasured(
         &partner_buffer_clear,
         "the partner's IPC buffer slot was not emptied",
-    ) || !unmeasured_all(
-        &MOVE_TEARDOWN[4..],
-        "the long fault reply's page teardown failed",
-    ) {
+    ) || !unmeasured(&restorer_delete, "the third thread was not deleted")
+        || !unmeasured_all(
+            &MOVE_TEARDOWN[4..],
+            "the long fault reply's page teardown failed",
+        )
+    {
         return Some(false);
     }
     // The root task's access loads its context; its receive blocks it and
