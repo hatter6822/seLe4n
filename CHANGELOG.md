@@ -880,7 +880,7 @@ decodes later SX phases re-decode, which keep a narrowed row.
   raw-slot and model-only decodes (CNode delete and revoke, the reply-cap
   mint, retype's child and slot, the interrupt-control slot, the page-table
   map's address, the IPC-buffer address, the service interface id and the
-  audit index and chunk) still make a `Nat` of a word; SX9.1, SX6.2, SX6.5
+  audit index and chunk) still make a `Nat` of a word; SX9.1, SX6.3, SX6.6
   and SX7.1 re-decode them.
 
 ## v0.37.20 — error payloads and the `LookupFault` type
