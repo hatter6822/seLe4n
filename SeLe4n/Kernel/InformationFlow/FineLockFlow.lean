@@ -1509,13 +1509,9 @@ SM8.B.12 first stated this for the boot-pinned pre-SMP entry (retired by owner
 decision 2026-11-13), because that is where the release-grade witness lived;
 the entry the SMP dispatch seam actually calls is `syscallEntryChecked`, and it
 had none.  The steps before the dispatch — the context check is state-free,
-the register lookup is read-only, the decode is pure — are followed by the
-SM7.F.5 access-time TLB fill, which writes `perCoreTlb` and nothing else
-(`tlbFillIpcBufferOnCore_eq_setPerCoreTlb`) and is invisible by
-`perCoreTlb_write_preserves_projection`.
-
-The dispatch hypothesis is stated against the **filled** state, because that is
-the state `dispatchSyscallChecked` is applied to. -/
+the register lookup is read-only, the decode is pure — write nothing, so the
+dispatch hypothesis is stated against the state the entry was handed, the one
+`dispatchSyscallChecked` is applied to. -/
 theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (st st' : SystemState)
@@ -1523,12 +1519,10 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), stPost) →
+            st = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-                decoded.overflowCount)) :
+              st) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold syscallEntryChecked at hOk
   split at hOk
@@ -1548,17 +1542,7 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
           -- seam is still projection-invisible
           -- (`applySyscallTaint_preserves_projection`), which is what lets
           -- `hDispatchProj` be discharged from a statement about the arm.
-          --
-          -- The entry binds the TLB-filled state once rather than spelling it out
-          -- three times; Lean elaborates that binding to `letFun`, which the
-          -- rewrite below cannot see through, so reduce it away first.
-          dsimp only at hOk
-          rw [hDispatchProj decoded tid st' hOk]
-          obtain ⟨t, hEq⟩ :=
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
-              decoded.overflowCount
-          rw [hEq]
-          exact perCoreTlb_write_preserves_projection ctx observer st t
+          exact hDispatchProj decoded tid st' hOk
 
 /-- WS-J1-D (the `NonInterferenceStep` bridge, on the live entry): a refused
 `syscallEntryChecked` commits no state, so it is a `syscallDecodeError` step. -/
@@ -1582,12 +1566,10 @@ theorem syscallEntryChecked_success_yields_NI_step (ctx : LabelingContext)
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), stPost) →
+            st = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-                decoded.overflowCount)) :
+              st) :
     NonInterferenceStep ctx observer st st' :=
   .syscallDispatchHigh hCurrentHigh
     (syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
@@ -1598,7 +1580,7 @@ core, given that the entry's writes stay on the boot core.
 
 `syscallEntryChecked_preserves_projection` is the release-grade statement at
 the live entry: the context check is state-free, the register lookup is
-read-only, the decode is pure, the TLB fill writes `perCoreTlb` alone, and the
+read-only, the decode is pure, and the
 caller supplies the dispatched operation's projection-preservation proof.  This
 lifts it from the boot-core observer to all of them.
 
@@ -1626,12 +1608,10 @@ theorem syscallEntryChecked_preserves_projectionOnCore (ctx : LabelingContext)
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), stPost) →
+            st = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-                decoded.overflowCount))
+              st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   lowEquivalent_smp_of_projection_and_confinement ctx observer
@@ -1654,12 +1634,10 @@ theorem syscallEntryChecked_success_perCore_NI (ctx : LabelingContext)
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), stPost) →
+            st = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-                decoded.overflowCount))
+              st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
@@ -1851,13 +1829,11 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingConte
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              s.kernel executingCore tid decoded.overflowCount)
+            s.kernel
               = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                s.kernel executingCore tid decoded.overflowCount))
+              s.kernel)
     (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId) :
     lowEquivalent_smp ctx observer
       (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
@@ -1994,13 +1970,11 @@ theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : Securi
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              s.kernel executingCore tid decoded.overflowCount)
+            s.kernel
               = .ok ((), stPost) →
         projectState ctx (IfObserver.ofLabel L) stPost
           = projectState ctx (IfObserver.ofLabel L)
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                s.kernel executingCore tid decoded.overflowCount))
+              s.kernel)
     (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId)
     (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel st')
     (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel st') :
@@ -2168,7 +2142,7 @@ result.
 
 **WS-SM SM9.D.7 / PR #873 round 6.**  The equation used to spell the taint seam
 out here, because the seam sat at the entry.  It sits at the dispatcher now, so
-the entry *is* the dispatch at the filled state and the equation says exactly
+the entry *is* the dispatch at the entry's own state and the equation says exactly
 that — the `tid`, the `decoded` and the state the dispatch runs on, all three
 read off the helper's outputs.  Nothing was given up in the move: what the
 propagation is keyed on is pinned one layer down and over *every* caller of the
@@ -2181,8 +2155,7 @@ theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
     (h : entryDecode ctx layout executingCore regCount s = some (tid, decoded)) :
     syscallEntryChecked ctx layout executingCore regCount s
       = dispatchSyscallChecked ctx decoded tid executingCore
-          (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
-            decoded.overflowCount) := by
+          s := by
   unfold entryDecode at h
   unfold syscallEntryChecked
   cases hIns : isInsecureDefaultContext ctx with

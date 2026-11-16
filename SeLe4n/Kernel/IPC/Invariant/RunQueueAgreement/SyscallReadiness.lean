@@ -1624,12 +1624,8 @@ theorem syscallEntryChecked_readyKeptStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
   have hF := SystemState.RunQueueStage.of_frame (st := st)
-    (st' := { st with perCoreTlb := t }) rfl rfl rfl
+    (st' := st) rfl rfl rfl
   refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
   exact readyKeptStage.trans hF.entry.1 (.of_stage hF)
     (dispatchSyscallChecked_readyKeptStage ctx decoded tid e _ st'

@@ -646,13 +646,9 @@ theorem syscallEntryChecked_bankAgree {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e c0
-    decoded.overflowCount
-  rw [ht] at h
   have hF := SystemState.RunQueueStage.of_frame (st := st)
-    (st' := { st with perCoreTlb := t }) rfl rfl rfl
-  exact dispatchSyscallChecked_bankAgree (st := { st with perCoreTlb := t })
+    (st' := st) rfl rfl rfl
+  exact dispatchSyscallChecked_bankAgree (st := st)
     ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hC0 (hNI c0 hC0))
     hRT (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hBNR hYA hYN
     hPlaced h hA

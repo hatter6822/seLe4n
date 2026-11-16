@@ -17,8 +17,8 @@ scheduling-context configure, a service register or a CNode copy, its fifth
 word read from overflow slot 0 of the caller's IPC buffer, or a CNode mint short
 of its sixth, as its own function.  The syscall
 and the operand's address cross as words, the state owned, and the result is
-the state with its report pushed (`RoutedArms.Report`); the read, the TLB
-fill and its undo are the entry's own.
+the state with its report pushed (`RoutedArms.Report`); the read is the
+entry's own.
 The caller's saved register file is read here, off the state the arm is
 handed, rather than crossing the call: passed in, it would be held across the
 whole arm by the entry's reference, and every write to it the arm makes would
@@ -42,8 +42,7 @@ message with no IPC buffer, it is short of its fifth argument. -/
     entryReportLookup entryReportLookupAtW
 
 /-- **The one-overflow-word arm**: the overflow word read, then
-`dispatchOverflowOneCheckedR` on the state with this core's TLB holding the
-buffer's translation, a refusal handing back the TLB the entry held; its
+`dispatchOverflowOneCheckedR` on the state it is handed; its
 refusal reported under the entry's resolved or lookup continuation as the
 dispatch told them apart, a result under the first. -/
 @[noinline] def overflowOneRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
@@ -53,7 +52,7 @@ dispatch told them apart, a result under the first. -/
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
       (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
-      (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+      (fun w => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
         (overflowOneOperandArmR ctx sid tcb.registerContext w tid xc) st entryReportGeneral
         (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
         entryReportLookupAtW)

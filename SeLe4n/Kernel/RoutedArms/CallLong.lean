@@ -19,8 +19,7 @@ than the inline words, as its own function, read and filled as the long send's
 page of the caller's IPC buffer that holds slot 0 and at most the next
 (`firstPageSlots`): slot 0 and the next page's first slot read (slot 0 again
 when the words fit one page), the call is dispatched through the long call's arm
-(`callLongOperandArmThenTaintR`) on the state with this core's TLB holding the
-buffer's translations, a refusal handing back the TLB the entry held.  The
+(`callLongOperandArmThenTaintR`) on the state it is handed.  The
 operand's address and the
 message length cross as words, the state owned, and the result is the state
 with its report pushed (`RoutedArms.Report`).  The caller's TCB is read here,
@@ -36,8 +35,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- **The long-call arm**: slot 0 and the next page's first slot read, then the
-call's operand dispatch on the state whose TLB holds the buffer's
-translations, a refusal handing back the TLB the entry held; a refusal reported
+call's operand dispatch on the state it is handed; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
 @[noinline] def callLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
@@ -51,10 +49,10 @@ apart, a result under the first. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => callRoutedArm ctx executingCore tid capWord xc 4 st)
-            (fun _ => longOperandKW .call (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+            (fun _ => dispatchOperandCheckedKW .call (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (callLongOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                     length tid executingCore (syscallRequiredRight .call))
-                  (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+                  st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
                   entryReportLookup entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 

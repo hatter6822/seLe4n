@@ -32,9 +32,7 @@ integrator who did so never reached the seam, and a successful send moved
 tagged content with no provenance.  `dispatchSyscallChecked_applies_taint_plan`
 pins that no success path skips it.
 
-The placement is the SM7.F.5 seam one layer down: the entry already threads a
-projection-invisible model write (`tlbFillIpcBufferOnCore`) around the dispatch
-for exactly this kind of bookkeeping, and keeping the taint write out of the
+The placement is at the dispatcher, and keeping the taint write out of the
 transitions buys three things a per-arm write does not:
 
 * **one writer.**  `storeObject_declassificationTaint_eq` frames the field, so

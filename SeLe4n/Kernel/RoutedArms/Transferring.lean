@@ -17,8 +17,7 @@ call whose message carries capabilities, as its own function
 (`transferringRoutedArm`).  Within the inline words it is the operand
 dispatch over the transferring arm (`transferringOperandArmThenTaintR`);
 past them, slot 0 and the next page's first slot are read and the dispatch
-runs on the state with this core's TLB holding the buffer's translations, a
-refusal handing back the TLB the entry held, as the long send's.  The
+runs on the state it is handed, as the long send's.  The
 caller's TCB is read here, off the state the arm is handed.
 
 An overflow slot that does not read clamps the message to its four inline
@@ -59,10 +58,10 @@ filled first as the long send's. -/
             (syscallRequiredRight sid))
           st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
           entryReportLookup entryReportLookupAtW)
-            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
                     executingCore (syscallRequiredRight sid))
-                  (length - 4) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
+                  st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
                   entryReportLookup entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))
 

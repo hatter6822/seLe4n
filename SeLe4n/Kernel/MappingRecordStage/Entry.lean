@@ -321,11 +321,7 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
-  exact (MappingStage.of_objects_eq (st := st) (st' := { st with perCoreTlb := t }) rfl
+  exact (MappingStage.of_objects_eq (st := st) (st' := st) rfl
     ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 

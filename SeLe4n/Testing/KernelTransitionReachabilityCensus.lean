@@ -1247,14 +1247,9 @@ def nonExecutedTransitionsPlain : List Name :=
   -- The short-argument route's specification, which the compiled entry
   -- runs as the arm proven equal to it (`shortArgsRoutedArm`).
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
-  -- The long and one-overflow-word routes' operand dispatches as the
-  -- specification runs them, a refusal handing back the TLB the entry held,
-  -- which the compiled entry runs as the continuation forms proven to hand on
-  -- what each returns (`longOperandK_spec`, `overflowOneOperandK_spec`,
-  -- `undoFillRefusalK_eq`, `dispatchOverflowOneCheckedR_eq_operand`).
-  , `SeLe4n.Kernel.longOperandSpecR
-  , `SeLe4n.Kernel.overflowOneOperandSpecR
-  , `SeLe4n.Kernel.undoFillRefusal
+  -- The one-overflow-word route's dispatch, which the compiled entry runs as
+  -- the operand dispatch proven equal to it
+  -- (`dispatchOverflowOneCheckedR_eq_operand`).
   , `SeLe4n.Kernel.dispatchOverflowOneCheckedR
   -- WS-SX SX1: the five-word invocations' arm as the continuation entry's
   -- specification names it, which the compiled entry runs as
@@ -1405,11 +1400,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
-  -- The per-core TLB replaced, the form the busy-reply cancel's TLB frame is
-  -- stated over (`cancelReplyHolder_withPerCoreTlb`,
-  -- `tlbUndoFillOnCore_fill_of_withPerCoreTlb`): a proof device, run by no
-  -- seam.
-  , `SeLe4n.Model.SystemState.withPerCoreTlb
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads

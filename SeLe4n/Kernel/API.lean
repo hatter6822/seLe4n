@@ -82,7 +82,6 @@ import SeLe4n.Kernel.Architecture.IpcBufferValidation
 -- `.vspaceMap` / `.vspaceUnmap` arms dispatch through (initiator-atomic
 -- `perCoreTlb` retirement + translation-walk fill; projection-invisible).
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
-import SeLe4n.Kernel.Architecture.IpcBufferTlbFill
 
 /-!
 # L-01/WS-E6: Unified Public Kernel API
@@ -6072,50 +6071,20 @@ def syscallEntryChecked (ctx : LabelingContext)
                 st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
-          -- WS-SM SM7.F.5: the decode above walked this thread's IPC buffer
-          -- for each overflow message register.  On hardware that walk fills
-          -- the *executing* core's TLB; record it, so `perCoreTlb` holds the
-          -- translations a core acquired by access rather than only those it
-          -- established by mapping.  Purely a TLB-model event
-          -- (`tlbFillIpcBufferOnCore_frame`), and inert when the syscall
-          -- carried no overflow registers.
+          -- WS-SX SX6.6: the decode above read the overflow words at their
+          -- physical addresses, through the kernel's own mapping of RAM (the
+          -- HAL's entry reads them there, as seL4 reads the buffer through
+          -- `lookupIPCBuffer`'s kernel pointer), so no user translation is
+          -- cached on this core and the dispatcher is handed the entry's own
+          -- state.
           -- WS-SM SM9.D.7: **the taint propagation seam is inherited, not
           -- repeated.**  `dispatchSyscallChecked` applies the plan to the state
-          -- it was handed, so this entry gets it by passing the filled state and
-          -- returning what comes back — the same plan, the same pre-state, the
-          -- same post-state as when the two lines lived here.
-          --
-          -- It moved down one layer in PR #873 round 6.  `dispatchSyscallChecked`
-          -- is what an integrator writing a production user-space entry calls,
-          -- and an integrator who did so
-          -- called the dispatcher directly and never reached a seam that sat
-          -- above it: content moved with no provenance, and a retype kept the
-          -- destroyed object's tags.  Putting the seam at the dispatcher makes
-          -- every entry inherit it, including one written tomorrow.
-          --
-          -- One writer, at the dispatcher rather than at the arms, for the
-          -- SM7.F.5 reason one layer on: keeping the write out of the
-          -- transitions leaves every IPC frame, invariant and non-interference
-          -- result untouched (`applySyscallTaint_frame`,
-          -- `storeObject_declassificationTaint_eq`).  The classification
-          -- `contentFlowClass` is total on `SyscallId`, so a new syscall is a
-          -- missing case at elaboration; that its *callees* do not move content
-          -- the declared edges miss is checked by reach, in
-          -- `scripts/check_content_flow_coverage.py`.
-          --
-          -- The filled state is bound ONCE.  It used to be spelled out three
-          -- times — for the dispatch, for the taint plan, and as the plan's
-          -- pre-state — on the reasoning that an intermediate binding would stop
-          -- the downstream carriage proofs from `split`ting on a bare `match`.
-          -- That is true of `have`, which is opaque, but not of `let`, which
-          -- zeta-reduces and stays transparent to `split`.  Three evaluations of
-          -- a TCB/VSpace resolution (and, with overflow registers, of the page
-          -- fold and the TLB-table update) on every successful syscall was the
-          -- cost of the stronger reading.
-          let stFilled :=
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              st executingCore tid decoded.overflowCount
-          dispatchSyscallChecked ctx decoded tid executingCore stFilled
+          -- it was handed, so every entry, including one written tomorrow,
+          -- inherits it.  The classification `contentFlowClass` is total on
+          -- `SyscallId`, so a new syscall is a missing case at elaboration; that
+          -- its *callees* do not move content the declared edges miss is checked
+          -- by reach, in `scripts/check_content_flow_coverage.py`.
+          dispatchSyscallChecked ctx decoded tid executingCore st
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems
@@ -7086,10 +7055,8 @@ satisfies `proofLayerInvariantBundle` and the flow-checked dispatcher preserves
 it, the post-state satisfies it.
 
 Compositional: the context check is state-free, the register lookup is
-read-only, the decode is pure, and the access-time TLB fill the entry runs
-before it dispatches preserves the whole bundle
-(`tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle`), so the
-dispatcher is handed a state that satisfies it.  The caller provides the
+read-only and the decode is pure, so the dispatcher is handed the entry's own
+state, which satisfies it.  The caller provides the
 dispatcher's preservation, which composes its per-arm results with the taint
 seam's (`applySyscallTaint_preserves_proofLayerInvariantBundle`). -/
 theorem syscallEntryChecked_preserves_proofLayerInvariantBundle
@@ -7114,10 +7081,7 @@ theorem syscallEntryChecked_preserves_proofLayerInvariantBundle
       · split at hOk
         · exact absurd hOk (by simp)
         · next decoded _ =>
-          dsimp only at hOk
-          exact hDispatchPres decoded tid _ st'
-            (Architecture.tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle
-              st executingCore tid decoded.overflowCount hInv) hOk
+          exact hDispatchPres decoded tid _ st' hInv hOk
 
 -- ============================================================================
 -- WS-J1-D: Non-interference theorems for the syscall decode path
@@ -7410,18 +7374,6 @@ theorem dispatchSyscallChecked_ok_caller_current
   · rw [dispatchSyscallChecked_refuses_mismatched_core ctx decoded tid executingCore st
       hCur] at h
     exact absurd h (by simp)
-
-/-- The entry never trips the guard: `syscallEntryChecked` resolves `tid` as
-`currentOnCore executingCore` and dispatches on the IPC-buffer-filled state,
-whose scheduler is the pre-state's (`tlbFillIpcBufferOnCore_scheduler`), so the
-guard reads back the very thread the entry resolved. -/
-theorem syscallEntryChecked_dispatch_caller_current
-    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (overflowCount : Nat)
-    (st : SystemState) (hCur : st.scheduler.currentOnCore executingCore = some tid) :
-    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-        overflowCount).scheduler.currentOnCore executingCore = some tid := by
-  rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler]
-  exact hCur
 
 -- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
@@ -7935,16 +7887,11 @@ Three properties of the statement, all of them the point:
 * the caller is identified on the **executing** core (`currentOnCore
   executingCore`), not on `bootCoreId`, so the guarantee covers a syscall issued
   from a secondary PE;
-* the capability is resolved against the state the decode's TLB fill produced
-  (`tlbFillIpcBufferOnCore`), which is the state the dispatcher is handed — a
-  statement about `st` would be about a state no arm ever sees;
+* the capability is resolved against the state the caller trapped in, which is
+  the state the dispatcher is handed (the decode writes nothing) and the one
+  user space could have arranged;
 * the entry's own `isInsecureDefaultContext` refusal is part of the chain, so a
-  success also witnesses that a deployment labeling context was installed.
-
-`lookupSlot` and `lookupSlotCap` read only the object store, which the
-TLB fill leaves alone (`tlbFillIpcBufferOnCore_frame`), so the resolution is
-equally a resolution against `st`; that corollary is
-`syscallEntryChecked_implies_capability_held_of_pre_state` below. -/
+  success also witnesses that a deployment labeling context was installed. -/
 theorem syscallEntryChecked_implies_capability_held
     (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
     (executingCore : Concurrency.CoreId) (regCount : Nat)
@@ -7956,16 +7903,12 @@ theorem syscallEntryChecked_implies_capability_held
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout regs regCount = .ok decoded ∧
-      ∃ stFilled,
-        SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-          st executingCore tid decoded.overflowCount = stFilled ∧
-        (decoded.syscallId ≠ .yield →
-        ∃ tcb, stFilled.getTcb? tid = some tcb ∧
-            ∃ cap ref,
-              lookupSlot tcb decoded.capAddr stFilled =
-                .ok ref ∧
-              SystemState.lookupSlotCap stFilled ref = some cap ∧
-              cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
+      (decoded.syscallId ≠ .yield →
+      ∃ tcb, st.getTcb? tid = some tcb ∧
+          ∃ cap ref,
+            lookupSlot tcb decoded.capAddr st = .ok ref ∧
+            SystemState.lookupSlotCap st ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
   unfold syscallEntryChecked at hOk
   split at hOk
   · simp at hOk
@@ -7986,52 +7929,8 @@ theorem syscallEntryChecked_implies_capability_held
             split at hLookup <;> simp at hLookup
             exact hLookup.2.symm
           subst hStEq
-          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl, fun hCap =>
+          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap =>
             dispatchSyscallChecked_requires_right ctx decoded tid executingCore _ st' hCap hOk⟩
-
-/-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
-caller trapped in.
-
-`syscallEntryChecked_implies_capability_held` resolves against the state the
-decode's TLB fill produced, because that is the state the dispatcher is handed.
-The fill touches only the per-core TLB view (`tlbFillIpcBufferOnCore_frame`) and
-the CSpace walk reads only the object store
-(`lookupSlot_congr_getCNode?`), so the same capability is at the same slot
-of the pre-state — which is the form a reader of "every syscall is capability
-gated" wants, since the pre-state is the one user space could have arranged. -/
-theorem syscallEntryChecked_implies_capability_held_of_pre_state
-    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
-    (executingCore : Concurrency.CoreId) (regCount : Nat)
-    (st : SystemState) (st' : SystemState)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st')) :
-    isInsecureDefaultContext ctx = false ∧
-    ∃ tid regs decoded,
-      (st.scheduler.currentOnCore executingCore) = some tid ∧
-      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-        st tid layout regs regCount = .ok decoded ∧
-      (decoded.syscallId ≠ .yield →
-      ∃ tcb, st.getTcb? tid = some tcb ∧
-          ∃ cap ref,
-            lookupSlot tcb decoded.capAddr st = .ok ref ∧
-            SystemState.lookupSlotCap st ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
-  obtain ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, stFilled, hFill, hHeld⟩ :=
-    syscallEntryChecked_implies_capability_held ctx layout executingCore regCount st st' hOk
-  refine ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap => ?_⟩
-  obtain ⟨tcb, hTcb, cap, ref, hResolve, hSlot, hRight⟩ := hHeld hCap
-  subst hFill
-  have hObjects :
-      (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-        st executingCore tid decoded.overflowCount).objects = st.objects :=
-    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_frame
-      st executingCore tid decoded.overflowCount).1
-  refine ⟨tcb, ?_, cap, ref, ?_, ?_, hRight⟩
-  · simpa only [SystemState.getTcb?, hObjects] using hTcb
-  · rw [← lookupSlot_congr_getCNode? (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-        st executingCore tid decoded.overflowCount) st
-      (fun id => by simp only [SystemState.getCNode?, hObjects])]; exact hResolve
-  · rw [← lookupSlotCap_congr_objects _ st ref hObjects]; exact hSlot
 
 /-- **WS-SM SM9.A.10**: an unconfigured deployment cannot drain.
 

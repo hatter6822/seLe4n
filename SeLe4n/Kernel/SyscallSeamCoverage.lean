@@ -853,20 +853,20 @@ the operands are the busy receive's, whose footprint is every core's run queue
 and moves no reservation the cancel does not keep. -/
 theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult)
-    (stRegs stFilled : SystemState) (ops : Concurrency.SyscallLockOperands) (S U : LockSet)
+    (stRegs stSpilled : SystemState) (ops : Concurrency.SyscallLockOperands) (S U : LockSet)
     (hRegsObjInv : stRegs.objects.invExt)
     (hCur : stRegs.scheduler.currentOnCore e = some tid)
     (hTcbRegs : stRegs.getObject? tid.toObjId = some (.tcb tcb))
     (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState stRegs tid
       SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded)
-    (hFillObj : stFilled.objects = stRegs.objects)
-    (hCode : ∀ gate, recvBusyReplyHolderCode ctx tid gate decoded stFilled
+    (hFillObj : stSpilled.objects = stRegs.objects)
+    (hCode : ∀ gate, recvBusyReplyHolderCode ctx tid gate decoded stSpilled
       = recvBusyReplyHolderCode ctx tid gate decoded stRegs)
-    (hXc : ∀ n, callerExtraCapsFault? stFilled tid n = callerExtraCapsFault? stRegs tid n)
-    (hOps : abiEntryLockOperands decoded tid stFilled = some ops)
-    (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops e stFilled
+    (hXc : ∀ n, callerExtraCapsFault? stSpilled tid n = callerExtraCapsFault? stRegs tid n)
+    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops)
+    (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
       = some S)
-    (hU : unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops e stFilled
+    (hU : unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
       = some U) :
     footprintCoversWrites U stRegs (cancelReceiveBusyReply ctx e stRegs) := by
   rcases cancelReceiveBusyReply_cases_decoded ctx e stRegs with
@@ -879,28 +879,28 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
   cases hObj'
   rw [hDec] at hDec'
   cases hDec'
-  have hRecvF : receivesWithoutReply decoded tid stFilled := by
+  have hRecvF : receivesWithoutReply decoded tid stSpilled := by
     unfold receivesWithoutReply at hRecv' ⊢
     rw [hXc]
     exact hRecv'
   obtain ⟨tcbF, gate, cap, hGate, -, -, -⟩ :=
-    abiEntryLockOperands_gate_lookup decoded tid stFilled ops
+    abiEntryLockOperands_gate_lookup decoded tid stSpilled ops
       (by rcases hRecvF with h | ⟨h, -⟩ <;> rw [h] <;> decide) hOps
-  obtain ⟨hTcbF, -, -, hGateEq⟩ := abiEntryGate_components decoded tid stFilled tcbF gate hGate
+  obtain ⟨hTcbF, -, -, hGateEq⟩ := abiEntryGate_components decoded tid stSpilled tcbF gate hGate
   have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
   have hTcbRegs' : stRegs.objects[tid.toObjId]? = some (.tcb tcb) := hTcbRegs
   rw [hFillObj, hTcbRegs'] at hTcbF'
   simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
   subst hTcbF'
-  have hCodeF : recvBusyReplyHolderCode ctx tid gate decoded stFilled = k + 1 := by
+  have hCodeF : recvBusyReplyHolderCode ctx tid gate decoded stSpilled = k + 1 := by
     rw [hCode]
     exact hCode' gate (by rw [hGateEq]; simp only [callerCspaceRoot, hTcbRegs])
   have hB := recvBusyReplyHolderCode_succ hCodeF
   obtain ⟨epId, hOpsEq⟩ :=
-    abiEntryLockOperands_receive_busy decoded tid stFilled ops _ gate ⟨k⟩ hRecvF hGate hB hOps
+    abiEntryLockOperands_receive_busy decoded tid stSpilled ops _ gate ⟨k⟩ hRecvF hGate hB hOps
   refine unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU ?_
   subst hOpsEq
-  rw [(abiEntryFootprintId_eq_receive_iff decoded tid stFilled).mpr hRecvF] at hSched
+  rw [(abiEntryFootprintId_eq_receive_iff decoded tid stSpilled).mpr hRecvF] at hSched
   simp only [schedLockSetForSyscall, Option.bind_some,
     schedLockSet_receiveCancellingHolderOnCore, hB] at hSched
   exact footprintCoversWrites_of_allCores S _ stRegs _ (LockSet.ofList?_pairs hSched)
@@ -910,8 +910,8 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
 
 The seam's pre-state invariant is the object-store invariant with the
 queue-head consistency the receive arm's chain walk reads; both transport
-across the seam's register spill (a TCB rewrite that keeps every `ipcState`)
-and IPC-buffer fill (per-core TLB alone).  On a successful dispatch the step is
+across the seam's register spill (a TCB rewrite that keeps every `ipcState`).
+On a successful dispatch the step is
 the covered dispatcher followed by the covered commit tail; on a refused one it
 is the recorded refusal — scheduler-inert — followed by the same tail.  The
 capability-fault delivery is unreachable: the operands resolved, so the rights
@@ -931,10 +931,10 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   cases hPlan : abiEntryPlan ctx e syscallId x0 x1 x2 x3 x4 x5 st with
   | none => rw [hPlan] at hU; exact absurd hU (by simp)
   | some triple =>
-  obtain ⟨tid, decoded, stFilled⟩ := triple
+  obtain ⟨tid, decoded, stSpilled⟩ := triple
   rw [hPlan] at hU
   simp only at hU
-  cases hOps : abiEntryLockOperands decoded tid stFilled with
+  cases hOps : abiEntryLockOperands decoded tid stSpilled with
   | none => rw [hOps] at hU; exact absurd hU (by simp)
   | some ops =>
   rw [hOps] at hU
@@ -945,30 +945,27 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   have hRunE : (LockKey.runQueue e, AccessMode.write) ∈ U.pairs :=
     mem_unifiedLockSetForSyscall_executingCore _ _ _ _ _ hU
   obtain ⟨hCur, tcb, hTcbRegs, hDec, hFilled⟩ :=
-    abiEntryPlan_components ctx e syscallId x0 x1 x2 x3 x4 x5 st tid decoded stFilled hPlan
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb
-    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) e tid
-    decoded.overflowCount
+    abiEntryPlan_components ctx e syscallId x0 x1 x2 x3 x4 x5 st tid decoded stSpilled hPlan
   have hRegsSch := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid syscallId x0 x1 x2 x3 x4 x5
-  have hFillObj : stFilled.objects
+  have hFillObj : stSpilled.objects
       = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects := by
-    rw [hFilled, ht]
-  have hFillSch : stFilled.scheduler
+    rw [hFilled]
+  have hFillSch : stSpilled.scheduler
       = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler := by
-    rw [hFilled, ht]
+    rw [hFilled]
   have hRegsObjInv :
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects.invExt :=
     SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-  have hFillObjInv : stFilled.objects.invExt := by rw [hFillObj]; exact hRegsObjInv
+  have hFillObjInv : stSpilled.objects.invExt := by rw [hFillObj]; exact hRegsObjInv
   have hRegsHeads :
       queueHeadBlockedConsistent
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
     queueHeadBlockedConsistent_updateTcb_of_ipcState_eq st tid _ hObjInv (fun _ => rfl) hHeads
-  have hFillHeads : queueHeadBlockedConsistent stFilled :=
+  have hFillHeads : queueHeadBlockedConsistent stSpilled :=
     queueHeadBlockedConsistent_of_readViewAgreement (.of_getElem_eq (fun oid => by rw [hFillObj])) hRegsHeads
   have hD := abiEntryPlan_dispatches ctx e syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
-    spEl0 x30 st tid decoded stFilled hPlan
-  cases hDisp : dispatchSyscallChecked ctx decoded tid e stFilled with
+    spEl0 x30 st tid decoded stSpilled hPlan
+  cases hDisp : dispatchSyscallChecked ctx decoded tid e stSpilled with
   | ok r =>
     obtain ⟨⟨⟩, st'⟩ := r
     rw [hDisp] at hD
@@ -979,8 +976,8 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       (footprintCoversWrites_trans U (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch)
         (footprintCoversWrites_of_objects_scheduler_eq U hFillObj hFillSch)) ?_)
       (syscallCommitTail_coversWrites U e _ st' _ hTable hRunE)
-    exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U stFilled st' hSched hU
-      (dispatchSyscallChecked_coversWrites ctx decoded tid e stFilled st' ops S hFillObjInv
+    exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U stSpilled st' hSched hU
+      (dispatchSyscallChecked_coversWrites ctx decoded tid e stSpilled st' ops S hFillObjInv
         hFillHeads hOps hSched hDisp)
   | error ke =>
     rw [hDisp] at hD
@@ -1015,15 +1012,15 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       · exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ _
           tid ke tcb decoded hTcbRegs' hDec (by rw [hY]; rfl)
       obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv, hReplyF⟩ :=
-        abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
+        abiEntryLockOperands_gate_lookup decoded tid stSpilled ops hY hOps
       obtain ⟨hTcbF, -, -, hGateEq⟩ :=
-        abiEntryGate_components decoded tid stFilled tcbF gate hGate
+        abiEntryGate_components decoded tid stSpilled tcbF gate hGate
       have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
       rw [hFillObj, hTcbRegs'] at hTcbF'
       simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
       subst hTcbF'
-      have hResolve := syscallResolveCap_congr_objects gate stFilled _ cap hFillObj
-        (syscallLookupCap_resolve gate stFilled cap hLk)
+      have hResolve := syscallResolveCap_congr_objects gate stSpilled _ cap hFillObj
+        (syscallLookupCap_resolve gate stSpilled cap hLk)
       subst hGateEq
       cases hPhase : Platform.FFI.capFaultReceivePhase? decoded.syscallId with
       | none =>
@@ -1043,8 +1040,8 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
         exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ _ tid
           ke tcb decoded inRecv hTcbRegs' hDec hPhase
           (by
-            have hX := abiEntryLockOperands_extraCaps decoded tid stFilled ops hY hOps
-            rw [hFilled, ht, callerExtraCapsFault?_perCoreTlb] at hX
+            have hX := abiEntryLockOperands_extraCaps decoded tid stSpilled ops hY hOps
+            rw [hFilled] at hX
             simp [syscallOperandLookup, hResolve, hRecv', hX])
           (by
             rw [hFrameR.1, hRoot, receiveReplyFault?_congr_getCNode? _ decoded _ _ hFrameR.2,
@@ -1054,10 +1051,10 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     simp only at hD
     rw [syscallDispatchCrossCoreStep_of_ok hD]
     dsimp only
-    have hCancel := cancelReceiveBusyReply_coversWrites ctx e tid tcb decoded _ stFilled ops S U
+    have hCancel := cancelReceiveBusyReply_coversWrites ctx e tid tcb decoded _ stSpilled ops S U
       hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs hDec hFillObj
       (fun gate => recvBusyReplyHolderCode_congr_objects ctx tid gate decoded hFillObj)
-      (fun n => by rw [hFilled, ht, callerExtraCapsFault?_perCoreTlb]) hOps hSched hU
+      (fun n => by rw [hFilled]) hOps hSched hU
     refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
       (footprintCoversWrites_trans U
         (footprintCoversWrites_trans U

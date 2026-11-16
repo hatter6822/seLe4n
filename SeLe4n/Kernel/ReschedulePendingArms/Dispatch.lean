@@ -1747,11 +1747,7 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
-  have hD := dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
+  have hD := dispatchSyscallChecked_stepCovers (st := st) hInv
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h

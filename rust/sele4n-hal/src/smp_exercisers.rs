@@ -12752,13 +12752,11 @@ fn queued_overflow_cap_fault(
 /// routed arm and the entry's refusal seam reads it as the fault
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
-/// The buffer's page is unmapped and mapped again first, so its translation is
-/// on no core's TLB (between the two, the messages past the inline words are
-/// clamped to them, as seL4 clamps a message with no IPC buffer): the first configure refused for its arguments and the
-/// first fault take the arm that fills the entry and takes the fill back
-/// (`tlbFillIpcBufferOnCore`, `tlbUndoFillOnCore`); the configure that then
-/// succeeds fills it and keeps it; the second fault and refusal and the
-/// configure after them find it held.
+/// The buffer's page is unmapped and mapped again first (between the two, the
+/// messages past the inline words are clamped to them, as seL4 clamps a
+/// message with no IPC buffer); once it is mapped again, every configure,
+/// fault and refusal reads the words at their physical address, through the
+/// kernel's own mapping of RAM, and caches no user translation on any core.
 #[cfg(feature = "hw_target")]
 fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     let unmap_buffer_page = invocation(

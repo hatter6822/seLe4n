@@ -20,9 +20,8 @@ the arm is handed) whose message runs past them, as its own function.  Only a sy
 reads its overflow words is routed past the inline registers
 (`syscallReadsOverflow`), so no other kind reaches this arm.  Its overflow
 words read as the long send's are (slot 0 and the next page's first slot), the
-call runs the long route's operand dispatch (`longOperandK`) on the state with
-this core's TLB holding the buffer's translations, a refusal handing back the
-TLB the entry held, so a refusal reaches the entry's resolved or lookup
+call runs the operand dispatch (`dispatchOperandCheckedK`) on the state it is
+handed, so a refusal reaches the entry's resolved or lookup
 continuation as the dispatch told them apart and the operand is never resolved
 a second time.  An overflow slot that does not read clamps the message to its
 inline words, as seL4's `handleInvocation` clamps a message with no IPC
@@ -38,8 +37,7 @@ open SeLe4n.Model
 
 /-- **The overflowed arm's body**: slot 0 and the next page's first slot read,
 then the long route's operand dispatch of `arm` (handed the overflow word and
-the caller's registers) on the state whose TLB holds the buffer's
-translations, a refusal handing back the TLB the entry held; a slot that does
+the caller's registers) on the state it is handed; a slot that does
 not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
 @[inline] def overflowedLongArmWith (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (sid : SyscallId) (length : Nat) (capWord : UInt64) (xc : Nat)
@@ -53,8 +51,8 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
-            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-              (arm w tcb.registerContext) (length - 4) st entryReportGeneral
+            (fun _ => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+              (arm w tcb.registerContext) st entryReportGeneral
               (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
               entryReportLookupAtW))
   | _ => entryReportGeneral (.error (.illegalState, st))

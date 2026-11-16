@@ -17,8 +17,7 @@ The routed entry's `.replyRecvLong` arm (`syscallEntryCheckedK`): a
 reply-receive of more than the inline words, as its own function, read and
 filled as the long reply's (`replyRecvLongRoutedArm`): slot 0 and the next
 page's first slot read, the reply-receive dispatched through its long arm
-(`replyRecvLongOperandArmThenTaintR`) on the state with this core's TLB holding
-the buffer's translations, a refusal handing back the TLB the entry held.  The
+(`replyRecvLongOperandArmThenTaintR`) on the state it is handed.  The
 replier's TCB is read here, off the state the arm is handed.
 
 An overflow slot that does not read clamps the message to its four inline
@@ -31,8 +30,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- **The long reply-receive arm**: slot 0 and the next page's first slot read, then the
-reply-receive's operand dispatch on the state whose TLB holds the buffer's
-translations, a refusal handing back the TLB the entry held; a refusal reported
+reply-receive's operand dispatch on the state it is handed; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
 apart, a result under the first. -/
 @[noinline] def replyRecvLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
@@ -46,10 +44,10 @@ apart, a result under the first. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
-            (fun _ => longOperandKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+            (fun _ => dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))
-                  (length - 4) st entryReportGeneral (entryReportPushOk 1)
+                  st entryReportGeneral (entryReportPushOk 1)
                   (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
                     (entryReportPushErrorW 1)
                     (entryReportPushLookupAtW (replyRecvReplyAddr tcb.registerContext).word))

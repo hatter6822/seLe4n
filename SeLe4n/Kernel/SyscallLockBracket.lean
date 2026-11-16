@@ -31,8 +31,7 @@ This module supplies it.  Three pieces, in the order the seam runs them.
 `abiEntryPlan` is the prefix `syscallDispatchFromAbi` performs before it
 dispatches: the ABI consistency check, the labeling-context guard, the caller
 read off the executing core, the register spill into that caller's TCB, the
-register-context read and the state-aware argument decode, and the IPC-buffer
-TLB fill.  It returns the caller, the decode and **the state the dispatch runs
+register-context read and the state-aware argument decode.  It returns the caller, the decode and **the state the dispatch runs
 on** — and `abiEntryPlan_dispatches` is the anti-drift tie: whenever the plan
 yields a triple, `syscallDispatchFromAbi` *is* `dispatchSyscallChecked` at that
 same caller, that same decode and that same state.
@@ -103,8 +102,7 @@ open SeLe4n.Kernel.Concurrency (CoreId LockSet lockSetForSyscall SyscallLockOper
 before it dispatches, as a value.
 
 Returns the caller, the decoded syscall, and **the state the dispatch runs on** —
-the register-spilled, IPC-buffer-TLB-filled state, not the entry's raw
-pre-state.  Every rejection the prefix can take is a `none` here, so a plan that
+the register-spilled state, not the entry's raw pre-state.  Every rejection the prefix can take is a `none` here, so a plan that
 resolves is a syscall that will reach `dispatchSyscallChecked`.
 
 The point of naming it is `abiEntryPlan_dispatches` below: a footprint resolved
@@ -127,9 +125,7 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
                 stRegs tid SeLe4n.arm64DefaultLayout regs 32 with
         | .error _ => none
         | .ok decoded =>
-          some (tid, decoded,
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              stRegs executingCore tid decoded.overflowCount)
+          some (tid, decoded, stRegs)
 
 /-- **WS-RR RR7.12 (the anti-drift tie)**: whenever the plan resolves, the live
 ABI dispatch **is** `dispatchSyscallChecked` at that caller, that decode and
@@ -142,12 +138,12 @@ leaving the bracket around a different syscall. -/
 theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stFilled : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
     (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-          = some (tid, decoded, stFilled)) :
+          = some (tid, decoded, stSpilled)) :
     Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-      = (match dispatchSyscallChecked ctx decoded tid executingCore stFilled with
+      = (match dispatchSyscallChecked ctx decoded tid executingCore stSpilled with
          | .error ke =>
              match Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
                  (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
@@ -214,14 +210,13 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
 /-- **WS-LS LS2.3**: the plan, component by component — the caller is the
 executing core's current thread, the decode is of the caller's spilled register
 file at the spilled state, and the state the dispatch runs on is that spilled
-state with the IPC-buffer window filled (which touches the per-core TLB alone,
-`tlbFillIpcBufferOnCore_eq_setPerCoreTlb`).  What the seam coverage proof
+state.  What the seam coverage proof
 reads to carry a claim from the dispatch state back to the entry state. -/
 theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stFilled : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
     (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-          = some (tid, decoded, stFilled)) :
+          = some (tid, decoded, stSpilled)) :
     st.scheduler.currentOnCore executingCore = some tid ∧
       ∃ tcb : TCB,
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
@@ -229,9 +224,7 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
-        stFilled = SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-          executingCore tid decoded.overflowCount := by
+        stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 := by
   unfold abiEntryPlan at h
   by_cases hCtx : isInsecureDefaultContext ctx
   · rw [if_pos hCtx] at h; exact absurd h (by simp)
@@ -677,9 +670,9 @@ def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
     Option LockSet :=
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
-  | some (tid, decoded, stFilled) =>
-    (abiEntryLockOperands decoded tid stFilled).bind
-      (fun ops => lockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops stFilled)
+  | some (tid, decoded, stSpilled) =>
+    (abiEntryLockOperands decoded tid stSpilled).bind
+      (fun ops => lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled)
 
 /-- **WS-RR RR7.12 (the binding, as a theorem)**: a declared footprint is
 `lockSetForSyscall`'s output at the decode the dispatch runs, the caller the
@@ -693,24 +686,24 @@ theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
     (st : SystemState) (S : LockSet)
     (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
           = some S) :
-    ∃ tid decoded stFilled ops,
+    ∃ tid decoded stSpilled ops,
       abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-        = some (tid, decoded, stFilled) ∧
-      abiEntryLockOperands decoded tid stFilled = some ops ∧
-      lockSetForSyscall (abiEntryFootprintId decoded tid stFilled) ops stFilled = some S := by
+        = some (tid, decoded, stSpilled) ∧
+      abiEntryLockOperands decoded tid stSpilled = some ops ∧
+      lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled = some S := by
   unfold declaredLockSetForAbiEntry at h
   cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => rw [hPlan] at h; exact absurd h (by simp)
   | some triple =>
-    obtain ⟨tid, decoded, stFilled⟩ := triple
+    obtain ⟨tid, decoded, stSpilled⟩ := triple
     rw [hPlan] at h
     simp only at h
-    cases hOps : abiEntryLockOperands decoded tid stFilled with
+    cases hOps : abiEntryLockOperands decoded tid stSpilled with
     | none => rw [hOps] at h; exact absurd h (by simp)
     | some ops =>
       rw [hOps] at h
       simp only [Option.bind_some] at h
-      exact ⟨tid, decoded, stFilled, ops, rfl, hOps, h⟩
+      exact ⟨tid, decoded, stSpilled, ops, rfl, hOps, h⟩
 
 /-- **WS-RR RR7.12 (the sentinel guard, as a theorem)**: a capability naming the
 sentinel thread yields no operands, so no footprint is declared for it. -/

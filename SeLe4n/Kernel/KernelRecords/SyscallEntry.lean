@@ -137,12 +137,8 @@ theorem syscallEntryChecked_recordsStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
   exact (RecordsStage.of_frameK fun hI =>
-    RecordsFrame.of_objects_eq (st' := { st with perCoreTlb := t }) hI rfl rfl).trans
+    RecordsFrame.of_objects_eq (st' := st) hI rfl rfl).trans
     (dispatchSyscallChecked_recordsStage ctx decoded tid e _ st'
       (RecordsArmPremises.of_objects_scheduler_eq (s := st) rfl rfl P) (hR e tid hCur) h)
 

@@ -259,8 +259,6 @@ run_negative_check "INVARIANT" rg -n '^def (dispatchSyscall|syscallEntry)($|[ ({
 run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_dispatch_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_scheduler($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 run_check "INVARIANT" rg -n '^private def dispatcherRefusesCallerNotCurrentOnCore($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n '^  dispatcherRefusesCallerNotCurrentOnCore$' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther\)' tests/SyscallDispatchSuite.lean
@@ -6766,21 +6764,18 @@ run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.5: the ACCESS-time fill — a core caches translations it did not
-# map (the IPC-buffer walk), live on the per-core syscall entry.
-run_check "INVARIANT" rg -n '^def tlbFillIpcBufferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_caches_read_translation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n 'tlbFillIpcBufferOnCore' SeLe4n/Kernel/API.lean
+# map.  WS-SX SX6.6: the kernel reads a thread's IPC buffer through the buffer
+# frame's capability, as seL4's `lookupIPCBuffer` does, so the syscall entry
+# walks no user translation and fills no TLB entry.
+run_negative_check "INVARIANT" rg -n 'tlbFillIpcBuffer' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingEntry.lean SeLe4n/Kernel/RoutedArms
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The page-granular IPC-buffer translation the fill rests on: the read and the
 # fill must resolve through ONE page computation, not two copies.
 run_check "INVARIANT" rg -n '^def VAddr.pageBase($|[ ({:\[\]])' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def ipcBufferSlotPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-# WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write — the
-# reusable layer, and the fill's discharge of its single obligation.
+# WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
 # WS-SM SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
 # drains ONLY the rounds its own commit opened, so a concurrently-committed
@@ -22495,7 +22490,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedulerLockSetForAbiEn
 # re-derives neither the gate nor the capability lookup.  The negative is scoped
 # to this declaration because the file legitimately names both elsewhere (the
 # `.replyRecv` CSpace-root agreement is stated over them).
-run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stSpilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedulerLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # One record, two domains: the object resolver must be blind to the five fields
 # the scheduler footprints read, or a field added for one domain silently moves

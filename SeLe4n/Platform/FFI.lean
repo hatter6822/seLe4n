@@ -3248,9 +3248,8 @@ delivery with the address and error its own lookup produced
 (`deliverSyscallLookupFault`), so the decode and the lookup run once, and
 `syscallEntryCheckedK_outcome_eq` proves that outcome the one this decision
 gives on the dispatcher's refusal.  The prologue re-run here reads the
-argument-spilled state the dispatcher decoded from, and the per-core TLB fill
-between the two touches no object (`tlbFillIpcBufferOnCore_frame`), so the
-two resolutions agree.  A receive's second lookup, its reply capability's
+argument-spilled state the dispatcher decoded from, the state the dispatcher
+is handed, so the two resolutions agree.  A receive's second lookup, its reply capability's
 (seL4-MCS's `lookupReply`), is re-run the same way: on a receive that names a
 reply capability (`receiveReplyAddr?`), a refusal that is that lookup's own
 failure (`receiveReplyFaults`) is raised as the capability fault at the reply
@@ -4759,7 +4758,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
             x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st'
             hCur hNI hSyscall, ?_⟩
   obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode, hHeld⟩ :=
-    syscallEntryChecked_implies_capability_held_of_pre_state
+    syscallEntryChecked_implies_capability_held
       ctx SeLe4n.arm64DefaultLayout executingCore 32 _ st' hSyscall
   -- The spill leaves the scheduler untouched, so the thread the entry found on
   -- the executing core is the one this seam resolved.
