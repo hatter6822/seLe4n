@@ -691,10 +691,12 @@ capability's, to `onLookupAtW` as its address and the resolver's words
       (fun t a b c => onLookupAtW capAddr t a b c st)
       (fun cnode slot =>
         let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-        if slotHeldNone c then onLookup (.invalidCapability 0) st
-        else
-          extraCapsLookupK st tcb xc (fun cptr t a b c' => onLookupAtW cptr t a b c' st)
-            (fun _ =>
+        extraCapsLookupK st tcb xc (fun cptr t a b c' => onLookupAtW cptr t a b c' st)
+          (fun _ =>
+            if slotHeldNone c then
+              if syscallReceivesOnCap sid then onLookup (.invalidCapability 0) st
+              else kArmErr (KernelError.invalidCapability 0).toDiscriminant 0 0 0 0 0 st
+            else
               let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr onLookup (arm c st)
               if receiveRefusedAt sid tid st c then k true else k false))
   | some _ => kPre (.error (.illegalState, st))
@@ -962,7 +964,7 @@ theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (sid : Syscal
     · split
       · rfl
       · split
-        · rfl
+        · split <;> rfl
         · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
   all_goals rfl
 

@@ -12453,8 +12453,18 @@ const fn unknown_syscall(name: &'static str) -> TrapTrip {
 /// An empty slot of the root CNode: its capability address is `2^63 + 31`.
 #[cfg(feature = "hw_target")]
 const EMPTY_SLOT: u64 = 31;
-/// A send through the empty slot's address: the lookup finds no capability,
-/// which seL4 raises as a capability fault carrying the address.
+/// An address that misses the root CNode's guard: the empty slot's index
+/// without the guard bit, so its lookup stops at the root with
+/// `seL4_GuardMismatch` (as `REPLY_CAP_SLOT` does for a reply capability).
+/// An empty slot is no lookup failure in seL4 (`lookupCapAndSlot` hands the
+/// null capability on, and `decodeInvocation` refuses it with
+/// `seL4_InvalidCapability`), so a send-phase capability fault needs an
+/// address that does not resolve.
+#[cfg(feature = "hw_target")]
+const UNRESOLVED_ADDRESS: u64 = EMPTY_SLOT;
+/// A send through an address that does not resolve: seL4's
+/// `lookupCapAndSlot` fails, which `handleInvocation` raises as a capability
+/// fault carrying the address.
 #[cfg(feature = "hw_target")]
 const fn cap_fault(name: &'static str) -> TrapTrip {
     TrapTrip {
@@ -12462,7 +12472,7 @@ const fn cap_fault(name: &'static str) -> TrapTrip {
         esr: ROUND_TRIP_ESR,
         far: 0,
         elr: FAULT_PC + 4,
-        x0: cap_address(EMPTY_SLOT),
+        x0: UNRESOLVED_ADDRESS,
         x1: 0,
         x2: 0,
         x7: SEND,
@@ -12500,7 +12510,8 @@ const VM_FAULT_MESSAGE_INFO: u64 = (6 << 12) | 4;
 
 /// The five faults each fault scenario raises: a data abort and an
 /// instruction abort (seL4's `handleVMFaultEvent`), a capability fault at an
-/// address `≥ 2^63` (`handleInvocation`'s lookup failure), an unknown syscall
+/// address that misses the root CNode's guard (`handleInvocation`'s lookup
+/// failure, [`UNRESOLVED_ADDRESS`]), an unknown syscall
 /// (`handleUnknownSyscall`) and a user exception (`handleUserLevelFault`).
 #[cfg(feature = "hw_target")]
 const FAULT_KINDS: [&str; 5] = [
@@ -12559,8 +12570,9 @@ const FAULT_REPLIES: [&str; 5] = [
     "user-exception-reply",
 ];
 
-/// A syscall the register file routes past the operand dispatch, through the
-/// empty slot: the root task's `x7`, `x1` and `x0` as an `SVC` traps with them.
+/// A syscall the register file routes past the operand dispatch, through an
+/// address that does not resolve: the root task's `x7`, `x1` and `x0` as an
+/// `SVC` traps with them.
 #[cfg(feature = "hw_target")]
 const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> TrapTrip {
     TrapTrip {
@@ -12572,17 +12584,19 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 }
 
 /// The `x1` a capability fault reaches its receiver with: `seL4_Fault_CapFault`
-/// (1) as the label and the words `setMR` wrote as the length.  An empty
-/// slot's fault is seL4's five `seL4_CapFault_*` words (`IP`, `Addr`,
-/// `InRecvPhase`, `LookupFailureType`, `BitsLeft` of `seL4_MissingCapability`);
-/// the fifth lands in the receiving partner's IPC buffer, the window's page
-/// (`tcb-set-ipc-buffer`), so while that page is mapped the length is five.
+/// (1) as the label and the words `setMR` wrote as the length.  A receive-phase
+/// fault on a capability of the wrong kind is seL4's five `seL4_CapFault_*`
+/// words (`IP`, `Addr`, `InRecvPhase`, `LookupFailureType`, `BitsLeft` of
+/// `seL4_MissingCapability`); the fifth lands in the receiving partner's IPC
+/// buffer, the window's page (`tcb-set-ipc-buffer`), so while that page is
+/// mapped the length is five.  A send-phase fault at [`UNRESOLVED_ADDRESS`] is
+/// a guard mismatch's seven ([`CAP_FAULT_GUARD_MISMATCH_INFO`]).
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 5;
 
-/// The same fault while the partner's buffer page is unmapped: the fifth word
-/// has nowhere to go, so the length is the four message registers (seL4's
-/// `setMR` with no buffer answers `n_msgRegisters`).
+/// A capability fault while the partner's buffer page is unmapped: the words
+/// past the fourth have nowhere to go, so the length is the four message
+/// registers (seL4's `setMR` with no buffer answers `n_msgRegisters`).
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_UNMAPPED_BUFFER_INFO: u64 = (1 << 12) | 4;
 
@@ -12623,8 +12637,8 @@ fn queued_overflow_cap_fault(
 /// failed lookup of the invoked capability raises a capability fault).  The
 /// configure, the service register (each one word past the registers, read
 /// from the root task's IPC buffer: the `.overflowOne` route) and a long send
-/// each name the empty slot, so the operand's lookup fails inside the routed
-/// arm and the entry's refusal seam reads it as the fault
+/// each name [`UNRESOLVED_ADDRESS`], so the operand's lookup fails inside the
+/// routed arm and the entry's refusal seam reads it as the fault
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
 /// The buffer's page is unmapped and mapped again first, so its translation is
@@ -12783,7 +12797,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-fills", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault",
             "reply-configure-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && heap_allocations_round_trip(&fills, which) == Some(true)
@@ -12791,7 +12805,7 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-held", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault-held",
             "reply-configure-cap-fault-held",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
@@ -12804,14 +12818,14 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
             "receive-service-register-cap-fault",
             "reply-service-register-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && queued_overflow_cap_fault(
             &overflow_cap_fault("long-send-cap-fault", SEND, LONG_SEND_LENGTH),
             "receive-long-send-cap-fault",
             "reply-long-send-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         // A receive past its inline words on the CNode capability: seL4's

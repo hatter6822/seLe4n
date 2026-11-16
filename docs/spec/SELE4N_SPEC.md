@@ -8316,10 +8316,25 @@ Every syscall that invokes a capability runs one gate, `syscallInvokeTyped`
 (`API.lean`), in every dispatcher and in every compiled routed arm.  It checks,
 in order:
 
-1. **Lookup.**  The CPtr resolves to a slot holding a capability user space
-   may hold (`syscallResolveCap`).  A failure is the lookup's capability fault
-   or error.
-2. **Type.**  The capability is of the type the syscall invokes
+1. **Lookup.**  The CPtr resolves to a slot (seL4's `lookupCapAndSlot`).  An
+   address that does not resolve is the lookup's capability fault, raised at
+   that address in the send phase (`syscallResolveCap`, `syscallCapFaultOf`).
+2. **Extra capabilities.**  On every syscall that does not receive on its
+   capability, the addresses the message info's `extraCaps` names in the
+   caller's IPC buffer are looked up in the caller's CSpace, as seL4's
+   `handleInvocation` runs `lookupExtraCaps` before `decodeInvocation`
+   (`callerExtraCapsFault?`).  The first that does not resolve is a capability
+   fault at its own address in the send phase
+   (`dispatchSyscallChecked_extraCaps_before_type`).  A receive-phase syscall
+   looks none up (seL4's `handleRecv`).
+3. **Null capability.**  A slot that holds no capability user space may hold
+   is no failure of the lookup in seL4: it is refused only now, after the extra
+   capabilities (`syscallResolveRefusal`,
+   `dispatchSyscallChecked_extraCaps_before_null`), with seL4's
+   `decodeInvocation` error `.invalidCapability`, which raises no fault.  A
+   receive-phase syscall raises the receive-phase capability fault for it
+   instead, as seL4's `handleRecv` does.
+4. **Type.**  The capability is of the type the syscall invokes
    (`syscallTargetAccepted`): its `CapTarget` constructor and, for an
    `.object` capability, the kind of the object it names, read in place with
    no allocation.  A capability of the wrong type answers
@@ -8331,9 +8346,15 @@ in order:
    because `capabilityInvariantBundle_objectCapsBacked` backs every `.object`
    capability a slot holds with a present object (and `capTargetKindBacked`
    types a kind-typed capability's target).
-3. **Right.**  The syscall's right (`syscallRequiredRight`), answered by
+5. **Right.**  The syscall's right (`syscallRequiredRight`), answered by
    `syscallMissingRightError` (`dispatchSyscallChecked_right_after_type`).
-4. **Length**, then the arguments, in the arm (§8.10.5a).
+6. **Length**, then the arguments, in the arm (§8.10.5a).
+
+A declared lock footprint covers every lookup in steps 1 and 2: the entry
+declares one only for a caller whose CSpace root consumes all 64 address bits,
+so each lookup reads the root CNode and nothing else
+(`lookupSlot_single_level_read`, `abiEntryGate_lookupSlot_root`), and the root
+is the CNode every footprint read-locks.
 
 Every check precedes every write.  The table gives, for each syscall, the
 seL4 function whose order it follows.  A right seL4 does not check is an

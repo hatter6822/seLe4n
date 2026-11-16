@@ -765,11 +765,13 @@ slot, or a capability naming a reserved idle object.  The resolution
 
 /-- `dispatchSyscallChecked` for a syscall whose arm and taint step are given as
 `arm`, refusing in the state it was handed.  It resolves the operand once, for
-the gate and the taint step alike; a slot holding no capability user space may
-hold is the resolution's refusal; then the caller's `xc` extra capabilities
+the gate and the taint step alike; then the caller's `xc` extra capabilities
 are looked up (seL4's `lookupExtraCaps`, after `lookupCapAndSlot` and before
 the arm's type and right checks), the first failure refused as
-`.failedLookup false`; and `arm` is handed the capability found.  The arm
+`.failedLookup false`; then a slot holding no capability user space may hold
+is refused (`syscallResolveRefusal`: seL4's `lookupCapAndSlot` hands the null
+capability on, and `decodeInvocation` refuses it); and `arm` is handed the
+capability found.  The arm
 captures the taint words its step reads from the state it is handed
 (`withTaintWordsAt`, `dispatchOperandCheckedR_eq`).  It reads the decode only
 through the operand address, the extra-capability count and the required
@@ -787,11 +789,9 @@ builds no decode record. -/
         (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
         (fun cnode slot =>
           let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-          if capHeldNone c then .error (.invalidCapability 0, st)
-          else
-            match extraCapsLookupFault? st tcb xc with
-            | some (_, f) => .error (.failedLookup false f, st)
-            | none => arm c st)
+          match extraCapsLookupFault? st tcb xc with
+          | some (_, f) => .error (.failedLookup false f, st)
+          | none => if capHeldNone c then .error (.invalidCapability 0, st) else arm c st)
     | some _ => .error (.illegalState, st)
     | none   => .error (.objectNotFound, st)
 
@@ -880,32 +880,33 @@ theorem dispatchOperandCheckedR_eq_reporting_at (ctx : LabelingContext)
         f | ⟨cn, sl⟩
       · simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
           SyscallGate.lookupSlot_mk, hRef, LookupFault.ofWords_word]
+        cases extraCapsLookupFault? st tcb
+          (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) <;> rfl
       · dsimp only
-        by_cases hN : capHeldNone (SystemState.lookupSlotCap st { cnode := cn, slot := sl }) = true
-        · rw [if_pos hN, if_pos hN]
+        cases hX : extraCapsLookupFault? st tcb (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) with
+        | some p =>
+          obtain ⟨a, f⟩ := p
           simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
             SyscallGate.lookupSlot_mk, hRef]
-          revert hN
           cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
-          | none => intro _; rfl
+          | none => simp [syscallResolveRefusal, capHeldNone]
           | some cap =>
-            intro hN
-            simp only [capHeldNone] at hN
-            simp only [hN, ↓reduceIte]
-        · rw [if_neg hN, if_neg hN]
-          cases hX : extraCapsLookupFault? st tcb (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) with
-          | some p =>
-            obtain ⟨a, f⟩ := p
+            by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;>
+              simp [hRes, syscallResolveRefusal, capHeldNone]
+        | none =>
+          dsimp only
+          by_cases hN : capHeldNone (SystemState.lookupSlotCap st { cnode := cn, slot := sl }) = true
+          · rw [if_pos hN, if_pos hN]
             simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
               SyscallGate.lookupSlot_mk, hRef]
             revert hN
             cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
-            | none => intro hN; exact absurd rfl hN
+            | none => intro _; rfl
             | some cap =>
               intro hN
               simp only [capHeldNone] at hN
-              simp only [hN, Bool.false_eq_true, ↓reduceIte]
-          | none =>
+              simp only [hN, ↓reduceIte]
+          · rw [if_neg hN, if_neg hN]
             have h := hArm tcb ⟨cn, sl⟩ hTcb hRef
             simp only [RefusalCarrying.ofKernelReporting] at h
             exact h

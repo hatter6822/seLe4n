@@ -631,6 +631,48 @@ theorem lookupSlotK_eq {α : Type} (tcb : TCB) (cptr : SeLe4n.CPtr) (st : System
     | ok r => rfl
   · rfl
 
+/-- **A CSpace root that consumes every address bit resolves in one hop**: when
+the root capability's guard and the root CNode's radix together take all 64
+bits, every lookup through the thread's CSpace reads the root CNode and nothing
+else — it answers the same on any state that agrees on that one CNode, and a
+slot it finds is in the root.  `resolveAddressBits` recurses only while bits
+remain, and none remain after the root.  This is what lets a footprint that
+locks only the caller's root cover every lookup the caller's invocation makes
+through its CSpace: the invoked capability's and the extra capabilities'
+(`abiEntryGate_lookupSlot_root`). -/
+theorem lookupSlot_single_level_read {tcb : TCB} {st₁ st₂ : SystemState} {rootCn : CNode}
+    (hCn : st₁.getCNode? tcb.cspaceRoot = some rootCn)
+    (hEq : st₂.getCNode? tcb.cspaceRoot = st₁.getCNode? tcb.cspaceRoot)
+    (hW : rootCapGuardSize tcb + rootCn.radixWidth = 64) (cptr : SeLe4n.CPtr) :
+    lookupSlot tcb cptr st₂ = lookupSlot tcb cptr st₁ ∧
+      ∀ ref, lookupSlot tcb cptr st₁ = .ok ref → ref.cnode = tcb.cspaceRoot := by
+  unfold lookupSlot
+  cases h0 : tcb.spaceCells[0] with
+  | none => exact ⟨rfl, fun _ h => by cases h⟩
+  | some root =>
+    have hG : rootCapGuardSize tcb = root.cnodeGuardSize.toNat := by
+      simp only [rootCapGuardSize, h0]
+    rw [hG] at hW
+    simp only [lookupSlotFrom]
+    rw [resolveAddressBits, resolveAddressBits]
+    cases hT : root.target with
+    | object id =>
+      have hId : tcb.cspaceRoot = id := by simp [TCB.cspaceRoot, TCB.spaceCellObject, h0, hT]
+      rw [hId] at hCn hEq
+      simp only [hEq, hCn, dite_cond_eq_true (eq_true hW.symm)]
+      refine ⟨trivial, fun ref h => ?_⟩
+      rw [hId]
+      split at h
+      · cases h
+      · next r n hR =>
+        cases h
+        split at hR
+        · cases hR
+        · split at hR
+          · cases hR
+          · cases hR; rfl
+    | _ => exact ⟨rfl, fun _ h => by cases h⟩
+
 /-- `lookupSlot` reads only CNodes. -/
 theorem lookupSlot_congr_getCNode?
     (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)

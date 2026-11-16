@@ -1395,9 +1395,20 @@ private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt6
   SeLe4n.Testing.dispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
-/-- The seam pipeline: a `Call` at CPtr 3 — a slot the root CNode does not
-hold — faults; the handler receives it on core 1 and answers with a
-payload-free reply. -/
+/-- An address that misses the root CNode's guard (its 62 guard bits are 0, and
+bit 2 is set above the root's two radix bits), so the lookup fails at the root
+with a guard mismatch: 64 bits left, guard 0, guard size 62.  An empty slot is
+no lookup failure in seL4 (`lookupCapAndSlot` hands the null capability on), so
+the send-phase fault needs an address that does not resolve. -/
+private def unresolvedCPtr : UInt64 := 4
+
+/-- The fault an invocation at `unresolvedCPtr` raises, in phase `inRecv`. -/
+private def unresolvedFault (inRecv : Bool) : Fault :=
+  .capFault unresolvedCPtr inRecv (.guardMismatch 64 0 62)
+
+/-- The seam pipeline: a `Call` at `unresolvedCPtr` — an address the root CNode
+does not resolve — faults; the handler receives it on core 1 and answers with
+a payload-free reply. -/
 private structure SeamFault where
   outcome : SyscallOutcome
   afterFault : SystemState
@@ -1407,7 +1418,7 @@ private structure SeamFault where
 
 private def seamFaultE : Except String SeamFault := do
   let (outcome, afterFault) ←
-    match seamDispatch seamCtx .call 3 with
+    match seamDispatch seamCtx .call unresolvedCPtr with
     | .ok r => .ok r
     | .error e => .error s!"step1: seam dispatch: {repr e}"
   let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the capFault)"
@@ -1448,8 +1459,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the caller is parked on the handler endpoint as a Call sender"
         (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
       assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"
-        ((pendingFaultOf s.afterFault faulter).map (·.fault)
-          == some (.capFault 3 false (.missingCapability 0)))
+        ((pendingFaultOf s.afterFault faulter).map (·.fault) == some (unresolvedFault false))
       assertBool "the restart PC is the SVC instruction (ELR - 4), never the return address"
         ((pendingFaultOf s.afterFault faulter).map (·.context.faultIP) == some (svcElr - 4))
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
@@ -1458,15 +1468,16 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = the id"
         ((pendingFaultOf s.afterFault faulter).map
             (fun tf => (tf.context.gprAt 0, tf.context.gprAt 7))
-          == some (3, SyscallId.call.toNat.toUInt64))
+          == some (unresolvedCPtr, SyscallId.call.toNat.toUInt64))
       assertBool "the caller is not dispatchable on the core it trapped on"
         (!dispatchableOn s.afterFault faulter c0)
       assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
         ((deliveredMessageOf s.afterRecv handler).map (·.label) == some FaultLabel.capFault)
-      assertBool "MR0..MR4 = FaultIP, the CPtr, InRecvPhase = 0, seL4_MissingCapability, BitsLeft"
+      assertBool "MR0..MR6 = FaultIP, the CPtr, InRecvPhase = 0, seL4_GuardMismatch, BitsLeft, GuardFound, GuardSize"
         ((deliveredMessageOf s.afterRecv handler).map (·.registers) ==
-          some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat 3,
-                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat 0])
+          some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat unresolvedCPtr.toNat,
+                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 4, SeLe4n.RegValue.ofNat 64,
+                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 62])
       assertBool "a payload-free reply restarts the caller AT the SVC — the syscall is re-issued"
         (s.replyOutcome.restartPC? == some (svcElr - 4) &&
           savedPcOf s.afterReply faulter == some (svcElr - 4).toNat)
@@ -1478,16 +1489,24 @@ private def runSyscallCapFaultChecks : IO Unit := do
   -- not the object invoked: every `seL4_Call` invocation faults, `seL4_Signal`
   -- is `seL4_Send`, and the receive-side syscalls set the phase flag.
   assertBool "a Receive at the same CPtr faults IN the receive phase"
-    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .receive unresolvedCPtr) (unresolvedFault true))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
-    (seamCapFault (seamDispatch seamCtx .notificationSignal 3)
-      (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .notificationSignal unresolvedCPtr) (unresolvedFault false))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
-    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .tcbSuspend unresolvedCPtr) (unresolvedFault false))
+  -- An empty slot (CPtr 3) resolves: seL4's `lookupCapAndSlot` hands the null
+  -- capability on, so a send-phase invocation is `decodeInvocation`'s
+  -- `InvalidCapability` error, and only `handleRecv` faults on it.
+  assertBool "a Call at an empty slot is the invocation's InvalidCapability error, not a fault (seL4 lookupCapAndSlot finds the slot)"
+    (seamErrorFrame (seamDispatch seamCtx .call 3) (.invalidCapability 0))
+  assertBool "a TCB invocation at an empty slot is the same error"
+    (seamErrorFrame (seamDispatch seamCtx .tcbSuspend 3) (.invalidCapability 0))
+  assertBool "a Receive at an empty slot still faults in the receive phase (seL4 handleRecv: missing_capability)"
+    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.missingCapability 0)))
   -- A short message: the lookup comes first, as in seL4, so an unresolvable
   -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
   assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
-    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete unresolvedCPtr) (unresolvedFault false))
   -- A CNode capability parked at slot 3 of the caller's root: the delete's
   -- type.  The checks run lookup, type, right, length.
   let cnodeCapAt3 (rights : List AccessRight) : SystemState :=
@@ -1507,7 +1526,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
   assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault (seL4 decodeInvocation: no CanSend answers InvalidCapability)"
     (seamErrorFrame (seamDispatch seamCtx .call 1) (.invalidCapability 0))
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
-    (seamErrorFrame (seamDispatch permissiveCtx .call 3) .policyDenied)
+    (seamErrorFrame (seamDispatch permissiveCtx .call unresolvedCPtr) .policyDenied)
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
     (match seamDispatch seamCtx .declassify 3 with
      | .ok (.returns f, st) =>

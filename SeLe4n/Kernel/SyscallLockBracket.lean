@@ -352,6 +352,45 @@ theorem abiEntryGate_cspaceRoot (decoded : SyscallDecodeResult) (tid : SeLe4n.Th
               subst hG
               exact ⟨rfl, rfl, rfl⟩
 
+/-- WS-SX SX6.1: **every lookup an invocation with a declared footprint makes
+through the caller's CSpace reads only the caller's root CNode** — the invoked
+capability's and each extra capability's (seL4's `lookupExtraCaps`).  The gate
+is declared only for a root whose guard and radix take all 64 bits
+(`abiEntryGate`), so each lookup resolves in one hop
+(`lookupSlot_single_level_read`): it answers the same on any state that agrees
+on the root CNode, and a slot it finds is in the root.  The root is the one
+CNode every declared footprint read-locks, so the extra capabilities' lookups
+need no lock of their own and add nothing to `maxLockSetSize`. -/
+theorem abiEntryGate_lookupSlot_root (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (s : SystemState) (tcb : TCB) (gate : SyscallGate)
+    (h : abiEntryGate decoded tid s = some (tcb, gate)) (cptr : SeLe4n.CPtr) :
+    (∀ s', s'.getCNode? tcb.cspaceRoot = s.getCNode? tcb.cspaceRoot →
+        lookupSlot tcb cptr s' = lookupSlot tcb cptr s) ∧
+      ∀ ref, lookupSlot tcb cptr s = .ok ref → ref.cnode = tcb.cspaceRoot := by
+  unfold abiEntryGate at h
+  cases hTcb : s.getTcb? tid with
+  | none => rw [hTcb] at h; exact absurd h (by simp)
+  | some tcb' =>
+      rw [hTcb] at h
+      simp only at h
+      split at h
+      · exact absurd h (by simp)
+      · rename_i rootCn hRoot
+        split at h
+        · exact absurd h (by simp)
+        · rename_i hW
+          split at h
+          · exact absurd h (by simp)
+          · split at h
+            · exact absurd h (by simp)
+            · obtain ⟨hT, -⟩ := Prod.mk.injEq .. ▸ Option.some.inj h
+              subst hT
+              have hW' : rootCapGuardSize tcb' + rootCn.radixWidth = 64 :=
+                Classical.not_not.mp hW
+              exact ⟨fun s' hEq =>
+                  (lookupSlot_single_level_read hRoot hEq hW' cptr).1,
+                (lookupSlot_single_level_read (st₂ := s) hRoot rfl hW' cptr).2⟩
+
 /-- **WS-LS LS2.3**: the gate, field by field — the caller's TCB, its root
 CNode, and the `SyscallGate` `dispatchSyscallChecked` builds from the two.
 

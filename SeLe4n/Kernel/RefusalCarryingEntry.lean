@@ -1422,17 +1422,20 @@ each lookup runs once. -/
       (fun t a b c => onLookup capAddr (.failedLookup false (LookupFault.ofWords t a b c)) st)
       (fun cnode slot =>
         let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-        -- a slot holding no capability user space may hold is the
-        -- resolution's refusal, handed on without running the arm, so no
-        -- refusal is built as a value
-        if slotHeldNone c then onLookup capAddr (.invalidCapability 0) st
-        else
-          -- seL4's `lookupExtraCaps`, after `lookupCapAndSlot` and before the
-          -- invocation's decode; a receive-phase syscall looks none up
-          extraCapsLookupK st tcb xc
-            (fun cptr t a b c' =>
-              onLookup cptr (.failedLookup false (LookupFault.ofWords t a b c')) st)
-            (fun _ =>
+        -- seL4's `lookupExtraCaps`, after `lookupCapAndSlot` and before the
+        -- invocation's decode; a receive-phase syscall looks none up
+        extraCapsLookupK st tcb xc
+          (fun cptr t a b c' =>
+            onLookup cptr (.failedLookup false (LookupFault.ofWords t a b c')) st)
+          (fun _ =>
+            -- a slot holding no capability user space may hold is refused
+            -- without running the arm: the receive's capability fault
+            -- (seL4 `handleRecv`), any other syscall's `InvalidCapability`
+            -- error (seL4 `decodeInvocation` on the null capability)
+            if slotHeldNone c then
+              if syscallReceivesOnCap sid then onLookup capAddr (.invalidCapability 0) st
+              else kArm (.error (.invalidCapability 0, st))
+            else
               -- a receive's capability of the wrong type or without its right
               -- is the lookup's failure (seL4 `handleRecv`), asked before the
               -- arm takes the state; the arm runs once on either branch
@@ -1491,31 +1494,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
   | ok ref =>
     obtain ⟨cn, sl⟩ := ref
     dsimp only
-    by_cases hN : capHeldNone (SystemState.lookupSlotCap st { cnode := cn, slot := sl }) = true
-    · rw [if_pos (by simpa only [slotHeldNone] using hN), if_pos hN]
-      refine .inr ⟨capAddr, .invalidCapability 0, st, rfl, rfl, ?_⟩
-      revert hN
-      cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
-      | none =>
-        intro _
-        simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC]
-      | some cap =>
-        intro hN
-        simp only [capHeldNone] at hN
-        simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC,
-          hN, ↓reduceIte]
-    rw [if_neg (by simpa only [slotHeldNone] using hN), if_neg hN]
-    obtain ⟨cap, hC, hIdle⟩ : ∃ cap, SystemState.lookupSlotCap st { cnode := cn, slot := sl } =
-        some cap ∧ SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
-      revert hN
-      cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
-      | none => intro hN; exact absurd rfl hN
-      | some cap => intro hN; exact ⟨cap, rfl, by simpa only [capHeldNone, Bool.not_eq_true] using hN⟩
-    have hResolve : syscallResolveCap ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .ok (cap, st) := by
-      simp only [syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle, Bool.false_eq_true,
-        ↓reduceIte]
     rw [extraCapsLookupK_eq]
-    simp only [hC]
     cases hX : lookupExtraCaps st tcb xc with
     | error p =>
       obtain ⟨cptr, f⟩ := p
@@ -1523,11 +1502,51 @@ theorem dispatchOperandCheckedK_spec {β : Type} (sid : SyscallId) (capAddr : Se
         simp only [extraCapsLookupFault?, hX]
       simp only [hF, LookupFault.ofWords_word]
       refine .inr ⟨cptr, _, st, rfl, rfl, ?_⟩
-      simp only [syscallOperandLookup, hResolve, hXf, hF]
+      cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+      | none =>
+        simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC,
+          hXf, hF]
+      | some cap =>
+        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;>
+          simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC,
+            hXf, hF, hIdle, ↓reduceIte, Bool.false_eq_true]
     | ok refs =>
       have hF : extraCapsLookupFault? st tcb xc = none := by
         simp only [extraCapsLookupFault?, hX]
       simp only [hF]
+      by_cases hN : capHeldNone (SystemState.lookupSlotCap st { cnode := cn, slot := sl }) = true
+      · rw [if_pos (by simpa only [slotHeldNone] using hN), if_pos hN]
+        have hLk : syscallOperandLookup sid ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ xc st =
+            if syscallReceivesOnCap sid then .error (capAddr, .invalidCapability 0) else .ok () := by
+          revert hN
+          cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+          | none =>
+            intro _
+            simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes,
+              hC, hXf, hF]
+          | some cap =>
+            intro hN
+            simp only [capHeldNone] at hN
+            simp only [syscallOperandLookup, syscallResolveCap, SyscallGate.lookupSlot_mk, hRes,
+              hC, hN, ↓reduceIte, hXf, hF]
+        by_cases hRecv : syscallReceivesOnCap sid = true
+        · rw [if_pos hRecv]
+          exact .inr ⟨capAddr, .invalidCapability 0, st, rfl, rfl, by rw [hLk, if_pos hRecv]⟩
+        · rw [if_neg hRecv]
+          refine .inl ⟨rfl, fun ke s _ a e h => ?_⟩
+          rw [hLk, if_neg hRecv] at h
+          cases h
+      rw [if_neg (by simpa only [slotHeldNone] using hN), if_neg hN]
+      obtain ⟨cap, hC, hIdle⟩ : ∃ cap, SystemState.lookupSlotCap st { cnode := cn, slot := sl } =
+          some cap ∧ SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
+        revert hN
+        cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+        | none => intro hN; exact absurd rfl hN
+        | some cap => intro hN; exact ⟨cap, rfl, by simpa only [capHeldNone, Bool.not_eq_true] using hN⟩
+      have hResolve : syscallResolveCap ⟨tid, tcb.spaceCells[0], capAddr, rr⟩ st = .ok (cap, st) := by
+        simp only [syscallResolveCap, SyscallGate.lookupSlot_mk, hRes, hC, hIdle, Bool.false_eq_true,
+          ↓reduceIte]
+      simp only [hC]
       -- the receive's refusal flag
       obtain ⟨noCap, hK, hLk⟩ : ∃ noCap : Bool,
           (if receiveRefusedAt sid tid st (some cap) = true then

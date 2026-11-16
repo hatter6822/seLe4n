@@ -1421,22 +1421,40 @@ def syscallMissingRightError : SyscallId → KernelError
   | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .mintReplyCap => .illegalAuthority
 
+/-- **The refusal of a resolution that found no capability to invoke, when an
+extra capability's lookup fails with `f`**, in seL4's order: an address that
+does not resolve is `lookupCapAndSlot`'s failure, refused as the resolution
+refused it; a slot that resolves but holds no capability user space may hold is
+no failure of `lookupCapAndSlot`, which hands the null capability on, so the
+extra capabilities' lookup runs (`lookupExtraCaps`) and its failure is the
+refusal, before `decodeInvocation` would refuse the null capability. -/
+@[inline] def syscallResolveRefusal (e : KernelError) (f : LookupFault) : KernelError :=
+  match e with
+  | .failedLookup w f' => .failedLookup w f'
+  | _ => .failedLookup false f
+
 /-- **The syscall gate, in seL4's order** (`handleInvocation`): resolve the
 capability (`lookupCapAndSlot`), then the extra capabilities' lookup
 (`lookupExtraCaps`), whose first failure `xf` — its address and lookup fault —
 is refused as `.failedLookup false`, the send-phase capability fault the entry
 raises at that address; then the capability's type (`syscallTargetAccepted`,
 `.invalidCapability`), then the syscall's right (`syscallMissingRightError`),
-then the arm, which checks the message length and the arguments.  Every check
-precedes every write.  The dispatchers hand `xf` in already read on the state
-the gate runs on (`callerExtraCapsFault?`), `none` for a syscall that receives
-on its capability, which looks no extra capability up (seL4's `handleRecv`). -/
+then the arm, which checks the message length and the arguments.  A slot that
+holds no capability is no failure of the resolution in seL4, so the extra
+capabilities are looked up before it is refused (`syscallResolveRefusal`).
+Every check precedes every write.  The dispatchers hand `xf` in already read on
+the state the gate runs on (`callerExtraCapsFault?`), `none` for a syscall that
+receives on its capability, which looks no extra capability up (seL4's
+`handleRecv`). -/
 def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
     (xf : Option (SeLe4n.CPtr × LookupFault))
     (op : Capability → Kernel α) : Kernel α :=
   fun st =>
     match syscallResolveCap gate st with
-    | .error e => .error e
+    | .error e =>
+      match xf with
+      | none => .error e
+      | some (_, f) => .error (syscallResolveRefusal e f)
     | .ok (cap, st') =>
       match xf with
       | some (_, f) => .error (.failedLookup false f)
@@ -1839,11 +1857,24 @@ with `.failedLookup false`, the error the gate refuses it with; then, for a
 receive-phase syscall, the type and the right (`receiveGateRefuses`), whose
 failure is the lookup failure `.invalidCapability`, seL4's
 `missing_capability`.  The dispatchers look up `syscallExtraCapCount` of the
-extra capabilities, none on a receive-phase syscall. -/
+extra capabilities, none on a receive-phase syscall.
+
+A slot that resolves but holds no capability user space may hold is not
+`lookupCapAndSlot`'s failure in seL4: the extra capabilities are looked up
+after it as after any other slot (`syscallResolveRefusal`), and the null
+capability is then `decodeInvocation`'s `InvalidCapability` error, which raises
+no fault — except on a receive-phase syscall, where `handleRecv` raises the
+capability fault (`missing_capability`) for it. -/
 def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (xc : Nat)
     (st : SystemState) : Except (SeLe4n.CPtr × KernelError) Unit :=
   match syscallResolveCap gate st with
-  | .error e => .error (gate.capAddr, e)
+  | .error e =>
+      match e with
+      | .failedLookup w f => .error (gate.capAddr, .failedLookup w f)
+      | e =>
+        match callerExtraCapsFault? st gate.callerId xc with
+        | some (a, f) => .error (a, .failedLookup false f)
+        | none => if syscallReceivesOnCap sid then .error (gate.capAddr, e) else .ok ()
   | .ok (cap, _) =>
       match callerExtraCapsFault? st gate.callerId xc with
       | some (a, f) => .error (a, .failedLookup false f)
@@ -1861,7 +1892,15 @@ theorem syscallOperandLookup_error_cases (sid : SyscallId) (gate : SyscallGate) 
     ∃ f, e = .failedLookup false f ∧ callerExtraCapsFault? st gate.callerId xc = some (a, f) := by
   unfold syscallOperandLookup at h
   rcases hR : syscallResolveCap gate st with e' | ⟨cap, _⟩
-  · rw [hR] at h; cases h; exact .inl ⟨rfl, .inl rfl⟩
+  · rw [hR] at h
+    simp only at h
+    split at h
+    · cases h; exact .inl ⟨rfl, .inl rfl⟩
+    · split at h
+      · next a' f hX => cases h; exact .inr ⟨f, rfl, hX⟩
+      · split at h
+        · cases h; exact .inl ⟨rfl, .inl rfl⟩
+        · cases h
   · rw [hR] at h
     simp only at h
     split at h
@@ -1880,7 +1919,7 @@ theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)
       syscallTargetAccepted sid st cap = true ∧ op cap st = .ok (a, st') := by
   unfold syscallInvokeTyped at hOk
   cases hR : syscallResolveCap gate st with
-  | error e => rw [hR] at hOk; exact absurd hOk (by simp)
+  | error e => rw [hR] at hOk; cases xf <;> exact absurd hOk (by simp)
   | ok p =>
     obtain ⟨cap, stR⟩ := p
     obtain ⟨_, _, _, hSt⟩ := syscallResolveCap_implies_capability_at_slot gate st cap stR hR
@@ -1907,7 +1946,7 @@ theorem syscallInvokeTyped_ok_extraCaps (sid : SyscallId) (gate : SyscallGate)
     (hOk : syscallInvokeTyped sid gate xf op st = .ok (a, st')) : xf = none := by
   unfold syscallInvokeTyped at hOk
   cases hR : syscallResolveCap gate st with
-  | error e => rw [hR] at hOk; exact absurd hOk (by simp)
+  | error e => rw [hR] at hOk; cases xf <;> exact absurd hOk (by simp)
   | ok p =>
     rw [hR] at hOk
     cases xf with
@@ -7784,6 +7823,29 @@ theorem dispatchSyscallChecked_extraCaps_before_type
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup, hXf,
     hNotReserved, Bool.false_eq_true]
+
+/-- **An empty slot is refused after the extra capabilities' lookup** (seL4's
+`lookupCapAndSlot` hands the null capability on, `lookupExtraCaps` runs, and
+only `decodeInvocation` refuses the null capability): a slot holding no
+capability, with an extra capability whose address does not resolve, is refused
+with that lookup's failure in the send phase. -/
+theorem dispatchSyscallChecked_extraCaps_before_null
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (tcb : TCB) (ref : SlotRef) (st : SystemState)
+    (a : SeLe4n.CPtr) (f : LookupFault)
+    (hNotYield : decoded.syscallId ≠ .yield)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hResolve : lookupSlot tcb decoded.capAddr st = .ok ref)
+    (hLookup : SystemState.lookupSlotCap st ref = none)
+    (hXf : decodedExtraCapsFault? st tid decoded = some (a, f)) :
+    dispatchSyscallChecked ctx decoded tid executingCore st = .error (.failedLookup false f) := by
+  simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
+    SystemState.getObject?,
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+    syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hResolve, hLookup, hXf,
+    syscallResolveRefusal]
 
 /-- **The right is checked after the type**: a capability of the syscall's
 type without the syscall's right is refused with the syscall's missing-right
