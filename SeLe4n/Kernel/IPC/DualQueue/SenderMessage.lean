@@ -312,6 +312,114 @@ theorem lookupExtraCaps_zero (st : SystemState) (tcb : TCB) :
     lookupExtraCaps st tcb 0 = .ok [] := by
   unfold lookupExtraCaps; rw [senderExtraCapAddrs_zero]; rfl
 
+/-- Whether the `caps_or_badges` words `i, …, i + k - 1` of a sender's IPC
+buffer all resolve (`senderExtraCapAddr?`): a counted loop over the words,
+building no list. -/
+def extraCapAddrsResolveFrom (st : SystemState) (tcb : TCB) : Nat → Nat → Bool
+  | _, 0 => true
+  | i, k + 1 => (senderExtraCapAddr? st tcb i).isSome && extraCapAddrsResolveFrom st tcb (i + 1) k
+
+/-- The lookups of the extra capabilities `i, …, i + k - 1` in continuation
+form: each word read and walked (`lookupSlotK`) in turn, the first failure's
+address and lookup-fault words handed to `onErr`, `onOk` once every one has
+resolved.  No address array and no slot list is built. -/
+def extraCapsLookupFromK {α : Type} (st : SystemState) (tcb : TCB)
+    (onErr : SeLe4n.CPtr → UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) :
+    Nat → Nat → α
+  | _, 0 => onOk
+  | i, k + 1 =>
+    match senderExtraCapAddr? st tcb i with
+    | none => onOk
+    | some cptr =>
+      lookupSlotK tcb cptr st (onErr cptr)
+        (fun _ _ => extraCapsLookupFromK st tcb onErr onOk (i + 1) k)
+
+/-- WS-SX SX6.1: **seL4's `lookupExtraCaps` as the entry runs it**: the
+`count` extra capabilities (at most `maxExtraCaps`) read word by word and
+looked up in turn, the first failing address and its lookup-fault words to
+`onErr`, `onOk` otherwise; a buffer that does not resolve names none.  The
+allocation-free form of `lookupExtraCaps` (`extraCapsLookupK_eq`). -/
+@[inline] def extraCapsLookupK {α : Type} (st : SystemState) (tcb : TCB) (count : Nat)
+    (onErr : SeLe4n.CPtr → UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) : α :=
+  if extraCapAddrsResolveFrom st tcb 0 (min count maxExtraCaps) then
+    extraCapsLookupFromK st tcb onErr onOk 0 (min count maxExtraCaps)
+  else onOk
+
+theorem extraCapAddrs_mapM_none {st : SystemState} {tcb : TCB} :
+    ∀ {i k : Nat}, extraCapAddrsResolveFrom st tcb i k = false →
+      (List.range' i k).mapM (senderExtraCapAddr? st tcb) = none
+  | _, 0, h => by simp [extraCapAddrsResolveFrom] at h
+  | i, k + 1, h => by
+    simp only [extraCapAddrsResolveFrom, Bool.and_eq_false_iff] at h
+    rw [List.range'_succ, List.mapM_cons]
+    cases hA : senderExtraCapAddr? st tcb i with
+    | none => rfl
+    | some c =>
+      rw [hA] at h
+      have hR : extraCapAddrsResolveFrom st tcb (i + 1) k = false := by
+        rcases h with h | h
+        · simp at h
+        · exact h
+      rw [extraCapAddrs_mapM_none hR]; rfl
+
+theorem extraCapsLookupFromK_eq {α : Type} {st : SystemState} {tcb : TCB}
+    (onErr : SeLe4n.CPtr → UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) :
+    ∀ {i k : Nat}, extraCapAddrsResolveFrom st tcb i k = true →
+      ∃ addrs, (List.range' i k).mapM (senderExtraCapAddr? st tcb) = some addrs ∧
+        extraCapsLookupFromK st tcb onErr onOk i k =
+          match lookupExtraCapsOf st tcb addrs with
+          | .error (cptr, f) => onErr cptr (f.word 0) (f.word 1) (f.word 2) (f.word 3)
+          | .ok _ => onOk
+  | _, 0, _ => ⟨[], rfl, rfl⟩
+  | i, k + 1, h => by
+    simp only [extraCapAddrsResolveFrom, Bool.and_eq_true] at h
+    obtain ⟨hA, hR⟩ := h
+    obtain ⟨rest, hRest, hK⟩ := extraCapsLookupFromK_eq onErr onOk hR
+    cases hC : senderExtraCapAddr? st tcb i with
+    | none => rw [hC] at hA; cases hA
+    | some c =>
+      refine ⟨c :: rest, ?_, ?_⟩
+      · rw [List.range'_succ, List.mapM_cons, hC, hRest]; rfl
+      · simp only [extraCapsLookupFromK, hC, lookupSlotK_eq, lookupExtraCapsOf]
+        cases lookupSlot tcb c st with
+        | error f => rfl
+        | ok ref =>
+          simp only [hK]
+          cases lookupExtraCapsOf st tcb rest with
+          | error e => rfl
+          | ok _ => rfl
+
+/-- **The entry's lookup is seL4's `lookupExtraCaps`.** -/
+theorem extraCapsLookupK_eq {α : Type} (st : SystemState) (tcb : TCB) (count : Nat)
+    (onErr : SeLe4n.CPtr → UInt64 → UInt64 → UInt64 → UInt64 → α) (onOk : α) :
+    extraCapsLookupK st tcb count onErr onOk =
+      match lookupExtraCaps st tcb count with
+      | .error (cptr, f) => onErr cptr (f.word 0) (f.word 1) (f.word 2) (f.word 3)
+      | .ok _ => onOk := by
+  unfold extraCapsLookupK lookupExtraCaps senderExtraCapAddrs
+  rw [List.range_eq_range']
+  cases hR : extraCapAddrsResolveFrom st tcb 0 (min count maxExtraCaps) with
+  | false =>
+    simp only [extraCapAddrs_mapM_none hR, Bool.false_eq_true, ↓reduceIte]
+    rfl
+  | true =>
+    obtain ⟨addrs, hM, hK⟩ := extraCapsLookupFromK_eq onErr onOk hR
+    simp only [↓reduceIte, hM, hK, List.toList_toArray]
+
+/-- WS-SX SX6.1: **the extra-capability lookup failure an invocation raises**
+(seL4's `lookupExtraCaps` setting `current_fault` to `CapFault(cptr, false)`):
+the first extra capability address that does not resolve, and its lookup
+fault; `none` when every one resolves. -/
+def extraCapsLookupFault? (st : SystemState) (tcb : TCB) (count : Nat) :
+    Option (SeLe4n.CPtr × LookupFault) :=
+  match lookupExtraCaps st tcb count with
+  | .error e => some e
+  | .ok _ => none
+
+theorem extraCapsLookupFault?_zero (st : SystemState) (tcb : TCB) :
+    extraCapsLookupFault? st tcb 0 = none := by
+  simp only [extraCapsLookupFault?, lookupExtraCaps_zero]
+
 /-- WS-ZA ZA4.7: **the capabilities a sender's frame asks to transfer**, as the
 CSpace root capability and the addresses it resolves (at 64 bits) -- or
 `none` when it transfers nothing: no grant right, a frame that does not decode,
