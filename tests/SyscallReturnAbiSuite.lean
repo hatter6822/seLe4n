@@ -270,6 +270,10 @@ private def unbadgedCapPtr : Nat := 13
 the notification it signals is its extra capability 0, `declassCapPtr`). -/
 private def declassAuditCapPtr : Nat := 14
 
+/-- The service-registry capability the service query invokes (WS-SX SX6.7:
+the endpoint it reads is its extra capability 0, `epCapPtr`). -/
+private def registryCapPtr : Nat := 15
+
 private def ntfnCapWith (badgeWord : Nat) (badged : Bool) : Capability :=
   { target := .object ntfnId,
     rights := AccessRightSet.ofList [.read, .write],
@@ -295,7 +299,8 @@ private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
        (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false),
        (SeLe4n.Slot.ofNat declassAuditCapPtr,
         { target := .auditTrail CapTarget.authorityCode,
-          rights := AccessRightSet.ofList [.read, .write] })]))
+          rights := AccessRightSet.ofList [.read, .write] }),
+       (SeLe4n.Slot.ofNat registryCapPtr, Capability.serviceRegistry)]))
 
 private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
@@ -634,7 +639,8 @@ private def replyRecvCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
 
 /-- 9f: `.serviceQuery` — the `.word` shape end to end (the one value
 shape the blocked orderings do not exercise): a service registered on the
-endpoint, resolved through the endpoint capability, its `ServiceId` staged
+endpoint, invoked on the service-registry capability with the endpoint
+capability as extra capability 0 (WS-SX SX6.7), its `ServiceId` staged
 as the caller's return word and carried in the outcome frame — the answer
 the pre-WS-RA arm computed and discarded. -/
 -- A service's identity is its endpoint's (`ServiceRegistration.sid`).
@@ -648,8 +654,11 @@ private def serviceQueryScenario :
   let ((), st1) ← Kernel.registerInterface iface twoThreadState
   let ((), st2) ← Kernel.registerService
     { iface := iface, endpointCap := epCap } st1
+  let st2 := SeLe4n.Testing.withSenderCapAddrs st2 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.serviceQuery.toNat 0 epCapPtr.toUInt64 0 0 0 st2
+    SyscallId.serviceQuery.toNat
+    (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    registryCapPtr.toUInt64 0 0 0 st2
 
 /-- 9g: a **self**-`.tcbSuspend` — §3.5's parenthetical, witnessed: the
 caller deschedules itself but does not IPC-block (`ipcState` stays

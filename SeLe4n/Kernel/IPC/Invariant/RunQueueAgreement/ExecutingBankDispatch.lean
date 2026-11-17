@@ -240,7 +240,10 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
   all_goals subst hK
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
+  all_goals try unfold serviceEndpointArm at h
   all_goals (repeat' split at h)
+  all_goals first | (cases h; done) | skip
+  all_goals try (dsimp only at h; repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals first
     | exact hO (cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h).1
@@ -479,9 +482,12 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
           (hRes := by rw [cspaceMove_machine_eq h])
           (hBank := banksKeptOffCore_of_eq (by rw [cspaceMove_machine_eq h])))
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · exact hF (savedRegsKept.of_serviceRecordRewrite hInv (registerService_serviceRecordRewrite h))

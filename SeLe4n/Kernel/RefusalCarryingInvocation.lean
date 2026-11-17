@@ -238,11 +238,13 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error (.invalidCapability 0)
   | .serviceRevoke =>
     match cap.target with
-    | .object epId => revokeServiceChecked ctx tid epId st
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceRevoke tid xc (fun _ epId => revokeServiceChecked ctx tid epId) st
     | _ => .error (.invalidCapability 0)
   | .serviceQuery =>
     match cap.target with
-    | .object epId => serviceQueryStaged ctx tid epId st
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceQuery tid xc (fun _ epId => serviceQueryStaged ctx tid epId) st
     | _ => .error (.invalidCapability 0)
   | .schedContextBind =>
     match cap.target with
@@ -1048,10 +1050,13 @@ refusal is read where it is, never rebuilt. -/
             (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability 0, st)
   -- WS-ZA ZA5.5: the revoke and the query through the endpoint read its
-  -- recorded registration first and then write in place.
+  -- recorded registration first and then write in place.  WS-SX SX6.7: the
+  -- endpoint is extra capability 0, resolved in continuation form, so no
+  -- capability pair is built.
   | .serviceRevoke =>
     match cap.target with
-    | .object epId =>
+    | .serviceRegistry _ =>
+      resolveServiceEndpointK .serviceRevoke tid xc st (fun e => .error (e, st)) fun _ epId =>
       RefusalCarrying.ofChecked
         (serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId)
         (fun st => revokeServiceByRecordedRegistrationPerform st epId)
@@ -1059,7 +1064,8 @@ refusal is read where it is, never rebuilt. -/
     | _ => .error (.invalidCapability 0, st)
   | .serviceQuery =>
     match cap.target with
-    | .object epId =>
+    | .serviceRegistry _ =>
+      resolveServiceEndpointK .serviceQuery tid xc st (fun e => .error (e, st)) fun _ epId =>
       RefusalCarrying.ofCheckedThen
         (serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId)
         (fun st => serviceQueryPerform st tid epId)
@@ -1757,21 +1763,35 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     all_goals rfl
   case serviceRevoke =>
     cases target
-    case object epId =>
+    case serviceRegistry _ =>
       dsimp only
-      apply RefusalCarrying.ofChecked_eq
-      intro hA
-      simp only [dispatchInvocationBy, revokeServiceChecked_of_admitted ctx tid epId st hA]
+      rw [resolveServiceEndpointK_eq]
+      cases hR : resolveServiceEndpoint .serviceRevoke tid xc st with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, serviceEndpointArm, hR]
+      | ok pr =>
+        obtain ⟨epCap, epId⟩ := pr
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, serviceEndpointArm, hR,
+          revokeServiceChecked_of_admitted ctx tid epId st hA]
     all_goals rfl
   case serviceQuery =>
     cases target
-    case object epId =>
+    case serviceRegistry _ =>
       dsimp only
-      refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-      · simp only [dispatchInvocationBy, serviceQueryStaged]
-        split <;> simp_all
-      intro hA
-      simp only [dispatchInvocationBy, serviceQueryStaged_of_admitted ctx tid epId st hA]
+      rw [resolveServiceEndpointK_eq]
+      cases hR : resolveServiceEndpoint .serviceQuery tid xc st with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, serviceEndpointArm, hR]
+      | ok pr =>
+        obtain ⟨epCap, epId⟩ := pr
+        dsimp only
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, serviceEndpointArm, hR, serviceQueryStaged]
+          split <;> simp_all
+        intro hA
+        simp only [dispatchInvocationBy, serviceEndpointArm, hR,
+          serviceQueryStaged_of_admitted ctx tid epId st hA]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]
@@ -2024,22 +2044,24 @@ as the word `w`.  Its taint step is the identity and its rights are checked in
 the classic order. -/
 
 /-- `dispatchWithCapChecked`'s service-register arm, its arguments read from the
-register file `regs` through `layout` and then the overflow word `w`
-(`dispatchWithCapChecked_eq_serviceRegisterBy`). -/
-@[inline] def dispatchServiceRegisterBy (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+register file `regs` through `layout` and then the overflow word `w`, its
+endpoint extra capability 0 of the `xc` the message names (WS-SX SX6.7,
+`dispatchWithCapChecked_eq_serviceRegisterBy`). -/
+@[inline] def dispatchServiceRegisterBy (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc : Nat)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=
   match cap.target with
-  | .object epId =>
+  | .serviceRegistry _ =>
     match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
     | .error e => .error e
     | .ok args =>
-      registerServiceChecked ctx tid
-        { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
-                     maxMessageSize := args.maxMessageSize
-                     maxResponseSize := args.maxResponseSize
-                     requiresGrant := args.requiresGrant }
-          endpointCap := cap } st
+      serviceEndpointArm .serviceRegister tid xc (fun epCap _ st =>
+        registerServiceChecked ctx tid
+          { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+                       maxMessageSize := args.maxMessageSize
+                       maxResponseSize := args.maxResponseSize
+                       requiresGrant := args.requiresGrant }
+            endpointCap := epCap } st) st
   | _ => .error (.invalidCapability 0)
 
 theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
@@ -2051,7 +2073,7 @@ theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
       (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      dispatchServiceRegisterBy ctx tid layout regs w cap st := by
+      dispatchServiceRegisterBy ctx tid decoded.msgInfo.extraCaps layout regs w cap st := by
   have hDec := decodeServiceRegisterArgs_eq_by layout regs w decoded hRegs hLen
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
@@ -2061,47 +2083,55 @@ theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchServiceRegisterBy, hDec]
   all_goals rfl
 
-/-- `dispatchServiceRegisterBy`, refusal-carrying: the checks read first (the
+/-- `dispatchServiceRegisterBy`, refusal-carrying: the endpoint resolved in
+continuation form (`resolveServiceEndpointK`), then the checks read first (the
 flow check and `registerServiceAdmitted`) and the state handed to the write
 alone (`registerServicePerform`); a refusal is in the state handed in
 (`dispatchServiceRegisterByR_eq`). -/
-@[inline] def dispatchServiceRegisterByR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+@[inline] def dispatchServiceRegisterByR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc : Nat)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
   match cap.target with
-  | .object epId =>
+  | .serviceRegistry _ =>
     match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
     | .error e => .error (e, st)
     | .ok args =>
+      resolveServiceEndpointK .serviceRegister tid xc st (fun e => .error (e, st)) fun epCap _ =>
       let reg : ServiceRegistration :=
         { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
                      maxMessageSize := args.maxMessageSize
                      maxResponseSize := args.maxResponseSize
                      requiresGrant := args.requiresGrant }
-          endpointCap := cap }
+          endpointCap := epCap }
       RefusalCarrying.ofChecked
         (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg)
         (fun st => registerServicePerform st reg)
         (registerServiceChecked ctx tid reg) st
   | _ => .error (.invalidCapability 0, st)
 
-theorem dispatchServiceRegisterByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+theorem dispatchServiceRegisterByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc : Nat)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
     (st : SystemState) :
-    dispatchServiceRegisterByR ctx tid layout regs w cap st =
-      RefusalCarrying.ofKernel (dispatchServiceRegisterBy ctx tid layout regs w cap) st := by
+    dispatchServiceRegisterByR ctx tid xc layout regs w cap st =
+      RefusalCarrying.ofKernel (dispatchServiceRegisterBy ctx tid xc layout regs w cap) st := by
   unfold dispatchServiceRegisterByR dispatchServiceRegisterBy
   cases cap.target with
-  | object epId =>
+  | serviceRegistry _ =>
     dsimp only
     cases decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
     | error e => rfl
     | ok args =>
       dsimp only
-      apply RefusalCarrying.ofChecked_eq
-      intro hA
-      exact registerServiceChecked_of_admitted _ _ _ _ hA
+      rw [resolveServiceEndpointK_eq]
+      cases hR : resolveServiceEndpoint .serviceRegister tid xc st with
+      | error e => simp [RefusalCarrying.ofKernel, serviceEndpointArm, hR]
+      | ok pr =>
+        obtain ⟨epCap, epId⟩ := pr
+        dsimp only
+        rw [RefusalCarrying.ofChecked_eq _ _ _ _
+          (fun hA => registerServiceChecked_of_admitted _ _ _ _ hA)]
+        simp only [RefusalCarrying.ofKernel, serviceEndpointArm, hR]
   | _ => rfl
 
 /-- **WS-ZA ZA5.9**: the service record a register writes, built from the
@@ -2203,42 +2233,53 @@ decoded words and the invoked capability, and its write
 (`registerServiceRefusalCode`), so the arm builds no registration.  Equal
 to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
 @[inline] def dispatchServiceRegisterByRImpl (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
-    RefusalCarrying Unit :=
+    (xc : Nat) (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64)
+    (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
   match cap.target with
-  | .object epId =>
+  | .serviceRegistry _ =>
     match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
     | .error e => .error (e, st)
     | .ok args =>
+      resolveServiceEndpointK .serviceRegister tid xc st (fun e => .error (e, st)) fun epCap epId =>
       if serviceEndpointWriteAdmitted ctx tid epId &&
           (!recordedRegistrationPresent st
               (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat) &&
             (st.interfaceRegistry[args.interfaceId]?).isSome &&
             match st.getObject? epId with
-            | some (.endpoint ep) => Capability.hasRight cap .write && !ep.serviceRegistered
+            | some (.endpoint ep) => Capability.hasRight epCap .write && !ep.serviceRegistered
             | _ => false) then
         .ok ((), registerServiceWordsPerform st epId args.interfaceId args.methodCount
-          args.maxMessageSize args.maxResponseSize args.requiresGrant cap)
+          args.maxMessageSize args.maxResponseSize args.requiresGrant epCap)
       else
         .error (registerServiceRefusalError
-          (registerServiceRefusalCode ctx tid epId args.interfaceId cap st), st)
+          (registerServiceRefusalCode ctx tid epId args.interfaceId epCap st), st)
   | _ => .error (.invalidCapability 0, st)
 
 @[csimp] theorem dispatchServiceRegisterByR_eq_impl :
     @dispatchServiceRegisterByR = @dispatchServiceRegisterByRImpl := by
-  funext ctx tid layout regs w cap st
-  unfold dispatchServiceRegisterByR dispatchServiceRegisterByRImpl RefusalCarrying.ofChecked
-  rcases cap with ⟨target, rights, badge, badged, mAsid, mVaddr, mEpoch, mapped, freeIndex,
-    cnGuard, cnGuardSize⟩
-  cases target with
-  | object epId =>
+  funext ctx tid xc layout regs w cap st
+  unfold dispatchServiceRegisterByR dispatchServiceRegisterByRImpl
+  cases cap.target with
+  | serviceRegistry _ =>
     dsimp only
     cases decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
     | error e => rfl
     | ok args =>
       dsimp only
+      rw [resolveServiceEndpointK_eq, resolveServiceEndpointK_eq]
+      cases hR : resolveServiceEndpoint .serviceRegister tid xc st with
+      | error e => rfl
+      | ok pr =>
+      obtain ⟨epCap, epId⟩ := pr
+      obtain ⟨_, _, _, hTg, _, _⟩ := resolveServiceEndpoint_ok _ _ _ _ _ _ hR
+      dsimp only
+      unfold RefusalCarrying.ofChecked
       simp only [registerServicePerform_eq_impl]
+      rcases epCap with ⟨target, rights, badge, badged, mAsid, mVaddr, mEpoch, mapped, freeIndex,
+        cnGuard, cnGuardSize⟩
+      simp only at hTg
+      subst hTg
       let cap : Capability := ⟨.object epId, rights, badge, badged, mAsid, mVaddr, mEpoch, mapped,
         freeIndex, cnGuard, cnGuardSize⟩
       let reg : ServiceRegistration :=
@@ -2283,7 +2324,7 @@ theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.
 
 /-- The service register's arm behind the operand check: the gate's type and
 right, then `dispatchServiceRegisterByR`. -/
-@[inline] def serviceRegisterOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+@[inline] def serviceRegisterOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (xc : Nat)
     (regs : RegisterFile) (w : UInt64) :
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
@@ -2293,7 +2334,7 @@ right, then `dispatchServiceRegisterByR`. -/
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
         else if !syscallTargetAccepted .serviceRegister st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight .serviceRegister) then
-          dispatchServiceRegisterByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
+          dispatchServiceRegisterByR ctx tid xc SeLe4n.arm64DefaultLayout regs w cap st
         else .error (syscallMissingRightError .serviceRegister, st)
 
 /-- `dispatchSyscallChecked` for a service register whose fifth word is `w`
@@ -2301,7 +2342,7 @@ right, then `dispatchServiceRegisterByR`. -/
 @[inline] def dispatchServiceRegisterCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore xc (serviceRegisterOperandArmR ctx tid regs w)
+  dispatchOperandCheckedR capAddr tid executingCore xc (serviceRegisterOperandArmR ctx tid xc regs w)
 
 theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
@@ -2314,9 +2355,11 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
+  have hXc : syscallExtraCapCount .serviceRegister decoded.msgInfo.extraCaps =
+      decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_serviceRegister st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2330,7 +2373,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
       replace hType : syscallTargetAccepted .serviceRegister st cap = true := by simpa using hType
       by_cases hRight : cap.hasRight (syscallRequiredRight .serviceRegister) = true
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [dispatchServiceRegisterByR_eq]
+        rw [dispatchServiceRegisterByR_eq, hXc]
         simp only [RefusalCarrying.ofKernel]
         rw [← dispatchWithCapChecked_eq_serviceRegisterBy ctx decoded SeLe4n.arm64DefaultLayout
           regs w tid executingCore

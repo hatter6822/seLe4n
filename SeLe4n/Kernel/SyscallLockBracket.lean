@@ -740,6 +740,7 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
       | schedControl _ => rw [hTgt] at h; exact absurd h (by simp)
       | irqHandler _ => rw [hTgt] at h; exact absurd h (by simp)
       | irqControl _ => rw [hTgt] at h; exact absurd h (by simp)
+      | serviceRegistry _ => rw [hTgt] at h; exact absurd h (by simp)
       | object objId =>
       rw [hTgt] at h
       simp only at h

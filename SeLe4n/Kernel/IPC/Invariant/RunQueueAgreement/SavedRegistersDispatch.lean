@@ -346,9 +346,12 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     split at h
     · exact hF (cspaceMove_savedRegsKept hInv h)
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · exact hF (savedRegsKept.of_serviceRecordRewrite hInv (registerService_serviceRecordRewrite h))

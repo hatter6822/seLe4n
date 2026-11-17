@@ -80,7 +80,7 @@ of six words is refused short of its seventh. -/
           (overflowWordAt st tid 1) (overflowWordAt st tid 2)) st
   | _ =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
-      serviceRegisterOperandArmR ctx tid rf w) st
+      serviceRegisterOperandArmR ctx tid xc rf w) st
 
 /-- The overflowed arm is the long operand dispatch of the route's arm
 (`overflowedArmOf`). -/

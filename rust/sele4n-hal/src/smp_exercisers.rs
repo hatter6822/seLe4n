@@ -2138,6 +2138,11 @@ const AUDIT_SLOT: u64 = COPY_SLOT;
 /// exerciser holds is issued from (`seL4_IRQControl_Get`).
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_SLOT: u64 = 20;
+/// The slot of the root task's service-registry capability
+/// (`Exerciser.serviceRegistrySlot`, WS-SX SX6.7): the capability the service
+/// register, revoke and query invoke, the endpoint their extra capability 0.
+#[cfg(feature = "hw_target")]
+const SERVICE_REGISTRY_SLOT: u64 = 36;
 /// The rights the boot gives the interrupt-control capability (`write` alone,
 /// `Capability.irqControl`), as a mint's rights word.
 #[cfg(feature = "hw_target")]
@@ -2201,6 +2206,8 @@ const SCHED_CONTEXT_CAP: u64 = cap_address(SCHED_CONTEXT_SLOT);
 const SCHED_CONTROL_CAP: u64 = cap_address(SCHED_CONTROL_SLOT);
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_CAP: u64 = cap_address(IRQ_CONTROL_SLOT);
+#[cfg(feature = "hw_target")]
+const SERVICE_REGISTRY_CAP: u64 = cap_address(SERVICE_REGISTRY_SLOT);
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
 #[cfg(feature = "hw_target")]
@@ -3015,20 +3022,22 @@ const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
     }
 }
 
-/// The service register: five message words, the fifth (whether invoking the
-/// interface needs the grant right) read from the root task's IPC buffer,
-/// which the kernel's model of memory holds as zero, so no grant.
+/// The service register (WS-SX SX6.7): invoked on the service-registry
+/// capability, the endpoint `endpoint` extra capability 0, named in the root
+/// task's IPC buffer; five message words, the fifth (whether invoking the
+/// interface needs the grant right) read from that buffer, which the kernel's
+/// model of memory holds as zero, so no grant.
 #[cfg(feature = "hw_target")]
-const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+const fn service_register(name: &'static str, endpoint: u64, msg: [u64; 4]) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SERVICE_REGISTER,
-        cptr,
-        msg_len: 5,
+        cptr: SERVICE_REGISTRY_CAP,
+        msg_len: 5 | ONE_EXTRA_CAP,
         msg,
         primed: None,
         blocks: false,
-        caps_or_badges: None,
+        caps_or_badges: Some((ROOT_IPC_BUFFER, [endpoint, 0, 0], None)),
         overflow: None,
         returns: None,
     }
@@ -3898,8 +3907,20 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             ],
         ),
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
-        invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
-        invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
+        cap_argument(
+            "service-query",
+            SERVICE_QUERY,
+            SERVICE_REGISTRY_CAP,
+            ENDPOINT_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        cap_argument(
+            "service-revoke",
+            SERVICE_REVOKE,
+            SERVICE_REGISTRY_CAP,
+            ENDPOINT_CAP,
+            ROOT_IPC_BUFFER,
+        ),
         // A carved endpoint registered as the service, then its only
         // capability deleted: the final delete drops the registration
         // (`releaseFinalRegistration`, seL4's endpoint finalisation with the
@@ -3928,7 +3949,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // left; an invocation one word long; a message-info word whose length
         // no message has, refused; one whose top bit is set, refused; and a
         // yield one word long.
-        truncated("service-register-short", SERVICE_REGISTER, ENDPOINT_CAP, 4),
+        truncated(
+            "service-register-short",
+            SERVICE_REGISTER,
+            SERVICE_REGISTRY_CAP,
+            4,
+        ),
         truncated(
             "sched-context-configure-short",
             SCHED_CONTEXT_CONFIGURE,

@@ -340,17 +340,22 @@ fn xval_012_service_register() {
     };
     let encoded = args.encode();
     // Service register needs 5 msg regs: 4 inline + 1 IPC buffer overflow.
+    // WS-SX SX6.7: invoked on the service-registry capability, the endpoint
+    // extra capability 0.
     let mut buf = IpcBuffer::new();
     buf.set_mr(4, encoded[4]).unwrap();
+    buf.caps_or_badges[0] = 1201;
     let req = SyscallRequest {
         cap_addr: CPtr::from(1200u64),
-        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(5, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
     };
     verify_regs(
         &req,
         &[
+            (0, 1200, "x0=CPtr(service registry)"),
+            (1, 5 | (1 << 7), "x1=MessageInfo(length 5, one extra cap)"),
             (2, 7, "x2=interfaceId"),
             (3, 5, "x3=methodCount"),
             (4, 256, "x4=maxMessageSize"),
@@ -364,24 +369,25 @@ fn xval_012_service_register() {
         1,
         "IPC buffer[4]=requiresGrant(true)"
     );
+    assert_eq!(buf.caps_or_badges[0], 1201, "extra cap 0 = the endpoint");
 }
 
 /// RUST-XVAL-013: Service revoke register layout.
 #[test]
 fn xval_013_service_revoke() {
     // The revoke reads no message register: the kernel removes the
-    // registration the invoked endpoint records.
+    // registration the endpoint, extra capability 0, records.
     let req = SyscallRequest {
         cap_addr: CPtr::from(1300u64),
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
     };
     verify_regs(
         &req,
         &[
-            (0, 1300, "x0=CPtr"),
-            (1, 0, "x1=MessageInfo(empty)"),
+            (0, 1300, "x0=CPtr(service registry)"),
+            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
             (6, 12, "x7=SyscallId::ServiceRevoke"),
         ],
     );
@@ -392,15 +398,15 @@ fn xval_013_service_revoke() {
 fn xval_014_service_query() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(1400u64),
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
     };
     verify_regs(
         &req,
         &[
-            (0, 1400, "x0=CPtr"),
-            (1, 0, "x1=MessageInfo(empty)"),
+            (0, 1400, "x0=CPtr(service registry)"),
+            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
             (6, 13, "x7=SyscallId::ServiceQuery"),
         ],
     );
@@ -2588,7 +2594,7 @@ fn return_shape_value_returning_surface() {
 #[test]
 fn return_shape_matches_wrapper_signatures() {
     let _wait: fn(CPtr) -> KernelResult<Badge> = sele4n_sys::ipc::notification_wait;
-    let _query: fn(CPtr) -> KernelResult<sele4n_types::ServiceId> =
+    let _query: fn(CPtr, CPtr, &mut IpcBuffer) -> KernelResult<sele4n_types::ServiceId> =
         sele4n_sys::service::service_query;
     let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
         sele4n_sys::ipc::endpoint_receive;
@@ -2846,6 +2852,7 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::service::service_register(
         cap,
+        cap,
         InterfaceId::from(1u64),
         1,
         64,
@@ -2854,9 +2861,9 @@ fn wrappers_name_their_syscalls() {
         &mut buf,
     );
     assert_names("service_register", SyscallId::ServiceRegister);
-    let _ = sele4n_sys::service::service_revoke(cap);
+    let _ = sele4n_sys::service::service_revoke(cap, cap, &mut buf);
     assert_names("service_revoke", SyscallId::ServiceRevoke);
-    let _ = sele4n_sys::service::service_query(cap);
+    let _ = sele4n_sys::service::service_query(cap, cap, &mut buf);
     assert_names("service_query", SyscallId::ServiceQuery);
 
     let _ = sele4n_sys::sched_context::sched_context_configure(

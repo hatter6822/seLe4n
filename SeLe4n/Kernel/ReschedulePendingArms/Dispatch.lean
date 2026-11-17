@@ -1377,7 +1377,10 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals subst hK
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
+  all_goals try unfold serviceEndpointArm at h
   all_goals (repeat' split at h)
+  all_goals first | (cases h; done) | skip
+  all_goals try (dsimp only at h; repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
     | exact irqHandlerAck_stepCovers hInv h
@@ -1634,9 +1637,12 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [cspaceMove_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceMove_machine_eq h]))
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · exact (registerService_keyFrame hInv h).stepCoversInv

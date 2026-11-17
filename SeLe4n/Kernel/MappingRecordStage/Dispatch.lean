@@ -192,14 +192,18 @@ theorem dispatchCapabilityOnly_mappingStage
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object oid =>
+    case serviceRegistry _ =>
+      replace hStep := serviceEndpointArm_ok hStep
+      obtain ⟨_, oid, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
       exact revokeService_mappingStage hRev
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object epId =>
+    case serviceRegistry _ =>
+      replace hStep := serviceEndpointArm_ok hStep
+      obtain ⟨_, epId, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       cases hLkS : lookupServiceByRecordedRegistration epId st with
       | error e => simp only [hLkS] at hStep; cases hStep
@@ -684,9 +688,12 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     split at h
     · exact cspaceMove_mappingStage P.caps h
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · exact registerService_mappingStage h

@@ -4221,11 +4221,14 @@ def lockSet_serviceRegister (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
-`revokeServiceByRecordedRegistration epId` reads the registration the invoked endpoint
+`revokeServiceByRecordedRegistration epId` reads the registration the endpoint
 records and clears that endpoint's service record (`clearServiceRecord`, a
 read-modify-write of it — since WS-ZA ZA5.9 the registration's only home), so
-the footprint is the caller TCB, its CNode, the invoked endpoint in **write**
-mode and the state-level lock. -/
+the footprint is the caller TCB, its CNode, the endpoint in **write** mode and
+the state-level lock.  WS-SX SX6.7: the endpoint is the one the invocation's
+extra capability 0 names (`resolveServiceEndpoint`), resolved through the same
+CNode as the invoked service-registry capability, so the CNode member covers
+both lookups. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
@@ -4245,7 +4248,8 @@ on success its arm stages the resolved `ServiceId` into the caller's TCB via
 WS-RA's `writeReturnFrameToTcb` — the same committed-dispatch caller write the
 audit pair declares, present since the WS-RA staging landed (v0.33.37) and
 fixed with them (`lockSet_serviceQuery_staging_write_mem`).  CNode **read**
-for capability resolution. -/
+for capability resolution: the invoked service-registry capability and the
+endpoint, extra capability 0 (WS-SX SX6.7). -/
 def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList

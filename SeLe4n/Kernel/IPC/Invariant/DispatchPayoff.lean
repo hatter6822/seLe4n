@@ -1040,11 +1040,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case serviceRegister =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object epId =>
+        case serviceRegistry _ =>
           cases hDec : decodeServiceRegisterArgs decoded with
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              replace hStep := serviceEndpointArm_ok hStep
+              obtain ⟨_, epId, -, hStep⟩ := hStep
+              try dsimp only at hStep
               unfold registerServiceChecked at hStep
               split at hStep
               · exact registerService_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep

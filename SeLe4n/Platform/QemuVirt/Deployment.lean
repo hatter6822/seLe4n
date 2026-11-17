@@ -161,14 +161,19 @@ def qemuVirtSchedControlSlotBase : Nat := 16
     scheduling controls — seL4's boot info `seL4_CapIRQControl`. -/
 def qemuVirtIrqControlSlot : Nat := 20
 
+/-- **WS-SX SX6.7**: the root task's service-registry slot, above the
+    interrupt control (`Capability.serviceRegistry`). -/
+def qemuVirtServiceRegistrySlot : Nat := 21
+
 /-- The root task's boot capabilities, by slot: its own TCB, CNode and VSpace,
     the interrupt notification, the untyped, and the allocation exerciser's
     partner thread, endpoint and reply object, and in slot 0 the exerciser's
     scheduling context (slot 9 is left free for the reply capability the
     exerciser mints from slot 8, and slots 10 to 15 for the objects it copies
     and carves), (WS-ZA ZA6.4) each core's scheduling control from
-    `qemuVirtSchedControlSlotBase`, and (WS-ZA ZA6.32) the interrupt control
-    at `qemuVirtIrqControlSlot`. -/
+    `qemuVirtSchedControlSlotBase`, (WS-ZA ZA6.32) the interrupt control
+    at `qemuVirtIrqControlSlot`, and (WS-SX SX6.7) the service registry at
+    `qemuVirtServiceRegistrySlot`. -/
 def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply]
@@ -180,7 +185,8 @@ def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
   , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write])
-  , (SeLe4n.Slot.ofNat qemuVirtIrqControlSlot, Capability.irqControl) ] ++
+  , (SeLe4n.Slot.ofNat qemuVirtIrqControlSlot, Capability.irqControl)
+  , (SeLe4n.Slot.ofNat qemuVirtServiceRegistrySlot, Capability.serviceRegistry) ] ++
   SeLe4n.Platform.RPi5.schedControlBootSlots qemuVirtSchedControlSlotBase
 
 /-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`)

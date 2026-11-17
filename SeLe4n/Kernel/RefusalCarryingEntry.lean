@@ -1344,7 +1344,7 @@ mint's refusal short of its sixth; no other syscall is routed here
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) (xc : Nat) :
     Option Capability → RefusalCarrying Unit :=
   match sid with
-  | .serviceRegister => serviceRegisterOperandArmR ctx tid regs w
+  | .serviceRegister => serviceRegisterOperandArmR ctx tid xc regs w
   | .cspaceCopy => copyOperandArmR ctx tid xc regs w
   | .cspaceMint => shortArgsOperandArmR .cspaceMint
   | .untypedRetype => shortArgsOperandArmR .untypedRetype

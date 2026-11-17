@@ -45,8 +45,9 @@ open Architecture.SyscallArgDecode
 /-! ## An invocation short of its arguments (seL4's `seL4_TruncatedMessage`) -/
 
 /-- The target an invocation reads its arguments under: a core's scheduling
-control for the configure, the interrupt control for the handler issue, and an
-object for every other invocation.  Any other target is refused `.invalidCapability` before the
+control for the configure, the interrupt control for the handler issue, the
+service registry for the service calls (WS-SX SX6.7), and an object for every
+other invocation.  Any other target is refused `.invalidCapability` before the
 arguments are read, as seL4's capability kind chooses the decode before the
 decode checks the length. -/
 @[inline] def truncationTarget (sid : SyscallId) (t : CapTarget) : Bool :=
@@ -55,6 +56,9 @@ decode checks the length. -/
   | .schedContextConfigure, _ => false
   | .irqControlGet, .irqControl _ => true
   | .irqControlGet, _ => false
+  | .serviceRegister, .serviceRegistry _ | .serviceRevoke, .serviceRegistry _
+  | .serviceQuery, .serviceRegistry _ => true
+  | .serviceRegister, _ | .serviceRevoke, _ | .serviceQuery, _ => false
   | _, .object _ => true
   | _, _ => false
 
@@ -258,7 +262,7 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
     Option Capability → RefusalCarrying Unit :=
   match sid with
   | .schedContextConfigure => configureOperandArmR rf w tid
-  | .serviceRegister => serviceRegisterOperandArmR ctx tid rf w
+  | .serviceRegister => serviceRegisterOperandArmR ctx tid xc rf w
   | .cspaceCopy => copyOperandArmR ctx tid xc rf w
   | .cspaceMint => mintOperandArmR ctx tid xc rf w w1
   | .untypedRetype =>

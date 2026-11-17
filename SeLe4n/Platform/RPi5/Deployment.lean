@@ -219,6 +219,14 @@ def rpi5SchedControlSlotBase : Nat := 12
     authority to issue an interrupt handler (`seL4_IRQControl_Get`). -/
 def rpi5IrqControlSlot : Nat := 11
 
+/-- **WS-SX SX6.7**: the root task's service-registry slot — the one
+    authority to register, revoke and query a service
+    (`Capability.serviceRegistry`).  Slot 0: the sixteen-slot root CNode's
+    others hold the task's own objects, its untypeds, the root server's
+    frame and tables (`rpi5RootServerFrameSlot` and the three after it), the
+    interrupt control and the scheduling controls. -/
+def rpi5ServiceRegistrySlot : Nat := 0
+
 /-- An empty user address space on `asid` — what `bootSafeUserVSpaceRootCheck`
     admits — whose top-level table is the `page`-th page of the binding's
     table-page pool (WS-BP BP7.1, `Platform.Boot.bootRootTablesPlaced`). -/
@@ -285,7 +293,8 @@ theorem rpi5BootRamExtensions_length (v : BCM2712Config) (hv : v.Admissible) :
 
 /-- **WS-BP BP7.10**: the root task's CNode slots for `n` untypeds: its own TCB,
     CNode and VSpace, the interrupt notification, and untyped `i` at slot
-    `5 + i` (`rpi5RootTaskUntypedSlot`), (WS-ZA ZA6.32) the interrupt control
+    `5 + i` (`rpi5RootTaskUntypedSlot`), (WS-SX SX6.7) the service registry at
+    `rpi5ServiceRegistrySlot`, (WS-ZA ZA6.32) the interrupt control
     at `rpi5IrqControlSlot`, and (WS-ZA ZA6.4) each core's scheduling control
     from `rpi5SchedControlSlotBase`.  A function of the count, because a
     capability names an object and not its extent. -/
@@ -297,7 +306,8 @@ def rpi5RootTaskCNodeSlotsOfCount (n : Nat) : List (SeLe4n.Slot × Capability) :
   , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write]) ] ++
   ((List.range n).map fun i =>
     (rpi5RootTaskUntypedSlot i, rpi5InitialCap (rpi5RootTaskUntypedId i) [.read, .write, .retype])) ++
-  [(SeLe4n.Slot.ofNat rpi5IrqControlSlot, Capability.irqControl)] ++
+  [(SeLe4n.Slot.ofNat rpi5ServiceRegistrySlot, Capability.serviceRegistry),
+   (SeLe4n.Slot.ofNat rpi5IrqControlSlot, Capability.irqControl)] ++
   schedControlBootSlots rpi5SchedControlSlotBase
 
 /-- The root task's CNode slots on a board bound to `v` — one untyped
