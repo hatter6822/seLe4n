@@ -4041,7 +4041,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // the frame's own mapping is looked at), a map address past the
         // canonical bound (seL4's `vtop > USER_TOP`, `InvalidArgument 0`), an
         // unmap address past it (`AddressOutOfBounds`), and an affinity past
-        // the cores and the unbind marker (`InvalidArgument 0`).
+        // the cores and the unbind marker (`InvalidArgument 0`).  The maps'
+        // VSpace root, extra capability 0, is written to the window, the
+        // root task's buffer here (`root-set-ipc-buffer`).
         RoundTrip {
             returns: refused(POLICY_DENIED),
             ..page_map_words(
@@ -4049,7 +4051,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 FRAME_CAP,
                 VSPACE_CAP,
                 [FRAME_VADDR, WIDE_WORD | 1, 0],
-                ROOT_IPC_BUFFER,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
@@ -4060,7 +4062,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 VSPACE_CAP,
                 WIDE_WORD,
                 FRAME_PERMS,
-                ROOT_IPC_BUFFER,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
@@ -4070,7 +4072,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 FRAME_CAP,
                 VSPACE_CAP,
                 [FRAME_VADDR, 3, WIDE_WORD],
-                ROOT_IPC_BUFFER,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
