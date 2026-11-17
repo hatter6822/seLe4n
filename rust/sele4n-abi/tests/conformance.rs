@@ -1409,19 +1409,21 @@ fn sched_context_required_rights() {
 
 // --- AA1-F: SchedContext arg decode conformance ---
 
-/// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip.
+/// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip — seL4-MCS's
+/// `SchedControl_ConfigureFlags` words (WS-SX SX6.4): budget, period, extra
+/// refills, badge, flags; the context is extra capability 0, not a word.
 #[test]
 fn sched_context_configure_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs {
-        sched_context: CPtr::from((1u64 << 63) | 4),
         budget: 1000,
         period: 5000,
-        priority: 200,
-        deadline: 10000,
-        domain: 3,
+        extra_refills: 6,
+        badge: (1u64 << 63) | 4,
+        flags: 1,
     };
-    let encoded = args.encode().unwrap();
+    let encoded = args.encode();
+    assert_eq!(encoded, [1000, 5000, 6, (1u64 << 63) | 4, 1]);
     let decoded = SchedContextConfigureArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
 }
@@ -1446,89 +1448,16 @@ fn sched_context_configure_insufficient_regs() {
     );
 }
 
-/// AA1-F-5: SchedContextConfigureArgs — the priority is the parameter word's
-/// low byte (WS-ZA ZA6.4: priority and domain share MR3), so the word 256 reads
-/// as priority 0 in domain 1.  The encoder therefore refuses a priority of 256
-/// (or a domain of 16) rather than masking it into that other configuration.
+/// AA1-F-5: SchedContextConfigureArgs — every word is carried verbatim: the
+/// kernel range-checks the times and extra refills and stores the badge and
+/// flags as given, so the ABI neither masks nor refuses a bit.
 #[test]
-fn sched_context_configure_priority_is_low_byte() {
+fn sched_context_configure_words_verbatim() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 256, 10000]).unwrap();
-    assert_eq!(args.priority, 0);
-    assert_eq!(args.domain, 1);
-}
-
-/// AA1-F-5b: the encoder refuses priority 256 and domain 16 with the error the
-/// decode and the kernel return for the same word, and encodes nothing.
-#[test]
-fn sched_context_configure_encode_refuses_out_of_range() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let valid = SchedContextConfigureArgs {
-        sched_context: CPtr::from(7u64),
-        budget: 1000,
-        period: 5000,
-        priority: 255,
-        deadline: 10000,
-        domain: 15,
-    };
-    assert!(valid.encode().is_ok());
-    let priority_256 = SchedContextConfigureArgs {
-        priority: 256,
-        ..valid
-    };
-    assert_eq!(
-        priority_256.encode(),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-    let domain_16 = SchedContextConfigureArgs {
-        domain: 16,
-        ..valid
-    };
-    assert_eq!(domain_16.encode(), Err(KernelError::InvalidSyscallArgument));
-}
-
-/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain.
-/// AG2-A: Domain 16 is first invalid (Lean numDomainsVal = 16, zero-indexed 0..=15).
-#[test]
-fn sched_context_configure_invalid_domain() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    // Domain 16 is the first invalid value
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-    // Domain 256 is also invalid (well beyond range)
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (256 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-}
-
-/// AA1-F-8: SchedContextConfigureArgs — max valid priority (255) and domain (15).
-/// AG2-A: Domain max updated from 255 to 15 to match Lean numDomainsVal = 16.
-#[test]
-fn sched_context_configure_max_valid() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 255 | (15 << 8), 10000]).unwrap();
-    assert_eq!(args.sched_context, CPtr::from(7u64));
-    assert_eq!(args.priority, 255);
-    assert_eq!(args.domain, 15);
-    assert_eq!(args.budget, 1000);
-    assert_eq!(args.period, 5000);
-    assert_eq!(args.deadline, 10000);
-}
-
-/// AA1-F-9: SchedContextConfigureArgs — zero-valued fields accepted.
-#[test]
-fn sched_context_configure_zero_values() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
-    assert_eq!(args.sched_context, CPtr::from(0u64));
-    assert_eq!(args.budget, 0);
-    assert_eq!(args.period, 0);
-    assert_eq!(args.priority, 0);
-    assert_eq!(args.deadline, 0);
-    assert_eq!(args.domain, 0);
+    for regs in [[0u64; 5], [u64::MAX; 5], [1, 2, 3, 4, 5]] {
+        let args = SchedContextConfigureArgs::decode(&regs).unwrap();
+        assert_eq!(args.encode(), regs);
+    }
 }
 
 // --- AA1-G: SchedContext TypeTag retype conformance ---
@@ -2019,58 +1948,10 @@ fn sys_tcb_module_exports() {
 // AG2 — Pre-Hardware Rust ABI Fixes conformance tests
 // ============================================================================
 
-/// AG2-A-1: MAX_DOMAIN matches Lean numDomainsVal = 16 (zero-indexed 0..=15).
-#[test]
-fn max_domain_matches_lean() {
-    use sele4n_abi::args::sched_context::MAX_DOMAIN;
-    assert_eq!(
-        MAX_DOMAIN, 15,
-        "MAX_DOMAIN must be 15 (Lean numDomainsVal = 16, zero-indexed)"
-    );
-}
-
-/// AG2-A-2: Domain 15 accepted, domain 16 rejected at decode boundary.
-#[test]
-fn domain_boundary_validation() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-
-    // WS-ZA ZA6.4: the domain is bits 8–11 of MR3, beside the priority.
-    // Domain 15 (max valid) — accepted
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (15 << 8), 10000]).unwrap();
-    assert_eq!(args.domain, 15);
-
-    // Domain 16 (first invalid) — rejected
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-}
-
-/// AG2-A-3: All valid domain values (0..=15) accepted at decode.
-#[test]
-fn all_valid_domains_accepted() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    for domain in 0..=15u64 {
-        let result =
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]);
-        assert!(result.is_ok(), "Domain {} should be accepted", domain);
-        assert_eq!(result.unwrap().domain, domain);
-    }
-}
-
-/// AG2-A-4: All invalid domain values (16..=255 and beyond) rejected at decode.
-#[test]
-fn invalid_domains_rejected() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    for domain in [16u64, 17, 100, 255, 256, u64::MAX >> 8] {
-        assert_eq!(
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]),
-            Err(KernelError::InvalidSyscallArgument),
-            "Domain {} should be rejected",
-            domain
-        );
-    }
-}
+// AG2-A-1..4 (domain range at the configure decode) retired by WS-SX SX6.4:
+// seL4-MCS's configure carries no domain (a thread's domain is set by
+// `seL4_DomainSet_Set`), so the configure words are carried verbatim
+// (`sched_context_configure_words_verbatim`).
 
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]

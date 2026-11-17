@@ -288,8 +288,7 @@ SchedContext has **exhausted** budget (`budgetRemaining = 0`).  The non-budget
 private def scId : SeLe4n.SchedContextId := SchedContextId.ofNat 300
 private def tidBound : SeLe4n.ThreadId := ThreadId.ofNat 200
 private def mkScExhausted (sc : SeLe4n.SchedContextId) : SeLe4n.Kernel.SchedContext :=
-  { scId := sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨10⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := SeLe4n.Kernel.Budget.zero }
+  { scId := sc, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := SeLe4n.Kernel.Budget.zero }
 private def stBudgetExhausted : SystemState :=
   (((BootstrapBuilder.empty.withObject tidBound.toObjId
       (.tcb { mkTcb 200 10 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 })).withObject

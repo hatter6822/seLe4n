@@ -167,13 +167,14 @@ private def t02_service_register_bounds_rejected : IO Unit := do
     | .ok _ =>
       throw <| IO.userError "expected error, got ok"
 
-/-- AK4-G-T03: schedContextConfigure with 5 args — inline + 1 overflow. -/
+/-- AK4-G-T03: schedContextConfigure with 5 args — inline + 1 overflow.
+    WS-SX SX6.4: seL4-MCS's `SchedControl_ConfigureFlags` words (budget,
+    period, extra refills, badge, flags); the context is extra cap 0. -/
 private def t03_sched_context_configure_full_abi : IO Unit := do
   let syscallId := 17  -- schedContextConfigure
   let msgLen := 5
-  -- WS-ZA ZA6.4: x2 = the context's cptr, x5 = priority 128 | domain 3 << 8
-  let inline : Array UInt64 := #[7, 1000, 10000, 128 + 3 * 256]     -- x2..x5
-  let overflow : Array UInt64 := #[5000]                      -- MR[4] = deadline=5000
+  let inline : Array UInt64 := #[1000, 10000, 2, 0xBEEF]  -- x2..x5
+  let overflow : Array UInt64 := #[1]                      -- MR[4] = flags (sporadic)
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -186,20 +187,19 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
     | .error e =>
       throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "context cptr=7" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
       expect "budget=1000" (args.budget == 1000)
       expect "period=10000" (args.period == 10000)
-      expect "priority=128" (args.priority == 128)
-      expect "deadline=5000" (args.deadline == 5000)
-      expect "domain=3" (args.domain == 3)
+      expect "extraRefills=2" (args.extraRefills == 2)
+      expect "badge=0xBEEF" (args.badge == 0xBEEF)
+      expect "flags=1" (args.flags == 1)
 
-/-- AK4-G-T04: schedContextConfigure with domain > MAX → rejected.
-    AK3-J / AK4-D tightened validation. -/
-private def t04_sc_configure_domain_rejected : IO Unit := do
+/-- AK4-G-T04: schedContextConfigure with a budget above its period →
+    seL4-MCS's `RangeError(MIN_BUDGET, period)`. -/
+private def t04_sc_configure_budget_above_period_rejected : IO Unit := do
   let syscallId := 17
   let msgLen := 5
-  let inline : Array UInt64 := #[7, 1000, 10000, 128 + 16 * 256]  -- domain=16 > MAX_DOMAIN=15
-  let overflow : Array UInt64 := #[5000]
+  let inline : Array UInt64 := #[10001, 10000, 0, 0]
+  let overflow : Array UInt64 := #[0]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -208,8 +208,10 @@ private def t04_sc_configure_domain_rejected : IO Unit := do
     throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeSchedContextConfigureArgsChecked decoded with
-    | .error _ =>
-      expect "domain>MAX rejected" true
+    | .error (.rangeError _ hi) =>
+      expect "budget>period rejected with the period as the bound" (hi == 10000)
+    | .error e =>
+      throw <| IO.userError s!"expected rangeError, got {toString e}"
     | .ok _ =>
       throw <| IO.userError "expected error, got ok"
 
@@ -358,7 +360,7 @@ private def runAll : IO Unit := do
   t01_service_register_full_abi
   t02_service_register_bounds_rejected
   t03_sched_context_configure_full_abi
-  t04_sc_configure_domain_rejected
+  t04_sc_configure_budget_above_period_rejected
   t05_cspace_mint_no_overflow
   t06_cspace_mint_rights_bits_ignored
   t07_cspace_copy_minimal

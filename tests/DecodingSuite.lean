@@ -446,23 +446,24 @@ private def sad015_replyRecv : IO Unit := do
 
 -- SchedContext family ----------------------------------------------------------
 
-/-- SAD-016: decodeSchedContextConfigureArgs — valid decode with 5 registers. -/
+/-- SAD-016: decodeSchedContextConfigureArgs — valid decode with 5 registers
+(seL4-MCS's budget, period, extra refills, badge, flags; WS-SX SX6.4). -/
 private def sad016_schedContextConfigure : IO Unit := do
-  let stub := mkStub #[⟨7⟩, ⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
+  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨3⟩, ⟨128⟩, ⟨1⟩]
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-016a scConfigure ok" result.isOk
   match result with
   | .ok args =>
     expect "SAD-016b budget" (args.budget == 1000)
     expect "SAD-016c period" (args.period == 5000)
-    expect "SAD-016d priority" (args.priority == 128)
-    expect "SAD-016e context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
-    expect "SAD-016f deadline" (args.deadline == 10000)
+    expect "SAD-016d extra refills" (args.extraRefills == 3)
+    expect "SAD-016e badge" (args.badge == 128)
+    expect "SAD-016f flags" (args.flags == 1)
   | .error _ => expect "SAD-016 unexpected error" false
 
 /-- SAD-017: decodeSchedContextConfigureArgs — insufficient registers (4). -/
 private def sad017_schedContextConfigureInsufficient : IO Unit := do
-  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
+  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨0⟩, ⟨128⟩]
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-017a scConfigure insufficient" (!result.isOk)
 

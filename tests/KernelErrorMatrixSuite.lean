@@ -191,8 +191,7 @@ private def row_rangeError_period_zero : KernelErrorRejection :=
                      " replenishmentListWellFormed downstream)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 0) (priority := 5) (deadline := 0)
-        (domain := 0) }
+        (budget := 100) (period := 0) }
 
 /-- Row: `setIPCBufferFrom` rejects an unaligned address with
 `.alignmentError`, seL4's `checkValidIPCBuffer`. -/
@@ -270,8 +269,7 @@ private def row_rangeError_period_over_max : KernelErrorRejection :=
                      " must reject, as seL4-MCS's decode does"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := SeLe4n.Kernel.configureMaxPeriod.toNat + 1)
-        (priority := 5) (deadline := 0) (domain := 0) }
+        (budget := 100) (period := SeLe4n.Kernel.configureMaxPeriod.toNat + 1) }
 
 /-- Row: `validateRegBound` rejects out-of-range register name with
 `.invalidRegister`. -/
@@ -567,8 +565,7 @@ private def row_rangeError_budget_zero : KernelErrorRejection :=
                      " — every replenishment amount must be positive)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 0) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 0) }
+        (budget := 0) (period := 1000) }
 
 /-- Row: `validateSchedContextParams` rejects budget > period with seL4-MCS's
 `seL4_RangeError`, the least budget and the period. -/
@@ -580,32 +577,7 @@ private def row_rangeError_budget_over_period : KernelErrorRejection :=
                      " more than 100% of a period)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 2000) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 0) }
-
-/-- Row: `validateSchedContextParams` rejects priority > 255 with
-`.invalidArgument` naming the parameter word (MR3). -/
-private def row_invalidArgument_priority_overflow : KernelErrorRejection :=
-  { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.4.invalidArgument.priority_overflow"
-    scenarioDesc  := "SchedContext priority must be ≤ maxPriorityVal (255)"
-    runScenario   := fun _ =>
-      SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 256) (deadline := 0)
-        (domain := 0) }
-
-/-- Row: `validateSchedContextParams` rejects domain ≥ 16 with
-`.invalidArgument` naming the parameter word (MR3). -/
-private def row_invalidArgument_domain_overflow : KernelErrorRejection :=
-  { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.4.invalidArgument.domain_overflow"
-    scenarioDesc  := "SchedContext domain must be < numDomainsVal (16)"
-    runScenario   := fun _ =>
-      SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 16) }
+        (budget := 2000) (period := 1000) }
 
 /-- Row: `validatePriorityAuthority` rejects priority above
 `maxHardwarePriority` with `.illegalAuthority` (AK8-D / C-M05). -/
@@ -825,8 +797,7 @@ private def row_invalidObjectType_cross_variant : KernelErrorRejection :=
       let sc : Kernel.SchedContext :=
         { scId := SchedContextId.ofObjId oid
           budget := ⟨100⟩, period := ⟨1000⟩
-          priority := ⟨0⟩, deadline := ⟨0⟩
-          domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+          budgetRemaining := ⟨100⟩
           boundThreadCode := 0, isActive := false
           refillTailCount := 0 }
       let st : SystemState := { (default : SystemState) with
@@ -1031,8 +1002,6 @@ def errorMatrix : List KernelErrorRejection :=
     row_alreadyWaiting_enqueue_blocked,
     row_rangeError_budget_zero,
     row_rangeError_budget_over_period,
-    row_invalidArgument_priority_overflow,
-    row_invalidArgument_domain_overflow,
     row_illegalAuthority_priority_over_hw,
     row_illegalAuthority_over_mcp,
     row_invalidTypeTag,

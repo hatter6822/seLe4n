@@ -71,9 +71,6 @@ private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
   { scId := SchedContextId.ofNat id
     budget := { val := 100 }
     period := { val := 1000 }
-    priority := { val := 0 }
-    deadline := { val := 0 }
-    domain := ⟨0⟩
     budgetRemaining := { val := 100 }
     boundThreadCode := 0
     isActive := false
@@ -322,7 +319,7 @@ passes. -/
 def an10_d_getCurrentPriority_bound : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 300
   let sc : Kernel.SchedContext :=
-    { mkEmptySchedContext 300 with priority := ⟨42⟩ }
+    { mkEmptySchedContext 300 with }
   let tcb : TCB :=
     { mkTcb 51 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0, priority := ⟨5⟩ }
   let st : SystemState := { (default : SystemState) with

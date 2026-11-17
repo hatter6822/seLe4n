@@ -217,9 +217,6 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.PriorityInheritance.effectiveSchedParams_frame
 #check @SeLe4n.Kernel.PriorityInheritance.effectiveSchedParams_frame_per_field
 #check @SeLe4n.Kernel.PriorityInheritance.getSchedContext?_frame
--- Phase P2 foundational frame lemmas:
-#check @SeLe4n.Kernel.objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent
-#check @SeLe4n.Kernel.objects_update_sync_domain_preserves_boundThreadDomainConsistent
 -- R5.C (DEEP-SCH-02): total effectiveSchedParams.
 -- R5.C.1 full deprecation: the partial `effectivePriority` + bridge witness
 -- have been retired; only the total `effectiveSchedParams` form remains.
@@ -230,13 +227,6 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_scheduler_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_lifecycle_eq
--- R5.G (DEEP-SCH-06): schedContextConfigure domain propagation witnesses.
-#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq
-#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_domain_noop_when_eq
-#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent
--- R5.G.3 (DEEP-SCH-06) substantive (Phase R2 landing):
-#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent_caseC
-#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
 
 -- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
@@ -370,7 +360,7 @@ def main : IO Unit := do
       s!"AN11-F: rpi5CanonicalConfig.cbsPeriodTicks drifted (got {period}, expected 10000)"
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := SeLe4n.SchedContextId.ofNat 1, budget := ⟨5_000⟩, period := ⟨period⟩,
-      priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨5_000⟩,
+      budgetRemaining := ⟨5_000⟩,
       periodStart := 0, boundThreadCode := 0, isActive := true }
   let spent := sc.chargeBudget 0 5_000 5_000
   if !(spent.budgetRemaining.val == 0 && spent.releaseKey? == some period &&

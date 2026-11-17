@@ -1751,7 +1751,7 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
     mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
-      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with }),
       (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
              (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)]))
     ]
@@ -1771,14 +1771,15 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | .ok v => decide (v.val = tgtTid)
      | .error _ => false)
     "extra capability 0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
-  -- Positive: bound both ways, at the SchedContext's configured band.
+  -- Positive: bound both ways; the thread keeps its own priority (10), as
+  -- seL4-MCS's `schedContext_bindTCB` writes only the links (WS-SX SX6.4).
   match dispatchSyscallAsCurrent decoded caller bootCoreId (bindSt 1) with
   | .ok ((), st') =>
       expect "sd060_bind_through_tcb_capability_binds_the_target"
         ((st'.getTcb? tgtTid).any (fun t =>
-            decide (t.schedContextBinding = .bound scId) && decide (t.priority = ⟨20⟩)) &&
+            decide (t.schedContextBinding = .bound scId) && decide (t.priority = ⟨10⟩)) &&
          (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some tgtTid)))
-        "a bind through a writable TCB capability must bind the target both ways"
+        "a bind through a writable TCB capability must bind the target both ways and keep its priority"
   | .error e =>
       failLine "sd060_bind_through_tcb_capability_binds_the_target"
         s!"unexpected refusal: {repr e}"
@@ -1833,12 +1834,14 @@ core 0's and core 1's scheduling controls at slots 1 and 2, a capability to the
 CNode at slot 3 and a writable capability to a second context, bound to a thread
 homed on core 0, at slot 4.  Through `dispatchSyscallChecked`: the configure invoked on
 the context's own capability is refused (`.invalidCapability`) and changes
-nothing; through core 0's control it configures the context MR0 names; core 0's
+nothing; through core 0's control it configures the context extra capability 0
+names (WS-SX SX6.4; a missing one is `TruncatedMessage`, and extra refills above
+the refill array's headroom `RangeError`); core 0's
 control configures the context whose thread is homed on core 0 in place; core 1's
 control configures it too, moving the context and its thread to core 1 as seL4's
 `invokeSchedControl_ConfigureFlags` does, and the runnable thread, whose fresh
-refill is ready, is queued there (`schedContext_resume`); and MR0 naming
-anything but a scheduling context is `.invalidCapability`. -/
+refill is ready, is queued there (`schedContext_resume`); and extra capability
+0 naming anything but a scheduling context is `.invalidCapability`. -/
 private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
   let cnId   : SeLe4n.ObjId := ⟨50⟩
@@ -1864,60 +1867,85 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
              (SeLe4n.Slot.ofNat 2, Capability.schedControlOf 1),
              (SeLe4n.Slot.ofNat 3, cnCap), (SeLe4n.Slot.ofNat 4, scBCap)]))
     ]
-  -- MR0 the context's address, then budget 100, period 1000, priority 20 in
-  -- domain 0, deadline 0.
-  let decoded (capAddr scCPtr : Nat) : SyscallDecodeResult :=
+  -- WS-SX SX6.4: seL4-MCS's `SchedControl_ConfigureFlags` words (budget 100,
+  -- period 1000, extra refills, badge, flags); the context is extra capability
+  -- 0, its address in the caller's IPC buffer (`cfgSt`).
+  let decodedWith (capAddr : Nat) (xc : Nat) (extraRefills : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat capAddr,
-      msgInfo := { length := 5, extraCaps := 0, label := 0 },
+      msgInfo := { length := 5, extraCaps := xc, label := 0 },
       syscallId := .schedContextConfigure,
-      msgRegs := #[SeLe4n.RegValue.ofNat scCPtr, SeLe4n.RegValue.ofNat 100,
-        SeLe4n.RegValue.ofNat 1000, SeLe4n.RegValue.ofNat 20, SeLe4n.RegValue.ofNat 0],
+      msgRegs := #[SeLe4n.RegValue.ofNat 100, SeLe4n.RegValue.ofNat 1000,
+        SeLe4n.RegValue.ofNat extraRefills, SeLe4n.RegValue.ofNat 0xB4D6E,
+        SeLe4n.RegValue.ofNat 1],
       inlineCount := 4, overflowCount := 1 }
+  let decoded (capAddr : Nat) : SyscallDecodeResult := decodedWith capAddr 1 0
+  let cfgSt (scCPtr : Nat) : SystemState :=
+    withSenderCapAddrs st caller #[SeLe4n.CPtr.ofNat scCPtr]
   let configured (s : SystemState) (id : SeLe4n.SchedContextId) : Bool :=
     (s.getSchedContext? id).any (fun sc =>
-      sc.budget.val == 100 && sc.period.val == 1000 && sc.priority.val == 20)
+      sc.budget.val == 100 && sc.period.val == 1000 && sc.badge == 0xB4D6E && sc.sporadic)
   -- The regression: the context's own capability configures nothing.
   expect "sd063_configure_through_sched_context_cap_refused"
-    (match dispatchSyscallAsCurrent (decoded 0 0) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 0) caller bootCoreId (cfgSt 0) with
      | .error (.invalidCapability _) => true
      | _ => false)
     "a configure invoked on a scheduling-context capability must be refused"
   expect "sd063_refused_configure_leaves_the_context"
     (!configured st scId)
     "the fixture's context starts unconfigured"
-  match dispatchSyscallAsCurrent (decoded 1 0) caller bootCoreId st with
+  -- seL4-MCS checks the extra capability before the message length.
+  expect "sd063_missing_extra_cap_is_truncated"
+    (match dispatchSyscallAsCurrent (decodedWith 1 0 0) caller bootCoreId (cfgSt 0) with
+     | .error .truncatedMessage => true
+     | _ => false)
+    "a configure naming no extra capability is TruncatedMessage"
+  expect "sd063_extra_refills_over_the_headroom_refused"
+    (match dispatchSyscallAsCurrent
+        (decodedWith 1 1 (SeLe4n.Kernel.configureMaxExtraRefills.toNat + 1)) caller
+        bootCoreId (cfgSt 0) with
+     | .error (.rangeError 0 hi) => hi == SeLe4n.Kernel.configureMaxExtraRefills
+     | _ => false)
+    "extra refills above MAX_REFILLS - MIN_REFILLS are RangeError(0, max)"
+  expect "sd063_extra_refills_at_the_headroom_accepted"
+    (match dispatchSyscallAsCurrent
+        (decodedWith 1 1 SeLe4n.Kernel.configureMaxExtraRefills.toNat) caller
+        bootCoreId (cfgSt 0) with
+     | .ok ((), st') => configured st' scId
+     | .error _ => false)
+    "extra refills of exactly MAX_REFILLS - MIN_REFILLS are accepted"
+  match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 0) with
   | .ok ((), st') =>
-      expect "sd063_configure_through_sched_control_configures_mr0s_context"
+      expect "sd063_configure_through_sched_control_configures_the_extra_caps_context"
         (configured st' scId && !configured st' scBId)
-        "core 0's scheduling control must configure the context MR0 names, and only it"
+        "core 0's scheduling control must configure the context extra cap 0 names, and only it"
   | .error e =>
-      failLine "sd063_configure_through_sched_control_configures_mr0s_context"
+      failLine "sd063_configure_through_sched_control_configures_the_extra_caps_context"
         s!"unexpected refusal: {repr e}"
   let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
   expect "sd063_other_cores_control_moves_a_bound_context"
-    (match dispatchSyscallAsCurrent (decoded 2 4) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 2) caller bootCoreId (cfgSt 4) with
      | .ok ((), st') =>
          configured st' scBId && determineTargetCore st' tgtTid == core1
            && st'.queuedOn core1 tgtTid && !st'.queuedOn bootCoreId tgtTid
      | .error _ => false)
     "core 1's control must move the context and its thread to core 1 and queue the thread there"
   expect "sd063_home_cores_control_configures_a_bound_context"
-    (match dispatchSyscallAsCurrent (decoded 1 4) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 4) with
      | .ok ((), st') =>
          configured st' scBId && determineTargetCore st' tgtTid == bootCoreId
            && st'.queuedOn bootCoreId tgtTid
      | .error _ => false)
     "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
-  expect "sd063_mr0_naming_no_sched_context_refused"
-    (match dispatchSyscallAsCurrent (decoded 1 3) caller bootCoreId st with
+  expect "sd063_extra_cap_naming_no_sched_context_refused"
+    (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 3) with
      | .error (.invalidCapability _) => true
      | _ => false)
-    "MR0 naming a CNode capability is not a scheduling context"
+    "extra capability 0 naming a CNode capability is not a scheduling context"
   expect "sd063_resolver_answers_the_held_context"
-    (match resolveSchedControlConfigureTarget caller 0 (SeLe4n.CPtr.ofNat 0) st with
+    (match resolveSchedControlConfigureTarget caller 0 (SeLe4n.CPtr.ofNat 0) 0 st with
      | .ok v => decide (v.val = scObj)
      | .error _ => false)
-    "the resolver answers the context MR0's capability names"
+    "the resolver answers the context extra capability 0 names"
 
 /-- SD-061 (WS-ZA ZA5.4 part 14): **every kernel object kind is carved from an
 untyped through the live dispatch.**
@@ -2563,10 +2591,10 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     expect s!"argcap_schedContextBind_thread_{what}"
       (capNum (resolveSchedContextBindThread caller (.ok { tcbCPtr := cptr w }) st) == some 1)
       "a bind's thread argument is refused invalidCapability 1"
-    -- `.schedContextConfigure`'s context (MR0).
+    -- `.schedContextConfigure`'s context (extra capability 0).
     expect s!"argcap_configure_context_{what}"
-      (capNum (resolveSchedControlConfigureTarget caller 0 (cptr w) st) == some 1 &&
-       kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) st some (fun _ => none))
+      (capNum (resolveSchedControlConfigureTarget caller 0 (cptr w) 0 st) == some 1 &&
+       kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) 0 st some (fun _ => none))
          == some 1)
       "a configure's context argument is refused invalidCapability 1 on the spec and K forms"
     -- `.tcbSetSpace`: an empty root is seL4's `IllegalOperation` (seL4-MCS

@@ -97,26 +97,27 @@ parameter classes that would corrupt CBS invariants downstream:
   • period == 0  (zero-period SC cannot make progress)
   • budget == 0  (would violate `replenishmentListWellFormed`)
   • budget > period  (over-utilisation by definition)
-  • priority > maxPriorityVal (255)  (out of priority register width)
-  • domain ≥ numDomainsVal (16)  (out of modeled domain count)
+  • period above MAX_PERIOD (seL4-MCS's bound)
+(WS-SX SX6.4: a context carries no priority or domain, so neither is checked.)
 
 A successful run also verifies the validator accepts a well-formed input. -/
 def test_schedContext_param_validation_rejects_invariant_violations
     : IO Bool := do
   let v := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
   -- Negative cases
-  if (v 100 0    5    0 0).toOption.isSome then return false  -- period=0
-  if (v 0   1000 5    0 0).toOption.isSome then return false  -- budget=0
-  if (v 2000 1000 5   0 0).toOption.isSome then return false  -- budget>period
-  if (v 100 1000 256  0 0).toOption.isSome then return false  -- priority>255
-  if (v 100 1000 5    0 16).toOption.isSome then return false -- domain>=16
+  if (v 100 0).toOption.isSome then return false     -- period=0
+  if (v 0   1000).toOption.isSome then return false   -- budget=0
+  if (v 2000 1000).toOption.isSome then return false  -- budget>period
+  if (v 100 (SeLe4n.Kernel.configureMaxPeriod.toNat + 1)).toOption.isSome then
+    return false                                      -- period>MAX_PERIOD
   -- Positive case: well-formed input must succeed
-  match v 100 1000 5 0 0 with
+  match v 100 1000 with
   | .ok () => return true
   | .error _ => return false
 
 /-- AK6-B (SC-M01), WS-ZA ZA6.4: `configuredSchedContext` — the record
-`schedContextConfigure` stores — writes the new parameters and, for a context
+`schedContextConfigure` stores — writes the new parameters (WS-SX SX6.4: the badge word, and bit 0 of the
+flags word as the sporadic flag) and, for a context
 not in use, seL4-MCS's `refill_new`: the whole budget in one head refill
 released now, no pending refill. -/
 def test_configuredSchedContext_post_state_shape : IO Bool := do
@@ -124,19 +125,17 @@ def test_configuredSchedContext_post_state_shape : IO Bool := do
     { scId := SeLe4n.SchedContextId.ofNat 1
       budget := { val := 50 }
       period := { val := 500 }
-      priority := { val := 0 }
-      deadline := { val := 0 }
-      domain := ⟨0⟩
       budgetRemaining := { val := 50 }
       boundThreadCode := 0
       isActive := false
       refillHeadPresent := true, refillHeadAmount := 50, refillHeadEligibleAt := 0 }
   let post := SeLe4n.Kernel.SchedContextOps.configuredSchedContext
-                (budget := 100) (period := 1000) (priority := 5) (deadline := 0)
-                (domain := 0) (timer := 7) (keep := false) scInit
+                (budget := 100) (period := 1000) (badge := 0xAB) (flags := 3)
+                (timer := 7) (keep := false) scInit
   if post.budget.val ≠ 100 then return false
   if post.period.val ≠ 1000 then return false
-  if post.priority.val ≠ 5 then return false
+  if post.badge ≠ 0xAB then return false
+  if !post.sporadic then return false
   if post.budgetRemaining.val ≠ 100 then return false
   if post.periodStart ≠ 7 then return false
   return !post.refillHeadPresent && post.refillTotal == 100
@@ -151,17 +150,14 @@ def test_schedContext_configure_budget_held_once : IO Bool := do
     { scId := SeLe4n.SchedContextId.ofNat 2
       budget := { val := 50 }
       period := { val := 500 }
-      priority := { val := 0 }
-      deadline := { val := 0 }
-      domain := ⟨0⟩
       budgetRemaining := { val := 30 }
       periodStart := 90
       boundThreadCode := 0
       isActive := true
       refillHeadPresent := true, refillHeadAmount := 20, refillHeadEligibleAt := 590 }
   let cfg := fun keep => SeLe4n.Kernel.SchedContextOps.configuredSchedContext
-                (budget := 100) (period := 1000) (priority := 0) (deadline := 0)
-                (domain := 0) (timer := 100) (keep := keep) scInit
+                (budget := 100) (period := 1000) (badge := 0) (flags := 0)
+                (timer := 100) (keep := keep) scInit
   let kept := cfg true
   let fresh := cfg false
   -- The kept head is the 30 left of the old one, never the whole new budget.
@@ -359,9 +355,6 @@ def test_refill_window_charge_releases_one_period_later : IO Bool := do
     { scId := SeLe4n.SchedContextId.ofNat 4
       budget := { val := 100 }
       period := { val := 1000 }
-      priority := { val := 0 }
-      deadline := { val := 0 }
-      domain := ⟨0⟩
       budgetRemaining := { val := 100 }
       periodStart := 0
       boundThreadCode := 0

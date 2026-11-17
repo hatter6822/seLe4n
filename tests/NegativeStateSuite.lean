@@ -4081,7 +4081,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
 
   -- Z8-L-01: Configure non-existent SchedContext
   expectErr "configure non-existent SC"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨⟨9900⟩, by decide⟩ 100 1000 50 0 0 st0)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨⟨9900⟩, by decide⟩ 100 1000 0 0 st0)
     .objectNotFound
 
   -- Z8-L-02: Configure with zero period
@@ -4093,12 +4093,12 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
     objectIndexGhost := st0.objectIndexGhost.map (scId :: ·)
     objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "configure zero period"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 50 0 0 stWithSc)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 0 0 stWithSc)
     (.rangeError SeLe4n.Kernel.configureMinBudget SeLe4n.Kernel.configureMaxPeriod)
 
   -- Z8-L-03: Configure with budget > period
   expectErr "configure budget>period"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 50 0 0 stWithSc)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 0 0 stWithSc)
     (.rangeError SeLe4n.Kernel.configureMinBudget 100)
 
   -- Z8-L-04: Bind to non-existent SchedContext

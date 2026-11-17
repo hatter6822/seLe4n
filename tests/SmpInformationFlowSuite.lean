@@ -645,11 +645,9 @@ set_option maxRecDepth 8192
 #check @SeLe4n.Kernel.schedControlConfigure_crossCoreNonInterference
 #check @SeLe4n.Kernel.schedControlConfigureWriteSet
 #check @SeLe4n.Kernel.configureResumeBound_confinedToCores
--- The configure write set gains the bound thread's inheritance chain, which the
--- propagated priority re-walks when the thread is reply-blocked.
+-- WS-SX SX6.4: the configure writes the context alone, so its write set is the
+-- context's own (`schedContextWriteSet`): no inheritance chain is re-walked.
 #check @SeLe4n.Kernel.schedContextConfigureWriteSet
-#check @SeLe4n.Kernel.waiterChainWriteSet_configurePropagate
-#check @SeLe4n.Kernel.observableSlotsConfinedToCores_repropagate
 -- SM8.B.2 (PR #861 review round 35): the three entries that emptied the
 -- per-core routing allowlist.  Two carry an EMPTY write set — the shape the
 -- inventory previously could not express, which is the only reason those arms
@@ -4959,7 +4957,7 @@ private def replenishScId : SeLe4n.SchedContextId := ⟨1030⟩
 
 private def replenishScValue : SchedContext :=
   { scId := replenishScId
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩
+    budget := ⟨100⟩, period := ⟨1000⟩
     budgetRemaining := ⟨100⟩
     refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 500
     boundThreadCode := SeLe4n.ThreadId.optCode (some remoteHomedThread)
@@ -11854,8 +11852,7 @@ private def flowSc : SeLe4n.SchedContextId := SchedContextId.ofNat 1213
 
 /-- The client's own reservation — what the rendezvous lends to the server. -/
 private def flowClientSc : SchedContext :=
-  { scId := flowSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := flowSc, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some flowClient), isActive := true }
 
 private def flowClientTcb : TCB :=

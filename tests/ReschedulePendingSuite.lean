@@ -314,7 +314,7 @@ private def stLent : SystemState :=
         scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scLent lendOrigin), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scLent lendOrigin) })
     |>.withObject lendOrigin.toObjId (.tcb (mkReadyTcb 231 6 (some core1) .Ready))
     |>.withObject scLent.toObjId (.schedContext { SchedContext.empty scLent with
-        boundThreadCode := SeLe4n.ThreadId.optCode (some lendSrv), deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some lendSrv) })
     |>.build
   let q := enqueueAllOnCore base core1 [(lendOrigin, ⟨6⟩)]
   { q with scheduler := q.scheduler.setCurrentOnCore core0 (some lendSrv) }
@@ -344,7 +344,7 @@ private def stBound : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject boundTid.toObjId (.tcb boundTcb)
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid) })
     |>.build
   enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
@@ -354,8 +354,7 @@ private def stBoundFunded : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject boundTid.toObjId (.tcb boundTcb)
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩,
-        budget := ⟨1⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), budget := ⟨1⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ })
     |>.build
   enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
@@ -372,37 +371,32 @@ private def runBoundUnbindChecks : IO Unit := do
     IO.println s!"  FAIL: cancelBoundDonationOnCore returned {repr e}"
     throw (IO.userError "cancelBoundDonationOnCore failed")
 
-/-- Reconfigure `scBound` from core 0 with the fixture's own priority (6) and
-deadline (9), so only the domain can move the bound thread's key. -/
-private def configureBound (domain : Nat) (pre : SystemState := stBound) : IO SystemState := do
+/-- Reconfigure `scBound` from core 0.  WS-SX SX6.4: the configure writes the
+context alone (seL4-MCS's `invokeSchedControl_ConfigureFlags`), so it moves no
+thread's key; what it can move is a starved thread's budget eligibility. -/
+private def configureBound (pre : SystemState := stBound) : IO SystemState := do
   match scBound.toObjId.toValid? with
   | none => throw (IO.userError "scBound has no valid object id")
   | some vSc =>
-    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc 1 10 6 9 domain pre with
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc 1 10 0 0 pre with
     | .ok (_, post) => pure post
     | .error e =>
       IO.println s!"  FAIL: schedContextConfigure returned {repr e}"
       throw (IO.userError "schedContextConfigure failed")
 
-/-- §2.9 the reconfigure that moves only the bound thread's domain
-(`schedContextConfigure`): the selector filters by domain, so a thread queued
-on another core changed eligibility there and that core is flagged; the same
-reconfigure with the domain left alone flags nothing. -/
-private def runDomainMoveChecks : IO Unit := do
-  IO.println "--- §2.9 schedContextConfigure domain move ---"
-  let moved ← configureBound 1
-  assertBool "domain move reached the bound thread"
-    ((moved.getTcb? boundTid).map (·.domain.val) == some 1)
-  checkDiff "domain move of a thread queued on a remote core" stBound moved core0 true
-  expectRaised "domain move of a thread queued on a remote core" stBound moved core0 [core1]
-  let same ← configureBound 0 stBoundFunded
-  checkDiff "reconfigure that keeps the domain" stBoundFunded same core0 true
-  expectRaised "reconfigure that keeps the domain" stBoundFunded same core0 []
+/-- §2.9 the reconfigure (`schedContextConfigure`): over a funded context it
+moves no key and no eligibility, so it flags nothing; over a starved context it
+refills it, a candidacy gain on the core queueing the thread. -/
+private def runConfigureCoverageChecks : IO Unit := do
+  IO.println "--- §2.9 schedContextConfigure ---"
+  let same ← configureBound stBoundFunded
+  checkDiff "reconfigure of a funded context" stBoundFunded same core0 true
+  expectRaised "reconfigure of a funded context" stBoundFunded same core0 []
   -- The same reconfigure over the starved context refills it: the queued
   -- thread becomes one core 1's chooser may pick, a candidacy gain with no key
   -- move, so core 1 is flagged (it was not before the coverage relation read
   -- budget eligibility).
-  let refilled ← configureBound 0
+  let refilled ← configureBound
   expectRaised "reconfigure that refills a starved queued thread" stBound refilled core0 [core1]
   checkDiff "reconfigure that refills a starved queued thread" stBound refilled core0 false
 
@@ -412,7 +406,7 @@ private def stBoundCurrent (withSrv : Bool) : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject boundTid.toObjId (.tcb { boundTcb with threadState := .Running })
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid) })
     |>.withObject srv.toObjId (.tcb (mkReadyTcb 200 5 (some core1) .Ready))
     |>.build
   let withCurrent := { base with scheduler := base.scheduler.setCurrentOnCore core1 (some boundTid) }
@@ -426,67 +420,37 @@ private def receiveOnCore1 (name : String) (st : SystemState) : IO SystemState :
     IO.println s!"  FAIL: {name}: handleRescheduleSgiOnCore returned {repr e}"
     throw (IO.userError s!"{name} failed")
 
-/-- §2.10 the receiver evicts an incumbent the reconfigure moved out of the
-core's active domain: with nothing else runnable core 1 goes idle and keeps the
-thread queued; with an in-domain thread queued, that thread runs even though
-its priority is lower.  The same reconfigure that keeps the domain leaves the
-incumbent running. -/
+/-- The fixture moved out of core 1's active domain: `boundTid`'s domain set to
+1 and core 1 flagged, the state a domain move leaves for the receiver. -/
+private def movedOutOfDomain (pre : SystemState) : SystemState :=
+  (pre.updateTcb boundTid fun t => { t with domain := ⟨1⟩ }).markReschedulePendingOnCore core1
+
+/-- §2.10 the receiver evicts an out-of-domain incumbent: with nothing else
+runnable core 1 goes idle and keeps the thread queued; with an in-domain thread
+queued, that thread runs even though its priority is lower.  The same flag with
+the domain left alone leaves the incumbent running. -/
 private def runDomainEvictionChecks : IO Unit := do
   IO.println "--- §2.10 the receiver evicts an out-of-domain incumbent ---"
   let pre := stBoundCurrent false
-  let moved ← configureBound 1 pre
-  expectRaised "domain move of a thread running on a remote core" pre moved core0 [core1]
-  checkDiff "domain move of a thread running on a remote core" pre moved core0 true
+  let moved := movedOutOfDomain pre
   let idle ← receiveOnCore1 "eviction to idle" moved
   assertBool "eviction to idle: core 1 runs nothing"
     (idle.scheduler.currentOnCore core1 == none)
   assertBool "eviction to idle: the thread stays queued on core 1"
     (idle.queuedOn core1 boundTid)
   assertBool "eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
+  assertBool "eviction to idle: core 1 resumes the idle loop, not the evicted thread"
+    (match Architecture.restoreTargetOnCore idle core1 with | .idle => true | _ => false)
   let preSrv := stBoundCurrent true
-  let movedSrv ← configureBound 1 preSrv
-  let switched ← receiveOnCore1 "eviction to a lower-priority thread" movedSrv
+  let switched ← receiveOnCore1 "eviction to a lower-priority thread" (movedOutOfDomain preSrv)
   assertBool "eviction to a lower-priority thread: srv runs on core 1"
     (switched.scheduler.currentOnCore core1 == some srv)
   assertBool "eviction to a lower-priority thread: the evicted thread is queued"
     (switched.queuedOn core1 boundTid)
-  let kept ← configureBound 0 preSrv
-  let stays ← receiveOnCore1 "reconfigure that keeps the domain" kept
-  assertBool "reconfigure that keeps the domain: the incumbent keeps running"
+  let stays ← receiveOnCore1 "a flag with the domain kept"
+    (preSrv.markReschedulePendingOnCore core1)
+  assertBool "a flag with the domain kept: the incumbent keeps running"
     (stays.scheduler.currentOnCore core1 == some boundTid)
-
-/-- §2.11 the same domain move made **on the core the thread runs on** (the
-thread reconfigures its own context, executing core 1): the flag the writer
-raises is the executing core's own.  The seam's local reschedule runs only on a
-vacated core, so the step leaves the caller running and the core interrupts
-itself (`rescheduleSgisFromFlags` names core 1); the receiver that SGI runs
-evicts the caller.  A reconfigure that keeps the domain raises no flag and
-sends nothing. -/
-private def runLocalDomainEvictionChecks : IO Unit := do
-  IO.println "--- §2.11 the executing core pokes itself ---"
-  let pre := stBoundCurrent false
-  let moved ← configureBound 1 pre
-  assertBool "local domain move: core 1's own flag is raised" (flagOf moved core1)
-  assertBool "local domain move: the step sends core 1 its own reschedule SGI"
-    ((rescheduleSgisFromFlags pre.scheduler.reschedulePending
-      moved.scheduler.reschedulePending).map (·.1) == [core1])
-  assertBool "local domain move: the step itself leaves the caller running"
-    ((PriorityInheritance.scheduleLocalSuccessor pre moved core1).scheduler.currentOnCore core1
-      == some boundTid)
-  let idle ← receiveOnCore1 "local eviction to idle" moved
-  assertBool "local eviction to idle: core 1 runs nothing"
-    (idle.scheduler.currentOnCore core1 == none)
-  assertBool "local eviction to idle: the thread stays queued on core 1"
-    (idle.queuedOn core1 boundTid)
-  assertBool "local eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
-  assertBool "local eviction to idle: core 1 resumes the idle loop, not the evicted thread"
-    (match Architecture.restoreTargetOnCore idle core1 with | .idle => true | _ => false)
-  let preSrv := stBoundCurrent true
-  let kept ← configureBound 0 preSrv
-  assertBool "local reconfigure that keeps the domain: no flag" (!flagOf kept core1)
-  assertBool "local reconfigure that keeps the domain: no SGI"
-    (rescheduleSgisFromFlags preSrv.scheduler.reschedulePending
-      kept.scheduler.reschedulePending).isEmpty
 
 -- ============================================================================
 -- §3  Scheduling points clear their own flag and nobody else's
@@ -549,9 +513,8 @@ def runReschedulePendingChecks : IO Unit := do
   runAffinityChecks
   runDonationReturnChecks
   runBoundUnbindChecks
-  runDomainMoveChecks
+  runConfigureCoverageChecks
   runDomainEvictionChecks
-  runLocalDomainEvictionChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="

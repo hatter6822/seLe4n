@@ -151,7 +151,7 @@ private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
   -- The passive server holds the caller's context by donation, and the context
   -- heads the reply stack at `rid` — the live depth-1 `Call` shape.
   let serverTcb : TCB := { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ⟨2⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ⟨2⟩) }
-  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
   let replyObj : SeLe4n.Kernel.Reply :=
     { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩), prev := none, next := some (.head scId) }
   let fst := mkFrozenState
@@ -201,7 +201,7 @@ private def fo004e_replyDeschedulesTheServer : IO Unit := do
   let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let serverTcb : TCB := { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ⟨2⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ⟨2⟩) }
-  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
   let replyObj : SeLe4n.Kernel.Reply :=
     { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩), prev := none, next := some (.head scId) }
   let st0 := mkFrozenState
@@ -414,8 +414,7 @@ private def frozenBudgetTickPlacesExhaustedContext : IO Unit := do
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
     scBindingOwnerCode := 0 }
   let spent : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨0⟩,
+    { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨0⟩,
       refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
       boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
   let run (sc : SeLe4n.Kernel.SchedContext) : Except KernelError FrozenSystemState :=
@@ -1162,8 +1161,7 @@ makes the head-driven trigger fire. -/
 private def diffScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 66
 
 private def diffDonatedSc (head? : Option SeLe4n.ReplyId) : SeLe4n.Kernel.SchedContext :=
-  { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some diffB), scReply := head?, isActive := true }
 
 /-- **WS-HP HP4.7**: a reservation the *answered caller* holds in its own right.
@@ -1174,8 +1172,7 @@ trigger nothing the operation reads rules that state out. -/
 private def diffOwnScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 67
 
 private def diffCallerOwnSc : SeLe4n.Kernel.SchedContext :=
-  { scId := diffOwnScId, budget := ⟨80⟩, period := ⟨800⟩, priority := ⟨30⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨40⟩,
+  { scId := diffOwnScId, budget := ⟨80⟩, period := ⟨800⟩, budgetRemaining := ⟨40⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), isActive := true }
 
 /-! ### Comparing like layers
@@ -2565,8 +2562,7 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
   -- that has ended.  `diffB` is stored and `.unbound`, so it passes both of
   -- `frozenDonationOriginRecipient?`'s guards and the resolver really fires.
   let scWithOrigin : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := none, donationOrigin := some diffB,
       isActive := false }
   let ist := diffAddSchedContext
@@ -2649,8 +2645,7 @@ private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
       priority := ⟨40⟩,
       scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
   let scBoundWithOrigin : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none, donationOrigin := some diffB,
       isActive := true }
   let ist := diffAddSchedContext
@@ -2699,8 +2694,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   -- so this is the shape the kernel reaches rather than a fixture convenience.
   let parkedTcb : TCB := (TCB.setIpcState { diffTcb 62 with threadState := .Ready } .ready)
   let scFree : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := none, isActive := false }
   let istParked := diffAddSchedContext
     (Builder.createObject (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 63))
@@ -2820,8 +2814,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let headReply : SeLe4n.Kernel.Reply :=
     { replyId := headRid, callerCode := SeLe4n.ThreadId.optCode (some diffB), next := some (.head diffScId) }
   let scHeading : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := some headRid, isActive := false }
   let istHeading := diffAddSchedContext (diffAddReply
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
@@ -2834,8 +2827,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   -- (2) the thread's domain differs from the reservation's.
   let otherDomainTcb : TCB := { diffTcb 62 with domain := ⟨1⟩ }
   let scDomainZero : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := none, isActive := false }
   let istDomain := diffAddSchedContext
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) otherDomainTcb) (diffTcb 63))
@@ -2892,130 +2884,54 @@ SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id
 or a refusal -- so every consumer pairs its assertion with a control asserting
 `isSome`, as the bind and unbind drivers above do. -/
 private def liveSchedContextConfigureState (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (budget period priority deadline domain : Nat) :
+    (scId : SeLe4n.SchedContextId) (budget period : Nat) (badge flags : UInt64) :
     Option SystemState := do
   let vSc ← scId.toObjId.toValid?
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period priority
-          deadline domain st with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period badge
+          flags st with
   | .ok (_, st') => some st'
   | .error _ => none
 
-/-- **The reading `v0.35.105` retired**, spelled here and nowhere else: one gate
-over *both* thread-owned parameters, feeding the re-bucketing writer.  Computed
-beside the live operation in FO-048 so the assertions there are known to
-discriminate rather than merely to pass -- a fixture on which the two readings
-agree would make the whole scenario a statement about the fixture. -/
-private def fusedGateConfigurePropagate (st : FrozenSystemState)
-    (scId : SeLe4n.ObjId) (boundTid : SeLe4n.ThreadId) (priority domain : Nat) :
-    Option FrozenSystemState :=
-  match frozenLookupTcb st boundTid with
-  | none => some st
-  | some boundTcb =>
-    if boundTcb.schedContextBinding.ownScId? != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
-      some st
-    else
-      let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩, domain := ⟨domain⟩ }
-      if boundTcb2.priority == boundTcb.priority && boundTcb2.domain == boundTcb.domain then
-        some st
-      else (frozenWriteTcbRebucketed st boundTid boundTcb2).toOption
+/-- FO-048 (PR #897 review, `v0.35.105`; WS-SX SX6.4): **a reconfiguration must
+not move the bound thread within its bucket.**
 
-/-- FO-048 (PR #897 review, `v0.35.105`): **a DOMAIN-ONLY reconfiguration must not
-move the bound thread within its bucket.**
-
-`schedContextConfigureBoundPropagate` is two independently gated writes -- a
-priority half that re-buckets and a domain half that writes in place -- and
-`v0.35.101`'s mirror fused them into one gate over their union feeding
-`frozenWriteTcbRebucketed`.  `RunQueue.insert` appends, so on a domain-only
-reconfigure the queued bound thread moved to its bucket's **tail** at an unchanged
-key while the live operation left it where it was.
-
-**Why a same-priority PEER is the fixture.**  With one thread in the bucket a
-remove-and-reinsert is the identity, so every earlier scenario -- each of which
-parks its actors at one priority and rarely queues two of them -- structurally
-could not see this.  Two threads in one bucket is the shallowest shape on which
-"the thread stayed where it was" is a proposition at all, and it is what
-`frozenChooseThread` reads: it folds the bucket in order, so the two orders name
-different next threads.
-
-**Four combinations, because the gates are two.**  Neither parameter moved (no
-write at all), domain only (the defect), priority only (the re-bucket that must
-*survive* the fix -- a mirror that simply stopped re-bucketing would pass the
-first two and break this), and both.  Each is compared whole with
-`frozenStateAgrees`, not field by field: the divergence this scenario exists for
-is in the run queue, which no per-object assertion about the TCB would have
-reached -- FO-044's lesson, one operation over.
-
-`.schedContextConfigure` is not a `FrozenOpBranch`, so no `frozenRunAgrees`
-scenario could have reached this operation at all; that is the measurement
-`v0.35.96` recorded for the bind's missing refusals, holding again. -/
-private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := do
+`v0.35.101`'s mirror once re-bucketed the bound thread on a reconfigure that
+moved no key, sending it to its bucket's tail while the live operation left it
+where it was.  WS-SX SX6.4 made the configure seL4-MCS's
+`invokeSchedControl_ConfigureFlags`, which writes the context alone, so neither
+surface re-buckets: a same-priority PEER is the fixture, the shallowest shape on
+which "the thread stayed where it was" is a proposition at all, and the two
+states are compared whole with `frozenStateAgrees`. -/
+private def differentialSchedContextConfigureKeepsOrder : IO Unit := do
   let cfgScId : SeLe4n.SchedContextId := diffScId
   let boundTcb : TCB :=
     { diffTcb 62 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound cfgScId), scBindingOwnerCode := 0 }
   let peerTcb : TCB := diffTcb 63
   let cfgSc : SeLe4n.Kernel.SchedContext :=
-    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩,
       refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb (diffAddTcb
     (diffAddSchedContext (mkEmptyIntermediateState ()) cfgScId cfgSc) boundTcb) peerTcb
-  let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
-    (liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom).map
-      (fun st => bucketOnCore st bootCoreId ⟨at_⟩)
-  let frozenAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
-    (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption.map
-      (fun r => (r.2.scheduler.byPriority.get? ⟨at_⟩).getD [])
-  let agreesAt (prio dom : Nat) : Bool :=
-    match liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption with
-    | some l, some f => frozenStateAgrees f.2 l
-    | _, _ => false
-  -- CONTROLS: both actors really are in one bucket, in this order, before anything
-  -- runs -- and the frozen copy of the pre-state agrees, so a divergence below is
-  -- the operation's and not the freeze's.
+  let live := liveSchedContextConfigureState ist.state cfgScId 100 1000 0x5A 1
+  let frozen := (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0x5A 1 (freeze ist)).toOption
   expect "FO-048 control: the bound thread and its peer share a bucket, in this order"
     (bucketOnCore ist.state bootCoreId ⟨0⟩ == [diffA, diffB])
   expect "FO-048 control: the frozen copy of the pre-state agrees"
     (frozenStateAgrees (freeze ist) ist.state)
-  expect "FO-048 control: the live domain-only reconfigure runs"
-    ((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).isSome)
-  -- PAYOFF: a domain-only reconfigure leaves the bucket untouched on both sides.
-  expect "FO-048: the live domain-only reconfigure leaves the bucket order alone"
-    (liveAt 0 1 0 == some [diffA, diffB])
+  expect "FO-048: the live reconfigure leaves the bucket order alone"
+    (live.map (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA, diffB])
   expect "FO-048: ...and so does the frozen one"
-    (frozenAt 0 1 0 == some [diffA, diffB])
+    (frozen.map (fun r => (r.2.scheduler.byPriority.get? (⟨0⟩ : SeLe4n.Priority)).getD [])
+      == some [diffA, diffB])
   expect "FO-048: ...and the two states agree whole"
-    (agreesAt 0 1)
-  -- DECISIVE: the retired fused reading, on this same state, moves the thread to
-  -- the bucket's tail.  Without this the three assertions above would pass on a
-  -- mirror that had never been wrong.
-  expect "FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail"
-    ((fusedGateConfigurePropagate (freeze ist) cfgScId.toObjId diffA 0 1).map
-       (fun st => (st.scheduler.byPriority.get? (⟨0⟩ : SeLe4n.Priority)).getD [])
-       == some [diffB, diffA])
-  -- ...and the domain really did move, so the half that must write still writes.
-  expect "FO-048: the bound thread's domain moved on both surfaces"
-    (((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).bind
-        (fun st => (st.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1)
-      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 1 (freeze ist)).toOption.bind
-        (fun r => (r.2.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1))
-  -- CONTROL on the other gate: a PRIORITY-only reconfigure must still re-bucket.
-  -- A mirror that answered the payoff by never re-bucketing passes everything
-  -- above and fails here, which is what makes the fix a narrowing rather than a
-  -- removal.
-  expect "FO-048 control: a priority-only reconfigure re-buckets on the live side"
-    (liveAt 5 0 5 == some [diffA] && liveAt 5 0 0 == some [diffB])
-  expect "FO-048 control: ...and identically on the frozen side"
-    (frozenAt 5 0 5 == some [diffA] && frozenAt 5 0 0 == some [diffB])
-  expect "FO-048: ...and those two states agree whole"
-    (agreesAt 5 0)
-  -- ...and the two remaining combinations of the two gates.
-  expect "FO-048: neither parameter moved — no write, and the states agree"
-    (liveAt 0 0 0 == some [diffA, diffB] && frozenAt 0 0 0 == some [diffA, diffB]
-      && agreesAt 0 0)
-  expect "FO-048: both parameters moved — both effects, and the states agree"
-    (liveAt 5 1 5 == some [diffA] && frozenAt 5 1 5 == some [diffA] && agreesAt 5 1)
+    (match live, frozen with
+     | some l, some f => frozenStateAgrees f.2 l
+     | _, _ => false)
+  expect "FO-048: both surfaces store the badge and the sporadic flag"
+    ((live.bind (fun st => st.getSchedContext? cfgScId)).any (fun sc => sc.badge == 0x5A && sc.sporadic)
+      && (frozen.bind (fun r => r.2.getSchedContext? cfgScId)).any
+        (fun sc => sc.badge == 0x5A && sc.sporadic))
 
 /-- **FO-052 (WS-ZA ZA6.4 review): configure's resume tail, on both surfaces.**
 
@@ -3040,13 +2956,12 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
              scBindingOwnerCode := 0 }
   let boundTcb : TCB := TCB.setIpcState (boundBinding (diffTcb 62)) .ready
   let readySc : SeLe4n.Kernel.SchedContext :=
-    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩,
       refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 0,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
-  let agrees (ist : IntermediateState) (prio : Nat) : Bool :=
-    match liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 0 (freeze ist)).toOption with
+  let agrees (ist : IntermediateState) : Bool :=
+    match liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 (freeze ist)).toOption with
     | some l, some f => frozenStateAgrees f.2 l
     | _, _ => false
   -- (1) PLACEMENT: the bound thread is `.ready`, `.Ready` and on NO run queue.
@@ -3064,19 +2979,19 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
           | .ok (none, _) => true
           | _ => false))
   expect "FO-052: the live configure places the parked bound thread"
-    ((liveSchedContextConfigureState istParked.state cfgScId 100 1000 5 0 0).map
-       (fun st => bucketOnCore st bootCoreId ⟨5⟩) == some [diffA])
-  match frozenSchedContextConfigure cfgScId.toObjId 100 1000 5 0 0 fzParked with
+    ((liveSchedContextConfigureState istParked.state cfgScId 100 1000 0 0).map
+       (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA])
+  match frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 fzParked with
   | .error e => expect s!"FO-052: the frozen configure succeeds (error: {reprStr e})" false
   | .ok (_, fz') =>
-    expect "FO-052: ...and so does the frozen one, in the bucket its new priority names"
-      ((fz'.scheduler.byPriority.get? (⟨5⟩ : SeLe4n.Priority)).getD [] == [diffA])
+    expect "FO-052: ...and so does the frozen one, in the bucket its own priority names"
+      ((fz'.scheduler.byPriority.get? (⟨0⟩ : SeLe4n.Priority)).getD [] == [diffA])
     expect "FO-052: ...so the frozen chooser can select it"
       (match frozenChooseThread fz' with
        | .ok (some t, _) => t == diffA
        | _ => false)
   expect "FO-052: ...and the two states agree whole"
-    (agrees istParked 5)
+    (agrees istParked)
   -- NEGATIVE: the tail is the placement -- the same configure on a SUSPENDED
   -- bound thread places nothing on either surface, and the two still agree.
   let suspendedTcb : TCB := { boundTcb with threadState := .Inactive }
@@ -3085,12 +3000,12 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
       (fun _ h => nomatch h) (fun _ h => nomatch h))
     cfgScId readySc
   expect "FO-052 NEGATIVE: a suspended bound thread is not placed, on either surface"
-    ((liveSchedContextConfigureState istSuspended.state cfgScId 100 1000 5 0 0).map
-        (fun st => bucketOnCore st bootCoreId ⟨5⟩) == some []
-      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 5 0 0
+    ((liveSchedContextConfigureState istSuspended.state cfgScId 100 1000 0 0).map
+        (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some []
+      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
             (freeze istSuspended)).toOption.map
           (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false
-      && agrees istSuspended 5)
+      && agrees istSuspended)
   -- (2) REMOVAL: a queued bound thread whose context's head is released only at
   -- 1000.  The configure keeps that head (`configureKeepsHead`: a runnable bound
   -- thread, budget ≠ period), so the context has no budget now.
@@ -3102,10 +3017,10 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
     (bucketOnCore istQueued.state bootCoreId ⟨0⟩ == [diffA]
       && SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere (freeze istQueued) diffA)
   expect "FO-052: the live configure takes the thread off its run queue"
-    ((liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0).map
+    ((liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0).map
        (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [])
   expect "FO-052: ...and the frozen one takes it out of every bucket"
-    (((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+    (((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
         (freeze istQueued)).toOption.map
       (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false)
   -- The live configure also puts the context on its home core's release queue
@@ -3113,10 +3028,10 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   -- queue ends; the frozen configure mirrors it (`frozenReleasePlace`), so the
   -- two states agree whole, links and ends included.
   expect "FO-052: ...and the two states agree whole, the release queue included"
-    (agrees istQueued 0)
+    (agrees istQueued)
   expect "FO-052: ...the context is on its home core's release queue on both surfaces"
-    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
             (freeze istQueued)).toOption with
      | some l, some f =>
        l.scheduler.releaseHeadOnCore bootCoreId != 0
@@ -3126,8 +3041,8 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   -- NEGATIVE: the comparison sees the release queue -- the frozen result with its
   -- context's link cleared disagrees with the live one.
   expect "FO-052 NEGATIVE: a frozen state off the release queue does not agree"
-    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
             (freeze istQueued)).toOption with
      | some l, some f =>
        match f.2.getSchedContext? cfgScId with
@@ -3141,9 +3056,9 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   let istQueuedReady := diffAddSchedContext (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
     cfgScId readySc
   expect "FO-052 CONTROL: with budget the queued thread stays queued, and the states agree"
-    ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0 0).map
+    ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0).map
         (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA]
-      && agrees istQueuedReady 0)
+      && agrees istQueuedReady)
 
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
@@ -3490,8 +3405,7 @@ private def cancelDonatingCaller : IntermediateState :=
     pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩)
     replyWaitersHeadCode := SeLe4n.ThreadId.optCode (some diffA), replyWaitersCount := 1 }
   let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := cancelDonatedScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    { scId := cancelDonatedScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffB), scReply := some cancelReplyId }
   let reply : SeLe4n.Kernel.Reply :=
     { replyId := cancelReplyId, callerCode := SeLe4n.ThreadId.optCode (some diffA),
@@ -3646,8 +3560,7 @@ private def differentialEndpointReplyPopsUnheldHead : IO Unit := do
       diffScId unheldSc
     match own? with
     | some s => diffAddSchedContext base s
-        { scId := s, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-          deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+        { scId := s, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
           boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none,
           isActive := true }
     | none => base
@@ -3864,7 +3777,7 @@ def main : IO Unit := do
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextBindRefusalsAgree
   differentialSchedContextBindPlacesParked
-  differentialSchedContextConfigureDomainOnlyKeepsOrder
+  differentialSchedContextConfigureKeepsOrder
   differentialSchedContextConfigureResumesBound
   differentialComparisonHasBite
   -- The resume is compared on objects only, so it is not a registered claim;

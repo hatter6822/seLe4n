@@ -95,8 +95,7 @@ def test_checkedPriority_bound_reads_thread_field : IO Bool := do
   let sc : Kernel.SchedContext :=
     { scId := scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨77⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := 0, isActive := false
       refillTailCount := 0 }
   let tcb : TCB :=
@@ -259,8 +258,7 @@ def test_AK8_H_unbind_missing_tcb_no_partial_mutation : IO Bool := do
   let sc : Kernel.SchedContext :=
     { scId := SchedContextId.ofObjId scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨0⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some danglingTid)
       isActive := true
       refillTailCount := 0 }
@@ -287,8 +285,7 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
   let sc : Kernel.SchedContext :=
     { scId := SchedContextId.ofObjId scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨0⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some tid)
       isActive := true
       refillTailCount := 0 }

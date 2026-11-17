@@ -9,7 +9,6 @@
 use sele4n_types::{KernelError, KernelResult};
 
 /// Maximum configurable priority value (8-bit, matching Lean `Priority` range 0xFF).
-/// Re-uses `sched_context::MAX_PRIORITY` (same value) — defined here for local clarity.
 const MAX_PRIORITY: u64 = 255;
 
 /// IPC buffer alignment in bytes, which is also the buffer's size (2^10 = 1024,

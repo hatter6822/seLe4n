@@ -22,8 +22,9 @@ Focused coverage for the decode-time validation introduced in AK3:
   physical address to bound — the bound applies to the resolved frame's
   `base` inside the production map wrapper.  T01–T03 pin the decode's
   contract.
-- `decodeSchedContextConfigureArgsChecked` (AK3-J / A-M07) — priority,
-  domain, budget, period validation
+- `decodeSchedContextConfigureArgsChecked` (AK3-J / A-M07) — budget and
+  period validation in seL4-MCS's order; the extra-refills, badge and flags
+  words are carried verbatim (WS-SX SX6.4)
 
 These wrappers are defense-in-depth — downstream paths also validate —
 but the decode-time check prevents malformed arguments from flowing into
@@ -75,30 +76,35 @@ def test_t03_noncanonical_vaddr_boundary_rejected : IO Unit := do
   | _ =>
     throw <| IO.userError "T03: expected invalidArgument 0 at the canonical boundary"
 
-/-- T04: AK3-J — checked schedContextConfigure rejects a priority-and-domain
-word with a bit above the domain's (WS-ZA ZA6.4: priority is bits 0–7 and the
-domain bits 8–11 of MR3, so no priority above 255 can be named). -/
-def test_t04_sc_rejects_high_priority : IO Unit := do
-  -- context cptr=7, budget=1000, period=10000, params=4096 (bit 12), deadline=5000
-  let stub := stubOf #[7, 1000, 10000, 4096, 5000]
+/-- T04: AK3-J — checked schedContextConfigure rejects a budget above its
+period with seL4-MCS's `RangeError(MIN_BUDGET, period)`. -/
+def test_t04_sc_rejects_budget_above_period : IO Unit := do
+  let stub := stubOf #[10001, 10000, 0, 0, 0]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error (.invalidArgument _) =>
-    IO.println "check passed [parameter word ≥ 4096 rejected]"
+  | .error (.rangeError lo hi) =>
+    if lo == configureMinBudget && hi == 10000 then
+      IO.println "check passed [budget above period rejected]"
+    else
+      throw <| IO.userError s!"T04: expected rangeError(min budget, period), got rangeError {lo} {hi}"
   | _ =>
-    throw <| IO.userError "T04: expected invalidArgument for a parameter word ≥ 4096"
+    throw <| IO.userError "T04: expected rangeError for a budget above its period"
 
-/-- T05: AK3-J — checked schedContextConfigure rejects domain ≥ 16. -/
-def test_t05_sc_rejects_high_domain : IO Unit := do
-  let stub := stubOf #[7, 1000, 10000, 100 + 16 * 256, 5000]
+/-- T05: AK3-J — checked schedContextConfigure rejects a period above
+`MAX_PERIOD` with `RangeError(MIN_BUDGET, MAX_PERIOD)`. -/
+def test_t05_sc_rejects_period_above_max : IO Unit := do
+  let stub := stubOf #[1000, configureMaxPeriod.toNat + 1, 0, 0, 0]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error (.invalidArgument _) =>
-    IO.println "check passed [domain ≥ 16 rejected]"
+  | .error (.rangeError lo hi) =>
+    if lo == configureMinBudget && hi == configureMaxPeriod then
+      IO.println "check passed [period above MAX_PERIOD rejected]"
+    else
+      throw <| IO.userError s!"T05: expected rangeError(min budget, max period), got rangeError {lo} {hi}"
   | _ =>
-    throw <| IO.userError "T05: expected invalidArgument for domain ≥ 16"
+    throw <| IO.userError "T05: expected rangeError for a period above MAX_PERIOD"
 
 /-- T06: AK3-J — checked schedContextConfigure rejects budget = 0. -/
 def test_t06_sc_rejects_zero_budget : IO Unit := do
-  let stub := stubOf #[7, 0, 10000, 100, 5000]
+  let stub := stubOf #[0, 10000, 0, 0, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error (.rangeError lo hi) =>
     if lo == configureMinBudget && hi == configureMaxPeriod then
@@ -110,7 +116,7 @@ def test_t06_sc_rejects_zero_budget : IO Unit := do
 
 /-- T07: AK3-J — checked schedContextConfigure rejects period = 0. -/
 def test_t07_sc_rejects_zero_period : IO Unit := do
-  let stub := stubOf #[7, 1000, 0, 100, 5000]
+  let stub := stubOf #[1000, 0, 0, 0, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error (.rangeError lo hi) =>
     if lo == configureMinBudget && hi == configureMaxPeriod then
@@ -120,65 +126,65 @@ def test_t07_sc_rejects_zero_period : IO Unit := do
   | _ =>
     throw <| IO.userError "T07: expected rangeError for period = 0"
 
-/-- T08: AK3-J — checked schedContextConfigure accepts valid args. -/
+/-- T08: AK3-J — checked schedContextConfigure accepts valid args.  WS-SX
+SX6.4: the words are seL4-MCS's `SchedControl_ConfigureFlags` layout (budget,
+period, extra refills, badge, flags); the context is extra capability 0. -/
 def test_t08_sc_accepts_valid : IO Unit := do
-  -- context cptr=7, budget=1000, period=10000, priority=100 domain=1, deadline=5000
-  let stub := stubOf #[7, 1000, 10000, 100 + 1 * 256, 5000]
+  let stub := stubOf #[1000, 10000, 2, 0xBEEF, 1]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
-    expectCond "decode-validation" "context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
     expectCond "decode-validation" "budget" (args.budget == 1000)
     expectCond "decode-validation" "period" (args.period == 10000)
-    expectCond "decode-validation" "priority" (args.priority == 100)
-    expectCond "decode-validation" "domain" (args.domain == 1)
+    expectCond "decode-validation" "extra refills" (args.extraRefills == 2)
+    expectCond "decode-validation" "badge" (args.badge == 0xBEEF)
+    expectCond "decode-validation" "flags" (args.flags == 1)
   | .error e =>
     throw <| IO.userError s!"T08: expected ok, got {toString e}"
 
-/-- T09: AK3-J — boundary: priority = 255 accepted, domain = 15 accepted. -/
+/-- T09: AK3-J — boundary: budget = period = the least time accepted. -/
 def test_t09_sc_boundary_accepted : IO Unit := do
-  let stub := stubOf #[7, 1, 1, 255 + 15 * 256, 0]
+  let stub := stubOf #[1, 1, 0, 0, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
-    expectCond "decode-validation" "priority boundary" (args.priority == 255)
-    expectCond "decode-validation" "domain boundary" (args.domain == 15)
+    expectCond "decode-validation" "budget boundary" (args.budget == 1)
+    expectCond "decode-validation" "period boundary" (args.period == 1)
   | .error _ =>
     throw <| IO.userError "T09: expected ok at boundary"
 
-/-- Words whose low twelve bits name a valid priority and domain but which set
-a bit above the domain's: each must be refused, never read as its low bits. -/
+/-- Words with high bits set: the badge and flags take any value
+(seL4-MCS stores the badge word verbatim and reads only bit 0 of the flags). -/
 def highBitParamWords : List Nat :=
-  [ 4096 + 100 + 1 * 256          -- bit 12 over priority 100, domain 1
-  , 2^40 + 255 + 15 * 256         -- bit 40 over the maxima
+  [ 4096 + 100 + 1 * 256          -- bit 12
+  , 2^40 + 255 + 15 * 256         -- bit 40
   , 2^63 + 7                      -- the word's top bit
   , 2^64 - 1 ]                    -- every bit
 
-/-- T10: WS-ZA ZA6.4 review — the checked configure decode refuses a parameter
-word with any bit set above the packed priority and domain, so a stray high bit
-is never truncated into the valid configuration its low bits name. -/
-def test_t10_sc_rejects_high_param_bits : IO Unit := do
+/-- T10: WS-SX SX6.4 — the checked configure decode carries the badge and flags
+words verbatim, whatever bits they set: no stray high bit is refused or
+truncated. -/
+def test_t10_sc_keeps_badge_and_flag_words : IO Unit := do
   for w in highBitParamWords do
-    match decodeSchedContextConfigureArgsChecked (stubOf #[7, 1000, 10000, w, 5000]) with
-    | .error (.invalidArgument _) => pure ()
-    | _ => throw <| IO.userError s!"T10: expected invalidArgument for parameter word {w}"
-  IO.println "check passed [parameter words with a bit above bit 11 rejected]"
+    match decodeSchedContextConfigureArgsChecked (stubOf #[1000, 10000, 0, w, w]) with
+    | .ok args =>
+      expectCond "decode-validation" s!"badge word {w} kept" (args.badge == UInt64.ofNat w)
+      expectCond "decode-validation" s!"flags word {w} kept" (args.flags == UInt64.ofNat w)
+    | .error e => throw <| IO.userError s!"T10: expected ok for word {w}, got {toString e}"
+  IO.println "check passed [badge and flag words carried verbatim]"
 
 /-- T11: the register-routed decode (`decodeSchedContextConfigureArgsCheckedBy`,
-read on machine words) refuses the same high-bit words and accepts the maxima. -/
-def test_t11_sc_word_reader_rejects_high_param_bits : IO Unit := do
+read on machine words) carries the same words verbatim. -/
+def test_t11_sc_word_reader_keeps_badge_and_flag_words : IO Unit := do
   let reader (w : Nat) : MsgRegReader := fun i =>
     match i with
-    | 0 => .ok 7 | 1 => .ok 1000 | 2 => .ok 10000 | 3 => .ok (UInt64.ofNat w)
-    | 4 => .ok 5000 | _ => .error .invalidMessageInfo
+    | 0 => .ok 1000 | 1 => .ok 10000 | 2 => .ok 0 | 3 => .ok (UInt64.ofNat w)
+    | 4 => .ok (UInt64.ofNat w) | _ => .error .invalidMessageInfo
   for w in highBitParamWords do
     match decodeSchedContextConfigureArgsCheckedBy (reader w) with
-    | .error (.invalidArgument _) => pure ()
-    | _ => throw <| IO.userError s!"T11: expected invalidArgument for parameter word {w}"
-  match decodeSchedContextConfigureArgsCheckedBy (reader (255 + 15 * 256)) with
-  | .ok args =>
-    expectCond "decode-validation" "word reader priority maximum" (args.priority == 255)
-    expectCond "decode-validation" "word reader domain maximum" (args.domain == 15)
-  | .error e => throw <| IO.userError s!"T11: expected ok at the maxima, got {toString e}"
-  IO.println "check passed [word-read parameter words with a bit above bit 11 rejected]"
+    | .ok args =>
+      expectCond "decode-validation" s!"word reader badge {w}" (args.badge == UInt64.ofNat w)
+      expectCond "decode-validation" s!"word reader flags {w}" (args.flags == UInt64.ofNat w)
+    | .error e => throw <| IO.userError s!"T11: expected ok for word {w}, got {toString e}"
+  IO.println "check passed [word-read badge and flag words carried verbatim]"
 
 /-- Running entry. -/
 def runAllTests : IO Unit := do
@@ -186,14 +192,14 @@ def runAllTests : IO Unit := do
   test_t01_high_mr2_is_a_capability_address
   test_t02_decode_carries_frame_cptr
   test_t03_noncanonical_vaddr_boundary_rejected
-  test_t04_sc_rejects_high_priority
-  test_t05_sc_rejects_high_domain
+  test_t04_sc_rejects_budget_above_period
+  test_t05_sc_rejects_period_above_max
   test_t06_sc_rejects_zero_budget
   test_t07_sc_rejects_zero_period
   test_t08_sc_accepts_valid
   test_t09_sc_boundary_accepted
-  test_t10_sc_rejects_high_param_bits
-  test_t11_sc_word_reader_rejects_high_param_bits
+  test_t10_sc_keeps_badge_and_flag_words
+  test_t11_sc_word_reader_keeps_badge_and_flag_words
   IO.println "=== All decode validation tests passed ==="
 
 end SeLe4n.Testing.DecodeValidation

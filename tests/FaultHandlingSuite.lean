@@ -1932,8 +1932,7 @@ private def scFaulter : SeLe4n.SchedContextId := SchedContextId.ofNat 1135
 the TCB's, which is what `boundThreadPriorityConsistent` /
 `boundThreadDomainConsistent` require of a `.bound` pair. -/
 private def faulterSc : SchedContext :=
-  { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some faulter), isActive := true }
 
 /-- `stFault`'s two-thread core, with the faulter **bound** to a reservation. -/
