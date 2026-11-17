@@ -576,7 +576,8 @@ decoder (`decodeSyscallArgsWith`) with the overflow words read from the frozen
 IPC buffer. -/
 def frozenSenderDecode (st : FrozenSystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     Except KernelError SyscallDecodeResult :=
-  Architecture.RegisterDecode.decodeSyscallArgsWith (frozenReadOverflowWord st sender)
+  Architecture.RegisterDecode.decodeSyscallArgsWith
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext) (frozenReadOverflowWord st sender)
     SeLe4n.arm64DefaultLayout tcb.registerContext 32
 
 /-- WS-ZA ZA4.7: **the message a frozen blocked sender holds** — the live

@@ -688,7 +688,8 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
     (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
     (hF : sTcb.ipcFaultSend = false)
     (hGt : receiveCallDonatesPastPop st epId tid s sTcb rid (replyHeadContextCode st rid) = true)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } grant core st with
@@ -718,7 +719,8 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
   obtain ⟨hEP, sTcbP, hSP, hKept, hBind, hDs, hDt, hGP⟩ := popDonationSettled_callDonationGuard
     st c tid rid msg ct rp scId sc (determineTargetCore st c) epId ep s sTcb _ rfl hNo hT hFC hRp
     hN hScO hHead hBelow hNe hLR hFR (replyPopsInPlace_serverTcb hG) hE hS hSC hGt
-  have hR' : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcbP.registerContext 32 =
+  have hR' : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcbP.registerContext) SeLe4n.arm64DefaultLayout sTcbP.registerContext 32 =
       .call capAddr mi := by rw [hKept.regs]; exact hR
   have hF' : sTcbP.ipcFaultSend = false := by rw [hKept.faultSend]; exact hF
   obtain ⟨hRecv, -, -, hCallT, hDonE⟩ := receiveCallDonatingTake_delivered _ epId ep tid rid core s

@@ -129,8 +129,9 @@ decoder (`decodeSyscallArgsFromState`) on the registers the entry saved
 (`registerContext`), with the overflow words read from its IPC buffer. -/
 def blockedSenderDecode (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     Except KernelError SyscallDecodeResult :=
-  Architecture.RegisterDecode.decodeSyscallArgsFromState st sender
-    SeLe4n.arm64DefaultLayout tcb.registerContext 32
+  Architecture.RegisterDecode.decodeSyscallArgsFromState
+    (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext)
+    st sender SeLe4n.arm64DefaultLayout tcb.registerContext 32
 
 /-- WS-ZA ZA4.7: **the message a sender's frame holds**, given the decode of
 its saved registers and what its capability contributes: the body cut to the
@@ -584,7 +585,7 @@ theorem decodeMsgInfoWord_extraCaps {w : UInt64} {mi : MessageInfo}
 message-info register. -/
 theorem decodeSyscallArgs_msgInfo {layout : SeLe4n.SyscallRegisterLayout}
     {regs : SeLe4n.RegisterFile} {n : Nat} {d : SyscallDecodeResult}
-    (h : Architecture.RegisterDecode.decodeSyscallArgs layout regs n = .ok d) :
+    (h : Architecture.RegisterDecode.decodeSyscallArgs opCode layout regs n = .ok d) :
     Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
       = .ok d.msgInfo := by
   unfold Architecture.RegisterDecode.decodeSyscallArgs at h
@@ -604,11 +605,11 @@ kept. -/
 theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.ThreadId}
     {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
     {n : Nat} {d : SyscallDecodeResult}
-    (h : Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs n = .ok d) :
+    (h : Architecture.RegisterDecode.decodeSyscallArgsFromState opCode st tid layout regs n = .ok d) :
     ∃ mi, Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
       = .ok mi ∧ d.msgInfo.extraCaps = mi.extraCaps ∧ d.msgInfo.label = mi.label := by
   unfold Architecture.RegisterDecode.decodeSyscallArgsFromState at h
-  cases hB : Architecture.RegisterDecode.decodeSyscallArgs layout regs n with
+  cases hB : Architecture.RegisterDecode.decodeSyscallArgs opCode layout regs n with
   | error e => simp only [hB, bind, Except.bind] at h; cases h
   | ok base =>
     have hb := decodeSyscallArgs_msgInfo hB

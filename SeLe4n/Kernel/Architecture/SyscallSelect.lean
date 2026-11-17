@@ -191,4 +191,54 @@ capability or nothing the lookup finds. -/
   | none | some .replyCap => true
   | _ => false
 
+/-- The label a message-info word carries: bits 12 and up (seL4's
+`seL4_MessageInfo_t`), read as a number below `2 ^ 52`. -/
+@[inline] def msgInfoWordLabel (w : UInt64) : Nat := (w >>> 12).toNat
+
+/-- **The operation the trapped registers select** for the thread `tcb`
+(seL4's `handleSyscall`, then `handleInvocation`'s `decodeInvocation` or
+`handleRecv`'s capability switch): the syscall `x7` names (`Syscall.ofWord?`),
+the type of the capability `x0` names, and the label `x1` carries.  `none`
+when `x7` names none of the eleven syscalls or the label names no operation of
+the capability's type. -/
+@[inline] def selectedOperation (st : SystemState) (tcb : TCB)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Option SyscallId :=
+  match Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
+  | none => none
+  | some sys =>
+      sys.selectOperation
+        (invokedCapType st tcb (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord regs layout.capPtrReg)))
+        (msgInfoWordLabel (SeLe4n.readRegWord regs layout.msgInfoReg))
+
+/-- **The internal code of the selected operation**, the number the router and
+the decode branch on (`SyscallId.toNat`); `SyscallId.encodingBound`, which names
+no operation, when nothing is selected, so the decode refuses the call
+`invalidSyscallNumber`, as seL4's `decodeInvocation` refuses a label its
+object does not take (`seL4_IllegalOperation`). -/
+@[inline] def selectedOperationCode (st : SystemState) (tcb : TCB)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Nat :=
+  match selectedOperation st tcb layout regs with
+  | some op => op.toNat
+  | none => SyscallId.encodingBound
+
+/-- A selected code names the operation selected, and no code names an
+operation when none is selected. -/
+theorem ofNat?_selectedOperationCode (st : SystemState) (tcb : TCB)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) :
+    SyscallId.ofNat? (selectedOperationCode st tcb layout regs) =
+      selectedOperation st tcb layout regs := by
+  unfold selectedOperationCode
+  cases selectedOperation st tcb layout regs with
+  | some op => exact SyscallId.ofNat_toNat op
+  | none => rfl
+
+/-- **The operation the thread `tid`'s trapped registers `regs` select**
+(`selectedOperationCode`), read off its TCB in `st`; a thread the store holds no
+TCB for selects nothing. -/
+@[inline] def threadOperationCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Nat :=
+  match st.getTcb? tid with
+  | some tcb => selectedOperationCode st tcb layout regs
+  | none => SyscallId.encodingBound
+
 end SeLe4n.Model

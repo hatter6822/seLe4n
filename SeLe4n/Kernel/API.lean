@@ -59,6 +59,7 @@ import SeLe4n.Kernel.InformationFlow.DeclassificationTaintStep
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
+import SeLe4n.Kernel.Architecture.SyscallSelect
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
@@ -6817,8 +6818,12 @@ def syscallEntryChecked (ctx : LabelingContext)
         -- AK4-A.6 (R-ABI-C01): Use state-aware decode so 5-arg syscalls
         -- (`serviceRegister`, `schedContextConfigure`) merge IPC-buffer
         -- overflow registers into `msgRegs` per seL4 convention.
+        -- WS-SX SX7: the operation is selected as seL4's `handleSyscall` and
+        -- `decodeInvocation` select it -- from the syscall `x7` names, the type
+        -- of the capability `x0` names and the label `x1` carries -- never
+        -- read off a register (`threadOperationCode`).
         match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                st tid layout regs regCount with
+                (threadOperationCode st tid layout regs) st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
           -- WS-SX SX6.6: the decode above read the overflow words at their
@@ -8708,6 +8713,7 @@ theorem syscallEntryChecked_implies_capability_held
       (st.scheduler.currentOnCore executingCore) = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid layout regs)
         st tid layout regs regCount = .ok decoded ∧
       (decoded.syscallId ≠ .yield →
       ∃ tcb, st.getTcb? tid = some tcb ∧

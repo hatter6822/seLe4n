@@ -49,14 +49,14 @@ about the decode, any of the routes. -/
 theorem decodeSyscallArgsFromState_of_routedReplyLongAny (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
         4 < mi.length)) :
     SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧ mi.length ≤ maxMessageRegisters ∧
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       mergeOverflowWords st tid
         { capAddr, msgInfo := mi, syscallId := sid,
           msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf),
@@ -73,15 +73,15 @@ inline words and then those slots' words (`longMessageDecode`). -/
 theorem decodeSyscallArgsFromState_of_routedReplyLong_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
         4 < mi.length))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (longMessageDecode sid st tid rf capAddr mi) := by
   obtain ⟨_, _, hDec⟩ := decodeSyscallArgsFromState_of_routedReplyLongAny st tid rf capAddr mi sid hR
   have hRd : syscallReadsOverflow sid = true := by
@@ -105,15 +105,15 @@ words (`clampedFrameDecode`), as seL4 clamps a message with no IPC buffer. -/
 theorem decodeSyscallArgsFromState_of_routedReplyLong_clamped (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
         4 < mi.length))
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (clampedFrameDecode sid rf capAddr mi) := by
   obtain ⟨hGt, _, hDec⟩ := decodeSyscallArgsFromState_of_routedReplyLongAny st tid rf capAddr mi sid hR
   have hRd : syscallReadsOverflow sid = true := by

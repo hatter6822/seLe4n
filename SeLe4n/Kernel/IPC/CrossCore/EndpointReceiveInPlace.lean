@@ -140,7 +140,9 @@ to transfer no capability, and its message is the inline words of its saved
 frame under the badge its capability carried. -/
 theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (h : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (h : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
     blockedSenderCapRequest st s sTcb = none ∧
@@ -169,9 +171,13 @@ those words straight into the receiver's saved registers, delivers exactly what
 the specification's send does. -/
 theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
     (hT : st.getTcb? s = some tcb) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (h : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (h : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext)
+      SeLe4n.arm64DefaultLayout
         tcb.registerContext 32 = .send capAddr mi ∨
-      Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+      Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext)
+      SeLe4n.arm64DefaultLayout
         tcb.registerContext 32 = .call capAddr mi)
     (endpointId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grant : Bool) :
     sendPayloadMessage st s (.frame badge grant) =
@@ -421,7 +427,9 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveTakesInPlace st endpointId receiver s sTcb = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
     let P := storePopHead st endpointId false s sTcb.queueNext

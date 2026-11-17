@@ -155,7 +155,8 @@ slots all read decodes** to the inline words and then those slots' words
 theorem blockedSenderDecode_routedLong (st : SystemState) (tid : SeLe4n.ThreadId) (stcb : TCB)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (hRf : stcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
@@ -170,7 +171,8 @@ theorem blockedSenderDecode_routedLong (st : SystemState) (tid : SeLe4n.ThreadId
 theorem senderFrameCapRequest_routedLong (st : SystemState) (tid : SeLe4n.ThreadId) (stcb : TCB)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (g : Bool) (hRf : stcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
@@ -189,7 +191,8 @@ theorem sendCapRequest_routedLong (st : SystemState) (epId : SeLe4n.ObjId)
     (mi : MessageInfo) (sid : SyscallId) (b : Option SeLe4n.Badge) (g : Bool)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
     (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
@@ -205,7 +208,8 @@ words, then the words its IPC buffer holds (`longSendMessage`). -/
 theorem routedLongTransferringMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
@@ -421,7 +425,8 @@ and its message is its inline words and then the words its IPC buffer holds,
 under the badge its capability carried (`longSendMessage`). -/
 theorem blockedSender_of_routedLongTransferring (st : SystemState) (s : SeLe4n.ThreadId)
     (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .transferring sid capAddr mi)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →

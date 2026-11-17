@@ -80,7 +80,8 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveCallDonatesInPlace st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,

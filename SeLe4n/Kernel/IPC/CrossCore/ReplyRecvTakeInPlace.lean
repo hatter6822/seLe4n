@@ -401,7 +401,8 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {sTcb2 : TCB}
     (hT2 : S2.objects[s.toObjId]? = some (.tcb sTcb2))
     (hG2 : receiveTakesInPlace S2 epId tid s sTcb2 = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb2.registerContext) SeLe4n.arm64DefaultLayout
       sTcb2.registerContext 32 = .send capAddr mi)
     (hF : sTcb2.ipcFaultSend = false) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
@@ -507,7 +508,8 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (hG : receiveTakesInPlace (Y.mapTcbInPlace c (holdMessage
       { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })) epId tid s sTcb
         = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
     Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
@@ -678,7 +680,8 @@ theorem replyRecvOnCore_take_delivered (st : SystemState) (epId : SeLe4n.ObjId)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
     (hGt : receiveTakesInPlace st epId tid s sTcb = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
     (match endpointReplyRecvOnCore epId tid rid c
@@ -714,7 +717,8 @@ theorem replyRecvOnCore_take_delivered (st : SystemState) (epId : SeLe4n.ObjId)
   have hXf := replyTransferCaps_of_inert st tid c grant ct hTc hInert
     (storeReplyRendezvous st c tid rid
       { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })
-  have hR1 : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+  have hR1 : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb1.registerContext) SeLe4n.arm64DefaultLayout
       sTcb1.registerContext 32 = .send capAddr mi := by rw [hK.regs]; exact hR
   rw [replyRecvOnCore_take_transfer st epId tid c rid _ grant core ct ep0 ep s capAddr mi hSz hT
     hIpc hRO hG hH hXf hE1 hS1 hG1 hR1 (by rw [hK.faultSend]; exact hF)]
@@ -799,7 +803,8 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     (hE : st.objects[epId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
     (hGt : receiveTakesInPlace st epId tid s sTcb = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false)
     (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
@@ -861,7 +866,8 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
       hNoX, hT1]; rfl)).1
   obtain ⟨hE2, sTcb2, hS2o, hK2, hG2⟩ := takeGuard_of_transferFrame hFr hE1 hS1o hG1
   have hK := hK2.trans hK1
-  have hR2 : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+  have hR2 : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb2.registerContext) SeLe4n.arm64DefaultLayout
       sTcb2.registerContext 32 = .send capAddr mi := by rw [hK.regs]; exact hR
   have hF2 : sTcb2.ipcFaultSend = false := by rw [hK.faultSend]; exact hF
   rw [replyRecvOnCore_take_transfer st epId tid c rid msg true core ct ep0 ep s capAddr mi
