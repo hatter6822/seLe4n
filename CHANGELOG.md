@@ -110,7 +110,9 @@ themselves, each in its own order and with its own answers.
   - A line past the board's last is now seL4's `Arch_checkIRQ`
     `RangeError(0, maxIRQ)` (`irqControlMaxLine`), not `InvalidIRQ`.
   - A table address past the user top is now seL4's `InvalidArgument 0`,
-    not `AddressOutOfBounds`.
+    not `AddressOutOfBounds`. The arm reads this refusal in place
+    (`pageTableMapPastUserTopAt`, `pageTableMap_of_pastUserTopAt`): through
+    the general dispatch it built the error, 3 cells on both lanes.
   - The `SetIPCBufferArgs` docstring gave the 32-bit alignment; it now
     gives 1024 bytes, seL4's `seL4_IPCBufferSizeBits = 10` on AArch64.
   - New QEMU scenarios, each read at 0: `untyped-retype-wide-child-id`
