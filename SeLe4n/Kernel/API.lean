@@ -1276,18 +1276,15 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- Point of Unification, so the subject that needs it is by construction one
   -- that could write the page.  A read-only holder gains nothing by unifying.
   | .vspaceUnifyInstruction => .write
-  -- WS-SM SM8.C.9: declassifying releases the caller's information *into* the
-  -- target object's domain, so the flow direction is subject → object and the
-  -- authority is the **write** right on the target's capability.  A read-only
-  -- holder can observe the object; it cannot make the kernel record that its
-  -- own domain was downgraded into that object's.
+  -- WS-SX SX6.7: the declassifications are invocations of the audit-trail
+  -- capability, and recording a downgrade appends to the trail, so each takes
+  -- the trail's **write** right, the drain's.  The object released into is
+  -- extra capability 0 and needs its own write right as well
+  -- (`declassifyTargetRight`): the flow runs from the caller into the object,
+  -- and the data-carrying one signals the notification, which the ordinary
+  -- `.notificationSignal` also asks write for — the declassification is an
+  -- *additional* gate on top of that authority, never a substitute for it.
   | .declassify         => .write
-  -- WS-SM SM9.C.8: the data-carrying declassification signals a notification,
-  -- so its authority is the same **write** right the ordinary
-  -- `.notificationSignal` requires on the notification's capability — the
-  -- declassification is an *additional* gate on top of that authority, never a
-  -- substitute for it.  A read-only notification cap holder cannot signal, and
-  -- so cannot declassify through a signal either, whatever the policy says.
   | .declassifySignal   => .write
   -- WS-SM SM9.A.10: the audit reader needs the **read** right and the drain the
   -- **write** right, on an audit capability (`extractAuditAuthority` is the
@@ -1356,13 +1353,13 @@ slot holds with a present object. -/
   | none => true
 
 /-- **The kind of object each syscall invokes through an `.object`
-capability**, or `none` where it invokes none: `.declassify` releases into any
-object (`syscallTargetAccepted`), and the other `none` syscalls invoke a
-capability of another target.  No wildcard: a new syscall states its kind. -/
+capability**, or `none` where it invokes none: the `none` syscalls invoke a
+capability of another target (WS-SX SX6.7: the declassifications invoke the
+audit-trail capability, their object an extra capability).  No wildcard: a new syscall states its kind. -/
 def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .send | .receive | .call | .replyRecv | .serviceRegister | .serviceRevoke
   | .serviceQuery => some .endpoint
-  | .notificationSignal | .notificationWait | .declassifySignal => some .notification
+  | .notificationSignal | .notificationWait => some .notification
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap => some .cnode
   | .untypedRetype | .untypedReset => some .untyped
@@ -1374,7 +1371,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .tcbSetAffinity | .tcbSetSpace | .tcbBindNotification
   | .tcbUnbindNotification => some .tcb
   | .pageTableMap | .pageTableUnmap => some .pageTable
-  | .declassify | .reply | .auditRead | .auditDrain | .schedContextConfigure
+  | .declassify | .declassifySignal | .reply | .auditRead | .auditDrain | .schedContextConfigure
   | .irqControlGet | .irqHandlerAck | .irqHandlerSetNotification | .irqHandlerClear
   | .yield => none
 
@@ -1383,9 +1380,9 @@ dispatch on the capability's type.  The type is the capability's `CapTarget`
 constructor and, for an `.object` capability, the kind of the object it names,
 read in place (`objectKindIs`).  The gate checks it after the lookup and before
 any right (`syscallInvokeTyped`), so a capability of the wrong type answers
-`.invalidCapability` whatever rights it carries.  `.declassify` releases into
-any object, so any `.object` capability is its type; the yield invokes no
-capability and accepts none.  Out of line, with the state and the capability
+`.invalidCapability` whatever rights it carries.  The declassifications are
+invocations of the audit-trail capability (WS-SX SX6.7), so no `.object`
+capability selects them; the yield invokes no capability and accepts none.  Out of line, with the state and the capability
 borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
 @[noinline] def syscallTargetAccepted (sid : SyscallId) (st : @& SystemState)
     (cap : @& Capability) : Bool :=
@@ -1393,9 +1390,10 @@ borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
   | .object id =>
       match syscallObjectKind? sid with
       | some kind => objectKindIs st id kind
-      | none => sid == .declassify
+      | none => false
   | .replyCap _ => sid == .reply
-  | .auditTrail _ => sid == .auditRead || sid == .auditDrain
+  | .auditTrail _ =>
+      sid == .auditRead || sid == .auditDrain || sid == .declassify || sid == .declassifySignal
   | .schedControl _ => sid == .schedContextConfigure
   | .irqControl _ => sid == .irqControlGet
   | .irqHandler _ =>
@@ -1405,19 +1403,19 @@ borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
 /-- **The answer to a capability of the right type without the syscall's
 right.**  seL4's `decodeInvocation` refuses an endpoint or notification
 capability without `CanSend` as `InvalidCapability` (invalid capability number
-0), so `.send`, `.call` and `.notificationSignal` answer `.invalidCapability`,
-and so does `.declassifySignal`, which signals a notification.  seL4's
+0), so `.send`, `.call` and `.notificationSignal` answer `.invalidCapability`.
+seL4's
 `handleRecv` raises a capability fault for an endpoint or notification without
 `CanReceive`; the receive-phase syscalls answer `.invalidCapability`, which the
 entry delivers as that fault (`syscallCapFaultOf`).  Every other right is an
 seLe4n extension, checked after the type and before the length, and answers
 `.illegalAuthority`.  No wildcard: a new syscall states its answer. -/
 def syscallMissingRightError : SyscallId → KernelError
-  | .send | .call | .notificationSignal | .declassifySignal => (.invalidCapability 0)
+  | .send | .call | .notificationSignal => (.invalidCapability 0)
   | .receive | .notificationWait | .replyRecv => (.invalidCapability 0)
   | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
-  | .declassify | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
+  | .declassify | .declassifySignal | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
   | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
@@ -2896,6 +2894,121 @@ theorem resolveCallerCapObjectK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
   cases resolveCallerCapSlot callerTid addr right st with
   | error e => rfl
   | ok r => obtain ⟨_, _, _⟩ := r; rfl
+
+/-- WS-SX SX6.7: the argument capability number a declassification's object
+answers to — extra capability 0, numbered `1` as seL4 numbers an extra
+capability's `invalidCapNumber`. -/
+def declassifyTargetCapNumber : UInt64 := 1
+
+/-- WS-SX SX6.7: the right a declassification asks of the object it releases
+into.  The flow runs from the caller into the object, so the authority is the
+**write** right on the object's capability: a read-only holder can observe the
+object, it cannot make the kernel record that its own domain was downgraded into
+the object's. -/
+def declassifyTargetRight : AccessRight := .write
+
+/-- **WS-SX SX6.7: the object a declassification releases into, extra
+capability 0.**  `.declassify` and `.declassifySignal` are invocations of the
+audit-trail capability, so no label selects an operation on an endpoint or a
+notification; the object (for the signal, the notification) is the caller's
+extra capability 0, resolved through the caller's own CSpace with
+`declassifyTargetRight`.  A message naming no extra capability is
+`.truncatedMessage`; an empty slot, a capability to a kernel-reserved object or
+one naming no object is `invalidCapability 1`, a capability without the right
+`.illegalAuthority`. -/
+def resolveDeclassifyTarget (tid : SeLe4n.ThreadId) (xc : Nat) (st : SystemState) :
+    Except KernelError (Capability × SeLe4n.ObjId) :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => .error .truncatedMessage
+  | some addr =>
+    match resolveCallerCapObject tid addr declassifyTargetRight st with
+    | .error e => .error (e.forArgumentCap declassifyTargetCapNumber)
+    | .ok r => .ok r
+
+/-- **WS-SX SX6.7: the notification a `.declassifySignal` signals**, extra
+capability 0 (`resolveDeclassifyTarget`), which must name a notification
+(`objectKindIs`; anything else is `invalidCapability 1`). -/
+def resolveDeclassifySignalTarget (tid : SeLe4n.ThreadId) (xc : Nat) (st : SystemState) :
+    Except KernelError (Capability × SeLe4n.ObjId) :=
+  match resolveDeclassifyTarget tid xc st with
+  | .error e => .error e
+  | .ok (cap, oid) =>
+    if objectKindIs st oid .notification then .ok (cap, oid)
+    else .error (.invalidCapability declassifyTargetCapNumber)
+
+/-- What `resolveDeclassifyTarget` answers is extra capability 0's capability,
+as the taint planner reads it (`syscallOperandCap?`), naming the object
+returned and carrying the right. -/
+theorem resolveDeclassifyTarget_ok (tid : SeLe4n.ThreadId) (xc : Nat) (st : SystemState)
+    (cap : Capability) (oid : SeLe4n.ObjId)
+    (h : resolveDeclassifyTarget tid xc st = .ok (cap, oid)) :
+    ∃ addr, callerExtraCapAddr? st tid xc 0 = some addr ∧
+      syscallOperandCap? st tid addr = some cap ∧ cap.target = .object oid ∧
+      cap.hasRight declassifyTargetRight = true := by
+  unfold resolveDeclassifyTarget at h
+  cases hA : callerExtraCapAddr? st tid xc 0 with
+  | none => rw [hA] at h; cases h
+  | some addr =>
+    rw [hA] at h
+    simp only at h
+    cases hR : resolveCallerCapObject tid addr declassifyTargetRight st with
+    | error e => rw [hR] at h; cases h
+    | ok r =>
+      rw [hR] at h
+      cases h
+      obtain ⟨callerTcb, ref, hT, hL, hC, hRt, hTg⟩ :=
+        resolveCallerCapObject_ok tid addr declassifyTargetRight st cap oid hR
+      exact ⟨addr, rfl, by simp only [syscallOperandCap?, hT, hL, hC], hTg, hRt⟩
+
+/-- `resolveDeclassifyTarget` in continuation form, through
+`resolveCallerCapObjectK`: no capability pair or result cell is built
+(`resolveDeclassifyTargetK_eq`). -/
+@[inline] def resolveDeclassifyTargetK {α : Type} (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) (onErr : KernelError → α) (onOk : Capability → SeLe4n.ObjId → α) : α :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => onErr .truncatedMessage
+  | some addr =>
+    resolveCallerCapObjectK tid addr declassifyTargetRight st
+      (KernelError.argumentCapRefusal declassifyTargetCapNumber onErr) onOk
+
+theorem resolveDeclassifyTargetK_eq {α : Type} (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) (onErr : KernelError → α) (onOk : Capability → SeLe4n.ObjId → α) :
+    resolveDeclassifyTargetK tid xc st onErr onOk =
+      match resolveDeclassifyTarget tid xc st with
+      | .error e => onErr e
+      | .ok (cap, oid) => onOk cap oid := by
+  unfold resolveDeclassifyTargetK resolveDeclassifyTarget
+  cases callerExtraCapAddr? st tid xc 0 with
+  | none => rfl
+  | some addr =>
+    simp only []
+    rw [resolveCallerCapObjectK_eq]
+    cases resolveCallerCapObject tid addr declassifyTargetRight st with
+    | error e => rfl
+    | ok r => obtain ⟨_, _⟩ := r; rfl
+
+/-- `resolveDeclassifySignalTarget` in continuation form
+(`resolveDeclassifySignalTargetK_eq`). -/
+@[inline] def resolveDeclassifySignalTargetK {α : Type} (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) (onErr : KernelError → α) (onOk : Capability → SeLe4n.ObjId → α) : α :=
+  resolveDeclassifyTargetK tid xc st onErr fun cap oid =>
+    if objectKindIs st oid .notification then onOk cap oid
+    else onErr (.invalidCapability declassifyTargetCapNumber)
+
+theorem resolveDeclassifySignalTargetK_eq {α : Type} (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) (onErr : KernelError → α) (onOk : Capability → SeLe4n.ObjId → α) :
+    resolveDeclassifySignalTargetK tid xc st onErr onOk =
+      match resolveDeclassifySignalTarget tid xc st with
+      | .error e => onErr e
+      | .ok (cap, oid) => onOk cap oid := by
+  unfold resolveDeclassifySignalTargetK resolveDeclassifySignalTarget
+  rw [resolveDeclassifyTargetK_eq]
+  cases resolveDeclassifyTarget tid xc st with
+  | error e => rfl
+  | ok r =>
+    obtain ⟨cap, oid⟩ := r
+    simp only []
+    split <;> rfl
 
 /-- WS-ZA ZA6.4: `resolveSchedControlConfigureTarget` in continuation form,
 through `resolveCallerCapObjectK`: no gate, slot reference, capability pair or
@@ -6093,8 +6206,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM8.C.9: **the live declassification.**
   --
-  -- The capability names the target object, so there is no confused deputy: the
-  -- operand is the capability, not a caller-supplied id.  Neither domain comes
+  -- WS-SX SX6.7: an invocation of the audit-trail capability, the object it
+  -- releases into extra capability 0 (`resolveDeclassifyTarget`).  A capability
+  -- names the target object, so there is no confused deputy: the operand is a
+  -- capability, not a caller-supplied id.  Neither domain comes
   -- from the caller either — `declassifyObjectFromCore` reads the source off the
   -- subject the executing core is running and the destination off the target
   -- object — so both endpoints of the recorded downgrade are facts about the
@@ -6106,15 +6221,20 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- call, exactly as on the unchecked path.
   | .declassify =>
     match cap.target with
-    | .object targetId =>
+    | .auditTrail _ =>
         fun st =>
-          declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
-            executingCore targetId st
+          match resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st with
+          | .error e => .error e
+          | .ok (_, targetId) =>
+            declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
+              executingCore targetId st
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM9.C.8: **the live data-carrying declassification.**
   --
-  -- Structurally the `.notificationSignal` arm — same capability target, same
-  -- badge (the capability's, `Capability.signalBadge`: no message register is
+  -- WS-SX SX6.7: an invocation of the audit-trail capability, the notification
+  -- extra capability 0 (`resolveDeclassifySignalTarget`).
+  -- Structurally the `.notificationSignal` arm — same notification, same
+  -- badge (the notification capability's, `Capability.signalBadge`: no message register is
   -- read, so the declassified datum is the identity the capability was minted
   -- with, never a caller-chosen word), same woken-stash clear, same WS-RA
   -- staging — with the
@@ -6135,12 +6255,15 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- (`.declassificationDeniedAtReceiver`).
   | .declassifySignal =>
     match cap.target with
-    | .object notifId =>
+    | .auditTrail _ =>
       fun st =>
+        match resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st with
+        | .error e => .error e
+        | .ok (ntfnCap, notifId) =>
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           let plainWaiter? := notificationSignalWaiter? st notifId
           match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-                  ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
+                  ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
@@ -6387,13 +6510,13 @@ step over the pre-state's taint (`dispatchCheckedArmThenTaintFused_eq`). -/
   fun st =>
     match decoded.syscallId with
     | .declassify =>
-        let operand := syscallOperandCap? st tid decoded.capAddr
+        let operand := declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps
         dispatchCheckedArmThenDeclassifyTaint ctx decoded tid executingCore gate
           (decodedExtraCapsFault? st tid decoded)
           (declassifyBypassB st operand) (operandObjectId operand)
           st.declassificationAuditEpoch st.declassificationAudit.length st
     | .declassifySignal =>
-        let operand := syscallOperandCap? st tid decoded.capAddr
+        let operand := declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps
         let nid := operandObjectId operand
         withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
         withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -6482,7 +6605,7 @@ theorem dispatchCheckedArmThenTaintFused_eq (ctx : LabelingContext)
     · rfl
     · rw [declassifySignalTaintStep_eq st tid decoded h _ _ st.declassificationTaint
         (st.taintWordsAt tid.toObjId)
-        (st.taintWordsAt (operandObjectId (syscallOperandCap? st tid decoded.capAddr)))
+        (st.taintWordsAt (operandObjectId (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps)))
         (decode_taintWordsAt st _) (decode_taintWordsAt st _), SignalTaintCase.ofCode_code]
   next h =>
     unfold dispatchCheckedArmOnly dispatchCheckedArmThenTaint
@@ -7990,15 +8113,17 @@ Checked dispatch only — `.declassify` is the one syscall with no unchecked twi
 declassification" would mean "every downgrade authorized". -/
 theorem dispatchWithCapChecked_declassify_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (targetCap : Capability)
+    (targetId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .declassify)
-    (hTarget : cap.target = .object targetId) :
+    (hTarget : cap.target = .auditTrail code)
+    (hRes : resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st = .ok (targetCap, targetId)) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
         executingCore targetId st := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
-  simp only [hTarget]
+  simp only [hTarget, hRes]
 
 /-- **WS-SM SM8.C.9**: an unconfigured deployment cannot declassify.
 
@@ -8007,14 +8132,16 @@ arm refuses too — the fail-closed default, stated where an operator reading th
 dispatch would look for it. -/
 theorem dispatchWithCapChecked_declassify_default_denied
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (targetCap : Capability)
+    (targetId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .declassify)
-    (hTarget : cap.target = .object targetId)
+    (hTarget : cap.target = .auditTrail code)
+    (hRes : resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st = .ok (targetCap, targetId))
     (hDefault : ctx.declassificationPolicy.canDeclassify = fun _ _ => false) :
     ¬ ∃ st', dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st') := by
   rintro ⟨st', hStep⟩
-  rw [dispatchWithCapChecked_declassify_delegates ctx decoded tid executingCore gate cap targetId st
-    hSyscall hTarget] at hStep
+  rw [dispatchWithCapChecked_declassify_delegates ctx decoded tid executingCore gate cap code
+    targetCap targetId st hSyscall hTarget hRes] at hStep
   obtain ⟨cur, hCur⟩ : ∃ x, st.scheduler.currentOnCore executingCore = x :=
     ⟨_, rfl⟩
   cases cur with
@@ -8047,12 +8174,14 @@ per-core routing gate and the cross-core inventory both consume this equation
 as their tie to the dispatch. -/
 theorem dispatchWithCapChecked_declassifySignal_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (ntfnCap : Capability)
+    (notifId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .declassifySignal)
-    (hTarget : cap.target = .object notifId) :
+    (hTarget : cap.target = .auditTrail code)
+    (hRes : resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId)) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-              ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
+              ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
        | (st', .ok _) =>
            (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
             | .error e => .error e
@@ -8064,7 +8193,7 @@ theorem dispatchWithCapChecked_declassifySignal_delegates
        | (_, .error e) => .error e) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
-  simp only [hTarget]
+  simp only [hTarget, hRes]
 
 /-- The checked signal arm's badge is its capability's too
 (`dispatchWithCap_notificationSignal_badge_of_cap`'s checked twin). -/
@@ -8078,19 +8207,20 @@ theorem dispatchWithCapChecked_notificationSignal_badge_of_cap (ctx : LabelingCo
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [h, h']
 
-/-- The declassifying signal's badge is its capability's: no word of the
-decode reaches it (`dispatchWithCapChecked_declassifySignal_delegates` names
-`cap.signalBadge`), so a declassifying signal whose hops are ordinary is the
-ordinary signal of the same capability, and neither can forge a badge. -/
+/-- The declassifying signal's badge is its notification capability's: no word
+of the decode reaches it (`dispatchWithCapChecked_declassifySignal_delegates`
+names `ntfnCap.signalBadge`, extra capability 0's), so two calls naming the same
+extra capabilities are the same arm, and neither can forge a badge. -/
 theorem dispatchWithCapChecked_declassifySignal_badge_of_cap (ctx : LabelingContext)
     (decoded decoded' : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (h : decoded.syscallId = .declassifySignal)
-    (h' : decoded'.syscallId = .declassifySignal) :
+    (h' : decoded'.syscallId = .declassifySignal)
+    (hXc : decoded.msgInfo.extraCaps = decoded'.msgInfo.extraCaps) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       dispatchWithCapChecked ctx decoded' tid executingCore gate cap := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
-  rw [h, h']
+  rw [h, h', hXc]
 
 /-- **WS-SM SM9.C.8**: an unconfigured deployment performs no downgrade through
 a signal.
@@ -8110,18 +8240,20 @@ stagers) must not touch the trail either — an arm that appended there would
 falsify this while the transition's own theorem stayed true. -/
 theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (ntfnCap : Capability)
+    (notifId : SeLe4n.ObjId)
     (st st' : SystemState)
     (hSyscall : decoded.syscallId = .declassifySignal)
-    (hTarget : cap.target = .object notifId)
+    (hTarget : cap.target = .auditTrail code)
+    (hRes : resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId))
     (hDefault : ctx.declassificationPolicy.canDeclassify = fun _ _ => false)
     (hStep : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
-  rw [dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap notifId
-    st hSyscall hTarget] at hStep
+  rw [dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap code
+    ntfnCap notifId st hSyscall hTarget hRes] at hStep
   unfold notificationSignalDeclassifiedCrossCoreDispatch at hStep
   obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalDeclassifiedOnCore (liftLegacyContext ctx)
-      ctx.declassificationPolicy notifId cap.signalBadge executingCore st = p :=
+      ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st = p :=
     ⟨_, rfl⟩
   rw [hPair] at hStep
   obtain ⟨stT, res⟩ := pair
@@ -8132,7 +8264,7 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     -- The transition's own trail statement, then the arm's post-processing —
     -- neither the stash clear nor either stager touches the trail.
     have hTrail := declassifiedSignal_default_policy_never_downgrades (liftLegacyContext ctx)
-      ctx.declassificationPolicy notifId cap.signalBadge executingCore st stT
+      ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st stT
       sgi hDefault hPair
     obtain ⟨stash, hStash⟩ : ∃ r, clearWokenReceiverStash
         ((boundDeliveryTarget? st notifId).map (·.1)) stT = r := ⟨_, rfl⟩
@@ -8960,9 +9092,11 @@ def syscallDelegates : SyscallId → Prop
   -- unchecked one fails closed (`dispatchWithCap_declassify_denied`).
   | .declassify =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-        (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState),
+        (gate : SyscallGate) (cap : Capability) (code : Nat) (targetCap : Capability)
+        (targetId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .declassify →
-        cap.target = .object targetId →
+        cap.target = .auditTrail code →
+        resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st = .ok (targetCap, targetId) →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
             executingCore targetId st
@@ -8972,12 +9106,14 @@ def syscallDelegates : SyscallId → Prop
   -- would not satisfy this.
   | .declassifySignal =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-        (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId) (st : SystemState),
+        (gate : SyscallGate) (cap : Capability) (code : Nat) (ntfnCap : Capability)
+        (notifId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .declassifySignal →
-        cap.target = .object notifId →
+        cap.target = .auditTrail code →
+        resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId) →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-                  ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
+                  ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
            | (st', .ok _) =>
                (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
                 | .error e => .error e
@@ -9244,15 +9380,15 @@ theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
 
 /-- WS-SM SM8.C.9: the `.declassify` obligation, discharged. -/
 theorem syscallDelegates_declassify : syscallDelegates .declassify := by
-  intro ctx decoded tid executingCore gate cap targetId st hSyscall hTarget
-  exact dispatchWithCapChecked_declassify_delegates ctx decoded tid executingCore gate cap targetId st
-    hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap code targetCap targetId st hSyscall hTarget hRes
+  exact dispatchWithCapChecked_declassify_delegates ctx decoded tid executingCore gate cap code
+    targetCap targetId st hSyscall hTarget hRes
 
 /-- WS-SM SM9.C.9: the `.declassifySignal` obligation, discharged. -/
 theorem syscallDelegates_declassifySignal : syscallDelegates .declassifySignal := by
-  intro ctx decoded tid executingCore gate cap notifId st hSyscall hTarget
-  exact dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap notifId
-    st hSyscall hTarget
+  intro ctx decoded tid executingCore gate cap code ntfnCap notifId st hSyscall hTarget hRes
+  exact dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap code
+    ntfnCap notifId st hSyscall hTarget hRes
 
 /-- WS-SM SM9.A.10: the `.auditRead` obligation, discharged. -/
 theorem syscallDelegates_auditRead : syscallDelegates .auditRead := by

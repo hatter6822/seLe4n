@@ -10380,30 +10380,20 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// already tagged, so it is the steady state of the tainted path too.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
-    RoundTrip {
-        name: "declassify",
-        syscall: DECLASSIFY,
-        cptr: FRAME_CAP,
-        msg_len: 0,
-        msg: [0; 4],
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
-        returns: None,
-    },
-    RoundTrip {
-        name: "declassified-signal",
-        syscall: DECLASSIFY_SIGNAL,
-        cptr: FRAME_CAP,
-        msg_len: 0,
-        msg: [0, 0, 0, 0],
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
-        returns: None,
-    },
+    cap_argument(
+        "declassify",
+        DECLASSIFY,
+        AUDIT_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    ),
+    cap_argument(
+        "declassified-signal",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    ),
     partner_step(
         "send-tainted-blocks",
         SEND,
@@ -10426,58 +10416,36 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         false,
     ),
     partner_step("declassified-wait-blocks", WAIT, FRAME_CAP, 0, [0, 0], true),
-    partner_step(
+    cap_argument(
         "declassified-signal-wakes",
         DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
         FRAME_CAP,
-        0,
-        [0, 0],
-        false,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// A refused declassification (WS-ZA ZA6.35), measured, and it gives the
 /// refusal ledger a slot for the audit reads to read: the boot domain's endpoint
-/// is in the caller's own domain, a flow the base lattice already permits,
-/// which `.declassify` refuses (`flowDenied`) and the seam records.
+/// (extra capability 0, the audit capability invoked) is in the caller's own
+/// domain, a flow the base lattice already permits, which `.declassify`
+/// refuses (`flowDenied`) and the seam records.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
-    name: "declassify-refused",
-    syscall: DECLASSIFY,
-    cptr: ENDPOINT_CAP,
-    msg_len: 0,
-    msg: [0; 4],
-    primed: None,
-    blocks: false,
-    caps_or_badges: None,
-    overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         [None; 4],
     )),
+    ..cap_argument(
+        "declassify-refused",
+        DECLASSIFY,
+        AUDIT_CAP,
+        ENDPOINT_CAP,
+        ROOT_IPC_BUFFER,
+    )
 };
 /// `KernelError::FlowDenied`'s discriminant.
 #[cfg(feature = "hw_target")]
 const FLOW_DENIED: u64 = 13;
-/// A declassification whose capability address misses the root guard, measured:
-/// a refused lookup whose error carries a payload (a guard mismatch) recorded in
-/// the refusal ledger from its words, so neither the error nor the record is
-/// built on the entry path.  The address is a bare slot number, below the root
-/// guard.  The fifth word (`GuardFound`'s size) goes to the caller's IPC
-/// buffer, and only the root task has one here, so the length is 5 only with
-/// the root task as the caller: the driver runs it with the partner suspended,
-/// where no tick can hand core 0 to another thread.  The buffer is not at
-/// `FRAME_VADDR` in this phase, so the word itself is not probed.
-#[cfg(feature = "hw_target")]
-const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
-    name: "declassify-guard-mismatch-refused",
-    cptr: 1,
-    returns: refused_with(
-        FAILED_LOOKUP,
-        5,
-        [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-    ),
-    ..DECLASSIFICATION_REFUSAL
-};
 /// A root slot no other scenario names: the read-only audit capability's.
 #[cfg(feature = "hw_target")]
 const READ_ONLY_AUDIT_SLOT: u64 = 60;
@@ -12022,8 +11990,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
         let saved = crate::interrupts::disable_interrupts();
-        let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) == Some(true)
-            && bound_declassified_signals(which);
+        let ok = bound_declassified_signals(which);
         crate::interrupts::restore_interrupts(saved);
         if !ok {
             return Some(false);
@@ -13827,14 +13794,15 @@ const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) ->
     }
 }
 
-/// An invocation by the partner on its own thread capability whose extra
-/// capability at some index misses the root CNode's guard: the syscall, the
-/// message info and the three `caps_or_badges` words, the reading's name and
-/// its handler reply's.
+/// An invocation by the partner whose extra capability at some index misses
+/// the root CNode's guard: the invoked capability, the syscall, the message
+/// info and the three `caps_or_badges` words, the reading's name and its
+/// handler reply's.
 #[cfg(feature = "hw_target")]
 struct ExtraCapGuardMismatch {
     name: &'static str,
     reply: &'static str,
+    x0: u64,
     x7: u64,
     x1: u64,
     caps: [u64; 3],
@@ -13843,13 +13811,15 @@ struct ExtraCapGuardMismatch {
 /// The extra capabilities whose addresses miss the root CNode's guard,
 /// measured: a bound notification (`seL4_TCB_BindNotification`'s extra
 /// capability 0), a SetSpace fault endpoint (`seL4_TCB_SetSpace`'s extra
-/// capability 0) and a SetSpace CSpace root (its extra capability 1, the
-/// fault endpoint before it found).
+/// capability 0), a SetSpace CSpace root (its extra capability 1, the
+/// fault endpoint before it found) and a declassification's object (the
+/// audit capability invoked, the object extra capability 0).
 #[cfg(feature = "hw_target")]
-const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
+const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 4] = [
     ExtraCapGuardMismatch {
         name: "bind-notification-guard-mismatch",
         reply: "bind-notification-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_BIND_NOTIFICATION,
         x1: ONE_EXTRA_CAP,
         caps: [NOTIFICATION_SLOT, 0, 0],
@@ -13857,6 +13827,7 @@ const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
     ExtraCapGuardMismatch {
         name: "set-fault-handler-guard-mismatch",
         reply: "set-fault-handler-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_SET_SPACE,
         x1: THREE_EXTRA_CAPS | 2,
         caps: [ENDPOINT_SLOT, CNODE_CAP, VSPACE_CAP],
@@ -13864,9 +13835,18 @@ const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
     ExtraCapGuardMismatch {
         name: "set-space-root-guard-mismatch",
         reply: "set-space-root-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_SET_SPACE,
         x1: THREE_EXTRA_CAPS | 2,
         caps: [ENDPOINT_CAP, CNODE_SLOT, VSPACE_CAP],
+    },
+    ExtraCapGuardMismatch {
+        name: "declassify-guard-mismatch-refused",
+        reply: "declassify-guard-mismatch-refused-reply",
+        x0: AUDIT_CAP,
+        x7: DECLASSIFY,
+        x1: ONE_EXTRA_CAP,
+        caps: [FRAME_SLOT, 0, 0],
     },
 ];
 
@@ -13887,7 +13867,7 @@ fn extra_cap_guard_mismatch(
 ) -> bool {
     let name = trip.name;
     let invoke = TrapTrip {
-        x0: PARTNER_TCB_CAP,
+        x0: trip.x0,
         x1: trip.x1,
         x7: trip.x7,
         ..cap_fault(name)
@@ -13934,7 +13914,7 @@ fn extra_cap_guard_mismatch(
     // trapped.
     let restart = FaultRestart {
         pc: FAULT_PC,
-        x0: PARTNER_TCB_CAP,
+        x0: trip.x0,
         x1: trip.x1,
     };
     restarted_as(name, &resumed, restart)

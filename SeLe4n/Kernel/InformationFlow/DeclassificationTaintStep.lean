@@ -222,15 +222,45 @@ theorem originateWindow_eq (r : AuditRing) (nrB : Bool) (nrId : SeLe4n.ObjId) (e
       | _ => false
   | none => false
 
+/-- **WS-SX SX6.7: a declassified signal's plan fields read its notification,
+extra capability 0** (`declassifyPlanOperand?`): the planners branch on the
+invoked capability first, and a declassification's plan operand is none exactly
+when that is. -/
+theorem declassifySignal_planFields_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .declassifySignal) :
+    contentFlowEdges st tid decoded =
+        (match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+         | some c => match c.target with
+           | .object nid => signalTaintEdges st tid nid
+           | _ => []
+         | none => []) ∧
+      contentFlowClears st tid decoded =
+        (match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+         | some c => match c.target with
+           | .object nid => signalClearedNotification st nid
+           | _ => []
+         | none => []) ∧
+      contentFlowBypassed st tid decoded =
+        (match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+         | some c => match c.target with
+           | .object nid => signalBypassedNotification st nid
+           | _ => []
+         | none => []) := by
+  unfold contentFlowEdges contentFlowClears contentFlowBypassed
+  rw [h]
+  cases hO : syscallOperandCap? st tid decoded.capAddr with
+  | none => simp only [declassifyPlanOperand?, hO, and_self]
+  | some _ => exact ⟨rfl, rfl, rfl⟩
+
 /-- The two scalars stand for the plan's `noRelease`. -/
 theorem declassifyBypassedTargets_contains (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .declassify) (x : SeLe4n.ObjId) :
     (declassifyBypassedTargets st tid decoded).contains x =
-      (declassifyBypassB st (syscallOperandCap? st tid decoded.capAddr) &&
-        x == operandObjectId (syscallOperandCap? st tid decoded.capAddr)) := by
+      (declassifyBypassB st (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps) &&
+        x == operandObjectId (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps)) := by
   unfold declassifyBypassedTargets
   rw [h]
-  rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
+  rcases declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with _ | ⟨target, _, _⟩
   · rfl
   · cases target with
     | object targetId =>
@@ -253,8 +283,8 @@ theorem declassifyTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .declassify)
     (preEpoch preLength : Nat) (preTaint : TaintMap) (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
-      declassifyTaintStep (declassifyBypassB st (syscallOperandCap? st tid decoded.capAddr))
-        (operandObjectId (syscallOperandCap? st tid decoded.capAddr)) preEpoch preLength post := by
+      declassifyTaintStep (declassifyBypassB st (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps))
+        (operandObjectId (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps)) preEpoch preLength post := by
   unfold declassifyTaintStep
   rw [originateWindow_eq _ _ _ _ _ (declassifyBypassedTargets st tid decoded) []
     (declassifyBypassedTargets_contains st tid decoded h) (fun _ => rfl),
@@ -398,11 +428,11 @@ theorem declassifySignalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .declassifySignal)
     (preEpoch preLength : Nat) (P : TaintMap) (wT wN : TaintWords)
     (hT : wT.decode = P tid.toObjId)
-    (hN : wN.decode = P (operandObjectId (syscallOperandCap? st tid decoded.capAddr)))
+    (hN : wN.decode = P (operandObjectId (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps)))
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength P post =
-      declassifySignalTaintStep (signalTaintCaseOf st (syscallOperandCap? st tid decoded.capAddr))
-        (operandObjectId (syscallOperandCap? st tid decoded.capAddr)) tid wT wN preEpoch preLength
+      declassifySignalTaintStep (signalTaintCaseOf st (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps))
+        (operandObjectId (declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps)) tid wT wN preEpoch preLength
         post := by
   have hST := decode_seedWords tid.toObjId
     (post.declassificationAudit.window preLength (recordedCount preEpoch preLength post)) wT P hT
@@ -410,10 +440,11 @@ theorem declassifySignalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   rw [seedWordsFrom_eq, seedWordsFrom_eq]
   simp only [TaintWords.mk_fields]
   simp only [applySyscallTaintAfter, syscallTaintPlan, contentFlowClass, h,
-    syscallRecordsDeclassification, ↓reduceIte, applyTaintStep, recordedSince_eq_window,
-    contentFlowEdges, contentFlowClears, contentFlowBypassed]
+    syscallRecordsDeclassification, ↓reduceIte, applyTaintStep, recordedSince_eq_window]
+  obtain ⟨hE, hC, hB⟩ := declassifySignal_planFields_eq st tid decoded h
+  rw [hE, hC, hB]
   revert hN
-  generalize syscallOperandCap? st tid decoded.capAddr = operand
+  generalize declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps = operand
   intro hN
   have hSN := decode_seedWords _
     (post.declassificationAudit.window preLength (recordedCount preEpoch preLength post)) wN P hN

@@ -1777,11 +1777,11 @@ fn vspace_unify_instruction_roundtrip() {
 /// WS-SM SM8.C.9: Declassify roundtrip (discriminant 30).
 ///
 /// Authorize and audit a cross-domain downgrade.  Requires the **write** right:
-/// the flow direction is subject -> object (the caller releases its information
-/// into the target object's domain), matching API.lean
-/// `syscallRequiredRight .declassify = .write`.  It takes no inline argument
-/// registers — the capability names the target and both domains are resolved
-/// kernel-side.
+/// recording a downgrade appends to the audit trail, matching API.lean
+/// `syscallRequiredRight .declassify = .write` on the invoked audit-trail
+/// capability.  It takes no inline argument registers — the target is extra
+/// capability 0 (which needs `write` too: the flow runs subject -> object) and
+/// both domains are resolved kernel-side.
 #[test]
 fn declassify_roundtrip() {
     let sid = SyscallId::from_u64(30).expect("Declassify must exist");
@@ -2895,9 +2895,9 @@ fn wrappers_name_their_syscalls() {
     let _ = sele4n_sys::cspace::mint_reply_cap(cap, Slot::from(0u64), Slot::from(1u64));
     assert_names("mint_reply_cap", SyscallId::MintReplyCap);
 
-    let _ = sele4n_sys::declassify::declassify(cap);
+    let _ = sele4n_sys::declassify::declassify(cap, cap, &mut buf);
     assert_names("declassify", SyscallId::Declassify);
-    let _ = sele4n_sys::declassify::declassify_signal(cap);
+    let _ = sele4n_sys::declassify::declassify_signal(cap, cap, &mut buf);
     assert_names("declassify_signal", SyscallId::DeclassifySignal);
     assert_no_badge_operand("declassify_signal");
 

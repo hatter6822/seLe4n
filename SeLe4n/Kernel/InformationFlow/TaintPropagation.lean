@@ -454,6 +454,41 @@ def syscallOperandCap? (st : SystemState) (tid : SeLe4n.ThreadId)
     | .error _ => none
     | .ok ref => SystemState.lookupSlotCap st ref
 
+/-- **WS-SX SX6.7: the capability a declassification's plan reads** — the
+object it releases into, the caller's extra capability 0, resolved as the
+dispatch resolves it (`syscallOperandCap?` at extra capability 0's address).  A
+declassification invokes the audit-trail capability at `capAddr`; when that
+resolves to no capability the call is refused before its arm, and the plan
+reads none. -/
+def declassifyPlanOperand? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capAddr : SeLe4n.CPtr) (xc : Nat) : Option Capability :=
+  match syscallOperandCap? st tid capAddr with
+  | none => none
+  | some _ =>
+    match callerExtraCapAddr? st tid xc 0 with
+    | some addr => syscallOperandCap? st tid addr
+    | none => none
+
+/-- A declassification's plan operand is a capability only when its invoked
+capability resolves to one. -/
+theorem declassifyPlanOperand?_some {st : SystemState} {tid : SeLe4n.ThreadId}
+    {capAddr : SeLe4n.CPtr} {xc : Nat} {cap : Capability}
+    (h : declassifyPlanOperand? st tid capAddr xc = some cap) :
+    ∃ c0, syscallOperandCap? st tid capAddr = some c0 := by
+  unfold declassifyPlanOperand? at h
+  cases h0 : syscallOperandCap? st tid capAddr with
+  | none => rw [h0] at h; cases h
+  | some c0 => exact ⟨c0, rfl⟩
+
+/-- WS-SX SX6.7: **the capability a signal's plan reads** — the invoked
+notification capability of a `.notificationSignal`, extra capability 0 of a
+`.declassifySignal` (`declassifyPlanOperand?`). -/
+def signalPlanOperand? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : Option Capability :=
+  if decoded.syscallId = .declassifySignal then
+    declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps
+  else syscallOperandCap? st tid decoded.capAddr
+
 /-! ### WS-SM SM9.D — the accepted out-of-scope channel: capability provenance
 
 A transfer moves **authority**, not content.  `contentTrackedFields` names the
@@ -777,9 +812,12 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalTaintEdges st tid nid
         | _ => []
     | .declassifySignal =>
-        match cap.target with
-        | .object nid => signalTaintEdges st tid nid
-        | _ => []
+        match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+        | some tcap =>
+          match tcap.target with
+          | .object nid => signalTaintEdges st tid nid
+          | _ => []
+        | none => []
     | .notificationWait =>
         match cap.target with
         | .object nid => waitTaintEdges tid nid
@@ -958,7 +996,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   -- idle-target list here or fail to elaborate.
   match decoded.syscallId with
   | .declassify =>
-      match syscallOperandCap? st tid decoded.capAddr with
+      match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
       | some cap =>
           match cap.target with
           | .object targetId => declassifyBypassedTarget st targetId
@@ -999,9 +1037,12 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalBypassedNotification st nid
         | _ => []
     | .declassifySignal =>
-        match cap.target with
-        | .object nid => signalBypassedNotification st nid
-        | _ => []
+        match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+        | some tcap =>
+          match tcap.target with
+          | .object nid => signalBypassedNotification st nid
+          | _ => []
+        | none => []
     | .send | .receive | .call | .reply | .replyRecv | .notificationWait
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
@@ -1073,9 +1114,12 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalClearedNotification st nid
         | _ => []
     | .declassifySignal =>
-        match cap.target with
-        | .object nid => signalClearedNotification st nid
-        | _ => []
+        match declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps with
+        | some tcap =>
+          match tcap.target with
+          | .object nid => signalClearedNotification st nid
+          | _ => []
+        | none => []
     | .send | .receive | .call | .reply | .replyRecv
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
@@ -2756,23 +2800,31 @@ theorem taintPropagation_signal_to_notification (st post : SystemState)
     (nid : SeLe4n.ObjId)
     (hClass : contentFlowClass decoded.syscallId = .movesContent)
     (hSid : decoded.syscallId = .notificationSignal ∨ decoded.syscallId = .declassifySignal)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hCap : signalPlanOperand? st tid decoded = some cap)
     (hTarget : cap.target = .object nid)
     (hNoWaiter : declassifiedSignalReceiver? st nid = none)
     (hLive : taintHolderAt post nid = true) {t : Nat}
     (hSignaller : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       nid).contains t = true := by
+  have hPlan : contentFlowEdges st tid decoded = signalTaintEdges st tid nid ∧
+      contentFlowClears st tid decoded = signalClearedNotification st nid := by
+    rcases hSid with h | h
+    · simp only [signalPlanOperand?, h, reduceCtorEq, if_false] at hCap
+      exact ⟨by simp [contentFlowEdges, hCap, h, hTarget],
+        by simp [contentFlowClears, hCap, h, hTarget]⟩
+    · simp only [signalPlanOperand?, h, if_true] at hCap
+      obtain ⟨c0, h0⟩ := declassifyPlanOperand?_some hCap
+      exact ⟨by simp [contentFlowEdges, h0, h, hCap, hTarget],
+        by simp [contentFlowClears, h0, h, hCap, hTarget]⟩
   have hMem : ({ sink := nid, source := tid.toObjId } : TaintFlowEdge) ∈
       contentFlowEdges st tid decoded := by
-    simp only [contentFlowEdges, hCap]
-    rcases hSid with h | h <;>
-      simp [h, hTarget, signalTaintEdges, signalDelivery_stored_of_no_receiver st nid hNoWaiter]
+    rw [hPlan.1]
+    simp [signalTaintEdges, signalDelivery_stored_of_no_receiver st nid hNoWaiter]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hLive hSignaller
-  rw [hCleared]; rcases hSid with h | h <;>
-    simp [contentFlowClears, hCap, h, hTarget,
-      signalClearedNotification_of_no_receiver st nid hNoWaiter]
+  rw [hCleared, hPlan.2]
+  simp [signalClearedNotification_of_no_receiver st nid hNoWaiter]
 
 /-- WS-SM SM9.D.10 (**wait ← notification**): the *other* ordering.
 
@@ -2878,7 +2930,7 @@ theorem declassify_idle_notification_bypassed (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
     (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification)
     (hSid : decoded.syscallId = .declassify)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hCap : declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps = some cap)
     (hTarget : cap.target = .object nid)
     (hNtfn : st.getNotification? nid = some ntfn)
     (hIdle : ntfn.pendingBadge = none) :
@@ -2899,7 +2951,7 @@ theorem declassify_pending_notification_not_bypassed (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
     (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification) (b : SeLe4n.Badge)
     (hSid : decoded.syscallId = .declassify)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hCap : declassifyPlanOperand? st tid decoded.capAddr decoded.msgInfo.extraCaps = some cap)
     (hTarget : cap.target = .object nid)
     (hNtfn : st.getNotification? nid = some ntfn)
     (hPending : ntfn.pendingBadge = some b) :
