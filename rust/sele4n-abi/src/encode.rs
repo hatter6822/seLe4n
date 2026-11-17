@@ -78,9 +78,10 @@ mod tests {
     fn encode_cspace_mint() {
         let req = SyscallRequest {
             cap_addr: CPtr::from(42u64),
-            // destIndex, srcRoot, srcIndex, depths|rights; the badge is the
-            // fifth word, in the IPC buffer's overflow slot.
-            msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+            // destIndex, destDepth, srcIndex, srcDepth; the rights and the
+            // badge are the fifth and sixth words, in the IPC buffer, and the
+            // source root is extra capability 0.
+            msg_info: MessageInfo::new(6, 1, 0).unwrap(),
             msg_regs: [1, 2, 3, 4],
             syscall_id: SyscallId::CSpaceMint,
         };

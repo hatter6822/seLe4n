@@ -1134,7 +1134,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   -- S2-J: the typed gate directly instead of deprecated apiEndpointSend
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
-    SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write }
+    SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write } none
       (fun cap => if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
         else SeLe4n.Kernel.endpointSendDual epId gate.callerId (.frame msg.badge false)) st
   match sendViaGate goodGate stLocal with
@@ -1172,7 +1172,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   }
   let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
-  match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype }
+  match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype } none
       (fun cap => match cap.target with
         | .object _ => SeLe4n.Kernel.untypedRetypeObject authSlot ⟨60⟩ dstSlot .endpoint
         | _ => fun _ => .error (.invalidCapability 0)) stLocal with
@@ -1378,14 +1378,15 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   let ksdWidth : Nat := match stKsd.getCNode? ksdCnodeId with
     | some cn => cn.radixWidth
     | none => 0
-  -- Decode mint args: destIndex=1, srcRoot, srcIndex=0, both depths the
-  -- CNode's width and the rights mask 1 (read), then the badge 42.
+  -- Decode mint args in seL4's order: destIndex=1 and depth the CNode's
+  -- width, srcIndex=0 and the same depth, the rights mask 1 (read), then the
+  -- badge 42 (the source root is extra capability 0, not a word).
   let mintDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 5, extraCaps := 0, label := 0 }
+    msgInfo := { length := 6, extraCaps := 1, label := 0 }
     syscallId := .cspaceMint
-    msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 1), ⟨42⟩]
+    msgRegs := #[⟨1⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨0⟩, SeLe4n.RegValue.ofNat ksdWidth,
+      ⟨1⟩, ⟨42⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintDecoded with
   | .error e => IO.println s!"[KSD-001] cspaceMint decode error: {reprStr e}"
@@ -1407,11 +1408,10 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   -- every right (`AccessRightSet.full`).
   let copyDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 5, extraCaps := 1, label := 0 }
     syscallId := .cspaceCopy
-    -- destIndex=1, srcRoot, srcIndex=0, both depths the CNode's width
-    msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 31)]
+    -- destIndex=1, srcIndex=0, both depths the CNode's width, the mask 31
+    msgRegs := #[⟨1⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨0⟩, SeLe4n.RegValue.ofNat ksdWidth, ⟨31⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
   | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
@@ -1451,15 +1451,16 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         IO.println s!"[KSD-003] cspaceDelete via decoded regs slot cleared: {slotEmpty}"
 
   -- KSD-004: an untyped carve via decoded registers — success path.  The
-  -- type word is `tag | sizeBits << 8` (notification is tag 2, size 0); the
+  -- words are seL4's (type, size, node index, node depth, node offset, object
+  -- count) and the model's object id: a notification (tag 2, size 0); the
   -- child is object 602, carved from the demo untyped (slot 6 of CNode 10)
-  -- into the root CNode's empty slot 3.
+  -- into the root CNode's empty slot 3 (the window's offset).
   let ksdCarveChild : SeLe4n.ObjId := ⟨602⟩
   let carveDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 6
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 7, extraCaps := 1, label := 0 }
     syscallId := .untypedRetype
-    msgRegs := #[⟨2⟩, ⟨602⟩, ⟨0⟩, ⟨3⟩]
+    msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨3⟩, ⟨1⟩, ⟨602⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded with
   | .error e => IO.println s!"[KSD-004] untypedRetype decode error: {reprStr e}"
@@ -1467,7 +1468,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       match SeLe4n.Kernel.carveRequestOf? st1 bootCoreId carveArgs.newType carveArgs.sizeBits with
       | .error e => IO.println s!"[KSD-004] untypedRetype request error: {reprStr e}"
       | .ok req =>
-          let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := carveArgs.dstSlot }
+          let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat carveArgs.nodeOffset }
           match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot carveArgs.childId dst req st1 with
           | .error e => IO.println s!"[KSD-004] untypedRetype carve error: {reprStr e}"
           | .ok (_, stCarved) =>
@@ -1475,7 +1476,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
             IO.println s!"[KSD-004] untyped carve via decoded regs new type: {reprStr objKind}"
 
   -- KSD-005: VSpace map via decoded registers — success path.
-  -- WS-BP BP7.1: MR2 is a frame CAPABILITY address, not a physical address.
+  -- WS-BP BP7.1: the frame is named by CAPABILITY, not by a physical address
+  -- (WS-SX SX6.3: the invoked capability).
   -- The caller's CSpace holds a readable capability to a frame at slot 0, and
   -- the mapping installs that frame's own `base` (8192) — the printed address
   -- is the frame's, reached through the arm's own resolution
@@ -1503,17 +1505,22 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.buildChecked)
   let vspaceDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 3, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    -- asid=10, vaddr=one page into the user window (WS-BP BP7.2), frame cap at
-    -- slot 0, perms=17 (read | cacheable): a RAM frame maps cacheable or not at
-    -- all since v0.36.32 (`frameMappingAdmissible_cacheable_iff_ram`)
-    msgRegs := #[⟨10⟩, SeLe4n.RegValue.ofNat (fixtureUserVAddr 4096).toNat, ⟨0⟩, ⟨17⟩]
+    -- WS-SX SX6.3 (D6): seL4's words — vaddr one page into the user window
+    -- (WS-BP BP7.2), rights CanRead (2), attributes PageCacheable |
+    -- ExecuteNever (5): a RAM frame maps cacheable or not at all since
+    -- v0.36.32 (`frameMappingAdmissible_cacheable_iff_ram`).  The frame is the
+    -- invoked capability (slot 0) and the address space's ASID is its root's.
+    msgRegs := #[SeLe4n.RegValue.ofNat (fixtureUserVAddr 4096).toNat, ⟨2⟩, ⟨5⟩]
   }
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs vspaceDecoded with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
-  | .ok mapArgs =>
-    -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)
+  | .ok words =>
+    match SeLe4n.Kernel.Architecture.SyscallArgDecode.vspaceMapArgsOfWords words ksdAsid
+        vspaceDecoded.capAddr with
+    | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
+    | .ok mapArgs =>
     match SeLe4n.Kernel.vspaceMapFromFrameCap ksdMapCaller bootCoreId mapArgs stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>
@@ -1668,10 +1675,9 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
   -- Decode move args: srcIndex=0, destIndex=2, each at the CNode's width (2)
   let moveDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 1, label := 0 }
     syscallId := .cspaceMove
-    msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩,
-      SeLe4n.RegValue.ofNat (SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack 2 2 0)]
+    msgRegs := #[⟨2⟩, ⟨2⟩, ⟨0⟩, ⟨2⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
   | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"
@@ -1948,31 +1954,50 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
 
 private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- Z5-AUD-01: validateSchedContextParams — valid params
-  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 0
+  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000
   IO.println s!"[SCO-001] validateSchedContextParams valid: {reprStr validResult}"
   -- Z5-AUD-02: validateSchedContextParams — zero period rejected
-  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0 50 0 0
+  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0
   IO.println s!"[SCO-002] validateSchedContextParams zero-period: {reprStr zeroPeriod}"
   -- Z5-AUD-03: validateSchedContextParams — budget > period rejected
-  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000 50 0 0
+  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000
   IO.println s!"[SCO-003] validateSchedContextParams budget>period: {reprStr budgetOver}"
-  -- Z5-AUD-04: validateSchedContextParams — priority > max rejected
-  let prioOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 256 0 0
-  IO.println s!"[SCO-004] validateSchedContextParams priority>max: {reprStr prioOver}"
-  -- Z5-AUD-05: validateSchedContextParams — domain >= numDomains rejected
-  let domainOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 16
-  IO.println s!"[SCO-005] validateSchedContextParams domain>=16: {reprStr domainOver}"
-  -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
-  -- A zero-budget SchedContext would store a replenishment with amount=0,
-  -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
-  let zeroBudget := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 0 1000 50 0 0
-  IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
-
-  -- Z5-AUD-06: schedContextConfigure — success path
+  -- WS-SX SX6.4: the configure records seL4's badge word and the flags' sporadic
+  -- bit (`seL4_SchedContext_Sporadic`, bit 0); the context carries no priority
+  -- or domain, so no word is range-checked against one.
   let scId : SeLe4n.ObjId := ⟨5000⟩
   let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
   let stWithSc := st1.withObjectStored scId scObj
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 50 0 0 stWithSc with
+  let flagsProbe (badge flags : UInt64) : String :=
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 badge
+        flags stWithSc with
+    | .error err => s!"error {reprStr err}"
+    | .ok ((), stC) =>
+      match stC.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => s!"badge={sc.badge} sporadic={sc.sporadic}"
+      | none => "object not found"
+  IO.println s!"[SCO-004] schedContextConfigure badge+sporadic: {flagsProbe 0xFFFFFFFFFFFFFFFF 1}"
+  IO.println s!"[SCO-005] schedContextConfigure flags-bit0-only: {flagsProbe 7 2}"
+  -- seL4-MCS's `max_refills`: the context's refill limit is `extra_refills +
+  -- MIN_REFILLS`, and `MIN_REFILLS` for a round-robin context (budget = period).
+  let refillProbe (budget : Nat) (extraRefills : UInt64) : String :=
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ budget 1000
+        extraRefills 0 0 stWithSc with
+    | .error err => s!"error {reprStr err}"
+    | .ok ((), stC) =>
+      match stC.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => s!"refillMax={sc.refillMax} limit={sc.refillLimit}"
+      | none => "object not found"
+  IO.println s!"[SCO-005b] schedContextConfigure extra-refills 3: {refillProbe 100 3}"
+  IO.println s!"[SCO-005c] schedContextConfigure round-robin extra-refills 3: {refillProbe 1000 3}"
+  -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
+  -- A zero-budget SchedContext would store a replenishment with amount=0,
+  -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
+  let zeroBudget := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 0 1000
+  IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
+
+  -- Z5-AUD-06: schedContextConfigure — success path
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 0 0 stWithSc with
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -1985,7 +2010,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scForBind : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
   let stForBind := st1.withObjectStored scId (.schedContext scForBind)
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stForBind with
   | .error err =>
@@ -2046,25 +2071,26 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let withExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall (some scId)
   IO.println s!"[SCO-012] admission without-exclude={withoutExclude} with-exclude={withExclude}"
 
-  -- Z5-AUD-13: schedContextBind — thread in RunQueue triggers re-insertion
-  -- Tests Z5-G3: when a thread is already in RunQueue, bind must remove and
-  -- re-insert it at the SchedContext's priority (not the old TCB priority).
+  -- Z5-AUD-13: schedContextBind — a queued thread keeps its key.
+  -- WS-SX SX6.4: seL4-MCS's `schedContext_bindTCB` writes only the two links;
+  -- the thread's priority is its own, so a thread already queued stays in the
+  -- bucket of its own priority (0 here).
   let tidRQ : SeLe4n.ThreadId := ⟨1⟩
   let scForRQ : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨200⟩, budgetRemaining := ⟨100⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
   -- thread in RunQueue at default prio 0
   let stForRQ := queueBoot ((resetBootQueue st1).withObjectStored scId (.schedContext scForRQ))
     (atPrioZero [tidRQ]) none
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tidRQ, by decide⟩ stForRQ with
   | .error err =>
-    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
+    IO.println s!"[SCO-013] schedContextBind runqueue-keeps-key: error {reprStr err}"
   | .ok ((), stBoundRQ) =>
     let inQueue := (stBoundRQ.queuedOn bootCoreId tidRQ)
     let newPrio := match (stBoundRQ.queuedPriorityOn bootCoreId tidRQ) with
       | some p => p.toNat
       | none => 9999
-    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: inQueue={inQueue} prio={newPrio}"
+    IO.println s!"[SCO-013] schedContextBind runqueue-keeps-key: inQueue={inQueue} prio={newPrio}"
 
   -- Z5-AUD-14: schedContextUnbind — current thread triggers preemption guard
   -- Tests Z5-H1: when the bound thread IS the current thread, unbind must
@@ -2133,7 +2159,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Tests the case where tcb.schedContextBinding is not .unbound.
   let scForBind2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩ }
   let tcbAlreadyBound : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨9999⟩), scBindingOwnerCode := 0 }  -- already bound to SC 9999
@@ -2241,8 +2267,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let victimReply : SeLe4n.Kernel.Reply := {
     replyId := rH, callerCode := SeLe4n.ThreadId.optCode (some vTid), next := some (.head scH) }
   let holderSc : SeLe4n.Kernel.SchedContext := {
-    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
-    deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, budgetRemaining := ⟨1000⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some hTid), scReply := some rH }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some hTid, tail := some hTid } {})
   let stR := st1.withObjectStored epH (.endpoint epObj)
@@ -2604,7 +2629,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let sc : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid) }
   let stDon := st1.withObjectStored callerTid.toObjId callerTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext sc)
@@ -2645,7 +2670,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let scDonated : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid) }
   let stRet := st1.withObjectStored callerTid.toObjId callerDonated
       |>.withObjectStored serverTid.toObjId serverDonated
       |>.withObjectStored scId.toObjId (.schedContext scDonated)
@@ -2778,7 +2803,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let scDepth2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨600⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), scReply := some outerReplyId, priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), scReply := some outerReplyId }
   let stChain2 := st1.withObjectStored callerTid.toObjId midTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext scDepth2)
@@ -2837,7 +2862,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     }
   let stSetup := st1.withObjectStored scId scObj
       |>.withObjectStored tid.toObjId (.tcb tcb0)
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 50 0 0 stSetup with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 0 0 0 stSetup with
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -3026,8 +3051,8 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: CSpaceMintArgs encode/decode
   let mintArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs :=
-    { destIndex := SeLe4n.CPtr.ofNat 10, srcRoot := SeLe4n.CPtr.ofNat 3,
-      srcIndex := SeLe4n.CPtr.ofNat 20, destDepth := 64, srcDepth := 64,
+    { destIndex := SeLe4n.CPtr.ofNat 10, destDepth := 64,
+      srcIndex := SeLe4n.CPtr.ofNat 20, srcDepth := 64,
       rights := .ofNat 0x07, badge := Badge.ofNatMasked 999 }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=
@@ -3058,7 +3083,7 @@ private def runRustXvalVectors : IO Unit := do
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
-      msgInfo := { length := ibEncoded.size, extraCaps := 0, label := 0 },
+      msgInfo := { length := ibEncoded.size, extraCaps := 1, label := 0 },
       syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
   | .ok decoded =>

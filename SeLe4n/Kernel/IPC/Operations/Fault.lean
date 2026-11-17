@@ -57,86 +57,6 @@ open SeLe4n.Kernel.Concurrency
 -- §1  RR4.7/RR4.8 — resolving the fault handler
 -- ============================================================================
 
-/-- WS-RR RR4.8: the rights a fault-handler endpoint capability must carry —
-seL4's `sendFaultIPC` predicate, verbatim:
-
-```c
-if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
-    cap_endpoint_cap_get_capCanSend(handlerCap) &&
-    (cap_endpoint_cap_get_capCanGrant(handlerCap) ||
-     cap_endpoint_cap_get_capCanGrantReply(handlerCap)))
-```
-
-* **send** (`.write`) is the authority to deliver the fault message at all;
-* **grant or grant-reply** is seL4's authority to hand the handler the reply
-  capability the faulting thread will block on.  In this model the reply
-  link is *structural* — the Call chain records `reply.caller` and the
-  faulting thread's `replyObject` unconditionally, and a fault delivery
-  transfers no capabilities for `.grant` to authorise
-  (`faultMessage_transfers_no_authority`) — so the disjunct is a **policy** gate
-  rather than a mechanism prerequisite: it is what keeps a capability minted
-  as send-only (a client's handle on a server endpoint, say) from being
-  configured as a fault handler and made to receive reply authority it was
-  deliberately not given.  `.grantReply` is admitted on the same footing as
-  `.grant` because seL4 admits it and because refusing it would turn every
-  `seL4_CapRights_new(0, 1, 0, 1)` handler capability — the idiomatic shape,
-  which withholds full grant from a fault handler — into a fail-closed
-  suspend.
-
-The audit round replaced a send-**and**-grant reading whose stated rationale
-("grant is what lets the handler receive a reply capability") was false of
-this model, where the reply link does not depend on any right.
-
-**Stated as clauses, and the predicate is defined from them** (PR #887 review
-round 3).  The outer list is a conjunction and each inner list a disjunction —
-send, and grant or grant-reply — so the inventory below (`faultHandlerRights`,
-the clauses flattened) and the predicate (`faultHandlerCapAuthorized`, the
-clauses evaluated) are two readings of one definition rather than two
-definitions a theorem tries to hold together.  The first cut pinned them with
-`faultHandlerCapAuthorized_reads_faultHandlerRights`, whose conclusion was one
-of its own hypotheses: it compiled with `.write` deleted from the inventory
-and with `.read` added, which is the proof-level form of a presence check.
-What holds now is `faultHandlerCapAuthorized_iff` — the exact seL4 form, which
-an added or removed right breaks — and
-`faultHandlerCapAuthorized_depends_only_on_faultHandlerRights`, the support
-relation: two capabilities that agree on the inventory's rights get the same
-verdict, so no right outside the inventory is consulted. -/
-def faultHandlerRequiredRights : List (List AccessRight) := [[.write], [.grant, .grantReply]]
-
-/-- WS-RR RR4.8: the rights the predicate consults — the clauses, flattened. -/
-def faultHandlerRights : List AccessRight := faultHandlerRequiredRights.flatten
-
-/-- The inventory, as the list a reader expects; a clause edit changes it. -/
-theorem faultHandlerRights_eq : faultHandlerRights = [.write, .grant, .grantReply] := rfl
-
-/-- WS-RR RR4.8: does a capability carry the rights a fault handler needs?
-Every clause satisfied by at least one of its rights: send, and at least one
-of the two grant rights. -/
-def faultHandlerCapAuthorized (cap : Capability) : Bool :=
-  faultHandlerRequiredRights.all (fun clause => clause.any (fun r => cap.hasRight r))
-
-/-- WS-RR RR4.8: the authorization is exactly seL4's predicate, unfolded —
-the form a caller checks against without reasoning through `Bool` algebra.
-Since PR #887 review round 3 this is the drift pin between the clauses and
-the predicate seL4 states: a right added to or removed from a clause changes
-the left-hand side and not the right, and the theorem fails. -/
-@[simp] theorem faultHandlerCapAuthorized_iff (cap : Capability) :
-    faultHandlerCapAuthorized cap = true ↔
-      (cap.hasRight .write = true ∧
-        (cap.hasRight .grant = true ∨ cap.hasRight .grantReply = true)) := by
-  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights]
-
-/-- WS-ZA ZA5.2: the compiled `faultHandlerCapAuthorized` — the clauses
-unrolled into rights tests, so no clause list is walked and no predicate closure
-built. -/
-@[inline] def faultHandlerCapAuthorizedImpl (cap : Capability) : Bool :=
-  cap.hasRight .write && (cap.hasRight .grant || cap.hasRight .grantReply)
-
-@[csimp] theorem faultHandlerCapAuthorized_eq_impl :
-    @faultHandlerCapAuthorized = @faultHandlerCapAuthorizedImpl := by
-  funext cap
-  simp [faultHandlerCapAuthorized, faultHandlerCapAuthorizedImpl, faultHandlerRequiredRights]
-
 /-- PR #887 review round 3 (**the support relation**): the verdict is a
 function of the inventory's rights alone — two capabilities that agree on
 every right in `faultHandlerRights` are authorized alike.  This is what the
@@ -183,65 +103,50 @@ structure FaultHandlerTarget where
   cspaceRoot : SeLe4n.ObjId
   deriving Repr, DecidableEq
 
-/-- WS-RR RR4.7 (**handler resolution**): resolve a fault-handler CPtr to the
-endpoint it names, through the thread's own CSpace.  `resolveFaultHandler`
-below supplies the thread's configured CPtr; `setThreadFaultHandlerOp`
-supplies a candidate.
+/-- WS-RR RR4.7 (**handler resolution**), WS-SX SX6.5: the fault handler is
+the capability in the thread's fault-handler slot (`TCB.faultHandlerSlot`,
+seL4-MCS's `tcbFaultHandler`), read as `handleFault` reads it
+(`TCB_PTR_CTE_PTR(tptr, tcbFaultHandler)->cap`).  `TCB_SetSpace` copies the
+slot's capability in only once it is a valid handler (`validFaultHandler`: an
+endpoint capability with send and a grant right), so the delivery looks nothing
+up through the thread's CSpace.
 
-The four gates, in the order seL4 applies them (the first two are
-`resolveFaultHandler`'s, the last two this function's):
+The gates, in seL4's order:
 
-1. the thread exists and **has** a fault-handler CPtr (`none` is seL4's
-   "no handler configured", and takes the RR4.9 path);
-2. the CPtr resolves through the thread's **own** CSpace root capability, at
-   64 bits (`lookupSlot`, seL4's `lookupCap`) — the same resolution the
-   syscall gate uses (`syscallResolveCap`), so a fault handler is addressed
-   with exactly the authority its thread already has and no more; a failed
-   lookup is its lookup fault;
-3. the resolved capability satisfies `faultHandlerCapAuthorized` — send, and
-   grant or grant-reply (RR4.8);
+1. the thread exists;
+2. the slot **holds** a capability: an empty slot is seL4's
+   `seL4_Fault_CapFault` with `lookup_fault_missing_capability_new(0)`
+   (`faulthandler.c`), which takes the RR4.9 path;
+3. the capability satisfies `faultHandlerCapAuthorized` — send, and grant or
+   grant-reply (RR4.8), the rights `sendFaultIPC` asserts;
 4. it names an object that really is an endpoint.
 
 Read-only: resolution never mutates the state. -/
-def resolveFaultHandlerCPtr (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
-    Except KernelError FaultHandlerTarget :=
-      match lookupSlot tcb cptr st with
-      | .error f => .error (.failedLookup false f)
-      | .ok ref =>
-          match SystemState.lookupSlotCap st ref with
-          | none => .error (.invalidCapability 0)
-          | some cap =>
-              if faultHandlerCapAuthorized cap then
-                match cap.target with
-                | .object epId =>
-                    match st.getEndpoint? epId with
-                    | some _ =>
-                        .ok { endpoint := epId, cap := cap,
-                              cspaceRoot := tcb.cspaceRoot }
-                    | none   => .error (.invalidCapability 0)
-                | _ => .error (.invalidCapability 0)
-              else .error .illegalAuthority
-
-/-- WS-RR RR4.7: resolve a thread's configured fault handler — gates 1 and 2
-of the resolution, then `resolveFaultHandlerCPtr` for gates 3 and 4.  Review
-round (PR #887): the CPtr half is factored out so `setThreadFaultHandlerOp`
-validates a candidate handler with the **same** resolution the fault path
-will run, rather than a second copy of it. -/
 def resolveFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) :
     Except KernelError FaultHandlerTarget :=
   match st.getTcb? tid with
   | none => .error .objectNotFound
   | some tcb =>
-      match tcb.faultHandler with
-      | none => .error (.invalidCapability 0)
-      | some cptr => resolveFaultHandlerCPtr st tcb cptr
+      match tcb.faultHandlerCap with
+      | none => .error (.failedLookup false (.missingCapability 0))
+      | some cap =>
+          if faultHandlerCapAuthorized cap then
+            match cap.target with
+            | .object epId =>
+                match st.getEndpoint? epId with
+                | some _ =>
+                    .ok { endpoint := epId, cap := cap, cspaceRoot := tcb.cspaceRoot }
+                | none   => .error (.invalidCapability 0)
+            | _ => .error (.invalidCapability 0)
+          else .error .illegalAuthority
 
-/-- WS-RR RR4.10 (**the negative**): a thread with no `faultHandler` never
-resolves — the arm that sends it to the fail-closed suspend. -/
+/-- WS-RR RR4.10 (**the negative**): a thread whose fault-handler slot is empty
+never resolves — the arm that sends it to the fail-closed suspend — and the
+refusal is seL4's missing-capability lookup fault at depth 0. -/
 theorem resolveFaultHandler_none_of_noHandler (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandler = none) :
-    resolveFaultHandler st tid = .error (.invalidCapability 0) := by
+    (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandlerCap = none) :
+    resolveFaultHandler st tid = .error (.failedLookup false (.missingCapability 0)) := by
   simp [resolveFaultHandler, hTcb, hNone]
 
 /-- WS-RR RR4.10: nor does a thread that is not a TCB at all. -/
@@ -260,33 +165,10 @@ theorem resolveFaultHandler_ok_inv (st : SystemState) (tid : SeLe4n.ThreadId)
     faultHandlerCapAuthorized tgt.cap = true ∧
     tgt.cap.target = .object tgt.endpoint ∧
     (st.getEndpoint? tgt.endpoint).isSome := by
-  unfold resolveFaultHandler resolveFaultHandlerCPtr at hOk
+  unfold resolveFaultHandler at hOk
   repeat' split at hOk
   all_goals (try (injection hOk with hEq; subst hEq))
   all_goals simp_all
-
-/-- Review round (PR #887): the CPtr resolution's own inversion — what a
-successful `resolveFaultHandlerCPtr` guarantees, the half the configuration
-operation relies on. -/
-theorem resolveFaultHandlerCPtr_ok_inv (st : SystemState) (tcb : TCB)
-    (cptr : SeLe4n.CPtr) (tgt : FaultHandlerTarget)
-    (hOk : resolveFaultHandlerCPtr st tcb cptr = .ok tgt) :
-    faultHandlerCapAuthorized tgt.cap = true ∧
-    tgt.cap.target = .object tgt.endpoint ∧
-    (st.getEndpoint? tgt.endpoint).isSome ∧
-    tgt.cspaceRoot = tcb.cspaceRoot := by
-  unfold resolveFaultHandlerCPtr at hOk
-  repeat' split at hOk
-  all_goals (try (injection hOk with hEq; subst hEq))
-  all_goals simp_all
-
-/-- Review round (PR #887): a configured handler resolves exactly as its CPtr
-does — the definitional bridge between the two resolutions. -/
-theorem resolveFaultHandler_eq_cptr (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (cptr : SeLe4n.CPtr)
-    (hTcb : st.getTcb? tid = some tcb) (hFh : tcb.faultHandler = some cptr) :
-    resolveFaultHandler st tid = resolveFaultHandlerCPtr st tcb cptr := by
-  simp [resolveFaultHandler, hTcb, hFh]
 
 /-- WS-RR RR4.8 (**the rights check, as a theorem**): a resolved handler
 capability always carries send **and** one of the grant rights — seL4's
@@ -656,220 +538,8 @@ theorem discardPendingFault_getTcb?_self (st : SystemState) (tid : SeLe4n.Thread
 
 
 -- ============================================================================
--- §7  Review round (PR #887) — configuring a handler, and resuming past a fault
+-- §7  Review round (PR #887) — resuming past a fault
 -- ============================================================================
-
-/-- The post-state of a successful `setThreadFaultHandlerOp`: the target's TCB
-with its `faultHandler` rewritten and nothing else touched — the shape every
-preservation proof below reads off.
-
-The TCB it is handed is the one the store holds, and it takes the store's
-witness for that (`hTcb`, `v0.35.70`): the operation resolves the thread once,
-through `getTcbWitnessed?`, uses the record to validate the handler and then
-hands it here with its proof, so the write is `rewriteObject` under that proof
-rather than a raw insert of a record nothing tied to the store. -/
-def installFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (cptr : SeLe4n.CPtr) : SystemState :=
-  st.rewriteObject tid.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
-    (SystemState.rewriteAdmissible_tcb hTcb _)
-
-/-- The handler a `.tcbSetFaultHandler` names at MR0: its argument capability
-`0` (seL4-MCS's `decodeSetSpace` answers a fault endpoint that is no valid
-handler `invalidCapNumber = 1`). -/
-def faultHandlerCapNumber : UInt64 := 1
-
-/-- **`seL4_TCB_SetSpace`'s fault endpoint, as a kernel operation.**  Install
-`cptr` as the target thread's fault handler.
-
-Before this operation existed, `TCB.faultHandler` had no writer outside the
-test fixtures — production TCB creation leaves it `none` — so on a live
-system every fault took the fail-closed suspend and the whole RR4 mechanism
-was unreachable.  The CPtr is interpreted **in the target thread's own
-CSpace**, exactly as seL4 documents (`fault_ep` "must be in the CSpace of
-the thread being configured") and exactly as `resolveFaultHandler` reads it
-at fault time.
-
-**Validated at set time.**  seL4-classic stores whatever CPtr it is given
-and discovers a bad one only when the thread faults; seL4-MCS validates the
-endpoint when it is configured.  This model validates: the candidate must
-resolve, through the target's CSpace, to an endpoint capability satisfying
-`faultHandlerCapAuthorized` — the same `resolveFaultHandlerCPtr` the fault
-path runs — so a misconfiguration is refused with its reason rather than
-surfacing later as a suspended thread.  The fault-time check remains (the
-capability may be revoked in between), and revoking the handler capability is
-the fail-closed way to withdraw a handler: the next fault then suspends.
-
-Authority is the caller's TCB capability with the write right, like every
-other thread-configuration syscall.  The write itself is a one-TCB field
-rewrite; it touches no scheduler or IPC state. -/
-def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
-    (cptr : SeLe4n.CPtr) : Except KernelError SystemState :=
-  match st.getTcbWitnessed? vTargetTid.val with
-  | none => .error .objectNotFound
-  | some ⟨tcb, hTcb⟩ =>
-      match resolveFaultHandlerCPtr st tcb cptr with
-      | .error e => .error (e.forArgumentCap faultHandlerCapNumber)
-      | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr)
-
-/-- WS-ZA ZA5.2: the compiled `setThreadFaultHandlerOp` — the handler written
-into the TCB in its slot (`updateTcb`), so on an exclusively owned state the TCB
-is not rebuilt. -/
-def setThreadFaultHandlerOpImpl (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
-    (cptr : SeLe4n.CPtr) : Except KernelError SystemState :=
-  match st.getTcb? vTargetTid.val with
-  | none => .error .objectNotFound
-  | some tcb =>
-      match resolveFaultHandlerCPtr st tcb cptr with
-      | .error e => .error (e.forArgumentCap faultHandlerCapNumber)
-      | .ok _ => .ok (st.updateTcb vTargetTid.val (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr }))
-
-@[csimp] theorem setThreadFaultHandlerOp_eq_impl :
-    @setThreadFaultHandlerOp = @setThreadFaultHandlerOpImpl := by
-  funext st vTargetTid cptr
-  cases hT : st.getTcb? vTargetTid.val with
-  | none =>
-    unfold setThreadFaultHandlerOp setThreadFaultHandlerOpImpl
-    rw [SystemState.getTcbWitnessed?_eq_none hT]; simp only [hT]
-  | some tcb =>
-    unfold setThreadFaultHandlerOp setThreadFaultHandlerOpImpl
-    rw [SystemState.getTcbWitnessed?_eq_some hT]
-    simp only [hT]
-    cases resolveFaultHandlerCPtr st tcb cptr with
-    | error e => rfl
-    | ok _ =>
-      simp only [installFaultHandler]
-      rw [SystemState.rewriteObject_tcb_eq_updateTcb hT (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr })]
-
-/-- **`setThreadFaultHandlerOp` in place, into continuations**: the handler's
-address resolved through the target's CSpace by `lookupSlotK`, so a refused
-address hands its lookup fault on as words and only `onErr` builds the error;
-the handler written into the TCB in its slot (`updateTcb`) on success.  Equal to
-the operation (`setThreadFaultHandlerOpK_eq`). -/
-@[inline] def setThreadFaultHandlerOpK {α : Type} (st : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (onErr : KernelError → α)
-    (onOk : SystemState → α) : α :=
-  match st.getTcb? vTargetTid.val with
-  | none => onErr .objectNotFound
-  | some tcb =>
-    lookupSlotK tcb cptr st
-      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
-      (fun cnode slot =>
-        match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-        | none => onErr (.invalidCapability faultHandlerCapNumber)
-        | some cap =>
-          if faultHandlerCapAuthorized cap then
-            match cap.target with
-            | .object epId =>
-              match st.getEndpoint? epId with
-              | some _ => onOk (st.updateTcb vTargetTid.val
-                  (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr }))
-              | none => onErr (.invalidCapability faultHandlerCapNumber)
-            | _ => onErr (.invalidCapability faultHandlerCapNumber)
-          else onErr .illegalAuthority)
-
-theorem setThreadFaultHandlerOpK_eq {α : Type} (st : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (onErr : KernelError → α)
-    (onOk : SystemState → α) :
-    setThreadFaultHandlerOpK st vTargetTid cptr onErr onOk =
-      match setThreadFaultHandlerOp st vTargetTid cptr with
-      | .error e => onErr e
-      | .ok st' => onOk st' := by
-  rw [setThreadFaultHandlerOp_eq_impl]
-  unfold setThreadFaultHandlerOpK setThreadFaultHandlerOpImpl resolveFaultHandlerCPtr
-  cases st.getTcb? vTargetTid.val with
-  | none => rfl
-  | some tcb =>
-    dsimp only
-    rw [lookupSlotK_eq]
-    cases lookupSlot tcb cptr st with
-    | error f => simp only [LookupFault.ofWords_word, KernelError.forArgumentCap]
-    | ok ref =>
-      obtain ⟨cnode, slot⟩ := ref
-      dsimp only
-      cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-      | none => rfl
-      | some cap =>
-        dsimp only
-        cases faultHandlerCapAuthorized cap
-        · rfl
-        · simp only [↓reduceIte]
-          cases cap.target with
-          | object epId => dsimp only; cases st.getEndpoint? epId <;> rfl
-          | _ => rfl
-
-/-- On the success path the step *is* the one-field rewrite. -/
-theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
-    (cptr : SeLe4n.CPtr) (tcb : TCB) (tgt : FaultHandlerTarget)
-    (hTcb : st.getTcb? vTargetTid.val = some tcb)
-    (hR : resolveFaultHandlerCPtr st tcb cptr = .ok tgt) :
-    setThreadFaultHandlerOp st vTargetTid cptr
-      = .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr) := by
-  simp only [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR]
-
-/-- A handler is installed only if it resolved, through the target's CSpace,
-to an authorised endpoint capability in the pre-state — the set-time
-validation, as a theorem. -/
-theorem setThreadFaultHandlerOp_validated (st st' : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
-    ∃ tcb tgt, st.getTcb? vTargetTid.val = some tcb ∧
-      resolveFaultHandlerCPtr st tcb cptr = .ok tgt ∧
-      faultHandlerCapAuthorized tgt.cap = true ∧
-      (st.getEndpoint? tgt.endpoint).isSome := by
-  cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          have hInv := resolveFaultHandlerCPtr_ok_inv st tcb cptr tgt hR
-          exact ⟨tcb, tgt, rfl, hR, hInv.1, hInv.2.2.1⟩
-
-/-- The post-state records the CPtr on the target — the field the fault path
-reads. -/
-theorem setThreadFaultHandlerOp_faultHandler (st st' : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (tcb : TCB)
-    (hTcb : st.getTcb? vTargetTid.val = some tcb)
-    (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
-    st'.getTcb? vTargetTid.val = some { tcb with faultHandlerSet := true, faultHandlerWord := cptr } := by
-  cases hR : resolveFaultHandlerCPtr st tcb cptr with
-  | error e =>
-      simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR] at hStep
-  | ok tgt =>
-      rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hTcb hR] at hStep
-      cases hStep
-      unfold installFaultHandler
-      exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-        (SystemState.rewriteObject_objects_self st _ _ _ hObjInv)
-
-/-- Configuring a handler touches no scheduler state. -/
-theorem setThreadFaultHandlerOp_scheduler_eq (st st' : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
-    st'.scheduler = st.scheduler := by
-  cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          rfl
-
-/-- A CPtr that does not resolve to an authorised endpoint capability is
-refused — the negative that keeps "configured" and "usable" the same thing —
-with the refusal naming the handler (`faultHandlerCapNumber`). -/
-theorem setThreadFaultHandlerOp_rejects (st : SystemState)
-    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (tcb : TCB) (e : KernelError)
-    (hTcb : st.getTcb? vTargetTid.val = some tcb)
-    (hR : resolveFaultHandlerCPtr st tcb cptr = .error e) :
-    setThreadFaultHandlerOp st vTargetTid cptr =
-      .error (e.forArgumentCap faultHandlerCapNumber) := by
-  simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR]
 
 /-- **Resuming a thread that carries a fault retires the fault** — seL4's
 `restart` semantics for a double-faulted thread, closing a misclassification
@@ -884,7 +554,7 @@ and rewind execution to the former fault PC.  So a resume answers the fault
 itself, the way a payload-free handler reply does: the thread restarts at
 the faulting instruction with the register window it held at the trap
 (`faultRestartFrameOfContext`), and the fault is cleared.  If the handler
-configuration was repaired in between (`setThreadFaultHandlerOp`), the
+configuration was repaired in between (`TCB_SetSpace`'s fault endpoint), the
 re-executed instruction faults again and is delivered this time; if not, it
 suspends again — either way through the fault path, never through a stale
 fault.  A thread carrying no fault is untouched.

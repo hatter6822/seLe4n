@@ -2150,7 +2150,7 @@ private def runWSH15Checks : IO Unit := do
   -- `InvalidCapability` (`syscallMissingRightError .send`).
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   expectErr "H15 syscall endpoint send insufficient rights"
-    (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } none (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
     (.invalidCapability 0)
@@ -2621,8 +2621,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (34 = tcbSetFaultHandler)"
+  -- WS-SX SX6.5: 34, the retired tcbSetFaultHandler, names no syscall.
+  expectErr "J1 decodeSyscallId retired (34)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
+    .invalidSyscallNumber
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (35 = cspaceRevoke)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (36 = untypedRetype)"
@@ -2759,23 +2761,23 @@ def runWSJ1DecodeChecks : IO Unit := do
 private def runWSKGCSpaceChecks : IO Unit := do
   -- ---- K-G1: CSpace negative tests ----
 
-  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 5) → invalidMessageInfo
+  -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 6) → invalidMessageInfo
   let shortDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 5, extraCaps := 0, label := 0 }
+    msgInfo := { length := 6, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
-    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 5
+    msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 6
   }
   expectErr "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
     .invalidMessageInfo
 
-  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 5) → invalidMessageInfo
   let oneRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 5, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
-    msgRegs := #[⟨10⟩]  -- only 1, need 4
+    msgRegs := #[⟨10⟩]  -- only 1, need 5
   }
   expectErr "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs oneRegDecode)
@@ -2797,7 +2799,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
     .invalidMessageInfo
 
-  -- A message shorter than the mint's five argument words is refused
+  -- A message shorter than the mint's six argument words is refused
   -- `.truncatedMessage` before any register is read (seL4's
   -- `seL4_TruncatedMessage`), whatever the registers hold.
   expectErr "K-G-NEG-TRUNC cspaceMint decode of a four-word message"
@@ -2838,12 +2840,12 @@ private def runWSKGCSpaceChecks : IO Unit := do
 private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- ---- K-G2: Lifecycle/VSpace negative tests ----
 
-  -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 7) → invalidMessageInfo
   let threeRegCarve : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 7, extraCaps := 1, label := 0 }
     syscallId := .untypedRetype
-    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
+    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 7
   }
   expectErr "K-G-NEG-07 untypedRetype decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs threeRegCarve)
@@ -2852,7 +2854,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- K-G-NEG-08: decodeUntypedRetypeArgs with invalid type tag (99) → invalidTypeTag
   expectErr "K-G-NEG-08 untypedRetype decode invalid tag"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
-      { threeRegCarve with msgRegs := #[⟨99⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩] })
+      { threeRegCarve with msgRegs := #[⟨99⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨0⟩, ⟨1⟩, ⟨5⟩] })
     .invalidTypeTag
 
   -- K-G-NEG-09 (WS-ZA ZA5.4 part 14, retargeted from the in-place retype): a
@@ -2883,15 +2885,15 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.untypedRetypeObject (carveAt 2) ⟨510⟩ (carveAt 3) .endpoint carveState)
     (.invalidCapability 0)
 
-  -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
-  let threeRegDecode : SyscallDecodeResult := {
+  -- K-G-NEG-11: decodePageMapArgs with insufficient msgRegs (< 3) → invalidMessageInfo
+  let twoRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    msgInfo := { length := 3, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
+    msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
   }
   expectErr "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
-    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode 65536)
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs twoRegDecode)
     .invalidMessageInfo
 
   -- K-G-NEG-12: vspaceMapPageChecked with W^X violation (perms = write+execute)
@@ -2984,10 +2986,10 @@ private def runWSKGDeterminismChecks : IO Unit := do
     let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs d1
     unless lr1 == lr2 do
       throw <| IO.userError "K-G-DET-01: decodeUntypedRetypeArgs not deterministic"
-    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
-    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
+    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
+    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
     unless vm1 == vm2 do
-      throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
+      throw <| IO.userError "K-G-DET-01: decodePageMapArgs not deterministic"
     let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
     let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
     unless vu1 == vu2 do
@@ -3009,9 +3011,9 @@ private def runWSKGDeterminismChecks : IO Unit := do
   for tag in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] do
     let carveDecoded : SyscallDecodeResult := {
       capAddr := SeLe4n.CPtr.ofNat 0
-      msgInfo := { length := 4, extraCaps := 0, label := 0 }
+      msgInfo := { length := 7, extraCaps := 1, label := 0 }
       syscallId := .untypedRetype
-      msgRegs := #[⟨tag + 256⟩, ⟨600⟩, ⟨1⟩, ⟨2⟩] }
+      msgRegs := #[⟨tag⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨2⟩, ⟨1⟩, ⟨600⟩] }
     let o1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
     let o2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
     unless o1 == o2 do
@@ -4079,7 +4081,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
 
   -- Z8-L-01: Configure non-existent SchedContext
   expectErr "configure non-existent SC"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨⟨9900⟩, by decide⟩ 100 1000 50 0 0 st0)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨⟨9900⟩, by decide⟩ 100 1000 0 0 0 st0)
     .objectNotFound
 
   -- Z8-L-02: Configure with zero period
@@ -4091,12 +4093,12 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
     objectIndexGhost := st0.objectIndexGhost.map (scId :: ·)
     objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "configure zero period"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 50 0 0 stWithSc)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 0 0 0 stWithSc)
     (.rangeError SeLe4n.Kernel.configureMinBudget SeLe4n.Kernel.configureMaxPeriod)
 
   -- Z8-L-03: Configure with budget > period
   expectErr "configure budget>period"
-    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 50 0 0 stWithSc)
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 200 100 0 0 0 stWithSc)
     (.rangeError SeLe4n.Kernel.configureMinBudget 100)
 
   -- Z8-L-04: Bind to non-existent SchedContext
@@ -4608,7 +4610,8 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
     unless SeLe4n.Kernel.zombieSlotClass stS tId SeLe4n.Model.TCB.cspaceRootSlot tId
         SeLe4n.Model.TCB.cspaceRootSlot != 0 do
       throw <| IO.userError "the thread's old CSpace root must name a CNode holding a capability"
-    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 with
+    let fhSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rootId, slot := SeLe4n.Slot.ofNat 7 }
+    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 fhSrc with
     | .error e => throw <| IO.userError s!"the space change must succeed, got {repr e}"
     | .ok stS' =>
       match stS'.getTcb? ⟨6⟩ with

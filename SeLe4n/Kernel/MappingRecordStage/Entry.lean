@@ -321,11 +321,7 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
-  exact (MappingStage.of_objects_eq (st := st) (st' := { st with perCoreTlb := t }) rfl
+  exact (MappingStage.of_objects_eq (st := st) (st' := st) rfl
     ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
@@ -334,7 +330,7 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
 its busy reply's holder cancelled. -/
 theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
     (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases ctx e st with h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩
   · rw [h]; exact MappingStage.refl _
   · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
 

@@ -153,8 +153,8 @@ theorem refillSchedContext_determineTargetCore (st : SystemState) (scId0 : SeLe4
       (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) rfl t)
 
 /-- WS-SM SM5.I: `refillSchedContext` preserves every SchedContext's `boundThread`
-projection (`SchedContext.releaseReadyHead` writes the refills alone and
-`cbsUpdateDeadline` the deadline alone, never `boundThread`). -/
+projection (`SchedContext.releaseReadyHead` writes the refills alone, never
+`boundThread`). -/
 theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedContextId)
     (now : Nat) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((refillSchedContext st scId0 now).getSchedContext? scId).map (·.boundThread)
@@ -164,11 +164,10 @@ theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedC
   | none => rw [SystemState.updateSchedContext_eq_self_of_none hOld]
   | some sc =>
     rw [SystemState.updateSchedContext_eq_of_some hOld]
-    have hBT : (cbsUpdateDeadline (sc.releaseReadyHead now) now true).boundThread
+    have hBT : ((sc.releaseReadyHead now)).boundThread
         = sc.boundThread := by
       unfold SchedContext.boundThread
-      rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
-        (SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
+      rw [(SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
     exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) hBT rfl scId
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` (a register-context TCB write) preserves
@@ -488,8 +487,7 @@ theorem timeoutBlockedThreads_homeBindFrame (st : SystemState) (scId : SchedCont
 theorem spentSchedContext_boundThread (sc : SchedContext) (now : Nat) :
     (spentSchedContext sc now).boundThread = sc.boundThread := by
   unfold SchedContext.boundThread
-  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
-    (SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased (now - 1) 1 now)).2.2.2.2.2.2.1]
+  rw [(SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased (now - 1) 1 now)).2.2.2.2.2.2.1]
 
 /-- **An exhausting charge keeps every core's queue affinity-consistent** when
 the context it re-places on core `c` names only threads homed on `c`: the
@@ -625,7 +623,7 @@ scheduled as a refill, the deadline moved on — keeps its release link core: th
 exhausting tick's (`spentSchedContext`, one tick) and the bound yield's (its
 budget). -/
 theorem chargedSchedContext_releaseCoreCode (sc : SchedContext) (start ticks now : Nat) :
-    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseCoreCode =
+    ((sc.chargeBudget start ticks now)).releaseCoreCode =
       sc.releaseCoreCode :=
   (spendRecord_release sc start ticks now).2.1
 
@@ -657,8 +655,7 @@ theorem spendBudget_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     (hCur : currentBoundHomedOnCore st c) (hc : st.scheduler.currentOnCore c = some tid)
     (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
-    (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
-        (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true))
+    (st.rewriteObject scId.toObjId (.schedContext (sc.chargeBudget start ticks st.machine.timer))
       (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true := by
   have h := releaseFreeFor_of_boundHome hRef hAff hSc ((hCur tid tcb hc hT).2 scId sc hb hSc)
     (hCur tid tcb hc hT).1

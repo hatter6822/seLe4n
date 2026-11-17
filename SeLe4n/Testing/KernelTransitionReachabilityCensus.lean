@@ -1121,6 +1121,14 @@ def nonExecutedTransitionsPlain : List Name :=
   -- arms equal to.  Since the trail read and the drain refuse in place
   -- (`auditReadTrailR`, `auditedArmSpec_auditDrain_refused`) no arm runs it.
   , `SeLe4n.Kernel.auditGeneralR
+  -- The audited calls' specification arm (`dispatchWithCapChecked_eq_auditedArmSpec`).
+  -- WS-SX SX6.7: since the declassifying calls take their target as extra
+  -- capability 0, their general routed forms run the target-resolved arms
+  -- (`declassifyTargetSpec`, `declassifySignalTargetSpec`), each proven the
+  -- specification's on the audit-trail capability
+  -- (`auditedArmSpec_declassify_trail`, `auditedArmSpec_declassifySignal_trail`),
+  -- so no arm runs the specification itself.
+  , `SeLe4n.Kernel.auditedArmSpec
   , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread
@@ -1145,6 +1153,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-ZA ZA5.2: the routed configure's specification arm; the entry runs its
   -- refusal-carrying form `dispatchConfigureByR` (`dispatchConfigureByR_eq`).
   , `SeLe4n.Kernel.dispatchConfigureBy
+  -- WS-SX SX6.3 (D9): the routed untyped retype's specification arm; the
+  -- entry runs its refusal-carrying form `dispatchRetypeByR`
+  -- (`dispatchRetypeByR_eq`).
+  , `SeLe4n.Kernel.dispatchRetypeBy
   -- WS-ZA ZA5.5: the routed service register's specification arm; the entry
   -- runs `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq`).
   , `SeLe4n.Kernel.dispatchServiceRegisterBy
@@ -1176,9 +1188,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.entryReportResolved
   -- The reply capability's failed lookup as a report, in the specification
   -- form (`replyLookupRefusal`): the entry pushes it from the lookup's words
-  -- (`entryReportPushReplyW` through `replyLookupRefusalW`), equal to it by
+  -- (`entryReportPushLookupAtW` through `replyLookupRefusalW`), equal to it by
   -- `liftReport_replyLookupRefusalW`.
-  , `SeLe4n.Kernel.entryReportReplyLookup
+  , `SeLe4n.Kernel.entryReportLookupAt
+  -- The operand dispatch's report of a failed lookup, in the specification
+  -- form (`dispatchOperandCheckedK`'s lookup continuation): every routed arm
+  -- pushes it from the lookup's address and words (`entryReportLookupAtW`) or
+  -- the empty slot's refusal (`entryReportLookup`), equal to it by
+  -- `dispatchOperandCheckedKW_report`.
+  , `SeLe4n.Kernel.entryReportLookupFor
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
@@ -1213,7 +1231,7 @@ def nonExecutedTransitionsPlain : List Name :=
   -- continuation form (`syscallEntryCheckedK_eq_routed`,
   -- `dispatchOperandCheckedK_spec`).  A long message on a syscall that reads
   -- no overflow word takes its short route (`syscallReadsOverflow`), so the
-  -- overflowed dispatch holds only the five-word invocations
+  -- overflowed dispatch holds only the five-word invocations and the retype
   -- (`dispatchOverflowedCheckedR_eq_operand`, run as `overflowedRoutedArm`).
   , `SeLe4n.Kernel.dispatchSignalCheckedR
   , `SeLe4n.Kernel.dispatchWaitCheckedR
@@ -1222,7 +1240,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchAuditedCheckedR
   , `SeLe4n.Kernel.dispatchConfigureCheckedR
   , `SeLe4n.Kernel.dispatchServiceRegisterCheckedR
+  , `SeLe4n.Kernel.dispatchCopyCheckedR
   , `SeLe4n.Kernel.dispatchMintCheckedR
+  , `SeLe4n.Kernel.dispatchRetypeCheckedR
   , `SeLe4n.Kernel.dispatchOverflowedCheckedR
   , `SeLe4n.Kernel.dispatchOperandCheckedR
   -- The long call's, reply's and reply-receive's and the capability-carrying
@@ -1240,14 +1260,9 @@ def nonExecutedTransitionsPlain : List Name :=
   -- The short-argument route's specification, which the compiled entry
   -- runs as the arm proven equal to it (`shortArgsRoutedArm`).
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
-  -- The long and one-overflow-word routes' operand dispatches as the
-  -- specification runs them, a refusal handing back the TLB the entry held,
-  -- which the compiled entry runs as the continuation forms proven to hand on
-  -- what each returns (`longOperandK_spec`, `overflowOneOperandK_spec`,
-  -- `undoFillRefusalK_eq`, `dispatchOverflowOneCheckedR_eq_operand`).
-  , `SeLe4n.Kernel.longOperandSpecR
-  , `SeLe4n.Kernel.overflowOneOperandSpecR
-  , `SeLe4n.Kernel.undoFillRefusal
+  -- The one-overflow-word route's dispatch, which the compiled entry runs as
+  -- the operand dispatch proven equal to it
+  -- (`dispatchOverflowOneCheckedR_eq_operand`).
   , `SeLe4n.Kernel.dispatchOverflowOneCheckedR
   -- WS-SX SX1: the five-word invocations' arm as the continuation entry's
   -- specification names it, which the compiled entry runs as
@@ -1350,14 +1365,24 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored
-  -- WS-ZA ZA6.35: the carve's writes over a built `CarveRequest` (the
-  -- statement, its untyped-record step, its words form and its scrub), proven
-  -- equal to the code form the dispatch runs off the request's words
-  -- (`untypedRetypePerformCode_eq`, `CarveRequest.scrubAtW_eq`).
-  , `SeLe4n.Kernel.untypedRetypePerformAt
+  -- WS-ZA ZA6.35: the carve's words form and its scrub, proven equal to the
+  -- code form the dispatch runs off the request's words
+  -- (`untypedRetypePerformCode_eq`, `CarveRequest.scrubAtW_eq`).  The
+  -- statement over a built request (`untypedRetypePerformAt`) and its
+  -- untyped-record step (`retypeFromUntypedWrites`) are reached since
+  -- WS-SX SX6.3: the retype window runs them carve by carve.
   , `SeLe4n.Kernel.untypedRetypePerformWords
-  , `SeLe4n.Kernel.retypeFromUntypedWrites
   , `SeLe4n.Kernel.CarveRequest.scrubAt
+  -- WS-SX SX6.3: the single carve, checks and writes together
+  -- (`untypedRetypeObject`, its carve `retypeFromUntyped`), is the statement
+  -- the window's carve chain is stated over (`RetypeCarveChain`,
+  -- `untypedRetypeWindow_ok`); the window runs its refusal once
+  -- (`untypedRetypeWindowRefusal`) and then each carve's writes.  The
+  -- unguarded loop `untypedRetypeWindowCarves` is the admission theorem's
+  -- right-hand side (`untypedRetypeWindow_admitsEveryCarve`).
+  , `SeLe4n.Kernel.untypedRetypeObject
+  , `SeLe4n.Kernel.retypeFromUntyped
+  , `SeLe4n.Kernel.untypedRetypeWindowCarves
   , `SeLe4n.Kernel.switchDomain
   -- WS-ZA ZA6.2: the rotation's `Except` statement, proven equal to the form the
   -- domain accounting runs (`switchDomainOnCore_eq_state`).

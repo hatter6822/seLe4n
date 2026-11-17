@@ -62,17 +62,12 @@ theorem markCandidacyGainFor (st : SystemState) (t : SeLe4n.ThreadId) (b : Bool)
 
 /-! ### Priorities -/
 
-/-- The priority's source write: the bound context's band and the thread's
-priority, each in place. -/
+/-- The priority's source write: the thread's priority, in place. -/
 theorem updatePrioritySource (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
     (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
     RecordsFrame st (SchedContext.PriorityManagement.updatePrioritySource st t tcb p) := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · rename_i scId _
-    have F := updateSchedContext st scId (fun sc => { sc with priority := p }) hInv
-    exact F.trans (updateTcb _ t F.invExt fun _ => rfl)
-  · exact updateTcb _ t hInv fun _ => rfl
+  exact updateTcb _ t hInv fun _ => rfl
 
 theorem migrateRunQueueBucketOnCore (st : SystemState) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (home : CoreId) (hInv : st.objects.invExt) :
@@ -302,9 +297,8 @@ theorem rewriteObject_tcb {st : SystemState} {t : SeLe4n.ThreadId} {x : TCB}
     RecordsFrame st (st.rewriteObject t.toObjId (.tcb x') hA) :=
   rewriteObject hA hInv (by rw [(SystemState.getTcb?_eq_some_iff st t x).mp h]; simp [hV])
 
-/-- The bind writes the context's bound thread and the thread's binding and
-priority in place, re-buckets or places the thread, then the key hook and the
-context's placement. -/
+/-- The bind writes the context's bound thread and the thread's binding in
+place, places a parked thread, then the context's placement. -/
 theorem schedContextBind {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) : RecordsFrame st st' := by
@@ -319,63 +313,16 @@ theorem schedContextBind {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadI
         · split at h
           · cases h
           · split at h
-            · cases h
-            · split at h
-              · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-                subst h
-                refine chain ?_ (releasePlace _ _ _) hInv
-                refine chain ?_ (markKeyChangeFor _ _ _)
-                split
-                · refine chain ?_ (runRequeueOnCore _ _ _ _)
-                  exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
-                · split
-                  · refine chain (chain ?_ (runEnqueueOnCore _ _ _ _)) (markReschedulePendingOnCore _ _)
-                    exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
-                  · exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
-              all_goals cases h
+            · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+              subst h
+              refine chain ?_ (releasePlace _ _ _) hInv
+              split
+              · refine chain (chain ?_ (runEnqueueOnCore _ _ _ _)) (markReschedulePendingOnCore _ _)
+                exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
+              · exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
+            all_goals cases h
         · cases h
   · cases h
-
-/-- The configure's bound-thread propagation: thread rewrites in place and a
-re-bucket. -/
-theorem schedContextConfigureBoundPropagate (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (hInv : stStored.objects.invExt) :
-    RecordsFrame stStored (SchedContextOps.schedContextConfigureBoundPropagate stStored scId
-      boundTid boundTcb hBound priority domain) := by
-  have hP : ∀ (P : Prop) [Decidable P], RecordsFrame stStored
-      (if P then stStored else
-        if (stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)).queuedOn
-            (determineTargetCore (stStored.rewriteObject boundTid.toObjId
-              (.tcb { boundTcb with priority := ⟨priority⟩ })
-              (SystemState.rewriteAdmissible_tcb hBound _)) boundTid) boundTid then
-          (stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)).runRequeueOnCore
-            (determineTargetCore (stStored.rewriteObject boundTid.toObjId
-              (.tcb { boundTcb with priority := ⟨priority⟩ })
-              (SystemState.rewriteAdmissible_tcb hBound _)) boundTid) boundTid
-            ({ boundTcb with priority := ⟨priority⟩ } : TCB).boostedPriority
-        else stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)) := by
-    intro P _
-    have F := rewriteObject_tcb hBound { boundTcb with priority := ⟨priority⟩ } rfl
-      (SystemState.rewriteAdmissible_tcb hBound _) hInv
-    split
-    · exact refl hInv
-    · split
-      · exact F.andThen fun h => runRequeueOnCore _ _ _ _ h
-      · exact F
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  dsimp only
-  split
-  · rename_i cur hCur hEq
-    split
-    · exact hP _
-    · refine (hP _).andThen fun h => rewriteObject_tcb hCur _ ?_ _ h
-      rfl
-  · exact hP _
 
 /-- The configure's resume tail writes run-queue links and the scheduler alone. -/
 theorem configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : SchedContext)
@@ -395,11 +342,11 @@ theorem configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : Sche
     · exact refl hInv
 
 /-- The configure purges the context's replenishment, stores the reconfigured
-context over the old one, and runs the placement, the bound-thread
-propagation, the key hooks, the chain re-walk and the resume tail. -/
+context over the old one, and runs the placement, the candidacy hook and the
+resume tail. -/
 theorem schedContextConfigure {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : RecordsFrame st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -426,13 +373,10 @@ theorem schedContextConfigure {vScId : SeLe4n.ValidObjId}
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2]; exact F1
           · split at h
-            · rename_i boundTcb hBound _
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
+            · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact (((((F1.andThen fun h => releasePlace _ _ _ h).andThen fun h =>
-                schedContextConfigureBoundPropagate _ _ _ _ hBound _ _ h).andThen fun h =>
-                markCandidacyGainFor _ _ _ h).andThen fun h => markKeyChangeFor _ _ _ h).andThen
-                fun h => repropagateFromWaiter _ _ _ _ h).andThen fun h => configureResumeBound _ _ _ h
+              exact ((F1.andThen fun h => releasePlace _ _ _ h).andThen fun h =>
+                markCandidacyGainFor _ _ _ h).andThen fun h => configureResumeBound _ _ _ h
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]; exact F1.andThen fun h => releasePlace _ _ _ h
       · exact absurd h (by simp)
@@ -553,8 +497,8 @@ theorem setThreadCpuAffinityOnCore {st st' : SystemState} {vTarget : SeLe4n.Vali
 /-- The SchedControl configure moves the bound thread through the affinity
 change and then configures on the moved state. -/
 theorem schedControlConfigure {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
       st = .ok ((), st')) : RecordsFrame st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure hInv h

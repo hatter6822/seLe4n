@@ -593,7 +593,8 @@ theorem computeCrossCoreSgis_mem_flags_of_covers {e : CoreId} {pre post : System
 
 /-! ### Key frames -/
 
-/-- A TCB rewrite that keeps the five fields the effective key reads. -/
+/-- A TCB rewrite that keeps the four fields the effective key reads and the
+binding budget eligibility reads. -/
 def schedKeyFieldsEq (a b : TCB) : Prop :=
   b.priority = a.priority ∧ b.deadline = a.deadline ∧
     b.schedContextBinding = a.schedContextBinding ∧ b.pipBoost = a.pipBoost ∧
@@ -602,15 +603,14 @@ def schedKeyFieldsEq (a b : TCB) : Prop :=
 theorem schedKeyFieldsEq_ipcState (a : TCB) (s : ThreadIpcState) :
     schedKeyFieldsEq a (a.setIpcState s) := ⟨rfl, rfl, rfl, rfl, rfl⟩
 
-/-- The effective key reads only the key fields and the scheduling contexts. -/
+/-- The effective key reads only the thread's own key fields (WS-SX SX6.4: a
+scheduling context carries no part of it). -/
 theorem resolveEffectivePrioDeadline_congr {st st' : SystemState} {a b : TCB}
-    (hSc : ∀ sc, st'.getSchedContext? sc = st.getSchedContext? sc)
     (hK : schedKeyFieldsEq a b) :
     resolveEffectivePrioDeadline st' b = resolveEffectivePrioDeadline st a := by
-  obtain ⟨hP, hD, hB, hPip, -⟩ := hK
+  obtain ⟨hP, hD, -, hPip, -⟩ := hK
   unfold resolveEffectivePrioDeadline
-  rw [hP, hD, hB, hPip]
-  cases a.schedContextBinding <;> simp only [hSc]
+  rw [hP, hD, hPip]
 
 /-- The full key agrees when the two-component key and the domain do. -/
 theorem effectiveSchedParams_eq_of {st st' : SystemState} {a b : TCB}
@@ -632,12 +632,11 @@ theorem effectiveSchedParams_eq_of {st st' : SystemState} {a b : TCB}
   rintro ⟨rfl, rfl⟩ rfl
   exact ⟨rfl, rfl, rfl⟩
 
-/-- The full key reads only the key fields and the scheduling contexts. -/
+/-- The full key reads only the thread's own key fields. -/
 theorem effectiveSchedParams_congr {st st' : SystemState} {a b : TCB}
-    (hSc : ∀ sc, st'.getSchedContext? sc = st.getSchedContext? sc)
     (hK : schedKeyFieldsEq a b) :
     effectiveSchedParams st' b = effectiveSchedParams st a :=
-  effectiveSchedParams_eq_of (resolveEffectivePrioDeadline_congr hSc hK) hK.2.2.2.2
+  effectiveSchedParams_eq_of (resolveEffectivePrioDeadline_congr hK) hK.2.2.2.2
 
 /-- Budget eligibility reads the binding and the contexts' budget signs alone. -/
 theorem hasSufficientBudget_congr {st st' : SystemState} {a b : TCB}
@@ -724,19 +723,18 @@ theorem schedKeyView_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId
     (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt)
     (hK : schedKeyFieldsEq tcb t') (t : SeLe4n.ThreadId) :
     schedKeyView (st.rewriteObject tid.toObjId (.tcb t') h) t = schedKeyView st t := by
-  have hSc := SystemState.rewriteObject_tcb_getSchedContext? st tid.toObjId t' h hInv
   by_cases hEq : t = tid
   · subst hEq
     unfold schedKeyView
     rw [SystemState.rewriteObject_tcb_getTcb?_self st t t' h hInv, hOld]
-    simp only [Option.map_some, effectiveSchedParams_congr hSc hK]
+    simp only [Option.map_some, effectiveSchedParams_congr (st := st) hK]
   · have hNe : tid.toObjId ≠ t.toObjId :=
       fun h' => hEq (SeLe4n.ThreadId.toObjId_injective _ _ h').symm
     unfold schedKeyView
     rw [SystemState.rewriteObject_getTcb?_ne st _ _ h hInv t hNe]
     cases st.getTcb? t with
     | none => rfl
-    | some x => simp only [Option.map_some, effectiveSchedParams_congr hSc
+    | some x => simp only [Option.map_some, effectiveSchedParams_congr (st := st)
                   (⟨rfl, rfl, rfl, rfl, rfl⟩ : schedKeyFieldsEq x x)]
 
 /-! ### Coverage from frames -/
@@ -965,6 +963,26 @@ theorem markKeyChangeFor_reschedulePendingOnCore_of_weakened {pre mid : SystemSt
     simp only [Option.map_some]
     rcases hLt with h | h | h <;> simp [h]
 
+/-- **Coverage when no key moved.**  A step that moves no thread's key, gains no
+unflagged candidacy, and leaves every remote core flagged or with its slots kept
+(its queue may only shrink) covers with no hook: WS-SX SX6.4's bind writes the
+two links alone, and the key reads neither. -/
+theorem reschedulePendingCovers_of_keysKept {e : CoreId} {pre mid : SystemState}
+    (hKeys : ∀ t, schedKeyView mid t = schedKeyView pre t)
+    (hElig : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = false →
+      ∀ t, mid.queuedOn c t = true → candidacyNotGained pre mid t)
+    (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
+        mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
+    reschedulePendingCovers e pre mid := by
+  intro c hc
+  cases hFl : mid.scheduler.reschedulePendingOnCore c
+  case true => exact Or.inl rfl
+  rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
+  · rw [hFl] at hUp; cases hUp
+  exact Or.inr ⟨fun t ht => ⟨hRq t ht, (hKeys t).symm, hElig c hc hFl t ht⟩, hCur,
+    fun t _ => schedKeyNotWeakened_of_eq (hKeys t).symm⟩
+
 /-- **The key hook covers a key writer.**  If the write `pre → mid` moved no
 other thread's key, made no thread an unflagged remote core holds
 budget-eligible (a key writer leaves the binding alone), and every remote core
@@ -1162,6 +1180,42 @@ theorem markKeyChangeFor_markCandidacyGainFor_eq {pre mid : SystemState}
       (effectiveSchedParams pre tcb) = markKeyChangeFrom pre mid tid := by
   unfold markKeyChangeFrom; rw [hPre]
 
+/-- **The candidacy hook alone covers a write that moves no key.**  WS-SX SX6.4:
+a configure rewrites the context alone, so the bound thread's key is unchanged
+and the only thing it can do to the thread is hand it budget: a candidacy gain,
+which the hook flags (`markCandidacyGainFor_reschedulePendingOnCore_of_gained`).
+A lost candidacy stales nothing (`candidacyNotGained`). -/
+theorem markCandidacyGainFor_covers {e : CoreId} {pre mid : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
+    (hKey : schedKeyView mid tid = schedKeyView pre tid)
+    (hOthers : ∀ t, t ≠ tid → schedKeyView mid t = schedKeyView pre t ∧
+      budgetEligibleView mid t = budgetEligibleView pre t)
+    (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
+        mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
+    reschedulePendingCovers e pre (markCandidacyGainFor mid tid (hasSufficientBudget pre tcb)) := by
+  refine reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_) (fun c hc => ?_)
+  · by_cases ht : t = tid
+    · subst ht
+      refine Or.inr fun c hc => ?_
+      rcases hc with ⟨hMem, hCh | hGain⟩ | ⟨-, hW⟩
+      · exact absurd (by rw [schedKeyView_markCandidacyGainFor]; exact hKey) hCh
+      · rw [markCandidacyGainFor_queuedOn] at hMem
+        refine markCandidacyGainFor_reschedulePendingOnCore_of_gained hPre hMem fun h => hGain ?_
+        intro hq
+        rw [budgetEligibleView_markCandidacyGainFor] at hq
+        exact h hq
+      · exact absurd (schedKeyNotWeakened_of_eq
+          (by rw [schedKeyView_markCandidacyGainFor]; exact hKey.symm)) hW
+    · left
+      simp only [schedKeyView_markCandidacyGainFor, budgetEligibleView_markCandidacyGainFor]
+      exact hOthers t ht
+  · rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
+    · exact Or.inl (markCandidacyGainFor_reschedulePendingOnCore_mono _ _ _ _ hUp)
+    · refine Or.inr ⟨fun t ht => hRq t ?_, ?_⟩
+      · rwa [markCandidacyGainFor_queuedOn] at ht
+      · rw [markCandidacyGainFor_currentOnCore]; exact hCur
+
 /-! ### The key inputs as an object-store relation
 
 The effective key reads a TCB's four key fields and a scheduling context's
@@ -1174,15 +1228,15 @@ lemma establishes for every write whose slot keeps its projection. -/
 /-- What one object slot contributes to any thread's effective key and budget
 eligibility, and the core whose run queue a TCB's links place it on (WS-ZA
 ZA4.5: the coverage reads queue membership off the TCB links, so the core is an
-input too).  A scheduling context contributes its deadline (the key) and
-whether budget is left (`hasSufficientBudget`). -/
+input too).  A scheduling context contributes whether budget is left
+(`hasSufficientBudget`); WS-SX SX6.4: no part of the key. -/
 def keyInputsOf : Option KernelObject →
     Option ((SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding ×
-      Option SeLe4n.Priority × SeLe4n.DomainId × Nat) ⊕ (SeLe4n.Deadline × Bool))
+      Option SeLe4n.Priority × SeLe4n.DomainId × Nat) ⊕ Bool)
   | some (.tcb t) =>
       some (.inl (t.priority, t.deadline, t.schedContextBinding, t.pipBoost, t.domain,
         t.runCoreCode))
-  | some (.schedContext sc) => some (.inr (sc.deadline, sc.budgetRemaining.isPositive))
+  | some (.schedContext sc) => some (.inr sc.budgetRemaining.isPositive)
   | _ => none
 
 /-- No object slot's key inputs moved from `pre` to `post`. -/
@@ -1333,29 +1387,6 @@ theorem getTcb?_keyFields_of_keyInputsEq {pre post : SystemState} (h : keyInputs
     (post.getTcb? t).map tcbKeyFields = (pre.getTcb? t).map tcbKeyFields :=
   getTcb?_keyFields_of_keyInputsOf (h t.toObjId)
 
-/-- One slot's key inputs fix a scheduling context's deadline there. -/
-theorem getSchedContext?_deadline_of_keyInputsOf {pre post : SystemState}
-    {sc : SeLe4n.SchedContextId}
-    (hk : keyInputsOf post.objects[sc.toObjId]? = keyInputsOf pre.objects[sc.toObjId]?) :
-    (post.getSchedContext? sc).map (·.deadline) = (pre.getSchedContext? sc).map (·.deadline) := by
-  unfold SystemState.getSchedContext?
-  revert hk
-  generalize post.objects[sc.toObjId]? = a
-  generalize pre.objects[sc.toObjId]? = b
-  intro hk
-  cases a with
-  | none => cases b with
-    | none => rfl
-    | some o => cases o <;> simp_all [keyInputsOf]
-  | some o => cases b with
-    | none => cases o <;> simp_all [keyInputsOf]
-    | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
-
-theorem getSchedContext?_deadline_of_keyInputsEq {pre post : SystemState}
-    (h : keyInputsEq pre post) (sc : SeLe4n.SchedContextId) :
-    (post.getSchedContext? sc).map (·.deadline) = (pre.getSchedContext? sc).map (·.deadline) :=
-  getSchedContext?_deadline_of_keyInputsOf (h sc.toObjId)
-
 /-- One slot's key inputs fix a scheduling context's budget sign there. -/
 theorem getSchedContext?_budget_of_keyInputsOf {pre post : SystemState}
     {sc : SeLe4n.SchedContextId}
@@ -1402,34 +1433,13 @@ theorem budgetEligibleView_eq_of_keyInputsEq {pre post : SystemState} (h : keyIn
   budgetEligibleView_eq_of_keyFields (getTcb?_keyFields_of_keyInputsEq h t)
     (getSchedContext?_budget_of_keyInputsEq h)
 
-/-- The effective key reads the key fields and the contexts' deadlines alone. -/
-theorem resolveEffectivePrioDeadline_congr_deadline {st st' : SystemState} {a b : TCB}
-    (hSc : ∀ sc, (st'.getSchedContext? sc).map (·.deadline) =
-      (st.getSchedContext? sc).map (·.deadline))
-    (hK : tcbKeyFields b = tcbKeyFields a) :
-    resolveEffectivePrioDeadline st' b = resolveEffectivePrioDeadline st a := by
-  simp only [tcbKeyFields, Prod.mk.injEq] at hK
-  obtain ⟨hP, hD, hB, hPip, -⟩ := hK
-  unfold resolveEffectivePrioDeadline
-  rw [hP, hD, hB, hPip]
-  cases a.schedContextBinding with
-  | unbound => rfl
-  | bound sc =>
-    have := hSc sc
-    cases hq : st'.getSchedContext? sc <;> cases hp : st.getSchedContext? sc <;> simp_all
-  | donated sc o =>
-    have := hSc sc
-    cases hq : st'.getSchedContext? sc <;> cases hp : st.getSchedContext? sc <;> simp_all
-
-/-- The full key reads the key fields and the contexts' deadlines alone. -/
-theorem effectiveSchedParams_congr_deadline {st st' : SystemState} {a b : TCB}
-    (hSc : ∀ sc, (st'.getSchedContext? sc).map (·.deadline) =
-      (st.getSchedContext? sc).map (·.deadline))
+/-- The full key reads the thread's key fields alone. -/
+theorem effectiveSchedParams_congr_keyFields {st st' : SystemState} {a b : TCB}
     (hK : tcbKeyFields b = tcbKeyFields a) :
     effectiveSchedParams st' b = effectiveSchedParams st a := by
-  have hDom : b.domain = a.domain := by
-    simp only [tcbKeyFields, Prod.mk.injEq] at hK; exact hK.2.2.2.2
-  exact effectiveSchedParams_eq_of (resolveEffectivePrioDeadline_congr_deadline hSc hK) hDom
+  simp only [tcbKeyFields, Prod.mk.injEq] at hK
+  obtain ⟨hP, hD, hB, hPip, hDom⟩ := hK
+  exact effectiveSchedParams_congr ⟨hP, hD, hB, hPip, hDom⟩
 
 /-- Equal key inputs give equal keys for every thread. -/
 theorem schedKeyView_eq_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post)
@@ -1441,8 +1451,7 @@ theorem schedKeyView_eq_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq
   · simp at hT
   · simp at hT
   · simp only [Option.map_some, Option.some.injEq] at hT ⊢
-    rw [effectiveSchedParams_congr_deadline
-      (getSchedContext?_deadline_of_keyInputsEq h) hT]
+    rw [effectiveSchedParams_congr_keyFields hT]
 
 /-- Equal key inputs followed by a run-queue link rewrite move no thread's key. -/
 theorem schedKeyView_of_keyInputsEq_offRunLinks {pre mid post : SystemState}
@@ -1615,29 +1624,13 @@ theorem schedKeyView_eq_of_keyInputsEqExcept {tid : SeLe4n.ThreadId} {pre post :
     schedKeyView post t = schedKeyView pre t := by
   have hNe : t.toObjId ≠ tid.toObjId := fun e => ht (SeLe4n.ThreadId.toObjId_injective _ _ e)
   have hT := getTcb?_keyFields_of_keyInputsOf (h.1 _ hNe)
-  have hSc : ∀ sc, (post.getSchedContext? sc).map (·.deadline) =
-      (pre.getSchedContext? sc).map (·.deadline) := by
-    intro sc
-    by_cases hs : sc.toObjId = tid.toObjId
-    · have hq : post.getSchedContext? sc = none := by
-        unfold SystemState.getSchedContext?; rw [hs]
-        split
-        · rename_i x hx; exact absurd hx (h.2.2 x)
-        · rfl
-      have hp : pre.getSchedContext? sc = none := by
-        unfold SystemState.getSchedContext?; rw [hs]
-        split
-        · rename_i x hx; exact absurd hx (h.2.1 x)
-        · rfl
-      rw [hq, hp]
-    · exact getSchedContext?_deadline_of_keyInputsOf (h.1 _ hs)
   unfold schedKeyView
   cases hq : post.getTcb? t <;> cases hp : pre.getTcb? t <;> simp only [hq, hp] at hT ⊢
   · rfl
   · simp at hT
   · simp at hT
   · simp only [Option.map_some, Option.some.injEq] at hT ⊢
-    rw [effectiveSchedParams_congr_deadline hSc hT]
+    rw [effectiveSchedParams_congr_keyFields hT]
 
 /-- A TCB update at `tid` moves no key input but `tid`'s. -/
 theorem keyInputsEqExcept_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId}

@@ -294,10 +294,9 @@ example {st : SystemState}
     (h : schedulerInvariant_perCore_extended st bootCoreId)
     (hDSE : domainScheduleEntriesPositive st)
     (hSCWF : schedContextsWellFormed st)
-    (hSCBC : schedContextBindingConsistent st)
-    (hBTDC : boundThreadDomainConsistent st) :
+    (hSCBC : schedContextBindingConsistent st) :
     schedulerInvariantBundleExtended st :=
-  schedulerInvariant_perCore_extended_bootCore_to_bundleExtended h hDSE hSCWF hSCBC hBTDC
+  schedulerInvariant_perCore_extended_bootCore_to_bundleExtended h hDSE hSCWF hSCBC
 
 -- §2.10  Extended-aggregate pairwise independence.
 example {st : SystemState} (vc : Option SeLe4n.ThreadId) (vrq : SeLe4n.Kernel.RunQueue)

@@ -10,7 +10,7 @@
 import SeLe4n.Kernel.Capability.Operations
 
 /-!
-# The operation a syscall selects (WS-SX SX6)
+# The operation a syscall selects (WS-SX SX7)
 
 seL4 selects what a syscall does in two steps.  `handleSyscall` dispatches on
 the syscall number, one of seL4-MCS's eleven (`Syscall`).  An invoking
@@ -50,6 +50,7 @@ inductive CapType where
   | schedControl
   | irqControl
   | irqHandler
+  | serviceRegistry
   | cnodeSlot
   deriving Repr, DecidableEq
 
@@ -62,6 +63,7 @@ inductive CapType where
   | .schedControl _ => .schedControl
   | .irqControl _ => .irqControl
   | .irqHandler _ => .irqHandler
+  | .serviceRegistry _ => .serviceRegistry
   | .cnodeSlotWord _ => .cnodeSlot
 
 /-- The object kind each labelled operation invokes, by capability type: the
@@ -69,20 +71,18 @@ operation a label names is selected only on a capability of the type it takes
 (seL4's per-object `decode*Invocation`). -/
 def labelledOperationTakes (sid : SyscallId) : CapType → Bool
   | .object (some .cnode) => sid == .cspaceMint || sid == .cspaceCopy || sid == .cspaceMove ||
-      sid == .cspaceDelete || sid == .cspaceRevoke || sid == .mintReplyCap || sid == .declassify
-  | .object (some .untyped) => sid == .untypedRetype || sid == .declassify
-  | .object (some .vspaceRoot) => sid == .vspaceMap || sid == .vspaceUnmap ||
-      sid == .vspaceUnifyInstruction || sid == .declassify
+      sid == .cspaceDelete || sid == .cspaceRevoke || sid == .mintReplyCap
+  | .object (some .untyped) => sid == .untypedRetype
+  | .object (some .vspaceRoot) => sid == .vspaceUnmap || sid == .vspaceUnifyInstruction
   | .object (some .schedContext) => sid == .schedContextBind || sid == .schedContextUnbind ||
-      sid == .schedContextConsumed || sid == .schedContextYieldTo || sid == .declassify
+      sid == .schedContextConsumed || sid == .schedContextYieldTo
   | .object (some .tcb) => sid == .tcbSuspend || sid == .tcbResume || sid == .tcbSetPriority ||
-      sid == .tcbSetMCPriority || sid == .tcbSetIPCBuffer || sid == .tcbSetFaultHandler ||
-      sid == .tcbSetAffinity ||
-      sid == .tcbSetSpace || sid == .tcbBindNotification || sid == .tcbUnbindNotification ||
-      sid == .declassify
-  | .object (some .pageTable) => sid == .pageTableMap || sid == .pageTableUnmap ||
-      sid == .declassify
-  | .object (some .reply) | .object (some .frame) => sid == .declassify
+      sid == .tcbSetMCPriority || sid == .tcbSetIPCBuffer || sid == .tcbSetAffinity ||
+      sid == .tcbSetSpace || sid == .tcbBindNotification || sid == .tcbUnbindNotification
+  | .object (some .pageTable) => sid == .pageTableMap || sid == .pageTableUnmap
+  -- seL4's `seL4_ARM_Page_Map` is invoked on the frame capability (WS-SX SX6.3).
+  | .object (some .frame) => sid == .vspaceMap
+  | .object (some .reply) => false
   -- seL4: Send or Call on an endpoint is IPC and Send on a notification
   -- signals, whatever the label; the label is the receiver's data.  No label
   -- selects an operation on either (`invocationOperation_endpoint`,
@@ -90,7 +90,11 @@ def labelledOperationTakes (sid : SyscallId) : CapType → Bool
   | .object (some .endpoint) | .object (some .notification) => false
   | .object none => true
   | .replyCap => false
-  | .auditTrail => sid == .auditRead || sid == .auditDrain
+  -- The declassifications are invoked on the audit-trail capability, their
+  -- target extra capability 0 (WS-SX SX6.7).
+  | .auditTrail => sid == .auditRead || sid == .auditDrain || sid == .declassify ||
+      sid == .declassifySignal
+  | .serviceRegistry => sid == .serviceRegister || sid == .serviceRevoke || sid == .serviceQuery
   | .schedControl => sid == .schedContextConfigure
   | .irqControl => sid == .irqControlGet
   | .irqHandler => sid == .irqHandlerAck || sid == .irqHandlerSetNotification ||

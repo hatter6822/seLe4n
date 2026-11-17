@@ -129,6 +129,7 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- capability is observable where its line's interrupt node is, seL4's IRQ
   -- label (`pasIRQAbs`), as the line's state is (`projectIrqSignalLines`).
   | .irqControl _ => true
+  | .serviceRegistry _ => true
   | .irqHandler l => objectObservable ctx observer (irqNodeId l)
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.

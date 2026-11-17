@@ -431,9 +431,9 @@ theorem setThreadCpuAffinityWithMigration_readyKeptStage {S : SeLe4n.ThreadId �
     rw [hPair]; exact hr x hx
 
 theorem schedControlConfigure_readyKeptStage {S : SeLe4n.ThreadId → Prop} {core : CoreId}
-    {vScId : SeLe4n.ValidObjId} {budget period priority deadline domain : Nat}
+    {vScId : SeLe4n.ValidObjId} {budget period : Nat} {extraRefills badge flags : UInt64}
     {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain st =
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags st =
       .ok ((), st')) : readyKeptStage S st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact .of_stage (schedContextConfigure_runQueueStage h)
@@ -762,8 +762,8 @@ theorem cspaceRevokeCdtFinalising_readyKeptStage {S : SeLe4n.ThreadId → Prop} 
     (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h).2
 
 theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : readyKeptStage S st st' :=
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') : readyKeptStage S st st' :=
   (copyThreadSpacesZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
       readyKeptStage S st s)
     (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
@@ -809,7 +809,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqControl =>
-      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ _ hStep
       exact readyKeptStage.of_stage (irqControlGet_runQueueStage hG)
     all_goals try cases hStep
   case irqHandlerSetNotification =>
@@ -874,14 +874,21 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceMapArgs decoded st.machine.maxASID with
+      cases hDec : decodePageMapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
+      | ok words =>
           simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · refine readyKeptStage.of_stage ?_
-            exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+            simp only [hX] at hStep
+            cases hOps : resolvePageMapOperands tid decoded.capAddr rootCPtr words st with
+            | error e => simp only [hOps] at hStep; cases hStep
+            | ok p =>
+              obtain ⟨_, args⟩ := p
+              simp only [hOps] at hStep
+              refine readyKeptStage.of_stage ?_
+              exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -911,7 +918,9 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object oid =>
+    case serviceRegistry _ =>
+      replace hStep := serviceEndpointArm_ok hStep
+      obtain ⟨_, oid, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
       refine readyKeptStage.of_stage ?_
@@ -919,7 +928,9 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object epId =>
+    case serviceRegistry _ =>
+      replace hStep := serviceEndpointArm_ok hStep
+      obtain ⟨_, epId, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       cases hLkS : lookupServiceByRecordedRegistration epId st with
       | error e => simp only [hLkS] at hStep; cases hStep
@@ -937,14 +948,17 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case schedControl core =>
       try dsimp only [] at hStep
-      cases hDec : decodeSchedContextConfigureArgsChecked decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : resolveSchedControlConfigureTarget tid core args.scCPtr st with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vScId =>
-              simp only [hVal] at hStep
+      rcases hXc : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with _ | scCPtr
+      · simp only [hXc] at hStep; cases hStep
+      simp only [hXc] at hStep
+      cases hVal : resolveSchedControlConfigureTarget tid core scCPtr decoded.msgInfo.length st with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hDec : decodeSchedContextConfigureArgsChecked decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
               split at hStep
               · exact schedControlConfigure_readyKeptStage hStep
               · cases hStep
@@ -953,7 +967,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
+      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
       | error e => simp only [hRes] at hStep; cases hStep
       | ok vThreadId =>
           simp only [hRes] at hStep
@@ -1021,7 +1035,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>
       try dsimp only [] at hStep
-      cases hDec : decodeTcbBindNotificationArgs decoded with
+      cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
@@ -1030,18 +1044,12 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | some callerTcb =>
               simp only [hCaller] at hStep
               try dsimp only [] at hStep
-              simp only [syscallLookupArgumentCap] at hStep
-              cases hCap2 : syscallLookupCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .write } st with
+              cases hCap2 : resolveBindNotificationCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
               | error e => simp only [hCap2] at hStep; cases hStep
-              | ok pair =>
-                  obtain ⟨ntfnCap, stL⟩ := pair
+              | ok notifId =>
                   simp only [hCap2] at hStep
-                  cases hNT : ntfnCap.target with
-                  | object notifId =>
-                      simp only [hNT] at hStep
-                      refine readyKeptStage.of_stage ?_
-                      exact bindNotification_runQueueStage hStep
-                  | _ => simp only [hNT] at hStep; cases hStep
+                  refine readyKeptStage.of_stage ?_
+                  exact bindNotification_runQueueStage hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1116,7 +1124,8 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep
@@ -1142,7 +1151,8 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hValC : validateThreadIdArg tid with
+          cases hValC : resolvePriorityAuthority st tid
+              (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) with
           | error e => simp only [hValC] at hStep; cases hStep
           | ok vCallerTid =>
               simp only [hValC] at hStep
@@ -1172,7 +1182,8 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp st vtid
+              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp executingCore st
+                  vtid tid (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0)
                   args.bufferAddr with
               | error e => simp only [hSet] at hStep; cases hStep
               | ok stU =>
@@ -1206,26 +1217,6 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
                       cases hStep
                       exact setThreadCpuAffinityWithMigration_readyKeptStage hSet
     all_goals try cases hStep
-  case tcbSetFaultHandler =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object objId =>
-      try dsimp only [] at hStep
-      cases hDec : Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vtid =>
-              simp only [hVal] at hStep
-              cases hSet : setThreadFaultHandlerOp st vtid args.handlerCPtr with
-              | error e => simp only [hSet] at hStep; cases hStep
-              | ok stU =>
-                  simp only [hSet] at hStep
-                  cases hStep
-                  refine readyKeptStage.of_stage ?_
-                  exact setThreadFaultHandlerOp_runQueueStage hSet
-    all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object objId =>
@@ -1238,12 +1229,12 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hR : resolveSetSpace tid args st with
+              cases hR : resolveSetSpace tid decoded.msgInfo.extraCaps args st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
-                  obtain ⟨cn, vr⟩ := p
+                  obtain ⟨cn, vr, fh⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData fh with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
@@ -1258,13 +1249,17 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hR : resolveCallerCapObject tid args.vspaceRoot .write st with
-          | error e => simp only [hR] at hStep; cases hStep
-          | ok p =>
-              obtain ⟨_, rootId⟩ := p
-              simp only [hR] at hStep
-              refine readyKeptStage.of_stage ?_
-              exact pageTableMap_runQueueStage hStep
+          cases hX : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
+          | none => simp only [hX] at hStep; cases hStep
+          | some rootCPtr =>
+            simp only [hX] at hStep
+            cases hR : resolveCallerCapObject tid rootCPtr .write st with
+            | error e => simp only [hR] at hStep; cases hStep
+            | ok p =>
+                obtain ⟨_, rootId⟩ := p
+                simp only [hR] at hStep
+                refine readyKeptStage.of_stage ?_
+                exact pageTableMap_runQueueStage hStep
     all_goals try cases hStep
   case pageTableUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1328,6 +1323,64 @@ theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingC
   · exact .refl _
 
 
+/-- A receive run on its busy-reply-cancelled state keeps every ready thread
+but the receiver ready: the `.receive` arm, and the `.replyRecv` arm whose
+reply is skipped. -/
+theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : receiveResolvedArm decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
+    readyKeptStage (· = tid) st st' := by
+  unfold receiveResolvedArm at h
+  -- WS-SX SX4: the busy reply's holder cancelled first, which blocks no
+  -- thread; the receive then runs from the cancelled state.
+  have hSC : SystemState.RunQueueEntryStage st
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      readyKeptStage (· = tid) st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
+        executingCore = some tid ∧
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
+    rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
+      rw [e]
+    · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, P.endpointHeads, P.current,
+        P.currentActive⟩
+    · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
+        cancelReplyHolder_readyKeptStage st hd executingCore,
+        cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
+          P.toEntryPremises.queueHeadCancelFacts,
+        by rw [cancelReplyHolder_currentOnCore]; exact P.current,
+        cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
+  obtain ⟨hS, hK, hHC, hCurC, hActC⟩ := hSC
+  obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
+  have hDC := hS.2 P.objInv P.refined hRC P.dequeued
+  generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
+    at h hS hK hHC hCurC hActC hIC hRC hDC
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    have E := runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
+        hCurC P.notIdle hActC) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
+    exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
+        hCurC P.notIdle hActC) hRecv).trans E.1
+      (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
+          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+        (stageWokenSendCompletion_runQueueStage _ _)).trans
+        (stageDeliveredMessage_runQueueStage _ _ _))))
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
 other arm blocks a thread. -/
@@ -1385,52 +1438,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    -- WS-SX SX4: the busy reply's holder cancelled first, which blocks no
-    -- thread; the receive then runs from the cancelled state.
-    have hSC : SystemState.RunQueueEntryStage st
-          (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        readyKeptStage (· = tid) st (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        endpointHeadsWakeable (cancelRecvBusyReply ctx tid gate decoded executingCore st) ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).scheduler.currentOnCore
-          executingCore = some tid ∧
-        (cancelRecvBusyReply ctx tid gate decoded executingCore st).activeAt tid := by
-      rcases cancelRecvBusyReply_cases ctx tid gate decoded executingCore st with e | ⟨hd, hne, e⟩ <;>
-        rw [e]
-      · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, P.endpointHeads, P.current,
-          P.currentActive⟩
-      · exact ⟨cancelReplyHolder_runQueueEntryStage st hd executingCore,
-          cancelReplyHolder_readyKeptStage st hd executingCore,
-          cancelReplyHolder_endpointHeadsWakeable P.objInv P.dequeued
-            P.toEntryPremises.queueHeadCancelFacts,
-          by rw [cancelReplyHolder_currentOnCore]; exact P.current,
-          cancelReplyHolder_activeAt P.objInv P.refined (Ne.symm hne) P.currentActive⟩
-    obtain ⟨hS, hK, hHC, hCurC, hActC⟩ := hSC
-    obtain ⟨hIC, hRC⟩ := hS.1.links P.objInv P.refined
-    have hDC := hS.2 P.objInv P.refined hRC P.dequeued
-    generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
-      at h hS hK hHC hCurC hActC hIC hRC hDC
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      have E := runQueueStage_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-          hCurC P.notIdle hActC) hRecv
-      obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-      exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
-          hCurC P.notIdle hActC) hRecv).trans E.1
-        (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
-            ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-          (stageWokenSendCompletion_runQueueStage _ _)).trans
-          (stageDeliveredMessage_runQueueStage _ _ _))))
-    · cases h
+    exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1473,9 +1481,12 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · refine readyKeptStage.of_stage ?_
       exact cspaceMove_runQueueStage h
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · refine readyKeptStage.of_stage ?_
@@ -1507,6 +1518,12 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
+    -- and the receive runs alone
+    split at h
+    · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
@@ -1515,14 +1532,18 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
       P.current P.notIdle hRR).trans (endpointReplyRecvOnCore_runQueueEntryStage P.objInv
         P.refined P.dequeued P.queueHeads P.current P.notIdle hRR).1
       (.of_stage (stageDeliveredMessage_runQueueStage _ _ _))
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     refine readyKeptStage.of_stage ?_
     exact SystemState.RunQueueStage.of_frame rfl rfl rfl
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1598,12 +1619,8 @@ theorem syscallEntryChecked_readyKeptStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
   have hF := SystemState.RunQueueStage.of_frame (st := st)
-    (st' := { st with perCoreTlb := t }) rfl rfl rfl
+    (st' := st) rfl rfl rfl
   refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
   exact readyKeptStage.trans hF.entry.1 (.of_stage hF)
     (dispatchSyscallChecked_readyKeptStage ctx decoded tid e _ st'

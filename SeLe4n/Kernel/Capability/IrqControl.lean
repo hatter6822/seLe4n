@@ -38,12 +38,20 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **The line checks of `seL4_IRQControl_Get`**, read before any write:
-`.invalidIrq` for a line that is no device line of the board (`Arch_checkIRQ`)
-or that has no interrupt node, and `.revocationRequired` for a line a handler
-already holds (`isIRQActive`, seL4's `RevokeFirst`). -/
+/-- **The board's highest interrupt line**, seL4's `maxIRQ`: the last line
+below both the board's line count and the model's. -/
+@[inline] def irqControlMaxLine (st : SystemState) : Nat :=
+  min st.machine.interruptLineCount Architecture.modelInterruptLineCount - 1
+
+/-- **The line checks of `seL4_IRQControl_Get`**, read before any write: a
+line past the board's highest is `RangeError(0, maxIRQ)` (seL4's
+`Arch_checkIRQ`, WS-SX SX6.3); `.invalidIrq` for a line at or below it that is
+no device line of the board or has no interrupt node; and
+`.revocationRequired` for a line a handler already holds (`isIRQActive`,
+seL4's `RevokeFirst`). -/
 @[inline] def irqControlLineRefusal (st : SystemState) (line : Nat) : Option KernelError :=
-  if !Architecture.deviceInterruptLine st line then some .invalidIrq
+  if irqControlMaxLine st < line then some (.rangeError 0 (irqControlMaxLine st).toUInt64)
+  else if !Architecture.deviceInterruptLine st line then some .invalidIrq
   else if (st.getCNode? (irqNodeId line)).isNone then some .invalidIrq
   else if st.irqSignalLines.mem line then some .revocationRequired
   else none
@@ -208,7 +216,7 @@ def irqHandlerSetNotificationBindAt (executingCore : Concurrency.CoreId) (line :
     irqHandlerSetNotificationPerform line ⟨srcCnode, srcSlot⟩ st
   else irqHandlerSetNotificationOverFinalPerform executingCore line ⟨srcCnode, srcSlot⟩ st
 
-/-- The notification an `.irqHandlerSetNotification` names at MR0: its argument
+/-- The notification an `.irqHandlerSetNotification` names as extra capability 0: its argument
 capability `0` (seL4's `decodeIRQHandlerInvocation` answers a capability that is
 no notification capability with the send right `invalidCapNumber = 1`). -/
 def irqHandlerNotificationCapNumber : UInt64 := 1

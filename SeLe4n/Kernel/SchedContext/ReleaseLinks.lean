@@ -1838,11 +1838,6 @@ theorem _root_.SeLe4n.Kernel.SchedContext.chargeBudget_releaseKey_gt (sc : Sched
     ∀ t, (sc.chargeBudget start usage now).releaseKey? = some t → t > now :=
   SchedContext.releaseReadyHead_releaseKey_gt _ now
 
-/-- The deadline rule keeps the place. -/
-theorem _root_.SeLe4n.Kernel.cbsUpdateDeadline_releaseKey (sc : SchedContext) (t : Nat) (b : Bool) :
-    (cbsUpdateDeadline sc t b).releaseKey? = sc.releaseKey? := by
-  unfold cbsUpdateDeadline; split <;> rfl
-
 
 /-- WS-ZA ZA6.3: core `c`'s release queue as the abstract queue reads it holds
 each context at its place: a queued context is held by the store and its

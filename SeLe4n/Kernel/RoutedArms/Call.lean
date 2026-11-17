@@ -29,15 +29,15 @@ open SeLe4n.Model
 arm and taint step (`callOperandArmThenTaintR`) over the caller's message
 registers, its results reported. -/
 @[noinline] def callRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (length : Nat) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedKW .call (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW .call (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
       (callOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length tid
         executingCore (syscallRequiredRight .call))
       st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-      entryReportLookup entryReportLookupW
+      entryReportLookup entryReportLookupAtW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

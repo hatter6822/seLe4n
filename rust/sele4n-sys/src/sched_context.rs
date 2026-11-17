@@ -4,7 +4,7 @@
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiSchedContextConfigure`,
 //! `apiSchedContextBind`, `apiSchedContextUnbind`. Added in WS-Z Phase Z5.
 //! Bind and unbind require `.write` on the SchedContext capability; configure
-//! requires `.write` on a core's scheduling-control capability (WS-ZA ZA6.4).
+//! is invoked on a core's scheduling-control capability (WS-ZA ZA6.4).
 
 use sele4n_abi::args::sched_context::*;
 use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
@@ -14,17 +14,20 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// scheduling control — seL4-MCS's `seL4_SchedControl_ConfigureFlags`.
 ///
 /// Lean: the `.schedContextConfigure` arm (API.lean).  WS-ZA ZA6.4: the invoked
-/// capability `sched_control` is a core's scheduling control (`.write`), the only
-/// authority to set a budget and period; `sched_context` (MR\[0\]) is the address,
-/// in the caller's own CSpace, of a `.write` capability to the context, resolved
-/// by `resolveSchedControlConfigureTarget`.  A context bound to a thread homed on
-/// another core is refused (`ThreadOnDifferentCore`).  Parameters: budget,
-/// period, priority (≤255), deadline, domain (≤15); priority and domain travel
-/// in one word (MR\[3\]).  An out-of-range priority or domain returns
-/// `Err(InvalidSyscallArgument)` without a syscall.
+/// capability `sched_control` is a core's scheduling control, the only
+/// authority to set a budget and period.  WS-SX SX6.4: `sched_context` is the
+/// message's extra capability 0 (`caps_or_badges[0]` of `buf`), the address,
+/// in the caller's own CSpace, of a capability to the context, resolved by
+/// `resolveSchedControlConfigureTarget`; no extra capability is
+/// `TruncatedMessage`; as in seL4, the capability needs no right, only the
+/// scheduling-context kind.  A context bound to a thread homed on another core
+/// is moved, with its thread, to the control's core.  The words are seL4-MCS's:
+/// budget, period, extra refills (at most `MAX_REFILLS - MIN_REFILLS`; the
+/// context then holds up to `extra_refills + MIN_REFILLS` refills), badge, and
+/// flags (bit 0 is `seL4_SchedContext_Sporadic`).
 ///
 /// This syscall requires 5 message registers, but ARM64 only provides 4
-/// inline (x2–x5). The 5th value (`deadline`) is written to the IPC buffer's
+/// inline (x2–x5). The 5th word (`flags`) is written to the IPC buffer's
 /// overflow slot 0 (message register index 4), which the kernel reads at the
 /// entry (`ipcBufferReadMrK`) on the register-routed path.
 #[inline]
@@ -34,52 +37,52 @@ pub fn sched_context_configure(
     sched_context: CPtr,
     budget: u64,
     period: u64,
-    priority: u64,
-    deadline: u64,
-    domain: u64,
+    extra_refills: u64,
+    badge: u64,
+    flags: u64,
     buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    let args = SchedContextConfigureArgs {
-        sched_context,
+    let encoded = SchedContextConfigureArgs {
         budget,
         period,
-        priority,
-        deadline,
-        domain,
-    };
-    // A priority above 255 or a domain above 15 is refused here, before any
-    // write, with `InvalidSyscallArgument` — never masked into another valid
-    // configuration.
-    let encoded = args.encode()?;
-    // The 5th word (the deadline) goes to the IPC buffer's overflow slot
+        extra_refills,
+        badge,
+        flags,
+    }
+    .encode();
+    // The 5th word (the flags) goes to the IPC buffer's overflow slot
     // (register index 4).  AK4-F (R-ABI-M04): `set_mr(4)` returns `Ok(())` on
     // success; overflow-slot write only.
     buf.set_mr(4, encoded[4])?;
+    buf.caps_or_badges[0] = sched_context.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: sched_control,
-        msg_info: MessageInfo::new_const(5, 0, 0),
+        msg_info: MessageInfo::new_const(5, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::SchedContextConfigure,
     })
 }
 
-/// Bind a scheduling context to a thread.
+/// Bind a scheduling context to a thread — seL4-MCS's `seL4_SchedContext_Bind`.
 ///
 /// Lean: the `.schedContextBind` arm (API.lean) — requires `.write` on the
 /// SchedContext capability **and** `.write` on a TCB capability the caller
-/// holds: `tcb_cap` (MR\[0\]) is the capability address, in the caller's own
-/// CSpace, of the thread to bind, resolved by the kernel through
-/// `resolveSchedContextBindThread` (`v0.35.204`; a raw `ThreadId` until then,
-/// which let a SchedContext-capability holder bind — and re-prioritise — any
-/// thread it could name).  Same shape as `tcb_bind_notification`.
+/// holds: `tcb_cap` is the capability address, in the caller's own CSpace, of
+/// the thread to bind, the message's extra capability 0 (`caps_or_badges[0]`
+/// of `buf`, the caller's IPC buffer), resolved by the kernel through
+/// `resolveSchedContextBindThread`.  No message word is sent; no extra
+/// capability is `TruncatedMessage`.  Same shape as `tcb_bind_notification`.
 #[inline]
-pub fn sched_context_bind(sc_cap: CPtr, tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
-    let args = SchedContextBindArgs { tcb_cap };
-    let encoded = args.encode();
+pub fn sched_context_bind(
+    sc_cap: CPtr,
+    tcb_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = tcb_cap.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: sc_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [encoded[0], 0, 0, 0],
+        msg_info: MessageInfo::new_const(0, 1, 0),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::SchedContextBind,
     })
 }
@@ -167,23 +170,16 @@ pub fn yield_now() -> KernelResult<SyscallResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sele4n_types::KernelError;
 
-    /// An out-of-range priority or domain is refused before the wrapper writes
-    /// the overflow word or traps: never masked into another configuration.
+    /// WS-SX SX6.4: the context travels as extra capability 0 and the flags
+    /// word as message register 4 (the IPC buffer's overflow slot 0).
     #[test]
-    fn configure_refuses_out_of_range_before_any_write() {
+    fn configure_names_the_context_as_extra_cap_zero() {
         let mut buf = IpcBuffer::new();
         let cap = CPtr::from(1u64);
         let sc = CPtr::from(2u64);
-        assert_eq!(
-            sched_context_configure(cap, sc, 10, 100, 256, 77, 0, &mut buf),
-            Err(KernelError::InvalidSyscallArgument)
-        );
-        assert_eq!(
-            sched_context_configure(cap, sc, 10, 100, 0, 77, 16, &mut buf),
-            Err(KernelError::InvalidSyscallArgument)
-        );
-        assert_eq!(buf.get_mr(4), Ok(0));
+        let _ = sched_context_configure(cap, sc, 10, 100, 0, 77, 1, &mut buf);
+        assert_eq!(buf.caps_or_badges[0], 2);
+        assert_eq!(buf.get_mr(4), Ok(1));
     }
 }

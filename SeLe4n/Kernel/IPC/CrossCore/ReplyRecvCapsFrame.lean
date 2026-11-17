@@ -50,14 +50,14 @@ structure CapTransferWords where
 
 /-- The words `capTransferK` reads on `st`. -/
 def capTransferWords (st : SystemState) (ep : SeLe4n.ObjId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : CapTransferWords :=
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : CapTransferWords :=
   capTransferK st ep sv sb sroot count rv rb rroot CapTransferWords.mk
 
 /-- **`capTransferK` commutes with any map of its answer.** -/
 theorem capTransferK_map {α β : Type} (f : α → β) (st : SystemState) (ep : SeLe4n.ObjId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability)
     (k : Bool → SeLe4n.ObjId → SeLe4n.Slot → Nat → Capability → Capability → Capability →
       SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
     f (capTransferK st ep sv sb sroot count rv rb rroot k) =
@@ -73,8 +73,8 @@ theorem capTransferK_map {α β : Type} (f : α → β) (st : SystemState) (ep :
 
 /-- **`capTransferK` is its continuation at the words it reads.** -/
 theorem capTransferK_eq_words {α : Type} (st : SystemState) (ep : SeLe4n.ObjId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability)
     (k : Bool → SeLe4n.ObjId → SeLe4n.Slot → Nat → Capability → Capability → Capability →
       SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
     capTransferK st ep sv sb sroot count rv rb rroot k =
@@ -87,8 +87,8 @@ theorem capTransferK_eq_words {α : Type} (st : SystemState) (ep : SeLe4n.ObjId)
 /-- **The words the transfer reads are the same on states that agree on
 buffers and CNodes** (`ipcBufferReadsAgree`). -/
 theorem capTransferWords_congr {X st : SystemState} (h : ipcBufferReadsAgree X st)
-    (ep : SeLe4n.ObjId) (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability)
-    (count : Nat) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) :
+    (ep : SeLe4n.ObjId) (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability)
+    (count : Nat) (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) :
     capTransferWords X ep sv sb sroot count rv rb rroot =
       capTransferWords st ep sv sb sroot count rv rb rroot := by
   have hC : ∀ id, X.getCNode? id = st.getCNode? id := h.getCNode?
@@ -241,7 +241,7 @@ theorem transferFrame_transferInstallPerform (scn : SeLe4n.ObjId) (ssl : SeLe4n.
 /-! ### The reply's loop: at most one install, at index 0 -/
 
 /-- With the receive slot used up and nothing to unwrap, the loop writes nothing. -/
-theorem capStepsApply_noUnwrap_used (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr)
+theorem capStepsApply_noUnwrap_used (ep : SeLe4n.ObjId) (rv : Option Capability) (rb : SeLe4n.VAddr)
     (c0 c1 c2 : Capability) (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId)
     (r1s : SeLe4n.Slot) (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId)
     (dsl : SeLe4n.Slot) (idx fuel : Nat) (st : SystemState) :
@@ -251,7 +251,7 @@ theorem capStepsApply_noUnwrap_used (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb 
   | succ f => simp [capStepsApply]
 
 /-- **The reply's loop is at most the install of its first capability.** -/
-theorem capStepsApply_noUnwrap_cases (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr)
+theorem capStepsApply_noUnwrap_cases (ep : SeLe4n.ObjId) (rv : Option Capability) (rb : SeLe4n.VAddr)
     (c0 c1 c2 : Capability) (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId)
     (r1s : SeLe4n.Slot) (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId)
     (dsl : SeLe4n.Slot) (fuel : Nat) (free : Bool) (st : SystemState) :
@@ -273,7 +273,7 @@ theorem capStepsApply_noUnwrap_cases (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb
     · exact .inl rfl
 
 /-- **The reply's loop keeps the frame.** -/
-theorem transferFrame_capStepsApply_noUnwrap (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId)
+theorem transferFrame_capStepsApply_noUnwrap (ep : SeLe4n.ObjId) (rv : Option Capability)
     (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability) (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot)
     (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot) (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot)
     (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (fuel : Nat) (free : Bool) (st : SystemState)
@@ -414,8 +414,8 @@ theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
   have hK := capTransferK_eq_at S ep false stcb count rt (fun _ Y => Y)
   simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte, hT] at hK
   rw [capTransferK_eq_words, capTransferWords_congr hAg] at hK
-  generalize capTransferWords st ep stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count
-    rt.vspaceRoot rt.ipcBuffer rt.spaceCells[0] = w at hK
+  generalize capTransferWords st ep stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count
+    rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] = w at hK
   dsimp only at hK
   rw [← hK]
   exact transferFrame_capStepsApply_noUnwrap _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ S hNo

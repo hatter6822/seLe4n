@@ -1457,7 +1457,7 @@ form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
     ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 3)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s1.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
@@ -1476,7 +1476,7 @@ theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
     ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 3)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s2.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,

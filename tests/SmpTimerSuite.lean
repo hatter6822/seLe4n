@@ -714,7 +714,7 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
   let tcbHi : TCB := { mkTcb 311 20 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scHi), scBindingOwnerCode := 0, threadState := .Ready }
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidHi),
+        boundThreadCode := SeLe4n.ThreadId.optCode (some tidHi),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
         refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   -- exhausted tidHi queued on the boot core (its exhaustion re-enqueue), tidLo
@@ -762,7 +762,7 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
   let scB : SeLe4n.SchedContextId := ⟨89⟩
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidB),
+        boundThreadCode := SeLe4n.ThreadId.optCode (some tidB),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
         refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   let mkState (tcb : TCB) : SystemState :=
@@ -803,7 +803,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
     queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 } (.blockedOnSend epW))
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨15⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidW),
+        boundThreadCode := SeLe4n.ThreadId.optCode (some tidW),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some tidW, tail := some tidW } {})
   let stBase : SystemState :=

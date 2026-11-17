@@ -4089,13 +4089,11 @@ breaking it.
 
 With one home there is nothing to keep in step on the READ side: the stale-mirror
 read is not a defect that was fixed but a state no reader can be misled by, since
-no scheduling decision consults the mirror any more.  `SchedContext.priority`
-survives as what it always was on the write side — the band a reservation
-*configures* its bound thread to, propagated into the TCB by `schedContextBind` and
-`schedContextConfigureBoundPropagate` — and `boundThreadPriorityConsistent` survives
-with it, no longer load-bearing for any read but still the statement that those two
-writers propagated.  That is a real property of them and not a tautology, so it is
-kept rather than retired.
+no scheduling decision consults the mirror any more.  Since WS-SX SX6.4 the mirror
+is gone as well: a scheduling context carries no priority, deadline or domain
+(seL4-MCS's `sched_context_t` holds none; `seL4_SchedControl_ConfigureFlags` sets
+budget, period, refills, badge and flags), so no bind or configure writes a
+thread's priority and `boundThreadPriorityConsistent` is retired with the field.
 
 The state argument is kept so the ~50 call sites and every theorem stated over them
 are unchanged by the collapse; it is unread, and `threadBasePriority_eq` says so.

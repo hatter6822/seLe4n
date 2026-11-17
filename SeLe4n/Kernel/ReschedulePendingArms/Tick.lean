@@ -123,7 +123,7 @@ theorem refillSchedContext_views_of_unbound (st : SystemState) (scId : SeLe4n.Sc
   | some sc =>
     have hPre := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
     have hPost : (refillSchedContext st scId now).objects[scId.toObjId]? =
-        some (.schedContext (cbsUpdateDeadline (sc.releaseReadyHead now) now true)) := by
+        some (.schedContext ((sc.releaseReadyHead now))) := by
       apply (SystemState.getSchedContext?_eq_some_iff _ _ _).mp
       unfold refillSchedContext
       rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
@@ -471,8 +471,7 @@ theorem yieldCharge_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     (hc : st.scheduler.currentOnCore c = some tid)
     (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
-    (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
-        (sc.chargeBudget st.machine.timer sc.budget.val st.machine.timer) st.machine.timer true))
+    (st.rewriteObject scId.toObjId (.schedContext (sc.chargeBudget st.machine.timer sc.budget.val st.machine.timer))
       (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true :=
   spendBudget_requeue_releaseFreeFor _ _ hInv hRef hAff
     (currentBoundHomedOnCore_of_placement st c hD hBi) hc hT hb hSc
@@ -526,16 +525,13 @@ theorem timerTickBudgetOnCore_stepCovers (st : SystemState) (c : CoreId)
       · rename_i hBudget
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
         have hEx : sc.tickExhausts (st.machine.timer - 1) = false := by simpa using hBudget
-        have hD := (SchedContext.fields_of_refillsErased
-          (sc.chargeBudget_refillsErased (st.machine.timer - 1) 1 st.machine.timer)).2.2.2.2.1
         have hP1 := sc.chargeBudget_tick_pos _ st.machine.timer hEx
         have hP0 := sc.tickExhausts_false_pos _ hEx
         exact stepCovers_of_scheduler_eq
           (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_schedContext hSc _) hInv (by
             rw [hScRaw]
-            simp only [keyInputsOf, Budget.isPositive, hD]
-            congr 3
-            simp only [decide_eq_decide]
+            simp only [keyInputsOf, Budget.isPositive, Option.some.injEq, Sum.inr.injEq,
+              decide_eq_decide]
             omega))
           rfl
     · exact stepCovers_refl c st

@@ -109,7 +109,6 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_tcbSetMCPriority
 #check @lockSet_tcbSetIPCBuffer
 #check @lockSet_tcbSetAffinity
-#check @lockSet_tcbSetFaultHandler
 
 /-! ## SM3.B.3 audit-pass-5 — PIP-chain-walk start markers -/
 
@@ -148,7 +147,6 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_consistent_tcbSetMCPriority
 #check @lockSet_consistent_tcbSetIPCBuffer
 #check @lockSet_consistent_tcbSetAffinity
-#check @lockSet_consistent_tcbSetFaultHandler
 
 /-! ## SM3.B Inventory -/
 
@@ -501,11 +499,11 @@ example : permittedKinds .tcbSetPriority =
 example : permittedKinds .tcbSetMCPriority =
     [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
 example : permittedKinds .tcbSetIPCBuffer =
-    [.tcb, .cnode, .vspaceRoot, .endpoint, .notification] := by decide
+    [.tcb, .cnode, .page, .endpoint, .notification, .objStore] := by decide
 -- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
--- about the arm rather than a relaxation.  The live arm hands
--- `cap.target = .object targetId` to a transition that commits a `storeObject`
--- at it, and SM9.D.17's `targetLock : Option LockId` carries that object's own
+-- about the arm rather than a relaxation.  The live arm hands the object its
+-- extra capability 0 names (`resolveDeclassifyTarget`, the invoked capability
+-- being the audit trail's) to a transition that commits a `storeObject` at it, and SM9.D.17's `targetLock : Option LockId` carries that object's own
 -- lock into the resolved footprint — so a downgrade of an endpoint, a
 -- notification, a reply, a scheduling context, a VSpace root, an untyped region
 -- or a page frame contributes that kind.  Listing three left
@@ -633,10 +631,10 @@ example :
 
 example :
     ∀ p ∈ (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext).pairs,
+              (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext 1).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-    (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext
+    (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext 1
 
 -- ============================================================================
 -- §6d — Runtime exercise of lockAcquireSequence_canonical
@@ -745,12 +743,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 109 := by decide
+example : lockSetTheorems.length = 107 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 43 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 43 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -854,7 +852,7 @@ private def runPermittedKindsChecks : IO Unit := do
       (.schedContext, .schedContext), (.untyped, .untyped), (.vspaceRoot, .vspaceRoot),
       (.frame, .page), (.pageTable, .page)].all fun (ty, k) =>
       (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-          (ObjId.ofNat 30) (ObjId.ofNat 10) ty).pairs.any (fun p =>
+          (ObjId.ofNat 30) (ObjId.ofNat 10) ty 1).pairs.any (fun p =>
         decide (p.fst.kind = k ∧ p.snd = AccessMode.write)))
   -- WS-RR RR7.23 (register finding 5): every registry writer declares the
   -- state-level lock — the trio in write/write/read.
@@ -905,11 +903,11 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .tcbSetMCPriority (audit-pass-6: includes .schedContext)"
     (decide (permittedKinds .tcbSetMCPriority =
       [.tcb, .cnode, .schedContext, .endpoint, .notification]))
-  -- Audit-pass-6: .tcbSetIPCBuffer includes .vspaceRoot.
-  -- validateIpcBufferAddress reads the target's VSpaceRoot.
-  assertBool "permittedKinds .tcbSetIPCBuffer (audit-pass-6: includes .vspaceRoot)"
+  -- .tcbSetIPCBuffer reads the buffer's frame (.page) and writes the
+  -- derivation tree when it installs the frame capability (.objStore).
+  assertBool "permittedKinds .tcbSetIPCBuffer (the frame read + the slot copy's state-level lock)"
     (decide (permittedKinds .tcbSetIPCBuffer =
-      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]))
+      [.tcb, .cnode, .page, .endpoint, .notification, .objStore]))
   -- Audit-pass-6: .serviceRegister includes .endpoint.
   -- registerService reads st.objects[epId]? to verify endpoint kind.
   assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
@@ -962,7 +960,7 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "untypedRetype writes the authority capability's CNode"
     (decide ((cnodeLock (ObjId.ofNat 11), AccessMode.write)
         ∈ (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
-            (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).pairs))
+            (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 1).pairs))
   -- …and the member is present in all four, which the size alone would not say.
   assertBool "every capability operation declares the state-level CDT write"
     (decide ((stateLevelLock, AccessMode.write)
@@ -1018,7 +1016,26 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- state-level CDT write), on distinct CNodes.
   assertBool "untypedRetype size = 7"
     (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
-              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).size = 7))
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 1).size = 7))
+  -- A carve of n objects names each child id: the base six plus n, so the
+  -- fan-out limit fills the ceiling exactly and a larger count is clamped.
+  assertBool "untypedRetype of 3 objects names children 40, 41 and 42"
+    (decide ([40, 41, 42].all fun c =>
+      (endpointLock (ObjId.ofNat c), AccessMode.write) ∈
+        (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+          (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 3).pairs))
+  assertBool "untypedRetype of 3 objects does not name child 43"
+    (decide ((endpointLock (ObjId.ofNat 43), AccessMode.write) ∉
+        (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+          (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 3).pairs))
+  assertBool "untypedRetype at the fan-out limit fills maxLockSetSize"
+    (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint retypeFanOutLimit).size
+              = maxLockSetSize))
+  assertBool "untypedRetype past the fan-out limit is clamped to the ceiling"
+    (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 100).size = maxLockSetSize))
+  assertBool "retypeFanOutLimit is 26" (decide (retypeFanOutLimit = 26))
   -- **WS-OD (`v0.35.4`)**: the suspend's optional members, at the two footprints
   -- that own them since the parametric `lockSet_tcbSuspend` was retired.
   -- Teardown with both blocked objects: victim + endpoint + notification.
@@ -1079,25 +1096,36 @@ private def runPerTransitionShapeChecks : IO Unit := do
               (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
-  -- (caller TCB read, CNode read, target TCB write — no SC).
+  -- (caller TCB read, CNode read, target TCB write — no SC; the caller is
+  -- its own authority).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetPriority with bound SC = 4 locks.
   assertBool "tcbSetPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+  -- WS-SX SX6.4 (D11): an authority other than the caller adds its TCB read
+  -- (the self-authority sets above dedupe it into the caller's).
+  assertBool "tcbSetPriority size (unbound target, another authority) = 4"
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  assertBool "tcbSetMCPriority size (unbound target, another authority) = 4"
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  assertBool "tcbSetPriority(authority 2) contains tcbLock 2 as read"
+    ((lockSet_tcbSetPriority ⟨1⟩ ⟨2⟩ (ObjId.ofNat 10) ⟨3⟩ none none).pairs.any (fun p =>
+      decide (p = (.object ⟨.tcb, ObjId.ofNat 2⟩, .read))))
   -- Audit-pass-6 P1: tcbSetMCPriority with unbound target = 3 locks.
   assertBool "tcbSetMCPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetMCPriority with bound SC = 4 locks.
   assertBool "tcbSetMCPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
-  -- Audit-pass-6 P1: tcbSetIPCBuffer with no target VSpaceRoot (target absent) = 3 locks.
-  assertBool "tcbSetIPCBuffer size (no VSpaceRoot) = 3"
-    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
-  -- Audit-pass-6 P1: tcbSetIPCBuffer with target VSpaceRoot = 4 locks.
-  assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
+  -- tcbSetIPCBuffer with no frame read (lookup failed, or a zero address) = 4 locks:
+  -- the base three plus the state-level write the buffer slot's copy takes.
+  assertBool "tcbSetIPCBuffer size (no frame) = 4"
+    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 4))
+  -- tcbSetIPCBuffer with the buffer's frame = 5 locks.
+  assertBool "tcbSetIPCBuffer size (frame included) = 5"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 99)) none).size = 4))
+              (some (ObjId.ofNat 99)) none).size = 5))
   -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint lock;
   -- WS-RR RR7.23 added the registry's own state-level write.
   assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
@@ -1488,7 +1516,7 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     allOk_mint
   -- The carve, at a kernel-object child.
   let carve := lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-                  (ObjId.ofNat 30) (ObjId.ofNat 10) .tcb
+                  (ObjId.ofNat 30) (ObjId.ofNat 10) .tcb 1
   let allOk_carve := carve.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .untypedRetype))
   assertBool "lockSet_untypedRetype: all kinds in permittedKinds .untypedRetype"
@@ -1512,23 +1540,23 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
     allOk_replyDon
   -- Audit-pass-6 P1: .tcbSetPriority with bound SC — every kind permitted.
-  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setPriBound := setPriBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
   assertBool "lockSet_tcbSetPriority (.bound binding, SC included): all kinds permitted"
     allOk_setPriBound
   -- Audit-pass-6 P1: .tcbSetMCPriority with bound SC.
-  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setMcpBound := setMcpBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetMCPriority))
   assertBool "lockSet_tcbSetMCPriority (.bound binding, SC included): all kinds permitted"
     allOk_setMcpBound
-  -- Audit-pass-6 P1: .tcbSetIPCBuffer with VSpaceRoot.
+  -- .tcbSetIPCBuffer with the buffer's frame.
   let setIpcVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                      (some (ObjId.ofNat 99)) none
   let allOk_setIpcVsr := setIpcVsr.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer))
-  assertBool "lockSet_tcbSetIPCBuffer (VSpaceRoot included): all kinds permitted"
+  assertBool "lockSet_tcbSetIPCBuffer (frame included): all kinds permitted"
     allOk_setIpcVsr
   -- Audit-pass-6 P2: .serviceRegister with endpoint.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -1549,9 +1577,9 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
   IO.println "--- §18 WS-RR RR7.38 queue-owner footprint member ---"
   let ep : QueueOwner := .endpoint (ObjId.ofNat 20)
   let ntfn : QueueOwner := .notification (ObjId.ofNat 21)
-  let bare := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
-  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
-  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
+  let bare := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
+  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
   assertBool "a queued target adds exactly one member"
     (decide (queuedEp.size = bare.size + 1))
   assertBool "…and that member is the endpoint's WRITE lock, not a read"
@@ -1624,27 +1652,30 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   IO.println "--- §17 Audit-pass-6 footprint completeness (P1+P2 closure) ---"
   -- P1 (tcbSetPriority): with unbound target, no SC lock — but the
   -- bound case adds (schedContextLock scId, .write).
-  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+  let boundPri := lockSet_tcbSetPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetPriority(.bound) has one more lock than .unbound"
     (decide (boundPri.size = unboundPri.size + 1))
   assertBool "P1: tcbSetPriority(.bound 50) contains schedContextLock ⟨50⟩ as write"
     (boundPri.pairs.any (fun p =>
       decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetMCPriority): same shape.
-  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
       decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
-  -- P1 (tcbSetIPCBuffer): with target VSpaceRoot, contains read lock.
-  let withVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+  -- tcbSetIPCBuffer: with the buffer's frame, contains its page read lock and
+  -- the state-level write; it never names a VSpace root.
+  let withFrame := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                     (some (ObjId.ofNat 99)) none
-  assertBool "P1: tcbSetIPCBuffer(some 99) contains vspaceRootLock 99 as read"
-    (withVsr.pairs.any (fun p =>
-      decide (p = (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
-  assertBool "P1: tcbSetIPCBuffer(none) does NOT contain any vspaceRoot lock"
-    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-     decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
+  assertBool "tcbSetIPCBuffer(some 99) contains pageLock 99 as read"
+    (withFrame.pairs.any (fun p =>
+      decide (p = (.object ⟨.page, ObjId.ofNat 99⟩, .read))))
+  assertBool "tcbSetIPCBuffer(some 99) contains the state-level lock as write"
+    (withFrame.pairs.any (fun p => decide (p = (.objStore, .write))))
+  assertBool "tcbSetIPCBuffer(none) contains no page lock and no vspaceRoot lock"
+    (let noFrame := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+     decide (noFrame.pairs.all (fun p => p.fst.kind ≠ .page ∧ p.fst.kind ≠ .vspaceRoot)))
   -- P2 (serviceRegister): contains the endpoint read lock.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   assertBool "P2: serviceRegister contains endpointLock 20 as write (it records its code)"
@@ -1659,10 +1690,14 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   let boundPriSeq := boundPri.lockAcquireSequence
   assertBool "P1: tcbSetPriority(.bound 50) canonical sort places SC at end (level 7)"
     (decide (boundPriSeq.getLast? = some (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write)))
-  -- Similarly for setIPCBuffer: VSpaceRoot at level 8, sorts last.
-  let ipcSeq := withVsr.lockAcquireSequence
-  assertBool "P1: tcbSetIPCBuffer(some 99) canonical sort places VSpaceRoot at end (level 8)"
-    (decide (ipcSeq.getLast? = some (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read)))
+  -- Similarly for setIPCBuffer: the frame's page lock sorts last, and the
+  -- state-level lock (level 0) first.
+  let ipcSeq := (lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+                  (some (ObjId.ofNat 99)) none).lockAcquireSequence
+  assertBool "tcbSetIPCBuffer(some 99) canonical sort places the frame's page lock at end"
+    (decide (ipcSeq.getLast? = some (.object ⟨.page, ObjId.ofNat 99⟩, .read)))
+  assertBool "tcbSetIPCBuffer(some 99) canonical sort places the state-level lock first"
+    (decide (ipcSeq.head? = some (.objStore, .write)))
   -- P2 canonical: endpoint at level 4, sorts after cnode(2) but before tcb(3).
   -- Actually wait — hierarchy is cnode=2 < tcb=3 < endpoint=4.  So endpoint is last.
   let svcRegSeq := svcReg.lockAcquireSequence
@@ -1729,8 +1764,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 111"
-    (decide (lockSetTheorems.length = 111))
+  assertBool "lockSetTheorems.length = 107"
+    (decide (lockSetTheorems.length = 107))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

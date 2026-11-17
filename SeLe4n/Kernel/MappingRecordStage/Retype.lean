@@ -52,8 +52,8 @@ theorem CarveRequest.object_threadSlotsEmpty (untypedId childId : SeLe4n.ObjId)
   unfold TCB.spaceSlotCap at hc
   split at hc
   · next hs =>
-    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 := by omega
-    rcases this with h | h | h <;> simp [carvedTcb, h] at hc
+    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 ∨ s.toNat = 3 := by omega
+    rcases this with h | h | h | h <;> simp [carvedTcb, h] at hc
   · cases hc
 
 /-- **The carve keeps the mappings recorded.** -/
@@ -106,12 +106,12 @@ theorem untypedRetypeObject_mappingStage {src dst : CSpaceAddr} {childId : SeLe4
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap_mappingStage {tid : SeLe4n.ThreadId}
-    {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr}
+    {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
-    {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
-    MappingStage st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
-  exact untypedRetypeObject_mappingStage hCarve
+    {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    MappingStage st st' :=
+  (untypedRetypeFromCap_chain h).rel (P := fun _ => True) MappingStage.refl
+    (fun h1 h2 => h1.trans h2) (fun _ _ => trivial)
+    (fun _ hC => untypedRetypeObject_mappingStage hC) trivial
 
 end SeLe4n.Kernel

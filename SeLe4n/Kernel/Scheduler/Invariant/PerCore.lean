@@ -53,7 +53,7 @@ each `bound`/`donated` arm).
    per-core scheduler invariant (the per-core slice of
    `schedulerInvariantBundleExtended`).  System-wide invariants
    (`schedContextsWellFormed`, `schedContextBindingConsistent`,
-   `boundThreadDomainConsistent`, `domainScheduleEntriesPositive`,
+   `domainScheduleEntriesPositive`,
    `configTimeSlicePositive`) are core-independent and need no `c`.
 2. **Boot-core bridges** — `…_bootCore_iff` proving each per-core form
    at `bootCoreId` is equivalent to the existing single-core predicate
@@ -994,9 +994,9 @@ Composes the base `schedulerInvariant_perCore` (the ten conjuncts of
 `schedulerInvariantBundleFull`'s per-core slice) with the four
 per-core conjuncts that Z4 / AE3-A added: `currentBudgetPositiveOnCore`,
 `budgetPositiveOnCore`, `replenishQueueValidOnCore`,
-`effectiveParamsMatchRunQueueOnCore`.  The remaining three Z4 conjuncts
-(`schedContextsWellFormed`, `schedContextBindingConsistent`,
-`boundThreadDomainConsistent`) are core-independent (they quantify
+`effectiveParamsMatchRunQueueOnCore`.  The remaining two Z4 conjuncts
+(`schedContextsWellFormed`, `schedContextBindingConsistent`) are
+core-independent (they quantify
 universally over the object store) and need no per-core form; they
 participate in the `…_to_bundleExtended_bootCore` bridge as
 separate arguments.
@@ -1101,11 +1101,10 @@ theorem schedulerInvariantBundleExtended_to_perCore_bootCore {st : SystemState}
 
 /-- WS-SM SM4.C: the extended single-core bundle implies the **extended**
 per-core invariant at the boot core.  This is the tight bridge: each of
-`schedulerInvariantBundleExtended`'s seven extra Z4 conjuncts maps to its
+`schedulerInvariantBundleExtended`'s six extra Z4 conjuncts maps to its
 per-core form via the §2 boot-core bridges (for the four genuinely
-per-core conjuncts) or is dropped (for the three system-wide ones:
-`schedContextsWellFormed`, `schedContextBindingConsistent`,
-`boundThreadDomainConsistent`).  The dropped conjuncts are restored in
+per-core conjuncts) or is dropped (for the two system-wide ones:
+`schedContextsWellFormed`, `schedContextBindingConsistent`).  The dropped conjuncts are restored in
 the converse bridge below. -/
 theorem schedulerInvariantBundleExtended_to_perCore_extended_bootCore {st : SystemState}
     (h : schedulerInvariantBundleExtended st) :
@@ -1121,8 +1120,8 @@ theorem schedulerInvariantBundleExtended_to_perCore_extended_bootCore {st : Syst
       (schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue h)
 
 /-- WS-SM SM4.C: the converse — the extended per-core invariant at the boot
-core plus the three system-wide Z4 conjuncts (`schedContextsWellFormed`,
-`schedContextBindingConsistent`, `boundThreadDomainConsistent`) plus
+core plus the two system-wide Z4 conjuncts (`schedContextsWellFormed`,
+`schedContextBindingConsistent`) plus
 `domainScheduleEntriesPositive` rebuilds the full
 `schedulerInvariantBundleExtended`.  Confirms the extended per-core slice
 loses no boot-core content. -/
@@ -1131,11 +1130,10 @@ theorem schedulerInvariant_perCore_extended_bootCore_to_bundleExtended
     (h : schedulerInvariant_perCore_extended st bootCoreId)
     (hDSE : domainScheduleEntriesPositive st)
     (hSCWF : schedContextsWellFormed st)
-    (hSCBC : schedContextBindingConsistent st)
-    (hBTDC : boundThreadDomainConsistent st) :
+    (hSCBC : schedContextBindingConsistent st) :
     schedulerInvariantBundleExtended st := by
   obtain ⟨hBase, hCBP, hBP, hRQV, hEPM⟩ := h
-  refine ⟨?_, ?_, ?_, hSCWF, ?_, hSCBC, ?_, hBTDC⟩
+  refine ⟨?_, ?_, ?_, hSCWF, ?_, hSCBC, ?_⟩
   · exact schedulerInvariant_perCore_bootCore_to_bundleFull hBase hDSE
   · exact (budgetPositiveOnCore_bootCore_iff st).mp hBP
   · exact (currentBudgetPositiveOnCore_bootCore_iff st).mp hCBP
@@ -2023,76 +2021,8 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
   · exact hNonBootIdle' c hc
 
 -- ============================================================================
--- §9  AK2-B carrier: bound-thread base-priority consistency (SM5.I)
+-- §9  Default-state helpers and cross-core current uniqueness
 -- ============================================================================
---
--- **What this was for, and what it is for now (`v0.35.133`).**  Until that cut
--- `resolveEffectivePrioDeadline` read the *SchedContext's* base priority while
--- `TCB.boostedPriority` — the bucket `schedulerPriorityMatchOnCore` records —
--- read the *TCB's*, so the two coincided exactly under the "Option B
--- propagation" agreement `schedContextBind` / `schedContextConfigure` establish,
--- and `boundThreadPriorityConsistent` was the discharge for preserving
--- `schedulerPriorityMatchOnCore` through the SchedContext-priced run-queue
--- inserts.  With `TCB.priority` the base's one home,
--- `resolveEffectivePrioDeadline_fst_eq_boostedPriority` is unconditional and
--- that discharge needs no agreement at all.  What the predicate states now is
--- the propagation itself: that the two writers below moved both homes.
---
--- It is stated system-wide (a property of the object store, core-independent).
--- It ranged over both `.bound` and `.donated` via `SchedContextBinding.scId?`
--- until WS-OD (`v0.35.3`) narrowed it to `ownScId?`; see the definition's own
--- docstring for why the donation falsifies the wider reading.
---
--- **Which transitions maintain it, corrected at `v0.35.98`.**  The sentence
--- that stood here said it "frames through every scheduler transition (none
--- touch a TCB's base `priority` / `schedContextBinding` or a SchedContext's
--- `priority`)".  Three transitions touch exactly those fields, and the
--- correction is the reason this block is worth reading rather than a tidy-up:
---
--- * `schedContextBind` **establishes** it, writing `tcb.priority := sc.priority`
---   (the AK2-B "Option B" propagation).
--- * `schedContextConfigureBoundPropagate` **maintains** it, writing both sides
---   under `schedContextConfigurePropagates`.
--- * `updatePrioritySource` — the body of `.tcbSetPriority` and of
---   `.tcbSetMCPriority`'s capping — **broke** it until `v0.35.98`: its `.bound`
---   arm wrote the reservation alone, so the pair desynchronised and the
---   thread's next `enqueueRunnableOnCore` re-installed the *stale* band out of
---   `TCB.boostedPriority`.  It writes both homes now, and
---   `updatePrioritySource_preserves_boundThreadPriorityConsistent` (at the end
---   of this module) is the statement.
--- * `returnDonatedSchedContext`'s bottom arm rebinds a recipient `.bound`
---   without refreshing the reservation's record, so it **still** breaks it.
---
--- **WS-RR (`v0.35.136`, PR #897's review): that last bullet made this a
--- statement about writers and not an invariant, and the sentence claiming it
--- was "registered in `docs/REGISTERED_DEBT.md`" named no row — the register's
--- only candidate was CLOSED and said the predicate "remains as the statement
--- that the propagation happened".**  It is registered now, in table C, with the
--- model change that closes it.  Two routes reach the disagreement, and the
--- review reported the first: a `.tcbSetPriority` on the **unbound** donor writes
--- its TCB alone (correctly — it owns no reservation to mirror to), and a
--- `schedContextConfigure` of the **donated** reservation writes `sc.priority`
--- alone (correctly — its propagation is gated on the donee's `ownScId?`, which
--- is `none`).  Either way the pop then rebinds the origin `.bound` under the
--- disagreement.  `tests/PriorityManagementSuite.lean`'s `pm_od_09` drives the
--- second route through two live operations, with `pm_od_10` as the
--- unreconfigured control.
---
--- **Neither reconciliation is available to the pop**, which is what makes this a
--- fact about the writers rather than a defect in the pop: writing `tcb.priority
--- := sc.priority` would undo a demotion by an IPC reply, and writing
--- `sc.priority := tcb.priority` would silently retune the band a SchedContext
--- capability's holder set — and is projection-visible besides, since
--- `SchedContext.priority` survives `projectKernelObject`.  The sibling
--- `boundThreadDomainConsistent` (`Scheduler/Invariant.lean`) has the same hole
--- for the same reason and its docstring carries the same correction.
---
--- Nothing reads the mirror: `resolveEffectivePrioDeadline_fst_eq_boostedPriority`
--- and `effectiveSchedParams_domain_eq` are both unconditional, so a stale mirror
--- changes no scheduling decision.  That is what makes the residue a verification
--- gap rather than a scheduling defect.
---
--- The default state satisfies it vacuously.
 
 /-- Local helper: the default object store is empty, so every `ObjId` lookup is
 `none`.  Stated over a generic `ObjId` (no `tid`-keyed raw-lookup text). -/
@@ -2106,46 +2036,6 @@ private theorem default_getTcb?_none (tid : SeLe4n.ThreadId) :
     (default : SystemState).getTcb? tid = none := by
   unfold SystemState.getTcb?
   rw [default_objects_getElem_none]
-
-/-- SM5.I (AK2-B carrier).  A SchedContext-bound or -donated thread's base
-priority agrees with its bound SchedContext's base priority.  System-wide (an
-object-store property, core-independent).  Uses the typed `getTcb?` /
-`getSchedContext?` accessors.
-
-**WS-OD (v0.35.3) — scoped by `ownScId?`, not `scId?`.**  It ranges
-over exactly the bindings whose base priority *is* read from a SchedContext,
-which since the donee-priority split is `.bound` alone.  Quantifying over
-`scId?` covered `.donated` too, and **the donation falsifies that**: the
-reservation's `priority` must equal the donor's base priority before the
-hand-off and the donee's after, while `donateSchedContext` writes neither
-field — so any hand-off between threads of different bands broke it.  Nothing
-carried it across either, since `boundThreadPriorityConsistent_frame` requires
-`schedContextBinding` unchanged, which is exactly what the hand-off rewrites.  Narrowing it is not a weakening of the
-guarantee — `resolveEffectivePrioDeadline` no longer reads `sc.priority` on the
-`.donated` arm, so there is nothing left for the donated case to reconcile.
-
-**WS-RR (`v0.35.133`): what this predicate is still FOR.**  Since `TCB.priority`
-became the base's one home, no scheduling decision reads `sc.priority` at any
-binding — `resolveEffectivePrioDeadline_fst_eq_boostedPriority` is unconditional
-now, and the `_of_agree` form that used to consume this predicate is deleted.  So
-this is no longer load-bearing for a *read*.  It is kept, and is not a tautology:
-it states that `schedContextBind` and `schedContextConfigureBoundPropagate`
-actually propagated the band a reservation configures its bound thread to, which
-is a real property of those two writers and the only artefact saying they did.
-
-**WS-RR (`v0.35.136`): and it is NOT an invariant — read that sentence as scoped
-to those writers.**  `returnDonatedSchedContext`'s bottom arm installs a `.bound`
-binding without writing either home, so a reservation whose band moved while it
-was on loan comes back disagreeing.  See §9's writer enumeration above for the
-two routes, for why neither reconciliation is available to the pop, and for the
-register row; and `tests/PriorityManagementSuite.lean`'s `pm_od_09`/`pm_od_10` for the
-executed refutation and its control.  A proof that takes this predicate of a
-state reached through a donation pop is asking for a premise the kernel
-refutes. -/
-def boundThreadPriorityConsistent (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
-    ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
-      ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority
 
 /-- Audit closure (PR #831 review 4 follow-up): **a thread is current on at
 most one core**.  The per-core dispatch discipline maintains this by
@@ -2174,47 +2064,6 @@ theorem default_currentThreadUniqueAcrossCores :
   rw [hCur] at hc
   cases hc
 
-/-- `boundThreadPriorityConsistent` depends only on the object store, so it is
-preserved by any transition leaving `objects` unchanged (the pure
-scheduler-field ops: `advanceDomainOnCore`, `decrementDomainTimeOnCore`, the
-run-queue / current / domain writes). -/
-theorem boundThreadPriorityConsistent_of_objects_eq {st st' : SystemState}
-    (hObj : st'.objects = st.objects) (h : boundThreadPriorityConsistent st) :
-    boundThreadPriorityConsistent st' := by
-  intro tid tcb' htcb' scId hbind sc' hsc'
-  rw [getTcb?_congr_objects hObj] at htcb'
-  rw [getSchedContext?_congr_objects hObj] at hsc'
-  exact h tid tcb' htcb' scId hbind sc' hsc'
-
-/-- General frame lemma: `boundThreadPriorityConsistent` is preserved by any
-transition whose object writes preserve, for every thread, its base `priority`
-and `schedContextBinding`, and for every SchedContext, its base `priority`.
-Every SM5 scheduler transition satisfies this — writes to `timeSlice` /
-`registerContext` / `ipcState` / `pipBoost` / `budgetRemaining` / replenishments
-never touch base `priority` or `schedContextBinding`. -/
-theorem boundThreadPriorityConsistent_frame {st st' : SystemState}
-    (hTcb : ∀ tid tcb', st'.getTcb? tid = some tcb' →
-       ∃ tcb, st.getTcb? tid = some tcb ∧
-         tcb'.schedContextBinding = tcb.schedContextBinding ∧
-         tcb'.priority = tcb.priority)
-    (hSc : ∀ scId sc', st'.getSchedContext? scId = some sc' →
-       ∃ sc, st.getSchedContext? scId = some sc ∧ sc'.priority = sc.priority)
-    (h : boundThreadPriorityConsistent st) :
-    boundThreadPriorityConsistent st' := by
-  intro tid tcb' htcb' scId hbind sc' hsc'
-  obtain ⟨tcb, hTcbPre, hBind, hPrio⟩ := hTcb tid tcb' htcb'
-  obtain ⟨sc, hScPre, hScPrio⟩ := hSc scId sc' hsc'
-  rw [hPrio, hScPrio]
-  exact h tid tcb hTcbPre scId (hBind ▸ hbind) sc hScPre
-
-/-- The default state's object store is empty, so `boundThreadPriorityConsistent`
-holds vacuously. -/
-theorem default_boundThreadPriorityConsistent :
-    boundThreadPriorityConsistent (default : SystemState) := by
-  intro tid tcb htcb
-  rw [default_getTcb?_none] at htcb
-  simp at htcb
-
 -- ============================================================================
 -- §10  Global time-slice positivity (SM5.I — global-invariant strengthening)
 -- ============================================================================
@@ -2234,7 +2083,7 @@ theorem default_boundThreadPriorityConsistent :
 -- boot, preserved by every transition, and implies *both* per-core slice
 -- conjuncts (`timeSlicePositiveOnCore`, `currentTimeSlicePositiveOnCore`), so
 -- the wake's slice preservation becomes unconditional.  System-wide
--- (core-independent); mirrors the `boundThreadPriorityConsistent` carrier.
+-- (core-independent).
 
 /-- SM5.I (global-invariant strengthening).  Every TCB in the object store has a
 positive time slice.  The genuine global invariant behind the run-queue-scoped
@@ -2304,117 +2153,5 @@ theorem default_allThreadsTimeSlicePositive :
   intro tid tcb htcb
   rw [default_getTcb?_none] at htcb
   simp at htcb
-
--- ============================================================================
--- The base-priority agreement — `v0.35.98`
--- ============================================================================
-
-/-- **`.tcbSetPriority` maintains the agreement between a bound thread's two
-base-priority homes.**
-
-`boundThreadPriorityConsistent` says a `.bound` thread's own `priority` equals
-its reservation's — the AK2-B "Option B" propagation that
-`SystemState.threadBasePriority` (which reads the reservation) and
-`TCB.boostedPriority` (which every run-queue insert reads) rest on.
-`schedContextBind` establishes it and `schedContextConfigureBoundPropagate`
-maintains it; `updatePrioritySource` **broke** it until `v0.35.98`, writing the
-reservation alone, so the one syscall whose whole job is to change a priority
-was the one writer that desynchronised the pair — and the thread's next wake
-re-installed the stale band out of its TCB.  This is the statement that it no
-longer does.
-
-Three hypotheses, and each is load-bearing:
-
-* `hPre` ties the `tcb` the caller classified the binding from to the record the
-  store actually holds — the operation rewrites the stored record, so without
-  this the conclusion would be about a binding nobody has.
-* `hBind` (`schedContextBindingConsistent`) is what rules out a **second** thread
-  bound to the same reservation.  The reservation's `priority` moves for the
-  whole reservation, so a second claimant would be left stale; the invariant
-  says a `.bound scId` thread *is* `sc.boundThread`, which makes two claimants
-  the same thread.
-* `hObjInv` is the store's extensionality, needed by every typed-update lookup
-  lemma this composes.
-
-What it does **not** cover is `returnDonatedSchedContext`'s bottom arm, which
-rebinds a recipient `.bound` without refreshing the reservation's record; that
-is the remaining writer and it is registered in `docs/REGISTERED_DEBT.md`.
-
-**Homed beside the invariant, not beside the write.**  This project's rule is
-that a frame belongs to the write, and it does not apply here: the operation is
-*upstream* of the predicate (`CrossSubsystem` imports
-`SchedContext.Invariant.PriorityPreservation`, and this module imports
-`CrossSubsystem`), so stating it at `updatePrioritySource` closes an import
-cycle.  Beside the invariant is where an `X_preserves_I` lives when `I` is
-downstream of `X`. -/
-theorem updatePrioritySource_preserves_boundThreadPriorityConsistent
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (newPrio : SeLe4n.Priority)
-    (hObjInv : st.objects.invExt)
-    (hPre : st.getTcb? tid = some tcb)
-    (hBind : schedContextBindingConsistent st)
-    (h : boundThreadPriorityConsistent st) :
-    boundThreadPriorityConsistent (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPrio) := by
-  unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · -- `.bound scId`: the reservation and the thread, in that order.
-    rename_i scId hSrc
-    have hInv1 :
-        (st.updateSchedContext scId fun sc => { sc with priority := newPrio }).objects.invExt :=
-      SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv
-    intro u tcbU hU k hK scK hScK
-    -- the thread half is invisible to SchedContext lookups; the reservation half
-    -- is invisible to TCB lookups, so each side reduces independently.
-    rw [SystemState.updateTcb_getSchedContext? _ tid _ hInv1 k] at hScK
-    by_cases hEq : u = tid
-    · subst hEq
-      rw [SystemState.updateTcb_getTcb?_self _ u _ hInv1,
-        SystemState.updateSchedContext_getTcb? st scId _ hObjInv u, hPre] at hU
-      simp only [Option.map_some] at hU
-      obtain rfl := Option.some.inj hU
-      -- the binding is untouched, so the reservation it names is `scId`
-      have hKscId : k = scId := by
-        have : tcb.schedContextBinding.ownScId? = some k := hK
-        rw [hSrc] at this; exact (Option.some.inj this).symm
-      subst hKscId
-      rw [SystemState.updateSchedContext_getSchedContext?_self st k _ hObjInv] at hScK
-      cases hSc : st.getSchedContext? k with
-      | none => rw [hSc] at hScK; exact absurd hScK (by simp)
-      | some sc =>
-          rw [hSc] at hScK; simp only [Option.map_some] at hScK
-          obtain rfl := Option.some.inj hScK; rfl
-    · -- a different thread: its record is untouched, and it cannot name `scId`
-      rw [SystemState.updateTcb_getTcb?_ne _ tid _ hInv1 u
-          (fun he => hEq (SeLe4n.ThreadId.toObjId_injective _ _ he).symm),
-        SystemState.updateSchedContext_getTcb? st scId _ hObjInv u] at hU
-      have hNe : scId.toObjId ≠ k.toObjId := by
-        intro hSame
-        -- both threads would be `sc.boundThread`, so they are the same thread
-        obtain ⟨scU, hScU, hOwnU⟩ := hBind.1 u tcbU
-          ((SystemState.getTcb?_eq_some_iff st u tcbU).mp hU) k
-          (SchedContextBinding.eq_bound_of_ownScId? hK)
-        obtain ⟨scT, hScT, hOwnT⟩ := hBind.1 tid tcb
-          ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hPre) scId
-          (SchedContextBinding.eq_bound_of_ownScId? hSrc)
-        rw [hSame, hScU] at hScT
-        have : scT = scU := by injection (Option.some.inj hScT) with hx; exact hx.symm
-        subst this
-        exact hEq (Option.some.inj (hOwnT.symm.trans hOwnU)).symm
-      rw [SystemState.updateSchedContext_getSchedContext?_ne st scId _ hObjInv k hNe] at hScK
-      exact h u tcbU hU k hK scK hScK
-  · -- `.unbound` / `.donated`: the thread's own TCB, which names no reservation
-    rename_i hSrc
-    intro u tcbU hU k hK scK hScK
-    rw [SystemState.updateTcb_getSchedContext? st tid _ hObjInv k] at hScK
-    by_cases hEq : u = tid
-    · subst hEq
-      rw [SystemState.updateTcb_getTcb?_self st u _ hObjInv, hPre] at hU
-      simp only [Option.map_some] at hU
-      obtain rfl := Option.some.inj hU
-      rw [hSrc] at hK
-      exact absurd hK (by simp)
-    · rw [SystemState.updateTcb_getTcb?_ne st tid _ hObjInv u
-          (fun he => hEq (SeLe4n.ThreadId.toObjId_injective _ _ he).symm)] at hU
-      exact h u tcbU hU k hK scK hScK
 
 end SeLe4n.Kernel

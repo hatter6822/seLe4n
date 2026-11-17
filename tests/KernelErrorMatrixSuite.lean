@@ -12,6 +12,7 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Model.State
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.RefusalCarryingDeclassification
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
@@ -28,6 +29,7 @@ import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Platform.Boot
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.BootCoreOps
+import SeLe4n.Testing.StateBuilder
 
 /-!
 # AN11-A — KernelError variant cross-syscall coverage matrix (H-20)
@@ -85,7 +87,7 @@ namespace SeLe4n.Testing.KernelErrorMatrix
 * `syscall` is a free-form short string naming the operation under test
   (`"cspaceMint"`, `"validateSchedContextParams"`, ...).  It is *not*
   bound to `SyscallId.toString` because some rows exercise sub-helpers
-  like `validateIpcBufferAddress` that are not themselves syscalls.
+  like `setIPCBufferFrom` that are not themselves syscalls.
 * `expectedError` is the variant the path must return.
 * `scenarioTag` is a stable identifier for the row (used in PASS/FAIL
   output and in any future cross-references).
@@ -121,6 +123,29 @@ private def mkTcb (tid : Nat) : TCB :=
     domain := ⟨0⟩
     spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+/-- A thread (90) and a CNode (91) whose slot 0 holds a capability to frame 92
+(a device frame when `device`) and slot 1 one to endpoint 93: the sources
+`setIPCBufferFrom` checks a buffer's capability against. -/
+private def ipcBufferFrameState (device : Bool := false) : SystemState :=
+  let st0 : SystemState := default
+  let cn : CNode := CNode.ofList 3
+    [(SeLe4n.Slot.ofNat 0, { target := .object (ObjId.ofNat 92),
+                             rights := AccessRightSet.ofList [.read, .write] }),
+     (SeLe4n.Slot.ofNat 1, { target := .object (ObjId.ofNat 93),
+                             rights := AccessRightSet.ofList [.read] })]
+  let frame : KernelObject := .frame { base := SeLe4n.PAddr.ofNat 0x10000, isDevice := device }
+  let objs := (((st0.objects.insert (ObjId.ofNat 90) (.tcb (mkTcb 90))).insert
+      (ObjId.ofNat 91) (.cnode cn)).insert (ObjId.ofNat 92) frame).insert
+      (ObjId.ofNat 93) (.endpoint {})
+  { st0 with objects := objs }
+
+/-- `setIPCBufferFrom` on thread 90 from CNode 91's slot `slot`. -/
+private def setIpcBufferFromSlot (st : SystemState) (slot addr : Nat) :
+    Except KernelError Unit :=
+  runUnit (SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferFrom
+    SeLe4n.Kernel.Concurrency.bootCoreId st ⟨ThreadId.ofNat 90, by decide⟩ (ObjId.ofNat 91)
+    (SeLe4n.Slot.ofNat slot) (SeLe4n.VAddr.ofNat addr))
 
 /-- An empty CNode with depth/radix sized for ABI-decoded slot indices.  The
 default `radixWidth = 16` is large enough for every test's chosen slots. -/
@@ -166,27 +191,23 @@ private def row_rangeError_period_zero : KernelErrorRejection :=
                      " replenishmentListWellFormed downstream)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 0) (priority := 5) (deadline := 0)
-        (domain := 0) }
+        (budget := 100) (period := 0) }
 
-/-- Row: `validateIpcBufferAddress` rejects unaligned address with
-`.alignmentError`. -/
+/-- Row: `setIPCBufferFrom` rejects an unaligned address with
+`.alignmentError`, seL4's `checkValidIPCBuffer`. -/
 private def row_alignmentError_ipcBuffer : KernelErrorRejection :=
-  { syscall       := "validateIpcBufferAddress"
+  { syscall       := "setIPCBufferFrom"
     expectedError := .alignmentError
     scenarioTag   := "AN11A.2.alignmentError.ipcBuffer"
     scenarioDesc  := "IPC buffer address must be 1024-byte aligned" ++
                      " (ipcBufferAlignment); a one-byte-offset address" ++
-                     " is rejected before any state mutation"
-    runScenario   := fun _ =>
-      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        (default : SystemState) (ThreadId.ofNat 0)
-        (SeLe4n.VAddr.ofNat 1) }
+                     " with a frame capability is rejected before any state mutation"
+    runScenario   := fun _ => setIpcBufferFromSlot (ipcBufferFrameState) 0 1 }
 
-/-- Row: `validateIpcBufferAddress` rejects missing TCB with
+/-- Row: `setIPCBufferFrom` rejects missing TCB with
 `.objectNotFound`. -/
 private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
-  { syscall       := "validateIpcBufferAddress"
+  { syscall       := "setIPCBufferFrom"
     expectedError := .objectNotFound
     scenarioTag   := "AN11A.2.objectNotFound.ipcBuffer_missing_tcb"
     scenarioDesc  := "Validating IPC buffer for an absent TCB returns" ++
@@ -194,24 +215,22 @@ private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
                      " collapses absent and wrong-variant into the same" ++
                      " variant)"
     runScenario   := fun _ =>
-      -- 0x400 is aligned (multiple of 1024); canonical (within 48-bit VA);
-      -- no TCB exists at id 1 in default state.
-      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        (default : SystemState) (ThreadId.ofNat 1)
-        (SeLe4n.VAddr.ofNat 0x400) }
+      -- 0x400 is aligned (multiple of 1024); no TCB exists at id 90 in the
+      -- default state.
+      setIpcBufferFromSlot (default : SystemState) 0 0x400 }
 
-/-- Row: `decodeCSpaceMintArgs` rejects a word of the depths and the rights
-mask with a bit set past the mask (bit 21, `CNodeOpWord.rightsFits`) with
-`.invalidArgument 3`, the word's index. -/
-private def row_invalidArgument_mint_rights : KernelErrorRejection :=
+/-- Row: `decodeCSpaceMintArgs` refuses a five-word mint with
+`.truncatedMessage`: seL4's `seL4_CNode_Mint` takes six words (the four slot
+words, the rights and the badge), and its rights word is never refused. -/
+private def row_truncatedMessage_mint_five_words : KernelErrorRejection :=
   { syscall       := "decodeCSpaceMintArgs"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.2.invalidArgument.mint_rights"
-    scenarioDesc  := "AK4-E: cspaceMint args rejected when the word of the" ++
-                     " depths and the rights mask sets a bit past the mask"
+    expectedError := .truncatedMessage
+    scenarioTag   := "SX6.2.truncatedMessage.mint_five_words"
+    scenarioDesc  := "WS-SX SX6.2: a cspaceMint message of five words, short" ++
+                     " of seL4's six, is refused as truncated"
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs (mkDecoded
-        #[rv 0, rv 1, rv 0, rv (0x200000 + 0x4040), rv 0])) }
+        #[rv 0, rv 64, rv 0, rv 64, rv 31])) }
 
 /-- Row: `decodeSyscallId` rejects an unknown syscall number with
 `.invalidSyscallNumber`. -/
@@ -250,8 +269,7 @@ private def row_rangeError_period_over_max : KernelErrorRejection :=
                      " must reject, as seL4-MCS's decode does"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := SeLe4n.Kernel.configureMaxPeriod.toNat + 1)
-        (priority := 5) (deadline := 0) (domain := 0) }
+        (budget := 100) (period := SeLe4n.Kernel.configureMaxPeriod.toNat + 1) }
 
 /-- Row: `validateRegBound` rejects out-of-range register name with
 `.invalidRegister`. -/
@@ -376,17 +394,19 @@ private def row_revocationRequired_retype_inUse_reply : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.lifecyclePreRetypeCleanup (default : SystemState) target inUse
         (.reply { replyId := ⟨999⟩ })) }
 
-/-- Row: `decodeVSpaceMapArgs` rejects ASID at or above maxASID with
-`.asidNotBound`. -/
-private def row_asidNotBound_vspaceMap : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+/-- Row: `decodeVSpaceUnmapArgs` rejects ASID at or above maxASID with
+`.asidNotBound`.  (WS-SX SX6.3, D6: a map names its address space as extra
+capability 0 and takes that root's own ASID, so the unmap is the decode that
+still reads an ASID word.) -/
+private def row_asidNotBound_vspaceUnmap : KernelErrorRejection :=
+  { syscall       := "decodeVSpaceUnmapArgs"
     expectedError := .asidNotBound
     scenarioTag   := "AN11A.3.asidNotBound.over_maxASID"
-    scenarioDesc  := "U2-G/U-H08: decode of vspaceMap rejects ASID ≥" ++
+    scenarioDesc  := "U2-G/U-H08: decode of vspaceUnmap rejects ASID ≥" ++
                      " platform-configured maxASID with .asidNotBound"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 65536, rv 0, rv 0, rv 0]) 65536) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+        (mkDecoded #[rv 65536, rv 0]) 65536) }
 
 /-- Row: `bootScheduleChecked` rejects when the current TCB is missing with
 `.schedulerInvariantViolation`. -/
@@ -404,21 +424,18 @@ private def row_schedulerInvariantViolation : KernelErrorRejection :=
           SeLe4n.Kernel.Concurrency.bootCoreId (some (ThreadId.ofNat 999)) }
       runUnit (bootScheduleChecked st) }
 
-/-- Row: `validateIpcBufferAddress` rejects unaligned address with
+/-- Row: `setIPCBufferFrom` rejects unaligned address with
 `.alignmentError`.  Same as the AN11-A.2 baseline row but tagged as
 security-priority per audit; uses a different non-zero misalignment to
 avoid duplicate scenario tags. -/
 private def row_alignmentError_security : KernelErrorRejection :=
-  { syscall       := "validateIpcBufferAddress"
+  { syscall       := "setIPCBufferFrom"
     expectedError := .alignmentError
     scenarioTag   := "AN11A.3.alignmentError.security_critical"
     scenarioDesc  := "Security-critical: misaligned IPC buffer (address" ++
                      " 512, half the 1024-byte alignment) rejected before" ++
                      " any state mutation"
-    runScenario   := fun _ =>
-      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        (default : SystemState) (ThreadId.ofNat 0)
-        (SeLe4n.VAddr.ofNat 512) }
+    runScenario   := fun _ => setIpcBufferFromSlot (ipcBufferFrameState) 0 512 }
 
 /-- Row: `cspaceInsertSlot` rejects writing to an already-occupied slot
 with `.targetSlotOccupied`. -/
@@ -548,8 +565,7 @@ private def row_rangeError_budget_zero : KernelErrorRejection :=
                      " — every replenishment amount must be positive)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 0) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 0) }
+        (budget := 0) (period := 1000) }
 
 /-- Row: `validateSchedContextParams` rejects budget > period with seL4-MCS's
 `seL4_RangeError`, the least budget and the period. -/
@@ -561,32 +577,35 @@ private def row_rangeError_budget_over_period : KernelErrorRejection :=
                      " more than 100% of a period)"
     runScenario   := fun _ =>
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 2000) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 0) }
+        (budget := 2000) (period := 1000) }
 
-/-- Row: `validateSchedContextParams` rejects priority > 255 with
-`.invalidArgument` naming the parameter word (MR3). -/
-private def row_invalidArgument_priority_overflow : KernelErrorRejection :=
-  { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.4.invalidArgument.priority_overflow"
-    scenarioDesc  := "SchedContext priority must be ≤ maxPriorityVal (255)"
+/-- Row: the checked configure decode refuses an extra-refills count above the
+refill array's headroom with seL4-MCS's `seL4_RangeError` bounds
+(`[0, refill_absolute_max - MIN_REFILLS]`). -/
+private def row_rangeError_extra_refills_over_max : KernelErrorRejection :=
+  { syscall       := "decodeSchedContextConfigureArgsChecked"
+    expectedError := (.rangeError 0 SeLe4n.Kernel.configureMaxExtraRefills)
+    scenarioTag   := "SX6.4.rangeError.extra_refills_over_max"
+    scenarioDesc  := "WS-SX SX6.4: extra_refills + MIN_REFILLS above the refill" ++
+                     " capacity is refused as seL4-MCS's decode refuses it"
     runScenario   := fun _ =>
-      SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 256) (deadline := 0)
-        (domain := 0) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked
+        (mkDecoded #[rv 1000, rv 10000,
+          rv (SeLe4n.Kernel.configureMaxExtraRefills.toNat + 1), rv 0, rv 0]
+          (syscallId := SyscallId.schedContextConfigure))) }
 
-/-- Row: `validateSchedContextParams` rejects domain ≥ 16 with
-`.invalidArgument` naming the parameter word (MR3). -/
-private def row_invalidArgument_domain_overflow : KernelErrorRejection :=
-  { syscall       := "validateSchedContextParams"
-    expectedError := (.invalidArgument 3)
-    scenarioTag   := "AN11A.4.invalidArgument.domain_overflow"
-    scenarioDesc  := "SchedContext domain must be < numDomainsVal (16)"
+/-- Row: the configure decode refuses a message of four words, short of
+seL4-MCS's five (`SchedControl_ConfigureFlags`), as truncated. -/
+private def row_truncatedMessage_configure_four_words : KernelErrorRejection :=
+  { syscall       := "decodeSchedContextConfigureArgsChecked"
+    expectedError := .truncatedMessage
+    scenarioTag   := "SX6.4.truncatedMessage.configure_four_words"
+    scenarioDesc  := "WS-SX SX6.4: a configure message of four words, short of" ++
+                     " seL4's five, is refused as truncated"
     runScenario   := fun _ =>
-      SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
-        (budget := 100) (period := 1000) (priority := 5) (deadline := 0)
-        (domain := 16) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked
+        (mkDecoded #[rv 1000, rv 10000, rv 0, rv 0]
+          (syscallId := SyscallId.schedContextConfigure))) }
 
 /-- Row: `validatePriorityAuthority` rejects priority above
 `maxHardwarePriority` with `.illegalAuthority` (AK8-D / C-M05). -/
@@ -625,35 +644,37 @@ private def row_invalidTypeTag : KernelErrorRejection :=
                      " at the ABI decode boundary"
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
-        (mkDecoded #[rv 99, rv 0, rv 0, rv 0])) }
+        (mkDecoded #[rv 99, rv 0, rv 0, rv 0, rv 0, rv 1, rv 0])) }
 
 -- ============================================================================
 -- AN11-A.5 — Architecture / Capability / Service residual variants
 -- ============================================================================
 
-/-- Row: `decodeVSpaceMapArgs` rejects non-canonical VAddr (≥ 2^48) with
+/-- Row: `decodeVSpaceUnmapArgs` rejects non-canonical VAddr (≥ 2^48) with
 `.addressOutOfBounds`. -/
 private def row_addressOutOfBounds_vaddr : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+  { syscall       := "decodeVSpaceUnmapArgs"
     expectedError := .addressOutOfBounds
     scenarioTag   := "AN11A.5.addressOutOfBounds.non_canonical_vaddr"
-    scenarioDesc  := "U2-B/U-H06: vspaceMap rejects VAddr ≥ 2^48 (outside" ++
+    scenarioDesc  := "U2-B/U-H06: vspaceUnmap rejects VAddr ≥ 2^48 (outside" ++
                      " ARM64 48-bit canonical range)"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 0, rv (2^48), rv 0, rv 0]) 65536) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+        (mkDecoded #[rv 0, rv (2^48)]) 65536) }
 
-/-- Row: `decodeVSpaceMapArgs` rejects invalid permission bits with
-`.invalidSyscallArgument` (X5-E / M-11). -/
-private def row_invalidSyscallArgument_perms : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgs"
+/-- Row: an audit read whose opcode names no read is refused
+`.invalidSyscallArgument` (X5-E / M-11), as `decodeAuditReadOp` refuses it.
+(WS-SX SX6.3, D6 retired the map's permissions-word refusal: seL4's rights and
+attributes words are total.) -/
+private def row_invalidSyscallArgument_auditOpcode : KernelErrorRejection :=
+  { syscall       := "auditReadFastRefusal"
     expectedError := .invalidSyscallArgument
-    scenarioTag   := "AN11A.5.invalidSyscallArgument.bad_perms"
-    scenarioDesc  := "U5-E/U-M07/X5-E: undefined permission bits (≥ 32)" ++
-                     " yield .invalidSyscallArgument from the vspace decode"
+    scenarioTag   := "AN11A.5.invalidSyscallArgument.bad_audit_opcode"
+    scenarioDesc  := "X5-E: an audit-read opcode from 30 names no read and" ++
+                     " yields .invalidSyscallArgument"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
-        (mkDecoded #[rv 0, rv 0x1000, rv 0, rv 64]) 65536) }
+      .error (SeLe4n.Kernel.auditReadFastRefusal SeLe4n.Kernel.defaultLabelingContext
+        default (default : SystemState) 30 0 0) }
 
 /-- Row: the production map wrapper rejects a physical address at or above the
 platform's PA window with `.addressOutOfBounds`.  WS-BP BP7.1 retired AK3-E's
@@ -760,23 +781,16 @@ private def row_objectNotFound_mint_missing_cnode : KernelErrorRejection :=
         ⟨ObjId.ofNat 9999, SeLe4n.Slot.ofNat 1⟩
         AccessRightSet.empty none (default : SystemState)) }
 
-/-- Row: `validateIpcBufferAddress` on present TCB but missing VSpaceRoot
-returns `.invalidArgument`. -/
-private def row_invalidArgument_ipcBuffer_missing_vspaceRoot : KernelErrorRejection :=
-  { syscall       := "validateIpcBufferAddress"
-    expectedError := (.invalidArgument 0)
-    scenarioTag   := "AN11A.5.invalidArgument.ipcBuffer_missing_vspaceRoot"
-    scenarioDesc  := "When the TCB exists but its vspaceRoot reference does" ++
-                     " not resolve to a VSpaceRoot, validation rejects with" ++
-                     " .invalidArgument"
-    runScenario   := fun _ =>
-      let tid : ThreadId := ThreadId.ofNat 90
-      let tcb : TCB := mkTcb 90
-      let st : SystemState := { (default : SystemState) with
-        objects := (default : SystemState).objects.insert tid.toObjId
-          (.tcb tcb) }
-      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        st tid (SeLe4n.VAddr.ofNat 0x400) }
+/-- Row: `setIPCBufferFrom` refuses a nonzero address whose capability is
+not a frame with `.illegalState`, seL4's `seL4_IllegalOperation` from
+`checkValidIPCBuffer`. -/
+private def row_illegalState_ipcBuffer_not_frame : KernelErrorRejection :=
+  { syscall       := "setIPCBufferFrom"
+    expectedError := .illegalState
+    scenarioTag   := "AN11A.5.illegalState.ipcBuffer_not_frame"
+    scenarioDesc  := "An endpoint capability offered as the IPC buffer's" ++
+                     " frame is refused before any state mutation"
+    runScenario   := fun _ => setIpcBufferFromSlot (ipcBufferFrameState) 1 0x400 }
 
 /- Note on `applyMachineConfigChecked`: this validator rejects malformed
 `MachineConfig` with an `Except String _` (rather than a `KernelError`),
@@ -811,41 +825,38 @@ private def row_invalidObjectType_cross_variant : KernelErrorRejection :=
       let sc : Kernel.SchedContext :=
         { scId := SchedContextId.ofObjId oid
           budget := ⟨100⟩, period := ⟨1000⟩
-          priority := ⟨0⟩, deadline := ⟨0⟩
-          domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+          budgetRemaining := ⟨100⟩
           boundThreadCode := 0, isActive := false
           refillTailCount := 0 }
       let st : SystemState := { (default : SystemState) with
         objects := (default : SystemState).objects.insert oid (.tcb tcb) }
       runUnit (SeLe4n.Model.storeObjectKindChecked oid (.schedContext sc) st) }
 
-/-- Row: `validateIpcBufferAddress` rejects a write-permission-missing
-mapping with `.translationFault`.  The IPC buffer must be writable; a
-read-only mapping at an aligned canonical address fails at step 6. -/
-private def row_translationFault_ipcBuffer_no_write : KernelErrorRejection :=
-  { syscall       := "validateIpcBufferAddress"
+/-- Row: `vspaceLookupFull` on an address its bound root does not map
+returns `.translationFault`. -/
+private def row_translationFault_lookup_unmapped : KernelErrorRejection :=
+  { syscall       := "vspaceLookupFull"
     expectedError := .translationFault
-    scenarioTag   := "AN11A.6.translationFault.ipcBuffer_no_write_perm"
-    scenarioDesc  := "IPC buffer mapped without write permission is" ++
-                     " rejected at validateIpcBufferAddress step 6"
+    scenarioTag   := "AN11A.6.translationFault.lookup_unmapped"
+    scenarioDesc  := "Translating an address the bound VSpace root does not" ++
+                     " map is a translation fault"
     runScenario   := fun _ =>
-      let tid : ThreadId := ThreadId.ofNat 800
-      let vsRootId : ObjId := ObjId.ofNat 801
-      let vaddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x400
-      -- Read-only mapping (no write permission)
-      let perms : PagePermissions :=
-        { read := true, write := false, execute := false, user := true,
-          cacheable := true }
-      let vsRoot : VSpaceRoot :=
-        { asid := SeLe4n.ASID.ofNat 1
-          mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert vaddr.pageBase
-                        (SeLe4n.PAddr.ofNat 0x1000, perms) }
-      let tcb : TCB := ((mkTcb 800).withVSpaceRoot vsRootId)
-      let st : SystemState := { (default : SystemState) with
-        objects := ((default : SystemState).objects.insert tid.toObjId
-          (.tcb tcb)).insert vsRootId (.vspaceRoot vsRoot) }
-      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        st tid vaddr }
+      let st : SystemState :=
+        ({ objects := [(ObjId.ofNat 801, .vspaceRoot
+              { asid := SeLe4n.ASID.ofNat 1, mappings := {} })] }
+          : SeLe4n.Testing.BootstrapBuilder).build
+      runUnit (SeLe4n.Kernel.Architecture.vspaceLookupFull (SeLe4n.ASID.ofNat 1)
+        (SeLe4n.VAddr.ofNat 0x400) st) }
+
+/-- Row: `setIPCBufferFrom` refuses a device frame with `.illegalState`:
+seL4's `checkValidIPCBuffer` refuses a device frame as an IPC buffer. -/
+private def row_illegalState_ipcBuffer_device_frame : KernelErrorRejection :=
+  { syscall       := "setIPCBufferFrom"
+    expectedError := .illegalState
+    scenarioTag   := "AN11A.6.illegalState.ipcBuffer_device_frame"
+    scenarioDesc  := "A device frame offered as the IPC buffer is refused" ++
+                     " before any state mutation"
+    runScenario   := fun _ => setIpcBufferFromSlot (ipcBufferFrameState (device := true)) 0 0x400 }
 
 /-- Row: `endpointQueuePopHead` on an empty queue returns
 `.endpointQueueEmpty`. -/
@@ -995,7 +1006,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_rangeError_period_zero,
     row_alignmentError_ipcBuffer,
     row_objectNotFound_ipcBuffer_missing_tcb,
-    row_invalidArgument_mint_rights,
+    row_truncatedMessage_mint_five_words,
     row_invalidSyscallNumber,
     row_invalidMessageInfo,
     row_rangeError_period_over_max,
@@ -1007,7 +1018,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_nullCapability_mint,
     -- AN11-A.3 security-priority
     row_revocationRequired_retype_inUse_reply,
-    row_asidNotBound_vspaceMap,
+    row_asidNotBound_vspaceUnmap,
     row_schedulerInvariantViolation,
     row_alignmentError_security,
     row_targetSlotOccupied,
@@ -1019,24 +1030,25 @@ def errorMatrix : List KernelErrorRejection :=
     row_alreadyWaiting_enqueue_blocked,
     row_rangeError_budget_zero,
     row_rangeError_budget_over_period,
-    row_invalidArgument_priority_overflow,
-    row_invalidArgument_domain_overflow,
+    row_rangeError_extra_refills_over_max,
+    row_truncatedMessage_configure_four_words,
     row_illegalAuthority_priority_over_hw,
     row_illegalAuthority_over_mcp,
     row_invalidTypeTag,
     -- AN11-A.5 architecture / residual
     row_addressOutOfBounds_vaddr,
-    row_invalidSyscallArgument_perms,
+    row_invalidSyscallArgument_auditOpcode,
     row_addressOutOfBounds_paddr,
     row_notSupported_fiq,
     row_hardwareFault_serror,
     row_vmFault_data_abort,
     row_userException_pc_alignment,
     row_objectNotFound_mint_missing_cnode,
-    row_invalidArgument_ipcBuffer_missing_vspaceRoot,
+    row_illegalState_ipcBuffer_not_frame,
     -- AN11-A.6 audit-pass v2 additions
     row_invalidObjectType_cross_variant,
-    row_translationFault_ipcBuffer_no_write,
+    row_translationFault_lookup_unmapped,
+    row_illegalState_ipcBuffer_device_frame,
     row_endpointQueueEmpty_pop_empty,
     row_untypedTypeMismatch,
     row_childIdSelfOverwrite,

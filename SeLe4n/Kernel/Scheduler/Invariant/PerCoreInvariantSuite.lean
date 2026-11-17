@@ -1443,8 +1443,8 @@ theorem runQueueUniqueOnCore_smp_of_operated_and_frame
 -- `schedulerInvariant_perCore`.  Like `RegNodup` it is preserved by genuine
 -- multi-core dispatch (no shared-register conflict beyond the `contextMatches`
 -- conjunct already in `RegNodup`).  `schedulerPriorityMatchOnCore` preservation
--- through the SchedContext-priced run-queue inserts is gated on the
--- `boundThreadPriorityConsistent` carrier (PR-A) — see PR1b.
+-- through the run-queue inserts reads the thread's own priority (`TCB.priority`,
+-- its one home: a scheduling context carries none since WS-SX SX6.4).
 
 /-- WS-SM SM5.I PR1: the Tier-A extended structural per-core invariant —
 `RegNodup` plus the three every-transition conjuncts. -/
@@ -3773,8 +3773,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
       · -- case #3: budget exhausted
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
-            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize ((sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : allThreadsTimeSlicePositive
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
           allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
@@ -3791,7 +3790,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
         have h3 := allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
-              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid)) h2
         have h3' := allThreadsTimeSlicePositive_of_objects_eq
           (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
@@ -3812,8 +3811,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
       · -- case #3: budget exhausted
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
-            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize ((sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : allThreadsTimeSlicePositive
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
           allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
@@ -3830,7 +3828,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
         have h3 := allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
-              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid)) h2
         have h3' := allThreadsTimeSlicePositive_of_objects_eq
           (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
@@ -3908,8 +3906,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
       · -- case #3: budget exhausted → replenish + re-enqueue + timeoutBlockedThreads
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
-            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize ((sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : runQueueSafetyOnCore
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
           objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
@@ -3931,7 +3928,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
             getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
         have h3 := runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid
           (resolveInsertPriority
-            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid)
           tcb hTidR h2
         have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
           (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c
@@ -3966,8 +3963,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
       · -- case #3
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
-            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize ((sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : runQueueSafetyOnCore
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
           objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
@@ -3989,7 +3985,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
             getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
         have h3 := runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid
           (resolveInsertPriority
-            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid)
           tcb hTidR h2
         have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
           (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c

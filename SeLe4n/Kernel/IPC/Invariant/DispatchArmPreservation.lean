@@ -263,7 +263,7 @@ theorem writeDeliveredFrameToTcb_preserves_ipcInvariantFull
         (tcb.withDeliveredFrame frame) hInv hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
 
 -- ============================================================================
--- §5  One-TCB field stores (`.tcbSetIPCBuffer` and friends)
+-- §5  One-TCB field stores
 -- ============================================================================
 
 /-- The store-level instance of the one-TCB-rewrite lever: a transition whose
@@ -286,8 +286,9 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hAt : st'.objects[tid.toObjId]? = some (.tcb tcb') :=
@@ -299,30 +300,6 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
   exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
     hSlots hBnc
-
-/-- `.tcbSetIPCBuffer`: rewrites one TCB's `ipcBuffer` — a field no conjunct
-reads — so the whole bundle transports. -/
-theorem setIPCBufferOp_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (addr : SeLe4n.VAddr)
-    (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    ipcInvariantFull st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  split at hStep
-  · contradiction
-  · split at hStep
-    · rename_i tcb hTcb
-      dsimp only [] at hStep
-      split at hStep
-      · rename_i hStore
-        cases hStep
-        exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st _ vtid.val
-          tcb { tcb with ipcBuffer := addr } hObjInv hInv
-          ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcb)
-          hStore rfl rfl rfl rfl rfl rfl rfl rfl rfl
-      · contradiction
-    · contradiction
 
 -- ============================================================================
 -- §6  Notification-binding arms (`.tcbBindNotification`, `.tcbUnbindNotification`)
@@ -425,9 +402,9 @@ theorem bindNotification_preserves_ipcInvariantFull
             have hNBR : notificationBindingReciprocal st' :=
               notificationBindingReciprocal.of_bindCodes hInv.notificationBindingReciprocal hNeIds
                 (by rw [hTraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
-                  TCB.boundNotificationCode_eq_zero hFree.2])
+                  TCB.boundNotificationCode_eq_zero hFree.1.2])
                 (by rw [hNraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
-                  Notification.boundTCBCode_eq_zero hFree.1])
+                  Notification.boundTCBCode_eq_zero hFree.1.1])
                 (by rw [hAt2]; rfl)
                 (by rw [hNe2 _ (Ne.symm hNeIds), hAt1]; rfl)
                 (fun k hk1 hk2 => by rw [hNe2 k hk1, hNe1 k hk2])
@@ -661,8 +638,9 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
   have hAt := insertObjects_getElem_self st tid.toObjId (.tcb tcb') hObjInv
@@ -711,86 +689,28 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
 
-/-- Reduction of `updatePrioritySource` at a binding with **no** priority
-source — `.unbound` and, since WS-OD (v0.35.3), `.donated`.  Both write the
-thread's own TCB — through the typed rewrite since `v0.35.71`, so the reduction
-takes the store's witness for the record the operation was handed. -/
+/-- Reduction of `updatePrioritySource`: it writes the thread's own TCB at every
+binding (WS-SX SX6.4), through the typed rewrite since `v0.35.71`, so the
+reduction takes the store's witness for the record the operation was handed. -/
 private theorem updatePrioritySource_tcbTarget_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (hB : tcb.schedContextBinding.ownScId? = none)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rw [hB]
   exact SystemState.updateTcb_eq_of_some
     ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hPre) _
 
-/-- Reduction of `updatePrioritySource` at a binding that **does** name a
-priority source — `.bound scId`, and only that since WS-OD (v0.35.3).
-
-**`v0.35.98`: that arm is a PAIR of writes**, the reservation and the thread,
-because the base priority of a `.bound` thread has two homes and the syscall
-must move both (see the operation's own docstring).  The reduction is therefore
-to the composed typed updates rather than to a single insert; each half is an
-identity where its object is absent, so no presence hypothesis is needed here
-and the two `_sc_eq` / `_sc_none_eq` reductions this replaces — which described
-a one-object write — are gone rather than given a second object. -/
-private theorem updatePrioritySource_bound_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (scId : SeLe4n.SchedContextId)
-    (hB : tcb.schedContextBinding.ownScId? = some scId) :
-    SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
-      = (st.updateSchedContext scId fun sc => { sc with priority := p }).updateTcb tid
-          fun t => { t with priority := p } := by
-  unfold SchedContext.PriorityManagement.updatePrioritySource
-  rw [hB]
-
-/-- `updatePrioritySource` writes a priority field — on the thread's own TCB
-unless the binding names a priority source, in which case on that SchedContext —
-and priority is a field no conjunct reads.  The case split is on the classifier
-rather than on the binding, so the two arms are exactly the operation's. -/
+/-- `updatePrioritySource` writes the thread's priority field, which no
+conjunct reads. -/
 theorem updatePrioritySource_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ipcInvariantFull (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
-  cases hB : tcb.schedContextBinding.ownScId? with
-  | none =>
-      rw [updatePrioritySource_tcbTarget_eq st tid tcb p hB hPre]
-      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-        { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
-  | some scId =>
-      -- `v0.35.98`: two writes, so two preservation steps — the reservation at
-      -- `st`, the thread at the reservation-written state.  The thread's record
-      -- survives the first because a SchedContext rewrite is invisible to every
-      -- TCB lookup **at every key** (`updateSchedContext_getTcb?`), so no
-      -- key-distinctness side condition enters the argument.
-      have hObjInv1 :
-          (st.updateSchedContext scId fun sc => { sc with priority := p }).objects.invExt :=
-        SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv
-      have hGet1 :
-          (st.updateSchedContext scId fun sc => { sc with priority := p }).getTcb? tid
-            = some tcb := by
-        rw [SystemState.updateSchedContext_getTcb? st scId _ hObjInv tid]
-        exact (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hPre
-      have hPre1 :
-          (st.updateSchedContext scId fun sc => { sc with priority := p }).objects[tid.toObjId]?
-            = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hGet1
-      have hInv1 :
-          ipcInvariantFull (st.updateSchedContext scId fun sc => { sc with priority := p }) := by
-        cases hSc : st.getSchedContext? scId with
-        | some sc =>
-            rw [SystemState.updateSchedContext_eq_of_some hSc]
-            exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
-              sc { sc with priority := p } hObjInv hInv
-              ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-        | none => rw [SystemState.updateSchedContext_eq_self_of_none hSc]; exact hInv
-      rw [updatePrioritySource_bound_eq st tid tcb p scId hB,
-        SystemState.updateTcb_eq_of_some hGet1]
-      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid tcb
-        { tcb with priority := p } hObjInv1 hInv1 hPre1 rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  rw [updatePrioritySource_tcbTarget_eq st tid tcb p hPre]
+  exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
+    { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- The bucket re-key changes no thread's run-queue membership on any core. -/
 theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
@@ -990,7 +910,7 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st st'
       (SeLe4n.ThreadId.ofObjId addr.cnode) t (t.removeSpaceCap addr.slot) hObjInv hInv hPre hS
       rfl rfl rfl rfl rfl rfl rfl rfl rfl
-      (fun _ _ _ h _ => TCB.spaceSlotCap_removeSpaceCap_back h)
+      (fun _ _ _ h _ => .inl (TCB.spaceSlotCap_removeSpaceCap_back h))
   have hAt := storeObject_objects_eq st st' _ _ hObjInv hS
   have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' _ oid _ h hObjInv hS
@@ -1647,104 +1567,14 @@ theorem ipcInvariantFull_of_runRequeueOnCore (st : SystemState) (c : CoreId)
   have hA := SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c tid p
   exact ipcInvariantFull_of_objectsAgreeOffRunLinks hA hInv
 
-/-- Domain alignment over any base state: a no-op or a one-TCB rewrite of a
-field no conjunct reads. -/
-private theorem domainAlignStep_preserves_ipcInvariantFull (stP : SystemState)
-    (tid : SeLe4n.ThreadId) (tcbC : TCB) (domain : Nat) (gate : Prop) [Decidable gate]
-    (hObjInv : stP.objects.invExt) (hInv : ipcInvariantFull stP)
-    (hAt : stP.objects[tid.toObjId]? = some (.tcb tcbC)) :
-    ipcInvariantFull (if tcbC.domain.val = domain ∨ gate then stP
-      else { stP with objects := stP.objects.insert tid.toObjId (.tcb { tcbC with domain := ⟨domain⟩ }) }) := by
-  -- WS-OD (v0.35.3): the domain write gained the ownership gate as a second
-  -- disjunct, and the bundle argument is indifferent to it — either disjunct
-  -- takes the no-write arm.  Stated over an opaque `gate` so this lemma cannot
-  -- drift from whatever the operation's condition is.
-  by_cases h : tcbC.domain.val = domain ∨ gate
-  · rw [if_pos h]
-    exact hInv
-  · rw [if_neg h]
-    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull stP tid tcbC
-      { tcbC with domain := ⟨domain⟩ } hObjInv hInv hAt rfl rfl rfl rfl rfl rfl rfl rfl rfl
-
-/-- The factored propagation tail preserves the whole bundle: the priority
-write and domain write touch fields no conjunct reads, and the re-bucket
-re-keys a queued thread in place. -/
-theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
-    (stStored : SystemState) (scId : SeLe4n.SchedContextId)
-    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (priority domain : Nat)
-    (hObjInv : stStored.objects.invExt) (hInv : ipcInvariantFull stStored)
-    (hBT : stStored.getTcb? boundTid = some boundTcb) :
-    ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid
-      boundTcb hBT priority domain) := by
-  have hBTRaw := (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp hBT
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  -- `v0.35.71`: both writes are `rewriteObject`, which unfolds to the record
-  -- update the bundle levers below are stated over.
-  dsimp only [SystemState.rewriteObject]
-  -- WS-OD (v0.35.3): both propagations are gated on the bound thread OWNING this
-  -- SchedContext, so the "no write" arms now also cover a donated binding.  The
-  -- bundle argument is unchanged on every arm.
-  by_cases hPrioEq : boundTcb.priority.val = priority ∨
-      ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId
-  · rw [if_pos hPrioEq]
-    try dsimp only []
-    split
-    · rename_i currentTcb hCur _
-      have hCEq : boundTcb = currentTcb := Option.some.inj (hBT.symm.trans hCur)
-      subst hCEq
-      exact domainAlignStep_preserves_ipcInvariantFull stStored boundTid boundTcb domain
-        _ hObjInv hInv hBTRaw
-    · exact hInv
-  · rw [if_neg hPrioEq]
-    try dsimp only []
-    have hInvW := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull stStored
-      boundTid boundTcb { boundTcb with priority := ⟨priority⟩ }
-      hObjInv hInv hBTRaw rfl rfl rfl rfl rfl rfl rfl rfl rfl
-    have hObjInvW := RobinHood.RHTable.insert_preserves_invExt stStored.objects
-      boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) hObjInv
-    have hAtW := insertObjects_getElem_self stStored boundTid.toObjId
-      (.tcb { boundTcb with priority := ⟨priority⟩ }) hObjInv
-    have hSomeW := (SystemState.getTcb?_eq_some_iff
-      { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
-      boundTid { boundTcb with priority := ⟨priority⟩ }).mpr hAtW
-    by_cases hMem : ({ stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } : SystemState).queuedOn
-        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid) boundTid = true
-    · rw [if_pos hMem]
-      have hInvR := ipcInvariantFull_of_runRequeueOnCore
-        { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
-        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
-        boundTid
-        (match boundTcb.pipBoost with
-          | none => ⟨priority⟩
-          | some boostPri => ⟨Nat.max priority boostPri.val⟩)
-        hInvW
-      -- The re-key relinked the thread's run-queue fields, so the domain step
-      -- reads the re-keyed record (WS-ZA ZA4.5).
-      split
-      · rename_i currentTcb hCur _
-        exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          _ (SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hObjInvW) hInvR
-          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hCur)
-      · exact hInvR
-    · rw [if_neg hMem]
-      split
-      · rename_i currentTcb hCur _
-        have hCEq : { boundTcb with priority := ⟨priority⟩ } = currentTcb :=
-          Option.some.inj (hSomeW.symm.trans hCur)
-        subst hCEq
-        exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          _ hObjInvW hInvW hAtW
-      · exact hInvW
-
-/-- `.schedContextConfigure`: the SC rewrite keeps `boundThread`, the optional
-priority/domain propagation is the factored tail above. -/
+/-- `.schedContextConfigure`: the SC rewrite keeps `boundThread`, and the
+bound arm's candidacy mark and resume tail write scheduler links alone. -/
 theorem schedContextConfigure_preserves_ipcInvariantFull
     (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
-    (budget period priority deadline domain : Nat)
+    (budget period : Nat) (extraRefills badge flags : UInt64)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline
-      domain st = .ok ((), st')) :
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags
+       st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold SchedContextOps.schedContextConfigure at hStep
   split at hStep
@@ -1789,29 +1619,12 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             generalize stStored.releasePlace (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ =
               stPlaced at hStep hObjInvStored hInvStored
             split at hStep
-            · rename_i boundTcb hBT _
+            · rename_i boundTcb hBT
               cases hStep
-              have hObjP : (markKeyChangeFor (markCandidacyGainFor
-                  (SchedContextOps.schedContextConfigureBoundPropagate
-                  stPlaced ⟨vScId.val.toNat⟩ boundTid boundTcb hBT priority domain) boundTid
-                  (hasSufficientBudget st boundTcb)) boundTid
-                  (effectiveSchedParams st boundTcb)).objects.invExt := by
-                rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
-                exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
-                  _ _ _ _ _ _ _ hObjInvStored
               -- WS-ZA ZA6.4: the resume tail writes run-queue links alone.
               refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
                 (.of_runLinks (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks _ _ _)) ?_
-              exact PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
-                (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjP
-                  (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-                    (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
-                    (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stPlaced
-                      _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT))))
-                (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-                  (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
-                  (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stPlaced
-                    _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT)))
+              exact markCandidacyGainFor_preserves_ipcInvariantFull _ _ _ hInvStored
             · cases hStep
               exact hInvStored
       · contradiction
@@ -1821,10 +1634,10 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
 the context's thread to the control's core, then the configure there. -/
 theorem schedControlConfigure_preserves_ipcInvariantFull
     (st st' : SystemState) (core : CoreId) (vScId : SeLe4n.ValidObjId)
-    (budget period priority deadline domain : Nat)
+    (budget period : Nat) (extraRefills badge flags : UInt64)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
-      domain st = .ok ((), st')) :
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
+       st = .ok ((), st')) :
     ipcInvariantFull st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases hStep with h | ⟨_, t, stM, sgi, -, -, -, hM, h⟩
   · exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ _ hObjInv hInv h
@@ -1886,8 +1699,9 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       (tcb'.schedContextBinding = .unbound ∧
         sc.boundThread = some tid ∧ sc'.boundThread = none))
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hNeIds : tid.toObjId ≠ scId.toObjId := by
@@ -1998,11 +1812,13 @@ theorem ipcInvariantFull_of_schedBindingRewrite
     · intro oid o' sl c b hO hL hB
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT] at hO; cases hO
-        exact ⟨.tcb tcb, by rw [hT]; exact hPreT, hSlots sl c b hL hB⟩
+        rcases hSlots sl c b hL hB with h | h
+        · exact ⟨oid, .tcb tcb, sl, c, by rw [hT]; exact hPreT, h, hB⟩
+        · exact h
       · by_cases hS : oid = scId.toObjId
         · rw [hS, hAtS] at hO; cases hO
-          exact ⟨.schedContext sc, by rw [hS]; exact hPreS, hL⟩
-        · exact ⟨o', by rw [← hFrame oid hT hS]; exact hO, hL⟩
+          exact ⟨oid, .schedContext sc, sl, c, by rw [hS]; exact hPreS, hL, hB⟩
+        · exact ⟨oid, o', sl, c, by rw [← hFrame oid hT hS]; exact hO, hL, hB⟩
     · intro oid
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT, hPreT]
@@ -2159,10 +1975,8 @@ theorem schedContextBind_preserves_ipcInvariantFull
         have hNoLive : replyFrameOnLiveStack st tcb = false := by
           cases hL : replyFrameOnLiveStack st tcb with
           | false => rfl
-          | true => rw [hL] at hStep; split at hStep <;> simp at hStep
+          | true => rw [hL] at hStep; simp at hStep
         simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
-        split at hStep
-        · contradiction
         · split at hStep
           · rename_i hUnbound
             try dsimp only [] at hStep
@@ -2189,7 +2003,7 @@ theorem schedContextBind_preserves_ipcInvariantFull
               exact absurd (Option.some.inj hPreT) (fun hx => KernelObject.noConfusion hx)
             have hObjInv1 := RobinHood.RHTable.insert_preserves_invExt st.objects
               vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) hObjInv
-            have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
+            have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
                 = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
               have h1 : (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }))[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]? = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
                 simp only [RHTable_getElem?_eq_get?]
@@ -2198,13 +2012,13 @@ theorem schedContextBind_preserves_ipcInvariantFull
               rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId _ _
                 (by simp only [beq_iff_eq]; exact hNeIds) hObjInv1]
               exact h1
-            have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) } : SystemState)).objects[vThreadId.val.toObjId]?
-                = some (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) := by
+            have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[vThreadId.val.toObjId]?
+                = some (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) := by
               simp only [RHTable_getElem?_eq_get?]
               exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
             have hFrame2 : ∀ oid : SeLe4n.ObjId, oid ≠ vThreadId.val.toObjId →
                 oid ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId →
-                (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) } : SystemState)).objects[oid]?
+                (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]?
                   = st.objects[oid]? := by
               intro oid hNeT hNeS
               simp only [RHTable_getElem?_eq_get?]
@@ -2224,29 +2038,22 @@ theorem schedContextBind_preserves_ipcInvariantFull
               cases hBX
             have hInv2 := ipcInvariantFull_of_schedBindingRewrite st _ vThreadId.val
               ⟨vScId.val.toNat⟩ tcb
-              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }
+              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
               sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
               hInv hPreT hAtT2 hPreS hAtS2 hFrame2
               rfl rfl rfl rfl rfl rfl rfl rfl
               (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
             -- The release placement at the bind's end writes release links
-            -- alone (WS-ZA ZA6.4); the key-change hook before it a flag or nothing.
+            -- alone (WS-ZA ZA6.4).
             refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
               (.of_releaseLinks (SystemState.releasePlace_agree _ _ _)) ?_
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
+            -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the placement of a parked
+            -- runnable thread writes only run-queue links, which no conjunct
+            -- reads; otherwise the state is the double write.
             split
-            · -- The re-bucket arm: a re-key through the TCB run-queue links
-              -- (WS-ZA ZA4.5).
-              exact ipcInvariantFull_of_runRequeueOnCore _ _ _ _ hInv2
-            · -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the two remaining arms — the
-              -- placement of a parked runnable thread, and the identity.  The
-              -- placement writes only run-queue links, which no conjunct reads,
-              -- so the bundle survives for the same reason as the re-bucket.
-              split
-              · rename_i hPark
-                refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
-                  (ipcInvariantFull_runEnqueueOnCore _ _ _ _ hInv2)
-              · exact hInv2
+            · refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+                (ipcInvariantFull_runEnqueueOnCore _ _ _ _ hInv2)
+            · exact hInv2
           · contradiction
       · contradiction
   · contradiction
@@ -2551,11 +2358,11 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩
       · exact ⟨x, by rw [hNe oid h]; exact hx⟩
-    · intro oid o' _ _ _ hO hL _
+    · intro oid o' sl c _ hO hL hB
       by_cases h : oid = scObj
       · rw [h, hAt] at hO; cases hO
-        exact ⟨.schedContext sc, by rw [h]; exact hPre, hL⟩
-      · exact ⟨o', by rw [← hNe oid h]; exact hO, hL⟩
+        exact ⟨oid, .schedContext sc, sl, c, by rw [h]; exact hPre, hL, hB⟩
+      · exact ⟨oid, o', sl, c, by rw [← hNe oid h]; exact hO, hL, hB⟩
     · intro oid
       by_cases h : oid = scObj
       · rw [h, hAt, hPre]; rfl
@@ -5072,28 +4879,6 @@ theorem threadIpcFieldsQuiescent_retirePendingFaultForResume
               | exact hQ.noPPrev tcb hT | exact hQ.noStash tcb hT
               | exact hQ.noPendingMsg tcb hT | exact hQ.noBudget tcb hT
 
-/-- Review round (PR #887): **configuring a fault handler preserves the
-bundle** — a one-TCB rewrite of `faultHandler`, a field no conjunct reads. -/
-theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    ipcInvariantFull st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler SystemState.rewriteObject
-          exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-            { tcb with faultHandlerSet := true, faultHandlerWord := cptr } hObjInv hInv
-            ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-            rfl rfl rfl rfl rfl rfl rfl rfl rfl
-
 /-- **WS-BP BP7.2**: recording physical writes touches only the ledger, which
 no conjunct of the bundle reads. -/
 theorem ipcInvariantFull_recordPhysicalWrites {st : SystemState}
@@ -5184,8 +4969,8 @@ theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
 
 /-- **A thread slot's copy preserves the IPC bundle**: the delete touches no IPC
 state (`cspaceDeleteSlot_preserves_ipcInvariantFull`), the insert rewrites one
-thread's space slot with an unbadged capability, which no conjunct reads, and
-the edge writes links alone. -/
+thread's slot with a copy of the source slot's capability, whose badge that
+slot holds (`badgeHeldIn_of_lookupSlotCap`), and the edge writes links alone. -/
 theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
@@ -5194,7 +4979,7 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
   have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
     (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, hCap, e⟩
   · rw [e]; exact hD
   · rw [e]
     refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
@@ -5203,14 +4988,15 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
       ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl rfl rfl rfl rfl rfl rfl rfl rfl
       (fun _ c _ h hB => by
         rcases TCB.spaceSlotCap_insertSpaceCap_back h with rfl | h'
-        · simp at hB
-        · exact h')
+        · rw [TCB.spaceCopyOf_badge] at hB
+          exact .inr (badgeHeldIn_of_lookupSlotCap hCap hB)
+        · exact .inl h')
 
 /-- A slot set from a filled source keeps the thread stored: its slot then
 holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 3)
+    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 4)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
     ((threadSlotSet ec st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome := by
@@ -5219,24 +5005,6 @@ theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
   unfold threadSlotSet
   dsimp only
   rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl
-
-/-- Review round (PR #887): and the object-store invariant. -/
-theorem setThreadFaultHandlerOp_preserves_objects_invExt
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    st'.objects.invExt := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler
-          exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv
 
 /-- Cancelling IPC blocking on a `.ready` victim is the identity — there is
 nothing to cancel. -/
@@ -5687,7 +5455,7 @@ theorem updateTcb_yieldWrite_preserves_ipcInvariantFull (st : SystemState)
     exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t _ hObjInv hInv
       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
       (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
-      (by intro sl c b h _; rw [e] at h; exact h) (by rw [e] <;> rfl)
+      (by intro sl c b h _; rw [e] at h; exact .inl h) (by rw [e] <;> rfl)
 
 /-- A context rewritten keeping its bound thread keeps the bundle. -/
 theorem updateSchedContext_boundKept_preserves_ipcInvariantFull (st : SystemState)

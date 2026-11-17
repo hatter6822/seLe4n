@@ -259,8 +259,6 @@ run_negative_check "INVARIANT" rg -n '^def (dispatchSyscall|syscallEntry)($|[ ({
 run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_dispatch_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_scheduler($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 run_check "INVARIANT" rg -n '^private def dispatcherRefusesCallerNotCurrentOnCore($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n '^  dispatcherRefusesCallerNotCurrentOnCore$' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther\)' tests/SyscallDispatchSuite.lean
@@ -981,7 +979,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def capTransferInertW[^\n]*(\n([ \t][^
 run_negative_check "INVARIANT" rg -n 'decodeExtraCapAddrs' SeLe4n
 # The IPC buffer is seL4's seL4_IPCBuffer: a tag word, then msg[0..120].
 run_check "INVARIANT" rg -n '^def ipcBufferOverflowBaseWord : Nat := 1 \+ 4$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcBufferSlotAddr[^\n]*\n[^\n]*ipcBufferOverflowBaseWord \+ idx" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def ipcBufferWordAt[^\n]*\n[^\n]*ipcBufferOverflowBaseWord \+ idx" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
 # The label is seL4's 52 bits, and an error's word is shifted as a machine word.
 run_check "INVARIANT" rg -n '^def maxLabel : Nat := \(1 <<< 52\) - 1$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def errorLabelWord \(e : KernelError\) : UInt64 := \(errorLabel e\)\.toUInt64 <<< 12$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
@@ -1741,13 +1739,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := donationReturnSchedContext 
 # the de-duplication is the point, and a second copy reads exactly like the one
 # definition in a diff.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "boundThreadCode := SeLe4n\.ThreadId\.optCode \(some originalOwner\),\n\s*scReply := head\?\.bind" SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-# The priority mirror is deliberately NOT a fourth field: `SchedContext.priority`
-# survives `projectKernelObject`, so writing a possibly-high recipient's band
-# into a possibly-low reservation makes the pop projection-visible and
-# `returnDonatedSchedContext_preserves_projection` false.  The record says so
-# with a theorem rather than only in prose.
-run_check "INVARIANT" rg -n '^@\[simp\] theorem donationReturnSchedContext_priority' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*priority :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # **The frozen pop reads the live reader, not the bare accessor.**  The live pop
 # resolves both of its TCBs with `lookupTcb`, which refuses the reserved sentinel
 # thread id; this mirror used `getTcb?` for both, so it would have handed a
@@ -3277,23 +3268,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFfiRegistersToTcb_id_whe
 # dispositions (`faultSuspend` / `faultAbandon` and their per-core forms) each
 # looked the TCB up and inserted the rewritten record raw; each is `updateTcb`
 # now -- the dispositions over the descheduled state, so the deschedule stays
-# the scheduler-only write it always was.  `installFaultHandler` is handed the
-# TCB the operation already resolved, so it takes the store's witness for it
-# and writes through `rewriteObject` under that proof; the operation resolves
-# the thread once, through the witnessed lookup.
+# the scheduler-only write it always was.  (The seventh, `installFaultHandler`,
+# left with the fault-handler syscall at WS-SX SX6.5: SetSpace writes the
+# fault-handler slot through its slot set.)
 run_check "INVARIANT" bash -lc 'rg -U -n "^def recordPendingFault \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tf : ThreadFault\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb\.setPendingFault \(some tf\) with ipcFaultSend := true \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultSuspend \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb => \{ tcb with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultAbandon \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb =>\n    \{ tcb\.setPendingFault none with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def applyFaultRestart \(st : SystemState\) \(faulted : SeLe4n\.ThreadId\)\n    \(frame : Architecture\.FaultRestartFrame\) : SystemState :=\n  st\.updateTcb faulted fun tcb => \(\(tcb\.withRestartFrame frame\)\.setPendingFault none\)$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultSuspendOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(c : CoreId\) :\n    SystemState :=\n  \(removeRunnableOnCore st tid c\)\.updateTcb tid fun tcb => \{ tcb with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultAbandonOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(c : CoreId\) :\n    SystemState :=\n  \(removeRunnableOnCore st tid c\)\.updateTcb tid fun tcb =>\n    \{ tcb\.setPendingFault none with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
-# The handed-TCB writer takes the store's witness and writes under it; the
-# operation resolves the thread through the witnessed lookup, once.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def installFaultHandler \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(tcb : TCB\)\n    \(hTcb : st\.getTcb\? tid = some tcb\) \(cptr : SeLe4n\.CPtr\) : SystemState :=\n  st\.rewriteObject tid\.toObjId \(\.tcb \{ tcb with faultHandlerSet := true, faultHandlerWord := cptr \}\)\n    \(SystemState\.rewriteAdmissible_tcb hTcb _\)$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadFaultHandlerOp[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? vTargetTid\.val with\n  \| none => \.error \.objectNotFound\n  \| some ⟨tcb, hTcb⟩ =>" SeLe4n/Kernel/IPC/Operations/Fault.lean'
-# NEGATIVE: no raw insert and no bare lookup returning inside any of the eight,
+# NEGATIVE: no raw insert and no bare lookup returning inside any of the six,
 # bounded to each declaration.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (recordPendingFault|faultSuspend|faultAbandon|applyFaultRestart|installFaultHandler|setThreadFaultHandlerOp) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\? |match st1\.getTcb\? )" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (recordPendingFault|faultSuspend|faultAbandon|applyFaultRestart) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\? |match st1\.getTcb\? )" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (faultSuspendOnCore|faultAbandonOnCore) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\? |match st1\.getTcb\? )" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 # The two per-core dispositions are still, at the boot core, the single-core
 # forms by definition -- the migration kept the two spellings one.
@@ -3313,16 +3299,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultAbandonOnCore_
 # across a rewrite without `invExt`, which executable code has no proof of.
 # The proofs reduce that pair with `updateTcb_after_rewriteObject_schedContext`.
 
-# `updatePrioritySource`: every write is the typed rewrite, the reservation's
-# through `updateSchedContext` (its identity-on-absent arm is the defensive
-# no-op this site always had) and the thread's through `updateTcb`.
-#
-# **Repointed at `v0.35.98`**, which made the `.bound` arm a PAIR of writes --
-# a bound thread's base priority has two homes and the syscall must move both.
-# The anchor's subject is unchanged (the classifier, and that no arm reaches for
-# a raw insert); only the arm's shape moved, and a pin on a shape a cut changes
-# is exactly the artefact this project's sweep rule says to carry with it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with\n  \| some scId =>(\n([ \t][^\n]*)?)*    \(st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\)\.updateTcb tid\n      fun t => \{ t with priority := newPriority \}\n  \| none =>(\n([ \t][^\n]*)?)*    st\.updateTcb tid fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# `updatePrioritySource`: the write is the typed rewrite through `updateTcb`, at
+# every binding.  WS-SX SX6.4: the thread's TCB is its priority's only home (a
+# scheduling context carries no priority, as in seL4-MCS's `setPriority`), so the
+# `.bound` arm's pair of writes is one write and the reservation is never touched.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(_tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=(\n([ \t][^\n]*)?)*  st\.updateTcb tid fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource[^\n]*(\n([ \t][^\n]*)?)*updateSchedContext" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
 # The donor-reservation statement lost its key-distinctness hypothesis: the
 # typed rewrite fires only at a key holding a TCB, so it reaches no
 # SchedContext at any key.  NEGATIVE: the hypothesis must not come back.
@@ -3340,24 +3322,15 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def setMCPrior
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def setMCPriorityOnCore[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?st\.getTcb\? vTargetTid\.val" SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (updatePrioritySource|setPriorityOp|setMCPriorityOp|migrateRunQueueBucketOnCore)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
 run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean SeLe4n/Kernel/SchedContext/Operations.lean
-# The propagation tail takes the store's witness for the bound TCB it is
-# handed and writes under it; `schedContextConfigure` resolves the thread once,
-# through the witnessed lookup, and passes the proof down.  The domain half
-# re-resolves through the witnessed lookup and keeps its `if` OUTSIDE the
-# rewrite, so an unchanged domain is no write at all.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)\n    \(boundTid : SeLe4n\.ThreadId\) \(boundTcb : TCB\)\n    \(hBound : stStored\.getTcb\? boundTid = some boundTcb\)\n    \(priority domain : Nat\) : SystemState :=" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*        stStored\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb boundTcb2\)\n          \(SystemState\.rewriteAdmissible_tcb hBound boundTcb2\)" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*  match stProp\.getTcbWitnessed\? boundTid with\n  \| some ⟨currentTcb, hCurrent⟩ =>\n    if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp\n    else(\n([ \t][^\n]*)?)*      stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb currentTcb2\)\n        \(SystemState\.rewriteAdmissible_tcb hCurrent currentTcb2\)\n  \| none => stProp$" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), configureResumeBound \(PriorityInheritance\.repropagateFromWaiter\n                  \(markKeyChangeFor \(markCandidacyGainFor\n                    \(schedContextConfigureBoundPropagate stStored scIdTyped\n                      boundTid boundTcb hBound priority domain\) boundTid\n                    \(hasSufficientBudget st boundTcb\)\) boundTid preKey\) boundTid\n                  \(determineTargetCore st boundTid\) st\.objects\.size\)\n                  boundTid updated\)" SeLe4n/Kernel/SchedContext/Operations.lean'
-# NEGATIVE: the propagation must not resolve the bound thread bare again, and
-# the domain write must not swallow its condition (a rewrite that runs on
-# every configure re-inserts an unchanged record).
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*match stProp\.getTcb\? boundTid" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb \(if " SeLe4n/Kernel/SchedContext/Operations.lean'
+# The configure's bound arm: the reset refills `budgetRemaining`, so a bound
+# thread that had exhausted its budget is a candidacy gain (read against the
+# PRE-state's budget), then seL4-MCS's resume tail.  WS-SX SX6.4: nothing is
+# propagated to the thread -- a scheduling context carries no priority or domain.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcb\? boundTid with\n              \| some boundTcb =>(\n([ \t][^\n]*)?)*                \.ok \(\(\), configureResumeBound \(markCandidacyGainFor stStored boundTid\n                  \(hasSufficientBudget st boundTcb\)\) boundTid updated\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The bind: the SchedContext under its lookup's witness, then the TCB through
 # the typed rewrite over the rewritten state.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*            let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n              \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)\n            let st2 := st1\.updateTcb vThreadId\.val fun t =>\n              \{ t with scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(SchedContextBinding\.bound scIdTyped\), scBindingOwnerCode := 0,\n                       priority := sc\.priority \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*            let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n              \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)\n            let st2 := st1\.updateTcb vThreadId\.val fun t =>\n              \{ t with scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(SchedContextBinding\.bound scIdTyped\), scBindingOwnerCode := 0 \}$" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The unbind: the scheduler stage is a scheduler-only update of the pre-state,
 # so the SchedContext witness taken at `st` is the stage's own; the
 # SchedContext rewrite runs OVER THE STAGE under that witness, the TCB through
@@ -3685,10 +3658,10 @@ run_check "INVARIANT" rg -F -n 'def threadBasePriority (_st : SystemState) (tcb 
 run_check "INVARIANT" rg -n '^@\[simp\] theorem threadBasePriority_eq' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem threadBasePriority_congr($|[ ({:\[\]])' SeLe4n/Model/State.lean
 
-# THE WRITE.  `updatePrioritySource` selects its target through the classifier,
-# so a donee's priority lands in its own TCB and the donor's reservation is not
-# written at all.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# THE WRITE.  `updatePrioritySource` writes the target's own TCB at every binding
+# (WS-SX SX6.4), so a donee's priority lands in its own TCB and the donor's
+# reservation is not written at all.  NEGATIVE: no classifier comes back.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource[^\n]*(\n([ \t][^\n]*)?)*ownScId\?" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
 # NEGATIVE: the merged arm, bounded to this declaration -- the pre-fix spelling.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePrioritySource[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
 # The payoff, in the form the finding was reported in: which object moves.  An
@@ -3697,17 +3670,12 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updatePriori
 run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated ' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
 run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated_preserves_donor_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
 
-# THE READS.  Each site's `.donated` arm takes the donor's deadline (and, where
-# it resolves one, domain) and the donee's OWN priority.  Bounded gaps: a
-# declaration header sits at column 0, so the match cannot leave its own `def`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.priority, sc\.deadline\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-# `v0.35.28`: the arm's `pipBoost` split is gone -- the boost is applied by
-# `TCB.boostedPriority` (itself `Priority.raisedBy` at the thread's own base), so
-# the SchedContext-present case is one line.  The RELATION is unchanged and is
-# what this pins: the donee's OWN priority, the donor's deadline, the donee's
-# domain.  `tcb.boostedPriority` is the donee's own priority raised by the
-# donee's own boost; a spelling naming `sc.priority` would be the defect.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.boostedPriority, sc\.deadline, tcb\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+# THE READS.  Each resolver reads the thread's OWN priority, deadline and domain
+# at every binding: since WS-SX SX6.4 a scheduling context carries none of them,
+# so there is no binding to classify and no arm that could read the donor's.  The
+# whole body is pinned; a spelling naming `sc.` would be the defect.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*  \(tcb\.priority\.raisedBy tcb\.pipBoost, tcb\.deadline\)$" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams \(_st : SystemState\) \(tcb : TCB\)\n    : SeLe4n\.Priority × SeLe4n\.Deadline × SeLe4n\.DomainId :=\n  \(tcb\.boostedPriority, tcb\.deadline, tcb\.domain\)$" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 # RETIRED AT `v0.35.133`: this pinned the `.donated` arm of a classification the
 # one-home collapse deleted -- the helper is `TCB.boostedPriority` at every
 # binding now, pinned in the `v0.35.133` block below.
@@ -3761,7 +3729,9 @@ run_negative_check "INVARIANT" rg -n 'getCurrentPriority_donated' SeLe4n/ tests/
 # would have been a pin on a body that no longer asks the question: the positive
 # fails outright and the negative passes forever, which is the tautological pin
 # CLAUDE.md's "a fix retires more than it changes" rule retires.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*match targetTcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# WS-SX SX6.4: the classifier is gone with the reservation's priority -- the
+# helper writes the thread's TCB at every binding.  NEGATIVE: it does not return.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*ownScId\?" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
 
 # RETIRED AT `v0.35.133`: these pinned the `.donated` ARM of a three-armed case
@@ -3773,13 +3743,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[
 # tautology-in-waiting, so both are replaced by the pair in the `v0.35.133` block
 # below, which asserts the body each predicate HAS and refuses the binding
 # analysis coming back.
-# The carrier is scoped to the priority source, not to the binding.  Quantified
-# over `scId?` it covered `.donated` too, and the donation FALSIFIES that: the
-# reservation's priority must equal the donor's before the hand-off and the
-# donee's after, and the hand-off writes neither field.  `_frame` requires the
-# binding unchanged, so nothing carried it across either.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def boundThreadPriorityConsistent \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*∀ scId, tcb\.schedContextBinding\.ownScId\? = some scId" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def boundThreadPriorityConsistent[^\n]*(\n([ \t][^\n]*)?)*∀ scId, tcb\.schedContextBinding\.scId\? = some scId" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
 
 # THE CONTROL, in the relation-preserving direction: the split must not leak
 # into the BUDGET question.  Budget, period and deadline *are* the reservation's
@@ -3792,31 +3755,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def budgetPositiveOnCore[^\n]*(\n([ \
 run_check "INVARIANT" bash -lc 'rg -U -n "^def budgetPositive \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Invariant.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def maxBudgetInBandOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 
-# The mirror crossing, closed in the same cut: `schedContextConfigure`
-# propagates BOTH thread-owned parameters -- priority and domain -- into
-# `sc.boundThread`'s TCB, and after a donation `boundThread` is the DONEE.  So a
-# capability on the *client's* reservation could rewrite the *server's* own base
-# priority and migrate its partition, permanently.  Both propagations maintain a
-# `.bound`-only invariant (`boundThreadPriorityConsistent`,
-# `boundThreadDomainConsistent`), so both are gated on this SchedContext being
-# the bound thread's OWN.  Relation, not presence: the gate names `scId`, so a
-# thread that owns a DIFFERENT context is not propagated to either.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)" SeLe4n/Kernel/SchedContext/Operations.lean'
-# The ownership question has ONE definition that both halves consult, so a later
-# cut cannot gate one and not the other -- the shape that made this the *mirror*
-# of a crossing already fixed once.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigurePropagates \(boundTcb : TCB\)\n    \(scId : SeLe4n\.SchedContextId\) : Prop :=\n  boundTcb\.schedContextBinding\.ownScId\? = some scId$" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" rg -n '^@\[simp\] theorem schedContextConfigurePropagates_donated' SeLe4n/Kernel/SchedContext/Operations.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem schedContextConfigurePropagates_bound' SeLe4n/Kernel/SchedContext/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if boundTcb\.priority\.val = priority ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp" SeLe4n/Kernel/SchedContext/Operations.lean'
-# NEGATIVES: the ungated spellings -- the pre-fix shapes, which keep every token
-# and drop only the conjunct that makes the write the bound thread's own.  Both
-# halves are named, because a fix applied to one and not its sibling is how this
-# class stays open while reading closed.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if boundTcb\.priority\.val = priority then\n      stStored" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if currentTcb\.domain\.val = domain then stProp" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# The mirror crossing (a capability on the client's reservation rewriting the
+# server's base priority and domain through `sc.boundThread`, the DONEE after a
+# donation) is closed structurally since WS-SX SX6.4: the configure writes no
+# thread at all.  NEGATIVE, declaration-bounded: no TCB write in its body.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*(updateTcb|KernelObject\.tcb)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # ...and the reading side follows: `effectiveSchedParams` reports a donee's OWN
 # domain, because every live domain filter reads `tcb.domain`, so reporting
 # `sc.domain` described a partition the scheduler never puts the donee in.
@@ -4032,7 +3975,7 @@ run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*executingCore args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              \| \.ok \(_, args\) => vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
 # seL4's Page_Map remap: a live mapping on the frame capability is remapped
 # only at the ASID and address it records — a different ASID is refused as an
 # invalid capability, a different address as an invalid argument — and every
@@ -4040,7 +3983,7 @@ run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid exe
 # the record's ASID, its address, the walk) before the unmap writes; a refused
 # map half no longer leaves the unmap standing.
 run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability vspaceMapFrameCapNumber\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 1\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \(\.invalidCapability pageMapVSpaceCapNumber\)\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \(\.invalidArgument 0\)\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*      if capabilityMappingLive st frameCap then\n        match vspaceRemapRefusal st args frameCap frame with\n        \| \.error e => \.error e\n        \| \.ok \(\) =>\n          match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore\n              args\.asid args\.vaddr st with\n          \| \.error e => \.error e\n          \| \.ok \(\(\), st0\) => vspaceMapFromFrameCap tid executingCore args st0$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'vspaceRemapChecks|vspaceRemapMapFallback|vspaceRemapAdmittedAt' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapRefused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4066,7 +4009,7 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # a RAM page is zeroed before the capability exists, the new capability is a
 # CDT child of the untyped's, and a device untyped backs exactly the
 # memory-backed kinds.
-run_check "INVARIANT" rg -n -U '^    \| \.object _ =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^    \| \.object _ => fun st =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr\n          \(callerExtraCapAddr\? st tid decoded\.msgInfo\.extraCaps 0\)\n          \(decodeUntypedRetypeArgs decoded\) st$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st executingCore args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
 # WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
 # ASID the arm picks (never 0) and the carve itself checks is free before
@@ -4086,11 +4029,12 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def untypedRetypeAdmittedAt [^\n]*\
 run_check "INVARIANT" rg -n -U '^def CarveRequest\.heapAdmitted \(st : SystemState\) \(req : CarveRequest\) : Bool :=\n  decide \(req\.heapBytes st ≤ st\.machine\.kernelHeapFreeBytes\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_heapRefused_stateUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
-# The routed retype arm answers the heap refusal itself, then every other carve
-# refusal from the checks' words (`untypedRetypeRefusalCode`), so the general
-# path (a second decode) never runs for a carve; and a refusal crosses the
-# boundary as scalar words, building no frame or outcome.
-run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !CarveRequest\.heapAdmittedW st k n then \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n([ \t]*(--[^\n]*)?\n)*                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild\.val\n                    k n asid then\n                  \.ok \(\(\), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot\n[^\n]*\n                else\n                  \.error \(untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                    vChild\.val k n asid, st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# The routed retype arm answers every refusal of the window from the checks'
+# words (`untypedRetypeWindowRefusalCode`) before any write, then makes the
+# carves in place (`untypedRetypeWindowCode`), so the general path (a second
+# decode) never runs for a carve; and a refusal crosses the boundary as scalar
+# words, building no frame or outcome.
+run_check "INVARIANT" rg -n -U '^            \(fun srcCnode srcSlot dstCnode dstSlot =>\n              match retypeChildIdsRefusal vChild\.val 1 \(args\.numObjects - 1\) with\n              \| some e => \.error \(e, st\)\n              \| none =>\n([ \t]*(--[^\n]*)?\n)*              match untypedRetypeWindowRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                  vChild\.val k n args\.numObjects with\n              \| some e => \.error \(e, st\)\n              \| none =>\n                \.ok \(\(\), untypedRetypeWindowCode srcCnode srcSlot dstCnode dstSlot vChild\.val k n\n                  dom core asid 0 args\.numObjects st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeRefusalCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -4136,10 +4080,48 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_tcb($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_endpoint($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) =>\n            match retypeChildIdsRefusal vChild\.val 1 \(args\.numObjects - 1\) with\n            \| some e => \.error e\n            \| none => untypedRetypeWindow src vChild\.val dst req args\.numObjects st' SeLe4n/Kernel/API.lean
+# A window's refusals all precede its writes, in seL4's order (every slot
+# empty, then the region for every object), and every write is a successful
+# single carve (`untypedRetypeWindowWrites_chain`); an admitted window admits
+# every carve (`untypedRetypeWindow_admitsEveryCarve`).
+run_check "INVARIANT" rg -n -U 'def untypedRetypeWindow \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    match untypedRetypeWindowRefusal st src dst childId req count with\n    \| some e => \.error e\n    \| none => \.ok \(\(\), untypedRetypeWindowWrites src dst childId req 0 count st\)$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeWindowRefusalWith[^\n]*(\n([ \t][^\n]*)?)*        match retypeWindowSlotsRefusal st dst\.cnode dst\.slot 0 count with(\n([ \t][^\n]*)?)*          if !retypeResetAdmitted st src ut then some \.revocationRequired\n          else if !ut\.canAllocate \(alignedCarveIndex ty size ut \(retypeFreeIndex st src utCap\)\)\n              \(count \* size\) then' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowWrites_chain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindow_admitsEveryCarve($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean
+# WS-SX SX6.3/SX6.6: a retype's object id, an interrupt line, a page table's
+# address and an IPC buffer's address are read on the word (`wordLtNat`), so a
+# word at or above 2^63 builds no heap number; each consumer refuses the read
+# as seL4 refuses the word.
+run_check "INVARIANT" rg -n -U '@\[noinline\] def windowWordOf \(w : UInt64\) : Nat :=\n  if wordLtNat w windowWordBound then w\.toNat else windowWordBound$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n -U '@\[noinline\] def ipcBufferAddrOfWord \(w : UInt64\) : Nat :=\n  if wordLtNat w windowWordBound then w\.toNat else windowWordBound \+ \(w % 4096\)\.toNat$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^           childId    := ObjId\.ofNat \(windowWordOf r6\.word\) \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ line := windowWordOf r0\.word, dstIndex := CPtr\.ofWord r1\.word, dstDepth := cnodeDepthOfWord r2\.word \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ vaddr := SeLe4n\.VAddr\.ofNat \(windowWordOf r0\.word\), attr := r1\.word \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ bufferAddr := SeLe4n\.VAddr\.ofNat \(ipcBufferAddrOfWord r0\.word\) \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_negative_check "INVARIANT" rg -n 'childId *:= ObjId\.ofNat (r6|a6)\.val|line := r0\.val|vaddr := SeLe4n\.VAddr\.ofNat r0\.val|bufferAddr := SeLe4n\.VAddr\.ofNat r0\.val' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferAddrOfWord_mod_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferAddrOfWord_eq_zero_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+# seL4's `Arch_checkIRQ`: a line past the board's last is RangeError(0, maxIRQ),
+# and `decodeARMPageTableInvocation`: an address past the user top is
+# InvalidArgument 0, each before the model's own checks.
+run_check "INVARIANT" rg -n -U 'def irqControlLineRefusal[^\n]*\n  if irqControlMaxLine st < line then some \(\.rangeError 0 \(irqControlMaxLine st\)\.toUInt64\)\n  else if !Architecture\.deviceInterruptLine st line then some \.invalidIrq$' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n -U '      else if root\.tableBase\.isNone then \.error \(\.invalidArgument 0\)\n([ \t]*(--[^\n]*)?\n)*      else if !vaddr\.isCanonical then \.error \(\.invalidArgument 0\)\n      else if !pageTableAddressable vaddr then \.error \.addressOutOfBounds$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+# The arm answers that refusal in place, before the general form is reached.
+run_check "INVARIANT" rg -n -U '          \(fun _ rootId =>\n([ \t]*(--[^\n]*)?\n)*            if pageTableMapPastUserTopAt st objId rootId args\.vaddr then\n              \.error \(\.invalidArgument 0, st\)\n            else\n            RefusalCarrying\.ofChecked \(pageTableMapAdmittedAt st objId rootId args\.vaddr\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_of_pastUserTopAt($|[ ({:\[\]])' SeLe4n/Kernel/VSpacePerform.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*        cspaceRootCap := callerTcb\.spaceCells\[0\]\n        capAddr       := dstCNode\n        requiredRight := \.write' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
+# WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
+# 0, the CNode the root itself at depth 0 or the slot its index and depth name,
+# and the window is held to seL4's three range checks, in seL4's order.
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*\n  fun st =>\n    match root\? with\n    \| none => \.error \.truncatedMessage\n    \| some rootAddr =>\n    match args\? with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*        match retypeDestinationCNode \(SystemState\.lookupSlotCap st rootRef\) index depth st with(\n([ \t][^\n]*)?)*          match retypeWindowRefusal size offset count with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def retypeDestinationCNode[^\n]*(\n([ \t][^\n]*)?)*    if depth = 0 then \.ok rootCap\? else' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def retypeWindowRefusal[^\n]*\n  if size - 1 < offset then some \(\.rangeError 0 \(size - 1\)\.toUInt64\)\n  else if count < 1 ∨ Concurrency\.retypeFanOutLimit < count then\n    some \(\.rangeError 1 Concurrency\.retypeFanOutLimit\.toUInt64\)\n  else if size - offset < count then some \(\.rangeError 1 \(size - offset\)\.toUInt64\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveRetypeSlotsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'resolveIssuingSlots[^A]|issuingDestinationCapNumber' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4165,7 +4147,7 @@ run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_pageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem of_fresh_inert_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeObject_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact \(\(untypedRetypeFromCap_chain hStep\)\.preserves(\n([ \t][^\n]*)?)*          untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ _ _ hP\.1 hP\.2 hC' SeLe4n/Kernel/API.lean
 # WS-ZA ZA5.4 part 17: the carve keeps the capability bundle.  The carved
 # object lands at an id that held nothing, holding no capability and no link;
 # the install and its .retype edge are a copy's.  A CNode request carries its
@@ -4177,22 +4159,25 @@ run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityI
 run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
 run_check "INVARIANT" rg -n '^  \| cnode \(radixBits : Nat\) \(bounded : radixBits ≤ maxCSpaceDepth\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st. hInv hCarve$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  \(untypedRetypeFromCap_chain h\)\.preserves\n    \(fun hP hC => untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ _ _ _ hP hC\) hInv$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '\bdepthBounded\b' SeLe4n
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.vspaceMap \| \.irqControlGet \| \.auditRead => 3$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n -U '^  \| \.mintReplyCap \| \.vspaceUnmap \| \.vspaceUnifyInstruction\n  \| \.pageTableMap \| \.tcbSetSpace => 2$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
-run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     carvedChildLocks childKind childObjId count\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def carvedChildLocks[^\n]*\n[^\n]*\n  \(List\.range \(min count retypeFanOutLimit\)\)\.map fun i =>\n    \(carvedObjectLock childKind \(ObjId\.ofNat \(childObjId\.toNat \+ i\)\), \.write\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '^def retypeFanOutLimit : Nat := maxLockSetSize - retypeBaseLocks$' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
 run_check "INVARIANT" rg -n 'the revocation retires the child untyped and the grandchild frame' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'an untyped recording a child is retired with its capability, its parent adopting the child' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
-# WS-SX SX6.1: seL4 has no reset invocation; it resets inside Untyped_Retype,
+# WS-SX SX7.1: seL4 has no reset invocation; it resets inside Untyped_Retype,
 # as the carve does (`retypeFreeIndex`), so the model's `.untypedReset` and its
 # transition are gone.  The objects carved from an untyped leave through their
 # final deletes (`retireCarvedObject`).
@@ -4896,7 +4881,7 @@ run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(fun t => st\.schedule
 run_check "INVARIANT" rg -n -U '^    \(hB : blockedCurrentNowhere st\) \(hBN : st\.blockedNotResident\)\n    \(h : Lifecycle\.Suspend\.suspendThreadOnCore st vtid e = \.ok \(st., sgi\?\)\) :\n    savedRegsWrittenFree e st st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^  exact savedRegsKeptOffCore_trans_stepCovers \(retirePendingFaultForResume_savedRegsKeptOffCore hInv hCur\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(hN : st\.currentNotResidentElsewhere\) \(h : schedContextConsumedOnCore s e st = \.ok st.\) :\n    savedRegsWrittenFree e st st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
-run_check "INVARIANT" rg -n -U '^    \(hB : finalisingDeleteBundle st\) \(h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = \.ok st.\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(hB : finalisingDeleteBundle st\) \(h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = \.ok st.\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(hBNR : st\.blockedNotResident\) \(hYA : st\.yieldLinksAgree\) \(hYN : st\.yieldLinkedNotResident\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n -U '^        \| exact tcbRestart_savedRegsKeptOffCore hInv P\.refined P\.dequeued hU hN P\.toEntryPremises\.blocked\n            hBNR hS$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 # The restart's cancelling arm reaches a second scheduling point whose save may
@@ -5127,11 +5112,11 @@ run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @rem
 run_check "INVARIANT" rg -n -U '  let o := spaceCellAt t\.spaceCells s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
 # The slot read is out of line and takes only the cells, so the clear hands the
 # thread to no call and the thread is rebuilt in its own cell.
-run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 3\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 4\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
 # The set reads the spare record, takes it out of the spares, then writes the
 # capability and its object target over it, before the one rebuild.
-run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights guard guardSize\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights guard guardSize\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights badgeWord badged guard guardSize\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights badgeWord badged guard guardSize\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 # A spare or space record owns its object target; a register word is passed
 # unboxed.
 run_check "INVARIANT" rg -n -c '^  \| some r => some \{ r with rights := opaqueId r\.rights, target := unshareTarget r\.target \}$' SeLe4n/Model/Object/Unshare.lean
@@ -5182,8 +5167,8 @@ run_negative_check "INVARIANT" rg -n 'registryNamesNone|servicesNameNone|irqHand
 run_negative_check "INVARIANT" rg -n '\btableReferencesRecorded\b' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
 run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedRegistration_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedRegistration epId st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.serviceRegistry _ =>\n      serviceEndpointArm \.serviceQuery tid decoded\.msgInfo\.extraCaps fun _ epId st =>\n        match lookupServiceByRecordedRegistration epId st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.serviceRegistry _ =>\n      serviceEndpointArm \.serviceQuery tid xc \(fun _ epId => serviceQueryStaged ctx tid epId\) st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U 'def frozenLookupServiceByCap[^\n]*\n[^\n]*\n  fun st =>\n    match frozenLookupEndpoint st epId with' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.read\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.write\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -5350,8 +5335,11 @@ run_check "INVARIANT" rg -n -F '(Architecture.shootdownPostedOps st1 stLive).con
 # stored flag says so; the retired flag-only guard must not come back.
 run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    if tcb\.threadState != \.Inactive \|\| inferThreadState st vtid\.val tcb != \.Inactive then\n      \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_negative_check "INVARIANT" rg -n 'if tcb\.threadState != \.Inactive then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-# The checks come before the writes: both sources are read, then the copies run.
-run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    else if !cspaceRootSourceAdmitted st cnSrc cnData then\n      \.error \(\.invalidCapability setSpaceCSpaceRootCapNumber\)\n    else if !vspaceRootSourceAdmitted st vrSrc then\n      \.error \(\.invalidCapability setSpaceVSpaceRootCapNumber\)\n    else \.ok \(copyThreadSpacesPerform executingCore st vtid\.val cnSrc\.cnode cnSrc\.slot vrSrc\.cnode\n      vrSrc\.slot cnData\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+# The checks come before the writes: the three sources are read, then the
+# copies run.  A root source that names no object of its kind is seL4's
+# `IllegalOperation` (`.illegalState`), a fault endpoint that is no valid
+# fault handler `InvalidCapability` 1 (seL4-MCS `decodeSetSpace`).
+run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    else if !cspaceRootSourceAdmitted st cnSrc cnData then \.error \.illegalState\n    else if !vspaceRootSourceAdmitted st vrSrc then \.error \.illegalState\n    else if !faultHandlerSourceAdmitted st fhSrc then\n      \.error \(\.invalidCapability setSpaceFaultHandlerCapNumber\)\n    else \.ok \(copyThreadSpacesPerform executingCore st vtid\.val cnSrc\.cnode cnSrc\.slot vrSrc\.cnode\n      vrSrc\.slot cnData fhSrc\.cnode fhSrc\.slot\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 # Each slot is set as seL4 sets it: the slot delete (clear, then splice out of the
 # derivation tree), then the copy of the source's capability with the edge from it.
 run_check "INVARIANT" rg -n -U 'def threadSlotCopied [^\n]*(\n([ \t][^\n]*)?)*  let stD := spliceDeletedCdtNode \(threadSlotCleared tid\.toObjId slot st\)(\n([ \t][^\n]*)?)*    \(stD\.updateTcb tid \(·\.insertSpaceCap slot \(TCB\.spaceCopyOf cap rights data\)\)\)\.cdtAddChild\n      \{ cnode := srcCNode, slot := srcSlot \} \{ cnode := tid\.toObjId, slot := slot \} \.copy' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
@@ -5364,7 +5352,7 @@ run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_capabilityInvar
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-ZA ZA5.4 part 22: each space slot is set through the finalising retire.
 run_check "INVARIANT" rg -n -U 'def threadSlotSet [^\n]*(\n([ \t][^\n]*)?){0,3}\n  let target := slotRetireTarget st tid\.toObjId slot\n  retireFinalObject executingCore target \(recorderFor st target tid\.toObjId slot\)\n    \(threadSlotCopied st tid slot srcCNode srcSlot rights data\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-run_check "INVARIANT" rg -n -U 'def copyThreadSpacesPerform [^\n]*(\n([ \t][^\n]*)?){0,3}\n  threadSlotSet executingCore\n    \(threadSlotSet executingCore st tid TCB\.cspaceRootSlot cnCNode cnSlot TCB\.cspaceRootRights\n      cnData\)\n    tid TCB\.vspaceRootSlot vrCNode vrSlot TCB\.vspaceRootRights 0' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U 'def copyThreadSpacesPerform [^\n]*(\n([ \t][^\n]*)?){0,3}\n  threadSlotSet executingCore\n    \(threadSlotSet executingCore\n      \(threadSlotSet executingCore st tid TCB\.cspaceRootSlot cnCNode cnSlot TCB\.cspaceRootRights\n        cnData\)\n      tid TCB\.vspaceRootSlot vrCNode vrSlot TCB\.vspaceRootRights 0\)\n    tid TCB\.faultHandlerSlot fhCNode fhSlot TCB\.faultHandlerRights 0' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_negative_check "INVARIANT" rg -n 'threadSlotCopied \(threadSlotCopied' SeLe4n
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
@@ -5382,11 +5370,11 @@ run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_capabilit
 run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_coversWrites ' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc cnData then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ cnData then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc cnData fhSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ cnData ⟨fhCNode, fhSlot⟩ then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s ∈ \[TCB\.cspaceRootSlot, TCB\.vspaceRootSlot, TCB\.faultHandlerSlot\],\n      threadSlotHidden ctx observer st vtid\.val s\)' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_objects_of_excluded ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_tables ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_untypedRecordsChild ' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -5398,15 +5386,18 @@ run_check "INVARIANT" rg -n -U '"deleting a bound notification.s last capability
 run_negative_check "INVARIANT" rg -n 'a notification bound to a thread outlives its last capability' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the replace retires the root, releases its ASID and unrecords it' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ThreadSpaceCopy$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveSetSpaceAt_ok_sources($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match resolveCallerCapSlot callerTid args\.cspaceRoot \.grant st with(\n([ \t][^\n]*)?)*    if !cnCap\.hasRight \.write then \.error \.illegalAuthority(\n([ \t][^\n]*)?)*      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args\.cspaceRootData with' SeLe4n/Kernel/API.lean
+# seL4-MCS's decodeSetSpace: the fault endpoint, the CSpace root and the
+# VSpace root are extra capabilities 0, 1 and 2, a message naming fewer is
+# TruncatedMessage, and the three slots are resolved in the caller's CSpace.
+run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match callerExtraCapAddr\? st callerTid xc 0, callerExtraCapAddr\? st callerTid xc 1,\n      callerExtraCapAddr\? st callerTid xc 2 with\n  \| some fhAddr, some cnAddr, some vrAddr => resolveSetSpaceAt callerTid cnAddr vrAddr fhAddr args st\n  \| _, _, _ => \.error \.truncatedMessage' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid decoded\.msgInfo\.extraCaps args st with(\n([ \t][^\n]*)?)*                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args\.cspaceRootData\n                    fhSrc with' SeLe4n/Kernel/API.lean
 # seL4's decodeSetSpace: a nonzero CSpace root data word whose guard size does not fit beside
-# the CNode's radix is refused before the VSpace root is resolved, and the root copy takes its
-# guard from the word.
-run_check "INVARIANT" rg -n -U '    else if \(st\.getCNode\? cnId\)\.isNone then \.error \.illegalState\n    else if cspaceRootDataRefused st cnId args\.cspaceRootData then \.error \.illegalState\n    else\n      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
+# the CNode's radix is refused before the VSpace root is resolved (no right is asked of the
+# root capability, as seL4 asks none), and the root copy takes its guard from the word.
+run_check "INVARIANT" rg -n -U '      if !cspaceRootSourceAdmitted st cnSrc args\.cspaceRootData then \.error \.illegalState\n      else\n        match lookupSlot callerTcb vrAddr st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRootSourceAdmitted_dataFits($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_check "INVARIANT" rg -n -U '@\[inline\] def spaceCopyGuard \(cap : Capability\) \(data : UInt64\) : UInt64 :=\n  if data = 0 then cap\.cnodeGuard else capDataGuard data' SeLe4n/Model/ObjectSlots.lean
 # The guard is a machine word in the capability: the record holds the guard and its size unboxed,
@@ -5435,7 +5426,7 @@ run_check "INVARIANT" rg -n -U 'def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n '^  ipcUntypedGrantFollowsDerivationRule$' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceCopy[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceMint [^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*      \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The derivation rule allocates nothing: the children check is inlined, so a
 # caller naming the slot by its words builds no slot reference, and a boot
 # CNode's slot records are its own, so the first carve writes the invoked
@@ -5520,7 +5511,7 @@ run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[
 # frozen phase claims no coverage of a VSpace write it has only a read for.
 run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_negative_check "INVARIANT" rg -n '^  \| \.vspace(Map|Unmap) => true' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 18 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 17 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 run_check "INVARIANT" rg -n 'frozenCspaceMint strips the source.s mapping record' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -5974,9 +5965,9 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
 run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^        let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*        if slotEmpty c then onLookup \(\.invalidCapability 0\) st\n        else\n([ \t]*(--[^\n]*)?\n)*          let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n          if receiveRefusedAt sid tid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^        let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*        extraCapsLookupK st tcb xc\n          \(fun cptr t a b c. =>\n            onLookup cptr \(\.failedLookup false \(LookupFault\.ofWords t a b c.\)\) st\)\n          \(fun _ =>\n([ \t]*(--[^\n]*)?\n)*            if slotHeldNone c then\n              if syscallReceivesOnCap sid then onLookup capAddr \(\.invalidCapability 0\) st\n              else kArm \(\.error \(\.invalidCapability 0, st\)\)\n            else\n([ \t]*(--[^\n]*)?\n)*              let k := fun noCap => noCapRefusal noCap kArm \(onLookup capAddr\) \(arm c st\)\n              if receiveRefusedAt sid tid st c then k true else k false\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def receiveSlotRefused \(sid : SyscallId\) \(tid : SeLe4n\.ThreadId\) \(st : @& SystemState\)\n    \(c : @& Option Capability\) : Bool :=\n  match c with\n  \| some cap => receiveGateRefuses sid tid st cap\n  \| none => false$' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def slotHeldNone \(c : @& Option Capability\) : Bool := capHeldNone c$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # The ABI entry is the word entry's body, its words read back as the outcome
@@ -5996,12 +5987,12 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def signalRoutedArm($|[ ({:\[\]])' S
 # theorems: two decodes naming the signal dispatch identically).
 run_check "INVARIANT" rg -n '^@\[inline\] def signalBadge \(cap : Capability\) : SeLe4n\.Badge :=$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem signalBadge_eq_ofOption($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^    \(tid : SeLe4n\.ThreadId\) \(capWord : UInt64\) \(st : SystemState\) : SystemState :=$' SeLe4n/Kernel/RoutedArms/Signal.lean
+run_check "INVARIANT" rg -n '^    \(tid : SeLe4n\.ThreadId\) \(capWord : UInt64\) \(xc : Nat\) \(st : SystemState\) : SystemState :=$' SeLe4n/Kernel/RoutedArms/Signal.lean
 run_check "INVARIANT" rg -n '^  \| signal \(capAddr : CPtr\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_notificationSignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId ntfnCap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge$' SeLe4n/Kernel/RefusalCarryingDispatch.lean
 run_negative_check "INVARIANT" rg -n 'Badge\.ofWord \(auditedArgWord regs 0\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def waitRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Wait.lean
@@ -6053,8 +6044,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispat
 # and right; any other resolved capability refused is the invocation's error
 # (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
 # to the flow-checked delivery, as the abort entry does.
-run_check "INVARIANT" rg -n '^        match syscallOperandLookup decoded\.syscallId gate st with' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e => \.error e\n  \| \.ok \(cap, _\) =>\n      if receiveGateRefuses sid gate\.callerId st cap then \.error \(\.invalidCapability 0\) else \.ok \(\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^        match syscallOperandLookup decoded\.syscallId gate\n            \(syscallExtraCapCount decoded\.syscallId decoded\.msgInfo\.extraCaps\) st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e =>\n      match e with\n      \| \.failedLookup w f => \.error \(gate\.capAddr, \.failedLookup w f\)\n      \| e =>\n        match callerExtraCapsFault\? st gate\.callerId xc with\n        \| some \(a, f\) => \.error \(a, \.failedLookup false f\)\n        \| none => if syscallReceivesOnCap sid then \.error \(gate\.capAddr, e\) else \.ok \(\)\n  \| \.ok \(cap, _\) =>\n      match callerExtraCapsFault\? st gate\.callerId xc with\n      \| some \(a, f\) => \.error \(a, \.failedLookup false f\)\n      \| none =>\n        if receiveGateRefuses sid gate\.callerId st cap then \.error \(gate\.capAddr, \.invalidCapability 0\)\n        else \.ok \(\)$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^def receiveGateRefuses \(sid : SyscallId\) \(tid : SeLe4n\.ThreadId\) \(st : SystemState\)\n    \(cap : Capability\) : Bool :=\n  syscallReceivesOnCap sid &&\n    \(!syscallTargetAccepted sid st cap \|\| !cap\.hasRight \(syscallRequiredRight sid\) \|\|\n      receiveBoundRefuses sid tid st cap\)$' SeLe4n/Kernel/API.lean
 # A receive's reply capability follows seL4-MCS lookupReply: a failed lookup is
 # the receive-phase capability fault carrying its own lookup fault, a
@@ -6100,17 +6091,18 @@ run_check "INVARIANT" rg -n '^fn abort_fallback_status\(raw: &str\) -> Result<\(
 run_check "INVARIANT" rg -n '^fn verify_abort_fallback_scanner\(\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    scan_trap_rs_abort_fallback_halts\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    verify_abort_fallback_scanner\(\);' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n '^def faultHandlerRequiredRights : List \(List AccessRight\) := \[\[\.write\], \[\.grant, \.grantReply\]\]' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^def faultHandlerRights : List AccessRight := faultHandlerRequiredRights\.flatten' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultHandlerRequiredRights : List \(List AccessRight\) := \[\[\.write\], \[\.grant, \.grantReply\]\]' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def faultHandlerRights : List AccessRight := faultHandlerRequiredRights\.flatten' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # WS-RR RR7.38: `.notification` joins the arm, because the target of a
-# fault-handler set may be queued on a notification just as on an endpoint.  The
-# anchor names the whole list rather than a prefix, so a further kind is still a
+# fault-handler set may be queued on a notification just as on an endpoint;
+# WS-SX SX6.5 moved the set into SetSpace, whose arm carries it.  The anchor
+# names the whole list rather than a prefix, so a further kind is still a
 # failure here.
-run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint, \.notification\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '\| \.tcbSetSpace =>\n\s+\[\.tcb, \.cnode, \.vspaceRoot, \.endpoint, \.notification, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # **WS-RR RR7.41**: the CSpace walk's interior is covered, so its registry entry
 # is deleted.  What replaces the two presence anchors is the mechanism that
 # closed it: the path derived from `resolveCapAddress`'s own recursion, the
@@ -6431,21 +6423,15 @@ run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_n
 run_check "INVARIANT" rg -n '@\[export lean_handle_unknown_syscall\]' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\) => \{' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U '"deliver_unknown_syscall",\s*"lean_handle_unknown_syscall"' rust/sele4n-hal/build.rs
-# (5) `TCB.faultHandler` has a live writer, validated by the same resolution
-#     the fault path runs.
-run_check "INVARIANT" rg -n '^def setThreadFaultHandlerOp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'match resolveFaultHandlerCPtr st tcb cptr with' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-# The routed arm runs the set in place: the handler's lookup refuses through
-# the lookup's failure words (no heap fault record), proven equal to the
-# specification, and no admitted-check wrapper survives beside it.
-run_check "INVARIANT" rg -n '^@\[inline\] def setThreadFaultHandlerOpK($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def setThreadFaultHandlerOpK[^\n]*(\n([ \t][^\n]*)?)*lookupSlotK tcb cptr st\n\s*\(fun t a b c => onErr \(\.failedLookup false \(LookupFault\.ofWords t a b c\)\)\)' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOpK_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'setThreadFaultHandlerOpK st vtid args\.handlerCPtr \(fun e => \.error \(e, st\)\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# (5) the thread's fault-handler slot has a live writer (WS-SX SX6.5): seL4-MCS's
+#     `TCB_SetSpace` copies extra capability 0 into it, last of its three
+#     sets, admitted only as `validFaultHandler` admits it and refused as
+#     capability 1 otherwise; the delivery reads the slot and answers
+#     missingCapability 0 when it is empty.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def faultHandlerSourceAdmitted[^\n]*(\n([ \t][^\n]*)?)*  \| none => true\n  \| some cap =>\n    faultHandlerCapAuthorized cap &&' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U '^def resolveSetSpaceAt [^\n]*(\n([ \t][^\n]*)?)*              if faultHandlerSourceAdmitted st fhSrc then \.ok \(cnSrc, vrSrc, fhSrc\)\n              else \.error \(\.invalidCapability setSpaceFaultHandlerCapNumber\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def resolveFaultHandler [^\n]*(\n([ \t][^\n]*)?)*      match tcb\.faultHandlerCap with\n      \| none => \.error \(\.failedLookup false \(\.missingCapability 0\)\)' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerOp|resolveFaultHandlerCPtr|faultHandlerSet\b|faultHandlerWord|\.tcbSetFaultHandler' SeLe4n
 run_negative_check "INVARIANT" rg -n 'setThreadFaultHandlerAdmitted|faultHandlerResolves' SeLe4n
 # A refused audit read answers from the read's own code in place
 # (`auditReadFastRefusal`, proven the specification's refusal), not through
@@ -6471,8 +6457,9 @@ run_check "INVARIANT" rg -n '^theorem auditDrainPerform_countW($|[ ({:\[\]])' Se
 run_negative_check "INVARIANT" rg -n 'auditDrainPerform tid \(auditedArgWord regs 0\)\.toNat st\)$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 # On a live state no object-table resize is due.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objects_noResizeDue($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
+# WS-SX SX6.5: the standalone fault-handler install is retired (seL4-MCS's
+# `TCB_SetSpace` installs the fault endpoint), its number reserved.
+run_negative_check "INVARIANT" rg -n 'TcbSetFaultHandler|fn tcb_set_fault_handler' rust/sele4n-types/src rust/sele4n-sys/src rust/sele4n-hal/src
 # …and the labeling-context read that makes the gate meaningful: without it the
 # entry could call the checked arm with a context it invented.
 run_check "INVARIANT" rg -n 'Platform\.FFI\.getKernelLabelingContext' SeLe4n/Kernel/FaultEntry.lean
@@ -6735,21 +6722,22 @@ run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.5: the ACCESS-time fill — a core caches translations it did not
-# map (the IPC-buffer walk), live on the per-core syscall entry.
-run_check "INVARIANT" rg -n '^def tlbFillIpcBufferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_caches_read_translation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n 'tlbFillIpcBufferOnCore' SeLe4n/Kernel/API.lean
+# map.  WS-SX SX6.6: the kernel reads a thread's IPC buffer through the buffer
+# frame's capability, as seL4's `lookupIPCBuffer` does, so the syscall entry
+# walks no user translation and fills no TLB entry.
+run_negative_check "INVARIANT" rg -n 'tlbFillIpcBuffer' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingEntry.lean SeLe4n/Kernel/RoutedArms
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
-# The page-granular IPC-buffer translation the fill rests on: the read and the
-# fill must resolve through ONE page computation, not two copies.
+# WS-SX SX6.6: every IPC-buffer read finds the buffer as seL4's lookupIPCBuffer
+# does, through the frame capability in the thread's buffer slot: a device
+# frame is refused, a receiver needs `.write` and a sender `.read`, and no
+# buffer word is translated through the thread's address space.
 run_check "INVARIANT" rg -n '^def VAddr.pageBase($|[ ({:\[\]])' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^def ipcBufferSlotPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-# WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write — the
-# reusable layer, and the fill's discharge of its single obligation.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lookupIPCBuffer[^\n]*(\n([ \t][^\n]*)?)*bufferFrameBase\? st isReceiver tcb\.spaceCells\[2\] tcb\.ipcBuffer" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def bufferFrameBase\?[^\n]*(\n([ \t][^\n]*)?)*if !f\.isDevice && cap\.rights\.mem \(if isReceiver then \.write else \.read\) then" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcBufferReadMr[^\n]*(\n([ \t][^\n]*)?)*match lookupIPCBuffer false st tcb with" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+run_negative_check "INVARIANT" rg -n 'getVSpaceRoot\?|root\.lookup|ipcBufferSlotPage|firstPageSlots|overflowSecondRead' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+# WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
 # WS-SM SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
 # drains ONLY the rounds its own commit opened, so a concurrently-committed
@@ -7178,6 +7166,12 @@ run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_ne($|[ ({
 run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_object($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolvePageMapOperands_shadowed_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolvePageMapOperandsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_no_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.vspaceMap => some \.frame\n' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '              match resolvePageMapOperands tid decoded\.capAddr rootCPtr words st with' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'PagePermissions\.ofNat\?|pagePermissionsOfWord\?' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnmap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate must be present in all three live arms.  That is guaranteed by the
@@ -7558,7 +7552,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -7682,7 +7676,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 37' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -7972,7 +7966,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 37' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -8306,7 +8300,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 54' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 53' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -8548,8 +8542,8 @@ run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem releaseUn
 run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem releaseLinkIn_eq_impl .*^def releaseInsertFresh ' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem releasePlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem spendBudgetOnCore_eq_impl .*^@\[inline\] def budgetExhaustOnCore ' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def spendBudgetOnCoreImpl[^\n]*(\n([ \t][^\n]*)?)*  spendBudgetWrite st c tid scId start ticks sc\.priority$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n -U '^@\[noinline\] def chargeSchedContext \(s : SchedContext\) \(start ticks now : Nat\) : SchedContext :=\n  cbsUpdateDeadline \(s\.chargeBudget start ticks now\) now true$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def spendBudgetOnCoreImpl[^\n]*(\n([ \t][^\n]*)?)*  spendBudgetWrite st c tid scId start ticks$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def chargeSchedContext \(s : SchedContext\) \(start ticks now : Nat\) : SchedContext :=\n  \(s\.chargeBudget start ticks now\)$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_negative_check "INVARIANT" rg -n -U '^@\[inline\] def yieldOnCoreR[^\n]*(\n([ \t][^\n]*)?)*effectiveSchedParams' SeLe4n/Kernel/RefusalCarryingDispatch.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem budgetExhaustOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem storeIdleThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/IdleStore.lean
@@ -8610,7 +8604,7 @@ run_check "INVARIANT" rg -n '^theorem timerTickOnCoreCompleteLockSet_serialises_
 run_negative_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet =\s*\[\(LockKey.runQueue bootCoreId, .write\)\]' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
 # The queue-owning-object umbrella is an AUTHORIZATION statement; exclusion
 # additionally needs every writer of a queued TCB to hold the queue owner's
-# lock.  **WS-RR RR7.38** closed that: the eleven footprints that can write a
+# lock.  **WS-RR RR7.38** closed that: the ten footprints that can write a
 # queued TCB carry the owner's write lock as a declared member, resolved from
 # the pre-state's TCB by `queueOwnerOf?`, and the kind is one of exactly two by
 # construction rather than by a permitted list admitting everything.
@@ -8625,7 +8619,7 @@ run_check "INVARIANT" rg -n '^theorem queueOwnership_respected_by_tcbSetPriority
 # would ask something else.  The sweep that bounded the tree's 2502 other
 # bare-name anchors excludes it for that reason, stated rather than implied.
 run_check "INVARIANT" rg -c '^theorem queueOwnership_respected_by_' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'the eleven queued-TCB writers respect the queue-ownership protocol' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the ten queued-TCB writers respect the queue-ownership protocol' tests/SmpInformationFlowSuite.lean
 # NEGATIVE, deletion-last (RR7.8's order): the gap's `¬` and its witness are
 # deleted because the domain is covered, so neither may come back — a
 # reintroduced violation theorem would mean a footprint stopped declaring the
@@ -8634,7 +8628,7 @@ run_negative_check "INVARIANT" rg -n 'theorem queueOwnership_violated_by_tcbSetP
 run_negative_check "INVARIANT" rg -n 'theorem lockSet_tcbSetPriority_omits_endpointLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_negative_check "INVARIANT" rg -n 'queueOwnershipProtocol' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the splice docstring must not claim the umbrella *alone* closes the
-# gap.  It does not — what closes it is the eleven declarations, and the
+# gap.  It does not — what closes it is the ten declarations, and the
 # distinction between authorization and exclusion is the point of the theorem.
 run_negative_check "INVARIANT" rg -n 'there is no hole to close' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The severity basis carries the fairness and enqueue-edge premises themselves,
@@ -8797,7 +8791,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 55' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 53' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -8977,13 +8971,14 @@ run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
-# WS-ZA ZA5.4 part 14 retired number 8, leaving 41 variants under a bound of 42.
-run_check "INVARIANT" rg -n '^def count : Nat := 46' SeLe4n/Model/Object/Types.lean
+# WS-ZA ZA5.4 part 14 retired number 8 and WS-SX SX6.5 number 34, and WS-SX SX7.1 number 37, leaving 45
+# variants under a bound of 48.
+run_check "INVARIANT" rg -n '^def count : Nat := 45' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 46;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 45;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 48;' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 2\] = \[8, 37\];' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 3\] = \[8, 34, 37\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
 # IPC invariant preservation, the reschedule flags, the own-core lock footprint,
@@ -9044,7 +9039,16 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeed
 run_check "INVARIANT" rg -n '^def syscallResolveCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def syscallTargetAccepted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallMissingRightError($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '^def syscallInvokeTyped [^\n]*\n[^\n]*\n  fun st =>\n    match syscallResolveCap gate st with\n    \| \.error e => \.error e\n    \| \.ok \(cap, st'"'"'\) =>\n      if !syscallTargetAccepted sid st'"'"' cap then \.error \(\.invalidCapability 0\)\n      else if cap\.hasRight gate\.requiredRight then op cap st'"'"'\n      else \.error \(syscallMissingRightError sid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def syscallInvokeTyped [^\n]*\n[^\n]*\n[^\n]*\n  fun st =>\n    match syscallResolveCap gate st with\n    \| \.error e =>\n      match xf with\n      \| none => \.error e\n      \| some \(_, f\) => \.error \(syscallResolveRefusal e f\)\n    \| \.ok \(cap, st'"'"'\) =>\n      match xf with\n      \| some \(_, f\) => \.error \(\.failedLookup false f\)\n      \| none =>\n        if !syscallTargetAccepted sid st'"'"' cap then \.error \(\.invalidCapability 0\)\n        else if cap\.hasRight gate\.requiredRight then op cap st'"'"'\n        else \.error \(syscallMissingRightError sid\)' SeLe4n/Kernel/API.lean
+# An empty slot is no failure of seL4's lookupCapAndSlot: the extra
+# capabilities are looked up before decodeInvocation refuses the null
+# capability, and only an address that does not resolve keeps its own refusal.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def syscallResolveRefusal \(e : KernelError\) \(f : LookupFault\) : KernelError :=\n  match e with\n  \| \.failedLookup w f'"'"' => \.failedLookup w f'"'"'\n  \| _ => \.failedLookup false f$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_extraCaps_before_null($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# The extra capabilities' lookups read only the caller's root CNode, the one
+# CNode every declared footprint locks, under the gate's single-level guard.
+run_check "INVARIANT" rg -n '^theorem lookupSlot_single_level_read($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem abiEntryGate_lookupSlot_root($|[ ({:\[\]])' SeLe4n/Kernel/SyscallLockBracket.lean
 run_negative_check "INVARIANT" rg -n '\bsyscallInvoke\b' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -9085,7 +9089,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -9166,7 +9170,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=47' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=45' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -9182,12 +9186,14 @@ run_check "INVARIANT" rg -n 'restoreTargetAt st3 0\)\.deliveredFrame\?' tests/Sy
 run_check "INVARIANT" rg -n '11 CONTROL: \.\.\.and the waiter.s core resumes no badge' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 # WS-BP BP7.8: message registers past the fourth cross the kernel in both
-# directions, through ONE resolver; the write requires a writable mapping, the
+# directions, through ONE resolver; the write requires a writable buffer frame
+# capability (`lookupIPCBuffer` with `isReceiver`), the
 # delivery records user-word stores and counts them in the frame's length, both
 # fault seams drain the ledger, and the HAL never stores a user word into the
 # table pool.
 run_check "INVARIANT" rg -n '^@\[inline\] def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
-run_check "INVARIANT" rg -n 'st\.machine\.addrInRange pa && \(!needWrite \|\| perms\.write\)' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^    if pa\.toNat % 8 == 0 then some pa else none$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^    ipcBufferWordPAddrIn\? \(lookupIPCBuffer isReceiver st tcb\) idx$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
 run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
@@ -9462,7 +9468,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5_shippedLabeling_denies\b' SeLe4n/Plat
 # audited arm, dispatched to the routed form the specification is proven equal
 # to; an admitted record writes its ring slot in place, the ring's append.
 run_check "INVARIANT" rg -n -U '^def routedAudited : SyscallId → Bool\n  \| \.declassify \| \.declassifySignal \| \.auditRead \| \.auditDrain => true\n  \| _ => false$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^        \| \.audited sid capAddr =>\n          dispatchAuditedCheckedR ctx sid capAddr tcb\.registerContext tid executingCore st$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^        \| \.audited sid capAddr =>\n          dispatchAuditedCheckedR ctx sid capAddr tcb\.registerContext tid executingCore \(routedExtraCapCount sid tcb\.registerContext\) st$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem dispatchAuditedCheckedR_eq\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^    declassificationAudit := st\.declassificationAudit\.recordEvent actorDomain dstDomain targetId$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem recordEvent_eq\b' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
@@ -9470,7 +9476,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_stored_ok\b'
 # WS-SX SX2: an audited call's general form runs that call's arm alone, so its
 # compiled path carries no other syscall's arm; the audit read's tag word reads
 # the reason's discriminant off the slot's code, rebuilding no error.
-run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(xc : Nat\) \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>\n    match cap\.target with$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_negative_check "INVARIANT" rg -n 'dispatchWithCapChecked ctx \(auditedDecoded' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def auditGeneralR\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_eq_auditedArmSpec\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
@@ -10051,7 +10057,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def fpAccessTagOnCore \(st : SystemS
 run_check "INVARIANT" rg -n '^@\[noinline\] def fpLoadedContext \(st : SystemState\)' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^  \{ ms with fpOwnerCode := ms\.fpOwnerCode\.set c\.val \(ThreadId\.optCode t\?\) c\.isLt \}$' SeLe4n/Machine.lean
 run_negative_check "INVARIANT" rg -n 'restoreTargetAt|Platform\.FFI\.restoreTrapFrame |applyFpAccessOutcome r' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n 'some \(\.capFault decoded\.capAddr\.word inRecv e\.capFaultLookup\)' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'some \(\.capFault a\.word inRecv e\.capFaultLookup\)' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'capFault \(UInt64\.ofNat' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def faultRestartFrameOfContext \(ctx : FaultContext\)' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
@@ -10233,7 +10239,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=47 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=45 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -10339,7 +10345,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 46' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 45' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -11556,8 +11562,7 @@ run_check "INVARIANT" rg -n '^def frozenWriteTcbRebucketed($|[ ({:\[\]])' SeLe4n
 # and the two base writers take the shared write-and-re-bucket.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenRebucketRunnable st. tid newPrio" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid" SeLe4n/Kernel/FrozenOps/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*none => frozenWriteTcbRebucketed st targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*  frozenWriteTcbRebucketed st targetTid \{ targetTcb with priority := newPriority \}$" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # The third asker reaches the same mechanics one hop further out since Cut B2
 # (`v0.35.182`): a bind may ALSO place a parked runnable thread, which a priority
 # write must not, so `frozenSchedContextBind` takes the bind-specific
@@ -11569,7 +11574,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n(
 # **Test a gate by breaking the relation, not by deleting the token** -- and a
 # negative that is not DECLARATION-BOUNDED is a presence check.  The first draft of
 # the two store negatives below was written file-wide and fired on the clean tree:
-# `frozenSetIPCBuffer` stores a TCB at the same variable name, legitimately, because
+# `frozenSetIPCBuffer` (retired in SX6.6) stored a TCB at the same variable name, legitimately, because
 # `ipcBuffer` is not a run-queue key.  The relation is about *these three
 # declarations*, so each negative is scoped to one, with the gap written so it
 # cannot leave it.  Each keeps every name and re-introduces the defect's shape --
@@ -11577,71 +11582,39 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n(
 # still defined and still called from the other askers.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1? targetTid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1 threadId\.toObjId \(\.tcb updatedTcb\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
-# `v0.35.105`: the configure's negative is repointed, because the fix retired the
-# binding the old one named (`boundTcb2`, the fused record carrying BOTH
-# parameters) -- a negative on a name a cut deleted passes forever, which is this
-# project's tautological-pin shape.  Two relations replace it.  (a) The PRIORITY
-# half must not become a bare store: it moves the run-queue key, so it goes
-# through the re-bucketing writer.  (b) The fused record must not come back --
-# one gate over both parameters is what made a DOMAIN-only reconfigure re-bucket
-# a queued thread to its bucket's tail.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\(\.tcb \{ boundTcb with priority" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*priority := ⟨priority⟩, domain := ⟨domain⟩" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# WS-SX SX6.4: the frozen configure, like the live one, writes no thread -- the
+# propagation halves `v0.35.101`/`v0.35.105` pinned are retired with the
+# reservation's priority and domain.  NEGATIVE, declaration-bounded.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\.tcb \{" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # A second inlined bucket fold anywhere in that file would be a further answer to
 # the question the owner exists to have one answer to; the owner is in `Core.lean`,
 # so this one is legitimately file-wide.
 run_negative_check "INVARIANT" rg -n 'byPriority\.indexMap\.toList\.foldl' SeLe4n/Kernel/FrozenOps/Operations.lean
-# **`v0.35.101`, and found by the sweep rather than by the review**:
-# `frozenSchedContextConfigure` wrote the reservation and stopped, where the live
-# `schedContextConfigureBoundPropagate` propagates BOTH thread-owned parameters to
-# the bound thread and re-buckets it -- so every frozen post-configure state with a
-# bound owner falsified `boundThreadPriorityConsistent` AND
-# `boundThreadDomainConsistent`.  The gate is the live predicate's own question --
-# the bound thread must OWN the reservation, so a donee is never propagated to.
-# **`v0.35.105` (PR #897 review)**: and it propagates them in TWO independently
-# gated halves, because the live operation has two.  The priority half re-buckets
-# (a base priority IS the run-queue key); the domain half re-resolves the record
-# the first may have rewritten and writes it IN PLACE.  Fusing them -- one gate
-# over both parameters feeding the re-bucketing writer -- made a domain-only
-# reconfigure move a queued bound thread to its bucket's tail at an unchanged
-# key, which `frozenChooseThread` reads as a different next thread.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st. boundTid$" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\{ boundTcb with priority := ⟨priority⟩ \}" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\(\.tcb \{ currentTcb with domain := ⟨domain⟩ \}\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*!= some \(⟨scId\.toNat⟩ : SeLe4n\.SchedContextId\) then" SeLe4n/Kernel/FrozenOps/Operations.lean'
-# ...and the witness that makes the pair a measurement rather than a shape claim:
-# FO-048 drives all four combinations of the two gates against the live operation
-# with `frozenStateAgrees`, on a bucket holding a same-priority PEER -- the
-# shallowest fixture on which "the thread stayed where it was" is a proposition --
-# and computes the RETIRED fused reading beside them.
-run_check "INVARIANT" rg -n 'FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n 'FO-048 control: a priority-only reconfigure re-buckets on the live side' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureDomainOnlyKeepsOrder($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureDomainOnlyKeepsOrder$' tests/FrozenOpsSuite.lean
 # WS-ZA ZA6.4 review: the frozen configure ends in the live configure's resume
-# tail (`configureResumeBound`), run over the state the propagation halves left.
+# tail (`configureResumeBound`), run over the state the release placement left.
 # Without it a runnable bound thread parked off every bucket stayed unselectable
 # by `frozenChooseThread` while the live scheduler placed it.  The tail asks about
 # the CURRENT thread before the bucket (frozen dispatch leaves a current thread
 # in its bucket), takes a queued thread out when the context has no budget, and
 # places a parked runnable one at its effective priority.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\| \.ok stProp => \.ok \(\(\), frozenConfigureResumeBound stProp boundTid updated\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\| some _ => \.ok \(\(\), frozenConfigureResumeBound st. boundTid updated\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenConfigureResumeBound[^\n]*\n[^\n]*\n  if st\.scheduler\.current == some t then st\n  else if frozenQueuedAnywhere st t then\n    if sc\.budgetRemaining\.isPositive then st else frozenRemoveRunnable st t$" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenConfigureResumeBound[^\n]*(\n([ \t][^\n]*)?)*if frozenBindPlacesParkedThread st t tcb sc then\n        frozenRebucketRunnable st t tcb\.boostedPriority$" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" rg -n 'FO-052: \.\.\.so the frozen chooser can select it' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'FO-052: \.\.\.and the frozen one takes it out of every bucket' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureResumesBound($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureResumesBound$' tests/FrozenOpsSuite.lean
-# WS-ZA ZA6.4 review: the configure's parameter word packs the priority (bits
-# 0-7) and the domain (bits 8-11).  The encoder REFUSES an out-of-range field
-# rather than masking it into another valid configuration, and the kernel's
-# checked decode refuses any word with a bit above bit 11, tested on the word.
-run_check "INVARIANT" bash -lc 'rg -U -n "pub const fn encode\(&self\) -> KernelResult<\[u64; 5\]> \{\n        if self\.priority > MAX_PRIORITY \|\| self\.domain > MAX_DOMAIN \{\n            return Err\(KernelError::InvalidSyscallArgument\);" rust/sele4n-abi/src/args/sched_context.rs'
-run_negative_check "INVARIANT" rg -n '\(self\.(priority|domain) & MAX_(PRIORITY|DOMAIN)\)' rust/sele4n-abi/src/args/sched_context.rs
-run_check "INVARIANT" bash -lc 'rg -U -n "^    let encoded = args\.encode\(\)\?;$" rust/sele4n-sys/src/sched_context.rs'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.budget = 0 ∨ configureMaxPeriod\.toNat < args\.budget then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.period = 0 ∨ configureMaxPeriod\.toNat < args\.period then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.budget > args\.period then\n    \.error \(\.rangeError configureMinBudget \(UInt64\.ofNat args\.period\)\)\n  else if args\.schedParams ≥ 4096 then \.error \(\.invalidArgument configureSchedParamsWord\)\n  else if configureMaxPeriod\.toNat < args\.deadline then\n    \.error \(\.invalidArgument configureDeadlineWord\)$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
-run_check "INVARIANT" rg -n '^  test_t10_sc_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
-run_check "INVARIANT" rg -n '^  test_t11_sc_word_reader_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
+# WS-SX SX6.4: the configure's words are seL4-MCS's `SchedControl_ConfigureFlags`
+# layout (budget, period, extra refills, badge, flags), encoded verbatim by the
+# Rust ABI.  The checked decode range-checks the times, then the extra-refills
+# count with seL4's bounds (`[0, refill_absolute_max - MIN_REFILLS]`); the badge
+# and flag words are carried verbatim, tested on both readers.
+run_check "INVARIANT" bash -lc 'rg -U -n "pub const fn encode\(&self\) -> \[u64; 5\] \{\n        \[\n            self\.budget,\n            self\.period,\n            self\.extra_refills,\n            self\.badge,\n            self\.flags,\n        \]" rust/sele4n-abi/src/args/sched_context.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "^    let encoded = SchedContextConfigureArgs \{" rust/sele4n-sys/src/sched_context.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.budget = 0 ∨ configureMaxPeriod\.toNat < args\.budget then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.period = 0 ∨ configureMaxPeriod\.toNat < args\.period then\n    \.error \(\.rangeError configureMinBudget configureMaxPeriod\)\n  else if args\.budget > args\.period then\n    \.error \(\.rangeError configureMinBudget \(UInt64\.ofNat args\.period\)\)\n  else if configureMaxExtraRefills < args\.extraRefills then\n    \.error \(\.rangeError 0 configureMaxExtraRefills\)\n  else pure args$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
+run_check "INVARIANT" rg -n '^  test_t10_sc_keeps_badge_and_flag_words$' tests/DecodeValidationSuite.lean
+run_check "INVARIANT" rg -n '^  test_t11_sc_word_reader_keeps_badge_and_flag_words$' tests/DecodeValidationSuite.lean
+run_check "INVARIANT" rg -n '^  test_t12_sc_extra_refills_range_checked$' tests/DecodeValidationSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
 # in" has no frozen-specific answer -- the rule `frozenEnsureRunnable` states and
 # the one a second reading here would break.
@@ -12281,9 +12254,9 @@ run_check "INVARIANT" rg -n '^structure CSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^structure VSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodePageMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodePageMapArgs_eq_by($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-Q1-D: Service syscall argument decode structures and roundtrip proofs.
@@ -12298,12 +12271,16 @@ run_check "INVARIANT" rg -n '^def registerServiceChecked($|[ ({:\[\]])' SeLe4n/K
 run_check "INVARIANT" rg -n '^def lookupServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def revokeServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def dispatchCapabilityOnlyChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# WS-SX SX6.7: the service calls are invocations of the service-registry
+# capability, their endpoint extra capability 0.
+run_check "INVARIANT" rg -n '^def resolveServiceEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^  \| \.serviceRegistry _ =>\n      sid == \.serviceRegister \|\| sid == \.serviceRevoke \|\| sid == \.serviceQuery$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def revokeServiceByRecordedRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
-run_check "INVARIANT" rg -n '^  \| some k => dispatchCapabilityOnlyChecked ctx decoded\.syscallId tid cap k$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| some k => dispatchCapabilityOnlyChecked ctx decoded\.syscallId decoded\.msgInfo\.extraCaps tid cap k$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.serviceRegistry _ =>\n      serviceEndpointArm \.serviceRevoke tid xc \(fun _ epId => revokeServiceChecked ctx tid epId\) st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.serviceRegistry _ =>\n      serviceEndpointArm \.serviceQuery tid xc fun _ epId => serviceQueryStaged ctx tid epId$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def serviceQueryStaged[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>\n    match lookupServiceChecked ctx caller epId st with' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.serviceRegistry _ =>\n      serviceEndpointArm \.serviceRevoke tid xc fun _ epId => revokeServiceChecked ctx tid epId$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_eq_registerService_when_allowed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem enforcementSoundness_registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
@@ -12317,7 +12294,7 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_reply_populates_msg
 
 # WS-K-F1: Per-syscall encode functions (layer 2).
 run_check "INVARIANT" rg -n 'def encodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodePageMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-K-F2: Layer 2 round-trip proofs.
 run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
@@ -12635,15 +12612,34 @@ run_negative_check "INVARIANT" rg -n 'dispatchCapabilityOnly_schedContextBind_id
 # (`args.threadId`) must not come back on either side of the ABI.
 run_check "INVARIANT" rg -n '^def resolveSchedContextBindThread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*        requiredRight := \.write" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(decodeSchedContextBindArgs decoded\) st with" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(schedContextBindArgsOf st tid decoded\.msgInfo\.extraCaps\) st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  tcbCPtr : SeLe4n\.CPtr$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/SyscallLockBracket.lean
 run_negative_check "INVARIANT" rg -n 'threadId : Nat' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^    pub tcb_cap: CPtr,$' rust/sele4n-abi/src/args/sched_context.rs
-run_check "INVARIANT" rg -n '^pub fn sched_context_bind\(sc_cap: CPtr, tcb_cap: CPtr\)' rust/sele4n-sys/src/sched_context.rs
+# WS-SX SX6.4: the thread is the message's extra capability 0 (seL4-MCS's
+# `excaprefs[0]`), so no message word carries it: the wrapper names the TCB
+# capability in the caller's IPC buffer, and the kernel reads it there
+# (`schedContextBindArgsOf`, and in continuation form in the compiled arm).
+run_check "INVARIANT" bash -lc 'rg -U -n "^pub fn sched_context_bind\(\n    sc_cap: CPtr,\n    tcb_cap: CPtr,\n    buf: &mut IpcBuffer,\n\) -> KernelResult<SyscallResponse> \{\n    buf\.caps_or_badges\[0\] = tcb_cap\.raw\(\);" rust/sele4n-sys/src/sched_context.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage\n  \| some cptr => \.ok \{ tcbCPtr := cptr \}" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def tcbBindNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
+# WS-SX SX6.4: a bind asks the notification capability to receive (seL4's
+# `CanReceive`, `.read`), on the specification arm and the compiled arm alike.
+run_check "INVARIANT" rg -n -U '^            let ntfnGate : SyscallGate := \{\n              callerId      := tid\n              cspaceRootCap := callerTcb\.spaceCells\[0\]\n              capAddr       := args\.notificationCPtr\n              requiredRight := \.read\n            \}$' SeLe4n/Kernel/API.lean
+# seL4's `decodeBindNotification` order: the notification's type, then
+# `CanReceive`, each refusal `IllegalOperation` (`.illegalState`), on the
+# specification's resolver and the compiled arm alike.
+run_check "INVARIANT" rg -n -U '      else match ntfnCap\.target with\n        \| \.object notifId =>\n          match st\.getNotification\? notifId with\n          \| none => \.error \.illegalState\n          \| some _ => if ntfnCap\.hasRight \.read then \.ok notifId else \.error \.illegalState\n        \| _ => \.error \.illegalState$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^            \| \.ok notifId => bindNotification notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) st$' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '                    match st\.getNotification\? notifId with\n                    \| none => \.error \(\.illegalState, st\)\n                    \| some _ =>\n                      if ntfnCap\.hasRight \.read then$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^            if ntfn\.boundTCB\.isSome \|\| tcb\.boundNotification\.isSome \|\| ntfn\.waitHeadCode != 0 then$' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
+run_negative_check "INVARIANT" rg -n 'bindNotificationCapNumber' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'ntfnCap\.hasRight \.write|notificationCPtr, requiredRight := \.write' SeLe4n
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def irqHandlerSetNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" rg -n 'pub struct SchedContextBindArgs' rust/sele4n-abi/src/args/sched_context.rs
 run_negative_check "INVARIANT" rg -n 'thread_id' rust/sele4n-abi/src/args/sched_context.rs
 run_check "INVARIANT" rg -n '^private def sd060_schedContextBind_requires_tcb_capability($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n '^  sd060_schedContextBind_requires_tcb_capability$' tests/SyscallDispatchSuite.lean
@@ -12756,7 +12752,7 @@ run_check "INVARIANT" rg -n '^def capInfo($|[ ({:\[\]])' SeLe4n/Model/Object/Typ
 run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_capInfo($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # PR #866 round-2: the query wrapper returns the typed ServiceId.
-run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
+run_check "INVARIANT" rg -U -n 'pub fn service_query\(\n    registry_cap: CPtr,\n    endpoint_cap: CPtr,\n    buf: &mut IpcBuffer,\n\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
 # PR #866 round-3: the conformance sweep drives the REAL wrappers
 # (host-capture mock trap), and the `.message`-shaped call wrapper carries the
 # badge tuple like its siblings.  The HAL's inline-argument prefilter is
@@ -14027,7 +14023,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindReplen
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SeLe4n\.SchedContextId\.ofObjId scObjId\) with\n *\| some sc => SchedContextOps\.purgeReplenishCores st \(SeLe4n\.SchedContextId\.ofObjId scObjId\) \+\+\n *match sc\.boundThread with\n *\| some t => \[determineTargetCore st t\]" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # The exactness halves -- what each arm writes, against what it declares.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne_of_link \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
@@ -14128,13 +14123,13 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_error_iff
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_eq_by
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
@@ -14157,7 +14152,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceMapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodePageMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
 -- WS-K-F2: Layer 2 round-trip proofs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_roundtrip
@@ -14165,7 +14160,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs_roundtrip
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
 -- WS-K-F3: Layer 1 extraction round-trip
@@ -14186,7 +14181,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.refillsConserved
 #check @SeLe4n.Kernel.chargeBudget_preserves_schedContextWellFormed
 #check @SeLe4n.Kernel.releaseReadyHead_preserves_schedContextWellFormed
-#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_schedContextWellFormed
 #check @SeLe4n.Kernel.refillNew_schedContextWellFormed
 #check @SeLe4n.Kernel.refillUpdate_schedContextWellFormed
 #check @SeLe4n.Kernel.refill_window_bound
@@ -14224,7 +14218,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.budgetPositive_subset
 #check @SeLe4n.Kernel.effectiveSchedParams_unbound_legacy
 #check @SeLe4n.Kernel.hasSufficientBudget_unbound_legacy
-#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_wf
 -- D5: Bounded Latency Theorem surface anchors
 #check @SeLe4n.Kernel.Liveness.WCRTHypotheses
 #check @SeLe4n.Kernel.Liveness.wcrtBound
@@ -17831,9 +17824,6 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_preserves_schedulerInvariantStrong_smp
 #check @scheduleDomainOnCore_preserves_schedulerInvariantStrong_smp
 -- AK2-B priority carrier (PR-A) + the SC↔TCB priority alignment (PR-C).
-#check @boundThreadPriorityConsistent
-#check @boundThreadPriorityConsistent_frame
-#check @default_boundThreadPriorityConsistent
 #check @resolveEffectivePrioDeadline_fst_eq_boostedPriority
 EOF
 lake env lean /tmp/sm5i_suite.lean'
@@ -18435,13 +18425,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*
 # the kernel refuses -- the direction that matters on a differential surface, and
 # `v0.35.59`'s shape (*a named condition beside unnamed ones is a subset*) one
 # operation over.  The order is the live order, so the error codes agree too.
+# (WS-SX SX6.4 retired the domain refusal on both sides: a context carries no
+# domain, and seL4-MCS's bind checks none.)
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if sc\.scReply\.isSome then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if tcb\.domain != sc\.domain then \.error \(\.invalidArgument 0\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
-# ...and the write AK2-B establishes: without it every frozen post-bind state
-# falsified `boundThreadPriorityConsistent`, the invariant the live write exists
-# to establish, so the mirror produced states the live kernel cannot reach.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*priority := sc\.priority }" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The bind writes no priority: since WS-SX SX6.4 the thread's TCB is its only
+# home, so the mirror has no reservation field to copy.  NEGATIVE.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*priority := sc\." SeLe4n/Kernel/FrozenOps/Operations.lean'
 # The frozen live-stack predicate asks RECIPROCITY, exactly as the live one does.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveStack \([^\n]*(\n([ \t][^\n]*)?)*a\.prev == some rid" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveStack \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply == some rid" SeLe4n/Kernel/FrozenOps/Core.lean'
@@ -19992,22 +19982,6 @@ run_check "INVARIANT" bash -lc 'rg -F -n "  printf " scripts/test_tier2_trace.sh
 run_check "INVARIANT" bash -lc 'rg -n "record_failure .TRACE. .Missing expected trace line: .\{expected_fragment\}." scripts/test_tier2_trace.sh'
 
 # ---------------------------------------------------------------------------
-# `v0.35.98`: a bound thread's base priority has TWO homes and the syscall
-# writes both.  `SystemState.threadBasePriority` reads the reservation;
-# `TCB.boostedPriority` -- which every run-queue insert is keyed by -- reads the
-# thread.  Writing the reservation alone left the thread stale, so the demotion
-# was reverted at its next wake.
-run_check "INVARIANT" bash -lc 'rg -U -n "^    \(st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\)\.updateTcb tid\n      fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
-# ...and the retired reservation-only spelling must not come back.  Anchored at
-# the arm's own indentation, so the `.unbound` arm's legitimate TCB-only write
-# (`st.updateTcb tid ...`) is untouched and the private copy the witness keeps
-# in `tests/` is out of scope by file.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^    st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
-# The agreement is a THEOREM about the operation, not a sentence about it: the
-# docstring that stood on `boundThreadPriorityConsistent` claimed no transition
-# touches either of its two fields, and three do.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePrioritySource_preserves_boundThreadPriorityConsistent[^\n]*(\n([ \t][^\n]*)?)*boundThreadPriorityConsistent \(SchedContext\.PriorityManagement\.updatePrioritySource st tid tcb newPrio\)" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
-# ---------------------------------------------------------------------------
 # `v0.35.99`: `queuePPrev = none` CLAIMS the thread is on no queue.
 #
 # The inter-arm gap is `([ \t]*(--[^\n]*)?\n)*` rather than a comment pattern
@@ -20034,23 +20008,14 @@ run_negative_check "INVARIANT" rg -n '\| none => True' SeLe4n/Model/Object/Types
 # the Prop-level invariant refuses.
 run_check "INVARIANT" bash -lc 'rg -U -n "          match tcb\.queuePPrev with\n([ \t]*(--[^\n]*)?\n)*          \| none => tcb\.queuePrev\.isNone$" SeLe4n/Testing/InvariantChecks.lean'
 # ---------------------------------------------------------------------------
-# `v0.35.99`: the FROZEN surface writes both homes of a base priority too, and
-# both frozen operations that move one read the same writer.  `v0.35.98` fixed
-# the live side and left this one writing the reservation alone -- reported on
-# PR #897, and this project's own *a field added to a shared record is a sweep of
-# both surfaces* rule, which that cut's entry quoted and did not apply to itself.
-# **Repointed at `v0.35.101`**: this pinned the *pair* by naming the TCB store in
-# the `.ok st1` arm, and that store moved into the shared `frozenWriteTcbRebucketed`
-# when the re-bucket landed -- so the anchor went red, which is the loud direction
-# and what a positive on a retired spelling is for.  The claim is unchanged and the
-# evidence is now the pair **in the live order**: the reservation, then the thread.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*\(\.schedContext \{ sc with priority := newPriority \}\) with(\n([ \t][^\n]*)?)*\| \.ok st1 => frozenWriteTcbRebucketed st1 targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
+# `v0.35.99`: both frozen operations that move a base priority read the same
+# writer, `frozenWriteBasePriority`, whose body (pinned above) writes the thread's
+# TCB alone since WS-SX SX6.4 -- the priority's only home -- and re-buckets it.
 # ...and neither operation may go back to spelling its own write.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*let sc. := \{ sc with priority := newPriority \}" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteBasePriority st1 targetTid targetTcb. newMCP" SeLe4n/Kernel/FrozenOps/Operations.lean'
-# The frozen ceiling compares against the FROZEN base-priority reader, which is
-# the reservation for a `.bound` thread -- reading `targetTcb.priority` there is
-# the sibling divergence the sweep found.
+# The frozen ceiling compares against the FROZEN base-priority reader, the one
+# reader every surface shares (the thread's own priority at every binding).
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*if \(st1\.threadBasePriority targetTcb.\)\.val > newMCP\.val then" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # ---------------------------------------------------------------------------
 # `v0.35.106`: the head's back-pointer is the QUEUE's fact, and exclusivity is
@@ -21501,8 +21466,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -n -U "def FrozenSystemState.threadB
 # agreement stated as `rfl` -- the strongest form such an agreement can take.
 run_check "INVARIANT" rg -F -n 'def FrozenSystemState.threadBasePriority (_st : FrozenSystemState) (tcb : TCB) :' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -F -n 'theorem FrozenSystemState.threadBasePriority_eq_live' SeLe4n/Model/FrozenState.lean
-# (3) THE SCHEDULER'S OWN RESOLVER reads the thread's field on the `.bound` arm.
-run_check "INVARIANT" bash -lc 'rg -n -U "def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "| some sc => (tcb.priority, sc.deadline)"'
+# (3) THE SCHEDULER'S OWN RESOLVER reads the thread's field at every binding.
+run_check "INVARIANT" bash -lc 'rg -n -U "def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "(tcb.priority.raisedBy tcb.pipBoost, tcb.deadline)"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "(sc.priority, sc.deadline)"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "sc.priority.raisedBy"'
 # (4) THE THIRD COPY IS GONE: the bucket is the accessor, not a classification.
@@ -21616,29 +21581,14 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^private theorem saveOutgoingContext_e
 # domain mirror had "no writer known to break it" -- the writer being
 # `schedContextConfigure` of a DONATED reservation, whose propagation is gated
 # off, followed by the pop rebinding the origin under it.
-# The positive is pinned at the `.bound` arm SPECIFICALLY, by the `.donated`
-# header that follows it: both arms now compute the same triple, so a pattern
-# matching the line alone is satisfied by either and a mutation of one would
-# leave it green -- a presence check standing in for the relation.  The
-# structural guard is the unconditional theorem below, which cannot elaborate if
-# either arm reads `sc.domain`.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| some sc => \(tcb\.boostedPriority, sc\.deadline, tcb\.domain\)\n    \| none => \(tcb\.boostedPriority, tcb\.deadline, tcb\.domain\)\n  \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+# The positive pins the whole body: one triple at every binding (WS-SX SX6.4),
+# so no arm exists that could read `sc.domain`; the theorem below is `rfl`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*\n[^\n]*\n  \(tcb\.boostedPriority, tcb\.deadline, tcb\.domain\)$" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" rg -F -n 'theorem effectiveSchedParams_domain_eq (st : SystemState) (tcb : TCB) :' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
-run_check "INVARIANT" rg -F -n '    (effectiveSchedParams st tcb).2.2 = tcb.domain := by' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -F -n '    (effectiveSchedParams st tcb).2.2 = tcb.domain := rfl' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 # ...and the retired reading must not come back: it keeps every token of the arm
 # and changes only which record the domain is read from.
 run_negative_check "INVARIANT" rg -F -n '(tcb.boostedPriority, sc.deadline, sc.domain)' SeLe4n/ tests/
-# ...with the pop pinned as writing NEITHER reservation field, so a cut that
-# decides to reconcile at the pop has to change a theorem rather than a record.
-run_check "INVARIANT" rg -F -n 'theorem donationReturnSchedContext_domain (sc : SchedContext)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -F -n 'theorem donationReturnSchedContext_priority (sc : SchedContext)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-# ...and the refutation EXECUTED, with the control that isolates the
-# reconfiguration from the pop -- a witness without it would pass with the pop
-# blamed for a disagreement it does not create.
-run_check "INVARIANT" rg -F -n 'private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do' tests/PriorityManagementSuite.lean
-run_check "INVARIANT" rg -F -n 'private def pm_od_10_unreconfiguredLoanComesBackAgreeing : IO Unit := do' tests/PriorityManagementSuite.lean
-run_check "INVARIANT" rg -F -n '  pm_od_09_reconfiguredLoanComesBackDisagreeing' tests/PriorityManagementSuite.lean
-run_check "INVARIANT" rg -F -n '  pm_od_10_unreconfiguredLoanComesBackAgreeing' tests/PriorityManagementSuite.lean
 # ...and the stale enumeration that called the domain agreement "preserved by all
 # binding-modifying operations" must not return: the pop is one and installs
 # `.bound`.
@@ -22455,7 +22405,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedulerLockSetForAbiEn
 # re-derives neither the gate nor the capability lookup.  The negative is scoped
 # to this declaration because the file legitimately names both elsewhere (the
 # `.replyRecv` CSpace-root agreement is stated over them).
-run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stSpilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedulerLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # One record, two domains: the object resolver must be blind to the five fields
 # the scheduler footprints read, or a field added for one domain silently moves
@@ -22487,7 +22437,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId
 # raw `threadId` argument until then), the retype through the decoded
 # `targetObj`.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(Architecture\.SyscallArgDecode\.decodeSchedContextBindArgs decoded\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(schedContextBindArgsOf s tid decoded\.msgInfo\.extraCaps\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 # The witness: both domains at ONE entry, the object domain's answer measured to
 # be unmoved by the five new operands, and the scheduler footprint read off the
 # STATE -- an inactive victim declares the object-store lock alone and an active
@@ -22861,10 +22811,10 @@ run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with a
 run_check "INVARIANT" rg -n '^def bindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.isRunnable" SeLe4n/Kernel/SchedContext/Operations.lean'
 # RELATION: the bind's own body reads that guard, on the state its writes reach.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb scR then" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*let st3 := if bindPlacesParkedThread st2 vThreadId\.val tcb scR then" SeLe4n/Kernel/SchedContext/Operations.lean'
 # ...and the placement uses the SAME insert priority as the re-bucket arm, so the
 # two cannot disagree about which bucket a bound thread belongs in.
-run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb scR then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "if bindPlacesParkedThread st2 vThreadId\.val tcb scR then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId\.val\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The payoff, and the three refusals that keep the guard from admitting anything.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_placed' SeLe4n/Kernel/SchedContext/Operations.lean
@@ -22877,7 +22827,7 @@ run_check "INVARIANT" rg -n '^def frozenWriteTcbBoundPlaced($|[ ({:\[\]])' SeLe4
 # RELATION, not presence: the bind-specific writer is the SHARED mechanics under a
 # widened admission, so `v0.35.101`'s "one re-bucket, three askers" still holds of
 # it -- a second fold spelled inline here would be that cut's own defect returning.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid .. frozenBindPlacesParkedThread st. tid after sc then" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*if frozenBindPlacesParkedThread st. tid after sc then" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenRebucketRunnable st. tid after.boostedPriority" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbBoundPlaced st1 threadId updatedTcb sc with" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 threadId" SeLe4n/Kernel/FrozenOps/Operations.lean'
@@ -23733,7 +23683,7 @@ run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide
 # v0.36.131: boot groups its root chains by the object a capability names
 # (seL4's sameObjectAs), not by its target, so one object's slots are one run.
 run_negative_check "INVARIANT" rg -n 'q\.2 = cap\.target|roots := a\.roots \+\+ \[\(r, cap\.target\)\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
-run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) \(extra : List SlotRef := \[\]\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+ extra \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 2⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) \(extra : List SlotRef := \[\]\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+ extra \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 2⟩,\n      ⟨e\.id, SeLe4n\.Slot\.ofNat 3⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.step($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem linkBootCapabilities_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -23773,8 +23723,19 @@ run_check "INVARIANT" rg -n '^  ifaces\.foldl registerInterface ist$' SeLe4n/Pla
 run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceInterfaces \(platform := platform\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterface\]$' SeLe4n/Platform/QemuVirt/Contract.lean
 # WS-ZA ZA5.5: the service register is routed on the register file with the
-# configure, one overflow word read from the IPC buffer, and runs checks first.
-run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# configure, one overflow word read from the IPC buffer, and runs checks first;
+# WS-SX SX6.2: the CNode copy's rights and the mint's rights and badge are
+# overflow words too, in seL4's word order.
+run_check "INVARIANT" rg -n -U '^def routedOverflowOne : SyscallId → Bool\n  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceMint \| \.cspaceCopy\n  \| \.untypedRetype => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# The CNode operations' source root is the message's extra capability 0,
+# looked up after the destination and refused `TruncatedMessage` when the
+# message names none (seL4's `decodeCNodeInvocation`), and their lengths are
+# seL4's: a copy five words, a mint six.
+run_check "INVARIANT" rg -n -U '^  \| \.ok dst =>\n    match srcRoot with\n    \| none => \.error \.truncatedMessage$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '^  \| \.schedContextConfigure \| \.serviceRegister \| \.cspaceCopy => 5\n  \| \.cspaceMint => 6$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem truncationMinimum_le_seven($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedRetype => 7$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_negative_check "INVARIANT" rg -n 'CNodeOpWord' SeLe4n rust
 run_check "INVARIANT" rg -U -n '^    if routedOverflowOne sid then\n      if len = size \+ 1 then \.overflowOne sid capAddr else \.overflowed sid capAddr len$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 # A syscall reads a message word past the inline registers only when its
@@ -23785,7 +23746,7 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 # answer, not on a syscall name.  A buffer the kernel cannot read clamps the
 # message to its inline words (`clampToInline`), as seL4's `handleInvocation`
 # clamps a message with no IPC buffer, in each of the three merges.
-run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister\n  \| \.cspaceMint \| \.cspaceCopy \| \.untypedRetype => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
@@ -23798,15 +23759,15 @@ run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_true_iff($|[ ({:\[
 # The compiled long arms, an overflow slot that does not read, run their short
 # route's arm on the four inline words (the clamp), and no routed arm answers
 # a buffer it cannot read with `InvalidMessageInfo`.
-run_check "INVARIANT" rg -n '^        \(fun _ => sendRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/SendLong.lean
-run_check "INVARIANT" rg -n '^        \(fun _ => callRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/CallLong.lean
-run_check "INVARIANT" rg -n '^        \(fun _ => replyRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyLong.lean
-run_check "INVARIANT" rg -n '^        \(fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyRecvLong.lean
-run_check "INVARIANT" rg -n '^        \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/Overflowed.lean
-run_check "INVARIANT" rg -n '^      \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => sendRoutedArm ctx executingCore tid capWord xc 4 st\)$' SeLe4n/Kernel/RoutedArms/SendLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => callRoutedArm ctx executingCore tid capWord xc 4 st\)$' SeLe4n/Kernel/RoutedArms/CallLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyRecvLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st\)$' SeLe4n/Kernel/RoutedArms/Overflowed.lean
+run_check "INVARIANT" rg -n '^      \(fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st\)$' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
 run_negative_check "INVARIANT" rg -n 'invalidMessageInfo' SeLe4n/Kernel/RoutedArms
-run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore xc$' SeLe4n/Kernel/RefusalCarryingOverflowed.lean
+run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingOverflowed.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 # A service's identity is its endpoint's: the registration carries no `sid`
 # field, its `sid` is derived from the capability it keeps, and no builder

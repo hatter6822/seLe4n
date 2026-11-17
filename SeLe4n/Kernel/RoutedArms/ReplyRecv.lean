@@ -33,18 +33,18 @@ the caller's message registers, its results reported.  The arm inlines the
 reply-receive's whole checked transition, whose compilation takes more than
 the default heartbeats. -/
 @[noinline] def replyRecvRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (length extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length extraCaps label : Nat)
     (st : SystemState) : SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
       (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
         extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
       st entryReportGeneral (entryReportPushOk 1)
       (replyLookupRefusalW (length != 0) tid (replyRecvReplyAddr tcb.registerContext)
         (entryReportPushErrorW 1)
-        (entryReportPushReplyW (replyRecvReplyAddr tcb.registerContext).word))
-      entryReportLookup entryReportLookupW
+        (entryReportPushLookupAtW (replyRecvReplyAddr tcb.registerContext).word))
+      entryReportLookup entryReportLookupAtW
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

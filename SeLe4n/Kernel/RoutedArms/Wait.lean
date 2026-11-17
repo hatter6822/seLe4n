@@ -24,10 +24,10 @@ open SeLe4n.Model
 /-- **The wait arm**: `dispatchOperandCheckedK` on the operand and the wait's
 arm and taint step (`waitOperandArmThenTaintR`), its results reported. -/
 @[noinline] def waitRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedKW .notificationWait (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (st : SystemState) : SystemState :=
+  dispatchOperandCheckedKW .notificationWait (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
     (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))
     st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-    entryReportLookup entryReportLookupW
+    entryReportLookup entryReportLookupAtW
 
 end SeLe4n.Kernel

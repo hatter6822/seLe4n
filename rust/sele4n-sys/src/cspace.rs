@@ -8,18 +8,21 @@ use sele4n_abi::args::cspace::*;
 use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{AccessRights, Badge, CPtr, KernelResult, Slot, SyscallId};
 
-/// Mint a badged capability from the slot `slots` names in its source root
-/// into the empty slot it names in `cnode_cap`'s CNode (seL4's
-/// `seL4_CNode_Mint` addressing, [`CNodeOpArgs`]).
+/// Mint a badged capability from the slot `slots` names in `src_root`'s
+/// CNode into the empty slot it names in `cnode_cap`'s CNode (seL4's
+/// `seL4_CNode_Mint`, [`CNodeOpArgs`]).
 ///
 /// Lean: the `.cspaceMint` arm (API.lean) — requires `.grant` right on
 /// `cnode_cap`.  The new capability's rights are the source's masked with
 /// `rights` (seL4's `maskCapRights`: masking, never a refusal), and its badge
-/// is `badge`.  The badge is the fifth word, written to the IPC buffer's
-/// overflow slot 0 (message register 4).
+/// is `badge`.  As in seL4 the message is six words — destIndex, destDepth,
+/// srcIndex, srcDepth, rights, badge — the last two in the IPC buffer's
+/// message registers 4 and 5, and `src_root` is the message's extra
+/// capability 0 (`caps_or_badges[0]`).
 #[inline]
 pub fn cspace_mint(
     cnode_cap: CPtr,
+    src_root: CPtr,
     slots: CNodeOpArgs,
     rights: AccessRights,
     badge: Badge,
@@ -31,46 +34,61 @@ pub fn cspace_mint(
     };
     let encoded = args.encode();
     buf.set_mr(4, encoded[4])?;
+    buf.set_mr(5, encoded[5])?;
+    buf.caps_or_badges[0] = src_root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo::new_const(5, 0, 0),
+        msg_info: MessageInfo::new_const(6, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
     })
 }
 
-/// Copy a capability from the slot `slots` names in its source root into the
-/// empty slot it names in `cnode_cap`'s CNode (seL4's `seL4_CNode_Copy`
-/// addressing, [`CNodeOpArgs`]), its rights masked with `rights` (seL4's
-/// copy takes a rights operand and masks with it; `AccessRights::ALL` copies
-/// the capability unchanged).
+/// Copy a capability from the slot `slots` names in `src_root`'s CNode into
+/// the empty slot it names in `cnode_cap`'s CNode (seL4's
+/// `seL4_CNode_Copy`, [`CNodeOpArgs`]), its rights masked with `rights`
+/// (`AccessRights::ALL` copies the capability unchanged).  The rights are
+/// the fifth word, in the IPC buffer's message register 4, and `src_root` is
+/// the message's extra capability 0.
 ///
 /// Lean: the `.cspaceCopy` arm (API.lean) — requires `.grant` right on
 /// `cnode_cap`.
 #[inline]
 pub fn cspace_copy(
     cnode_cap: CPtr,
+    src_root: CPtr,
     slots: CNodeOpArgs,
     rights: AccessRights,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
+    let encoded = CSpaceCopyArgs { slots, rights }.encode();
+    buf.set_mr(4, encoded[4])?;
+    buf.caps_or_badges[0] = src_root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo::new_const(4, 0, 0),
-        msg_regs: CSpaceCopyArgs { slots, rights }.encode(),
+        msg_info: MessageInfo::new_const(5, 1, 0),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceCopy,
     })
 }
 
-/// Move a capability from the slot `slots` names in its source root into the
-/// empty slot it names in `cnode_cap`'s CNode (seL4's `seL4_CNode_Move`
-/// addressing, [`CNodeOpArgs`]).
+/// Move a capability from the slot `slots` names in `src_root`'s CNode into
+/// the empty slot it names in `cnode_cap`'s CNode (seL4's
+/// `seL4_CNode_Move`, [`CNodeOpArgs`]); `src_root` is the message's extra
+/// capability 0.
 ///
 /// Lean: `apiCspaceMove` (API.lean) — requires `.grant` right on `cnode_cap`.
 #[inline]
-pub fn cspace_move(cnode_cap: CPtr, slots: CNodeOpArgs) -> KernelResult<SyscallResponse> {
+pub fn cspace_move(
+    cnode_cap: CPtr,
+    src_root: CPtr,
+    slots: CNodeOpArgs,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = src_root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo::new_const(4, 0, 0),
+        msg_info: MessageInfo::new_const(4, 1, 0),
         msg_regs: slots.encode(),
         syscall_id: SyscallId::CSpaceMove,
     })

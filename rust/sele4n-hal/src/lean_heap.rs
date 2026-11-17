@@ -104,9 +104,12 @@ pub const HEAP_COUNTED_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
 pub const SLOT_COUNT: usize = MAX_SMALL_OBJECT_SIZE / OBJECT_SIZE_DELTA;
 /// The allocations each core's size record holds: its latest this many, by
 /// allocation number ([`Heap::allocation_sizes`]).  Above every reading the
-/// exerciser gates (a carve's cells), so a gated window is always recorded
-/// whole; a longer one reads as unrecorded, never as a partial list.
-pub const RECORDED_ALLOCATIONS: usize = 128;
+/// exerciser gates, so a gated window is always recorded whole; a longer one
+/// reads as unrecorded, never as a partial list.  The largest gated reading
+/// is a full retype window: `RETYPE_FAN_OUT_LIMIT` (26) endpoints of 6 cells
+/// each, 156 cells (`untyped-retype-window-full`, WS-SX SX6.3), past the 128
+/// this held before the window.
+pub const RECORDED_ALLOCATIONS: usize = 256;
 /// The largest arena, in pages, the page map can describe: a run's page count
 /// shares its word with two tag bits.
 pub const MAX_PAGES: usize = 1 << 29;

@@ -631,6 +631,48 @@ theorem lookupSlotK_eq {α : Type} (tcb : TCB) (cptr : SeLe4n.CPtr) (st : System
     | ok r => rfl
   · rfl
 
+/-- **A CSpace root that consumes every address bit resolves in one hop**: when
+the root capability's guard and the root CNode's radix together take all 64
+bits, every lookup through the thread's CSpace reads the root CNode and nothing
+else — it answers the same on any state that agrees on that one CNode, and a
+slot it finds is in the root.  `resolveAddressBits` recurses only while bits
+remain, and none remain after the root.  This is what lets a footprint that
+locks only the caller's root cover every lookup the caller's invocation makes
+through its CSpace: the invoked capability's and the extra capabilities'
+(`abiEntryGate_lookupSlot_root`). -/
+theorem lookupSlot_single_level_read {tcb : TCB} {st₁ st₂ : SystemState} {rootCn : CNode}
+    (hCn : st₁.getCNode? tcb.cspaceRoot = some rootCn)
+    (hEq : st₂.getCNode? tcb.cspaceRoot = st₁.getCNode? tcb.cspaceRoot)
+    (hW : rootCapGuardSize tcb + rootCn.radixWidth = 64) (cptr : SeLe4n.CPtr) :
+    lookupSlot tcb cptr st₂ = lookupSlot tcb cptr st₁ ∧
+      ∀ ref, lookupSlot tcb cptr st₁ = .ok ref → ref.cnode = tcb.cspaceRoot := by
+  unfold lookupSlot
+  cases h0 : tcb.spaceCells[0] with
+  | none => exact ⟨rfl, fun _ h => by cases h⟩
+  | some root =>
+    have hG : rootCapGuardSize tcb = root.cnodeGuardSize.toNat := by
+      simp only [rootCapGuardSize, h0]
+    rw [hG] at hW
+    simp only [lookupSlotFrom]
+    rw [resolveAddressBits, resolveAddressBits]
+    cases hT : root.target with
+    | object id =>
+      have hId : tcb.cspaceRoot = id := by simp [TCB.cspaceRoot, TCB.spaceCellObject, h0, hT]
+      rw [hId] at hCn hEq
+      simp only [hEq, hCn, dite_cond_eq_true (eq_true hW.symm)]
+      refine ⟨trivial, fun ref h => ?_⟩
+      rw [hId]
+      split at h
+      · cases h
+      · next r n hR =>
+        cases h
+        split at hR
+        · cases hR
+        · split at hR
+          · cases hR
+          · cases hR; rfl
+    | _ => exact ⟨rfl, fun _ h => by cases h⟩
+
 /-- `lookupSlot` reads only CNodes. -/
 theorem lookupSlot_congr_getCNode?
     (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
@@ -761,22 +803,30 @@ theorem lookupSlotForCNodeOp_result_valid_cnode {isSource : Bool} {root : Capabi
 /-- **The two slots of a CNode Copy, Mint or Move** (seL4's
 `decodeCNodeInvocation`), in seL4's order.  The destination is the slot the
 invoked CNode capability `destRoot` names by `destIndex` and `destDepth`
-(`lookupTargetSlot`, `lookupSlotForCNodeOp`), and must be empty
-(`.targetSlotOccupied`, seL4's `ensureEmptySlot`).  The source root is the
-capability the caller's `srcRoot` names in its CSpace (`lookupSlot`; a failed
-lookup is `seL4_FailedLookup` from the source with its lookup fault), and the
-source the slot that capability names by `srcIndex` and `srcDepth`
+(`lookupTargetSlot`, `lookupSlotForCNodeOp`).  The source root is the
+invocation's extra capability 0 (seL4's `excaprefs[0]`), `srcRoot` its address
+in the caller's CSpace: an invocation that names none is
+`seL4_TruncatedMessage`, checked after the destination's lookup as seL4 checks
+it.  The destination must be empty (`.targetSlotOccupied`, seL4's
+`ensureEmptySlot`).  The source root is the capability `srcRoot` names
+(`lookupSlot`, the walk the dispatch prologue's `lookupExtraCaps` made; a
+failed lookup is `seL4_FailedLookup` from the source with its lookup fault),
+and the source the slot that capability names by `srcIndex` and `srcDepth`
 (`lookupSourceSlot`): a source root slot that is empty or holds no CNode
 capability is `invalidRoot` there, as seL4's null or non-CNode root is.  The
 source slot must hold a capability — an empty one is `seL4_FailedLookup` from
 the source with `missingCapability srcDepth` (`cnode.c`).  The answer is the
 source and then the destination. -/
 def resolveCNodeOpSlots (callerTid : SeLe4n.ThreadId) (destRoot : Capability)
-    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
-    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot : Option SeLe4n.CPtr)
+    (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState) :
+    Except KernelError (CSpaceAddr × CSpaceAddr) :=
   match lookupSlotForCNodeOp false destRoot destIndex destDepth st with
   | .error e => .error e
   | .ok dst =>
+    match srcRoot with
+    | none => .error .truncatedMessage
+    | some srcRoot =>
     if (SystemState.lookupSlotCap st dst).isSome then .error .targetSlotOccupied
     else
       match st.getTcb? callerTid with
@@ -798,7 +848,7 @@ def resolveCNodeOpSlots (callerTid : SeLe4n.ThreadId) (destRoot : Capability)
 /-- Resolved slots name a destination in the CNode the invoked capability
 names: it is a CNode capability. -/
 theorem isCNodeCap_of_resolveCNodeOpSlots_ok {callerTid : SeLe4n.ThreadId}
-    {destRoot : Capability} {destIndex srcRoot srcIndex : SeLe4n.CPtr}
+    {destRoot : Capability} {srcRoot : Option SeLe4n.CPtr} {destIndex srcIndex : SeLe4n.CPtr}
     {destDepth srcDepth : Nat} {st : SystemState} {p : CSpaceAddr × CSpaceAddr}
     (h : resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
       = .ok p) :
@@ -813,7 +863,7 @@ theorem isCNodeCap_of_resolveCNodeOpSlots_ok {callerTid : SeLe4n.ThreadId}
 /-- Resolved slots name a destination in the CNode the invoked capability
 names: that CNode is in the store. -/
 theorem cnodeInvoked_of_resolveCNodeOpSlots_ok {callerTid : SeLe4n.ThreadId}
-    {destRoot : Capability} {destIndex srcRoot srcIndex : SeLe4n.CPtr}
+    {destRoot : Capability} {srcRoot : Option SeLe4n.CPtr} {destIndex srcIndex : SeLe4n.CPtr}
     {destDepth srcDepth : Nat} {st : SystemState} {p : CSpaceAddr × CSpaceAddr}
     {cnodeId : SeLe4n.ObjId}
     (h : resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
@@ -831,10 +881,13 @@ source's and the destination's CNode and slot go to `onOk`, so no address pair
 is built (`resolveCNodeOpSlotsK_eq`). -/
 @[inline] def resolveCNodeOpSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
     (destRoot : Capability) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
-    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (srcRoot : Option SeLe4n.CPtr) (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
   lookupSlotForCNodeOpK false destRoot destIndex destDepth st onErr fun dCn dSlot =>
+    match srcRoot with
+    | none => onErr .truncatedMessage
+    | some srcRoot =>
     if (SystemState.lookupSlotCap st { cnode := dCn, slot := dSlot }).isSome then
       onErr .targetSlotOccupied
     else
@@ -854,7 +907,7 @@ is built (`resolveCNodeOpSlotsK_eq`). -/
 
 theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
     (destRoot : Capability) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
-    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (srcRoot : Option SeLe4n.CPtr) (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
     resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
@@ -868,6 +921,10 @@ theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
   cases lookupSlotForCNodeOp false destRoot destIndex destDepth st with
   | error e => rfl
   | ok dst =>
+    simp only []
+    cases srcRoot with
+    | none => rfl
+    | some srcRoot =>
     simp only []
     split
     · rfl
@@ -893,8 +950,8 @@ theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
 built only at the end, from the four words the walks hand on
 (`resolveCNodeOpSlots_eq_impl`). -/
 def resolveCNodeOpSlotsImpl (callerTid : SeLe4n.ThreadId) (destRoot : Capability)
-    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
-    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot : Option SeLe4n.CPtr)
+    (srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
   resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
     .error (fun srcCNode srcSlot dstCNode dstSlot =>
       .ok (⟨srcCNode, srcSlot⟩, ⟨dstCNode, dstSlot⟩))
@@ -3487,5 +3544,91 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
     rw [hTcb] at hCn; cases hCn
   · exact (ipcTransferSingleCap_preserves_objects_ne cap srcNode dst st st' oid hNe hObjInv
       hStep).tcb_fwd hTcb
+
+-- ============================================================================
+-- The rights a fault-handler capability carries (seL4's `sendFaultIPC` and
+-- `validFaultHandler`), read by `TCB_SetSpace` when it copies the capability
+-- into a thread's fault-handler slot and by the fault delivery that reads it
+-- ============================================================================
+
+/-- WS-RR RR4.8: the rights a fault-handler endpoint capability must carry —
+seL4's `sendFaultIPC` predicate, verbatim:
+
+```c
+if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
+    cap_endpoint_cap_get_capCanSend(handlerCap) &&
+    (cap_endpoint_cap_get_capCanGrant(handlerCap) ||
+     cap_endpoint_cap_get_capCanGrantReply(handlerCap)))
+```
+
+* **send** (`.write`) is the authority to deliver the fault message at all;
+* **grant or grant-reply** is seL4's authority to hand the handler the reply
+  capability the faulting thread will block on.  In this model the reply
+  link is *structural* — the Call chain records `reply.caller` and the
+  faulting thread's `replyObject` unconditionally, and a fault delivery
+  transfers no capabilities for `.grant` to authorise
+  (`faultMessage_transfers_no_authority`) — so the disjunct is a **policy** gate
+  rather than a mechanism prerequisite: it is what keeps a capability minted
+  as send-only (a client's handle on a server endpoint, say) from being
+  configured as a fault handler and made to receive reply authority it was
+  deliberately not given.  `.grantReply` is admitted on the same footing as
+  `.grant` because seL4 admits it and because refusing it would turn every
+  `seL4_CapRights_new(0, 1, 0, 1)` handler capability — the idiomatic shape,
+  which withholds full grant from a fault handler — into a fail-closed
+  suspend.
+
+The audit round replaced a send-**and**-grant reading whose stated rationale
+("grant is what lets the handler receive a reply capability") was false of
+this model, where the reply link does not depend on any right.
+
+**Stated as clauses, and the predicate is defined from them** (PR #887 review
+round 3).  The outer list is a conjunction and each inner list a disjunction —
+send, and grant or grant-reply — so the inventory below (`faultHandlerRights`,
+the clauses flattened) and the predicate (`faultHandlerCapAuthorized`, the
+clauses evaluated) are two readings of one definition rather than two
+definitions a theorem tries to hold together.  The first cut pinned them with
+`faultHandlerCapAuthorized_reads_faultHandlerRights`, whose conclusion was one
+of its own hypotheses: it compiled with `.write` deleted from the inventory
+and with `.read` added, which is the proof-level form of a presence check.
+What holds now is `faultHandlerCapAuthorized_iff` — the exact seL4 form, which
+an added or removed right breaks — and
+`faultHandlerCapAuthorized_depends_only_on_faultHandlerRights`, the support
+relation: two capabilities that agree on the inventory's rights get the same
+verdict, so no right outside the inventory is consulted. -/
+def faultHandlerRequiredRights : List (List AccessRight) := [[.write], [.grant, .grantReply]]
+
+/-- WS-RR RR4.8: the rights the predicate consults — the clauses, flattened. -/
+def faultHandlerRights : List AccessRight := faultHandlerRequiredRights.flatten
+
+/-- The inventory, as the list a reader expects; a clause edit changes it. -/
+theorem faultHandlerRights_eq : faultHandlerRights = [.write, .grant, .grantReply] := rfl
+
+/-- WS-RR RR4.8: does a capability carry the rights a fault handler needs?
+Every clause satisfied by at least one of its rights: send, and at least one
+of the two grant rights. -/
+def faultHandlerCapAuthorized (cap : Capability) : Bool :=
+  faultHandlerRequiredRights.all (fun clause => clause.any (fun r => cap.hasRight r))
+
+/-- WS-RR RR4.8: the authorization is exactly seL4's predicate, unfolded —
+the form a caller checks against without reasoning through `Bool` algebra.
+Since PR #887 review round 3 this is the drift pin between the clauses and
+the predicate seL4 states: a right added to or removed from a clause changes
+the left-hand side and not the right, and the theorem fails. -/
+@[simp] theorem faultHandlerCapAuthorized_iff (cap : Capability) :
+    faultHandlerCapAuthorized cap = true ↔
+      (cap.hasRight .write = true ∧
+        (cap.hasRight .grant = true ∨ cap.hasRight .grantReply = true)) := by
+  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights]
+
+/-- WS-ZA ZA5.2: the compiled `faultHandlerCapAuthorized` — the clauses
+unrolled into rights tests, so no clause list is walked and no predicate closure
+built. -/
+@[inline] def faultHandlerCapAuthorizedImpl (cap : Capability) : Bool :=
+  cap.hasRight .write && (cap.hasRight .grant || cap.hasRight .grantReply)
+
+@[csimp] theorem faultHandlerCapAuthorized_eq_impl :
+    @faultHandlerCapAuthorized = @faultHandlerCapAuthorizedImpl := by
+  funext cap
+  simp [faultHandlerCapAuthorized, faultHandlerCapAuthorizedImpl, faultHandlerRequiredRights]
 
 end SeLe4n.Kernel

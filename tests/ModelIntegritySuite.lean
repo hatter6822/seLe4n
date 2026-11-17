@@ -756,8 +756,7 @@ def schedContext_retired_on_own_links : IO Unit := do
   let core := SeLe4n.Kernel.Concurrency.bootCoreId
   let scId : SeLe4n.SchedContextId := ⟨520⟩
   let fresh : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩, deadline := ⟨0⟩,
-      domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
+    { scId := scId, budget := ⟨1⟩, period := ⟨1⟩, budgetRemaining := ⟨1⟩ }
   let holder : TCB :=
     { tid := ⟨521⟩, priority := ⟨0⟩, domain := ⟨0⟩,
       spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
@@ -1124,9 +1123,6 @@ private def minimalSchedContext (scId : SchedContextId) : SeLe4n.Kernel.SchedCon
   { scId := scId
     budget := ⟨1⟩
     period := ⟨10⟩
-    priority := ⟨0⟩
-    deadline := ⟨0⟩
-    domain := ⟨0⟩
     budgetRemaining := ⟨1⟩ }
 
 /-- Store a TCB; verify getTcb? succeeds, getSchedContext? fails. -/

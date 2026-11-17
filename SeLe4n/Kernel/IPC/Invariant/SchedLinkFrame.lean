@@ -1914,43 +1914,66 @@ theorem threadSlotSet_preserves_ipcInvariantFull (ec : CoreId) {st : SystemState
     (allTimeoutBudgetsNone_of_aux
       (SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights data).aux hBudgets)
 
-/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
-slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
-theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : CoreId)
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64)
+/-- **A buffer-address write preserves the IPC bundle**: `ipcBuffer` is a field
+no conjunct reads. -/
+theorem updateTcb_ipcBuffer_preserves_ipcInvariantFull {st : SystemState}
+    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInv
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid t _ hObjInv hInv
+      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- **WS-SX SX6.6: a buffer change preserves the IPC bundle** — the buffer slot's
+set does (`threadSlotSet_preserves_ipcInvariantFull`), and so does the address
+write (`updateTcb_ipcBuffer_preserves_ipcInvariantFull`). -/
+theorem setIPCBufferOp_preserves_ipcInvariantFull (ec : CoreId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (callerTid : SeLe4n.ThreadId)
+    (bufferCap? : Option SeLe4n.CPtr) (addr : SeLe4n.VAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hBudgets : allTimeoutBudgetsNone st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
     ipcInvariantFull st' := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
+  obtain ⟨c, s, t, hT, -, rfl⟩ :=
+    Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
   obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hBudgets hT
+    TCB.ipcBufferSlot _ _ _ _
+  exact updateTcb_ipcBuffer_preserves_ipcInvariantFull _ _ hI1 h1
+
+/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
+of its three slot sets does (`threadSlotSet_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : CoreId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64)
+    (fhSrc : CSpaceAddr) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hObjInv hStep
+  obtain ⟨h1, -⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hBudgets hT
     TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
-  exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1
-    (threadSlotSet_preserves_allTimeoutBudgetsNone ec hObjInv hBudgets hT _ _ _ _ _) hT1'
+  have hB1 := threadSlotSet_preserves_allTimeoutBudgetsNone ec hObjInv hBudgets hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
+  obtain ⟨h2, -⟩ := threadSlotSet_preserves_ipcInvariantFull ec hI1 h1 hB1 hT1
+    TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
+  exact (threadSlotSet_preserves_ipcInvariantFull ec hI2 h2
+    (threadSlotSet_preserves_allTimeoutBudgetsNone ec hI1 hB1 hT1 _ _ _ _ _) hT2
     _ _ _ _ _).1
 
 /-- **A space change keeps every scheduling-link invariant** — each slot set
 does (`threadSlotSet_preserves_schedContextLinkInvariant`). -/
 theorem copyThreadSpaces_preserves_schedContextLinkInvariant (ec : CoreId)
     {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
-    (hInv : st.objects.invExt) (h : schedContextLinkInvariant st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {fhSrc : CSpaceAddr} (hInv : st.objects.invExt) (h : schedContextLinkInvariant st)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     schedContextLinkInvariant st' := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
-  exact threadSlotSet_preserves_schedContextLinkInvariant ec hI1
-    (threadSlotSet_preserves_schedContextLinkInvariant ec hInv h hT _ _ _ _ _) hT1' _ _ _ _ _
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hInv hStep
+  exact threadSlotSet_preserves_schedContextLinkInvariant ec hI2
+    (threadSlotSet_preserves_schedContextLinkInvariant ec hI1
+      (threadSlotSet_preserves_schedContextLinkInvariant ec hInv h hT _ _ _ _ _) hT1 _ _ _ _ _)
+    hT2 _ _ _ _ _
 
 end SeLe4n.Kernel

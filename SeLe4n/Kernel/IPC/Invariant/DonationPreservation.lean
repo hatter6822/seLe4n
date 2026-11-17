@@ -727,8 +727,9 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
     (hReply : newTcb.replyObject = oldTcb.replyObject)
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      newTcb.spaceSlotCap sl = some c → c.badge = some b →
+        oldTcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     donationReadAgreement st st' := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -781,8 +782,10 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
   · intro oid o' sl c b h hL hB
     by_cases hEq : oid = key
     · rw [hEq, hAt] at h; cases h
-      exact ⟨.tcb oldTcb, by rw [hEq]; exact hPre, hSlots sl c b hL hB⟩
-    · rw [hFrame oid hEq] at h; exact ⟨o', h, hL⟩
+      rcases hSlots sl c b hL hB with h | h
+      · exact ⟨oid, .tcb oldTcb, sl, c, by rw [hEq]; exact hPre, h, hB⟩
+      · exact h
+    · rw [hFrame oid hEq] at h; exact ⟨oid, o', sl, c, h, hL, hB⟩
   · intro oid
     by_cases hEq : oid = key
     · rw [hEq, hAt, hPre]
@@ -804,8 +807,9 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     (hReply : newTcb.replyObject = oldTcb.replyObject)
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      newTcb.spaceSlotCap sl = some c → c.badge = some b →
+        oldTcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     donationReadAgreement st st' :=
   donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt hFrame hIpc
@@ -894,7 +898,7 @@ theorem donationReadAgreement_of_headClear
       · rw [hEq, hRead] at hSc; cases hSc
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
   · rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
-    · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
+    · exact badgedSlotsBack.refl _
     · exact badgedSlotsBack.of_slotCap_back
         (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
   · rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
@@ -944,7 +948,7 @@ theorem donationReadAgreement_of_reHead
       · rw [hEq, hRead] at hSc; cases hSc
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
   · rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
-    · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
+    · exact badgedSlotsBack.refl _
     · exact badgedSlotsBack.of_slotCap_back
         (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
   · rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
@@ -1271,8 +1275,9 @@ theorem ipcInvariantFull_of_tcbFieldUpdateAgree
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      newTcb.spaceSlotCap sl = some c → c.badge = some b →
+        oldTcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hAgree := donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt
@@ -1347,8 +1352,9 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      newTcb.spaceSlotCap sl = some c → c.badge = some b →
+        oldTcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' :=
   ipcInvariantFull_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hInv hPre hAt hFrame hIpc

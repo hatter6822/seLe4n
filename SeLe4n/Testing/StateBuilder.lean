@@ -50,6 +50,12 @@ def ledgerWrites (l : Kernel.Architecture.PhysicalWriteLedger) : List Kernel.Arc
 def pendingWrites (st : SystemState) : List Kernel.Architecture.PhysicalWrite :=
   ledgerWrites st.drainedPhysicalWrites
 
+/-- A read-write capability to frame `frameId`, the content of a thread's
+buffer slot whose IPC buffer is in that frame (`withIpcBufferFrame`,
+`withReceivePath`). -/
+def bufferFrameCap (frameId : SeLe4n.ObjId) : Capability :=
+  { target := .object frameId, rights := AccessRightSet.ofList [.read, .write] }
+
 namespace BootstrapBuilder
 
 def empty : BootstrapBuilder := {}
@@ -92,6 +98,32 @@ def withLifecycleObjectType
     (oid : SeLe4n.ObjId)
     (objTy : KernelObjectType) : BootstrapBuilder :=
   { builder with lifecycleObjectTypes := (oid, objTy) :: builder.lifecycleObjectTypes }
+
+/-- **Put thread `tid`'s IPC buffer in a frame of its own**: frame `frameId`
+at `base` (page-aligned) joins the objects, and a read-write capability to it
+is written into the thread's buffer slot (`TCB.ipcBufferSlot`), where seL4's
+`lookupIPCBuffer` finds the buffer: word `i` of the buffer is then at
+`base + (ipcBuffer's page offset) + 8 * i`.  A RAM region is declared over the
+frame when none holds it, as a frame carved from untyped memory lies in RAM.  A
+thread not yet among the objects is left as it is. -/
+def withIpcBufferFrame
+    (builder : BootstrapBuilder)
+    (tid : SeLe4n.ThreadId) (frameId : SeLe4n.ObjId) (base : SeLe4n.PAddr) : BootstrapBuilder :=
+  let objects := builder.objects.map (fun (oid, o) =>
+    match o with
+    | .tcb t =>
+      if oid == tid.toObjId then
+        (oid, .tcb { t with spaceCells := t.spaceCells.set 2 (some (bufferFrameCap frameId)) })
+      else (oid, o)
+    | _ => (oid, o))
+  let region : MemoryRegion :=
+    { base := SeLe4n.PAddr.ofNat (base.toNat - base.toNat % 4096), size := 4096, kind := .ram }
+  let machine := if builder.machine.addrInRange base then builder.machine
+    else { builder.machine with memoryMap := region :: builder.machine.memoryMap }
+  { builder with
+    machine := machine
+    objects := (frameId, .frame { base := base }) :: objects
+    lifecycleObjectTypes := (frameId, .frame) :: builder.lifecycleObjectTypes }
 
 /-- Extract the actual TCB priority for a thread from the builder's object list.
     Falls back to Priority 0 if the thread has no TCB entry. -/
@@ -462,22 +494,25 @@ def tcbWithSenderFrame (tcb : TCB) (msg : IpcMessage) (extraCaps : Nat := 0) : T
   { tcb with registerContext := regs }
 
 /-- **Give thread `tid` an IPC buffer with a receive path** (seL4's
-`seL4_SetCapReceivePath`): a VSpace `vsId` of its own maps the buffer page at
-`va` (page-aligned) writable onto the frame at `pa` (a RAM region is declared
-over that frame when none holds it), and the buffer's
+`seL4_SetCapReceivePath`): the buffer is at `va` in the page of the frame at
+`pa` (a RAM region is declared over that frame when none holds it); the frame
+is the object `frameId`, whose read-write capability is in the thread's buffer
+slot, where seL4's `lookupIPCBuffer` finds the buffer, and the buffer's
 `receive_cnode` / `receive_index` / `receive_depth` words hold `cnodeCPtr`,
 `index` and `depth`.  The receive slot is then what seL4's `getReceiveSlots`
 reads (`receiveSlot?`): `cnodeCPtr` looked up in the thread's CSpace must name a
-CNode, in which `index` resolves `depth` bits deep to an empty slot. -/
-def withReceivePath (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.ObjId)
+CNode, in which `index` resolves `depth` bits deep to an empty slot.  The
+thread's VSpace is left as it is: the kernel reads the buffer through its frame
+capability, not through a mapping. -/
+def withReceivePath (st : SystemState) (tid : SeLe4n.ThreadId) (frameId : SeLe4n.ObjId)
     (va : SeLe4n.VAddr) (pa : SeLe4n.PAddr) (cnodeCPtr index depth : Nat) : SystemState :=
   match st.getTcb? tid with
   | none => st
   | some tcb =>
-    let vs : VSpaceRoot :=
-      { asid := ⟨vsId.toNat⟩
-        mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [(va, (pa, { read := true, write := true }))] }
-    let tcb' := { tcb with ipcBuffer := va, spaceCells := tcb.spaceCells.set 1 (TCB.spaceCellOf vsId TCB.vspaceRootRights) }
+    let frame : FrameObject := { base := SeLe4n.PAddr.ofNat (pa.toNat - pa.toNat % 4096) }
+    let tcb' := { tcb with
+      ipcBuffer := va,
+      spaceCells := tcb.spaceCells.set 2 (some (bufferFrameCap frameId)) }
     let word (i : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat
       (pa.toNat + 8 * (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord + i))
     let mem := SeLe4n.Kernel.Architecture.writeUInt64
@@ -492,7 +527,7 @@ def withReceivePath (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
     let map := if st.machine.addrInRange pa then st.machine.memoryMap
       else region :: st.machine.memoryMap
     let st0 := { st with machine := { st.machine with memory := mem, memoryMap := map } }
-    match storeObject vsId (.vspaceRoot vs) st0 with
+    match storeObject frameId (.frame frame) st0 with
     | .error _ => st
     | .ok ((), st1) =>
       match storeObject tid.toObjId (.tcb tcb') st1 with
@@ -501,7 +536,7 @@ def withReceivePath (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
 
 /-- **Name a sender's extra capability addresses** where seL4's
 `lookupExtraCaps` reads them: the `caps_or_badges` words of its IPC buffer.  A
-thread whose buffer the kernel cannot read is first given one, in a VSpace of
+thread whose buffer the kernel cannot read is first given one, in a frame of
 its own, with an empty receive path (`withReceivePath`, depth 0); the frame is a
 page per thread, apart from `withReceiveSlot`'s. -/
 def withSenderCapAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -511,16 +546,18 @@ def withSenderCapAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => st
   | some tcb =>
     let st1 :=
-      if (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr? st tcb
-          (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) false).isSome then st
+      if (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
+          (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer false st tcb)
+          (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0)).isSome then st
       else withReceivePath st tid ⟨0x7E000000 + tid.toNat⟩ (SeLe4n.VAddr.ofNat 0x7e0000)
         (SeLe4n.PAddr.ofNat (0x2000000 + 0x1000 * (tid.toNat % 4096))) 0 0 0
     match st1.getTcb? tid with
     | none => st1
     | some tcb1 =>
       let mem := (List.range addrs.size).foldl (fun mem i =>
-        match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr? st1 tcb1
-            (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i) false,
+        match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
+            (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer false st1 tcb1)
+            (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i),
             addrs[i]? with
         | some pa, some a => SeLe4n.Kernel.Architecture.writeUInt64 mem pa a.toNat.toUInt64
         | _, _ => mem) st1.machine.memory
@@ -541,9 +578,9 @@ def withSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId) (msg : IpcMessage
 `pathSlot` of that CNode is given a capability to the CNode itself (when empty),
 and the thread's receive path names it — `receive_cnode = pathSlot`,
 `receive_index = index`, `receive_depth` the CNode's depth — through a buffer in a
-VSpace `vsId` of its own (`withReceivePath`).  The buffer's frame is a page per
+frame `frameId` of its own (`withReceivePath`).  The frame is a page per
 thread, so several receivers in one state do not share one. -/
-def withReceiveSlot (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.ObjId)
+def withReceiveSlot (st : SystemState) (tid : SeLe4n.ThreadId) (frameId : SeLe4n.ObjId)
     (index : Nat) (pathSlot : Nat := 15) : SystemState :=
   match st.getTcb? tid with
   | none => st
@@ -556,7 +593,7 @@ def withReceiveSlot (st : SystemState) (tid : SeLe4n.ThreadId) (vsId : SeLe4n.Ob
         if (cn.lookup (SeLe4n.Slot.ofNat pathSlot)).isSome then st
         else st.storeCNodeWith root (·.insert (SeLe4n.Slot.ofNat pathSlot)
           { target := .object root, rights := AccessRightSet.ofList [.read, .write, .grant] })
-      withReceivePath st1 tid vsId (SeLe4n.VAddr.ofNat 0x7f0000)
+      withReceivePath st1 tid frameId (SeLe4n.VAddr.ofNat 0x7f0000)
         (SeLe4n.PAddr.ofNat (0x1000000 + 0x1000 * (tid.toNat % 4096))) pathSlot index cn.radixWidth
 
 /-- A CNode capability naming CNode `oid` with guard `guard` of `guardSize`

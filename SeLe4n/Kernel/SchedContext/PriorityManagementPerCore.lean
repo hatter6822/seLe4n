@@ -329,7 +329,7 @@ and each is written in its slot (`applyPriorityChangeState_eq`). -/
     (newPriority : SeLe4n.Priority) (executingCore : CoreId) : SystemState :=
   let home := determineTargetCore st tid
   let p0 := tcb.boostedPriority
-  let d0 := effectiveDeadline st tcb
+  let d0 := tcb.deadline
   let dom0 := tcb.domain
   let fuel := st.objects.size
   let st1 := updatePrioritySource st tid tcb newPriority

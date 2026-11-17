@@ -42,10 +42,14 @@ Four cores, four threads:
 
 | thread | core | fault handler |
 |---|---|---|
-| `faulter` | 0 | slot 0 — an endpoint cap with send **and** grant |
+| `faulter` | 0 | slot 0's endpoint cap, with send **and** grant |
 | `handler` | 1 | (the server; receives the fault message) |
 | `orphan`  | 2 | **none** — takes the fail-closed suspend |
-| `weak`    | 3 | slot 1 — a **read-only** endpoint cap: rights refused |
+| `weak`    | 3 | slot 1's **read-only** endpoint cap: rights refused |
+
+Each thread's handler is the capability in its TCB's fault-handler slot
+(`TCB.faultHandlerSlot`, seL4-MCS's `tcbFaultHandler`), here a copy of the
+root CNode slot named.
 
 The handler is homed on a *different* core from the faulter on purpose: that
 is what makes the delivery surface a cross-core `.reschedule` SGI, which is
@@ -148,8 +152,8 @@ open SeLe4n.Testing
 #check @faultLabel_ne_timeout
 #check @faultLabel_ne_debugException
 -- PR #887 review round: kernel-origin exceptions, the unknown-syscall producer,
--- the woken handler's staged frame, resume retiring a fault, and the
--- fault-handler configuration syscall.
+-- the woken handler's staged frame, resume retiring a fault, and (WS-SX
+-- SX6.5) the fault-handler slot SetSpace fills.
 #check @ExceptionContext.takenFromEl0
 #check @classifySynchronousException_currentEl_abort
 #check @faultOfExceptionContext_kernelAbort
@@ -160,19 +164,13 @@ open SeLe4n.Testing
 #check @unknownSyscallEntry
 #check @unknownSyscallEntryStep_not_dispatchable
 #check @unknownSyscallEntryStep_kernel_origin_inert
-#check @resolveFaultHandlerCPtr
-#check @resolveFaultHandlerCPtr_ok_inv
-#check @setThreadFaultHandlerOp
-#check @setThreadFaultHandlerOp_validated
-#check @setThreadFaultHandlerOp_faultHandler
-#check @setThreadFaultHandlerOp_rejects
+#check @resolveFaultHandler_none_of_noHandler
+#check @faultHandlerSourceAdmitted
 #check @retirePendingFaultForResume
 #check @retirePendingFaultForResume_pendingFault_none
 #check @retirePendingFaultForResume_of_no_fault
 #check @stageWokenDelivery_preserves_objects_invExt
 #check @retirePendingFaultForResume_preserves_ipcInvariantFull
-#check @setThreadFaultHandlerOp_preserves_ipcInvariantFull
-#check @setThreadFaultHandlerOp_preserves_projection
 
 -- ============================================================================
 -- §2  Elaboration-time witnesses (headline theorems applied to typed inputs)
@@ -302,8 +300,10 @@ private def rootCnode : CNode :=
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)
     (fh : Option SeLe4n.CPtr) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
-    threadState := .Ready, cpuAffinity := aff, faultHandlerSet := fh.isSome, faultHandlerWord := fh.getD (SeLe4n.CPtr.ofNat 0),
+    ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+    spaceCells := (SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot).set 3
+      (fh.bind fun p => rootCnode.lookupCells (SeLe4n.Slot.ofNat p.toNat)),
+    threadState := .Ready, cpuAffinity := aff,
     registerContext :=
       SeLe4n.RegisterFile.withGprs 0 0x7000 (fun r => if r = 30 then 0xF00D else (r * 100).toUInt64) }
 
@@ -313,6 +313,7 @@ private def stFault : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject cnRoot (.cnode rootCnode)
       |>.withObject epHandler (.endpoint {})
+      |>.withObject vsRoot (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withObject faulter.toObjId (.tcb (mkTcb 1121 40 none (some handlerCPtr)))
       |>.withObject handler.toObjId (.tcb (mkTcb 1122 50 (some c1) none))
       |>.withObject orphan.toObjId (.tcb (mkTcb 1123 40 (some c2) none))
@@ -569,8 +570,8 @@ private def runResolutionChecks : IO Unit := do
       assertBool "the caller's own CSpace root is threaded" (tgt.cspaceRoot == cnRoot)
   | .error e =>
       assertBool s!"faulter's handler must resolve (got {repr e})" false
-  assertBool "a thread with no faultHandler does not resolve"
-    (resolveErr stRunning orphan == some (.invalidCapability 0))
+  assertBool "a thread with an empty fault-handler slot does not resolve: missingCapability 0"
+    (resolveErr stRunning orphan == some (.failedLookup false (.missingCapability 0)))
   assertBool "a read-only handler capability is refused on rights"
     (resolveErr stRunning weak == some .illegalAuthority)
   assertBool "a thread that is not a TCB does not resolve"
@@ -1231,12 +1232,62 @@ private def configGate : SyscallGate :=
   { callerId := handler, cspaceRootCap := some (cnodeCapOf cnRoot 0 62), capAddr := SeLe4n.CPtr.ofNat 0,
     requiredRight := .write }
 
-/-- `tcbSetFaultHandler` with MR0 = the CPtr, in the target's CSpace. -/
-private def setHandlerDecoded (cptr : Nat) : SyscallDecodeResult :=
+/-- `tcbSetSpace` (seL4-MCS's `TCB_SetSpace`): MR0 and MR1 the root data
+words (zero), the fault endpoint, the CSpace root and the VSpace root extra
+capabilities 0, 1 and 2, read from the caller's IPC buffer. -/
+private def orphanOldCn : SeLe4n.ObjId := ⟨1102⟩
+private def orphanOldVs : SeLe4n.ObjId := ⟨1103⟩
+
+private def setSpaceDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0,
-    msgInfo := { length := 1, extraCaps := 0, label := 0 },
-    syscallId := .tcbSetFaultHandler,
-    msgRegs := #[SeLe4n.RegValue.ofNat cptr] }
+    msgInfo := { length := 2, extraCaps := 3, label := 0 },
+    syscallId := .tcbSetSpace,
+    msgRegs := #[SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 0] }
+
+/-- The handler's CSpace for a SetSpace on `st`: the root CNode's slot 0 its
+send-and-grant endpoint capability, slot 1 a CNode capability to the root
+CNode itself (grant and write, the 62-bit guard), slot 2 `slot2`, slot 3 a
+VSpace capability to `vsRoot`; the handler's own CSpace root capability carries
+the 62-bit guard, so address `k` names slot `k`.  The extra capabilities are
+the addresses `fh`, 1 and 3 (the fault endpoint, the CSpace root, the VSpace
+root), written to the handler's buffer.  The fixture builds no capability
+links, so every capability reads as final (`capIsFinal`); the orphan's old
+roots are therefore its own, an empty CNode and a VSpace root no other thread
+shares, so replacing them retires nothing the other threads use. -/
+private def setSpaceState (st : SystemState) (slot2 : Option Capability) (fh : Nat) :
+    SystemState :=
+  let cnCap : Capability :=
+    { cnodeCapOf cnRoot 0 62 with rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let vsCap : Capability :=
+    { target := .object vsRoot, rights := AccessRightSet.ofList [.read, .write] }
+  let base := (rootCnode.insert (SeLe4n.Slot.ofNat 1) cnCap).insert (SeLe4n.Slot.ofNat 3) vsCap
+  let cn : CNode := match slot2 with
+    | some c => base.insert (SeLe4n.Slot.ofNat 2) c
+    | none => base.remove (SeLe4n.Slot.ofNat 2)
+  let objs := st.objects.insert cnRoot (.cnode cn)
+  let objs := objs.insert orphanOldCn (.cnode (CNode.ofList 2 []))
+  let objs := objs.insert orphanOldVs (.vspaceRoot { asid := ⟨2⟩, mappings := {} })
+  let objs := match st.getTcb? orphan with
+    | some t => objs.insert orphan.toObjId
+        (.tcb { t with spaceCells := (TCB.spaceCellsOf orphanOldCn orphanOldVs).set 3 none })
+    | none => objs
+  let objs := match st.getTcb? handler with
+    | some t => objs.insert handler.toObjId
+        (.tcb { t with spaceCells := t.spaceCells.set 0 (some (cnodeCapOf cnRoot 0 62)) })
+    | _ => objs
+  SeLe4n.Testing.withSenderCapAddrs { st with objects := objs } handler
+    #[SeLe4n.CPtr.ofNat fh, SeLe4n.CPtr.ofNat 1, SeLe4n.CPtr.ofNat 3]
+
+/-- The send-and-grant-reply endpoint capability the root CNode's slot 2
+holds (`grantReplyCPtr`). -/
+private def grantReplyEpCap : Capability :=
+  { target := .object epHandler
+    rights := AccessRightSet.ofList [.write, .grantReply]
+    badgeWord := (SeLe4n.Badge.ofNat 9), badged := true }
+
+/-- The thread's fault-handler slot. -/
+private def faultSlotOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option Capability :=
+  (st.getTcb? tid).bind (·.faultHandlerCap)
 
 private def resumeTcbDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0,
@@ -1245,64 +1296,68 @@ private def resumeTcbDecoded : SyscallDecodeResult :=
 
 private def runConfigureAndResumeChecks : IO Unit := do
   IO.println "--- §7d configure a fault handler, resume past a double fault ---"
-  -- The fault-handler CPtr is validated at set time by the same resolution
-  -- the fault path runs: send + grant (slot 0) and send + grant-reply (slot 2)
-  -- are admitted, a read-only capability (slot 1) is refused on rights, and an
-  -- empty slot (3) is refused as no capability at all.
+  -- seL4-MCS's `TCB_SetSpace` installs the fault endpoint, extra capability
+  -- 0, in the target's fault-handler slot, admitted as `validFaultHandler`
+  -- admits it: send and grant (slot 0) or send and grant-reply (slot 2), or
+  -- an empty slot, which leaves no handler; a read-only capability is refused
+  -- `InvalidCapability` naming capability 1.  The target must be suspended:
+  -- the orphan is configured once its fault has suspended it.
   assertBool "pre: the orphan has no fault handler"
-    (resolveErr stRunning orphan == some (.invalidCapability 0))
-  match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stRunning with
+    (resolveErr stRunning orphan == some (.failedLookup false (.missingCapability 0)))
+  let fctxS := faultContextOfThread stRunning orphan 0x5_0000 0x3C0
+  let (stSusp0, _) := faultDeliverOnCoreChecked harnessLabelingContext stRunning orphan theFault fctxS c2
+  let setSpace (st : SystemState) :=
+    dispatchWithCapChecked harnessLabelingContext setSpaceDecoded handler c1 configGate orphanTcbCap st
+  match setSpace (setSpaceState stSusp0 (some grantReplyEpCap) 0) with
   | .ok (_, st1) =>
-      assertBool "the live tcbSetFaultHandler arm installs the CPtr on the target"
-        ((st1.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0))
+      assertBool "SetSpace copies the fault endpoint into the target's fault-handler slot"
+        ((faultSlotOf st1 orphan).map (·.target) == some (.object epHandler))
       assertBool "…and the target's handler now resolves to the handler endpoint"
         (match resolveFaultHandler st1 orphan with
          | .ok tgt => tgt.endpoint == epHandler
          | .error _ => false)
-      assertBool "configuring touches no scheduler state"
-        (st1.scheduler.currentOnCore c2 == stRunning.scheduler.currentOnCore c2 &&
-          (st1.runQueueWalk c2) == (stRunning.runQueueWalk c2))
-      -- The configured thread's next fault is delivered, not suspended.
-      match handlerRecvOnCore1 st1 with
-      | (st2, .ok _) =>
-          let fctx := faultContextOfThread st2 orphan 0x5_0000 0x3C0
-          let (_, res) := faultDeliverOnCoreChecked harnessLabelingContext st2 orphan theFault fctx c2
-          assertBool "a fault on the freshly configured thread is delivered"
-            (res.disposition == .delivered epHandler)
-      | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
-  | .error e => assertBool s!"tcbSetFaultHandler must succeed (got {repr e})" false
+      assertBool "configuring touches no run queue"
+        ((st1.runQueueWalk c2) == (stSusp0.runQueueWalk c2))
+  | .error e => assertBool s!"SetSpace must succeed (got {repr e})" false
   assertBool "a send + grant-reply capability is admitted as a handler"
-    (match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 2) handler c1 configGate orphanTcbCap stRunning with
-     | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 2)
+    (match setSpace (setSpaceState stSusp0 (some grantReplyEpCap) 2) with
+     | .ok (_, st') => (faultSlotOf st' orphan).map (·.rights) == some grantReplyEpCap.rights
      | .error _ => false)
-  assertBool "a read-only capability is refused at set time on rights"
-    (errorOf (dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
-      == some .illegalAuthority)
-  assertBool "an empty slot is refused at set time as no capability, naming the handler"
-    (errorOf (dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
+  assertBool "an empty fault endpoint slot leaves the thread with no handler"
+    (match setSpace (setSpaceState stSusp0 none 2) with
+     | .ok (_, st') => (faultSlotOf st' orphan).isNone
+     | .error _ => false)
+  let readOnly : Capability :=
+    { target := .object epHandler, rights := AccessRightSet.ofList [.read] }
+  assertBool "a read-only capability is refused, naming capability 1"
+    (errorOf (setSpace (setSpaceState stSusp0 (some readOnly) 2))
       == some (.invalidCapability 1))
-  assertBool "a refused configuration leaves the field as it was"
-    (match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
+  assertBool "a refused configuration leaves the slot as it was"
+    (match setSpace (setSpaceState stSusp0 (some readOnly) 2) with
      | .ok _ => false
-     | .error _ => (stRunning.getTcb? orphan).bind (·.faultHandler) == none)
+     | .error _ => (faultSlotOf stSusp0 orphan).isNone)
+  assertBool "a running target is refused"
+    ((errorOf (setSpace (setSpaceState stRunning (some grantReplyEpCap) 0))).isSome)
+  assertBool "two extra capabilities of three is truncatedMessage"
+    (errorOf (dispatchWithCapChecked harnessLabelingContext
+        { setSpaceDecoded with msgInfo := { length := 2, extraCaps := 2, label := 0 } }
+        handler c1 configGate orphanTcbCap (setSpaceState stSusp0 (some grantReplyEpCap) 0))
+      == some .truncatedMessage)
   -- The write right is checked by the real lookup path (`syscallLookupCap`
-  -- against `requiredRight .tcbSetFaultHandler = .write`), so it is exercised
-  -- through `dispatchSyscallChecked` with a TCB capability parked in the caller's
-  -- CSpace: slot 3 of the handler's root CNode holds a capability to the
-  -- orphan, once read-only and once read + write.
-  let orphanCapAt3 (rights : List AccessRight) : SystemState :=
-    let cap : Capability :=
-      { target := .object orphan.toObjId, rights := AccessRightSet.ofList rights }
-    let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
-    { stRunning with objects := stRunning.objects.insert cnRoot cn }
-  let viaLookup (st : SystemState) :=
+  -- against `requiredRight .tcbSetSpace = .write`), so it is exercised
+  -- through `dispatchSyscallChecked` with a TCB capability parked in the
+  -- caller's CSpace: slot 2 of the handler's root CNode holds a capability to
+  -- the orphan, once read-only and once read + write.
+  let viaLookup (rights : List AccessRight) :=
     dispatchSyscallChecked harnessLabelingContext
-      { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler c1 st
-  assertBool "a capability without the write right cannot configure a handler"
-    (errorOf (viaLookup (orphanCapAt3 [.read])) == some .illegalAuthority)
-  assertBool "…and with the write right the real lookup path installs it"
-    (match viaLookup (orphanCapAt3 [.read, .write]) with
-     | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0)
+      { setSpaceDecoded with capAddr := SeLe4n.CPtr.ofNat 2 } handler c1
+      (setSpaceState stSusp0
+        (some { target := .object orphan.toObjId, rights := AccessRightSet.ofList rights }) 0)
+  assertBool "a capability without the write right cannot set a thread's space"
+    (errorOf (viaLookup [.read]) == some .illegalAuthority)
+  assertBool "…and with the write right the real lookup path installs the handler"
+    (match viaLookup [.read, .write] with
+     | .ok (_, st') => (faultSlotOf st' orphan).map (·.target) == some (.object epHandler)
      | .error _ => false)
   -- **Resuming past a double fault.**  The orphan faults with no handler and
   -- is suspended, keeping its fault as a diagnostic.  Resuming it must retire
@@ -1329,7 +1384,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
         (threadStateOf stRes orphan == some .Restart)
       -- The recovery story: repair the configuration, resume, fault again —
       -- and this time it is delivered.
-      match dispatchWithCapChecked harnessLabelingContext (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stSusp with
+      match setSpace (setSpaceState stSusp (some grantReplyEpCap) 0) with
       | .ok (_, stCfg) =>
           match dispatchWithCapChecked harnessLabelingContext resumeTcbDecoded handler c1 configGate orphanTcbCap stCfg with
           | .ok (_, stRes2) =>
@@ -1395,9 +1450,20 @@ private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt6
   SeLe4n.Testing.dispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
-/-- The seam pipeline: a `Call` at CPtr 3 — a slot the root CNode does not
-hold — faults; the handler receives it on core 1 and answers with a
-payload-free reply. -/
+/-- An address that misses the root CNode's guard (its 62 guard bits are 0, and
+bit 2 is set above the root's two radix bits), so the lookup fails at the root
+with a guard mismatch: 64 bits left, guard 0, guard size 62.  An empty slot is
+no lookup failure in seL4 (`lookupCapAndSlot` hands the null capability on), so
+the send-phase fault needs an address that does not resolve. -/
+private def unresolvedCPtr : UInt64 := 4
+
+/-- The fault an invocation at `unresolvedCPtr` raises, in phase `inRecv`. -/
+private def unresolvedFault (inRecv : Bool) : Fault :=
+  .capFault unresolvedCPtr inRecv (.guardMismatch 64 0 62)
+
+/-- The seam pipeline: a `Call` at `unresolvedCPtr` — an address the root CNode
+does not resolve — faults; the handler receives it on core 1 and answers with
+a payload-free reply. -/
 private structure SeamFault where
   outcome : SyscallOutcome
   afterFault : SystemState
@@ -1407,7 +1473,7 @@ private structure SeamFault where
 
 private def seamFaultE : Except String SeamFault := do
   let (outcome, afterFault) ←
-    match seamDispatch seamCtx .call 3 with
+    match seamDispatch seamCtx .call unresolvedCPtr with
     | .ok r => .ok r
     | .error e => .error s!"step1: seam dispatch: {repr e}"
   let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the capFault)"
@@ -1448,8 +1514,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the caller is parked on the handler endpoint as a Call sender"
         (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
       assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"
-        ((pendingFaultOf s.afterFault faulter).map (·.fault)
-          == some (.capFault 3 false (.missingCapability 0)))
+        ((pendingFaultOf s.afterFault faulter).map (·.fault) == some (unresolvedFault false))
       assertBool "the restart PC is the SVC instruction (ELR - 4), never the return address"
         ((pendingFaultOf s.afterFault faulter).map (·.context.faultIP) == some (svcElr - 4))
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
@@ -1458,15 +1523,16 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = the id"
         ((pendingFaultOf s.afterFault faulter).map
             (fun tf => (tf.context.gprAt 0, tf.context.gprAt 7))
-          == some (3, SyscallId.call.toNat.toUInt64))
+          == some (unresolvedCPtr, SyscallId.call.toNat.toUInt64))
       assertBool "the caller is not dispatchable on the core it trapped on"
         (!dispatchableOn s.afterFault faulter c0)
       assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
         ((deliveredMessageOf s.afterRecv handler).map (·.label) == some FaultLabel.capFault)
-      assertBool "MR0..MR4 = FaultIP, the CPtr, InRecvPhase = 0, seL4_MissingCapability, BitsLeft"
+      assertBool "MR0..MR6 = FaultIP, the CPtr, InRecvPhase = 0, seL4_GuardMismatch, BitsLeft, GuardFound, GuardSize"
         ((deliveredMessageOf s.afterRecv handler).map (·.registers) ==
-          some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat 3,
-                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat 0])
+          some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat unresolvedCPtr.toNat,
+                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 4, SeLe4n.RegValue.ofNat 64,
+                 SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 62])
       assertBool "a payload-free reply restarts the caller AT the SVC — the syscall is re-issued"
         (s.replyOutcome.restartPC? == some (svcElr - 4) &&
           savedPcOf s.afterReply faulter == some (svcElr - 4).toNat)
@@ -1478,16 +1544,24 @@ private def runSyscallCapFaultChecks : IO Unit := do
   -- not the object invoked: every `seL4_Call` invocation faults, `seL4_Signal`
   -- is `seL4_Send`, and the receive-side syscalls set the phase flag.
   assertBool "a Receive at the same CPtr faults IN the receive phase"
-    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .receive unresolvedCPtr) (unresolvedFault true))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
-    (seamCapFault (seamDispatch seamCtx .notificationSignal 3)
-      (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .notificationSignal unresolvedCPtr) (unresolvedFault false))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
-    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .tcbSuspend unresolvedCPtr) (unresolvedFault false))
+  -- An empty slot (CPtr 3) resolves: seL4's `lookupCapAndSlot` hands the null
+  -- capability on, so a send-phase invocation is `decodeInvocation`'s
+  -- `InvalidCapability` error, and only `handleRecv` faults on it.
+  assertBool "a Call at an empty slot is the invocation's InvalidCapability error, not a fault (seL4 lookupCapAndSlot finds the slot)"
+    (seamErrorFrame (seamDispatch seamCtx .call 3) (.invalidCapability 0))
+  assertBool "a TCB invocation at an empty slot is the same error"
+    (seamErrorFrame (seamDispatch seamCtx .tcbSuspend 3) (.invalidCapability 0))
+  assertBool "a Receive at an empty slot still faults in the receive phase (seL4 handleRecv: missing_capability)"
+    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true (.missingCapability 0)))
   -- A short message: the lookup comes first, as in seL4, so an unresolvable
   -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
   assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
-    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false (.missingCapability 0)))
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete unresolvedCPtr) (unresolvedFault false))
   -- A CNode capability parked at slot 3 of the caller's root: the delete's
   -- type.  The checks run lookup, type, right, length.
   let cnodeCapAt3 (rights : List AccessRight) : SystemState :=
@@ -1507,7 +1581,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
   assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault (seL4 decodeInvocation: no CanSend answers InvalidCapability)"
     (seamErrorFrame (seamDispatch seamCtx .call 1) (.invalidCapability 0))
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
-    (seamErrorFrame (seamDispatch permissiveCtx .call 3) .policyDenied)
+    (seamErrorFrame (seamDispatch permissiveCtx .call unresolvedCPtr) .policyDenied)
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
     (match seamDispatch seamCtx .declassify 3 with
      | .ok (.returns f, st) =>
@@ -1854,12 +1928,11 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
 
 private def scFaulter : SeLe4n.SchedContextId := SchedContextId.ofNat 1135
 
-/-- The faulted thread's own reservation.  Its `priority` and `domain` agree with
-the TCB's, which is what `boundThreadPriorityConsistent` /
-`boundThreadDomainConsistent` require of a `.bound` pair. -/
+/-- The faulted thread's own reservation, bound to it.  It carries no priority or
+domain (a scheduling context holds neither, as in seL4-MCS); those are the
+TCB's. -/
 private def faulterSc : SchedContext :=
-  { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some faulter), isActive := true }
 
 /-- `stFault`'s two-thread core, with the faulter **bound** to a reservation. -/

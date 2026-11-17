@@ -238,7 +238,7 @@ theorem returnDonatedSchedContextInPlace_msg (r : SeLe4n.ThreadId)
     intro x; unfold popOuterCode; simp only [SystemState.getReply?_mapTcbInPlace]
   unfold returnDonatedSchedContextInPlace
   simp only [SystemState.getSchedContext?_mapTcbInPlace, SystemState.getReply?_mapTcbInPlace,
-    effectiveDeadline_msg, hasSufficientBudget_msg, hPop]
+    hasSufficientBudget_msg, hPop]
   have hTH : (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).getTcb? holder = st.getTcb? holder := by
     rw [SystemState.getTcb?_mapTcbInPlace, if_neg hH]
   rw [hTH]
@@ -262,7 +262,7 @@ theorem returnDonatedSchedContextInPlace_msg (r : SeLe4n.ThreadId)
           | none => rfl
           | some ht =>
             try simp only [Option.map_some, TCB.withMessageSlots_boostedPriority,
-              TCB.withMessageSlots_domain, effectiveDeadline_withMessageSlots,
+              TCB.withMessageSlots_domain, deadline_withMessageSlots,
               hasSufficientBudget_withMessageSlots]
             try dsimp only
             cases rr.prev with

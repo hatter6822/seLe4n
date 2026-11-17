@@ -956,7 +956,7 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
       (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype ⟨3⟩ rootId rootId
-        (SeLe4n.ObjId.ofNat 12) epKey rootId .cnode).pairs))
+        (SeLe4n.ObjId.ofNat 12) epKey rootId .cnode 1).pairs))
   -- 2. The declaration is REFUSED above the ceiling (PR #892 review round 4).
   --    `maxLockSetSize` is the premise `boundedWait_under_2pl` and the WCRT
   --    surface are stated at, and a walk reads one key per level, so a CSpace

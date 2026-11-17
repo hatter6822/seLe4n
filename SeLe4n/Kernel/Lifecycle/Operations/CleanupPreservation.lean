@@ -1884,18 +1884,21 @@ theorem spliceOccupiedSlot_shape (st : SystemState) (ref : SlotRef) :
   · exact ⟨_, spliceDeletedCdtNode_reach st ref⟩
   · exact ⟨st.cdt, .refl _⟩
 
-/-- **Splice all three of a thread's space slots out of the derivation tree**
+/-- **Splice all four of a thread's slots out of the derivation tree**
 (`spliceOccupiedSlot`, the delete's own tree step on a slot that holds a
 capability), as `detachCNodeSlots` does a CNode's: run on a thread being
-destroyed, so no edge outlives its CSpace and VSpace root slots and its
-IPC-buffer slot (seL4's `tcbCTable`, `tcbVTable` and `tcbBuffer`) and each
-slot's children are derived from its parent instead. -/
+destroyed, so no edge outlives its CSpace and VSpace root slots, its
+IPC-buffer slot and its fault-handler slot (seL4's `tcbCTable`, `tcbVTable`,
+`tcbBuffer` and `tcbFaultHandler`) and each slot's children are derived from
+its parent instead. -/
 def detachTcbSlots (st : SystemState) (tcbId : SeLe4n.ObjId) : SystemState :=
   spliceOccupiedSlot
     (spliceOccupiedSlot
-      (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
-      { cnode := tcbId, slot := TCB.vspaceRootSlot })
-    { cnode := tcbId, slot := TCB.ipcBufferSlot }
+      (spliceOccupiedSlot
+        (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
+        { cnode := tcbId, slot := TCB.vspaceRootSlot })
+      { cnode := tcbId, slot := TCB.ipcBufferSlot })
+    { cnode := tcbId, slot := TCB.faultHandlerSlot }
 
 /-- **`detachTcbSlots` writes the tree and link words alone**: every other
 field is the pre-state's. -/
@@ -1911,7 +1914,14 @@ theorem detachTcbSlots_shape (st : SystemState) (tcbId : SeLe4n.ObjId) :
       (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
       { cnode := tcbId, slot := TCB.vspaceRootSlot })
     { cnode := tcbId, slot := TCB.ipcBufferSlot }
-  exact ⟨c₃, ((h₁.with_cdt c₂).trans h₂ |>.with_cdt c₃).trans h₃⟩
+  obtain ⟨c₄, h₄⟩ := spliceOccupiedSlot_shape
+    (spliceOccupiedSlot
+      (spliceOccupiedSlot
+        (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
+        { cnode := tcbId, slot := TCB.vspaceRootSlot })
+      { cnode := tcbId, slot := TCB.ipcBufferSlot })
+    { cnode := tcbId, slot := TCB.faultHandlerSlot }
+  exact ⟨c₄, (((h₁.with_cdt c₂).trans h₂ |>.with_cdt c₃).trans h₃ |>.with_cdt c₄).trans h₄⟩
 
 /-- `detachTcbSlots` keeps every object up to derivation links, and the store
 invariant. -/
@@ -1954,7 +1964,7 @@ theorem detachTcbSlots_tlbShootdown_eq (st : SystemState) (tcbId : SeLe4n.ObjId)
     - If the current object is a TCB: refuse a running thread, end its
       reservation the way the suspend's G3 does (`cancelDonationArmOnCore`,
       since `v0.35.164`), then clean up scheduler + IPC references and splice
-      its three space slots out of the derivation tree (`detachTcbSlots`).
+      its four slots out of the derivation tree (`detachTcbSlots`).
     - An endpoint is not swept: no registration names one whose back-links
       the retire found clear (`SystemState.tableBackLinksClear.namedByNone`).
     - If the current object is a CNode: refuse when a slot still records a
@@ -2013,7 +2023,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   -- is read off the record the caller looked up before any write).  The
   -- reference sweep is the suspend's dequeue and IPC cancel, which `suspend`
   -- ends with the thread's own `schedContext_cancelYieldTo` (`cancelYieldTo`).
-  -- A thread's three space slots then leave the derivation tree as a deleted
+  -- A thread's four slots then leave the derivation tree as a deleted
   -- slot does (`detachTcbSlots`), as a CNode's slots do below.
   let st := match currentObj with
     | .tcb tcb => detachTcbSlots (cancelYieldTo

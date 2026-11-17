@@ -1294,11 +1294,11 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
       exact untypedRegionsDisjoint_frame st _ hObjEq h11
   -- schedulerInvariantBundleExtended: swap contextMatchesCurrent in inner Full
   · obtain ⟨⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩,
-            hBud, hCBud, hWf, hRq, hBind, hEff, hBound⟩ := hExt
+            hBud, hCBud, hWf, hRq, hBind, hEff⟩ := hExt
     exact ⟨⟨by exact hBase, by exact hTs, by exact hCts, by exact hEdf, hCtx,
             by exact hRunn, by exact hPri, by exact hDom, by exact hDomE⟩,
            by exact hBud, by exact hCBud, by exact hWf, by exact hRq,
-           by exact hBind, by exact hEff, by exact hBound⟩
+           by exact hBind, by exact hEff⟩
 
 -- ============================================================================
 -- AG7-D: contextSwitchState helpers
@@ -1509,14 +1509,14 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     · have hObjEq : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
       exact untypedRegionsDisjoint_frame st _ hObjEq h11
   -- 10. schedulerInvariantBundleExtended: rebuild with new current-thread predicates
-  · obtain ⟨hFull, hBud, _, hWf, hRq, hBind, hEff, hBound⟩ := hExt
+  · obtain ⟨hFull, hBud, _, hWf, hRq, hBind, hEff⟩ := hExt
     obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hFull
     have hQCC : queueCurrentConsistent
         (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩,
             hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩,
-           hBud, hBudgetPost, hWf, hRq, hBind, hEff, hBound⟩
+           hBud, hBudgetPost, hWf, hRq, hBind, hEff⟩
   -- 11. notificationWaiterConsistent: objects unchanged
   · exact notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC
 

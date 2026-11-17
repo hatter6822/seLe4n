@@ -228,8 +228,9 @@ one level up.
   member.  It is a subject write, not a hand-off: resolved from
   the target's binding, never from a donor's.
 * **`lockSet_tcbSetIPCBuffer`**: no donation; it names the
-  target's VSpaceRoot in **read** mode for the buffer-address
-  validation, so it is not TCB-only either.
+  buffer's frame in **read** mode for the frame-capability check
+  and the state-level lock in **write** mode for the buffer slot's
+  delete and copy, so it is not TCB-only either.
 
 ### PIP-chain TCB locks
 
@@ -400,6 +401,28 @@ page table keep the `page` lock their own operations take. -/
   | .reply => replyLock (ReplyId.ofObjId oid)
   | .schedContext => schedContextLock (SchedContextId.ofObjId oid)
   | .frame | .pageTable => pageLock oid
+
+/-- The write locks a carve of `count` objects takes on its children: child `i`
+is `childObjId + i`, under the kind it will hold (`carvedObjectLock`), for each
+`i` below the count clamped to seL4's fan-out limit (`retypeFanOutLimit`). -/
+def carvedChildLocks (childKind : KernelObjectType) (childObjId : ObjId) (count : Nat) :
+    List (LockKey × AccessMode) :=
+  (List.range (min count retypeFanOutLimit)).map fun i =>
+    (carvedObjectLock childKind (ObjId.ofNat (childObjId.toNat + i)), .write)
+
+theorem carvedChildLocks_length (childKind : KernelObjectType) (childObjId : ObjId)
+    (count : Nat) :
+    (carvedChildLocks childKind childObjId count).length = min count retypeFanOutLimit := by
+  simp [carvedChildLocks]
+
+theorem mem_carvedChildLocks {childKind : KernelObjectType} {childObjId : ObjId}
+    {count : Nat} {p : LockKey × AccessMode}
+    (h : p ∈ carvedChildLocks childKind childObjId count) :
+    ∃ i, i < min count retypeFanOutLimit ∧
+      p = (carvedObjectLock childKind (ObjId.ofNat (childObjId.toNat + i)), .write) := by
+  simp only [carvedChildLocks, List.mem_map, List.mem_range] at h
+  obtain ⟨i, hi, rfl⟩ := h
+  exact ⟨i, hi, rfl⟩
 
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
@@ -1461,25 +1484,32 @@ serialises two carves racing for one child id), under the kind it will hold
 `stateLevelLock` (write) for the CDT edge and the object index the carve
 extends, unconditional because a successful carve always writes both.  Every
 member is named by the operands, so unlike the in-place retype there is no
-state-resolved optional member. -/
+state-resolved optional member.
+
+**A carve of `count` objects** (seL4's fan-out, up to `retypeFanOutLimit`)
+names each child's key: child `i` is `childObjId + i`, as the carve numbers
+them (`carvedChildLocks`).  The count is clamped to the limit, so the footprint
+is at most `retypeBaseLocks + retypeFanOutLimit = maxLockSetSize` members
+whatever the operand; the window check refuses a larger count before anything
+is locked. -/
 def lockSet_untypedRetype (callerTid : ThreadId)
     (cnodeRootObjId authCnodeObjId untypedObjId childObjId dstCnodeObjId : ObjId)
-    (childKind : KernelObjectType) : LockSet :=
+    (childKind : KernelObjectType) (count : Nat) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (cnodeLock authCnodeObjId, .write),
-     (untypedLock untypedObjId, .write),
-     (carvedObjectLock childKind childObjId, .write),
-     (cnodeLock dstCnodeObjId, .write),
-     (stateLevelLock, .write)]
+    ([(tcbLock callerTid, .read),
+      (cnodeLock cnodeRootObjId, .read),
+      (cnodeLock authCnodeObjId, .write),
+      (untypedLock untypedObjId, .write),
+      (cnodeLock dstCnodeObjId, .write),
+      (stateLevelLock, .write)] ++
+     carvedChildLocks childKind childObjId count)
 
 /-! ## VSpace syscalls (2 transitions) -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`.
 
 **WS-BP BP7.1 (`v0.36.7`)**: the arm is `vspaceMapFromFrameCap`, which reads the
-**frame** the MR2 capability names (its `base` and device flag) and writes that
+**frame** the invoked capability names (its `base` and device flag) and writes that
 capability's **mapping record** into the CNode holding it — so the frame
 capability's CNode is a write member.  On a single-level CSpace the frame
 capability's CNode *is* the caller's root, and `insertOrMerge` lubs the two
@@ -1585,12 +1615,15 @@ what makes the two sides meet on the same subject.
 
 The target's lock is supplied by the caller rather than derived here, because a
 `LockKey` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
-declassify capability names `.object targetId` of any kind.  `none` is the
+target capability (extra capability 0 of the audit-trail invocation,
+`resolveDeclassifyTarget`) names `.object targetId` of any kind.  `none` is the
 capless/unresolved shape and is definitionally the identity, so every pin taken
 before this member existed survives by `rfl`.
 
-Caller CNode stays **read**: capability resolution reads it and nothing keys a
-taint write at a CSpace root on this path.  The transition's other write is the
+Caller CNode stays **read**: capability resolution reads it — both the invoked
+audit-trail capability and the target in extra capability 0 resolve through the
+caller's root CNode — and nothing keys a taint write at a CSpace root on this
+path.  The transition's other write is the
 audit-trail append — a `SystemState` field, not an object — and since PR #870
 round 7
 that write is declared through the **state-level lock** in write mode:
@@ -1627,7 +1660,8 @@ write, rather than as a fresh list.  The transition *is* the ordinary signal
 plus an audit append (`declassifiedSignal_ordinary_eq_signal` proves the
 unauthorized-hop-free case is literally `notificationSignalOnCore`), so its
 object-level footprint must be exactly the signal's: the caller TCB read, the
-CSpace root read, the notification write, the woken waiter's TCB write, and —
+CSpace root read (through which both the invoked audit-trail capability and the
+notification in extra capability 0 resolve), the notification write, the woken waiter's TCB write, and —
 on the seL4 bound-delivery path — the bound TCB's endpoint write and the bound
 TCB's own write.  Writing those out again here would let the two drift the
 moment SM6.B's footprint changes; composing them cannot.
@@ -4195,11 +4229,14 @@ def lockSet_serviceRegister (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
-`revokeServiceByRecordedRegistration epId` reads the registration the invoked endpoint
+`revokeServiceByRecordedRegistration epId` reads the registration the endpoint
 records and clears that endpoint's service record (`clearServiceRecord`, a
 read-modify-write of it — since WS-ZA ZA5.9 the registration's only home), so
-the footprint is the caller TCB, its CNode, the invoked endpoint in **write**
-mode and the state-level lock. -/
+the footprint is the caller TCB, its CNode, the endpoint in **write** mode and
+the state-level lock.  WS-SX SX6.7: the endpoint is the one the invocation's
+extra capability 0 names (`resolveServiceEndpoint`), resolved through the same
+CNode as the invoked service-registry capability, so the CNode member covers
+both lookups. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
@@ -4219,7 +4256,8 @@ on success its arm stages the resolved `ServiceId` into the caller's TCB via
 WS-RA's `writeReturnFrameToTcb` — the same committed-dispatch caller write the
 audit pair declares, present since the WS-RA staging landed (v0.33.37) and
 fixed with them (`lockSet_serviceQuery_staging_write_mem`).  CNode **read**
-for capability resolution. -/
+for capability resolution: the invoked service-registry capability and the
+endpoint, extra capability 0 (WS-SX SX6.7). -/
 def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
@@ -4508,8 +4546,14 @@ priority is its own, so the operation no longer writes the donor's
 reservation and declaring a write lock on it would be a footprint wider than
 its transition — sound, but carrying contention (SM8.D's CC-5 channel) that
 says nothing about the operation.  `.tcbSetAffinity` keeps `scId?`: a
-thread's home core *is* a property of the reservation it runs on. -/
-def lockSet_tcbSetPriority (callerTid : ThreadId)
+thread's home core *is* a property of the reservation it runs on.
+
+WS-SX SX6.4 (D11): the authority whose maximum controlled priority bounds the
+new value is the thread capability the caller names as extra capability 0
+(seL4's `authCap`), so its TCB is read beside the caller's (whose CSpace
+resolves the capability); `authorityTid` may equal `callerTid`.  The same
+holds for `lockSet_tcbSetMCPriority`. -/
+def lockSet_tcbSetPriority (callerTid authorityTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)
     (queueOwner : Option QueueOwner) : LockSet :=
@@ -4517,6 +4561,7 @@ def lockSet_tcbSetPriority (callerTid : ThreadId)
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
+         (tcbLock authorityTid, .read),
          (cnodeLock cnodeRootObjId, .read),
          (tcbLock targetTcbTid, .write)])
       (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
@@ -4537,7 +4582,7 @@ otherwise.  It also *reads* the priority source through
 
 The caller pre-resolves `targetTcb.schedContextBinding.ownScId?`
 identically to `lockSet_tcbSetPriority`. -/
-def lockSet_tcbSetMCPriority (callerTid : ThreadId)
+def lockSet_tcbSetMCPriority (callerTid authorityTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)
     (queueOwner : Option QueueOwner) : LockSet :=
@@ -4545,6 +4590,7 @@ def lockSet_tcbSetMCPriority (callerTid : ThreadId)
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
+         (tcbLock authorityTid, .read),
          (cnodeLock cnodeRootObjId, .read),
          (tcbLock targetTcbTid, .write)])
       (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
@@ -4552,41 +4598,32 @@ def lockSet_tcbSetMCPriority (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSetIPCBuffer`.
 
-Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
-`Architecture.IpcBufferValidation.setIPCBufferOp` calls
-`validateIpcBufferAddress` which reads:
-
-1. `st.getVSpaceRoot? targetTcb.vspaceRoot` — reads the target's
-   VSpaceRoot object.
-2. `root.lookup addr` — traverses the VSpaceRoot's `mappings`
-   RHTable.
-
-Both are reads (no writes to the VSpaceRoot itself), so a read lock
-on the target's VSpaceRoot is sufficient.  Without this lock, the
-IPC-buffer validation could race with a concurrent
-`VSpaceMap`/`VSpaceUnmap` on the same address space and observe an
-inconsistent mapping.
-
-The caller pre-resolves `targetTcb.vspaceRoot`:
-
-```
-let vsr := (s.getTcb? targetTcbTid).map (·.vspaceRoot)
-```
-
-`vsr = none` covers the case where the target TCB itself doesn't
-exist; in that case the syscall fails before reaching
-`setIPCBufferOp` and no VSpace read happens. -/
+WS-SX SX6.6: `Architecture.IpcBufferValidation.setIPCBufferOp` takes the
+buffer's frame capability as extra capability 0, the seL4 MCS shape.  It
+resolves that capability through the **caller's** CSpace root, reads the frame
+it names to check that it is a frame and not a device frame, then deletes the
+target's buffer slot (slot 2) and inserts the derived capability with a copy
+edge — the same slot write `copyThreadSpaces` makes — and writes the target
+TCB's `ipcBuffer`.  So the target TCB is written (`tcbLock targetTcbTid
+.write`), the derivation tree and the links around the slot are written
+(WS-RR RR7.9's `stateLevelLock` write, as in `lockSet_tcbSetSpace`), and the
+frame is read: without its lock a concurrent retype of the frame races the
+kind check.  The caller pre-resolves the capability's `.object` target the way
+`setIPCBufferOp` does; `none` when the lookup fails or the address is zero,
+since the operation then reads no frame.  No VSpace is read: the buffer's
+reads go through the slot's frame capability, as seL4's do. -/
 def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetVSpaceRootObjId : Option ObjId)
+    (bufferFrameObjId : Option ObjId)
     (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .read),
          (cnodeLock cnodeRootObjId, .read),
-         (tcbLock targetTcbTid, .write)])
-      (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+         (tcbLock targetTcbTid, .write),
+         (stateLevelLock, .write)])
+      (bufferFrameObjId.map (fun f => (pageLock f, .read))))
     (queueOwnerMember queueOwner)
 
 /-- WS-SM SM5.H.4: `lockSet` for `tcbSetAffinity`.
@@ -4615,67 +4652,25 @@ def lockSet_tcbSetAffinity (callerTid : ThreadId)
       (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
     (queueOwnerMember queueOwner)
 
-/-- PR #887 review: `lockSet` for `tcbSetFaultHandler`.
-
-`setThreadFaultHandlerOp` writes the target TCB's `faultHandler` field (covered
-by `tcbLock targetTcbTid .write`) after validating the candidate CPtr through
-the **target's** CSpace root — a read walk of that CNode
-(`resolveFaultHandlerCPtr`), which is the fourth lock.  The caller pre-resolves
-`(s.getTcb? targetTcbTid).map (·.cspaceRoot)`; `none` covers a missing target
-(the syscall fails before any CNode is read), and a caller whose own root *is*
-the target's passes `none` too, since that read lock is already in the base.
-
-**The validated endpoint is the fifth lock** (PR #887 review round 3).  The
-same resolution reads `st.getEndpoint? epId` to check that the capability the
-CPtr names is an endpoint before the CPtr is stored — the kind check
-`serviceRegister` locks its endpoint for (audit-pass-6), and for the same
-reason: without it a concurrent endpoint retype has no conflicting lock and
-races the check, so a handler could be recorded from a state that was never
-coherently validated.  The caller pre-resolves the capability's target the way
-`resolveFaultHandlerCPtr` does — the slot `lookupSlot` names through the
-target's root, its capability's `.object` target — and passes that `ObjId`;
-`none` when the walk fails or the target is not an object, since the operation
-then refuses before reading any endpoint.  Read mode, as the operation never
-writes the endpoint.  This footprint names the walk's **root** and nothing
-below it, which WS-RR RR7.41 proved is the *complete* CNode footprint of every
-resolution the live seam admits: `abiEntryGate` accepts only a single-level
-resolution, and `Capability.cspaceWalkPath_single_level` says such a walk reads
-exactly its root.  A multi-level walk — for which a root-only footprint would be
-false — is refused there, so no footprint is declared for one; a future consumer
-that wants to admit one takes `Capability.cspaceWalkLockSet` through
-`declaredLockSetForCSpaceWalk` — which refuses a walk wider than
-`maxLockSetSize` rather than declaring past the bound, and names the key a
-failed lookup read (PR #892 review round 4) — and whose conflict against an
-interior `cspaceDelete` is `cspaceWalk_conflicts_with_delete`. -/
-def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId)
-    (queueOwner : Option QueueOwner) : LockSet :=
-  lockSetExtendOpt
-    (lockSetExtendOpt
-      (lockSetExtendOpt
-        (lockSetOfList
-          [(tcbLock callerTid, .read),
-           (cnodeLock cnodeRootObjId, .read),
-           (tcbLock targetTcbTid, .write)])
-        (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read))))
-      (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read))))
-    (queueOwnerMember queueOwner)
-
 /-- **WS-BP BP7.1 (`v0.36.11`): `lockSet` for `tcbSetSpace`.**
 
-`copyThreadSpaces` writes the target TCB's CSpace and VSpace slots (covered by
-`tcbLock targetTcbTid .write`) after `resolveSetSpace` has read, through the
-**caller's** CSpace root, the two slots MR0 and MR1 name, and after the
-operation has read the CNode and the VSpace root their capabilities name to
+`copyThreadSpaces` writes the target TCB's CSpace, VSpace and fault-handler
+slots (covered by `tcbLock targetTcbTid .write`) after `resolveSetSpace` has
+read, through the **caller's** CSpace root, the three slots extra capabilities
+0, 1 and 2 name, and after the operation has read the CNode and the VSpace root
+the root capabilities name to
 check each is an object of its kind.  Each slot's delete splices it out of the
 derivation tree and its copy adds the edge from its source, so the operation
 writes the tree and the derivation links of the slots around it, as
 `cspaceCopy` and `cspaceDelete` do: WS-RR RR7.9's `stateLevelLock` write is
 the fourth member.  Those two kind checks are the fourth and fifth locks, in
 read mode: without them a concurrent retype of either object races the check,
-and a thread could be left naming a root that was never coherently validated —
-the reason `lockSet_tcbSetFaultHandler` locks its endpoint.  The caller
+and a thread could be left naming a root that was never coherently validated.
+**The fault endpoint is the sixth lock** (WS-SX SX6.5): seL4-MCS's
+`TCB_SetSpace` installs the fault handler from extra capability 0, and the
+operation reads the endpoint its capability names to check it is one (the kind
+check `serviceRegister` locks its endpoint for), in read mode, as the
+operation never writes the endpoint.  The caller
 pre-resolves each capability's `.object` target the way `resolveSetSpace` does;
 `none` when a lookup fails, since the operation then refuses before reading the
 object.  The capability walks name the caller's root and nothing below it, which
@@ -4684,17 +4679,20 @@ seam admits. -/
 def lockSet_tcbSetSpace (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (newCnodeObjId : Option ObjId) (newVSpaceRootObjId : Option ObjId)
+    (handlerEndpointObjId : Option ObjId)
     (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetExtendOpt
-        (lockSetOfList
-          [(tcbLock callerTid, .read),
-           (cnodeLock cnodeRootObjId, .read),
-           (tcbLock targetTcbTid, .write),
-           (stateLevelLock, .write)])
-        (newCnodeObjId.map (fun cn => (cnodeLock cn, .read))))
-      (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+        (lockSetExtendOpt
+          (lockSetOfList
+            [(tcbLock callerTid, .read),
+             (cnodeLock cnodeRootObjId, .read),
+             (tcbLock targetTcbTid, .write),
+             (stateLevelLock, .write)])
+          (newCnodeObjId.map (fun cn => (cnodeLock cn, .read))))
+        (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+      (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read))))
     (queueOwnerMember queueOwner)
 
 /-- **WS-BP BP7.1 (`v0.36.12`): `lockSet` for `pageTableMap`.**
@@ -5151,8 +5149,9 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
   -- SchedContext via `updatePrioritySource` (audit-pass-6 extension).
-  -- `.tcbSetIPCBuffer` reads the target's VSpaceRoot via
-  -- `validateIpcBufferAddress` (audit-pass-6 extension).
+  -- `.tcbSetIPCBuffer` reads the buffer's frame and writes the derivation tree
+  -- (`.objStore`) when it installs the frame capability in the buffer slot
+  -- (WS-SX SX6.6).
   -- WS-SM SM6.E: suspending a `.blockedOnReply` caller consumes its
   -- single-use reply link (`cancelIpcBlocking` → `consumeReplyLink`
   -- writes `reply.caller := none` — the SM6.D reply-object fold), so the
@@ -5171,21 +5170,17 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .tcbSetPriority | .tcbSetMCPriority =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
   | .tcbSetIPCBuffer =>
-      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
+      [.tcb, .cnode, .page, .endpoint, .notification, .objStore]
   -- WS-SM SM5.H.4: `setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity`
   -- and, for a SchedContext-bound target, migrates that SC's pending replenishments
   -- (so the bound SchedContext object is in the conservative kernel-object footprint;
   -- the run-queue / replenish-queue slots are SM5.A's separate `LockKey` domain).
   | .tcbSetAffinity =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
-  -- PR #887 review: `setThreadFaultHandlerOp` writes the target TCB's
-  -- `faultHandler` and reads the target's root CNode to validate the CPtr —
-  -- and (review round 3) the endpoint the CPtr names, for the kind check.
-  | .tcbSetFaultHandler =>
-      [.tcb, .cnode, .endpoint, .notification]
   -- **WS-BP BP7.1 (`v0.36.11`)**: `copyThreadSpaces` writes the target TCB,
-  -- reads the new CSpace root (a CNode) and the new VSpace root, and writes the
-  -- derivation tree and links (`.objStore`, as `.cspaceCopy`).
+  -- reads the new CSpace root (a CNode), the new VSpace root and (WS-SX SX6.5)
+  -- the fault endpoint, and writes the derivation tree and links (`.objStore`,
+  -- as `.cspaceCopy`).
   | .tcbSetSpace =>
       [.tcb, .cnode, .vspaceRoot, .endpoint, .notification, .objStore]
   -- **WS-BP BP7.1 (`v0.36.12`)**: the page-table operations write the table
@@ -5237,7 +5232,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
@@ -5246,7 +5241,7 @@ walk — `.cspaceRevoke`'s derivation tree and `.yield`'s timeouts with the
 inheritance chains they release — so a third undeclared syscall is a decision
 somebody has to write down rather than a number that quietly moves.  The untyped
 reset left the exemption in WS-ZA ZA5.4, when it became seL4's one free-index
-write, and the model in WS-SX SX6.1, when the carve took it over. -/
+write, and the model in WS-SX SX7.1, when the carve took it over. -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
     declaresStaticLockFootprint sid = false ↔
       sid = .cspaceRevoke ∨ sid = .yield := by
@@ -6673,29 +6668,31 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
-    (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
+    (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType)
+    (count : Nat) :
     ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot authCn untypedId childId dstCn
-      childKind).pairs,
+      childKind count).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; cases childKind <;>
+        rcases List.mem_append.mp hMem with hMem | hMem
+        · rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp [stateLevelLock]; decide
+          exact absurd hMem (by intro h; cases h)
+        · obtain ⟨i, _, rfl⟩ := mem_carvedChildLocks hMem
+          cases childKind <;>
             simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock, tcbLock,
-              endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [stateLevelLock]; decide
-        exact absurd hMem (by intro h; cases h))
+              endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide)
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
 theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
@@ -7149,14 +7146,16 @@ theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
 
 Audit-pass-6: the bound-SC write lock is now an `lockSetExtendOpt`
 extension on top of the base list.  Uses `base_plus_opt`. -/
-theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
+theorem lockSet_consistent_tcbSetPriority (callerTid authorityTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetPriority callerTid authorityTid cnRoot targetTcb boundSc queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetPriority :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
       (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
@@ -7173,14 +7172,16 @@ theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
 /-- WS-SM SM3.B.4 for `.tcbSetMCPriority`.
 
 Audit-pass-6: same shape as `.tcbSetPriority`. -/
-theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
+theorem lockSet_consistent_tcbSetMCPriority (callerTid authorityTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid authorityTid cnRoot targetTcb boundSc queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetMCPriority :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
       (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
@@ -7196,13 +7197,13 @@ theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`.
 
-Audit-pass-6: the target-VSpaceRoot read lock is now an
-`lockSetExtendOpt` extension on top of the base list.  Uses
-`base_plus_opt`. -/
+WS-SX SX6.6: the base four locks (caller TCB read, CNode read, target TCB
+write, the state-level write the slot's delete and copy take) plus the optional
+read of the buffer's frame.  Uses `base_plus_opt`. -/
 theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetVSpaceRoot : Option ObjId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (bufferFrame : Option ObjId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb targetVSpaceRoot queueOwner).pairs,
+    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb bufferFrame queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
@@ -7213,11 +7214,13 @@ theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
           exact absurd hMem (by intro h; cases h))
       (by intro pp hpp
-          cases targetVSpaceRoot with
+          cases bufferFrame with
           | none => simp at hpp
-          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
+          | some f => simp at hpp; rw [← hpp]; simp [pageLock, permittedKinds]))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM5.H.4 for `.tcbSetAffinity`.
@@ -7245,64 +7248,41 @@ theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
           | some sc => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
-/-- PR #887 review, for `.tcbSetFaultHandler`: the base three locks plus the
-optional target-CNode read and (review round 3) the optional read of the
-endpoint the CPtr names. -/
-theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId)
-    (handlerEp : Option ObjId)
+/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base four locks plus the
+optional reads of the new CSpace root, the new VSpace root and (WS-SX SX6.5)
+the fault endpoint. -/
+theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (newCnode newVSpaceRoot handlerEp : Option ObjId)
     (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot handlerEp queueOwner).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetFaultHandler :=
+    ∀ p ∈ (lockSet_tcbSetSpace callerTid cnRoot targetTcb newCnode newVSpaceRoot handlerEp
+        queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetSpace :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_extendOpt _ _ _
-      (lockSet_consistent_base_plus_opt _ _ _
-        (by intro p hMem
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            exact absurd hMem (by intro h; cases h))
+      (lockSet_consistent_extendOpt _ _ _
+        (lockSet_consistent_base_plus_opt _ _ _
+          (by intro p hMem
+              rcases List.mem_cons.mp hMem with h | hMem
+              · rw [h]; simp; decide
+              rcases List.mem_cons.mp hMem with h | hMem
+              · rw [h]; simp; decide
+              rcases List.mem_cons.mp hMem with h | hMem
+              · rw [h]; simp; decide
+              rcases List.mem_cons.mp hMem with h | hMem
+              · rw [h]; simp; decide
+              exact absurd hMem (by intro h; cases h))
+          (by intro pp hpp
+              cases newCnode with
+              | none => simp at hpp
+              | some cn => simp at hpp; rw [← hpp]; simp; decide))
         (by intro pp hpp
-            cases targetCnRoot with
+            cases newVSpaceRoot with
             | none => simp at hpp
-            | some cn => simp at hpp; rw [← hpp]; simp; decide))
+            | some vsr => simp at hpp; rw [← hpp]; simp; decide))
       (by intro pp hpp
           cases handlerEp with
           | none => simp at hpp
           | some ep => simp at hpp; rw [← hpp]; simp; decide))
-    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
-
-/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base four locks plus the
-optional reads of the new CSpace root and the new VSpace root. -/
-theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (newCnode newVSpaceRoot : Option ObjId)
-    (queueOwner : Option QueueOwner) :
-    ∀ p ∈ (lockSet_tcbSetSpace callerTid cnRoot targetTcb newCnode newVSpaceRoot queueOwner).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetSpace :=
-  lockSet_consistent_extendOpt _ _ _
-    (lockSet_consistent_extendOpt _ _ _
-      (lockSet_consistent_base_plus_opt _ _ _
-        (by intro p hMem
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            rcases List.mem_cons.mp hMem with h | hMem
-            · rw [h]; simp; decide
-            exact absurd hMem (by intro h; cases h))
-        (by intro pp hpp
-            cases newCnode with
-            | none => simp at hpp
-            | some cn => simp at hpp; rw [← hpp]; simp; decide))
-      (by intro pp hpp
-          cases newVSpaceRoot with
-          | none => simp at hpp
-          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableMap`: the base three locks plus the

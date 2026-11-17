@@ -70,17 +70,17 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-SM SM5.H.4: tcbSetAffinity=25
   let r25 := decodeSyscallId ⟨25⟩
   expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
-  -- PR #887 review: tcbSetFaultHandler=34 (the fault-handler configuration
-  -- syscall, the first writer of `TCB.faultHandler`)
+  -- WS-SX SX6.5: 34 (the retired tcbSetFaultHandler) decodes to nothing —
+  -- seL4-MCS's `TCB_SetSpace` installs the fault endpoint
   let r34 := decodeSyscallId ⟨34⟩
-  expect "tcbSetFaultHandler=34" (isOkEq r34 .tcbSetFaultHandler)
+  expect "retired=34" (isErrEq r34 .invalidSyscallNumber)
   -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
   let r35 := decodeSyscallId ⟨35⟩
   expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
   -- WS-BP BP7.1: untypedRetype=36 (`seL4_Untyped_Retype`, frames)
   let r36 := decodeSyscallId ⟨36⟩
   expect "untypedRetype=36" (isOkEq r36 .untypedRetype)
-  -- WS-SX SX6.1: 37, the untyped reset, is retired (seL4 resets inside Retype)
+  -- WS-SX SX7.1: 37, the untyped reset, is retired (seL4 resets inside Retype)
   let r37 := decodeSyscallId ⟨37⟩
   expect "retired=37" (isErrEq r37 .invalidSyscallNumber)
   -- WS-BP BP7.1: tcbSetSpace=38 (seL4's `TCB_SetSpace`)
@@ -107,10 +107,10 @@ private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- irqControlGet, irqHandlerSetNotification and irqHandlerClear at 45 to 47, ZA6.29
   -- schedContextYieldTo at 43, ZA6.9
   -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
-  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38 (37, the untyped reset, retired at WS-SX SX6.1)
+  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38 (37, the untyped reset, retired at WS-SX SX7.1)
   -- and untypedRetype at 36, on top of
   -- WS-RR RR8.16's cspaceRevoke at 35, the
-  -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's
+  -- PR #887 review round's tcbSetFaultHandler at 34 (retired by WS-SX SX6.5), WS-SM SM9.C's
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
@@ -278,10 +278,11 @@ private def mkStub (regs : Array RegValue) : SyscallDecodeResult :=
 
 -- CSpace family ---------------------------------------------------------------
 
-/-- SAD-001: decodeCSpaceMintArgs — valid decode with 5 registers: a copy's
-four and the badge. -/
+/-- SAD-001: decodeCSpaceMintArgs — valid decode with 6 registers in seL4's
+order: the destination index and depth, the source index and depth, the
+rights word and the badge. -/
 private def sad001_cspaceMint : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7), ⟨42⟩]
+  let stub := mkStub #[⟨10⟩, ⟨64⟩, ⟨20⟩, ⟨64⟩, ⟨7⟩, ⟨42⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-001a mint ok" result.isOk
   match result with
@@ -292,42 +293,45 @@ private def sad001_cspaceMint : IO Unit := do
     expect "SAD-001e rights" (args.rights.bits == 7)
   | .error _ => expect "SAD-001 unexpected error" false
 
-/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (4). -/
+/-- SAD-002: decodeCSpaceMintArgs — insufficient registers (5). -/
 private def sad002_cspaceMintInsufficient : IO Unit := do
-  let stub := mkStub #[⟨10⟩, ⟨3⟩, ⟨20⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 64 7)]
+  let stub := mkStub #[⟨10⟩, ⟨64⟩, ⟨20⟩, ⟨64⟩, ⟨7⟩]
   let result := decodeCSpaceMintArgs stub
   expect "SAD-002a mint insufficient" (!result.isOk)
 
-/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 4 registers, the depths
-and the rights mask packed in the fourth (`CNodeOpWord`); a short message and
-a word with a bit past the mask are refused. -/
+/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 5 registers in seL4's
+order; a short message is refused, a rights word's bits past the rights are
+ignored (seL4's `rightsFromWord`), and a depth past 64 reads as one
+`lookupSlotForCNodeOp` refuses. -/
 private def sad003_cspaceCopy : IO Unit := do
-  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 64 3 5)]
+  let stub := mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩, ⟨5⟩]
   let result := decodeCSpaceCopyArgs stub
   expect "SAD-003a copy ok" result.isOk
   match result with
   | .ok args =>
     expect "SAD-003b srcIndex" (args.srcIndex.toNat == 5)
     expect "SAD-003c destIndex" (args.destIndex.toNat == 15)
-    expect "SAD-003d srcRoot" (args.srcRoot.toNat == 9)
     expect "SAD-003e depths" (args.destDepth == 64 && args.srcDepth == 3)
     expect "SAD-003e2 rights mask" (args.rights.bits == 5)
   | .error _ => expect "SAD-003 unexpected error" false
   expect "SAD-003f copy short"
-    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩]) with
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩]) with
       | .error .truncatedMessage => true | _ => false)
-  expect "SAD-003g copy stray bit past the mask"
-    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨2097152⟩]) with
-      | .error (.invalidArgument _) => true | _ => false)
+  expect "SAD-003g copy bits past the rights ignored"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨64⟩, ⟨5⟩, ⟨3⟩, ⟨0xFFFF_FFE5⟩]) with
+      | .ok args => args.rights.bits == 5 | _ => false)
+  expect "SAD-003h a wide depth reads out of range"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨0xFFFF_FFFF_FFFF_FFFF⟩, ⟨5⟩, ⟨3⟩, ⟨5⟩]) with
+      | .ok args => args.destDepth == 65 | _ => false)
 
-/-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
+/-- SAD-004: decodeCSpaceMoveArgs — valid decode of four words. -/
 private def sad004_cspaceMove : IO Unit := do
-  let stub := mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 0)]
+  let stub := mkStub #[⟨3⟩, ⟨2⟩, ⟨8⟩, ⟨2⟩]
   let result := decodeCSpaceMoveArgs stub
   expect "SAD-004a move ok" result.isOk
-  expect "SAD-004b move stray rights bit"
-    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, SeLe4n.RegValue.ofNat (CNodeOpWord.pack 2 2 1)]) with
-      | .error (.invalidArgument _) => true | _ => false)
+  expect "SAD-004b move short"
+    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨2⟩, ⟨8⟩]) with
+      | .error .truncatedMessage => true | _ => false)
 
 /-- SAD-005: decodeCSpaceDeleteArgs — valid and insufficient. -/
 private def sad005_cspaceDelete : IO Unit := do
@@ -341,55 +345,63 @@ private def sad005_cspaceDelete : IO Unit := do
 -- Lifecycle family -------------------------------------------------------------
 
 /-- SAD-006: decodeUntypedRetypeArgs — valid decode of every kernel object
-kind's type word (`tag ||| sizeBits <<< 8`, WS-ZA ZA5.4 part 14). -/
+kind's seven seL4-shaped words (type, size, node index, node depth, node
+offset, object count, then the model's object id word; WS-SX SX6.3). -/
 private def sad006_untypedRetype : IO Unit := do
   for tag in [0, 1, 2, 3, 6, 7] do
-    let stub := mkStub #[⟨tag + 256⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+    let stub := mkStub #[⟨tag⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩, ⟨100⟩]
     match decodeUntypedRetypeArgs stub with
     | .ok args =>
         expect s!"SAD-006a carve decode tag {tag}"
-          (args.newType.toNat == tag.toNat && args.sizeBits == 1 && args.childId == ⟨100⟩)
+          (args.newType.toNat == tag.toNat && args.sizeBits == 1 && args.childId == ⟨100⟩ &&
+            args.nodeOffset == 4 && args.numObjects == 1 && args.nodeDepth == 0)
     | .error _ => expect s!"SAD-006a carve decode tag {tag}" false
-  expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨100⟩, ⟨1⟩])).isOk)
+  expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩])).isOk)
 
 /-- SAD-007: decodeUntypedRetypeArgs — invalid type tag. -/
 private def sad007_untypedRetypeInvalidType : IO Unit := do
-  let stub := mkStub #[⟨99⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+  let stub := mkStub #[⟨99⟩, ⟨1⟩, ⟨0⟩, ⟨0⟩, ⟨4⟩, ⟨1⟩, ⟨100⟩]
   let result := decodeUntypedRetypeArgs stub
   expect "SAD-007a carve invalid type" (!result.isOk)
 
 -- VSpace family ----------------------------------------------------------------
 
-/-- SAD-008: decodeVSpaceMapArgs — valid decode. -/
+/-- SAD-008: decodePageMapArgs — seL4's three words, carried verbatim
+(WS-SX SX6.3, D6: the frame is the invoked capability and the address space
+extra capability 0, so no word names either). -/
 private def sad008_vspaceMap : IO Unit := do
-  -- ASID < 65536, VAddr < 2^48, frame CPtr arbitrary, perms valid (< 32)
-  -- AH3-C: Pass ARM64 default maxASID (65536) to parameterized decode
-  -- WS-BP BP7.1: MR2 decodes as a frame capability address, carried verbatim.
-  let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-008a vspace map ok" result.isOk
-  expect "SAD-008b MR2 is the frame capability address"
+  let stub := mkStub #[⟨0x1000⟩, ⟨3⟩, ⟨5⟩]
+  let result := decodePageMapArgs stub
+  expect "SAD-008a page map ok" result.isOk
+  expect "SAD-008b MR0..MR2 are the address, rights and attributes words"
     (match result with
-     | .ok args => args.frame == SeLe4n.CPtr.ofNat 0x2000
+     | .ok args => args.vaddr == 0x1000 && args.rights == 3 && args.attr == 5
      | .error _ => false)
 
-/-- SAD-009: decodeVSpaceMapArgs — invalid ASID (>= 65536). -/
+/-- SAD-009: decodePageMapArgs — a message of two words is truncated. -/
 private def sad009_vspaceMapInvalidAsid : IO Unit := do
-  let stub := mkStub #[⟨65536⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-009a vspace map invalid ASID" (!result.isOk)
+  let stub := mkStub #[⟨0x1000⟩, ⟨3⟩]
+  let result := decodePageMapArgs stub
+  expect "SAD-009a page map two words truncated" (!result.isOk)
 
-/-- SAD-010: decodeVSpaceMapArgs — non-canonical VAddr (>= 2^48). -/
+/-- SAD-010: vspaceMapArgsOfWords — non-canonical VAddr (>= 2^48) is seL4's
+`InvalidArgument 0`. -/
 private def sad010_vspaceMapNonCanonical : IO Unit := do
-  let stub := mkStub #[⟨1⟩, ⟨2^48⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-010a vspace map non-canonical" (!result.isOk)
+  let result := vspaceMapArgsOfWords ⟨(2^48 : Nat).toUInt64, 3, 5⟩ ⟨1⟩ (SeLe4n.CPtr.ofNat 2)
+  expect "SAD-010a page map non-canonical"
+    (match result with
+     | .error (.invalidArgument 0) => true
+     | _ => false)
 
-/-- SAD-011: decodeVSpaceMapArgs — invalid permissions (>= 32). -/
+/-- SAD-011: pagePermissionsOfWords — the words are total; read/write come from
+the rights word and execute/cacheable from the attributes word. -/
 private def sad011_vspaceMapInvalidPerms : IO Unit := do
-  let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨32⟩]
-  let result := decodeVSpaceMapArgs stub 65536
-  expect "SAD-011a vspace map invalid perms" (!result.isOk)
+  let p := pagePermissionsOfWords 0xFFFF 0
+  expect "SAD-011a wide rights word read as CanRead|CanWrite"
+    (p.read && p.write && p.execute && p.user && !p.cacheable)
+  let q := pagePermissionsOfWords 2 5
+  expect "SAD-011b read-only, cacheable, never executable"
+    (q.read && !q.write && !q.execute && q.user && q.cacheable)
 
 /-- SAD-012: decodeVSpaceUnmapArgs — valid and invalid ASID. -/
 private def sad012_vspaceUnmap : IO Unit := do
@@ -434,34 +446,26 @@ private def sad015_replyRecv : IO Unit := do
 
 -- SchedContext family ----------------------------------------------------------
 
-/-- SAD-016: decodeSchedContextConfigureArgs — valid decode with 5 registers. -/
+/-- SAD-016: decodeSchedContextConfigureArgs — valid decode with 5 registers
+(seL4-MCS's budget, period, extra refills, badge, flags; WS-SX SX6.4). -/
 private def sad016_schedContextConfigure : IO Unit := do
-  let stub := mkStub #[⟨7⟩, ⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
+  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨3⟩, ⟨128⟩, ⟨1⟩]
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-016a scConfigure ok" result.isOk
   match result with
   | .ok args =>
     expect "SAD-016b budget" (args.budget == 1000)
     expect "SAD-016c period" (args.period == 5000)
-    expect "SAD-016d priority" (args.priority == 128)
-    expect "SAD-016e context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
-    expect "SAD-016f deadline" (args.deadline == 10000)
+    expect "SAD-016d extra refills" (args.extraRefills == 3)
+    expect "SAD-016e badge" (args.badge == 128)
+    expect "SAD-016f flags" (args.flags == 1)
   | .error _ => expect "SAD-016 unexpected error" false
 
 /-- SAD-017: decodeSchedContextConfigureArgs — insufficient registers (4). -/
 private def sad017_schedContextConfigureInsufficient : IO Unit := do
-  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
+  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨0⟩, ⟨128⟩]
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-017a scConfigure insufficient" (!result.isOk)
-
-/-- SAD-018: decodeSchedContextBindArgs — valid and insufficient. -/
-private def sad018_schedContextBind : IO Unit := do
-  let stub := mkStub #[⟨5⟩]
-  let result := decodeSchedContextBindArgs stub
-  expect "SAD-018a scBind ok" result.isOk
-  let stubEmpty := mkStub #[]
-  let resultEmpty := decodeSchedContextBindArgs stubEmpty
-  expect "SAD-018b scBind empty err" (!resultEmpty.isOk)
 
 /-- SAD-019: decodeSchedContextUnbindArgs — always succeeds. -/
 private def sad019_schedContextUnbind : IO Unit := do
@@ -506,19 +510,18 @@ private def sad022_setMCPriority : IO Unit := do
   let resultOver := decodeSetMCPriorityArgs stubOver
   expect "SAD-022b setMCPriority overflow" (!resultOver.isOk)
 
-/-- SAD-023: decodeSetIPCBufferArgs — valid (aligned) and invalid (misaligned). -/
+/-- SAD-023: decodeSetIPCBufferArgs carries the address as given.  seL4's
+`decodeSetIPCBuffer` checks the alignment in `checkValidIPCBuffer`, after the
+frame capability, so the decode refuses nothing but a short message. -/
 private def sad023_setIPCBuffer : IO Unit := do
-  -- Valid: 1024-byte aligned address
-  let stub := mkStub #[⟨1024 * 5⟩]
-  let result := decodeSetIPCBufferArgs stub
-  expect "SAD-023a setIPCBuffer aligned ok" result.isOk
-  -- Invalid: misaligned address
-  let stubBad := mkStub #[⟨1024 * 5 + 1⟩]
-  let resultBad := decodeSetIPCBufferArgs stubBad
-  expect "SAD-023b setIPCBuffer misaligned err" (!resultBad.isOk)
-  -- Invalid: 512-aligned but not 1024-aligned (could cross a page)
-  let stubHalf := mkStub #[⟨1024 * 5 + 512⟩]
-  expect "SAD-023c setIPCBuffer half-aligned err" (!(decodeSetIPCBufferArgs stubHalf).isOk)
+  let aligned := decodeSetIPCBufferArgs (mkStub #[⟨1024 * 5⟩])
+  expect "SAD-023a setIPCBuffer aligned decodes"
+    (match aligned with | .ok a => a.bufferAddr.toNat == 1024 * 5 | .error _ => false)
+  let misaligned := decodeSetIPCBufferArgs (mkStub #[⟨1024 * 5 + 1⟩])
+  expect "SAD-023b setIPCBuffer misaligned decodes (the operation refuses it)"
+    (match misaligned with | .ok a => a.bufferAddr.toNat == 1024 * 5 + 1 | .error _ => false)
+  expect "SAD-023c setIPCBuffer empty message is truncated"
+    (!(decodeSetIPCBufferArgs (mkStub #[])).isOk)
 
 -- Service family ---------------------------------------------------------------
 
@@ -594,18 +597,24 @@ private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
 -- ============================================================================
 
 /-- Helper: build a minimal SystemState with a TCB whose registers encode the
-    given syscall and whose IPC buffer resolves to PA=0 in a well-formed
-    VSpaceRoot. Memory is the default (zero-initialized).
-    When `mapIpcBuffer = false`, the VSpaceRoot contains no mapping, so
-    `ipcBufferReadMr` returns `.ipcBufferVAddrUnmapped`. -/
+    given syscall and whose IPC buffer is in the frame at `ipcBufferPA`, its
+    capability in the thread's buffer slot (where seL4's `lookupIPCBuffer`
+    finds it). Memory is the default (zero-initialized).
+    When `mapIpcBuffer = false`, the buffer slot is empty, so
+    `ipcBufferReadMr` returns `.noIpcBuffer`; `deviceFrame` makes the frame
+    device memory, which the lookup refuses too. -/
 private def buildIpcDecodeState
     (syscallNum : Nat) (msgLen : Nat) (msgRegs : Array SeLe4n.RegValue)
     (ipcBufferVA : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x10000))
     (ipcBufferPA : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x20000))
-    (mapIpcBuffer : Bool := true) : SeLe4n.Model.SystemState :=
+    (mapIpcBuffer : Bool := true) (deviceFrame : Bool := false) : SeLe4n.Model.SystemState :=
   let tid : SeLe4n.ThreadId := ⟨800⟩
   let cnodeId : SeLe4n.ObjId := ⟨801⟩
   let vsId : SeLe4n.ObjId := ⟨802⟩
+  let frameId : SeLe4n.ObjId := ⟨803⟩
+  let bufCap : SeLe4n.Model.Capability :=
+    { target := .object frameId,
+      rights := SeLe4n.Model.AccessRightSet.ofList [.read, .write] }
   -- Construct MessageInfo word: bits 0..6 = length, bits 7..8 = extraCaps, bits 9+ = label
   let msgInfoRaw := msgLen
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
@@ -634,15 +643,18 @@ private def buildIpcDecodeState
   let builder := BootstrapBuilder.empty
     |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId,
+        spaceCells := (SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId).set 2
+          (if mapIpcBuffer then some bufCap else none),
         ipcBuffer := ipcBufferVA,
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
     |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject vsId (.vspaceRoot vsRoot)
+    |>.withObject frameId (.frame { base := ipcBufferPA, isDevice := deviceFrame })
     |>.withLifecycleObjectType tid.toObjId .tcb
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType vsId .vspaceRoot
+    |>.withLifecycleObjectType frameId .frame
     |>.withRunnable []
     |>.withCurrent (some tid)
   builder.build
@@ -752,14 +764,14 @@ private def signalLongReadsNoIpcBuffer : IO Unit := do
       expect "a long declassified signal routes as audited" (s' == .declassifySignal)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
 
-/-- A receive, a wait, a yield and an invocation of at most four arguments
-read no word past the inline registers (`syscallReadsOverflow`), as seL4
+/-- A receive, a wait, a yield and an invocation of at most four arguments (a
+CNode move) read no word past the inline registers (`syscallReadsOverflow`), as seL4
 reads only the words a syscall uses: one whose message-info word names ten
 words decodes with no IPC buffer mapped, merges no overflow word, and the
 router takes its short route. -/
 private def shortReadersLongReadNoIpcBuffer : IO Unit := do
   for sid in [SyscallId.receive, SyscallId.notificationWait, SyscallId.yield,
-      SyscallId.cspaceCopy] do
+      SyscallId.cspaceMove] do
     let st := buildIpcDecodeState sid.toNat 10 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] (mapIpcBuffer := false)
     let tid : SeLe4n.ThreadId := ⟨800⟩
     let regs : SeLe4n.RegisterFile :=
@@ -775,7 +787,7 @@ private def shortReadersLongReadNoIpcBuffer : IO Unit := do
     | .receive .., .receive => expect "a long receive routes as a receive" true
     | .wait _, .notificationWait => expect "a long wait routes as a wait" true
     | .yield, .yield => expect "a long yield routes as a yield" true
-    | .invoke s' _, .cspaceCopy => expect "a long copy routes as an invocation" (s' == .cspaceCopy)
+    | .invoke s' _, .cspaceMove => expect "a long move routes as an invocation" (s' == .cspaceMove)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
 
 /-- A long send whose IPC buffer the kernel cannot read is clamped to its four
@@ -874,14 +886,14 @@ private def ipcBufferReadCarriesIntraPageOffset : IO Unit := do
   | .ok _ => expect "a non-page-aligned IPC buffer resolves through its page" true
   | .error _ =>
     expect "a non-page-aligned IPC buffer resolves through its page" false
-  -- And a buffer whose slot crosses into an unmapped page still fails closed.
-  let stEdge := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
-      (SeLe4n.VAddr.ofNat 0x10FF8) (SeLe4n.PAddr.ofNat 0x20000) true
-  match ipcBufferReadMr stEdge ⟨800⟩ 1 with
-  | .ok _ => expect "a slot crossing into an unmapped page fails closed" false
+  -- A buffer in a device frame is no IPC buffer (seL4's `lookupIPCBuffer`
+  -- refuses a device frame capability), and the read fails closed.
+  let stDev := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+      (SeLe4n.VAddr.ofNat 0x10000) (SeLe4n.PAddr.ofNat 0x20000) true (deviceFrame := true)
+  match ipcBufferReadMr stDev ⟨800⟩ 1 with
+  | .ok _ => expect "a device-frame IPC buffer fails closed" false
   | .error e =>
-    expect "a slot crossing into an unmapped page fails closed"
-      (e == .ipcBufferVAddrUnmapped)
+    expect "a device-frame IPC buffer fails closed" (e == .noIpcBuffer)
 
 /-- SAD-029: a sender's extra capability addresses are its IPC buffer's
 `caps_or_badges` words (seL4's `lookupExtraCaps`), never message registers;
@@ -946,7 +958,6 @@ private def runSyscallArgDecodeTests : IO Unit := do
   -- SchedContext
   sad016_schedContextConfigure
   sad017_schedContextConfigureInsufficient
-  sad018_schedContextBind
   sad019_schedContextUnbind
   -- TCB
   sad020_suspendResume

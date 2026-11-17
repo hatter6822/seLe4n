@@ -2947,39 +2947,11 @@ Three fields:
   hazard its own docstring names; above it the loan is still travelling outward
   and the origin is the fact the field exists to carry.
 
-**What it deliberately does NOT write is `SchedContext.priority` — nor
-`SchedContext.domain`, nor either of the recipient's own.**  A `.bound` thread's
-band and partition are each stored twice: in its TCB, which every scheduling
-decision reads, and on the reservation, which is what `schedContextBind`
-propagates from and `schedContextConfigureBoundPropagate` moves in step.  This
-arm installs a `.bound` binding and refreshes neither, so a reservation whose
-band or domain moved while it was on loan comes back disagreeing — which is the
-`boundThreadPriorityConsistent` / `boundThreadDomainConsistent` residue PR #897's
-review reported and `docs/REGISTERED_DEBT.md` table C now registers.
-
-**Refreshing either here is not the remedy, in either direction**, and that is
-what makes those two predicates facts about their *writers* rather than defects
-in this one:
-
-* `tcb.priority := sc.priority` would undo a demotion by an IPC reply, and
-  `tcb.domain := sc.domain` would migrate a thread's partition on one — at the
-  instance of a holder of a capability on the **reservation**, which says nothing
-  about the thread.  That is the authority crossing WS-OD `v0.35.3` closed from
-  the other side.
-* `sc.priority := tcb.priority` would silently retune a band that capability's
-  holder had just set, and is projection-**visible** besides:
-  `SchedContext.priority` survives `projectKernelObject` (thread priority is
-  deliberately observable — see `Projection.lean` §2), so writing a possibly-high
-  recipient's band into a possibly-low reservation makes
-  `returnDonatedSchedContext_preserves_projection` false.
-
-Nothing is mis-scheduled by the residue: since `v0.35.133` and `v0.35.136` every
-band read is `tcb.priority` (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`)
-and every domain read is `tcb.domain` (`effectiveSchedParams_domain_eq`), so the
-recipient resumes at its own band in its own partition.  The class fix is to stop
-storing either parameter twice, which is a scheduling-model change WS-CB owns;
-`tests/PriorityManagementSuite.lean`'s `pm_od_09`/`pm_od_10` is the executed
-refutation and its control. -/
+**It writes neither the reservation's parameters nor the recipient's own
+priority or domain**: a scheduling context carries budget and period alone
+(WS-SX SX6.4, as seL4-MCS's `sched_context_t`), and the recipient's band and
+partition are its TCB's, so the recipient resumes at its own band in its own
+partition with nothing to reconcile. -/
 @[inline] def donationReturnSchedContext (sc : SchedContext)
     (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
     (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
@@ -2993,28 +2965,6 @@ refutation and its control. -/
     (newOwner? : Option SeLe4n.ThreadId) :
     (donationReturnSchedContext sc originalOwner nextHead? newOwner?).scReply
       = nextHead? := rfl
-
-/-- **WS-RR RR8**: the reservation's own configured band is untouched by a pop —
-the fact the registered priority-mirror row is about, stated here rather than
-left to be read off the record. -/
-@[simp] theorem donationReturnSchedContext_priority (sc : SchedContext)
-    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) :
-    (donationReturnSchedContext sc originalOwner nextHead? newOwner?).priority
-      = sc.priority := rfl
-
-/-- **WS-RR (`v0.35.136`): and so is its configured partition.**  The sibling of
-the band above, added when PR #897's review showed the two mirrors have one hole:
-`schedContextConfigure` moves either field on a **donated** reservation without
-propagating (the donee's `ownScId?` is `none`), and this arm then rebinds the
-origin `.bound` under it.  Stated so that a cut which decides to reconcile at the
-pop has to change a theorem rather than a record, and so that the two halves of
-the residue are pinned symmetrically. -/
-@[simp] theorem donationReturnSchedContext_domain (sc : SchedContext)
-    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) :
-    (donationReturnSchedContext sc originalOwner nextHead? newOwner?).domain
-      = sc.domain := rfl
 
 /-- WS-OD OD4.4: **the donor shape the pop requires of an outer caller.**
 

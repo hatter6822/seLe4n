@@ -466,28 +466,6 @@ theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb 
     (hV := by rw [hPre]; simp only [objRefillView, tcbRefillView, hA])
     (hY := by rw [hPre]; simp only [objYieldCodes, hY])
 
-theorem setIPCBufferOp_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {addr : SeLe4n.VAddr}
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    RunQueueStage st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  run_queue_stage_at h
-
-theorem setThreadFaultHandlerOp_runQueueStage {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
-    (h : setThreadFaultHandlerOp st vtid cptr = .ok st') : RunQueueStage st st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at h
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at h
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at h
-          cases h
-          unfold installFaultHandler SystemState.rewriteObject
-          exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-            (fun _ => rfl)
-
 /-- A thread slot's copy: the delete, then a thread record rewritten in its
 space slot alone, then link writes. -/
 theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
@@ -514,19 +492,38 @@ theorem threadSlotSet_runQueueStage (ec : Concurrency.CoreId) {st : SystemState}
   unfold threadSlotSet
   exact (threadSlotCopied_runQueueStage hT _ _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
 
+/-- A buffer-address write is a run-queue stage: a thread record rewritten in a
+field the stage does not read. -/
+theorem updateTcb_ipcBuffer_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (addr : SeLe4n.VAddr) :
+    RunQueueStage st (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) := by
+  cases hU : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hU]; exact RunQueueStage.refl _
+  | some u =>
+    rw [SystemState.updateTcb_eq_of_some hU]
+    exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff _ _ _).mp hU) (fun _ => rfl)
+
+/-- WS-SX SX6.6: a buffer change is a run-queue stage: the buffer slot's set,
+then the address write. -/
+theorem setIPCBufferOp_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr}
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    RunQueueStage st st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  exact (threadSlotSet_runQueueStage ec hT _ _ _ _ _).trans
+    (updateTcb_ipcBuffer_runQueueStage _ _ _)
+
 theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData hCL)
-  exact (threadSlotSet_runQueueStage ec hT _ _ _ _ _).trans
-    (threadSlotSet_runQueueStage ec hT1' _ _ _ _ _)
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, -, hT2, -, rfl⟩ := copyThreadSpaces_ok_steps hInv h
+  exact ((threadSlotSet_runQueueStage ec hT _ _ _ _ _).trans
+    (threadSlotSet_runQueueStage ec hT1 _ _ _ _ _)).trans
+    (threadSlotSet_runQueueStage ec hT2 _ _ _ _ _)
 
 theorem bindNotification_runQueueStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :
@@ -1021,8 +1018,8 @@ theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
 the loop's passes are finalising deletes and finalisations, and the plain space
 change after them is a run-queue stage (`copyThreadSpaces_runQueueStage`). -/
 theorem copyThreadSpacesZombie_runQueueEntryStage {ec : Concurrency.CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     SystemState.RunQueueEntryStage st st' :=
   copyThreadSpacesZombie_closed (SystemState.RunQueueEntryStage st)
     (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))

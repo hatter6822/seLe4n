@@ -300,11 +300,11 @@ theorem faultDeliverOnCore_suspends_on_unresolvable (st : SystemState)
        { disposition := .suspended }) := by
   unfold faultDeliverOnCore; rw [hErr]
 
-/-- WS-RR RR4.10 (**the negative**): a thread with no `faultHandler` suspends
+/-- WS-RR RR4.10 (**the negative**): a thread whose fault-handler slot is empty suspends
 on its own core. -/
 theorem faultDeliverOnCore_suspends_without_handler (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandler = none) :
+    (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandlerCap = none) :
     faultDeliverOnCore st tid f ctx c =
       (recordPendingFault (faultSuspendOnCore st tid c) tid { fault := f, context := ctx },
        { disposition := .suspended }) :=

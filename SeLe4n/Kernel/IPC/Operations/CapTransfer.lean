@@ -44,20 +44,20 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
-/-- A word of a thread's IPC buffer, as the kernel reads it there (the entry's
-words ahead of the model's memory, `userWordAt`); `none` where the buffer does
-not resolve. -/
+/-- A word of a receiver's IPC buffer, as the kernel reads it there (the
+entry's words ahead of the model's memory, `userWordAt`), the buffer looked up
+as a receiver's (seL4's `lookupIPCBuffer(true, receiver)`, whose answer
+`getReceiveSlots` reads); `none` where the buffer does not resolve. -/
 @[inline] def receiverBufferWord? (st : SystemState) (tcb : TCB) (idx : Nat) : Option UInt64 :=
-  (ipcBufferWordPAddr? st tcb idx false).map (userWordAt st.machine)
+  (ipcBufferWordPAddrIn? (lookupIPCBuffer true st tcb) idx).map (userWordAt st.machine)
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- **The receiver has an IPC buffer the kernel may write** (seL4's
-`lookupIPCBuffer(true, receiver)` answering a buffer): its first word resolves
-writable through its own VSpace.  The buffer lies in one frame
-(`ipcBufferWords_within_alignment`), so its other words resolve through the same
-mapping. -/
+`lookupIPCBuffer(true, receiver)` answering a buffer): the frame capability in
+its buffer slot lets the kernel write it, and its first word is RAM.  The buffer
+lies in that one frame (`ipcBufferWords_within_alignment`). -/
 @[inline] def receiverHasBuffer (st : SystemState) (tcb : TCB) : Bool :=
-  (ipcBufferWordPAddr? st tcb 0 true).isSome
+  (ipcBufferWordPAddrIn? (lookupIPCBuffer true st tcb) 0).isSome
 
 /-- **The slot a receive path names** (seL4's `getReceiveSlots`): the
 `receiveCNode` word looked up in the receiver's CSpace (`lookupCap`, through
@@ -108,7 +108,7 @@ of the physical writes the step makes.  The word is in the receiver's buffer,
 which the transfer checked the kernel may write (`receiverHasBuffer`). -/
 def recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (badge : SeLe4n.Badge) :
     SystemState :=
-  match ipcBufferWordPAddr? st tcb (ipcBufferCapsOrBadgesWord i) true with
+  match ipcBufferWordPAddrIn? (lookupIPCBuffer true st tcb) (ipcBufferCapsOrBadgesWord i) with
   | some pa => Architecture.recordPhysicalWrites st [.storeUserWord pa badge.word]
   | none => st
 

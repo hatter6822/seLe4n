@@ -204,7 +204,7 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
     (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
     stepCovers e st (cancelReceiveBusyReply ctx ec st) ∧
       (cancelReceiveBusyReply ctx ec st).objects.invExt := by
-  rcases cancelReceiveBusyReply_cases ctx ec st with h | ⟨_, _, _, _, _, k, -, -, -, -, h⟩
+  rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩
   · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
   · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
 

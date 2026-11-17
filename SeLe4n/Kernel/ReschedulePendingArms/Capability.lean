@@ -421,39 +421,13 @@ theorem writeDeliveredFrameToTcb_keyFrame (st : SystemState) (tid : SeLe4n.Threa
    Architecture.writeDeliveredFrameToTcb_scheduler_eq st tid frame,
    writeDeliveredFrameToTcb_preserves_objects_invExt st tid frame hObjInv⟩
 
-theorem setIPCBufferOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (addr : SeLe4n.VAddr) (hObjInv : st.objects.invExt)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    capabilityKeyFrame st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  split at hStep
-  · contradiction
-  · split at hStep
-    · rename_i tcb hTcb
-      dsimp only [] at hStep
-      split at hStep
-      · rename_i hStore
-        cases hStep
-        exact storeObject_tcbKeyKeeping_keyFrame hObjInv
-          ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcb) hStore rfl
-      · contradiction
-    · contradiction
-
-theorem setThreadFaultHandlerOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cptr : SeLe4n.CPtr) (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') : capabilityKeyFrame st st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler SystemState.rewriteObject
-          exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
-            ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
+/-- A buffer-address write keeps every key input: a thread rewritten in a field
+no key reads. -/
+theorem updateTcb_ipcBuffer_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (addr : SeLe4n.VAddr) (hObjInv : st.objects.invExt) :
+    capabilityKeyFrame st (st.updateTcb tid (fun t => { t with ipcBuffer := addr })) :=
+  ⟨keyInputsEq_updateTcb hObjInv (fun _ => rfl), SystemState.updateTcb_scheduler _ _ _,
+   SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv⟩
 
 theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)

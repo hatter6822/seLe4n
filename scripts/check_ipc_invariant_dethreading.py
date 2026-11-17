@@ -342,7 +342,7 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "macro_rules"): 15,
     ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "syntax"): 3,
     ("SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean", "macro_rules"): 2,
-    ("SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean", "macro_rules"): 17,
+    ("SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean", "macro_rules"): 16,
     ("SeLe4n/Kernel/ReschedulePendingArms/Entry.lean", "macro_rules"): 5,
     ("SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean", "macro_rules"): 30,
     ("SeLe4n/Kernel/ReschedulePendingArms/Lifecycle.lean", "macro_rules"): 2,

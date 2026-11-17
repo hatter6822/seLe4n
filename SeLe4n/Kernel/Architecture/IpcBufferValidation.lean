@@ -7,394 +7,298 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Model.State
-import SeLe4n.Kernel.Architecture.VSpace
+import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
-/-! # D3: IPC Buffer Configuration
+/-! # seL4's `TCB_SetIPCBuffer`
 
-Implements `validateIpcBufferAddress` and `setIPCBufferOp` — the kernel
-operation for `seL4_TCB_SetIPCBuffer`. The IPC buffer is a user-space
-memory region used for message transfer; the kernel must validate that
-the specified address is mapped, writable, properly aligned, and within
-the thread's VSpace before accepting it.
+A thread's IPC buffer is two words of its TCB, as in seL4: the buffer's
+address (`TCB.ipcBuffer`, seL4's `tcbIPCBuffer`) and the capability to the
+frame that holds it, in the thread's buffer slot (`TCB.ipcBufferSlot`, seL4's
+`tcbBuffer`).  Every read and write of the buffer goes through that capability
+(`IpcBufferRead.lookupIPCBuffer`), never through the thread's address space.
 
-**Key design decisions:**
-- Validation looks up the VSpaceRoot directly from the TCB's `vspaceRoot`
-  ObjId rather than going through the ASID table, since the TCB already
-  carries the binding.
-- The thread does NOT need to be suspended — seL4 allows changing the IPC
-  buffer of a running thread (takes effect on next IPC operation).
-- `ipcBuffer` is the only TCB field modified, making frame preservation
-  trivial for all invariant bundles.
+`setIPCBufferOp` sets both as seL4-MCS's `decodeSetIPCBuffer` and
+`invokeTCB_ThreadControlCaps` do (WS-SX SX6.6):
+
+1. the frame capability is the caller's **extra capability 0**, resolved as a
+   slot through the caller's CSpace; a message naming none is refused
+   `truncatedMessage`;
+2. a nonzero buffer address derives the capability (`untypedDeriveRefused`,
+   seL4's `deriveCap`) and checks it as `checkValidIPCBuffer` does: a frame
+   capability (`illegalState`, seL4's `seL4_IllegalOperation`), not device
+   memory (`illegalState`), and the address aligned to the buffer's size
+   (`alignmentError`).  A zero address takes the null capability: the slot is
+   emptied and nothing is inserted;
+3. the buffer slot is then set as a space slot is (`threadSlotSet`): its old
+   capability deleted as `cteDelete` deletes it, finalising what it was the
+   last capability to, and the derived copy inserted with the derivation edge
+   from the source slot; the address is written into the thread.
+
+The thread need not be suspended: seL4 changes a running thread's buffer, and
+the change takes effect at its next IPC.  The address space is not consulted:
+seL4 does not walk it, and a buffer the thread has not mapped faults the thread
+when it touches it, not the kernel.
 -/
 
 namespace SeLe4n.Kernel.Architecture.IpcBufferValidation
 
 open SeLe4n
 open SeLe4n.Model
+open SeLe4n.Kernel
 
--- ============================================================================
--- D3-D: IPC buffer address validation
--- ============================================================================
+/-- The rights mask the buffer slot's copy takes: every right, so the copy keeps
+the rights of the capability it is derived from, as seL4's `deriveCap` keeps a
+frame capability's.  A constant, built once. -/
+def ipcBufferSlotRights : AccessRightSet :=
+  AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
 
-/-- D3-D: Validate an IPC buffer address for a given thread.
+/-- The CNode the buffer slot is set from: the source's, or, for a zero buffer
+address (seL4's null capability), the thread itself.  A thread is no CNode, so no
+slot lookup finds a capability there, and the slot set inserts nothing
+(`setIPCBufferPerform_zero`). -/
+@[inline] def ipcBufferSourceCNode (tid : ThreadId) (srcCNode : ObjId) (addr : VAddr) : ObjId :=
+  if addr.toNat = 0 then tid.toObjId else srcCNode
 
-Seven-step validation pipeline:
-1. Alignment: `addr.toNat % ipcBufferAlignment = 0`
-2. Canonical address: `addr.toNat < VAddr.canonicalBound` (ARM64 48-bit VA)
-3. Cross-page safety: guaranteed by step 1 — see `ipcBuffer_within_page`
-4. VSpace root validity: thread's `vspaceRoot` resolves to a VSpaceRoot object
-5. Mapping check: address is mapped in the thread's VSpace
-6. Write permission: mapped page has `write = true`
-7. Physical address bounds: mapped PA within `2^physicalAddressWidth` (AJ4-C)
+/-- The slot the buffer slot is set from (`ipcBufferSourceCNode`). -/
+@[inline] def ipcBufferSourceSlot (srcSlot : Slot) (addr : VAddr) : Slot :=
+  if addr.toNat = 0 then TCB.ipcBufferSlot else srcSlot
 
-AE4-H (U-32/A-IB01): Cross-page boundary safety is guaranteed by the
-alignment check (step 1): since `ipcBufferAlignment = 1024` divides the
-ARM64 page size (4096), any 1024-byte-aligned buffer of ≤1024 bytes fits
-entirely within a single 4KB page, as seL4 requires the buffer to lie in one
-frame. See `ipcBuffer_within_page` below.
+/-- **The writes of a buffer change**: the buffer slot set from the source slot
+(`threadSlotSet`, the old capability deleted and finalised, the derived copy
+inserted with its edge), then the buffer address written into the thread. -/
+@[inline] def setIPCBufferPerform (executingCore : Concurrency.CoreId) (st : SystemState)
+    (tid : ThreadId) (srcCNode : ObjId) (srcSlot : Slot) (addr : VAddr) : SystemState :=
+  (threadSlotSet executingCore st tid TCB.ipcBufferSlot (ipcBufferSourceCNode tid srcCNode addr)
+    (ipcBufferSourceSlot srcSlot addr) ipcBufferSlotRights 0).updateTcb tid
+    (fun t => { t with ipcBuffer := addr })
 
-AJ4-C (L-06): Step 7 checks the physical address returned by the VSpace
-lookup against the platform's physical address width from `MachineState`.
-Without this check, a mapped VA could theoretically reference a PA outside
-the valid physical memory range (e.g., ≥ 2^40 on the RPi5's Cortex-A76).
-
-Returns `.error` with appropriate error code on any failure. -/
-def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
-    (addr : VAddr) : Except KernelError Unit :=
-  -- Step 1: Alignment check
-  if addr.toNat % ipcBufferAlignment != 0 then .error .alignmentError
-  -- Step 2: Canonical address check
-  else if !addr.isCanonical then .error .addressOutOfBounds
-  else
-    -- Look up the thread's TCB.  AN10-B (DEF-AK7-F.reader.hygiene):
-    -- typed-helper migration. Both pre-AN10 `_` arms collapsed
-    -- wrong-variant and absent into the same error, so migration is
-    -- semantics-preserving.
-    match st.getTcb? tid with
-    | some tcb =>
-      -- Step 4: VSpace root validity
-      match st.getVSpaceRoot? tcb.vspaceRoot with
-      | some root =>
-        -- Step 5: Mapping check via VSpaceRoot.lookup, at the page holding
-        -- the buffer: the mappings are keyed by page base
-        -- (`VAddr.pageBase`), so a 512-aligned buffer inside a page is
-        -- found through its page, as the overflow reads find it
-        -- (`ipcBufferSlotPage`).
-        match root.lookup addr.pageBase with
-        | some (paddr, perms) =>
-          -- Step 6: Write permission check
-          if !perms.write then .error .translationFault
-          -- Step 7: Physical address bounds check (AJ4-C / L-06)
-          --
-          -- AK3-F (A-M02 / MEDIUM): Check the END of the IPC buffer fits
-          -- within the platform's physical address range, not just the start.
-          -- An IPC buffer occupies `[pa, pa + ipcBufferAlignment)` (1024
-          -- bytes, by AE4-H / `ipcBuffer_within_page`), `pa` the page's
-          -- physical base `paddr` plus the buffer's offset in the page. Without end-PA
-          -- validation, a buffer starting at `2^width − 256` would pass the
-          -- start-PA check but extend past the PA window into address
-          -- space that's undefined on hardware.
-          else if !(paddr.toNat + addr.pageOffset + ipcBufferAlignment ≤
-                    2^st.machine.physicalAddressWidth) then
-            .error .addressOutOfBounds
-          else .ok ()
-        | none => .error .translationFault
-      | none => .error (.invalidArgument 0)
-    | none => .error .objectNotFound
-
--- ============================================================================
--- D3-E: setIPCBufferOp — the complete operation
--- ============================================================================
-
-/-- D3-E: Set a thread's IPC buffer address after validation.
-
-Sequence:
-1. Validate the address (alignment, canonical, mapped, writable)
-2. Look up the target TCB
-3. Update `tcb.ipcBuffer := addr`
-4. Store the updated TCB
-
-The thread does NOT need to be suspended — seL4 allows changing the IPC
-buffer of a running thread (the change takes effect on next IPC operation).
-
-**WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
-`tid` parameter has type `ValidThreadId` to make sentinel-ID rejection
-non-bypassable at compile time. Uses `vtid.val` directly (no `let`
-binding) so `split at` tactics in preservation proofs can pattern-match
-the `Except` branches without going through a let-layer. -/
-def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
-    (addr : VAddr) : Except KernelError SystemState :=
-  match validateIpcBufferAddress st vtid.val addr with
-  | .error e => .error e
-  | .ok () =>
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    match st.getTcb? vtid.val with
-    | some tcb =>
-      -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
-      -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
-      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op (TCBs are never
-      -- VSpace roots), producing identical state.
-      let tcb' := { tcb with ipcBuffer := addr }
-      match storeObject vtid.val.toObjId (.tcb tcb') st with
-      | .ok ((), st') => .ok st'
-      | .error e => .error e
-    | none => .error .objectNotFound
-
-/-- WS-ZA ZA5.2: the compiled `setIPCBufferOp`.  When the store changes only
-`objects` (`storeLeavesIndexAndTypes`, every write to an existing TCB), the
-buffer address is written into the TCB in its slot (`updateTcb`), so on an
-exclusively owned state neither the TCB nor its table entry is rebuilt;
-otherwise the specification's body. -/
-def setIPCBufferOpImpl (st : SystemState) (vtid : ValidThreadId)
-    (addr : VAddr) : Except KernelError SystemState :=
-  match validateIpcBufferAddress st vtid.val addr with
-  | .error e => .error e
-  | .ok () =>
-    match st.getTcb? vtid.val with
-    | some tcb =>
-      if storeLeavesIndexAndTypes st vtid.val.toObjId .tcb then
-        .ok (st.updateTcb vtid.val (fun t => { t with ipcBuffer := addr }))
-      else
-      match storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
-      | .ok ((), st') => .ok st'
-      | .error e => .error e
-    | none => .error .objectNotFound
-
-@[csimp] theorem setIPCBufferOp_eq_impl : @setIPCBufferOp = @setIPCBufferOpImpl := by
-  funext st vtid addr
-  unfold setIPCBufferOp setIPCBufferOpImpl
-  cases validateIpcBufferAddress st vtid.val addr with
-  | error e => rfl
-  | ok u =>
-    cases hT : st.getTcb? vtid.val with
-    | none => rfl
-    | some tcb =>
-      simp only []
-      by_cases hL : storeLeavesIndexAndTypes st vtid.val.toObjId .tcb = true
-      · rw [if_pos hL, storeObject_eq_of_leaves (obj := .tcb { tcb with ipcBuffer := addr }) hL,
-          SystemState.updateTcb_eq_of_some hT]
-      · rw [if_neg hL]
-
-/-- WS-ZA ZA5.2: `setIPCBufferOp`'s checks, read before anything is written:
-the address validates, the thread is a stored TCB and the write changes only
-`objects`.  When they pass the operation is the in-slot write
-(`setIPCBufferOp_of_admitted`). -/
-@[inline] def setIPCBufferAdmitted (st : SystemState) (vtid : ValidThreadId)
+/-- **seL4's `checkValidIPCBuffer` on the capability derived from the source
+slot**, for a nonzero address: admitted when the slot holds a capability the
+derivation accepts, naming a frame of RAM, and the address is aligned to the
+buffer's size. -/
+@[inline] def ipcBufferSourceAdmitted (st : SystemState) (srcCNode : ObjId) (srcSlot : Slot)
     (addr : VAddr) : Bool :=
-  (match validateIpcBufferAddress st vtid.val addr with
-    | .ok () => true
-    | .error _ => false) &&
-  (st.getTcb? vtid.val).isSome && storeLeavesIndexAndTypes st vtid.val.toObjId .tcb
+  match SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } with
+  | none => false
+  | some cap =>
+    !untypedDeriveRefused st { cnode := srcCNode, slot := srcSlot } cap &&
+    match cap.target with
+    | .object id =>
+      match st.getFrame? id with
+      | some f => !f.isDevice && addr.toNat % ipcBufferAlignment == 0
+      | none => false
+    | _ => false
 
-theorem setIPCBufferOp_of_admitted (st : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (h : setIPCBufferAdmitted st vtid addr = true) :
-    setIPCBufferOp st vtid addr =
-      .ok (st.updateTcb vtid.val (fun t => { t with ipcBuffer := addr })) := by
-  rw [setIPCBufferOp_eq_impl]
+/-- **A buffer change from the source slot `srcCNode`/`srcSlot`**, refused,
+committing nothing, when the thread is not a stored TCB (`objectNotFound`) or,
+for a nonzero address, as `checkValidIPCBuffer` refuses the derived capability:
+an empty slot or a capability that is no frame's, or a frame of device memory
+(`illegalState`), an untyped capability the derivation refuses
+(`revocationRequired`), an unaligned address (`alignmentError`). -/
+def setIPCBufferFrom (executingCore : Concurrency.CoreId) (st : SystemState)
+    (vtid : ValidThreadId) (srcCNode : ObjId) (srcSlot : Slot) (addr : VAddr) :
+    Except KernelError SystemState :=
+  match st.getTcb? vtid.val with
+  | none => .error .objectNotFound
+  | some _ =>
+    if addr.toNat = 0 then .ok (setIPCBufferPerform executingCore st vtid.val srcCNode srcSlot addr)
+    else
+      match SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } with
+      | none => .error .illegalState
+      | some cap =>
+        if untypedDeriveRefused st { cnode := srcCNode, slot := srcSlot } cap then
+          .error .revocationRequired
+        else
+          match cap.target with
+          | .object id =>
+            match st.getFrame? id with
+            | some f =>
+              if f.isDevice then .error .illegalState
+              else if addr.toNat % ipcBufferAlignment != 0 then .error .alignmentError
+              else .ok (setIPCBufferPerform executingCore st vtid.val srcCNode srcSlot addr)
+            | none => .error .illegalState
+          | _ => .error .illegalState
+
+/-- **`.tcbSetIPCBuffer`: seL4's `TCB_SetIPCBuffer`** — the frame capability is
+the caller's extra capability 0 (`bufferCap?`, seL4's `excaprefs[0]`; none is
+`truncatedMessage`), resolved as a slot through the caller's CSpace, then the
+change from that slot (`setIPCBufferFrom`). -/
+def setIPCBufferOp (executingCore : Concurrency.CoreId) (st : SystemState)
+    (vtid : ValidThreadId) (callerTid : ThreadId) (bufferCap? : Option CPtr) (addr : VAddr) :
+    Except KernelError SystemState :=
+  match bufferCap? with
+  | none => .error .truncatedMessage
+  | some cptr =>
+    match st.getTcb? callerTid with
+    | none => .error .objectNotFound
+    | some callerTcb =>
+      match lookupSlot callerTcb cptr st with
+      | .error f => .error (.failedLookup false f)
+      | .ok src => setIPCBufferFrom executingCore st vtid src.cnode src.slot addr
+
+/-- **`setIPCBufferFrom`'s checks**, read before anything is written: the
+thread is a stored TCB, and a nonzero address's source is admitted.  When they
+pass the operation is its writes (`setIPCBufferFrom_of_admitted`). -/
+@[inline] def setIPCBufferAdmitted (st : SystemState) (vtid : ValidThreadId) (srcCNode : ObjId)
+    (srcSlot : Slot) (addr : VAddr) : Bool :=
+  (st.getTcb? vtid.val).isSome &&
+    (addr.toNat == 0 || ipcBufferSourceAdmitted st srcCNode srcSlot addr)
+
+/-- What an admitted source is: a capability the derivation accepts, naming a
+frame of RAM, and an aligned address. -/
+theorem ipcBufferSourceAdmitted_spec {st : SystemState} {srcCNode : ObjId} {srcSlot : Slot}
+    {addr : VAddr} (h : ipcBufferSourceAdmitted st srcCNode srcSlot addr = true) :
+    ∃ cap id f, SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap ∧
+      untypedDeriveRefused st { cnode := srcCNode, slot := srcSlot } cap = false ∧
+      cap.target = .object id ∧ st.getFrame? id = some f ∧ f.isDevice = false ∧
+      addr.toNat % ipcBufferAlignment = 0 := by
+  unfold ipcBufferSourceAdmitted at h
+  split at h
+  · cases h
+  · rename_i cap hL
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨hU, h⟩ := h
+    split at h
+    · rename_i id hTg
+      split at h
+      · rename_i f hF
+        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+        exact ⟨cap, id, f, hL, hU, hTg, hF, h.1, h.2⟩
+      · cases h
+    · cases h
+
+theorem setIPCBufferFrom_of_admitted {ec : Concurrency.CoreId} {st : SystemState}
+    {vtid : ValidThreadId} {srcCNode : ObjId} {srcSlot : Slot} {addr : VAddr}
+    (h : setIPCBufferAdmitted st vtid srcCNode srcSlot addr = true) :
+    setIPCBufferFrom ec st vtid srcCNode srcSlot addr =
+      .ok (setIPCBufferPerform ec st vtid.val srcCNode srcSlot addr) := by
   unfold setIPCBufferAdmitted at h
-  unfold setIPCBufferOpImpl
-  cases hV : validateIpcBufferAddress st vtid.val addr with
-  | error e => simp [hV] at h
-  | ok u =>
-    cases hT : st.getTcb? vtid.val with
-    | none => simp [hV, hT] at h
-    | some tcb =>
-      have hL : storeLeavesIndexAndTypes st vtid.val.toObjId .tcb = true := by
-        simpa [hV, hT] using h
-      simp only [hL, ↓reduceIte]
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+  obtain ⟨hT, hA⟩ := h
+  unfold setIPCBufferFrom
+  obtain ⟨t, hT⟩ := Option.isSome_iff_exists.mp hT
+  rw [hT]
+  dsimp only
+  by_cases h0 : addr.toNat = 0
+  · rw [if_pos h0]
+  · rw [if_neg h0]
+    obtain ⟨cap, id, f, hL, hU, hTg, hF, hD, hAl⟩ :=
+      ipcBufferSourceAdmitted_spec (hA.resolve_left h0)
+    simp only [hL, hU, hTg, hF, hD, hAl, Bool.false_eq_true, ↓reduceIte, bne_self_eq_false]
 
--- ============================================================================
--- D3-G: Validation correctness theorems
--- ============================================================================
+/-- **What a successful buffer change from a slot consists of**: the thread was
+a stored TCB, a nonzero address's source was admitted, and the state is the
+change's writes. -/
+theorem setIPCBufferFrom_ok {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : ValidThreadId} {srcCNode : ObjId} {srcSlot : Slot} {addr : VAddr}
+    (h : setIPCBufferFrom ec st vtid srcCNode srcSlot addr = .ok st') :
+    ∃ t, st.getTcb? vtid.val = some t ∧
+      (addr.toNat = 0 ∨ ipcBufferSourceAdmitted st srcCNode srcSlot addr = true) ∧
+      st' = setIPCBufferPerform ec st vtid.val srcCNode srcSlot addr := by
+  unfold setIPCBufferFrom at h
+  cases hT : st.getTcb? vtid.val with
+  | none => rw [hT] at h; cases h
+  | some t =>
+    rw [hT] at h
+    dsimp only at h
+    refine ⟨t, rfl, ?_⟩
+    by_cases h0 : addr.toNat = 0
+    · rw [if_pos h0] at h; cases h; exact ⟨.inl h0, rfl⟩
+    · rw [if_neg h0] at h
+      cases hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } with
+      | none => rw [hL] at h; cases h
+      | some cap =>
+        rw [hL] at h
+        dsimp only at h
+        cases hU : untypedDeriveRefused st { cnode := srcCNode, slot := srcSlot } cap with
+        | true => rw [hU] at h; cases h
+        | false =>
+          rw [hU] at h
+          simp only [Bool.false_eq_true, ↓reduceIte] at h
+          cases hTg : cap.target with
+          | object id =>
+            rw [hTg] at h
+            dsimp only at h
+            cases hF : st.getFrame? id with
+            | none => rw [hF] at h; cases h
+            | some f =>
+              rw [hF] at h
+              dsimp only at h
+              cases hD : f.isDevice with
+              | true => rw [hD] at h; cases h
+              | false =>
+                rw [hD] at h
+                by_cases hAl : addr.toNat % ipcBufferAlignment = 0
+                · simp only [hAl, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+                    Except.ok.injEq] at h
+                  refine ⟨.inr ?_, h.symm⟩
+                  simp only [ipcBufferSourceAdmitted, hL, hU, hTg, hF, hD, hAl, Bool.not_false,
+                    Bool.true_and, beq_self_eq_true, Bool.and_self]
+                · have : (addr.toNat % ipcBufferAlignment != 0) = true := by simpa using hAl
+                  simp only [this, Bool.false_eq_true, ↓reduceIte] at h; cases h
+          | _ => rw [hTg] at h; cases h
 
-/-- D3-G: If validation succeeds, the address is aligned. -/
-theorem validateIpcBufferAddress_implies_aligned
-    (st : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : validateIpcBufferAddress st tid addr = .ok ()) :
-    addr.toNat % ipcBufferAlignment = 0 := by
-  unfold validateIpcBufferAddress at hOk
-  split at hOk
-  · exact absurd hOk (by simp)
-  · next h =>
-    simp only [bne, Bool.not_eq_true, BEq.beq, Bool.not_eq_false'] at h
-    exact of_decide_eq_true h
+/-- **A buffer change goes through the slot extra capability 0 names**: the
+change from that slot (`setIPCBufferFrom`). -/
+theorem setIPCBufferOp_ok {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : ValidThreadId} {callerTid : ThreadId} {bufferCap? : Option CPtr} {addr : VAddr}
+    (h : setIPCBufferOp ec st vtid callerTid bufferCap? addr = .ok st') :
+    ∃ srcCNode srcSlot, setIPCBufferFrom ec st vtid srcCNode srcSlot addr = .ok st' := by
+  unfold setIPCBufferOp at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · exact ⟨_, _, h⟩
 
-/-- D3-G: If validation succeeds, the address is canonical (within 48-bit VA space). -/
-theorem validateIpcBufferAddress_implies_canonical
-    (st : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : validateIpcBufferAddress st tid addr = .ok ()) :
-    addr.isCanonical = true := by
-  unfold validateIpcBufferAddress at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · simp at hOk
-    · simp_all
+/-- **What a successful buffer change consists of**: the thread was a stored
+TCB, a nonzero address's source slot was admitted, and the state is the change's
+writes from that slot. -/
+theorem setIPCBufferOp_ok_perform {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : ValidThreadId} {callerTid : ThreadId} {bufferCap? : Option CPtr} {addr : VAddr}
+    (h : setIPCBufferOp ec st vtid callerTid bufferCap? addr = .ok st') :
+    ∃ srcCNode srcSlot t, st.getTcb? vtid.val = some t ∧
+      (addr.toNat = 0 ∨ ipcBufferSourceAdmitted st srcCNode srcSlot addr = true) ∧
+      st' = setIPCBufferPerform ec st vtid.val srcCNode srcSlot addr := by
+  obtain ⟨c, s, h⟩ := setIPCBufferOp_ok h
+  obtain ⟨t, hT, hA, rfl⟩ := setIPCBufferFrom_ok h
+  exact ⟨c, s, t, hT, hA, rfl⟩
 
-/-- D3-G / AK3-F: If validation succeeds, the address is mapped in the
-    thread's VSpace with write permission and the ENTIRE IPC buffer
-    (`[pa, pa + ipcBufferAlignment)`, `pa` the page's `paddr` plus the
-    buffer's offset in it) fits within the platform's
-    physical address range.
-
-    AK3-F (A-M02 / MEDIUM): Strengthened from `paddr.toNat < 2^width` to
-    `paddr.toNat + ipcBufferAlignment ≤ 2^width` so every byte accessed by
-    the kernel IPC subsystem is within valid PA space. -/
-theorem validateIpcBufferAddress_implies_mapped_writable
-    (st : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : validateIpcBufferAddress st tid addr = .ok ()) :
-    ∃ tcb root paddr perms,
-      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-      st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) ∧
-      root.lookup addr.pageBase = some (paddr, perms) ∧
-      perms.write = true ∧
-      paddr.toNat + addr.pageOffset + ipcBufferAlignment ≤
-        2^st.machine.physicalAddressWidth := by
-  unfold validateIpcBufferAddress at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · contradiction
-    · rename_i hAlign hCanon
-      split at hOk
-      · rename_i tcb hTcb
-        split at hOk
-        · rename_i root hVs
-          split at hOk
-          · rename_i hLookup
-            split at hOk
-            · contradiction
-            · rename_i hWrite
-              split at hOk
-              · contradiction
-              · rename_i hPA
-                simp only [Bool.not_eq_true, Bool.not_eq_false'] at hWrite hPA
-                -- AN10-B: post-migration `validateIpcBufferAddress` reads
-                -- via `getTcb?` and `getVSpaceRoot?`; bridge each typed-
-                -- helper hypothesis to the raw lookup form expected by
-                -- the post-condition.
-                have hTcbRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-                  (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-                have hVsRaw : st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) :=
-                  (SystemState.getVSpaceRoot?_eq_some_iff st tcb.vspaceRoot root).mp hVs
-                exact ⟨_, _, _, _, hTcbRaw, hVsRaw, hLookup,
-                  by simp_all, by simp_all [decide_eq_true_eq]⟩
-          · contradiction
-        · contradiction
-      · contradiction
+/-- **The source a buffer change copies from names no untyped**: a zero
+address's is the thread's own slot, which no slot lookup finds (a thread is no
+CNode), and a nonzero address's names a frame. -/
+theorem setIPCBufferSource_notUntyped {st : SystemState} {tid : ThreadId} {t : TCB}
+    {srcCNode : ObjId} {srcSlot : Slot} {addr : VAddr} (hT : st.getTcb? tid = some t)
+    (hA : addr.toNat = 0 ∨ ipcBufferSourceAdmitted st srcCNode srcSlot addr = true) :
+    ∀ cap, SystemState.lookupSlotCap st
+        ⟨ipcBufferSourceCNode tid srcCNode addr, ipcBufferSourceSlot srcSlot addr⟩ = some cap →
+      ∀ u, cap.target = .object u → st.getUntyped? u = none := by
+  intro cap hL u hu
+  unfold ipcBufferSourceCNode ipcBufferSourceSlot at hL
+  by_cases h0 : addr.toNat = 0
+  · simp only [h0, ↓reduceIte] at hL
+    have hO := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+    simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hO] at hL
+  · simp only [h0, ↓reduceIte] at hL
+    obtain ⟨cap', id, f, hL', -, hTg, hF, -⟩ := ipcBufferSourceAdmitted_spec (hA.resolve_left h0)
+    rw [hL] at hL'; cases hL'
+    rw [hTg] at hu; cases hu
+    unfold SystemState.getFrame? at hF; unfold SystemState.getUntyped?
+    split at hF <;> simp_all
 
 /-- AE4-H (U-32/A-IB01): IPC buffer cross-page safety.
 
 The IPC buffer (`ipcBufferAlignment`, 1024 bytes) never crosses a page
 boundary when the address is aligned to its size. Since 1024 divides the
 ARM64 page size (4096 = 1024 × 4), any 1024-aligned offset within a page
-leaves at least 1024 bytes before the next page boundary.
-
-This theorem guarantees that a single VSpace page-table lookup at `addr`
-covers the entire IPC buffer region `[addr, addr + 1024)`. -/
+leaves at least 1024 bytes before the next page boundary, so the buffer lies in
+the one frame its capability names. -/
 theorem ipcBuffer_within_page (addr : VAddr)
     (hAligned : addr.toNat % ipcBufferAlignment = 0) :
     addr.toNat / 4096 = (addr.toNat + ipcBufferAlignment - 1) / 4096 := by
-  -- ipcBufferAlignment = 1024. Since 1024 | addr, addr % 4096 ∈ {0, 1024, 2048, 3072}.
-  -- addr + 1023 has the same page index because 3072 + 1023 = 4095 < 4096.
   simp only [ipcBufferAlignment] at hAligned ⊢
   omega
-
--- ============================================================================
--- D3-F: Transport lemmas — setIPCBufferOp preserves non-object state fields
--- ============================================================================
-
-/-- D3-F: Helper to extract the success branch of setIPCBufferOp. -/
-private theorem setIPCBufferOp_success_shape
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    ∃ tcb, st.objects[vtid.val.toObjId]? = some (.tcb tcb) ∧
-      validateIpcBufferAddress st vtid.val addr = .ok () := by
-  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`; bridge
-  -- the typed-helper hypothesis to the raw lookup form expected by the
-  -- post-condition.
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · rename_i hVal
-    split at hOk
-    · rename_i tcb hTcbTyped
-      have hTcbRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcbTyped
-      exact ⟨tcb, hTcbRaw, hVal⟩
-    · contradiction
-
-/-- D3-F: `setIPCBufferOp` preserves the scheduler state.
-    The operation only modifies `objects`, `objectIndex`, `objectIndexSet`,
-    and `lifecycle`; all other SystemState fields are untouched. -/
-theorem setIPCBufferOp_scheduler_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.scheduler = st.scheduler := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · cases hOk; rfl
-    · contradiction
-
-/-- D3-F: `setIPCBufferOp` preserves IRQ handlers. -/
-theorem setIPCBufferOp_irqSignalLines_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.irqSignalLines = st.irqSignalLines := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · cases hOk; rfl
-    · contradiction
-
-/-- D3-F: `setIPCBufferOp` preserves machine state. -/
-theorem setIPCBufferOp_machine_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.machine = st.machine := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · -- AH3-B: Unfold storeObject — machine is not in the `with` clause
-      unfold storeObject at hOk; simp only [] at hOk; cases hOk; rfl
-    · contradiction
-
-/-- D3-F/AH3-B: `setIPCBufferOp` preserves the ASID table. After refactoring to
-    `storeObject`, the ASID table is preserved because TCBs are not VSpaceRoots
-    (both the clear and set branches of `storeObject.asidTable` are no-ops). -/
-theorem setIPCBufferOp_asidTable_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.asidTable = st.asidTable := by
-  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`; bridge
-  -- to the raw lookup form expected by `storeObject`'s asidTable
-  -- match-on-objects branch.
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · rename_i tcb hLookup
-      have hRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
-      unfold storeObject at hOk; simp only [] at hOk; cases hOk
-      simp only [hRaw, storeKeepsAsid, Bool.false_eq_true, ↓reduceIte]
-    · contradiction
-
-/-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function
-    of its inputs. -/
-theorem setIPCBufferOp_deterministic
-    (st : SystemState) (vtid : ValidThreadId) (addr : VAddr) :
-    ∀ st₁ st₂,
-      setIPCBufferOp st vtid addr = .ok st₁ →
-      setIPCBufferOp st vtid addr = .ok st₂ →
-      st₁ = st₂ := by
-  intro st₁ st₂ h₁ h₂
-  rw [h₁] at h₂
-  exact Except.ok.inj h₂
 
 end SeLe4n.Kernel.Architecture.IpcBufferValidation

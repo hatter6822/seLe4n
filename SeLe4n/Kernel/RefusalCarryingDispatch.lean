@@ -494,7 +494,7 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hRef : gate.lookupSlot st = .ok ref) :
     signalOperandArmThenTaintR ctx tid executingCore gate.requiredRight
         (SystemState.lookupSlotCap st ref) st =
-      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate none
         (signalTaintPlanOf st tid decoded (SystemState.lookupSlotCap st ref))
         preEpoch preLength st.declassificationTaint) st := by
   simp only [signalOperandArmThenTaintR, dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
@@ -731,7 +731,7 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     waitOperandArmThenTaintR ctx tid executingCore gate.requiredRight
         (SystemState.lookupSlotCap st ref) st =
-      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate none
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hWait, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
@@ -755,15 +755,30 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
+/-- Whether a resolved slot holds no capability user space may hold: an empty
+slot, or a capability naming a reserved idle object.  The resolution
+(`syscallResolveCap`) refuses either with `.invalidCapability`. -/
+@[inline] def capHeldNone (c : Option Capability) : Bool :=
+  match c with
+  | none => true
+  | some cap => SeLe4n.Kernel.capTargetsReservedKernelObject cap
+
 /-- `dispatchSyscallChecked` for a syscall whose arm and taint step are given as
 `arm`, refusing in the state it was handed.  It resolves the operand once, for
-the gate and the taint step alike, and hands `arm` the capability found; the
-arm captures the taint words its step reads from the state it is handed
-(`withTaintWordsAt`, `dispatchOperandCheckedR_eq`).  It reads the decode
-only through the operand address and the required right, so the entry hands it
-both straight from the register file and builds no decode record. -/
+the gate and the taint step alike; then the caller's `xc` extra capabilities
+are looked up (seL4's `lookupExtraCaps`, after `lookupCapAndSlot` and before
+the arm's type and right checks), the first failure refused as
+`.failedLookup false`; then a slot holding no capability user space may hold
+is refused (`syscallResolveRefusal`: seL4's `lookupCapAndSlot` hands the null
+capability on, and `decodeInvocation` refuses it); and `arm` is handed the
+capability found.  The arm
+captures the taint words its step reads from the state it is handed
+(`withTaintWordsAt`, `dispatchOperandCheckedR_eq`).  It reads the decode only
+through the operand address, the extra-capability count and the required
+right, so the entry hands it all three straight from the register file and
+builds no decode record. -/
 @[inline] def dispatchOperandCheckedR (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
     (arm : Option Capability → RefusalCarrying Unit) : RefusalCarrying Unit :=
   fun st =>
     if !(st.scheduler.currentOnCore executingCore).isEqSome tid then .error (.illegalState, st)
@@ -773,16 +788,20 @@ both straight from the register file and builds no decode record. -/
       lookupSlotK tcb capAddr st
         (fun t a b c => .error (.failedLookup false (LookupFault.ofWords t a b c), st))
         (fun cnode slot =>
-          arm (SystemState.lookupSlotCap st { cnode := cnode, slot := slot }) st)
+          let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
+          match extraCapsLookupFault? st tcb xc with
+          | some (_, f) => .error (.failedLookup false f, st)
+          | none => if capHeldNone c then .error (.invalidCapability 0, st) else arm c st)
     | some _ => .error (.illegalState, st)
     | none   => .error (.objectNotFound, st)
 
 /-- **The state a refusal of `dispatchOperandCheckedR` reports**, given the one
 `armReport` names for each capability the operand resolves to: that, once the
-caller is current, a thread and its operand resolves; the state it was handed
-otherwise, since every refusal before the arm writes nothing. -/
+caller is current, a thread, its operand resolves to a capability it may hold
+and its extra capabilities resolve; the state it was handed otherwise, since
+every refusal before the arm writes nothing. -/
 def operandReport (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId)
+    (executingCore : Concurrency.CoreId) (xc : Nat)
     (armReport : Option Capability → SystemState → SystemState) (st : SystemState) :
     SystemState :=
   if st.scheduler.currentOnCore executingCore ≠ some tid then st
@@ -790,19 +809,28 @@ def operandReport (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     match lookupSlot tcb capAddr st with
-    | .ok ref => armReport (SystemState.lookupSlotCap st ref) st
+    | .ok ref =>
+      if capHeldNone (SystemState.lookupSlotCap st ref) then st
+      else
+        match extraCapsLookupFault? st tcb xc with
+        | some _ => st
+        | none => armReport (SystemState.lookupSlotCap st ref) st
     | .error _ => st
   | _ => st
 
 /-- An arm reporting the state it was handed leaves the operand's report there. -/
 theorem operandReport_self (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (st : SystemState) :
-    operandReport capAddr tid executingCore (fun _ s => s) st = st := by
+    (executingCore : Concurrency.CoreId) (xc : Nat) (st : SystemState) :
+    operandReport capAddr tid executingCore xc (fun _ s => s) st = st := by
   unfold operandReport
   split
   · rfl
   · split
-    · split <;> rfl
+    · split
+      · split
+        · rfl
+        · split <;> rfl
+      · rfl
     · rfl
 
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, at one state, its
@@ -823,11 +851,13 @@ theorem dispatchOperandCheckedR_eq_reporting_at (ctx : LabelingContext)
       arm (SystemState.lookupSlotCap st ref) st =
         RefusalCarrying.ofKernelReporting (armReport (SystemState.lookupSlotCap st ref))
           (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
           st.declassificationAudit.length st.declassificationTaint) st) :
-    dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
-      RefusalCarrying.ofKernelReporting (operandReport decoded.capAddr tid executingCore armReport)
+    dispatchOperandCheckedR decoded.capAddr tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) arm st =
+      RefusalCarrying.ofKernelReporting
+        (operandReport decoded.capAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) armReport)
         (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   rw [dispatchSyscallChecked_eq_impl]
   simp only [dispatchOperandCheckedR, RefusalCarrying.ofKernelReporting, dispatchSyscallCheckedImpl,
@@ -842,13 +872,44 @@ theorem dispatchOperandCheckedR_eq_reporting_at (ctx : LabelingContext)
     · next tcb hTcb =>
       simp only [hTcb]
       rw [lookupSlotK_eq]
+      have hXf : decodedExtraCapsFault? st tid decoded =
+          extraCapsLookupFault? st tcb (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) :=
+        callerExtraCapsFault?_of_tcb hTcb _
+      rw [hXf]
       rcases hRef : lookupSlot tcb decoded.capAddr st with
-        f | ref
+        f | ⟨cn, sl⟩
       · simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
           SyscallGate.lookupSlot_mk, hRef, LookupFault.ofWords_word]
-      · have h := hArm tcb ref hTcb hRef
-        simp only [RefusalCarrying.ofKernelReporting] at h
-        exact h
+        cases extraCapsLookupFault? st tcb
+          (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) <;> rfl
+      · dsimp only
+        cases hX : extraCapsLookupFault? st tcb (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) with
+        | some p =>
+          obtain ⟨a, f⟩ := p
+          simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
+            SyscallGate.lookupSlot_mk, hRef]
+          cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+          | none => simp [syscallResolveRefusal, capHeldNone]
+          | some cap =>
+            by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;>
+              simp [hRes, syscallResolveRefusal, capHeldNone]
+        | none =>
+          dsimp only
+          by_cases hN : capHeldNone (SystemState.lookupSlotCap st { cnode := cn, slot := sl }) = true
+          · rw [if_pos hN, if_pos hN]
+            simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap,
+              SyscallGate.lookupSlot_mk, hRef]
+            revert hN
+            cases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
+            | none => intro _; rfl
+            | some cap =>
+              intro hN
+              simp only [capHeldNone] at hN
+              simp only [hN, ↓reduceIte]
+          · rw [if_neg hN, if_neg hN]
+            have h := hArm tcb ⟨cn, sl⟩ hTcb hRef
+            simp only [RefusalCarrying.ofKernelReporting] at h
+            exact h
     · next o hNo hTcb =>
       simp only [hTcb]
       cases o <;> first | rfl | exact absurd rfl (hNo _)
@@ -875,14 +936,15 @@ theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
       lookupSlot tcb decoded.capAddr st = .ok ref →
       arm (SystemState.lookupSlotCap st ref) st =
         RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
           st.declassificationAudit.length st.declassificationTaint) st) :
-    dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
+    dispatchOperandCheckedR decoded.capAddr tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) arm st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   rw [dispatchOperandCheckedR_eq_reporting_at ctx decoded tid executingCore arm (fun _ s => s)
     hNotYield st (fun tcb ref hT hR => hArm tcb ref hT hR),
-    RefusalCarrying.ofKernelReporting_of_fixed _ (operandReport_self _ _ _ st)]
+    RefusalCarrying.ofKernelReporting_of_fixed _ (operandReport_self _ _ _ _ st)]
 
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, given an `arm` that is
 the specification's arm and taint step on every capability the operand resolves
@@ -897,10 +959,11 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
       lookupSlot tcb decoded.capAddr st = .ok ref →
       arm (SystemState.lookupSlotCap st ref) st =
         RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
-          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
           st.declassificationAudit.length st.declassificationTaint) st) :
-    dispatchOperandCheckedR decoded.capAddr tid executingCore arm =
+    dispatchOperandCheckedR decoded.capAddr tid executingCore
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) arm =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
   exact dispatchOperandCheckedR_eq_at ctx decoded tid executingCore arm hNotYield st
@@ -922,8 +985,8 @@ A specification: the compiled entry runs the arm out of line
 (`syscallEntryRoutedK`), so no code is generated for it. -/
 noncomputable def dispatchSignalCheckedR (ctx : LabelingContext)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore
+    (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
     (signalOperandArmThenTaintR ctx tid executingCore
       (syscallRequiredRight .notificationSignal))
 
@@ -931,7 +994,7 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSig : decoded.syscallId = .notificationSignal) :
-    dispatchSignalCheckedR ctx decoded.capAddr tid executingCore =
+    dispatchSignalCheckedR ctx decoded.capAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hSig]; decide)
   intro st tcb ref hTcb hRef
@@ -950,15 +1013,15 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
 A specification: the compiled entry runs the arm out of line
 (`syscallEntryRoutedK`), so no code is generated for it. -/
 noncomputable def dispatchWaitCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
-  dispatchOperandCheckedR capAddr tid executingCore
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore xc
     (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))
 
 theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
     (hWait : decoded.syscallId = .notificationWait) :
-    dispatchWaitCheckedR ctx decoded.capAddr tid executingCore =
+    dispatchWaitCheckedR ctx decoded.capAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hWait]; decide)
   intro st tcb ref hTcb hRef
@@ -1053,7 +1116,7 @@ built pair of pairs, so the parts go to the key hook's parts form
       | .bound scId | .donated scId _ =>
         match st.getSchedContextWitnessed? scId with
         | some ⟨sc, hSc⟩ =>
-          let d := effectiveDeadline st tcb
+          let d := tcb.deadline
           .ok (scheduleEffectiveOnCoreTotal (markKeyChangeParts
             (spendBudgetOnCore st c tid scId sc hSc st.machine.timer sc.budget.val) tid
             tcb.boostedPriority d tcb.domain) c)

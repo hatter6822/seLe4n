@@ -331,8 +331,7 @@ private def tid0 : SeLe4n.ThreadId := ThreadId.ofNat 100
 
 /-- A CBS SchedContext bound to thread `tid0`, budget 100, period 1000, remaining 50. -/
 private def sc0 : SchedContext :=
-  { scId := scId0, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨5⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tid0), isActive := true,
+  { scId := scId0, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tid0), isActive := true,
     refillTailCount := 0 }
 
 /-- `tid0`'s TCB, bound to `sc0` and pinned (`cpuAffinity`) to core 1. -/
@@ -926,8 +925,7 @@ private def tidLifecycle : SeLe4n.ThreadId := ThreadId.ofNat 110
 /-- An **unbound, inactive** SchedContext — the shape `schedContextBind`'s guard
 admits. -/
 private def scLifecycle : SchedContext :=
-  { scId := scIdLifecycle, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨7⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := 0,
+  { scId := scIdLifecycle, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := 0,
     isActive := false, refillTailCount := 0 }
 
 /-- `tidLifecycle`'s TCB: unbound, same domain as `scLifecycle`, pinned to core 1. -/
@@ -961,8 +959,7 @@ orphan-freedom regardless.) -/
 private def tidDangling : SeLe4n.ThreadId := ThreadId.ofNat 120
 private def scIdDangling : SchedContextId := SchedContextId.ofNat 220
 private def scDangling : SchedContext :=
-  { scId := scIdDangling, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨6⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := scIdDangling, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some tidDangling), isActive := true, refillTailCount := 0 }
 private def stDangling : SystemState :=
   let base := (BootstrapBuilder.empty.withObject scIdDangling.toObjId
@@ -1224,7 +1221,7 @@ private def runSchedContextFootprintScenarios : IO Unit := do
     (hasRunQueueWriteLock fpConfigure core1
       && (schedContextConfigureReplenishCores stCbs scId0.toObjId).all
           (fun c => (schedContextWriteSet stCbs scId0.toObjId).contains c))
-  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 5 0 0 stCbs with
+  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 0 0 0 stCbs with
   | .error e =>
       assertBool s!"C3b-ii: the configure must succeed (got {repr e})" false
   | .ok ((), stC) =>
@@ -1315,11 +1312,11 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
   -- (iv) The undeclared arms, on a state and operands that would satisfy a
   -- declared one — so the `none` is the inventory's answer rather than a
   -- missing operand's.
-  assertBool "NEGATIVE: eighteen arms declare nothing on fully-supplied operands"
+  assertBool "NEGATIVE: seventeen arms declare nothing on fully-supplied operands"
     ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .mintReplyCap,
       .vspaceMap, .vspaceUnmap, .vspaceUnifyInstruction,
       .serviceRegister, .serviceRevoke, .serviceQuery,
-      .tcbSetIPCBuffer, .tcbSetFaultHandler,
+      .tcbSetIPCBuffer,
       .tcbBindNotification, .tcbUnbindNotification,
       .declassify, .declassifySignal, .auditRead, .auditDrain].all fun sid =>
         decide (declaredSchedFootprintSyscall sid = false) &&

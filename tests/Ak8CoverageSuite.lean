@@ -86,17 +86,14 @@ home it returns the thread's field at every binding; the lookup survives because
 its FAILURE is the error this `Checked` variant exists to surface (AK8-E.3), not
 because it decides the priority.
 
-The fixture is deliberately a **drifted** state -- the thread at 5, its
-reservation at 77 -- so the row discriminates: on a state satisfying
-`boundThreadPriorityConsistent` the two readings agree, and only here do they
-part.  A revert of the one-home collapse fails this row. -/
+Since WS-SX SX6.4 a scheduling context carries no priority at all, so the
+thread's field (5) is the only reading there is. -/
 def test_checkedPriority_bound_reads_thread_field : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 200
   let sc : Kernel.SchedContext :=
     { scId := scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨77⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := 0, isActive := false
       refillTailCount := 0 }
   let tcb : TCB :=
@@ -259,8 +256,7 @@ def test_AK8_H_unbind_missing_tcb_no_partial_mutation : IO Bool := do
   let sc : Kernel.SchedContext :=
     { scId := SchedContextId.ofObjId scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨0⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some danglingTid)
       isActive := true
       refillTailCount := 0 }
@@ -287,8 +283,7 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
   let sc : Kernel.SchedContext :=
     { scId := SchedContextId.ofObjId scId
       budget := ⟨100⟩, period := ⟨1000⟩
-      priority := ⟨0⟩, deadline := ⟨0⟩
-      domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+      budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some tid)
       isActive := true
       refillTailCount := 0 }

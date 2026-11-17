@@ -2669,7 +2669,7 @@ A misbehaving or crashed server can cause the caller to block forever. In
 production seL4 deployments, this is mitigated by:
 1. A watchdog/monitor thread that tracks call durations and faults
    unresponsive servers.
-2. The fault handler endpoint (`TCB.faultHandler`) which receives fault
+2. The fault handler endpoint (the capability in `TCB.faultHandlerSlot`) which receives fault
    messages when threads are destroyed while blocked.
 3. Domain scheduling, which bounds the time any domain (and its threads)
    can run before preemption.

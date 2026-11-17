@@ -11,8 +11,8 @@
 //! masks the line at the interrupt controller until the handler acknowledges it,
 //! as seL4's `handleInterrupt` does.
 
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest};
-use sele4n_types::{CPtr, KernelResult, Slot, SyscallId};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest};
+use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Acknowledge the interrupt line an interrupt-handler capability names —
 /// seL4's `seL4_IRQHandler_Ack`.
@@ -36,23 +36,28 @@ pub fn irq_handler_ack(handler_cap: CPtr) -> KernelResult<()> {
 /// `seL4_IRQControl_Get`.
 ///
 /// Invoked on the interrupt-control capability (`Write` right).  The handler
-/// capability is installed at slot `dst_slot` of the CNode `dst_cnode` names
-/// (a CNode capability with the `Write` right), as a derivation child of the
-/// interrupt-control capability, and the line is enabled.  A line that is no
-/// device line of the board is refused (`InvalidIrq`), as is one a handler
-/// already holds (`RevocationRequired`) and an occupied slot
-/// (`TargetSlotOccupied`).
+/// capability is installed at the slot `root` names by `index` and `depth`
+/// (seL4's `lookupTargetSlot`), as a derivation child of the
+/// interrupt-control capability, and the line is enabled.  `root` is the
+/// address of a CNode capability in the caller's CSpace, the message's extra
+/// capability 0 (`caps_or_badges[0]` of `buf`); no extra capability is
+/// `TruncatedMessage`.  A line that is no device line of the board is refused
+/// (`InvalidIrq`), as is one a handler already holds (`RevocationRequired`)
+/// and an occupied slot (`TargetSlotOccupied`).
 #[inline]
 pub fn irq_control_get(
     control_cap: CPtr,
     line: u64,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    root: CPtr,
+    index: CPtr,
+    depth: u64,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<()> {
+    buf.caps_or_badges[0] = root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: control_cap,
-        msg_info: MessageInfo::new_const(3, 0, 0),
-        msg_regs: [line, dst_cnode.into(), dst_slot.into(), 0],
+        msg_info: MessageInfo::new_const(3, 1, 0),
+        msg_regs: [line, index.raw(), depth, 0],
         syscall_id: SyscallId::IrqControlGet,
     })?;
     Ok(())
@@ -64,12 +69,20 @@ pub fn irq_control_get(
 /// Requires the `Write` right on the handler capability; the notification
 /// capability must carry the `Write` (send) right.  A copy of it replaces the
 /// one bound before, so the line's next delivery signals it with its badge.
+/// `notification_cap` is the message's extra capability 0
+/// (`caps_or_badges[0]` of `buf`, the caller's IPC buffer); no message word is
+/// sent, and no extra capability is `TruncatedMessage`.
 #[inline]
-pub fn irq_handler_set_notification(handler_cap: CPtr, notification_cap: CPtr) -> KernelResult<()> {
+pub fn irq_handler_set_notification(
+    handler_cap: CPtr,
+    notification_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<()> {
+    buf.caps_or_badges[0] = notification_cap.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: handler_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [notification_cap.into(), 0, 0, 0],
+        msg_info: MessageInfo::new_const(0, 1, 0),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::IrqHandlerSetNotification,
     })?;
     Ok(())

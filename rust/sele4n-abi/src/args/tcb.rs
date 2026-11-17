@@ -9,7 +9,6 @@
 use sele4n_types::{KernelError, KernelResult};
 
 /// Maximum configurable priority value (8-bit, matching Lean `Priority` range 0xFF).
-/// Re-uses `sched_context::MAX_PRIORITY` (same value) — defined here for local clarity.
 const MAX_PRIORITY: u64 = 255;
 
 /// IPC buffer alignment in bytes, which is also the buffer's size (2^10 = 1024,
@@ -126,23 +125,14 @@ impl SetIPCBufferArgs {
     }
 
     /// Decode from message registers. Requires 1 register.
-    /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (1024 bytes).
     ///
-    /// Uses the bitwise-AND form `(addr & MASK) != 0` rather than
-    /// `addr % ALIGN != 0` so the check is lint-clean on the project's
-    /// pinned MSRV (Rust 1.82, predating clippy 1.87's
-    /// `manual_is_multiple_of` lint) without needing an
-    /// `#[allow(clippy::manual_is_multiple_of)]` workaround — and
-    /// without the paired `#[allow(unknown_lints)]` that would
-    /// otherwise be required to keep the inner allow lint-clean on
-    /// 1.82.  `IPC_BUFFER_ALIGNMENT = 1024` is a power of 2, so the
-    /// two forms are mathematically equivalent.
+    /// The address is carried as given: seL4's `decodeSetIPCBuffer` checks
+    /// its alignment (`IPC_BUFFER_ALIGNMENT`) in `checkValidIPCBuffer`, after
+    /// the frame capability, so the kernel refuses a misaligned address with
+    /// `AlignmentError` only once the capability is a non-device frame.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() {
             return Err(KernelError::InvalidMessageInfo);
-        }
-        if (regs[0] & (IPC_BUFFER_ALIGNMENT - 1)) != 0 {
-            return Err(KernelError::AlignmentError);
         }
         Ok(Self {
             buffer_addr: regs[0],
@@ -180,65 +170,45 @@ impl SetAffinityArgs {
     }
 }
 
-/// Arguments for `tcbSetFaultHandler` (syscall 34).
-/// Register mapping: x2 = the fault-handler CPtr, interpreted in the **target**
-/// thread's CSpace (seL4's `fault_ep`).  Validated kernel-side at set time by
-/// `setThreadFaultHandlerOp`: the CPtr must resolve to an endpoint capability
-/// carrying send and grant or grant-reply (`faultHandlerCapAuthorized`), the
-/// same check the fault path applies when it delivers.
+/// Arguments for `tcbSetSpace` (syscall 38) — seL4-MCS's `TCB_SetSpace`.
+/// Register mapping: x2 = seL4's `cspace_root_data` (when nonzero, the CSpace
+/// root copy's guard in bits 63:6 and guard size in bits 5:0, as
+/// `updateCapData` reads a CNode capability's data word); x3 = seL4's
+/// `vspace_root_data`.  The capabilities travel as extra caps, addressed in
+/// the **caller's** CSpace by the IPC buffer's `caps_or_badges` words:
+/// extra cap 0 is the fault endpoint copied into the thread's fault-handler
+/// slot (an empty slot clears it), extra cap 1 the new CSpace root (a CNode)
+/// and extra cap 2 the new VSpace root.  The target thread must be suspended.
 ///
-/// Lean: `SetFaultHandlerArgs` (SyscallArgDecode.lean, PR #887 review)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SetFaultHandlerArgs {
-    pub handler_cptr: u64,
-}
-
-impl SetFaultHandlerArgs {
-    pub const fn encode(&self) -> [u64; 1] {
-        [self.handler_cptr]
-    }
-
-    /// Decode from message registers. Requires 1 register (the CPtr word).
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        Ok(Self {
-            handler_cptr: regs[0],
-        })
-    }
-}
-
-/// Arguments for `tcbSetSpace` (syscall 38) — seL4's `TCB_SetSpace`.
-/// Register mapping: x2 = the address, in the **caller's** CSpace, of a
-/// capability to the new CSpace root (a CNode, held with `Grant` and `Write`);
-/// x3 = the address of a capability to the new VSpace root (held with
-/// `Write`); x4 = seL4's `cspace_root_data`: when nonzero, the CSpace root
-/// copy's guard (bits 63:6) and guard size (bits 5:0), as `updateCapData`
-/// reads a CNode capability's data word.  The target thread must be suspended.
-///
-/// Lean: `SetSpaceArgs` (SyscallArgDecode.lean, WS-BP BP7.1, WS-SX SX2.3)
+/// Lean: `SetSpaceArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SetSpaceArgs {
-    pub cspace_root: u64,
-    pub vspace_root: u64,
     pub cspace_root_data: u64,
+    pub vspace_root_data: u64,
 }
 
 impl SetSpaceArgs {
-    pub const fn encode(&self) -> [u64; 3] {
-        [self.cspace_root, self.vspace_root, self.cspace_root_data]
+    /// Extra-cap index of the fault endpoint.
+    pub const FAULT_EP_EXTRA_CAP: usize = 0;
+    /// Extra-cap index of the CSpace root.
+    pub const CSPACE_ROOT_EXTRA_CAP: usize = 1;
+    /// Extra-cap index of the VSpace root.
+    pub const VSPACE_ROOT_EXTRA_CAP: usize = 2;
+    /// Number of extra caps the invocation carries.
+    pub const EXTRA_CAPS: usize = 3;
+
+    pub const fn encode(&self) -> [u64; 2] {
+        [self.cspace_root_data, self.vspace_root_data]
     }
 
-    /// Decode from message registers. Requires 3 registers.
+    /// Decode from message registers. Requires 2 registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 3 {
+        if regs.len() < 2 {
             return Err(KernelError::InvalidMessageInfo);
         }
         Ok(Self {
-            cspace_root: regs[0],
-            vspace_root: regs[1],
-            cspace_root_data: regs[2],
+            cspace_root_data: regs[0],
+            vspace_root_data: regs[1],
         })
     }
 }
@@ -252,17 +222,16 @@ mod tests {
     #[test]
     fn set_space_roundtrip() {
         let args = SetSpaceArgs {
-            cspace_root: 0x11,
-            vspace_root: 0x22,
             cspace_root_data: (0x5 << 6) | 3,
+            vspace_root_data: 0x22,
         };
         assert_eq!(SetSpaceArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
-    fn set_space_requires_three_registers() {
+    fn set_space_requires_two_registers() {
         assert_eq!(
-            SetSpaceArgs::decode(&[1, 2]),
+            SetSpaceArgs::decode(&[1]),
             Err(KernelError::InvalidMessageInfo)
         );
     }
@@ -349,15 +318,12 @@ mod tests {
     }
 
     #[test]
-    fn set_ipc_buffer_unaligned() {
+    fn set_ipc_buffer_unaligned_decodes() {
+        // The alignment is the operation's check, after the frame capability.
+        assert_eq!(SetIPCBufferArgs::decode(&[513]).unwrap().buffer_addr, 513);
         assert_eq!(
-            SetIPCBufferArgs::decode(&[513]),
-            Err(KernelError::AlignmentError)
-        );
-        // 512-aligned but not 1024-aligned: the buffer could cross a page.
-        assert_eq!(
-            SetIPCBufferArgs::decode(&[0x1E00]),
-            Err(KernelError::AlignmentError)
+            SetIPCBufferArgs::decode(&[0x1E00]).unwrap().buffer_addr,
+            0x1E00
         );
     }
 
@@ -372,22 +338,6 @@ mod tests {
     fn set_ipc_buffer_insufficient_regs() {
         assert_eq!(
             SetIPCBufferArgs::decode(&[]),
-            Err(KernelError::InvalidMessageInfo)
-        );
-    }
-
-    // -- PR #887 review: SetFaultHandler --
-
-    #[test]
-    fn set_fault_handler_roundtrip() {
-        let args = SetFaultHandlerArgs { handler_cptr: 0x2A };
-        assert_eq!(SetFaultHandlerArgs::decode(&args.encode()).unwrap(), args);
-    }
-
-    #[test]
-    fn set_fault_handler_requires_one_register() {
-        assert_eq!(
-            SetFaultHandlerArgs::decode(&[]),
             Err(KernelError::InvalidMessageInfo)
         );
     }

@@ -26,7 +26,7 @@ AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
 (`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
 is not being the dispatch path.
 
-AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
+AF5-I (AF-43): Implements 23 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a
 builder-phase operation but uses `FrozenMap.get?`/`FrozenMap.set` instead
 of `RHTable` operations.
@@ -71,7 +71,6 @@ than misleading its next reader.
 |21 | `frozenResumeThread`         | `restartThreadOnCore`      | Lifecycle    |
 |22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
-|24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
 **The lifecycle operation** (`untypedRetype`) is builder-only.  The carve adds
 an object and a CDT node, which a frozen map's fixed key set cannot, and its
@@ -548,24 +547,29 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     | none => .error .objectNotFound
 
 /-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
-live `ipcBufferReadMr` reads it (slot bound, the thread's VSpace root, the page
-the slot resolves through, then the synced word or memory), every failure the live decode's
-`.invalidMessageInfo`. -/
+live `ipcBufferReadMr` reads it (slot bound, the frame the thread's buffer slot
+names as `lookupIPCBuffer` finds it, then the synced word or memory), every
+failure the live decode's `.invalidMessageInfo`. -/
 private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (idx : Nat) : Except KernelError UInt64 :=
   if idx ≥ Architecture.IpcBufferRead.maxOverflowSlots then .error .invalidMessageInfo else
   match frozenLookupTcb st tid with
   | none => .error .invalidMessageInfo
   | some tcb =>
-    match st.getObject? tcb.vspaceRoot with
-    | some (.vspaceRoot root) =>
-      match root.mappings.get? (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
-      | some (paddr, _) =>
-          .ok (Architecture.IpcBufferRead.userWordAt st.machine
-            (SeLe4n.PAddr.ofNat (paddr.toNat +
-              (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
-      | none => .error .invalidMessageInfo
-    | _ => .error .invalidMessageInfo
+    match tcb.spaceCells[2] with
+    | some cap =>
+      match cap.target with
+      | .object id =>
+        match st.getObject? id with
+        | some (.frame f) =>
+          if !f.isDevice && cap.rights.mem .read then
+            .ok (Architecture.IpcBufferRead.userWordAt st.machine
+              (Architecture.IpcBufferRead.ipcBufferWordAt
+                (SeLe4n.PAddr.ofNat (f.base.toNat + tcb.ipcBuffer.pageOffset)) idx))
+          else .error .invalidMessageInfo
+        | _ => .error .invalidMessageInfo
+      | _ => .error .invalidMessageInfo
+    | none => .error .invalidMessageInfo
 
 /-- WS-ZA ZA4.7: the frozen decode of a sender's saved frame -- the live
 decoder (`decodeSyscallArgsWith`) with the overflow words read from the frozen
@@ -1461,54 +1465,17 @@ Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
 frozen (no internal RHTables), so this is a straightforward lookup + store.
 Validates parameters and checks admission control against frozen state.
 
-**And it propagates the two thread-owned parameters to the bound thread, in two
-independently gated halves, of which only the priority half re-buckets**
-(`v0.35.101`, corrected `v0.35.105`).  Found by sweeping the *question* rather than the
-two sites PR #897 named: the review reported `frozenSchedContextBind` and
-`frozenWriteBasePriority`, and asking "which other frozen writer moves a run-queue
-key?" found this one, which was worse than either.  It wrote the reservation and
-stopped -- no priority propagation, no domain propagation, no re-bucket -- where
-the live `schedContextConfigureBoundPropagate` does all three.  So every frozen
-post-configure state with a thread bound to the reconfigured reservation
-falsified **two** invariants at once, `boundThreadPriorityConsistent` and
-`boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
-operation.
-
-**Two halves, not one gate** (PR #897 review, `v0.35.105`).  The sentence above
-used to end *"does all three under one gate"*, and that reading is what the first
-mirror implemented: one condition over both parameters, feeding
-`frozenWriteTcbRebucketed`.  The live operation has **two** gates -- `if
-boundTcb.priority.val = priority ∨ ¬ propagates` and, over the state the first
-left, `if currentTcb.domain.val = domain ∨ ¬ propagates` -- and only the first
-writes a run-queue key.  Fusing them made a *domain-only* reconfiguration
-re-bucket, and `RunQueue.insert` appends, so a queued bound thread moved to its
-bucket's tail at an unchanged key: measured on a reservation bound to a queued
-thread with a same-priority peer, live leaves the bucket `[62, 63]` and the fused
-mirror left `[63, 62]`.  `frozenStateAgrees` compares buckets as lists and
-`frozenChooseThread` folds them in order, so that is a different next thread.
-
-Two live questions given one frozen answer is the **dual** of this project's *one
-question, two answers* shape, and it is invisible to the same instruments: only
-the priority half's outcome was ever compared, and `.schedContextConfigure` is not
-a `FrozenOpBranch` at all, so no `frozenRunAgrees` scenario could reach it -- the
-measurement `v0.35.96` recorded for the bind's missing refusals, holding again one
-operation over.
-
-The gate is the live one, `schedContextConfigurePropagates`: the bound thread must
-**own** this reservation, so a donee running on it is never propagated to -- its
-base priority and domain are its own (WS-OD `v0.35.3`), and writing them from the
-donor's reservation would be the authority crossing that cut closed.  `.bound` is
-the only binding `boundThread` can hold on this surface for a thread that owns the
-reservation, and the gate says so rather than this arm assuming it. -/
+WS-SX SX6.4: the context carries no priority, deadline or domain — those are
+the bound thread's own, as in seL4-MCS — so, like the live configure, this writes
+the context alone and propagates nothing to the bound thread. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
-    (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : FrozenKernel Unit :=
   fun st =>
     -- Parameter validation: the live operation's own
     -- (`SchedContextOps.validateSchedContextParams`), so the two answer every
     -- refusal with one error and payload.  AK6-A (SC-H01): a zero budget is
     -- refused, preserving replenishmentListWellFormed.
-    match SeLe4n.Kernel.SchedContextOps.validateSchedContextParams budget period priority
-        deadline domain with
+    match SeLe4n.Kernel.SchedContextOps.validateSchedContextParams budget period with
     | .error e => .error e
     | .ok () =>
       match st.getObject? scId with
@@ -1523,8 +1490,8 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | some t => (frozenLookupTcb st t).any TCB.isRunnable
           | none => false
         let updated : SeLe4n.Kernel.SchedContext :=
-          SeLe4n.Kernel.SchedContextOps.configuredSchedContext budget period priority deadline
-            domain st.machine.timer keep sc
+          SeLe4n.Kernel.SchedContextOps.configuredSchedContext budget period extraRefills badge flags
+             st.machine.timer keep sc
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with
@@ -1541,87 +1508,16 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           match frozenWithObjectStored (frozenPurgeReplenishment st scIdTyped) scId
               (.schedContext updated) with
           | .ok stStored =>
-            -- The propagation half: the live `schedContextConfigureBoundPropagate`
-            -- reads the *stored* state, so this does too.  Each parameter is
-            -- written only when it moved, as the live halves are -- and since
-            -- `v0.35.105` each has its **own** gate, so an unchanged priority is
-            -- no write and no re-bucket even when the domain moved.  This comment
-            -- claimed that before the code did it: the gate was the *disjunction*,
-            -- so a domain-only reconfigure reached the re-bucketing writer.
-            --
             -- WS-ZA ZA6.4: then the live resume tail (`frozenConfigureResumeBound`)
-            -- over the state the halves left, whether or not either half wrote,
-            -- as the live `configureResumeBound` runs over the propagation's
-            -- state whenever the bound thread exists.
+            -- over the stored state, as the live `configureResumeBound` runs
+            -- whenever the bound thread exists.
             match sc.boundThread with
             | none => .ok ((), stStored)
             | some boundTid =>
               let st' := frozenReleasePlace stStored (frozenDetermineTargetCore st boundTid) scIdTyped
               match frozenLookupTcb st' boundTid with
               | none => .ok ((), st')
-              | some boundTcb =>
-                let propagated : Except KernelError FrozenSystemState :=
-                  -- The id comes from the **argument**, as the live gate's does
-                  -- (`SchedContextId.ofObjId vScId.val`), not from the record's own
-                  -- `scId` field: a self-id field is data the store holds and the
-                  -- operation is about the object at this key.  Same derivation the
-                  -- frozen bind uses for its own binding.
-                  if boundTcb.schedContextBinding.ownScId?
-                      != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
-                    .ok st'
-                  else
-                    -- **TWO HALVES, one per parameter** (PR #897 review, `v0.35.105`).
-                    -- `schedContextConfigureBoundPropagate` is two independently
-                    -- gated writes -- a priority half that re-buckets and a domain
-                    -- half that writes in place -- and `v0.35.101` mirrored it as
-                    -- **one** gate over their union feeding the re-bucketing
-                    -- writer.  A domain-only reconfiguration then re-bucketed:
-                    -- `RunQueue.insert` appends, so a queued bound thread moved to
-                    -- its bucket's *tail* at an unchanged key while the live
-                    -- operation left it where it was.  Measured on a reservation
-                    -- bound to a queued thread with a same-priority peer: live
-                    -- leaves the bucket `[62, 63]`, the fused mirror left
-                    -- `[63, 62]`, so `frozenChooseThread` selected the other
-                    -- thread.  Two live questions given one frozen answer is the
-                    -- dual of this project's *one question, two answers* shape, and
-                    -- the remedy is the same -- mirror the structure rather than
-                    -- the outcome.
-                    --
-                    -- The ownership gate is hoisted above both halves rather than
-                    -- asked twice, which is exact and not a narrowing: the live
-                    -- domain half consults `schedContextConfigurePropagates
-                    -- boundTcb`, the **pre-write** record, exactly as its priority
-                    -- half does, so the predicate cannot change between them.
-                    --
-                    -- The priority half: the live gate is *the priority moved*, and
-                    -- the write goes through the re-bucketing writer because a base
-                    -- priority **is** the run-queue key (`TCB.boostedPriority`).
-                    let priorityHalf : Except KernelError FrozenSystemState :=
-                      if boundTcb.priority == (⟨priority⟩ : SeLe4n.Priority) then .ok st'
-                      else
-                        frozenWriteTcbRebucketed st' boundTid
-                          { boundTcb with priority := ⟨priority⟩ }
-                    match priorityHalf with
-                    | .error e => .error e
-                    | .ok stPri =>
-                      -- The domain half reads the record the priority half may have
-                      -- rewritten, so it **re-resolves** -- the live half does, for
-                      -- the same reason -- and its write is the surface's ordinary
-                      -- in-place store: a domain is not a run-queue key, so nothing
-                      -- here may move a bucket.
-                      match frozenLookupTcb stPri boundTid with
-                      | none => .ok stPri
-                      | some currentTcb =>
-                        if currentTcb.domain == (⟨domain⟩ : SeLe4n.DomainId) then
-                          .ok stPri
-                        else
-                          match frozenWithObjectStored stPri boundTid.toObjId
-                              (.tcb { currentTcb with domain := ⟨domain⟩ }) with
-                          | .ok stDom => .ok stDom
-                          | .error e => .error e
-                match propagated with
-                | .error e => .error e
-                | .ok stProp => .ok ((), frozenConfigureResumeBound stProp boundTid updated)
+              | some _ => .ok ((), frozenConfigureResumeBound st' boundTid updated)
           | .error e => .error e
         else
           .error .resourceExhausted
@@ -1651,15 +1547,14 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
       else
         match st.getTcb? threadId with
         | some tcb =>
-          -- AE3-A/U-11: the domain filter reads `tcb.domain` while effective
-          -- priority resolves from `sc.domain`, so a cross-domain bind would let
-          -- a thread pass the filter by one and be prioritised by the other.
-          if tcb.domain != sc.domain then .error (.invalidArgument 0)
+          -- WS-SX SX6.4: no domain check, as the live bind has none (seL4-MCS's
+          -- `decodeSchedContext_Bind`): a context carries no domain.
+          --
           -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
           -- live stack is owed a context by the pop that reaches that frame, and
           -- that pop writes its binding; a second context now would be
           -- overwritten by it and orphaned.
-          else if frozenReplyFrameOnLiveStack st tcb then .error .illegalState
+          if frozenReplyFrameOnLiveStack st tcb then .error .illegalState
           else
           match tcb.schedContextBinding with
           | .unbound =>
@@ -1676,31 +1571,11 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             -- not of the one whose transition motivated it.
             let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId),
                                        donationOrigin := none }
-            -- **AK2-B option B (S-H04), frozen mirror (PR #897 review)**: and the
-            -- SchedContext's priority reaches the TCB, as the live bind's does.
-            -- Omitting it left every frozen post-bind state falsifying
-            -- `boundThreadPriorityConsistent` -- the invariant the live write
-            -- exists to establish -- so the mirror was not merely narrower than
-            -- its subject but produced states the live kernel cannot reach.
             let updatedTcb := { tcb with
-              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
-              priority := sc.priority }
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
             match frozenWithObjectStored st scId (.schedContext updatedSc) with
             | .ok st1 =>
-              -- **And the bound thread is re-bucketed** (`v0.35.101`, reported on
-              -- PR #897).  The propagated `sc.priority` moves `updatedTcb`'s
-              -- `boostedPriority`, which is the frozen run queue's key, and the
-              -- live bind's Z5-G3 step exists for exactly this: `if tid ∈
-              -- runQueueOnCore bindHome then remove + insert at
-              -- resolveInsertPriority`.  Post-bind that insert priority *is*
-              -- `updatedTcb.boostedPriority` -- `resolveEffectivePrioDeadline`
-              -- reads the reservation for a `.bound` thread and this write has
-              -- just made the two agree -- so the shared frozen writer's key is
-              -- the live one's value, not a frozen-specific reading of it.
-              -- Without it a bind could raise a queued thread's band and
-              -- `frozenSchedule` would keep selecting it at the old one.
-              --
-              -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: and it **places** a parked
+              -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the bind **places** a parked
               -- runnable thread, which is the live bind's own new arm and
               -- seL4-MCS's `SCHED_ENQUEUE` tail.  `frozenWriteTcbBoundPlaced` is
               -- the bind-specific writer rather than a widening of
@@ -2269,17 +2144,9 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
 -- D2-L: Frozen priority management operations
 -- ============================================================================
 
-/-- **The frozen mirror of `updatePrioritySource`** (`v0.35.99`): a `.bound`
-thread's base priority has **two homes** and this writes both, in the live
-operation's own order (the reservation, then the thread).
-
-`v0.35.98` fixed the live writer and left this surface writing the reservation
-alone, so the same operation produced divergent live and frozen states and a
-frozen block/wake would read the stale `TCB.boostedPriority` and restore the old
-band — the very defect that cut closed, surviving on the mirror.  Reported on
-PR #897, and it is this project's *a field added to a shared record is a sweep of
-both surfaces* rule, which `v0.35.98`'s own entry quoted about `donationOrigin`
-and then did not apply to its own change.
+/-- **The frozen mirror of `updatePrioritySource`**: the thread's base priority
+has one home, its TCB (WS-SX SX6.4: a scheduling context carries no priority, as
+in seL4-MCS), and this writes it.
 
 Both frozen operations that move a base priority call this, so the surface has
 one answer: `frozenSetPriority` directly, and `frozenSetMCPriority` when its
@@ -2301,27 +2168,14 @@ never answering. -/
 def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadId)
     (targetTcb : TCB) (newPriority : SeLe4n.Priority) :
     Except KernelError FrozenSystemState :=
-  let tcb' := { targetTcb with priority := newPriority }
-  match targetTcb.schedContextBinding.ownScId? with
-  | some scId =>
-    match st.getSchedContext? scId with
-    | some sc =>
-      match frozenWithObjectStored st scId.toObjId
-              (.schedContext { sc with priority := newPriority }) with
-      | .ok st1 => frozenWriteTcbRebucketed st1 targetTid tcb'
-      | .error e => .error e
-    | none => .error .objectNotFound
-  | none => frozenWriteTcbRebucketed st targetTid tcb'
+  frozenWriteTcbRebucketed st targetTid { targetTcb with priority := newPriority }
 
-/-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
-on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).
+/-- D2-L: Frozen-phase setPriority. Validates MCP authority, then writes the
+target thread's own TCB priority (`frozenWriteBasePriority`), at every binding.
 
-**WS-OD (v0.35.3)**: the target is chosen by
-`SchedContextBinding.ownScId?`, the same classifier the live
-`updatePrioritySource` uses, so the frozen mirror and the live operation cannot
-answer "whose priority does this write" differently.  A `.donated` thread's
-priority lands in its own TCB — writing the donor's reservation was an
-authority crossing (`docs/REGISTERED_DEBT.md` §C). -/
+WS-SX SX6.4: a scheduling context carries no priority, so the thread's TCB is
+the priority's only home, as in seL4-MCS's `setPriority`; the frozen mirror and
+the live `updatePrioritySource` write the same field. -/
 def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : FrozenKernel Unit :=
   fun st =>
@@ -2332,8 +2186,7 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
       else match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some targetTcb =>
-        -- Update the priority source (`.bound`: the SchedContext; `.unbound`
-        -- and `.donated`: the TCB).
+        -- Write the thread's own priority (its only home).
         match frozenWriteBasePriority st targetTid targetTcb newPriority with
         | .ok st' => .ok ((), st')
         | .error e => .error e
@@ -2368,52 +2221,6 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
             | .ok st' => .ok ((), st')
             | .error e => .error e
           else .ok ((), st1)
-
--- ============================================================================
--- D3-I: Frozen IPC buffer configuration
--- ============================================================================
-
-/-- D3-I: Frozen-phase setIPCBuffer. Validates alignment, canonical address,
-VSpace mapping with write permission and PA bounds, then updates the target
-TCB's ipcBuffer. Mirrors `setIPCBufferOp` in frozen state using FrozenMap
-lookups.
-
-AJ4-C (L-06): Step 7 (PA bounds check) mirrors `validateIpcBufferAddress`
-step 7, ensuring consistency between frozen and production validation paths. -/
-def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
-    (addr : SeLe4n.VAddr) : FrozenKernel Unit :=
-  fun st =>
-    -- Step 1: Alignment check
-    if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
-    -- Step 2: Canonical address check
-    else if !addr.isCanonical then .error .addressOutOfBounds
-    else
-      match frozenLookupTcb st targetTid with
-      | none => .error .objectNotFound
-      | some tcb =>
-        -- Step 4: VSpace root validity (frozen VSpaceRoot)
-        match st.getVSpaceRoot? tcb.vspaceRoot with
-        | some vsr =>
-          -- Step 5: Mapping check via FrozenMap
-          match vsr.mappings.get? addr.pageBase with
-          | some (paddr, perms) =>
-            -- Step 6: Write permission check
-            if !perms.write then .error .translationFault
-            -- Step 7: Physical address bounds check (AJ4-C / L-06 + AK3-F)
-            -- AK3-F (A-M02): Check end-PA, not just start-PA, so the entire
-            -- `[pa, pa + ipcBufferAlignment)` IPC buffer (`pa` the page's
-            -- `paddr` plus the buffer's offset) fits within the platform's
-            -- PA range. Mirror `validateIpcBufferAddress`.
-            else if !(paddr.toNat + addr.pageOffset + SeLe4n.ipcBufferAlignment ≤
-                      2^st.machine.physicalAddressWidth) then
-              .error .addressOutOfBounds
-            else
-              let tcb' := { tcb with ipcBuffer := addr }
-              match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
-              | .ok st' => .ok ((), st')
-              | .error e => .error e
-          | none => .error .translationFault
-        | _ => .error (.invalidArgument 0)
 
 -- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
@@ -2472,9 +2279,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbResume => true               -- D1: frozenResumeThread
   | .tcbSetPriority => true          -- D2: frozenSetPriority
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
-  | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
+  | .tcbSetIPCBuffer => false        -- WS-SX SX6.6: deletes the buffer slot and inserts the derived frame cap with a CDT copy edge; the frozen phase models no CDT write
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
-  | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
   | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
   | .pageTableMap => false           -- WS-BP BP7.1 (`v0.36.12`): translation-table install; the frozen phase models no page-table objects' installs
   | .pageTableUnmap => false         -- WS-BP BP7.1 (`v0.36.12`): ditto
@@ -2495,8 +2301,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditRead => false              -- WS-SM SM9.A.13: reads the mounted audit trail through a clearance-filtered view; the frozen phase carries the trail but models no `LabelingContext`, so there is no reader's clearance to filter by
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
-/-- S3-L/Z8-H/D1/D2/D3: exactly **18** `SyscallId` arms have frozen operation
-coverage; the other 23 carry the reason beside their own `frozenOpCoverage` row.
+/-- S3-L/Z8-H/D1/D2/D3: exactly **17** `SyscallId` arms have frozen operation
+coverage; the other 24 carry the reason beside their own `frozenOpCoverage` row.
 
 The count is taken over `SyscallId.all`, the derived constructor list, not a
 hand-written one: the enumeration this replaced named every constructor by hand
@@ -2504,7 +2310,7 @@ and its docstring still said "18 uncovered" when 21 were, and "20 covered"
 included two arms (`vspaceMap`, `vspaceUnmap`) whose only frozen operation was a
 read (`v0.36.38`). -/
 theorem frozenOpCoverage_count :
-    (SyscallId.all.filter frozenOpCoverage).length = 18 := by
+    (SyscallId.all.filter frozenOpCoverage).length = 17 := by
   decide
 
 /-- S3-L/D1/D2/D3: All 38 SyscallId arms are accounted for (either covered or documented as builder-only). -/

@@ -80,7 +80,7 @@ def updatePipBoostOnCoreImpl (st : SystemState) (c : CoreId) (tid : ThreadId) : 
     if tcb.pipBoostCode == newCode then st
     else
       let p0 := tcb.boostedPriority
-      let d0 := effectiveDeadline st tcb
+      let d0 := tcb.deadline
       let dom0 := tcb.domain
       let newPrio := tcb.priority.raisedBy (SeLe4n.Priority.ofOptCode newCode)
       let queued := tcb.runCoreCode == c.val + 1

@@ -6,62 +6,55 @@
 use sele4n_abi::args::{
     PagePerms, PageTableMapArgs, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs,
 };
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
 use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
 
-/// Map a frame into a virtual address space.
+/// Map a frame into a virtual address space — seL4's `seL4_ARM_Page_Map`.
 ///
 /// Lean: the `.vspaceMap` arm of `dispatchCapabilityOnly` (API.lean), through
-/// `vspaceMapFromFrameCap`.
+/// `resolvePageMapOperands` and `vspaceMapOrRemapFromFrameCap`.
 ///
-/// **Authority (WS-BP BP7.1).**  Two capabilities, each for what it governs.
-/// `vspace_cap` must carry `.write` and name the VSpace root bound to `asid` —
-/// authority over the address space.  `frame_cap` is the address, in the
-/// caller's own CSpace, of a capability to the **frame** being mapped —
-/// authority over the memory.  The page installed is that frame's own base;
-/// no physical address crosses this interface, so a caller can map only memory
-/// it holds a frame capability for.  The frame capability must carry `.read`
-/// (every mapping is at least readable), and `.write` as well for a writable
-/// mapping (`IllegalAuthority` otherwise).  A **device** frame may be mapped
+/// **Authority (WS-BP BP7.1, WS-SX SX6.3).**  The call is an invocation of
+/// `frame_cap`, a capability to the **frame** being mapped — authority over
+/// the memory: the page installed is that frame's own base, so a caller can
+/// map only memory it holds a frame capability for.  The frame capability
+/// must carry `.read` (every mapping is at least readable), and `.write` as
+/// well for a writable mapping (`IllegalAuthority` otherwise).
+/// `vspace_root` is the address, **in the caller's CSpace**, of a capability
+/// to the address space (held with `Write`), sent as the message's extra
+/// capability 0 (`caps_or_badges[0]` of `buf`, the caller's IPC buffer); a
+/// message naming none is `TruncatedMessage`, and a root its own ASID does
+/// not resolve to is `InvalidCapability`.  A **device** frame may be mapped
 /// neither executable nor cacheable, and a **RAM** frame must be mapped
 /// cacheable (`PolicyDenied` otherwise): set `PagePerms::CACHEABLE` exactly
-/// when the frame is RAM.  An uncached alias of RAM the kernel writes through
-/// its cacheable identity map would be a mismatched-attribute alias (ARM ARM
-/// B2.8), so it is refused.  A capability to anything but a frame, or an
-/// empty slot, is `InvalidCapability`.
+/// when the frame is RAM.
 ///
 /// The mapping is recorded on the frame capability that made it, so deleting
-/// or revoking that capability unmaps it.  A frame capability maps its frame
-/// **once**: mapping through a capability whose recorded mapping is still in
-/// place is `InvalidCapability` — copy the capability (a copy carries no
-/// record) to map the same frame again.
+/// or revoking that capability unmaps it.  Mapping again through a capability
+/// whose recorded mapping is in place is seL4's remap, at the same address
+/// space and address only.
 ///
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
 #[inline]
 pub fn vspace_map(
-    vspace_cap: CPtr,
-    asid: Asid,
-    vaddr: VAddr,
     frame_cap: CPtr,
+    vspace_root: CPtr,
+    vaddr: VAddr,
     perms: PagePerms,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     // W^X pre-check (client-side, before syscall)
     perms.validate_wx()?;
 
-    let args = VSpaceMapArgs {
-        asid,
-        vaddr,
-        frame: frame_cap,
-        perms,
-    };
-    let encoded = args.encode();
+    let encoded = VSpaceMapArgs::from_perms(vaddr, perms).encode();
+    buf.caps_or_badges[0] = vspace_root.raw();
     invoke_syscall(SyscallRequest {
-        cap_addr: vspace_cap,
-        msg_info: MessageInfo::new_const(4, 0, 0),
-        msg_regs: encoded,
+        cap_addr: frame_cap,
+        msg_info: MessageInfo::new_const(3, 1, 0),
+        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
     })
 }
@@ -70,27 +63,33 @@ pub fn vspace_map(
 ///
 /// `table_cap` names the table (held with `Write`); `vspace_root` is the
 /// address, **in the caller's CSpace**, of a capability to the address space
-/// (held with `Write`).  The table is installed at the shallowest level the walk
-/// to `vaddr` is missing, so three calls make an address mappable; a fourth is
-/// refused with `MappingConflict`.  A carved address space maps a frame only
-/// where its walk is complete (`TranslationFault` otherwise).
+/// (held with `Write`), sent as the message's extra capability 0
+/// (`caps_or_badges[0]` of `buf`, the caller's IPC buffer); the words are
+/// `vaddr` and seL4's attributes word (0).  A message naming no extra
+/// capability is `TruncatedMessage`.  The table is installed at the
+/// shallowest level the walk to `vaddr` is missing, so three calls make an
+/// address mappable; a fourth is refused with `MappingConflict`.  A carved
+/// address space maps a frame only where its walk is complete
+/// (`TranslationFault` otherwise).
 ///
 /// Lean: `pageTableMap` (Architecture/PageTableInstall.lean), dispatched as
-/// `SyscallId.pageTableMap` in `API.lean` (WS-BP BP7.1).
+/// `SyscallId.pageTableMap` in `API.lean` (WS-BP BP7.1, WS-SX SX6.3).
 #[inline]
 pub fn page_table_map(
     table_cap: CPtr,
     vspace_root: CPtr,
     vaddr: VAddr,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     let args = PageTableMapArgs {
-        vspace_root: vspace_root.raw(),
         vaddr: vaddr.raw(),
+        attr: 0,
     };
     let encoded = args.encode();
+    buf.caps_or_badges[0] = vspace_root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: table_cap,
-        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_info: MessageInfo::new_const(2, 1, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::PageTableMap,
     })
@@ -177,45 +176,51 @@ pub fn vspace_unify_instruction(
     })
 }
 
-/// Convenience: map a read-only page.
+/// Convenience: map a read-only page of RAM.
 pub fn vspace_map_read_only(
-    vspace_cap: CPtr,
-    asid: Asid,
-    vaddr: VAddr,
     frame_cap: CPtr,
-) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, frame_cap, PagePerms::READ)
-}
-
-/// Convenience: map a read-write page.
-pub fn vspace_map_read_write(
-    vspace_cap: CPtr,
-    asid: Asid,
+    vspace_root: CPtr,
     vaddr: VAddr,
-    frame_cap: CPtr,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
-        vspace_cap,
-        asid,
-        vaddr,
         frame_cap,
-        PagePerms::READ | PagePerms::WRITE,
+        vspace_root,
+        vaddr,
+        PagePerms::READ | PagePerms::CACHEABLE,
+        buf,
     )
 }
 
-/// Convenience: map a read-execute page (code).
-pub fn vspace_map_read_execute(
-    vspace_cap: CPtr,
-    asid: Asid,
-    vaddr: VAddr,
+/// Convenience: map a read-write page of RAM.
+pub fn vspace_map_read_write(
     frame_cap: CPtr,
+    vspace_root: CPtr,
+    vaddr: VAddr,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
-        vspace_cap,
-        asid,
-        vaddr,
         frame_cap,
-        PagePerms::READ | PagePerms::EXECUTE,
+        vspace_root,
+        vaddr,
+        PagePerms::READ | PagePerms::WRITE | PagePerms::CACHEABLE,
+        buf,
+    )
+}
+
+/// Convenience: map a read-execute page (code) of RAM.
+pub fn vspace_map_read_execute(
+    frame_cap: CPtr,
+    vspace_root: CPtr,
+    vaddr: VAddr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    vspace_map(
+        frame_cap,
+        vspace_root,
+        vaddr,
+        PagePerms::READ | PagePerms::EXECUTE | PagePerms::CACHEABLE,
+        buf,
     )
 }
 
@@ -226,12 +231,13 @@ mod tests {
     #[test]
     fn wx_violation_rejected() {
         let wx = PagePerms::WRITE | PagePerms::EXECUTE;
+        let mut buf = IpcBuffer::new();
         let result = vspace_map(
             CPtr::from(1u64),
-            Asid::from(1u64),
-            VAddr::from(0x1000u64),
             CPtr::from(2u64),
+            VAddr::from(0x1000u64),
             wx,
+            &mut buf,
         );
         assert_eq!(result, Err(KernelError::PolicyDenied));
     }

@@ -37,15 +37,15 @@ namespace ipcBufferReadsAgree
 variable {X st : SystemState} (h : ipcBufferReadsAgree X st)
 include h
 
-theorem bufferWordPAddrOf? (vroot : SeLe4n.ObjId) (buf : SeLe4n.VAddr) (idx : Nat) (w : Bool) :
-    bufferWordPAddrOf? X vroot buf idx w = bufferWordPAddrOf? st vroot buf idx w := by
-  unfold SeLe4n.Kernel.bufferWordPAddrOf?
-  rw [h.getVSpaceRoot?, h.2]
+theorem bufferWordPAddrOf? (cell : Option Capability) (buf : SeLe4n.VAddr) (idx : Nat)
+    (w : Bool) : bufferWordPAddrOf? X cell buf idx w = bufferWordPAddrOf? st cell buf idx w := by
+  unfold SeLe4n.Kernel.bufferWordPAddrOf? Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
+  rw [Architecture.IpcBufferRead.bufferFrameBase?_congr h.getFrame?]
 
 theorem senderExtraCapAddr? (tcb : TCB) (i : Nat) :
     senderExtraCapAddr? X tcb i = senderExtraCapAddr? st tcb i := by
   unfold SeLe4n.Kernel.senderExtraCapAddr?
-  rw [ipcBufferWordPAddr?_eq_of, ipcBufferWordPAddr?_eq_of, h.bufferWordPAddrOf?, h.2]
+  rw [bufferWordPAddrOf?_eq, bufferWordPAddrOf?_eq, h.bufferWordPAddrOf?, h.2]
 
 theorem senderExtraCapAddrs (tcb : TCB) (c : Nat) :
     senderExtraCapAddrs X tcb c = senderExtraCapAddrs st tcb c := by
@@ -62,12 +62,12 @@ theorem frameCapRequestOf (tcb : TCB) (c : Nat) :
 theorem receiverHasBuffer (tcb : TCB) :
     receiverHasBuffer X tcb = receiverHasBuffer st tcb := by
   unfold SeLe4n.Kernel.receiverHasBuffer
-  rw [ipcBufferWordPAddr?_eq_of, ipcBufferWordPAddr?_eq_of, h.bufferWordPAddrOf?]
+  rw [bufferWordPAddrOf?_eq, bufferWordPAddrOf?_eq, h.bufferWordPAddrOf?]
 
 theorem receiverBufferWord? (tcb : TCB) (idx : Nat) :
     receiverBufferWord? X tcb idx = receiverBufferWord? st tcb idx := by
   unfold SeLe4n.Kernel.receiverBufferWord?
-  rw [ipcBufferWordPAddr?_eq_of, ipcBufferWordPAddr?_eq_of, h.bufferWordPAddrOf?, h.2]
+  rw [bufferWordPAddrOf?_eq, bufferWordPAddrOf?_eq, h.bufferWordPAddrOf?, h.2]
 
 theorem receivePathSlot? (tcb : TCB) (c i d : UInt64) :
     receivePathSlot? X tcb c i d = receivePathSlot? st tcb c i d := by
@@ -181,8 +181,8 @@ the transfer reads of them (`capTransferK`), read before the rendezvous. -/
     (r : SeLe4n.ThreadId) (nextCode : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     deliverCapsFrame (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
@@ -208,7 +208,7 @@ theorem sendRendezvousCaps_eq_delivered (st : SystemState) (endpointId : SeLe4n.
           s.capInfo
       | .error _ => st) =
       performSendCapsDelivered st endpointId r (ThreadId.optCode next) layout rf len badgeWord badged
-        core stcb.vspaceRoot stcb.ipcBuffer stcb.spaceCells[0] count rt.vspaceRoot rt.ipcBuffer
+        core stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count rt.spaceCells[2] rt.ipcBuffer
         rt.spaceCells[0] := by
   have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
   have hNoY := wakeThread_noResizeDue _ r core hNo0

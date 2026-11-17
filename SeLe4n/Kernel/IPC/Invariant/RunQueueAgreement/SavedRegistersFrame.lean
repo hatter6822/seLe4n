@@ -251,12 +251,15 @@ theorem untypedRetypeObject_savedRegsKept {src dst : CSpaceAddr} {childId : SeLe
 
 /-- **The untyped retype**, through the carve. -/
 theorem untypedRetypeFromCap_savedRegsKept {tid : SeLe4n.ThreadId} {ec : CoreId}
-    {srcAddr : SeLe4n.CPtr} {args? : Except KernelError Architecture.SyscallArgDecode.UntypedRetypeArgs}
+    {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError Architecture.SyscallArgDecode.UntypedRetypeArgs}
     {st st' : SystemState} (hInv : st.objects.invExt)
-    (hStep : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
+    (hStep : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
     savedRegsKept st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ hStep
-  exact untypedRetypeObject_savedRegsKept hInv hU
+  exact (untypedRetypeFromCap_chain hStep).rel (P := fun s => s.objects.invExt)
+    savedRegsKept.refl (fun h1 h2 => h1.trans h2)
+    (fun hP hC => untypedRetypeObject_preserves_objects_invExt hP hC)
+    (fun hP hC => untypedRetypeObject_savedRegsKept hP hC) hInv
 
 /-! ### The VSpace arms -/
 

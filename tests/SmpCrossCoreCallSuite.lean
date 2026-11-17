@@ -1268,11 +1268,11 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
   -- not a set the test supplied.
   assertBool "the declared footprint is `lockSetForSyscall`'s answer at the entry's decode"
     (match bracketPlan bracketState with
-     | some (tid, decoded, stFilled) =>
+     | some (tid, decoded, stSpilled) =>
        decide (decoded.syscallId = .tcbSuspend) &&
-       (match abiEntryLockOperands decoded tid stFilled with
+       (match abiEntryLockOperands decoded tid stSpilled with
         | some ops =>
-          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stFilled
+          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stSpilled
                     = bracketDecl bracketState) &&
           decide (ops.caller = tid)
         | none => false)
@@ -1363,26 +1363,26 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   -- not a set the test supplied — the relation, not a presence check.
   assertBool "it is `schedLockSetForSyscall`'s answer at the entry's own decode"
     (match bracketPlan bracketState with
-     | some (tid, decoded, stFilled) =>
+     | some (tid, decoded, stSpilled) =>
        decide (decoded.syscallId = .tcbSuspend) &&
-       (match abiEntryLockOperands decoded tid stFilled with
+       (match abiEntryLockOperands decoded tid stSpilled with
         | some ops =>
-          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stFilled
+          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stSpilled
                     = bracketSchedDecl bracketState) &&
           decide (ops.caller = tid)
         | none => false)
      | none => false)
   -- **One decode, two domains.** Both footprints are functions of the same
-  -- `(tid, decoded, stFilled)` and the same operands — which is what stops one
+  -- `(tid, decoded, stSpilled)` and the same operands — which is what stops one
   -- domain's footprint being acquired around the other domain's transition.
   assertBool "both domains resolve ONE decode and ONE operand record"
     (match bracketPlan bracketState with
-     | some (tid, decoded, stFilled) =>
-       (match abiEntryLockOperands decoded tid stFilled with
+     | some (tid, decoded, stSpilled) =>
+       (match abiEntryLockOperands decoded tid stSpilled with
         | some ops =>
-          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stFilled
+          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stSpilled
                     = bracketDecl bracketState) &&
-          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stFilled
+          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stSpilled
                     = bracketSchedDecl bracketState)
         | none => false)
      | none => false)
@@ -1391,14 +1391,14 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   -- states it for every arm, and this measures it at the entry's own operands.
   assertBool "the five scheduler operands do not move the OBJECT domain's answer"
     (match bracketPlan bracketState with
-     | some (tid, decoded, stFilled) =>
-       (match abiEntryLockOperands decoded tid stFilled with
+     | some (tid, decoded, stSpilled) =>
+       (match abiEntryLockOperands decoded tid stSpilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId
                     { ops with message := none,
                                replyMessageInfo := none, replyRegisters := none,
-                               affinity := none } stFilled
-                    = Concurrency.lockSetForSyscall decoded.syscallId ops stFilled)
+                               affinity := none } stSpilled
+                    = Concurrency.lockSetForSyscall decoded.syscallId ops stSpilled)
         | none => false)
      | none => false)
   -- **The footprint is read off the STATE, not emitted as a fixed set.**  The

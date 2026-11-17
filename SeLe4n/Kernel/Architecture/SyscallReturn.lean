@@ -117,7 +117,6 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetMCPriority      => .unit
   | .tcbSetIPCBuffer       => .unit
   | .tcbSetAffinity        => .unit
-  | .tcbSetFaultHandler    => .unit
   | .tcbSetSpace           => .unit
   | .pageTableMap          => .unit
   | .pageTableUnmap        => .unit

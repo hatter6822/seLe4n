@@ -49,7 +49,7 @@ states the states on which it is the specification's). -/
           let rnext := r.next
           let outer := popOuterCode st r
           let op := ot.boostedPriority
-          let od := effectiveDeadline st ot
+          let od := ot.deadline
           let odom := ot.domain
           let oe := hasSufficientBudget st ot
           let s1 := st.updateSchedContext scId fun s =>

@@ -1505,9 +1505,10 @@ struct RoundTrip {
     syscall: u64,
     /// The capability address in `x0`.
     cptr: u64,
-    /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
-    /// scheduling-context configure, the service register and the mint, whose
-    /// fifth word the kernel reads from the root task's IPC buffer (the boot's,
+    /// `x1`'s `MessageInfo`: its length at most 4, except for the
+    /// scheduling-context configure, the service register, the copy and the
+    /// mint, whose fifth word (and a mint's sixth) the kernel reads from the
+    /// root task's IPC buffer (the boot's,
     /// [`ROOT_IPC_BUFFER`], or the window's page while a scenario points the
     /// buffer there), and the long send, whose words past the fourth it reads
     /// from the sender's.
@@ -1534,14 +1535,16 @@ struct RoundTrip {
     /// and `getReceiveSlots`).  The two threads share the buffer, so the
     /// receive path is the receiver's as well.
     caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
-    /// The first overflow word of a message longer than the four registers
-    /// carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, word 5 of the
-    /// buffer), written unmeasured before the call into the IPC buffer at
-    /// this address, the caller's own, and cleared after it, so a later
-    /// call reading that word still finds the zero the kernel scrubbed: a
-    /// mint's badge (seL4's `seL4_CNode_Mint`, whose fifth argument is
-    /// read from the buffer).
-    overflow: Option<(u64, u64)>,
+    /// The first three overflow words of a message longer than the four
+    /// registers carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, words 5
+    /// to 7 of the buffer), written unmeasured before the call into the IPC
+    /// buffer at this address, the caller's own, and cleared after it, so a
+    /// later call reading them still finds the zeros the kernel scrubbed: a
+    /// copy's rights, a mint's rights and badge (seL4's `seL4_CNode_Copy` and
+    /// `seL4_CNode_Mint`, whose fifth and sixth arguments are read from the
+    /// buffer), a retype's window offset, object count and object id
+    /// ([`retype`]).
+    overflow: Option<(u64, [u64; 3])>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1617,8 +1620,6 @@ const TCB_BIND_NOTIFICATION: u64 = 26;
 const TCB_UNBIND_NOTIFICATION: u64 = 27;
 #[cfg(feature = "hw_target")]
 const VSPACE_UNIFY_INSTRUCTION: u64 = 29;
-#[cfg(feature = "hw_target")]
-const TCB_SET_FAULT_HANDLER: u64 = 34;
 #[cfg(feature = "hw_target")]
 const CSPACE_REVOKE: u64 = 35;
 #[cfg(feature = "hw_target")]
@@ -1799,19 +1800,27 @@ const fn cap_address(slot: u64) -> u64 {
 #[cfg(feature = "hw_target")]
 const ROOT_IPC_BUFFER: u64 = 2 << 39;
 
-/// The CNode operation word (`sele4n_abi::args::cspace::cnode_op_word`) of a
-/// copy or a move between two of the root task's slots: both resolved at the
-/// root CNode's whole depth, its 58-bit guard and its 6-bit radix.
+/// The partner's IPC buffer while it is runnable beside the root task: the
+/// second 1 KiB of the root task's buffer page, through the same frame
+/// capability.  A step there is issued by whichever thread is current, so
+/// every word the driver writes into the root task's buffer is written here
+/// too ([`write_buffer_words`]): an extra capability, a receive path or an
+/// overflow word reads the same whichever thread issues the step.
 #[cfg(feature = "hw_target")]
-const ROOT_SLOT_DEPTHS: u64 = 64 | (64 << 8);
+const PARTNER_IPC_BUFFER: u64 = ROOT_IPC_BUFFER + 0x400;
 
-/// A move's four words from root slot `src` to root slot `dest` (seL4's
-/// `seL4_CNode_Move` addressing): the destination index in the invoked root
-/// CNode, the source root (the root task's own CNode capability), the source
-/// index, and both depths.
+/// The depth that resolves a root slot's address: the root CNode's whole
+/// depth, its 58-bit guard and its 6-bit radix.
 #[cfg(feature = "hw_target")]
-const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
-    root_slot_masked(src, dest, 0)
+const ROOT_DEPTH: u64 = 64;
+
+/// A CNode operation's four slot words from root slot `src` to root slot
+/// `dest`, in seL4's `decodeCNodeInvocation` order: the destination index
+/// and depth in the invoked root CNode, then the source index and depth in
+/// the source root.
+#[cfg(feature = "hw_target")]
+const fn root_slots(src: u64, dest: u64) -> [u64; 4] {
+    [cap_address(dest), ROOT_DEPTH, cap_address(src), ROOT_DEPTH]
 }
 
 /// Every access right, as a copy's or a mint's rights mask (seL4's
@@ -1819,30 +1828,236 @@ const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
 #[cfg(feature = "hw_target")]
 const ALL_RIGHTS: u64 = 0x1f;
 
-/// A copy's four words from root slot `src` to root slot `dest` (seL4's
-/// `seL4_CNode_Copy`): [`root_slot_pair`]'s addressing with every right in the
-/// mask, so the copy keeps the source's rights.
+/// **A CNode operation** on the CNode at `cptr` with its four slot words
+/// `slots` ([`root_slots`]'s order) and its source root, the CNode
+/// capability at `src_root`, as the message's extra capability 0 (seL4's
+/// `excaprefs[0]`): written, unmeasured, into `caps_or_badges[0]` of the
+/// caller's IPC buffer at `buffer` ([`RoundTrip::caps_or_badges`]) and
+/// counted in the message info ([`ONE_EXTRA_CAP`]).  Four words: a move's
+/// whole message.
 #[cfg(feature = "hw_target")]
-const fn root_slot_copy(src: u64, dest: u64) -> [u64; 4] {
-    root_slot_masked(src, dest, ALL_RIGHTS)
+const fn cnode_trip(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    src_root: u64,
+    slots: [u64; 4],
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [src_root, 0, 0], None)),
+        ..invocation(name, syscall, cptr, slots)
+    }
 }
 
-/// [`root_slot_pair`]'s addressing with `rights` in the operation word's
-/// rights field (`sele4n_abi::args::cspace::cnode_op_word::RIGHTS_SHIFT`).
+/// **An IPC buffer set** (seL4's `seL4_TCB_SetIPCBuffer`): the thread at
+/// `tcb` gets its buffer at `vaddr` in the frame the capability at `frame`
+/// names, the message's extra capability 0 (seL4's `excaprefs[0]`), written,
+/// unmeasured, into `caps_or_badges[0]` of the caller's IPC buffer at
+/// `buffer` and counted in the message info ([`ONE_EXTRA_CAP`]).  The kernel
+/// derives that capability into the thread's buffer slot, so the thread's
+/// buffer is read through the frame wherever it is mapped (seL4's
+/// `lookupIPCBuffer`).
 #[cfg(feature = "hw_target")]
-const fn root_slot_masked(src: u64, dest: u64, rights: u64) -> [u64; 4] {
-    [
-        cap_address(dest),
+const fn set_ipc_buffer(
+    name: &'static str,
+    tcb: u64,
+    vaddr: u64,
+    frame: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [frame, 0, 0], None)),
+        ..invocation(name, TCB_SET_IPC_BUFFER, tcb, [vaddr, 0, 0, 0])
+    }
+}
+
+/// **The priority settings** (seL4's `seL4_TCB_SetPriority` and
+/// `seL4_TCB_SetMCPriority`): the value in MR0, and the root task's thread
+/// capability as the authority (`decodeSetPriority`'s `authCap`), extra
+/// capability 0, which the kernel reads from the caller's IPC buffer at
+/// `buffer`.  The new value must not exceed the authority's maximum controlled
+/// priority.
+#[cfg(feature = "hw_target")]
+const fn set_priority(
+    name: &'static str,
+    syscall: u64,
+    tcb: u64,
+    value: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 4,
+        caps_or_badges: Some((buffer, [ROOT_TCB_CAP, 0, 0], None)),
+        ..invocation(name, syscall, tcb, [value, 0, 0, 0])
+    }
+}
+
+/// **An invocation whose one argument is a capability** (seL4's
+/// `seL4_TCB_BindNotification`, `seL4_SchedContext_Bind` and
+/// `seL4_IRQHandler_SetNotification`): no message word, the argument named as
+/// extra capability 0, which the kernel reads from the caller's IPC buffer at
+/// `buffer`.
+#[cfg(feature = "hw_target")]
+const fn cap_argument(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    argument: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP,
+        caps_or_badges: Some((buffer, [argument, 0, 0], None)),
+        ..invocation(name, syscall, cptr, [0; 4])
+    }
+}
+
+/// **The thread-space set** (seL4-MCS's `seL4_TCB_SetSpace`) on the thread
+/// capability `tcb`: `cspace_root_data` in MR0 and `vspace_root_data` (0) in
+/// MR1, and the fault endpoint, the CSpace root and the VSpace root named as
+/// extra capabilities 0, 1 and 2 (`caps`), which the kernel reads from the
+/// caller's IPC buffer at `buffer`.  The fault endpoint is copied into the
+/// thread's fault-handler slot; [`NO_FAULT_HANDLER`] names an empty slot,
+/// which clears it.  The thread must be suspended.
+#[cfg(feature = "hw_target")]
+const fn set_space(
+    name: &'static str,
+    tcb: u64,
+    caps: [u64; 3],
+    cspace_root_data: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: THREE_EXTRA_CAPS | 2,
+        caps_or_badges: Some((buffer, caps, None)),
+        ..invocation(name, TCB_SET_SPACE, tcb, [cspace_root_data, 0, 0, 0])
+    }
+}
+
+/// **The table install** (seL4's `seL4_ARM_PageTable_Map`) on the table
+/// capability `table`: the address `FRAME_VADDR` in MR0 and the attributes
+/// word (0) in MR1, the address space `root` named as extra capability 0,
+/// which the kernel reads from the caller's IPC buffer at `buffer`.
+#[cfg(feature = "hw_target")]
+const fn page_table_map(name: &'static str, table: u64, root: u64, buffer: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 2,
+        caps_or_badges: Some((buffer, [root, 0, 0], None)),
+        ..invocation(name, PAGE_TABLE_MAP, table, [FRAME_VADDR, 0, 0, 0])
+    }
+}
+
+/// **The page map** (seL4's `seL4_ARM_Page_Map`) on the frame capability
+/// `frame`: the address, the rights word and the attributes word in MR0–MR2,
+/// the address space `root` named as extra capability 0, which the kernel
+/// reads from the caller's IPC buffer at `buffer` (WS-SX SX6.3, D6).
+#[cfg(feature = "hw_target")]
+const fn page_map_words(
+    name: &'static str,
+    frame: u64,
+    root: u64,
+    words: [u64; 3],
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 3,
+        caps_or_badges: Some((buffer, [root, 0, 0], None)),
+        ..invocation(name, VSPACE_MAP, frame, [words[0], words[1], words[2], 0])
+    }
+}
+
+/// `page_map_words` for a permission set in the model's five bits (read 0,
+/// write 1, execute 2, user 3, cacheable 4): read and write go to seL4's
+/// rights word (`CanRead` bit 1, `CanWrite` bit 0), execute and cacheable to
+/// its attributes word (`ExecuteNever` bit 2 clear, `PageCacheable` bit 0).
+#[cfg(feature = "hw_target")]
+const fn page_map(
+    name: &'static str,
+    frame: u64,
+    root: u64,
+    vaddr: u64,
+    perms: u64,
+    buffer: u64,
+) -> RoundTrip {
+    let rights = ((perms & 1) << 1) | ((perms >> 1) & 1);
+    let attr = ((perms >> 4) & 1) | (if perms & 4 == 0 { 4 } else { 0 });
+    page_map_words(name, frame, root, [vaddr, rights, attr], buffer)
+}
+
+/// **The handler issue** (seL4's `seL4_IRQControl_Get`) on the interrupt
+/// control: the line in MR0, and the destination as seL4's `lookupTargetSlot`
+/// reads it — the root CNode capability named as extra capability 0 (from the
+/// root task's IPC buffer at `ROOT_IPC_BUFFER`), the slot's index and depth in
+/// MR1 and MR2.
+#[cfg(feature = "hw_target")]
+const fn irq_control_get(name: &'static str, line: u64, slot: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 3,
+        caps_or_badges: Some((ROOT_IPC_BUFFER, [CNODE_CAP, 0, 0], None)),
+        ..invocation(
+            name,
+            IRQ_CONTROL_GET,
+            IRQ_CONTROL_CAP,
+            [line, cap_address(slot), ROOT_DEPTH, 0],
+        )
+    }
+}
+
+/// **The CNode copy** (seL4's `seL4_CNode_Copy`): [`cnode_trip`] and the
+/// rights mask, the fifth word, which the kernel reads from the caller's IPC
+/// buffer at `buffer` ([`RoundTrip::overflow`]).
+#[cfg(feature = "hw_target")]
+const fn cnode_copy(
+    name: &'static str,
+    cptr: u64,
+    src_root: u64,
+    slots: [u64; 4],
+    rights: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 5,
+        overflow: Some((buffer, [rights, 0, 0])),
+        ..cnode_trip(name, CSPACE_COPY, cptr, src_root, slots, buffer)
+    }
+}
+
+/// A copy from root slot `src` to root slot `dest` with every right in the
+/// mask, so the copy keeps the source's rights; the source root is the root
+/// task's own CNode capability.
+#[cfg(feature = "hw_target")]
+const fn root_copy(name: &'static str, src: u64, dest: u64, buffer: u64) -> RoundTrip {
+    cnode_copy(
+        name,
+        CNODE_CAP,
         cap_address(CNODE_SLOT),
-        cap_address(src),
-        ROOT_SLOT_DEPTHS | (rights << 16),
-    ]
+        root_slots(src, dest),
+        ALL_RIGHTS,
+        buffer,
+    )
+}
+
+/// A move from root slot `src` to root slot `dest` (seL4's
+/// `seL4_CNode_Move`: the four slot words, no rights).
+#[cfg(feature = "hw_target")]
+const fn root_move(name: &'static str, src: u64, dest: u64, buffer: u64) -> RoundTrip {
+    cnode_trip(
+        name,
+        CSPACE_MOVE,
+        CNODE_CAP,
+        cap_address(CNODE_SLOT),
+        root_slots(src, dest),
+        buffer,
+    )
 }
 
 /// **The CNode mint** (seL4's `seL4_CNode_Mint`) from root slot `src` to
 /// root slot `dest`, its capability masked by `rights` and badged `badge`:
-/// five words, [`root_slot_masked`]'s four and the badge, which the kernel
-/// reads from the root task's IPC buffer at `buffer`
+/// six words, [`root_slots`]'s four, the rights and the badge, the last two
+/// read from the root task's IPC buffer at `buffer`
 /// ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
 const fn mint(
@@ -1854,13 +2069,15 @@ const fn mint(
     buffer: u64,
 ) -> RoundTrip {
     RoundTrip {
-        msg_len: 5,
-        overflow: Some((buffer, badge)),
-        ..invocation(
+        msg_len: ONE_EXTRA_CAP | 6,
+        overflow: Some((buffer, [rights, badge, 0])),
+        ..cnode_trip(
             name,
             CSPACE_MINT,
             CNODE_CAP,
-            root_slot_masked(src, dest, rights),
+            cap_address(CNODE_SLOT),
+            root_slots(src, dest),
+            buffer,
         )
     }
 }
@@ -1919,6 +2136,11 @@ const AUDIT_SLOT: u64 = COPY_SLOT;
 /// exerciser holds is issued from (`seL4_IRQControl_Get`).
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_SLOT: u64 = 20;
+/// The slot of the root task's service-registry capability
+/// (`Exerciser.serviceRegistrySlot`, WS-SX SX6.7): the capability the service
+/// register, revoke and query invoke, the endpoint their extra capability 0.
+#[cfg(feature = "hw_target")]
+const SERVICE_REGISTRY_SLOT: u64 = 36;
 /// The rights the boot gives the interrupt-control capability (`write` alone,
 /// `Capability.irqControl`), as a mint's rights word.
 #[cfg(feature = "hw_target")]
@@ -1982,6 +2204,8 @@ const SCHED_CONTEXT_CAP: u64 = cap_address(SCHED_CONTEXT_SLOT);
 const SCHED_CONTROL_CAP: u64 = cap_address(SCHED_CONTROL_SLOT);
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_CAP: u64 = cap_address(IRQ_CONTROL_SLOT);
+#[cfg(feature = "hw_target")]
+const SERVICE_REGISTRY_CAP: u64 = cap_address(SERVICE_REGISTRY_SLOT);
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
 #[cfg(feature = "hw_target")]
@@ -2114,25 +2338,36 @@ const ROOT_IPC_BUFFER_AT_BOOT: RoundTrip = mint(
 /// mapped again through the frame capability the boot put in
 /// [`ROOT_IPC_BUFFER_FRAME_SLOT`], with the buffer's own permissions, and a
 /// mint then reads its badge from the remapped buffer.
+///
+/// The remap is seL4's `Page_Map`, whose VSpace root is extra capability 0,
+/// read from the caller's buffer — which is unmapped then.  The kernel reads
+/// the buffer through the frame capability in the thread's buffer slot
+/// (seL4's `lookupIPCBuffer`), not through the thread's tables, so the word
+/// is written while the page is still mapped: the unmap writes it (and names
+/// no extra capability, so reads none), and the remap writes nothing, as a
+/// thread whose buffer is unmapped can write nothing there.
 #[cfg(feature = "hw_target")]
 const ROOT_IPC_BUFFER_CAP: [RoundTrip; 3] = [
-    invocation(
-        "root-ipc-buffer-cap-unmap",
-        VSPACE_UNMAP,
-        VSPACE_CAP,
-        [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
-    ),
-    invocation(
-        "root-ipc-buffer-cap-remap",
-        VSPACE_MAP,
-        VSPACE_CAP,
-        [
-            ROOT_ASID,
-            ROOT_IPC_BUFFER,
+    RoundTrip {
+        caps_or_badges: Some((ROOT_IPC_BUFFER, [VSPACE_CAP, 0, 0], None)),
+        ..invocation(
+            "root-ipc-buffer-cap-unmap",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
+        )
+    },
+    RoundTrip {
+        caps_or_badges: None,
+        ..page_map(
+            "root-ipc-buffer-cap-remap",
             ROOT_IPC_BUFFER_FRAME_CAP,
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
             FRAME_PERMS,
-        ],
-    ),
+            ROOT_IPC_BUFFER,
+        )
+    },
     mint(
         "root-ipc-buffer-cap",
         NOTIFICATION_SLOT,
@@ -2413,11 +2648,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
     // WS-ZA ZA5.4 part 23: the final delete of a busy endpoint, of a busy
     // notification, and of a bound one.
     &[
-        invocation(
+        retype(
             "untyped-retype-busy-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("receive-on-carved", RECEIVE, FRAME_CAP, 0, [0, 0], true),
         invocation(
@@ -2428,9 +2663,8 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-busy-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -2438,6 +2672,7 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("wait-on-carved", WAIT, FRAME_CAP, 0, [0, 0], true),
         invocation(
@@ -2451,11 +2686,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
     // caller is blocked on: the sender pass of the endpoint's queue cancel
     // (seL4's `cancelAllIPC`), which restarts each.
     &[
-        invocation(
+        retype(
             "untyped-retype-send-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("send-on-carved", SEND, FRAME_CAP, 1, [0x88, 0], true),
         invocation(
@@ -2466,11 +2701,11 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-call-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         partner_step("call-on-carved", CALL, FRAME_CAP, 1, [0x66, 0], true),
         invocation(
@@ -2481,9 +2716,8 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-bound-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -2491,12 +2725,14 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cap_argument(
             "bind-carved-notification",
             TCB_BIND_NOTIFICATION,
             PARTNER_TCB_CAP,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-notification-delete",
@@ -2522,6 +2758,45 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         caps_or_badges: None,
         overflow: None,
         returns: None,
+    }
+}
+
+/// **The untyped retype** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3) of one
+/// object: [`retype_window`] with an object count of one.
+#[cfg(feature = "hw_target")]
+const fn retype(name: &'static str, untyped: u64, carve: [u64; 4], buffer: u64) -> RoundTrip {
+    retype_window(name, untyped, carve, 1, buffer)
+}
+
+/// **A retype window** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3): the
+/// invoked untyped `untyped` and the exerciser's carve `[type, child, root,
+/// slot]` — `type` the object's `KernelObjectType` tag with its size bits
+/// above bit 8, `child` the first object's id, `root` the destination CNode's
+/// capability address and `slot` the window's first slot in it — for `count`
+/// objects, object `i` at id `child + i` into slot `slot + i`.  Seven words:
+/// the type and the size inline, the node index and depth 0 (the destination
+/// is the root capability itself), then the window's offset (`slot`), its
+/// object count and the model's object id word, read from the caller's IPC
+/// buffer at `buffer` ([`RoundTrip::overflow`]); the root is extra capability
+/// 0, written to the same buffer ([`RoundTrip::caps_or_badges`]).
+#[cfg(feature = "hw_target")]
+const fn retype_window(
+    name: &'static str,
+    untyped: u64,
+    carve: [u64; 4],
+    count: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: ONE_EXTRA_CAP | 7,
+        caps_or_badges: Some((buffer, [carve[2], 0, 0], None)),
+        overflow: Some((buffer, [carve[3], count, carve[1]])),
+        ..invocation(
+            name,
+            UNTYPED_RETYPE,
+            untyped,
+            [carve[0] & 0xff, carve[0] >> 8, 0, 0],
+        )
     }
 }
 
@@ -2558,50 +2833,37 @@ const fn overflowed(
     }
 }
 
-/// A CNode Copy on the root CNode refused with `returns`, its four words `msg`.
+/// A CNode Copy on the root CNode refused with `returns`: its four slot words
+/// `slots`, every right in its mask, and its source root the CNode
+/// capability at `src_root`, both in the root task's IPC buffer at `buffer`.
 #[cfg(feature = "hw_target")]
 const fn cnode_refusal(
     name: &'static str,
-    msg: [u64; 4],
+    src_root: u64,
+    slots: [u64; 4],
+    buffer: u64,
     returns: Option<(u64, [Option<u64>; 4])>,
 ) -> RoundTrip {
     RoundTrip {
-        name,
-        syscall: CSPACE_COPY,
-        cptr: CNODE_CAP,
-        msg_len: 4,
-        msg,
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
         returns,
+        ..cnode_copy(name, CNODE_CAP, src_root, slots, ALL_RIGHTS, buffer)
     }
 }
 
-/// `trip` refused for a second capability whose address misses the root
-/// CNode's guard: `seL4_FailedLookup`, not the source, `GuardMismatch` (4),
-/// 64 bits left and the root's guard, its width (58) the fifth word, written
-/// to the root task's buffer `msg[4]` while the window's frame is that buffer
-/// ([`RoundTrip::overflow`], as `failed-lookup-guard-mismatch`).
-#[cfg(feature = "hw_target")]
-const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
-    RoundTrip {
-        overflow: Some((FRAME_VADDR, 0)),
-        returns: refused_with(
-            FAILED_LOOKUP,
-            5,
-            [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-        ),
-        ..trip
-    }
-}
-
-/// A root slot no scenario fills: the empty source a Copy is refused from.
+/// A root slot no scenario leaves filled (the full retype window fills and
+/// empties it, [`WINDOW_FULL_SCENARIO`]): the empty source a Copy is refused
+/// from.
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
 
-/// A root slot no scenario fills: the destination of the empty-source Copy.
+/// The address of a root slot no scenario leaves filled, named as a thread-space
+/// set's fault endpoint ([`set_space`]) to leave the thread with no fault
+/// handler.
+#[cfg(feature = "hw_target")]
+const NO_FAULT_HANDLER: u64 = cap_address(EMPTY_SOURCE_SLOT);
+
+/// A root slot no scenario leaves filled: the destination of the empty-source
+/// Copy.
 /// seL4's `decodeCNodeInvocation` refuses an occupied destination before it
 /// looks the source up, and the copy slot still holds the boot audit
 /// capability (`AUDIT_SLOT`) when the refusal scenarios run.
@@ -2678,6 +2940,25 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
     }
 }
 
+/// An IPC syscall on a capability of no IPC kind (the root CNode's), refused
+/// `InvalidCapability` in the state it was handed: each IPC route's refusal,
+/// measured.
+#[cfg(feature = "hw_target")]
+const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr: CNODE_CAP,
+        msg_len: 1,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(INVALID_CAPABILITY),
+    }
+}
+
 /// A message length past the most message registers a message has (120),
 /// which the message-info decode refuses.
 #[cfg(feature = "hw_target")]
@@ -2731,41 +3012,57 @@ const fn yield_to(name: &'static str) -> RoundTrip {
     }
 }
 
-/// The scheduling-context configure (WS-ZA ZA6.4): invoked on core 0's
-/// scheduling control, the context's capability at MR0, then the budget, the
-/// period and the priority-and-domain word (`priority | domain << 8`); the fifth
-/// word (the deadline) is read from the root task's IPC buffer, which the
-/// kernel's model of memory holds as zero, so deadline 0.
+/// The scheduling-context configure (seL4-MCS's
+/// `seL4_SchedControl_ConfigureFlags`): invoked on core 0's scheduling
+/// control, the context `sc_cap` extra capability 0, named in the root task's
+/// IPC buffer at `buffer` (the buffer its thread has set when the round trip
+/// runs); the budget and the period in MR0 and MR1, no extra refills and badge
+/// 0 in MR2 and MR3, and the fifth word (the flags) read from that buffer,
+/// which the kernel's model of memory holds as zero, so not sporadic.
 #[cfg(feature = "hw_target")]
-const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
+const fn configure(
+    name: &'static str,
+    buffer: u64,
+    sc_cap: u64,
+    budget: u64,
+    period: u64,
+) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SCHED_CONTEXT_CONFIGURE,
         cptr: SCHED_CONTROL_CAP,
-        msg_len: 5,
-        msg,
+        msg_len: ONE_EXTRA_CAP | 5,
+        msg: [budget, period, 0, 0],
         primed: None,
         blocks: false,
-        caps_or_badges: None,
+        caps_or_badges: Some((buffer, [sc_cap, 0, 0], None)),
         overflow: None,
         returns: None,
     }
 }
 
-/// The service register: five message words, the fifth (whether invoking the
-/// interface needs the grant right) read from the root task's IPC buffer,
-/// which the kernel's model of memory holds as zero, so no grant.
+/// The service register (WS-SX SX6.7): invoked on the service-registry
+/// capability, the endpoint `endpoint` extra capability 0, named in the root
+/// task's IPC buffer at `buffer` (the buffer its thread has set when the
+/// round trip runs); five message words, the fifth (whether invoking the
+/// interface needs the grant right) read from that buffer, which the kernel's
+/// model of memory holds as zero, so no grant.
 #[cfg(feature = "hw_target")]
-const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+const fn service_register(
+    name: &'static str,
+    endpoint: u64,
+    msg: [u64; 4],
+    buffer: u64,
+) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SERVICE_REGISTER,
-        cptr,
-        msg_len: 5,
+        cptr: SERVICE_REGISTRY_CAP,
+        msg_len: 5 | ONE_EXTRA_CAP,
         msg,
         primed: None,
         blocks: false,
-        caps_or_badges: None,
+        caps_or_badges: Some((buffer, [endpoint, 0, 0], None)),
         overflow: None,
         returns: None,
     }
@@ -2865,6 +3162,9 @@ const TAIL_MESSAGE_LENGTH: u64 = 120;
 /// A message-info word's one extra capability (seL4's `extraCaps`, bits 7..8).
 #[cfg(feature = "hw_target")]
 const ONE_EXTRA_CAP: u64 = 1 << 7;
+/// Two extra capabilities.
+#[cfg(feature = "hw_target")]
+const TWO_EXTRA_CAPS: u64 = 2 << 7;
 /// Three capabilities, the most a message carries (`seL4_MsgMaxExtraCaps`).
 #[cfg(feature = "hw_target")]
 const THREE_EXTRA_CAPS: u64 = 3 << 7;
@@ -2909,6 +3209,233 @@ const SCHED_CONTEXT_PERIOD: u64 = 10_000;
 #[cfg(feature = "hw_target")]
 const PARTNER_PRIORITY: u64 = 255;
 
+/// The retype windows' root slots and object ids: the windows start at the
+/// first root slot no boot object holds past the service registry's
+/// (`SERVICE_REGISTRY_SLOT`), and their ids above every other carve's.  A
+/// full window ([`RETYPE_FAN_OUT_LIMIT`] objects) fills root slots 37 to 62,
+/// past the empty slots the refusal and walk scenarios name (48 to 52) and the
+/// read-only audit slot (60, deleted before these scenarios run); each window
+/// deletes every capability it wrote, so it leaves those slots empty again.
+#[cfg(feature = "hw_target")]
+const WINDOW_FIRST_SLOT: u64 = 37;
+#[cfg(feature = "hw_target")]
+const WINDOW_THREE_CHILD_ID: u64 = 40;
+#[cfg(feature = "hw_target")]
+const WINDOW_FULL_CHILD_ID: u64 = 44;
+
+/// seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`: the most objects one retype carves
+/// (the model's `retypeFanOutLimit`).  The HAL has no runtime dependency, so
+/// this mirrors `sele4n_abi::args::RETYPE_FAN_OUT_LIMIT`, pinned by
+/// `retype_fan_out_limit_is_the_abi_limit`.
+#[cfg(any(feature = "hw_target", test))]
+const RETYPE_FAN_OUT_LIMIT: u64 = 26;
+
+/// **A three-object retype window** (WS-SX SX6.5): a window one object past
+/// [`RETYPE_FAN_OUT_LIMIT`] refused `RangeError(1, limit)` (seL4's
+/// `decodeUntypedInvocation` range check on the object count) with nothing
+/// carved, then three endpoints carved into root slots 37 to 39 in one call,
+/// read as three endpoints' cells; each capability deleted, which retires
+/// its endpoint and leaves the untyped childless, so the next run's carve
+/// resets it (seL4's `resetUntypedCap` inside `Untyped_Retype`) and carves
+/// where this one did.
+#[cfg(feature = "hw_target")]
+const WINDOW_THREE_SCENARIO: [RoundTrip; 5] = [
+    RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(1), Some(RETYPE_FAN_OUT_LIMIT), None, None],
+        ),
+        ..retype_window(
+            "untyped-retype-window-over-limit",
+            UNTYPED_CAP,
+            [
+                ENDPOINT_TYPE,
+                WINDOW_THREE_CHILD_ID,
+                CNODE_CAP,
+                WINDOW_FIRST_SLOT,
+            ],
+            RETYPE_FAN_OUT_LIMIT + 1,
+            ROOT_IPC_BUFFER,
+        )
+    },
+    retype_window(
+        "untyped-retype-window-three",
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            WINDOW_THREE_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        3,
+        ROOT_IPC_BUFFER,
+    ),
+    invocation(
+        "window-three-delete-0",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "window-three-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT + 1, 0, 0, 0],
+    ),
+    invocation(
+        "window-three-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT + 2, 0, 0, 0],
+    ),
+];
+
+/// The names of the full window's deletes, one per carved slot.
+#[cfg(feature = "hw_target")]
+const WINDOW_FULL_DELETE_NAMES: [&str; RETYPE_FAN_OUT_LIMIT as usize] = [
+    "window-full-delete-0",
+    "window-full-delete-1",
+    "window-full-delete-2",
+    "window-full-delete-3",
+    "window-full-delete-4",
+    "window-full-delete-5",
+    "window-full-delete-6",
+    "window-full-delete-7",
+    "window-full-delete-8",
+    "window-full-delete-9",
+    "window-full-delete-10",
+    "window-full-delete-11",
+    "window-full-delete-12",
+    "window-full-delete-13",
+    "window-full-delete-14",
+    "window-full-delete-15",
+    "window-full-delete-16",
+    "window-full-delete-17",
+    "window-full-delete-18",
+    "window-full-delete-19",
+    "window-full-delete-20",
+    "window-full-delete-21",
+    "window-full-delete-22",
+    "window-full-delete-23",
+    "window-full-delete-24",
+    "window-full-delete-25",
+];
+
+/// **A full retype window** (WS-SX SX6.5): [`RETYPE_FAN_OUT_LIMIT`] endpoints
+/// carved into root slots 37 to 62 in one call, read as that many endpoints'
+/// cells; each capability deleted, which retires its endpoint and leaves the
+/// untyped childless for the next run's carve to reset.
+#[cfg(feature = "hw_target")]
+static WINDOW_FULL_SCENARIO: [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 1] =
+    window_full_scenario();
+
+/// Builds [`WINDOW_FULL_SCENARIO`]: the carve, then a delete of each slot it
+/// filled, in order.
+#[cfg(feature = "hw_target")]
+const fn window_full_scenario() -> [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 1] {
+    let mut steps = [retype_window(
+        "untyped-retype-window-full",
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            WINDOW_FULL_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        RETYPE_FAN_OUT_LIMIT,
+        ROOT_IPC_BUFFER,
+    ); RETYPE_FAN_OUT_LIMIT as usize + 1];
+    let mut i = 0;
+    while i < RETYPE_FAN_OUT_LIMIT as usize {
+        steps[i + 1] = invocation(
+            WINDOW_FULL_DELETE_NAMES[i],
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [WINDOW_FIRST_SLOT + i as u64, 0, 0, 0],
+        );
+        i += 1;
+    }
+    steps
+}
+
+/// The page table [`WIDE_WORD_SCENARIO`] carves into the first window slot
+/// and offers a wide address to, above every other carve's id.
+#[cfg(feature = "hw_target")]
+const WIDE_TABLE_CHILD_ID: u64 = 70;
+
+/// **Argument words at or above `2 ^ 63`, each read on the word** (WS-SX
+/// SX6.3, SX6.6): no word is made a heap number, and each call is refused as
+/// seL4 refuses it, changing nothing.
+/// - A retype whose object id word is wide: an id past the machine's physical
+///   address space (`objectIdInAddressSpace`), `AddressOutOfBounds`.
+/// - An interrupt line past the board's last: seL4's `Arch_checkIRQ`,
+///   `RangeError(0, maxIRQ)`, `maxIRQ` the board's last line
+///   ([`crate::gic::MAX_INTID`] less one).
+/// - A page table, carved into the first window slot and installed nowhere,
+///   offered an address past the user top: seL4's
+///   `decodeARMPageTableInvocation`, `InvalidArgument 0`; its capability is
+///   then deleted, which retires it and leaves the untyped childless.
+/// - The suspended partner's IPC buffer set at a wide address 8 bytes past a
+///   1 KiB boundary: seL4's `checkValidIPCBuffer`, `AlignmentError`.
+#[cfg(feature = "hw_target")]
+const WIDE_WORD_SCENARIO: [RoundTrip; 6] = [
+    RoundTrip {
+        returns: refused(ADDRESS_OUT_OF_BOUNDS),
+        ..retype(
+            "untyped-retype-wide-child-id",
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, WIDE_WORD, CNODE_CAP, WINDOW_FIRST_SLOT],
+            ROOT_IPC_BUFFER,
+        )
+    },
+    RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(0), Some(crate::gic::MAX_INTID as u64 - 1), None, None],
+        ),
+        ..irq_control_get("irq-control-get-wide-line", WIDE_WORD, WINDOW_FIRST_SLOT)
+    },
+    retype(
+        "untyped-retype-wide-table",
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            WIDE_TABLE_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        ROOT_IPC_BUFFER,
+    ),
+    RoundTrip {
+        msg: [WIDE_WORD, 0, 0, 0],
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+        ..page_table_map(
+            "page-table-map-wide-vaddr",
+            cap_address(WINDOW_FIRST_SLOT),
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
+        )
+    },
+    invocation(
+        "wide-table-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT, 0, 0, 0],
+    ),
+    RoundTrip {
+        returns: refused(ALIGNMENT_ERROR),
+        ..set_ipc_buffer(
+            "tcb-set-ipc-buffer-wide-unaligned",
+            PARTNER_TCB_CAP,
+            WIDE_WORD | 8,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        )
+    },
+];
+
 /// The capability invocations outside IPC (WS-ZA ZA5.1), each sequence issued
 /// by the root task with the partner suspended, and each leaving the state it
 /// found, so its second run is its steady state:
@@ -2941,22 +3468,18 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   suspended, which leaves it bound (seL4's suspend unbinds nothing), and
 ///   unbound.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
-///   from that buffer), queried and revoked.
+///   from that buffer), queried and revoked;
+/// - a retype window one past the fan-out limit refused, three endpoints
+///   carved in one retype and each deleted ([`WINDOW_THREE_SCENARIO`]), and
+///   a full window of the limit's endpoints carved and each deleted
+///   ([`WINDOW_FULL_SCENARIO`]), each group ending in the untyped's reset;
+/// - argument words at or above `2 ^ 63`, each refused as seL4 refuses it
+///   ([`WIDE_WORD_SCENARIO`]).
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
     &[
-        invocation(
-            "cspace-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(NOTIFICATION_SLOT, COPY_SLOT),
-        ),
-        invocation(
-            "cspace-move",
-            CSPACE_MOVE,
-            CNODE_CAP,
-            root_slot_pair(COPY_SLOT, MOVE_SLOT),
-        ),
+        root_copy("cspace-copy", NOTIFICATION_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
+        root_move("cspace-move", COPY_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
         invocation(
             "cspace-delete",
             CSPACE_DELETE,
@@ -3008,16 +3531,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             0,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cnode_copy(
             "cnode-multi-level-copy",
-            CSPACE_COPY,
             CNODE_CAP,
+            cap_address(GUARDED_CNODE_SLOT),
             [
                 cap_address(WALK_COPY_SLOT),
-                cap_address(GUARDED_CNODE_SLOT),
+                ROOT_DEPTH,
                 guarded_index(GUARDLESS_CNODE_SLOT, NOTIFICATION_SLOT),
-                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            ALL_RIGHTS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "cnode-multi-level-copy-delete",
@@ -3027,12 +3552,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         cnode_refusal(
             "lookup-stops-at-non-cnode",
+            cap_address(GUARDED_CNODE_SLOT),
             [
                 cap_address(WALK_COPY_SLOT),
-                cap_address(GUARDED_CNODE_SLOT),
+                ROOT_DEPTH,
                 guarded_index(NOTIFICATION_SLOT, 0),
-                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            ROOT_IPC_BUFFER,
             // The source; DepthMismatch (3), six bits left, none found.
             refused_with(FAILED_LOOKUP, 4, [Some(1), Some(3), Some(6), Some(0)]),
         ),
@@ -3100,17 +3627,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
     ],
     &[
-        invocation(
+        set_priority(
             "tcb-set-priority",
             TCB_SET_PRIORITY,
             PARTNER_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_priority(
             "tcb-set-mc-priority",
             TCB_SET_MC_PRIORITY,
             PARTNER_TCB_CAP,
-            [255, 0, 0, 0],
+            255,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "tcb-set-affinity",
@@ -3118,17 +3647,34 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0, 0, 0, 0],
         ),
-        invocation(
-            "tcb-set-fault-handler",
-            TCB_SET_FAULT_HANDLER,
+        // seL4-MCS's `TCB_SetSpace` installs the fault endpoint, extra
+        // capability 0, beside the two roots: an empty slot clears the
+        // handler, and a capability that is not an endpoint is refused
+        // `InvalidCapability` naming capability 1 (`decodeSetSpace`'s
+        // `validFaultHandler`) before anything changes.
+        set_space(
+            "set-space-fault-handler-cleared",
             PARTNER_TCB_CAP,
-            [ENDPOINT_CAP, 0, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        RoundTrip {
+            returns: refused_with(INVALID_CAPABILITY, 1, [Some(1), None, None, None]),
+            ..set_space(
+                "set-space-fault-handler-not-endpoint",
+                PARTNER_TCB_CAP,
+                [NOTIFICATION_CAP, CNODE_CAP, VSPACE_CAP],
+                0,
+                ROOT_IPC_BUFFER,
+            )
+        },
+        cap_argument(
             "tcb-bind-notification",
             TCB_BIND_NOTIFICATION,
             PARTNER_TCB_CAP,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "tcb-unbind-notification",
@@ -3136,29 +3682,32 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_space(
             "tcb-set-space",
-            TCB_SET_SPACE,
             PARTNER_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
         // The CSpace root's guard taken from `cspace_root_data` (seL4's
         // `updateCapData` in `decodeSetSpace`): the root's own 58-bit guard,
         // so the partner's addresses resolve as before; then a guard size
         // that does not fit beside the radix, refused.
-        invocation(
+        set_space(
             "set-space-root-data",
-            TCB_SET_SPACE,
             PARTNER_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, ROOT_CNODE_DATA, 0],
+            [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+            ROOT_CNODE_DATA,
+            ROOT_IPC_BUFFER,
         ),
         RoundTrip {
             returns: refused(ILLEGAL_STATE),
-            ..invocation(
+            ..set_space(
                 "set-space-root-data-refused",
-                TCB_SET_SPACE,
                 PARTNER_TCB_CAP,
-                [CNODE_CAP, VSPACE_CAP, 59, 0],
+                [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+                59,
+                ROOT_IPC_BUFFER,
             )
         },
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
@@ -3171,11 +3720,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     // shared; and a carved thread's while it is queued to run.  Each delete
     // finalises its object (seL4's `finaliseCap`) and retires it.
     &[
-        invocation(
+        retype(
             "untyped-retype-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "inactive-tcb-delete",
@@ -3183,17 +3732,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-bound-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cap_argument(
             "bind-carved-tcb",
             TCB_BIND_NOTIFICATION,
             FRAME_CAP,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-tcb-delete",
@@ -3201,9 +3751,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-sched-context",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 SCHED_CONTEXT_TYPE,
@@ -3211,18 +3760,20 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 MINT_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-sc-thread",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cap_argument(
             "bind-carved-sched-context",
             SCHED_CONTEXT_BIND,
             MINT_CAP,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "bound-sched-context-delete",
@@ -3242,18 +3793,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // deleted, which retires it (the steady-state run carves its id
         // again); then the second's, which the finalisation suspends, taking
         // it off the queue in place, and retires.
-        invocation(
+        retype(
             "untyped-retype-queued-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[4], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation("resume-carved-tcb", TCB_RESUME, FRAME_CAP, [0; 4]),
-        invocation(
+        retype(
             "untyped-retype-shared-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[5], CNODE_CAP, MINT_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation("resume-shared-tcb", TCB_RESUME, MINT_CAP, [0; 4]),
         invocation("suspend-queued-tcb", TCB_SUSPEND, FRAME_CAP, [0; 4]),
@@ -3406,9 +3957,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
     ],
     &[
-        invocation(
+        retype(
             "untyped-retype-page-table-1",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3416,16 +3966,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[0],
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_table_map(
             "page-table-map-1",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[0],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-page-table-2",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3433,16 +3983,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[1],
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_table_map(
             "page-table-map-2",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[1],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-page-table-3",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 PAGE_TABLE_TYPE,
@@ -3450,24 +4000,27 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 PAGE_TABLE_SLOTS[2],
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_table_map(
             "page-table-map-3",
-            PAGE_TABLE_MAP,
             PAGE_TABLE_CAPS[2],
-            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-frame",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_map(
             "vspace-map",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         // The first page unmap after boot, before any teardown has retired a
         // shootdown round: the round writes over the spares the boot seeded.
@@ -3478,11 +4031,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
         ),
-        invocation(
+        page_map(
             "vspace-map-again",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-unify-instruction",
@@ -3490,29 +4045,26 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
         ),
-        invocation(
-            "frame-copy-mapped",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
-        ),
+        root_copy("frame-copy-mapped", FRAME_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
         invocation(
             "frame-copy-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [MOVE_SLOT, 0, 0, 0],
         ),
-        invocation(
+        root_copy(
             "frame-copy-for-revoke",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
+            FRAME_SLOT,
+            MOVE_SLOT,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        page_map(
             "vspace-map-copy",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "frame-revoke",
@@ -3532,17 +4084,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [MOVE_SLOT, 0, 0, 0],
         ),
-        invocation(
+        set_ipc_buffer(
             "tcb-set-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_ipc_buffer(
             "root-set-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         // WS-ZA ZA6.2: a tick that drains a due refill.  The context is
         // configured to a one-tick budget every two ticks and bound to the
@@ -3557,18 +4111,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "refill-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "refill-bind-root",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [ROOT_TCB_CAP, 0, 0, 0],
+            ROOT_TCB_CAP,
+            FRAME_VADDR,
         ),
         RoundTrip {
             name: "refill-yield",
@@ -3602,27 +4155,50 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "sched-context-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
-        invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
-        invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
+        // The root task's buffer is the window's page since
+        // `root-set-ipc-buffer`, so the endpoint, extra capability 0, is named
+        // there.
+        service_register(
+            "service-register",
+            ENDPOINT_CAP,
+            SERVICE_INTERFACE,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "service-query",
+            SERVICE_QUERY,
+            SERVICE_REGISTRY_CAP,
+            ENDPOINT_CAP,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "service-revoke",
+            SERVICE_REVOKE,
+            SERVICE_REGISTRY_CAP,
+            ENDPOINT_CAP,
+            FRAME_VADDR,
+        ),
         // A carved endpoint registered as the service, then its only
         // capability deleted: the final delete drops the registration
         // (`releaseFinalRegistration`, seL4's endpoint finalisation with the
         // registry's back-link) and retires the endpoint.
-        invocation(
+        retype(
             "untyped-retype-registered-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MINT_SLOT],
+            FRAME_VADDR,
         ),
-        service_register("registered-endpoint-register", MINT_CAP, SERVICE_INTERFACE),
+        service_register(
+            "registered-endpoint-register",
+            MINT_CAP,
+            SERVICE_INTERFACE,
+            FRAME_VADDR,
+        ),
         invocation(
             "registered-endpoint-delete",
             CSPACE_DELETE,
@@ -3640,7 +4216,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // left; an invocation one word long; a message-info word whose length
         // no message has, refused; one whose top bit is set, refused; and a
         // yield one word long.
-        truncated("service-register-short", SERVICE_REGISTER, ENDPOINT_CAP, 4),
+        truncated(
+            "service-register-short",
+            SERVICE_REGISTER,
+            SERVICE_REGISTRY_CAP,
+            4,
+        ),
         truncated(
             "sched-context-configure-short",
             SCHED_CONTEXT_CONFIGURE,
@@ -3652,133 +4233,159 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // past 64 (`RangeError(1, 64)`), a destination index whose guard
         // matches but whose depth stops inside the root's level (a depth
         // mismatch), an empty source (`MissingCapability`, seL4's
-        // `cnode.c`), and a destination index whose guard bits differ (a
+        // `cnode.c`), a CNode operation naming no source root (seL4's
+        // `TruncatedMessage`), and a destination index whose guard bits differ (a
         // guard mismatch, five words, the fifth written to the root task's
         // IPC buffer `msg[4]` and counted in the length).
         cnode_refusal(
             "range-error-payload",
+            cap_address(CNODE_SLOT),
             [
                 cap_address(COPY_SLOT),
-                cap_address(CNODE_SLOT),
+                65,
                 cap_address(NOTIFICATION_SLOT),
-                65 | (64 << 8) | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            FRAME_VADDR,
             refused_with(RANGE_ERROR, 2, [Some(1), Some(64), None, None]),
         ),
         cnode_refusal(
             "failed-lookup-depth-mismatch",
+            cap_address(CNODE_SLOT),
             [
                 ROOT_CNODE_GUARD >> 4,
-                cap_address(CNODE_SLOT),
+                60,
                 cap_address(NOTIFICATION_SLOT),
-                60 | (64 << 8) | (ALL_RIGHTS << 16),
+                ROOT_DEPTH,
             ],
+            FRAME_VADDR,
             // Not the source; DepthMismatch (3), 60 bits left, the level's 64.
             refused_with(FAILED_LOOKUP, 4, [Some(0), Some(3), Some(60), Some(64)]),
         ),
         cnode_refusal(
             "failed-lookup-missing-source",
-            root_slot_copy(EMPTY_SOURCE_SLOT, EMPTY_DEST_SLOT),
+            cap_address(CNODE_SLOT),
+            root_slots(EMPTY_SOURCE_SLOT, EMPTY_DEST_SLOT),
+            FRAME_VADDR,
             // The source; MissingCapability (2), the source's depth, 64.
             refused_with(FAILED_LOOKUP, 3, [Some(1), Some(2), Some(64), None]),
         ),
-        // The fifth word lands in the root task's buffer `msg[4]`, the word
-        // a later five-word call (a configure's deadline, a service
-        // register's grant flag) reads as its argument, so the round trip
-        // names the buffer ([`RoundTrip::overflow`]) and the word goes back
-        // to the boot's zero after the measured window.  The root task's
-        // buffer here is the window's frame ([`FRAME_VADDR`]), where
-        // `root-set-ipc-buffer` pointed it; the tail's configures read the
-        // same page once `tail-root-ipc-buffer-back` points it there again.
+        // The same copy with its message info counting no extra capability:
+        // no source root, seL4's `TruncatedMessage`, after the destination
+        // is found and before its emptiness is checked.
         RoundTrip {
-            overflow: Some((FRAME_VADDR, 0)),
-            ..cnode_refusal(
-                "failed-lookup-guard-mismatch",
-                [
-                    COPY_SLOT,
-                    cap_address(CNODE_SLOT),
-                    cap_address(NOTIFICATION_SLOT),
-                    ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
-                ],
-                // Not the source; GuardMismatch (4), 64 bits left, the root's
-                // guard; its width (58) is the fifth word, in the buffer.
-                refused_with(
-                    FAILED_LOOKUP,
-                    5,
-                    [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-                ),
+            msg_len: 5,
+            caps_or_badges: None,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..root_copy(
+                "cnode-copy-no-source-root",
+                NOTIFICATION_SLOT,
+                COPY_SLOT,
+                FRAME_VADDR,
             )
         },
-        // A second capability whose address misses the root CNode's guard,
-        // one per arm that resolves one (seL4's `lookupCap` of an argument,
-        // `seL4_FailedLookup` with the guard-mismatch words): the configure's
-        // scheduling context (the `.overflowOne` route), and the SetSpace
-        // CSpace root and the bound notification an invocation resolves.
-        // Each is refused before anything changes, its fifth word in the
-        // buffer as above.  A receive's reply capability is not here: its
-        // failed lookup is the receive's capability fault (seL4-MCS
-        // `lookupReply`), which `receive_side_faults` reaches.
-        guard_mismatch_refusal(configure(
-            "configure-sched-context-guard-mismatch",
+        // A copy carrying a sixth word: seL4 reads its five and ignores the
+        // rest, so the message takes the route past five words; the
+        // destination is the occupied CNode slot, seL4's `DeleteFirst`.
+        RoundTrip {
+            msg_len: ONE_EXTRA_CAP | 6,
+            returns: refused(TARGET_SLOT_OCCUPIED),
+            ..root_copy(
+                "cnode-copy-six-words",
+                NOTIFICATION_SLOT,
+                CNODE_SLOT,
+                FRAME_VADDR,
+            )
+        },
+        // A mint of five words, short of its badge: seL4's
+        // `TruncatedMessage` (Mint `length < 6`), on the five-word route.
+        RoundTrip {
+            msg_len: ONE_EXTRA_CAP | 5,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..mint(
+                "cnode-mint-five-words",
+                NOTIFICATION_SLOT,
+                MINT_SLOT,
+                ALL_RIGHTS,
+                0,
+                FRAME_VADDR,
+            )
+        },
+        // The refusal's fifth word lands in the root task's buffer `msg[4]`,
+        // the word a later five-word call (a configure's deadline, a service
+        // register's grant flag) reads as its argument; the copy's own rights
+        // word is written there first, so the round trip names the buffer
+        // ([`RoundTrip::overflow`]) and the word goes back to the boot's zero
+        // after the measured window.  The root task's buffer here is the
+        // window's frame ([`FRAME_VADDR`]), where `root-set-ipc-buffer`
+        // pointed it; the tail's configures read the same page once
+        // `tail-root-ipc-buffer-back` points it there again.
+        cnode_refusal(
+            "failed-lookup-guard-mismatch",
+            cap_address(CNODE_SLOT),
             [
-                SCHED_CONTEXT_SLOT,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
+                COPY_SLOT,
+                ROOT_DEPTH,
+                cap_address(NOTIFICATION_SLOT),
+                ROOT_DEPTH,
             ],
-        )),
-        guard_mismatch_refusal(invocation(
-            "set-space-root-guard-mismatch",
-            TCB_SET_SPACE,
-            PARTNER_TCB_CAP,
-            [CNODE_SLOT, VSPACE_CAP, 0, 0],
-        )),
-        guard_mismatch_refusal(invocation(
-            "bind-notification-guard-mismatch",
-            TCB_BIND_NOTIFICATION,
-            PARTNER_TCB_CAP,
-            [NOTIFICATION_SLOT, 0, 0, 0],
-        )),
-        // The fault handler a fault-handler set names
-        // (`setThreadFaultHandlerOpK`): resolved, like the bound
-        // notification, as an argument capability, and refused in place.
-        guard_mismatch_refusal(invocation(
-            "set-fault-handler-guard-mismatch",
-            TCB_SET_FAULT_HANDLER,
-            PARTNER_TCB_CAP,
-            [ENDPOINT_SLOT, 0, 0, 0],
-        )),
-        // Argument words at or above `2^63`, each refused on the word before
-        // it is made a number: an ASID past the configured bound
-        // (`AsidNotBound`), an address past the canonical bound
-        // (`AddressOutOfBounds`), a permission word past five bits
-        // (`InvalidSyscallArgument`), and an affinity past the cores and the
-        // unbind marker (`InvalidArgument 0`).
+            FRAME_VADDR,
+            // Not the source; GuardMismatch (4), 64 bits left, the root's
+            // guard; its width (58) is the fifth word, in the buffer.
+            refused_with(
+                FAILED_LOOKUP,
+                5,
+                [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+            ),
+        ),
+        // A scheduling context, a bound notification and SetSpace's fault
+        // endpoint and CSpace root are extra capabilities, so an address that
+        // misses the root CNode's guard is the invocation's capability fault
+        // (seL4's `handleInvocation` after `lookupExtraCaps`), which
+        // `extra_cap_guard_mismatch` reaches in the fault lane.  A receive's
+        // reply capability is not here: its failed lookup is the receive's
+        // capability fault (seL4-MCS `lookupReply`), which
+        // `receive_side_faults` reaches.
+        // Argument words at or above `2^63`, each read as a word: a
+        // `Page_Map` rights or attributes word (WS-SX SX6.3, D6: seL4's
+        // `rightsFromWord` and `vmAttributesFromWord` are total, so the wide
+        // word is read, not refused: its low bits ask for a writable and
+        // executable page, refused `PolicyDenied` by the W^X check before
+        // the frame's own mapping is looked at), a map address past the
+        // canonical bound (seL4's `vtop > USER_TOP`, `InvalidArgument 0`), an
+        // unmap address past it (`AddressOutOfBounds`), and an affinity past
+        // the cores and the unbind marker (`InvalidArgument 0`).  The maps'
+        // VSpace root, extra capability 0, is written to the window, the
+        // root task's buffer here (`root-set-ipc-buffer`).
         RoundTrip {
-            returns: refused(ASID_NOT_BOUND),
-            ..invocation(
-                "vspace-map-wide-asid",
-                VSPACE_MAP,
+            returns: refused(POLICY_DENIED),
+            ..page_map_words(
+                "vspace-map-wide-rights",
+                FRAME_CAP,
                 VSPACE_CAP,
-                [WIDE_WORD, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+                [FRAME_VADDR, WIDE_WORD | 1, 0],
+                FRAME_VADDR,
             )
         },
         RoundTrip {
-            returns: refused(ADDRESS_OUT_OF_BOUNDS),
-            ..invocation(
+            returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+            ..page_map(
                 "vspace-map-wide-vaddr",
-                VSPACE_MAP,
+                FRAME_CAP,
                 VSPACE_CAP,
-                [ROOT_ASID, WIDE_WORD, FRAME_CAP, FRAME_PERMS],
+                WIDE_WORD,
+                FRAME_PERMS,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
-            returns: refused(INVALID_SYSCALL_ARGUMENT),
-            ..invocation(
-                "vspace-map-wide-perms",
-                VSPACE_MAP,
+            returns: refused(POLICY_DENIED),
+            ..page_map_words(
+                "vspace-map-wide-attr",
+                FRAME_CAP,
                 VSPACE_CAP,
-                [ROOT_ASID, FRAME_VADDR, FRAME_CAP, WIDE_WORD],
+                [FRAME_VADDR, 3, WIDE_WORD],
+                FRAME_VADDR,
             )
         },
         RoundTrip {
@@ -3801,12 +4408,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         },
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
+        wrong_ipc_kind("send-wrong-kind-refused", SEND),
+        wrong_ipc_kind("call-wrong-kind-refused", CALL),
+        wrong_ipc_kind("reply-wrong-kind-refused", REPLY),
+        wrong_ipc_kind("signal-wrong-kind-refused", SIGNAL),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
         truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
         truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),
         truncated("mint-reply-cap-short", MINT_REPLY_CAP, CNODE_CAP, 1),
         truncated("untyped-retype-short", UNTYPED_RETYPE, UNTYPED_CAP, 3),
-        truncated("vspace-map-short", VSPACE_MAP, VSPACE_CAP, 3),
+        // Five words, one overflow word: the retype's `overflowOne` route
+        // (seven words long, it reads three), still short of its seven.
+        truncated("untyped-retype-five-words", UNTYPED_RETYPE, UNTYPED_CAP, 5),
+        truncated("vspace-map-short", VSPACE_MAP, FRAME_CAP, 2),
         truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
         truncated(
             "vspace-unify-instruction-short",
@@ -3856,23 +4470,29 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             0,
         ),
-        truncated(
-            "tcb-set-fault-handler-short",
-            TCB_SET_FAULT_HANDLER,
-            PARTNER_TCB_CAP,
-            0,
-        ),
-        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 2),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
+        // Both words, but two extra capabilities of the three
+        // (`decodeSetSpace`'s `excaprefs[2] == NULL`): `TruncatedMessage`
+        // once the two are looked up.
         RoundTrip {
-            msg_len: 6,
+            msg_len: TWO_EXTRA_CAPS | 2,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..set_space(
+                "set-space-extra-caps-short",
+                PARTNER_TCB_CAP,
+                [ENDPOINT_CAP, CNODE_CAP, 0],
+                0,
+                FRAME_VADDR,
+            )
+        },
+        RoundTrip {
+            msg_len: ONE_EXTRA_CAP | 6,
             ..configure(
                 "sched-context-configure-long",
-                [
-                    SCHED_CONTEXT_CAP,
-                    SCHED_CONTEXT_BUDGET,
-                    SCHED_CONTEXT_PERIOD,
-                    PARTNER_PRIORITY,
-                ],
+                FRAME_VADDR,
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
             )
         },
         RoundTrip {
@@ -3892,12 +4512,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             returns: None,
         },
         RoundTrip {
-            msg_len: 5,
-            ..invocation(
+            msg_len: ONE_EXTRA_CAP | 5,
+            ..set_priority(
                 "invocation-long-message",
                 TCB_SET_MC_PRIORITY,
                 PARTNER_TCB_CAP,
-                [255, 0, 0, 0],
+                255,
+                FRAME_VADDR,
             )
         },
         RoundTrip {
@@ -4082,13 +4703,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             INVALID_CAPABILITY,
         ),
         overflowed(
-            "overflowed-tcb-set-fault-handler",
-            TCB_SET_FAULT_HANDLER,
-            NOTIFICATION_CAP,
-            5,
-            INVALID_CAPABILITY,
-        ),
-        overflowed(
             "overflowed-tcb-set-space",
             TCB_SET_SPACE,
             NOTIFICATION_CAP,
@@ -4165,12 +4779,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             6,
             INVALID_CAPABILITY,
         ),
+        // A declassify invokes the audit-trail capability (its target is
+        // extra capability 0), so on an endpoint the type gate refuses it.
         overflowed(
             "overflowed-declassify",
             DECLASSIFY,
             ENDPOINT_CAP,
             5,
-            FLOW_DENIED,
+            INVALID_CAPABILITY,
         ),
         // A declassified signal reads no word past its inline registers
         // (seL4's `seL4_Signal` reads no message), so a long one takes the
@@ -4182,23 +4798,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             5,
             INVALID_CAPABILITY,
         ),
-        // The untyped retype past its inline words, its type tag one no
-        // object kind has, refused by the argument decode.
+        // The untyped retype at its full seven words, read past its inline
+        // words on the overflowed route, its type tag one no object kind
+        // has, refused by the argument decode.
         RoundTrip {
             msg: [0xff, 0, 0, 0],
-            ..overflowed(
+            returns: refused(INVALID_TYPE_TAG),
+            ..retype(
                 "overflowed-untyped-retype",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
-                5,
-                INVALID_TYPE_TAG,
+                [0, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+                FRAME_VADDR,
             )
         },
-        invocation(
+        cap_argument(
             "sched-context-bind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "sched-context-unbind",
@@ -4212,11 +4830,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // context unbound and nothing charged between them, must read 0.
         consumed("sched-context-consumed", None),
         consumed("sched-context-consumed-reset", Some(0)),
-        invocation(
+        cap_argument(
             "sched-context-rebind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         // WS-ZA ZA6.29: the yieldTo invocation on the context bound to the
         // partner, which is not yet resumed: the checks pass, the context's
@@ -4252,18 +4871,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "postpone-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "postpone-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "postpone-resume-partner",
@@ -4315,18 +4933,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "long-send-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "long-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "long-send-resume-partner",
@@ -4368,30 +4985,32 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // all 116 of the sender's overflow words and writes the receiver's in
         // place; then the buffers put back.
         RoundTrip {
-            caps_or_badges: None,
             overflow: None,
             returns: Some((
                 (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
                 [None; 4],
             )),
-            ..invocation(
+            ..set_ipc_buffer(
                 "half-aligned-ipc-buffer",
-                TCB_SET_IPC_BUFFER,
                 ROOT_TCB_CAP,
-                [HALF_ALIGNED_IPC_BUFFER, 0, 0, 0],
+                HALF_ALIGNED_IPC_BUFFER,
+                FRAME_CAP,
+                FRAME_VADDR,
             )
         },
-        invocation(
+        set_ipc_buffer(
             "tail-root-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [TAIL_IPC_BUFFER, 0, 0, 0],
+            TAIL_IPC_BUFFER,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_ipc_buffer(
             "tail-partner-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [TAIL_IPC_BUFFER, 0, 0, 0],
+            TAIL_IPC_BUFFER,
+            FRAME_CAP,
+            TAIL_IPC_BUFFER,
         ),
         RoundTrip {
             msg_len: TAIL_MESSAGE_LENGTH,
@@ -4616,10 +5235,59 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // A reply-receive whose one extra capability's address does not
+        // resolve (a bare slot index, whose guard bits do not match the root's
+        // guard): seL4-MCS `SysReplyRecv` runs `handleInvocation` with
+        // `isBlocking = false`, so the failed `lookupExtraCaps` skips the reply
+        // with no fault, and the receive half still runs and blocks with no
+        // sender waiting.  The partner's send then completes the receive, the
+        // partner blocks on a receive of its own, and the root task suspends it.
+        invocation(
+            "reply-recv-extra-cap-skips-reply-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_caps(
+            partner_step(
+                "reply-recv-extra-cap-skips-reply",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [REPLY_CAP, 0x7b],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [EMPTY_SOURCE_SLOT, 0, 0],
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-partner-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            false,
+        ),
+        partner_step(
+            "reply-recv-extra-cap-skips-reply-partner-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "reply-recv-extra-cap-skips-reply-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         // A send and a call carrying one capability, each within the inline
-        // words and at full length, that block with no receiver waiting: seL4
-        // looks a message's capabilities up only at the rendezvous, so the
-        // blocked sender holds its request and nothing is transferred.  The
+        // words and at full length, that block with no receiver waiting.  The
+        // capability's address resolves (the endpoint's own), as it must:
+        // seL4's `handleInvocation` looks a message's capabilities up at the
+        // send (`lookupExtraCaps`), and a failure there is a capability fault.
+        // The blocked sender holds its request and nothing is transferred.  The
         // partner then suspends the root task, which cancels its send, and
         // restarts it before suspending itself.
         invocation(
@@ -4638,7 +5306,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-send-blocks-suspend-root",
@@ -4674,7 +5342,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-long-send-blocks-suspend-root",
@@ -4710,7 +5378,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-call-blocks-suspend-root",
@@ -4746,7 +5414,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [0; 3],
+            [ENDPOINT_CAP, 0, 0],
         ),
         invocation(
             "caps-long-call-blocks-suspend-root",
@@ -4803,7 +5471,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        // The same with three capabilities, the most a message carries.
+        // The same with three capabilities, the most a message carries, each
+        // naming the notification, so all three addresses resolve at the send
+        // (seL4's `lookupExtraCaps`) and the transfer stops at the first, as
+        // the receiver names no receive slot.
         invocation(
             "caps-three-send-rendezvous-resume",
             TCB_RESUME,
@@ -4828,7 +5499,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 false,
             ),
             TAIL_IPC_BUFFER,
-            [NOTIFICATION_CAP, 0, 0],
+            [NOTIFICATION_CAP, NOTIFICATION_CAP, NOTIFICATION_CAP],
         ),
         kernel_step("caps-three-send-rendezvous-yield", YIELD),
         invocation(
@@ -4897,7 +5568,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 true,
             ),
             TAIL_IPC_BUFFER,
-            [NOTIFICATION_CAP, 0, 0],
+            [NOTIFICATION_CAP, NOTIFICATION_CAP, NOTIFICATION_CAP],
         ),
         invocation(
             "caps-three-call-rendezvous-suspend",
@@ -6059,18 +6730,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         receive_path("grant-reply-receive-path-closed", TAIL_IPC_BUFFER, [0; 3]),
         configure(
             "tail-send-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            TAIL_IPC_BUFFER,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "tail-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            TAIL_IPC_BUFFER,
         ),
         invocation(
             "tail-send-resume-partner",
@@ -6103,17 +6773,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        invocation(
+        set_ipc_buffer(
             "tail-root-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            TAIL_IPC_BUFFER,
         ),
-        invocation(
+        set_ipc_buffer(
             "tail-partner-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes
@@ -6124,18 +6796,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "suspend-donated-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "suspend-donated-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "suspend-donated-resume",
@@ -6182,18 +6853,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and the root task unbinds the context.
         configure(
             "donated-reply-caps-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "donated-reply-caps-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         receive_path(
             "donated-reply-caps-receive-path",
@@ -6303,27 +6973,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // server's reply onto a stack that already holds the root task's.
         // The server answers and receives again, the root task answers the
         // partner, and everything is taken down.  The timer is still masked.
-        invocation(
+        retype(
             "untyped-retype-chain-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "chain-tcb-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "chain-tcb-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-chain-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6331,6 +7002,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "chain-reply-cap-mint",
@@ -6340,18 +7012,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "chain-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "chain-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("chain-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("chain-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
@@ -6417,11 +7088,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // installs the capability in that slot and blocks the server
         // (`performReplyRecvDonatedCapsDelivered`).  The root task signals
         // through the copy, the wait takes its badge, and the copy is deleted.
-        invocation(
+        set_ipc_buffer(
             "chain-caps-server-ipc-buffer",
-            TCB_SET_IPC_BUFFER,
             CHAIN_TCB_CAP,
-            [FRAME_VADDR, 0, 0, 0],
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
         ),
         receive_path(
             "chain-caps-receive-path",
@@ -6591,27 +7263,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // loan goes back to its lender, who is ended as the server's waiter,
         // and the server's wait is cancelled before it is retired.  The
         // context's unbind leaves the state the scenario found.
-        invocation(
+        retype(
             "untyped-retype-third-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "third-tcb-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "third-tcb-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-third-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6619,6 +7292,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "third-reply-cap-mint",
@@ -6628,18 +7302,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "third-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "third-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("third-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
         partner_step("third-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
@@ -6674,9 +7347,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         // The server's reply carved again, so the call it answers is on a
         // reply the root task can delete.
-        invocation(
+        retype(
             "untyped-retype-waited-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6684,6 +7356,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "waited-reply-cap-mint",
@@ -6758,27 +7431,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // (`performReplyUnheldCapsDelivered`).  A signal through the copy shows
         // it is there; the copy, the partner's run and the reply are removed,
         // leaving the state the first orphan left.
-        invocation(
+        retype(
             "untyped-retype-unheld-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "unheld-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6786,6 +7460,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-caps-reply-cap-mint",
@@ -6914,27 +7589,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // endpoint; the partner's send wakes it and the partner waits.  The
         // root task suspends the partner and deletes the reply, leaving the
         // state the first orphan left.
-        invocation(
+        retype(
             "untyped-retype-orphan-recv-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "orphan-recv-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "orphan-recv-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-recv-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -6942,6 +7618,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-recv-reply-cap-mint",
@@ -7051,27 +7728,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // (`performReplyRecvUnheldCapsDelivered`).  The partner signals
         // through the copy, the wait takes its badge, and the copy is
         // deleted; its send wakes the root task, and it waits.
-        invocation(
+        retype(
             "untyped-retype-unheld-recv-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-recv-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "unheld-recv-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-recv-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7079,6 +7757,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-recv-caps-reply-cap-mint",
@@ -7215,27 +7894,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // message, 120 words: transferring nothing, then installing the
         // notification capability in the empty slot the partner's buffer
         // names; each with the second orphan's set-up again.
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-long-recv-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "unheld-long-recv-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7243,6 +7923,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-reply-cap-mint",
@@ -7343,27 +8024,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-caps-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-long-recv-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "unheld-long-recv-caps-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-unheld-long-recv-caps-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -7371,6 +8053,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "unheld-long-recv-caps-reply-cap-mint",
@@ -7523,23 +8206,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // in the empty slot the partner's buffer names; a signal through the
         // copy, the wait and the delete follow.  At each switch exactly one
         // thread is runnable.
-        invocation(
+        retype(
             "untyped-retype-queued-sender",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "queued-sender-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "queued-sender-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "queued-sender-resume-partner",
@@ -7722,23 +8407,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // receive through the same reply cancels the partner's call and takes
         // the queued send at once, and returns.  At each switch exactly one
         // thread is runnable.
-        invocation(
+        retype(
             "untyped-retype-busy-reply-sender",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "busy-reply-sender-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "busy-reply-sender-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "busy-reply-resume-partner",
@@ -7836,29 +8523,32 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // across the whole sequence, so no budget runs out between steps, and
         // at each switch exactly one thread is runnable.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
-        invocation(
+        retype(
             "untyped-retype-queued-caller",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "queued-caller-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "queued-caller-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        cap_argument(
             "queued-caller-bind",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [CHAIN_TCB_CAP, 0, 0, 0],
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "queued-caller-resume-caller",
@@ -7933,11 +8623,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_priority(
             "queued-caller-root-lowers-self",
             TCB_SET_PRIORITY,
             ROOT_TCB_CAP,
-            [PARTNER_PRIORITY - 1, 0, 0, 0],
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
         ),
         partner_step(
             "queued-caller-caller-waits",
@@ -7947,11 +8638,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [0, 0],
             true,
         ),
-        invocation(
+        set_priority(
             "queued-caller-root-raises-self",
             TCB_SET_PRIORITY,
             ROOT_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         signal("queued-caller-root-wakes-caller"),
         invocation(
@@ -7988,17 +8680,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CHAIN_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_priority(
             "queued-caller-lower-ready",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY - 1, 0, 0, 0],
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "queued-caller-raise-ready",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         partner_step(
             "queued-caller-root-waits-again",
@@ -8085,27 +8779,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // thread resumes the root task and waits; the root task suspends the
         // three others (the server's frame heads the context, which its
         // holder keeps as its own) and unbinds the context.
-        invocation(
+        retype(
             "untyped-retype-stack-server",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "stack-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "stack-server-set-priority",
             TCB_SET_PRIORITY,
             CHAIN_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-top",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 TCB_TYPE,
@@ -8113,22 +8808,24 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_TCB_SLOT,
             ],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "stack-top-set-space",
-            TCB_SET_SPACE,
             STACK_TOP_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "stack-top-set-priority",
             TCB_SET_PRIORITY,
             STACK_TOP_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-server-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8136,6 +8833,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-server-reply-cap-mint",
@@ -8143,9 +8841,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-stack-top-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8153,6 +8850,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "stack-top-reply-cap-mint",
@@ -8162,18 +8860,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "stack-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "stack-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation("stack-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
         partner_step(
@@ -8260,26 +8957,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // unbound), then the top reply's: its caller, the server, is ended
         // and the frame below loses its link up to it.  The partner and the
         // fourth thread are suspended and the two carved threads deleted.
-        invocation(
+        retype(
             "untyped-retype-stack-context",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+            FRAME_VADDR,
         ),
         configure(
             "stack-context-configure",
-            [
-                MOVE_SC_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            MOVE_SC_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "stack-context-bind-partner",
             SCHED_CONTEXT_BIND,
             MOVE_SC_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
         invocation(
             "contextless-resume-server",
@@ -8384,11 +9080,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and the partner receive on it, the partner waking the root task
         // first; the root task deletes it, which cancels both receives, and
         // suspends the two threads again.
-        invocation(
+        retype(
             "untyped-retype-queue-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+            FRAME_VADDR,
         ),
         invocation("queue-resume-top", TCB_RESUME, STACK_TOP_TCB_CAP, [0; 4]),
         partner_step("queue-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
@@ -8438,22 +9134,20 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and carves the fourth thread again.
         configure(
             "orphan-stack-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "orphan-stack-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-server-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8461,6 +9155,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 CHAIN_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-server-reply-cap-mint",
@@ -8468,9 +9163,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-top-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 REPLY_TYPE,
@@ -8478,6 +9172,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_REPLY_OBJECT_SLOT,
             ],
+            FRAME_VADDR,
         ),
         invocation(
             "orphan-top-reply-cap-mint",
@@ -8595,9 +9290,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [STACK_TOP_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-orphan-top",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 TCB_TYPE,
@@ -8605,18 +9299,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 STACK_TOP_TCB_SLOT,
             ],
+            FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "orphan-top-set-space",
-            TCB_SET_SPACE,
             STACK_TOP_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
-        invocation(
+        set_priority(
             "orphan-top-set-priority",
             TCB_SET_PRIORITY,
             STACK_TOP_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
         ),
         invocation(
             "stack-server-delete",
@@ -8631,6 +9328,27 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [STACK_TOP_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // The window's page is about to go, so the root task's buffer goes
+        // back to the one the boot gave it, where the mints below read their
+        // badges, and the partner's buffer slot is emptied (a zero address):
+        // each buffer slot holds a copy of the window's frame capability
+        // (seL4's `tcbBuffer`), which would otherwise keep the frame alive
+        // past its delete.  Both are set while the window is mapped, since
+        // the frame capability is named from the root task's buffer there.
+        set_ipc_buffer(
+            "root-ipc-buffer-back",
+            ROOT_TCB_CAP,
+            ROOT_IPC_BUFFER,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            FRAME_VADDR,
+        ),
+        set_ipc_buffer(
+            "partner-ipc-buffer-clear",
+            PARTNER_TCB_CAP,
+            0,
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,
@@ -8641,11 +9359,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // copy's page, which the revoke unmapped), so the map writes over the
         // translation and epoch cells the unmap took out rather than over an
         // entry left at its own address; then unmapped again.
-        invocation(
+        page_map(
             "vspace-map-moved",
-            VSPACE_MAP,
+            FRAME_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, FRAME_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-unmap-moved",
@@ -8689,14 +9409,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PAGE_TABLE_CAPS[0],
             [0; 4],
         ),
-        // The window's page is gone, so the root task's buffer goes back to
-        // the one the boot gave it, where the mints below read their badges.
-        invocation(
-            "root-ipc-buffer-back",
-            TCB_SET_IPC_BUFFER,
-            ROOT_TCB_CAP,
-            [ROOT_IPC_BUFFER, 0, 0, 0],
-        ),
         invocation(
             "page-table-delete-1",
             CSPACE_DELETE,
@@ -8707,11 +9419,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // minted with its own rights, with none and with a badge, into the slot
         // the next carve reuses, and deleted each time; the carve's pin reads
         // that slot's record after.
-        invocation(
+        root_copy(
             "irq-control-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            root_slot_copy(IRQ_CONTROL_SLOT, FRAME_SLOT),
+            IRQ_CONTROL_SLOT,
+            FRAME_SLOT,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-control-copy-delete",
@@ -8763,11 +9475,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         // WS-ZA ZA5.4 part 22: each passive kernel kind carved and its only
         // capability deleted, which retires it, quiescent and unreferenced.
-        invocation(
+        retype(
             "untyped-retype-endpoint",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "endpoint-delete",
@@ -8775,9 +9487,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -8785,6 +9496,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "notification-delete",
@@ -8792,11 +9504,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-reply",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "reply-delete",
@@ -8804,11 +9516,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        retype(
             "untyped-retype-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "cnode-delete",
@@ -8820,17 +9532,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // capability, its own only capability deleted: the delete empties
         // the CNode slot by slot (the zombie loop, seL4's `finaliseSlot`),
         // which retires the endpoint, then retires the CNode.
-        invocation(
+        retype(
             "untyped-retype-populated-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-into-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], FRAME_CAP, 0],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "populated-cnode-delete",
@@ -8843,23 +9555,24 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // thread's slot holds its last, then the thread's only capability
         // deleted: the finalisation leaves its space slots, which the loop
         // then deletes, retiring the CNode, and the thread is retired.
-        invocation(
+        retype(
             "untyped-retype-spaced-tcb",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-space-cnode",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_space(
             "set-carved-tcb-space",
-            TCB_SET_SPACE,
             FRAME_CAP,
-            [MOVE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "space-cnode-cap-delete",
@@ -8877,9 +9590,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // its only capability deleted, which retires it: a VSpace root (one
         // page, its top-level table, under the least free ASID) and a child
         // untyped of one page (seL4's `Untyped_Retype` to an untyped).
-        invocation(
+        retype(
             "untyped-retype-vspace-root",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 VSPACE_ROOT_TYPE,
@@ -8887,6 +9599,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "vspace-root-delete",
@@ -8900,9 +9613,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // the carves before it set, so not pinned here).
         RoundTrip {
             returns: refused(UNTYPED_REGION_EXHAUSTED),
-            ..invocation(
+            ..retype(
                 "untyped-retype-region-exhausted",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 [
                     UNTYPED_REGION_EXHAUSTED_TYPE,
@@ -8910,6 +9622,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                     CNODE_CAP,
                     FRAME_SLOT,
                 ],
+                ROOT_IPC_BUFFER,
             )
         },
         // A carve into an occupied slot (the untyped's own): refused
@@ -8917,18 +9630,18 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // after the heap's is, without decoding the invocation again.
         RoundTrip {
             returns: refused(TARGET_SLOT_OCCUPIED),
-            ..invocation(
+            ..retype(
                 "untyped-retype-slot-occupied",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, UNTYPED_SLOT],
+                ROOT_IPC_BUFFER,
             )
         },
-        invocation(
+        retype(
             "untyped-retype-untyped",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "child-untyped-delete",
@@ -8938,6 +9651,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
     ],
     &LIFECYCLE_SCENARIO,
+    &WINDOW_THREE_SCENARIO,
+    &WINDOW_FULL_SCENARIO,
+    &WIDE_WORD_SCENARIO,
 ];
 
 /// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A
@@ -8955,33 +9671,37 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
 /// holding none of them, and no other.
 #[cfg(feature = "hw_target")]
 const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
-    invocation(
+    retype(
         "untyped-retype-owned-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    cnode_copy(
         "owned-cnode-fill",
-        CSPACE_COPY,
+        cap_address(FRAME_SLOT),
+        cap_address(CNODE_SLOT),
+        [
+            CARVED_CNODE_SLOT,
+            CARVED_CNODE_RADIX,
+            cap_address(ENDPOINT_SLOT),
+            ROOT_DEPTH,
+        ],
+        ALL_RIGHTS,
+        ROOT_IPC_BUFFER,
+    ),
+    cnode_copy(
+        "owned-cnode-copy-out",
+        CNODE_CAP,
         cap_address(FRAME_SLOT),
         [
-            CARVED_CNODE_SLOT,
-            cap_address(CNODE_SLOT),
-            cap_address(ENDPOINT_SLOT),
-            CARVED_CNODE_RADIX | (64 << 8) | (ALL_RIGHTS << 16),
-        ],
-    ),
-    invocation(
-        "owned-cnode-copy-out",
-        CSPACE_COPY,
-        CNODE_CAP,
-        [
             cap_address(MOVE_SLOT),
-            cap_address(FRAME_SLOT),
+            ROOT_DEPTH,
             CARVED_CNODE_SLOT,
-            64 | (CARVED_CNODE_RADIX << 8) | (ALL_RIGHTS << 16),
+            CARVED_CNODE_RADIX,
         ],
+        ALL_RIGHTS,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "owned-cnode-slot-delete",
@@ -8995,11 +9715,11 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    root_move(
         "owned-cnode-escaped-move",
-        CSPACE_MOVE,
-        CNODE_CAP,
-        root_slot_pair(MOVE_SLOT, MINT_SLOT),
+        MOVE_SLOT,
+        MINT_SLOT,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "owned-cnode-escaped-delete",
@@ -9090,17 +9810,17 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // which has no child; then the untyped's last capability deleted while the
     // notification lives, so the boot untyped adopts the child and its
     // capability, whose delete retires it.
-    invocation(
+    retype(
         "untyped-retype-parent-untyped",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "child-retype-endpoint",
-        UNTYPED_RETYPE,
         FRAME_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "child-untyped-revoke",
@@ -9108,9 +9828,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    retype(
         "child-retype-notification",
-        UNTYPED_RETYPE,
         FRAME_CAP,
         [
             NOTIFICATION_TYPE,
@@ -9118,6 +9837,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             MOVE_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "childless-revoke",
@@ -9140,9 +9860,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A capability with a derivation child moved: the child stays linked below
     // it in its new slot; the child deleted, then the moved capability, the
     // last.
-    invocation(
+    retype(
         "untyped-retype-moved-parent",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             NOTIFICATION_TYPE,
@@ -9150,19 +9869,10 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             FRAME_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
-        "moved-parent-copy",
-        CSPACE_COPY,
-        CNODE_CAP,
-        root_slot_copy(FRAME_SLOT, COPY_SLOT),
-    ),
-    invocation(
-        "parent-cap-move",
-        CSPACE_MOVE,
-        CNODE_CAP,
-        root_slot_pair(FRAME_SLOT, MINT_SLOT),
-    ),
+    root_copy("moved-parent-copy", FRAME_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
+    root_move("parent-cap-move", FRAME_SLOT, MINT_SLOT, ROOT_IPC_BUFFER),
     invocation(
         "moved-parent-child-delete",
         CSPACE_DELETE,
@@ -9178,9 +9888,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A carved thread's last capability deleted while its scheduling context
     // is still bound to it: the finalisation unbinds the context (seL4's
     // `schedContext_unbindTCB`), which the context's own delete then retires.
-    invocation(
+    retype(
         "untyped-retype-bound-context",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             SCHED_CONTEXT_TYPE,
@@ -9188,18 +9897,20 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             MINT_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-context-thread",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    cap_argument(
         "bind-context-thread",
         SCHED_CONTEXT_BIND,
         MINT_CAP,
-        [FRAME_CAP, 0, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "context-bound-tcb-delete",
@@ -9221,23 +9932,24 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // the same CNode as the thread's CSpace root when the thread's own last
     // capability is deleted (the loop goes down two levels, thread to CNode to
     // endpoint); and a carved VSpace root as its VSpace root then.
-    invocation(
+    retype(
         "untyped-retype-space-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-space-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "space-root-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, MOVE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, MOVE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "space-root-cap-delete",
@@ -9245,23 +9957,25 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "space-root-replaced",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-replaced-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "replaced-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "replaced-cnode-cap-delete",
@@ -9269,29 +9983,31 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "replaced-cnode-retired",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-zombie-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-zombie-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "zombie-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "zombie-cnode-cap-delete",
@@ -9299,29 +10015,31 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "zombie-cnode-replaced",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-nested-cnode",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-nested-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "nested-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "nested-cnode-cap-delete",
@@ -9335,23 +10053,24 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-rooted-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-thread-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "thread-root-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, MOVE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, MOVE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "thread-root-cap-delete",
@@ -9378,9 +10097,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // below it, which takes the subtree out; the second's unmap, its record
     // stale, and both deleted; and a table never installed unmapped and
     // deleted.
-    invocation(
+    retype(
         "untyped-retype-installed-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9388,16 +10106,16 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-installed-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9405,16 +10123,16 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-installed-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9422,12 +10140,13 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "installed-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(REVOCATION_REQUIRED),
@@ -9438,31 +10157,37 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             [0, 0, 0, 0],
         )
     },
-    invocation(
+    retype(
         "untyped-retype-mapped-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_map(
         "mapped-frame-map",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_map(
         "mapped-frame-remap",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, CODE_PERMS],
+        FRAME_VADDR,
+        CODE_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(INVALID_ARGUMENT),
-        ..invocation(
+        ..page_map(
             "mapped-frame-remap-other-vaddr",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_COPY_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         )
     },
     invocation(
@@ -9477,11 +10202,13 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         VSPACE_CAP,
         [ROOT_ASID, FRAME_VADDR, 0, 0],
     ),
-    invocation(
+    page_map(
         "mapped-frame-map-again",
-        VSPACE_MAP,
+        MOVE_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     RoundTrip {
         returns: refused(TRANSLATION_FAULT),
@@ -9522,9 +10249,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [PAGE_TABLE_SLOTS[2], 0, 0, 0],
     ),
-    invocation(
+    retype(
         "untyped-retype-uninstalled-table",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9532,6 +10258,7 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "uninstalled-table-unmap",
@@ -9549,9 +10276,8 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // last capability deleted: the ASID released with its tables attached; the
     // deepest table's unmap, its root gone; the tables' and the frame's last
     // capabilities deleted, each naming the gone root.
-    invocation(
+    retype(
         "untyped-retype-tabled-root",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             VSPACE_ROOT_TYPE,
@@ -9559,10 +10285,10 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             FRAME_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9570,16 +10296,16 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9587,16 +10313,16 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -9604,34 +10330,41 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "tabled-root-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [FRAME_CAP, FRAME_VADDR, 0, 0],
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-tabled-root-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    // The frame mapped into the carved root (its capability in the frame
+    // capability's slot), under that root's own ASID (WS-SX SX6.3, D6).
+    page_map(
         "tabled-root-map",
-        VSPACE_MAP,
+        MOVE_CAP,
         FRAME_CAP,
-        [CARVED_ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     ),
     // The frame mapped in the carved root's address space, mapped through the
     // root task's own: refused, the capability's mapping is in another ASID.
     RoundTrip {
         returns: refused(INVALID_CAPABILITY),
-        ..invocation(
+        ..page_map(
             "tabled-root-frame-other-asid",
-            VSPACE_MAP,
+            MOVE_CAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+            FRAME_VADDR,
+            FRAME_PERMS,
+            ROOT_IPC_BUFFER,
         )
     },
     invocation(
@@ -9724,14 +10457,15 @@ const WIDE_PERIOD: u64 = 1 << 63;
 /// a heap number.
 #[cfg(feature = "hw_target")]
 const WIDE_WORD: u64 = 1 << 63;
-/// `KernelError.asidNotBound`, `.addressOutOfBounds` and
-/// `.invalidSyscallArgument`'s discriminants (`sele4n-types`).
-#[cfg(feature = "hw_target")]
-const ASID_NOT_BOUND: u64 = 9;
+/// `KernelError.addressOutOfBounds` and `.invalidSyscallArgument`'s
+/// discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const ADDRESS_OUT_OF_BOUNDS: u64 = 26;
 #[cfg(feature = "hw_target")]
 const INVALID_SYSCALL_ARGUMENT: u64 = 41;
+/// `KernelError.policyDenied`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const POLICY_DENIED: u64 = 4;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -9744,11 +10478,6 @@ const TARGET_SLOT_OCCUPIED: u64 = 18;
 const REVOCATION_REQUIRED: u64 = 38;
 #[cfg(feature = "hw_target")]
 const INVALID_ARGUMENT: u64 = 39;
-/// The ASID a carved VSpace root is given (`freshAsid?`, the least free one
-/// from 1): the root task's space holds ASID 1 and the untrusted partition's
-/// ASID 2, so the first carved root takes 3.
-#[cfg(feature = "hw_target")]
-const CARVED_ROOT_ASID: u64 = 3;
 
 /// **WS-ZA ZA5.4 part 25: the final delete of a reply whose caller still waits
 /// on it**, run as the root task once the partner is suspended (so the roles
@@ -9760,11 +10489,11 @@ const CARVED_ROOT_ASID: u64 = 3;
 /// and retires the reply.  The partner ends where the suspend left it.
 #[cfg(feature = "hw_target")]
 const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
-    invocation(
+    retype(
         "untyped-retype-busy-reply",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     partner_step(
         "mint-busy-reply-cap",
@@ -9814,11 +10543,11 @@ const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// then suspended, unmeasured.
 #[cfg(feature = "hw_target")]
 const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
-    invocation(
+    retype(
         "untyped-retype-stashed-reply",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     partner_step(
         "mint-stashed-reply-cap",
@@ -9887,30 +10616,20 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// already tagged, so it is the steady state of the tainted path too.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
-    RoundTrip {
-        name: "declassify",
-        syscall: DECLASSIFY,
-        cptr: FRAME_CAP,
-        msg_len: 0,
-        msg: [0; 4],
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
-        returns: None,
-    },
-    RoundTrip {
-        name: "declassified-signal",
-        syscall: DECLASSIFY_SIGNAL,
-        cptr: FRAME_CAP,
-        msg_len: 0,
-        msg: [0, 0, 0, 0],
-        primed: None,
-        blocks: false,
-        caps_or_badges: None,
-        overflow: None,
-        returns: None,
-    },
+    cap_argument(
+        "declassify",
+        DECLASSIFY,
+        AUDIT_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    ),
+    cap_argument(
+        "declassified-signal",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    ),
     partner_step(
         "send-tainted-blocks",
         SEND,
@@ -9933,57 +10652,62 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         false,
     ),
     partner_step("declassified-wait-blocks", WAIT, FRAME_CAP, 0, [0, 0], true),
-    partner_step(
+    cap_argument(
         "declassified-signal-wakes",
         DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
         FRAME_CAP,
-        0,
-        [0, 0],
-        false,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// A refused declassification (WS-ZA ZA6.35), measured, and it gives the
 /// refusal ledger a slot for the audit reads to read: the boot domain's endpoint
-/// is in the caller's own domain, a flow the base lattice already permits,
-/// which `.declassify` refuses (`flowDenied`) and the seam records.
+/// (extra capability 0, the audit capability invoked) is in the caller's own
+/// domain, a flow the base lattice already permits, which `.declassify`
+/// refuses (`flowDenied`) and the seam records.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
-    name: "declassify-refused",
-    syscall: DECLASSIFY,
-    cptr: ENDPOINT_CAP,
-    msg_len: 0,
-    msg: [0; 4],
-    primed: None,
-    blocks: false,
-    caps_or_badges: None,
-    overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         [None; 4],
     )),
+    ..cap_argument(
+        "declassify-refused",
+        DECLASSIFY,
+        AUDIT_CAP,
+        ENDPOINT_CAP,
+        ROOT_IPC_BUFFER,
+    )
 };
 /// `KernelError::FlowDenied`'s discriminant.
 #[cfg(feature = "hw_target")]
 const FLOW_DENIED: u64 = 13;
-/// A declassification whose capability address misses the root guard, measured:
-/// a refused lookup whose error carries a payload (a guard mismatch) recorded in
-/// the refusal ledger from its words, so neither the error nor the record is
-/// built on the entry path.  The address is a bare slot number, below the root
-/// guard.  The fifth word (`GuardFound`'s size) goes to the caller's IPC
-/// buffer, and only the root task has one here, so the length is 5 only with
-/// the root task as the caller: the driver runs it with the partner suspended,
-/// where no tick can hand core 0 to another thread.  The buffer is not at
-/// `FRAME_VADDR` in this phase, so the word itself is not probed.
+/// A declassification whose target address misses the root guard, measured: the
+/// audit-trail capability invoked, its extra capability 0 a bare slot number
+/// below the root guard.  The declassifying calls return their lookup failures
+/// rather than fault (`capFaultReceivePhase?`: the refusal ledger records them),
+/// so this is a refused lookup whose error carries a payload (a guard
+/// mismatch) recorded in the refusal ledger from its words, neither the error
+/// nor the record built on the entry path.  The fifth word (`GuardFound`'s
+/// size) goes to the caller's IPC buffer, and only the root task has one here,
+/// so the length is 5 only with the root task as the caller: the driver runs it
+/// with the partner suspended, where no tick can hand core 0 to another thread.
+/// The buffer is not at `FRAME_VADDR` in this phase, so the word itself is not
+/// probed.
 #[cfg(feature = "hw_target")]
 const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
-    name: "declassify-guard-mismatch-refused",
-    cptr: 1,
     returns: refused_with(
         FAILED_LOOKUP,
         5,
         [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
     ),
-    ..DECLASSIFICATION_REFUSAL
+    ..cap_argument(
+        "declassify-guard-mismatch-refused",
+        DECLASSIFY,
+        AUDIT_CAP,
+        1,
+        ROOT_IPC_BUFFER,
+    )
 };
 /// A root slot no other scenario names: the read-only audit capability's.
 #[cfg(feature = "hw_target")]
@@ -10427,9 +11151,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
 const UPPER_NOTIFICATION_ID: u64 = 0x10_0010;
 /// The declassification scenario's carve, unmeasured.
 #[cfg(feature = "hw_target")]
-const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
+const UPPER_NOTIFICATION_CARVE: RoundTrip = retype(
     "untyped-retype-upper-notification",
-    UNTYPED_RETYPE,
     UNTYPED_CAP,
     [
         NOTIFICATION_TYPE,
@@ -10437,6 +11160,7 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
         CNODE_CAP,
         FRAME_SLOT,
     ],
+    ROOT_IPC_BUFFER,
 );
 /// The low band's thread: its id in the exerciser labeling's lower trusted
 /// domain.
@@ -10460,28 +11184,29 @@ const DECLASSIFICATION_DENIED_AT_RECEIVER: u64 = 56;
 const REFUSAL_RING_SIZE: u64 = 32;
 /// The bound scenario's setup, unmeasured.
 #[cfg(feature = "hw_target")]
-const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
-    invocation(
+const BOUND_SIGNAL_SETUP: [RoundTrip; 11] = [
+    retype(
         "untyped-retype-low-thread",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, LOW_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "low-thread-set-space",
-        TCB_SET_SPACE,
         LOW_THREAD_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_priority(
         "low-thread-set-priority",
         TCB_SET_PRIORITY,
         LOW_THREAD_CAP,
-        [PARTNER_PRIORITY, 0, 0, 0],
+        PARTNER_PRIORITY,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-low-endpoint",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             ENDPOINT_TYPE,
@@ -10489,10 +11214,10 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
             CNODE_CAP,
             STACK_TOP_TCB_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "untyped-retype-boot-domain-notification",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             NOTIFICATION_TYPE,
@@ -10500,25 +11225,38 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
             CNODE_CAP,
             MOVE_SLOT,
         ],
+        ROOT_IPC_BUFFER,
     ),
     UPPER_NOTIFICATION_CARVE,
-    invocation(
+    cap_argument(
         "root-bind-boot-domain-notification",
         TCB_BIND_NOTIFICATION,
         ROOT_TCB_CAP,
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    irq_control_get(
         "bound-irq-control-get",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [IRQ_BOUND_LINE as u64, CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
+        IRQ_BOUND_LINE as u64,
+        IRQ_BOUND_HANDLER_SLOT,
     ),
-    invocation(
+    cap_argument(
         "bound-irq-handler-set-notification",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
+    ),
+    // The low thread names its declassified signal's notification as extra
+    // capability 0, so it is given a buffer on the root task's buffer frame,
+    // where every word the driver writes to the root task's buffer is mirrored
+    // ([`PARTNER_IPC_BUFFER`]).
+    set_ipc_buffer(
+        "low-thread-ipc-buffer",
+        LOW_THREAD_CAP,
+        PARTNER_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
     ),
     invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
 ];
@@ -10535,14 +11273,18 @@ const BOUND_ROOT_RECEIVES: RoundTrip = partner_step(
 );
 /// The low thread's declassified signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = partner_step(
-    "declassified-signal-bound",
-    DECLASSIFY_SIGNAL,
-    MOVE_CAP,
-    0,
-    [0, 0],
-    false,
-);
+const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = RoundTrip {
+    msg_len: ONE_EXTRA_CAP,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
+    ..partner_step(
+        "declassified-signal-bound",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        0,
+        [0, 0],
+        false,
+    )
+};
 /// The low thread's plain signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
 const SIGNAL_BOUND: RoundTrip = partner_step("signal-bound", SIGNAL, MOVE_CAP, 1, [6, 0], false);
@@ -10565,23 +11307,28 @@ const LOW_THREAD_RECEIVES: RoundTrip = partner_step(
 );
 /// The upper notification bound to the low thread, unmeasured.
 #[cfg(feature = "hw_target")]
-const BIND_UPPER_TO_LOW_THREAD: RoundTrip = invocation(
+const BIND_UPPER_TO_LOW_THREAD: RoundTrip = cap_argument(
     "low-thread-bind-upper-notification",
     TCB_BIND_NOTIFICATION,
     LOW_THREAD_CAP,
-    [FRAME_CAP, 0, 0, 0],
+    FRAME_CAP,
+    ROOT_IPC_BUFFER,
 );
 /// The root task's declassified signal on the upper notification, both hops
 /// downgrades.
 #[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = partner_step(
-    "declassified-signal-two-hop",
-    DECLASSIFY_SIGNAL,
-    FRAME_CAP,
-    0,
-    [0, 0],
-    false,
-);
+const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = RoundTrip {
+    msg_len: ONE_EXTRA_CAP,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [FRAME_CAP, 0, 0], None)),
+    ..partner_step(
+        "declassified-signal-two-hop",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        0,
+        [0, 0],
+        false,
+    )
+};
 /// The root task's yield, which runs the woken low thread, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_ROOT_YIELDS: RoundTrip = kernel_step("bound-root-yields", YIELD);
@@ -10601,11 +11348,12 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
         ROOT_TCB_CAP,
         [0; 4],
     ),
-    invocation(
+    cap_argument(
         "low-thread-bind-boot-domain-notification",
         TCB_BIND_NOTIFICATION,
         LOW_THREAD_CAP,
-        [MOVE_CAP, 0, 0, 0],
+        MOVE_CAP,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The root task's declassified signal refused at its second hop, measured.
@@ -10613,12 +11361,12 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
 const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
     syscall: DECLASSIFY_SIGNAL,
-    cptr: MOVE_CAP,
-    msg_len: 0,
+    cptr: AUDIT_CAP,
+    msg_len: ONE_EXTRA_CAP,
     msg: [0, 0, 0, 0],
     primed: None,
     blocks: false,
-    caps_or_badges: None,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
     overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
@@ -10727,19 +11475,14 @@ fn bound_declassified_signals(which: &str) -> bool {
         enter: irq_bound_line_entry,
     };
     // A capability fault to a handler waiting with no reply object: the low
-    // thread names the boot endpoint as its fault handler, the root task's
+    // thread's fault endpoint is the boot endpoint (installed by its SetSpace
+    // in the setup, seL4-MCS's `TCB_SetSpace` extra capability 0), the root task's
     // receive on it (no reply object, message length 0) blocks it, and the
     // low thread's fault finds the handler holding no reply to link it to, so
     // it is suspended with the fault recorded (seL4's `sendFaultIPC` failing
     // into `handleDoubleFault`), the handler left waiting.  The bound line's
     // interrupt wakes the root task through its bound notification, and the
     // low thread is resumed.
-    let set_low_handler = invocation(
-        "low-thread-set-fault-handler",
-        TCB_SET_FAULT_HANDLER,
-        LOW_THREAD_CAP,
-        [ENDPOINT_CAP, 0, 0, 0],
-    );
     let irq_wakes_handler = KernelEntry {
         name: "irq-wakes-handler-without-reply",
         enter: irq_bound_line_entry,
@@ -10751,10 +11494,6 @@ fn bound_declassified_signals(which: &str) -> bool {
         [0; 4],
     );
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
-        || !unmeasured(
-            &set_low_handler,
-            "the low thread's fault handler was not set",
-        )
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
@@ -10853,17 +11592,19 @@ fn bound_declassified_signals(which: &str) -> bool {
 /// it): the bind unmeasured, the priority change and the resume measured.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_SETUP: [RoundTrip; 3] = [
-    invocation(
+    cap_argument(
         "yield-to-bind-partner",
         SCHED_CONTEXT_BIND,
         SCHED_CONTEXT_CAP,
-        [PARTNER_TCB_CAP, 0, 0, 0],
+        PARTNER_TCB_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_priority(
         "yield-to-lower-partner",
         TCB_SET_PRIORITY,
         PARTNER_TCB_CAP,
-        [PARTNER_PRIORITY - 1, 0, 0, 0],
+        PARTNER_PRIORITY - 1,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "yield-to-resume-partner",
@@ -10879,11 +11620,12 @@ const YIELD_TO_REQUEUE: RoundTrip = yield_to("sched-context-yield-to-requeue");
 /// The partner raised to the root task's priority while it is ready and
 /// queued, measured.
 #[cfg(feature = "hw_target")]
-const YIELD_TO_RAISE: RoundTrip = invocation(
+const YIELD_TO_RAISE: RoundTrip = set_priority(
     "yield-to-raise-partner",
     TCB_SET_PRIORITY,
     PARTNER_TCB_CAP,
-    [PARTNER_PRIORITY, 0, 0, 0],
+    PARTNER_PRIORITY,
+    ROOT_IPC_BUFFER,
 );
 /// The linked branch's first half: the partner ranks with the caller on the
 /// caller's core, so the yield is linked and core 0 switches to the partner.
@@ -11419,6 +12161,21 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             return Some(false);
         }
     }
+    // The partner, about to be resumed, gets its buffer beside the root
+    // task's ([`PARTNER_IPC_BUFFER`]) while the root task is the only thread
+    // core 0 can run; it is emptied once the partner is suspended again.
+    if !unmeasured(
+        &set_ipc_buffer(
+            "partner-ipc-buffer-runnable",
+            PARTNER_TCB_CAP,
+            PARTNER_IPC_BUFFER,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner was not given a buffer",
+    ) {
+        return Some(false);
+    }
     for step in PARTNER_SETUP.iter() {
         if !unmeasured(step, "the partner setup failed") {
             return Some(false);
@@ -11492,6 +12249,18 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
         );
+        return Some(false);
+    }
+    if !unmeasured(
+        &set_ipc_buffer(
+            "partner-ipc-buffer-emptied",
+            PARTNER_TCB_CAP,
+            0,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner's buffer was not emptied",
+    ) {
         return Some(false);
     }
     // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
@@ -11824,15 +12593,6 @@ const HEAP_RETYPE_MSG: [u64; 4] = [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CA
 /// `untypedRegionExhausted` before any write, so it allocates nothing.
 #[cfg(feature = "hw_target")]
 const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
-    name: "untyped-retype-heap-refused",
-    syscall: UNTYPED_RETYPE,
-    cptr: UNTYPED_CAP,
-    msg_len: 4,
-    msg: HEAP_RETYPE_MSG,
-    primed: None,
-    blocks: false,
-    caps_or_badges: None,
-    overflow: None,
     // seL4's `seL4_NotEnoughMemory`: MR0 the memory left, the kernel heap's
     // free bytes the refusal read.
     returns: refused_with(
@@ -11840,6 +12600,12 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
         1,
         [Some(HEAP_REFUSED_CEILING), None, None, None],
     ),
+    ..retype(
+        "untyped-retype-heap-refused",
+        UNTYPED_CAP,
+        HEAP_RETYPE_MSG,
+        ROOT_IPC_BUFFER,
+    )
 };
 
 /// **The kernel heap's refusal of a retype**: the free bytes the kernel is
@@ -11855,11 +12621,11 @@ fn heap_refused_retype(which: &str) -> bool {
     crate::lean_heap::set_reported_free_bytes_ceiling(None);
     refused
         && unmeasured(
-            &invocation(
+            &retype(
                 "untyped-retype-heap-admitted",
-                UNTYPED_RETYPE,
                 UNTYPED_CAP,
                 HEAP_RETYPE_MSG,
+                ROOT_IPC_BUFFER,
             ),
             "the carve the heap refused did not succeed on the heap's own capacity",
         )
@@ -11985,33 +12751,22 @@ fn heap_allocations_interrupt(entry: &KernelEntry, which: &str) -> bool {
 /// interrupt notification bound to the first (`seL4_IRQHandler_SetNotification`).
 #[cfg(feature = "hw_target")]
 fn interrupt_handlers_issued(which: &str) -> bool {
-    let get_bound = invocation(
+    let get_bound = irq_control_get(
         "irq-control-get",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [
-            u64::from(IRQ_BOUND_LINE),
-            CNODE_CAP,
-            IRQ_BOUND_HANDLER_SLOT,
-            0,
-        ],
+        u64::from(IRQ_BOUND_LINE),
+        IRQ_BOUND_HANDLER_SLOT,
     );
-    let get_unbound = invocation(
+    let get_unbound = irq_control_get(
         "irq-control-get-unbound",
-        IRQ_CONTROL_GET,
-        IRQ_CONTROL_CAP,
-        [
-            u64::from(IRQ_UNBOUND_LINE),
-            CNODE_CAP,
-            IRQ_UNBOUND_HANDLER_SLOT,
-            0,
-        ],
+        u64::from(IRQ_UNBOUND_LINE),
+        IRQ_UNBOUND_HANDLER_SLOT,
     );
-    let bind = invocation(
+    let bind = cap_argument(
         "irq-handler-set-notification",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        ROOT_IPC_BUFFER,
     );
     // Each one word shorter than its arguments, on the capability it reads
     // them under: refused `TruncatedMessage` once the capability is found.
@@ -12066,11 +12821,12 @@ fn interrupt_binding_revoked(which: &str) -> bool {
         [1, 0],
         false,
     );
-    let rebind = invocation(
+    let rebind = cap_argument(
         "irq-handler-set-notification-again",
         IRQ_HANDLER_SET_NOTIFICATION,
         cap_address(IRQ_BOUND_HANDLER_SLOT),
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        ROOT_IPC_BUFFER,
     );
     heap_allocations_round_trip(&revoke, which) == Some(true)
         && heap_allocations_interrupt(&revoked_line, which)
@@ -12096,9 +12852,8 @@ fn interrupt_binding_revoked(which: &str) -> bool {
 fn interrupt_notification_finalised(which: &str) -> bool {
     let handler = cap_address(IRQ_UNBOUND_HANDLER_SLOT);
     let steps = [
-        invocation(
+        retype(
             "untyped-retype-irq-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -12106,12 +12861,14 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-carved-notification",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-notification-cap-delete",
@@ -12119,15 +12876,15 @@ fn interrupt_notification_finalised(which: &str) -> bool {
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-notification-over-last",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [NOTIFICATION_CAP, 0, 0, 0],
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        retype(
             "untyped-retype-irq-cleared-notification",
-            UNTYPED_RETYPE,
             UNTYPED_CAP,
             [
                 NOTIFICATION_TYPE,
@@ -12135,12 +12892,14 @@ fn interrupt_notification_finalised(which: &str) -> bool {
                 CNODE_CAP,
                 FRAME_SLOT,
             ],
+            ROOT_IPC_BUFFER,
         ),
-        invocation(
+        cap_argument(
             "irq-handler-set-notification-over-copy",
             IRQ_HANDLER_SET_NOTIFICATION,
             handler,
-            [FRAME_CAP, 0, 0, 0],
+            FRAME_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-cleared-notification-cap-delete",
@@ -12420,8 +13179,18 @@ const fn unknown_syscall(name: &'static str) -> TrapTrip {
 /// An empty slot of the root CNode: its capability address is `2^63 + 31`.
 #[cfg(feature = "hw_target")]
 const EMPTY_SLOT: u64 = 31;
-/// A send through the empty slot's address: the lookup finds no capability,
-/// which seL4 raises as a capability fault carrying the address.
+/// An address that misses the root CNode's guard: the empty slot's index
+/// without the guard bit, so its lookup stops at the root with
+/// `seL4_GuardMismatch` (as `REPLY_CAP_SLOT` does for a reply capability).
+/// An empty slot is no lookup failure in seL4 (`lookupCapAndSlot` hands the
+/// null capability on, and `decodeInvocation` refuses it with
+/// `seL4_InvalidCapability`), so a send-phase capability fault needs an
+/// address that does not resolve.
+#[cfg(feature = "hw_target")]
+const UNRESOLVED_ADDRESS: u64 = EMPTY_SLOT;
+/// A send through an address that does not resolve: seL4's
+/// `lookupCapAndSlot` fails, which `handleInvocation` raises as a capability
+/// fault carrying the address.
 #[cfg(feature = "hw_target")]
 const fn cap_fault(name: &'static str) -> TrapTrip {
     TrapTrip {
@@ -12429,7 +13198,7 @@ const fn cap_fault(name: &'static str) -> TrapTrip {
         esr: ROUND_TRIP_ESR,
         far: 0,
         elr: FAULT_PC + 4,
-        x0: cap_address(EMPTY_SLOT),
+        x0: UNRESOLVED_ADDRESS,
         x1: 0,
         x2: 0,
         x7: SEND,
@@ -12467,7 +13236,8 @@ const VM_FAULT_MESSAGE_INFO: u64 = (6 << 12) | 4;
 
 /// The five faults each fault scenario raises: a data abort and an
 /// instruction abort (seL4's `handleVMFaultEvent`), a capability fault at an
-/// address `≥ 2^63` (`handleInvocation`'s lookup failure), an unknown syscall
+/// address that misses the root CNode's guard (`handleInvocation`'s lookup
+/// failure, [`UNRESOLVED_ADDRESS`]), an unknown syscall
 /// (`handleUnknownSyscall`) and a user exception (`handleUserLevelFault`).
 #[cfg(feature = "hw_target")]
 const FAULT_KINDS: [&str; 5] = [
@@ -12526,8 +13296,9 @@ const FAULT_REPLIES: [&str; 5] = [
     "user-exception-reply",
 ];
 
-/// A syscall the register file routes past the operand dispatch, through the
-/// empty slot: the root task's `x7`, `x1` and `x0` as an `SVC` traps with them.
+/// A syscall the register file routes past the operand dispatch, through an
+/// address that does not resolve: the root task's `x7`, `x1` and `x0` as an
+/// `SVC` traps with them.
 #[cfg(feature = "hw_target")]
 const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> TrapTrip {
     TrapTrip {
@@ -12539,19 +13310,34 @@ const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> Tr
 }
 
 /// The `x1` a capability fault reaches its receiver with: `seL4_Fault_CapFault`
-/// (1) as the label and the words `setMR` wrote as the length.  An empty
-/// slot's fault is seL4's five `seL4_CapFault_*` words (`IP`, `Addr`,
-/// `InRecvPhase`, `LookupFailureType`, `BitsLeft` of `seL4_MissingCapability`);
-/// the fifth lands in the receiving partner's IPC buffer, the window's page
-/// (`tcb-set-ipc-buffer`), so while that page is mapped the length is five.
+/// (1) as the label and the words `setMR` wrote as the length.  A receive-phase
+/// fault on a capability of the wrong kind is seL4's five `seL4_CapFault_*`
+/// words (`IP`, `Addr`, `InRecvPhase`, `LookupFailureType`, `BitsLeft` of
+/// `seL4_MissingCapability`); the fifth lands in the receiving partner's IPC
+/// buffer, the window's page (`tcb-set-ipc-buffer`), so while that page is
+/// mapped the length is five.  A send-phase fault at [`UNRESOLVED_ADDRESS`] is
+/// a guard mismatch's seven ([`CAP_FAULT_GUARD_MISMATCH_INFO`]).
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 5;
 
-/// The same fault while the partner's buffer page is unmapped: the fifth word
-/// has nowhere to go, so the length is the four message registers (seL4's
-/// `setMR` with no buffer answers `n_msgRegisters`).
+/// A capability fault received by the partner while its buffer slot is
+/// empty: the words past the fourth have nowhere to go, so the length is the
+/// four message registers (seL4's `setMR` with no buffer answers
+/// `n_msgRegisters`).
 #[cfg(feature = "hw_target")]
 const CAP_FAULT_UNMAPPED_BUFFER_INFO: u64 = (1 << 12) | 4;
+
+/// The slot and the boot-domain id the fault lane carves its third core-0
+/// thread at: the donation-chain server's, free again by then.  The thread's
+/// buffer is the window's page, so it can set the root task's buffer back
+/// while neither the root task nor the partner has one
+/// ([`root_buffer_restored`]).
+#[cfg(feature = "hw_target")]
+const RESTORER_TCB_SLOT: u64 = CHAIN_TCB_SLOT;
+#[cfg(feature = "hw_target")]
+const RESTORER_CHILD_ID: u64 = CHAIN_CHILD_IDS[0];
+#[cfg(feature = "hw_target")]
+const RESTORER_TCB_CAP: u64 = cap_address(RESTORER_TCB_SLOT);
 
 /// One overflow capability fault queued and answered: the partner resumed,
 /// the root task's trap queued on its handler's endpoint, the partner's
@@ -12590,37 +13376,61 @@ fn queued_overflow_cap_fault(
 /// failed lookup of the invoked capability raises a capability fault).  The
 /// configure, the service register (each one word past the registers, read
 /// from the root task's IPC buffer: the `.overflowOne` route) and a long send
-/// each name the empty slot, so the operand's lookup fails inside the routed
-/// arm and the entry's refusal seam reads it as the fault
+/// each name [`UNRESOLVED_ADDRESS`], so the operand's lookup fails inside the
+/// routed arm and the entry's refusal seam reads it as the fault
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
-/// The buffer's page is unmapped and mapped again first, so its translation is
-/// on no core's TLB (between the two, the messages past the inline words are
-/// clamped to them, as seL4 clamps a message with no IPC buffer): the first configure refused for its arguments and the
-/// first fault take the arm that fills the entry and takes the fill back
-/// (`tlbFillIpcBufferOnCore`, `tlbUndoFillOnCore`); the configure that then
-/// succeeds fills it and keeps it; the second fault and refusal and the
-/// configure after them find it held.
+/// The partner's buffer slot and then the root task's are emptied first and
+/// set again after (between the two, the messages past the inline words are
+/// clamped to them, as seL4's `handleInvocation` clamps a message from a
+/// thread whose `tcbBuffer` holds no frame capability, and the partner
+/// receives each fault in its four message registers, as seL4's `setMR` with
+/// no buffer does; unmapping the buffer's page would not, since seL4 reads the
+/// buffer through the frame, not the thread's page tables).  A thread with no
+/// buffer names no extra capability, so neither can set a buffer back: the
+/// root task blocks on the endpoint and a third thread, whose buffer is the
+/// window's page, sets it and wakes it ([`root_buffer_restored`]); the root
+/// task then sets the partner's.  With the
+/// buffer set, every configure, fault and refusal reads the words at their
+/// physical address, through the kernel's own mapping of RAM, and caches no
+/// user translation on any core.
 #[cfg(feature = "hw_target")]
-fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
-    let unmap_buffer_page = invocation(
-        "fault-long-unmap-buffer",
-        VSPACE_UNMAP,
-        VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, 0, 0],
+fn overflow_cap_faults(which: &str) -> bool {
+    let clear_partner_buffer = set_ipc_buffer(
+        "fault-long-clear-partner-buffer",
+        PARTNER_TCB_CAP,
+        0,
+        FRAME_CAP,
+        FRAME_VADDR,
     );
-    let refused_args = [
-        SCHED_CONTEXT_CAP,
-        SCHED_CONTEXT_PERIOD + 1,
-        SCHED_CONTEXT_PERIOD,
-        PARTNER_PRIORITY,
-    ];
-    let admitted_args = [
-        SCHED_CONTEXT_CAP,
-        SCHED_CONTEXT_BUDGET,
-        SCHED_CONTEXT_PERIOD,
-        PARTNER_PRIORITY,
-    ];
+    let clear_buffer = set_ipc_buffer(
+        "fault-long-clear-buffer",
+        ROOT_TCB_CAP,
+        0,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
+    // Each configure names the context in the window's page, the root task's
+    // buffer once `root_buffer_restored` has set it back; with the buffer
+    // slot empty the kernel reads no extra capability at all.
+    let over_period = |name| {
+        configure(
+            name,
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_PERIOD + 1,
+            SCHED_CONTEXT_PERIOD,
+        )
+    };
+    let admitted = |name| {
+        configure(
+            name,
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        )
+    };
     // A budget above its period is seL4-MCS's `seL4_RangeError` with
     // `MIN_BUDGET` and the period (`decodeSchedControl_ConfigureFlags`): the
     // payload carries the period the caller passed, a word read at the entry.
@@ -12636,19 +13446,19 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     );
     let refused_fills = RoundTrip {
         returns: budget_over_period,
-        ..configure("configure-refused-fills", refused_args)
+        ..over_period("configure-refused-fills")
     };
     let refused_held = RoundTrip {
         returns: budget_over_period,
-        ..configure("configure-refused-held", refused_args)
+        ..over_period("configure-refused-held")
     };
     // seL4-MCS's bounds (`decodeSchedControl_ConfigureFlags`): a budget or
     // period below `MIN_BUDGET` or above `MAX_PERIOD` answers `MIN_BUDGET` and
     // `MAX_PERIOD`.  A budget of zero; a budget of `2^64 - 1` over a period
-    // past `2^63`; a budget and a period both past `2^63`; and a deadline past
-    // `2^63`, the fifth word, read from the buffer (`invalidArgument 4`).
-    // Each argument word past `2^63` is tested as a word, so none is made a
-    // heap number.
+    // past `2^63`; and a budget and a period both past `2^63`.  Each argument
+    // word past `2^63` is tested as a word, so none is made a heap number.
+    // A flags word past `2^63`, the fifth word, read from the buffer, is
+    // admitted: seL4 reads only its bit 0 (`seL4_SchedContext_Sporadic`).
     let max_period_refusal = refused_with(
         RANGE_ERROR,
         2,
@@ -12663,37 +13473,40 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
         returns: max_period_refusal,
         ..configure(
             "configure-zero-budget-max-period",
-            [SCHED_CONTEXT_CAP, 0, SCHED_CONTEXT_PERIOD, PARTNER_PRIORITY],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            0,
+            SCHED_CONTEXT_PERIOD,
         )
     };
     let wide_period = RoundTrip {
         returns: max_period_refusal,
         ..configure(
             "configure-budget-over-wide-period",
-            [SCHED_CONTEXT_CAP, u64::MAX, WIDE_PERIOD, PARTNER_PRIORITY],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            u64::MAX,
+            WIDE_PERIOD,
         )
     };
     let wide_budget_and_period = RoundTrip {
         returns: max_period_refusal,
         ..configure(
             "configure-wide-budget-and-period",
-            [
-                SCHED_CONTEXT_CAP,
-                WIDE_PERIOD,
-                WIDE_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            WIDE_PERIOD,
+            WIDE_PERIOD,
         )
     };
-    let wide_deadline = RoundTrip {
-        returns: refused_with(INVALID_ARGUMENT, 1, [Some(4), None, None, None]),
-        overflow: Some((FRAME_VADDR, WIDE_WORD)),
-        ..configure("configure-wide-deadline", admitted_args)
+    let wide_flags = RoundTrip {
+        overflow: Some((FRAME_VADDR, [WIDE_WORD, 0, 0])),
+        ..admitted("configure-wide-flags")
     };
-    let fills = configure("configure-fills-ipc-buffer", admitted_args);
-    let held = configure("configure-held-ipc-buffer", admitted_args);
-    // With the buffer's page unmapped, a message past the inline words is
-    // clamped to them (seL4's `handleInvocation`: `length > n_msgRegisters &&
+    let fills = admitted("configure-fills-ipc-buffer");
+    let held = admitted("configure-held-ipc-buffer");
+    // With the root task's buffer slot empty, a message past the inline words
+    // is clamped to them (seL4's `handleInvocation`: `length > n_msgRegisters &&
     // !buffer` gives `n_msgRegisters`): the configure, one word past and two
     // words past, is then short of its fifth argument and refused
     // `TruncatedMessage` once its capability is found; the long send and the
@@ -12702,14 +13515,17 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     // on the CNode capability as the short receive does.
     let clamped_one_word = RoundTrip {
         returns: refused(TRUNCATED_MESSAGE),
-        ..configure("configure-one-word-unmapped-buffer", admitted_args)
+        ..admitted("configure-one-word-unmapped-buffer")
     };
     let clamped_long = RoundTrip {
-        msg_len: 6,
+        msg_len: ONE_EXTRA_CAP | 6,
         returns: refused(TRUNCATED_MESSAGE),
-        ..configure("configure-long-unmapped-buffer", admitted_args)
+        ..admitted("configure-long-unmapped-buffer")
     };
-    unmeasured(&unmap_buffer_page, "the buffer's page was not unmapped")
+    unmeasured(
+        &clear_partner_buffer,
+        "the partner's buffer slot was not emptied",
+    ) && unmeasured(&clear_buffer, "the root task's buffer slot was not emptied")
         && heap_allocations_round_trip(&clamped_one_word, which) == Some(true)
         && heap_allocations_round_trip(&clamped_long, which) == Some(true)
         && queued_overflow_cap_fault(
@@ -12744,13 +13560,13 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             CAP_FAULT_UNMAPPED_BUFFER_INFO,
             which,
         )
-        && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
+        && root_buffer_restored()
         && heap_allocations_round_trip(&refused_fills, which) == Some(true)
         && queued_overflow_cap_fault(
             &overflow_cap_fault("configure-cap-fault-fills", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault",
             "reply-configure-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && heap_allocations_round_trip(&fills, which) == Some(true)
@@ -12758,27 +13574,27 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             &overflow_cap_fault("configure-cap-fault-held", SCHED_CONTEXT_CONFIGURE, 5),
             "receive-configure-cap-fault-held",
             "reply-configure-cap-fault-held",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && heap_allocations_round_trip(&refused_held, which) == Some(true)
         && heap_allocations_round_trip(&zero_budget, which) == Some(true)
         && heap_allocations_round_trip(&wide_period, which) == Some(true)
         && heap_allocations_round_trip(&wide_budget_and_period, which) == Some(true)
-        && heap_allocations_round_trip(&wide_deadline, which) == Some(true)
+        && heap_allocations_round_trip(&wide_flags, which) == Some(true)
         && heap_allocations_round_trip(&held, which) == Some(true)
         && queued_overflow_cap_fault(
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
             "receive-service-register-cap-fault",
             "reply-service-register-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         && queued_overflow_cap_fault(
             &overflow_cap_fault("long-send-cap-fault", SEND, LONG_SEND_LENGTH),
             "receive-long-send-cap-fault",
             "reply-long-send-cap-fault",
-            CAP_FAULT_MESSAGE_INFO,
+            CAP_FAULT_GUARD_MISMATCH_INFO,
             which,
         )
         // A receive past its inline words on the CNode capability: seL4's
@@ -12795,6 +13611,73 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             which,
         )
         && receive_phase_cap_faults(which)
+}
+
+/// **The root task's buffer set back by the third thread, and the
+/// partner's by the root task**: the third thread resumed, the root task
+/// blocked receiving on the endpoint, the third thread's buffer set of the
+/// root task (its extra capability, the window's frame capability, read from
+/// the third thread's buffer on the window's page), its send waking the root
+/// task, its yield giving the core back and its suspend by the root task; then
+/// the root task's buffer set of the partner.  Unmeasured.
+#[cfg(feature = "hw_target")]
+fn root_buffer_restored() -> bool {
+    let resume = invocation(
+        "fault-long-restorer-resume",
+        TCB_RESUME,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
+    let root_waits = partner_step(
+        "fault-long-root-waits",
+        RECEIVE,
+        ENDPOINT_CAP,
+        0,
+        [0, 0],
+        true,
+    );
+    let restore = set_ipc_buffer(
+        "fault-long-root-buffer-restore",
+        ROOT_TCB_CAP,
+        FRAME_VADDR,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
+    let wake = partner_step(
+        "fault-long-restorer-wakes-root",
+        SEND,
+        ENDPOINT_CAP,
+        0,
+        [0, 0],
+        false,
+    );
+    let restorer_yields = kernel_step("fault-long-restorer-yield", YIELD);
+    let suspend = invocation(
+        "fault-long-restorer-suspend",
+        TCB_SUSPEND,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
+    let partner_buffer = set_ipc_buffer(
+        "fault-long-partner-buffer-restore",
+        PARTNER_TCB_CAP,
+        FRAME_VADDR,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
+    unmeasured(&resume, "the third thread was not resumed")
+        && unmeasured(&root_waits, "the root task did not block on the endpoint")
+        && unmeasured(
+            &restore,
+            "the third thread did not set the root task's buffer",
+        )
+        && unmeasured(&wake, "the third thread's send did not wake the root task")
+        && unmeasured(&restorer_yields, "the third thread did not yield")
+        && unmeasured(&suspend, "the third thread was not suspended")
+        && unmeasured(
+            &partner_buffer,
+            "the root task did not set the partner's buffer",
+        )
 }
 
 /// A receive-phase trap: the root task's `SVC` with `x7` the syscall, `x0`
@@ -13108,6 +13991,31 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     Some(true)
 }
 
+/// Enter `trip` unmeasured, as [`heap_allocations_trap`] enters it, with no
+/// reading: a setup step whose effect a later reading depends on.
+#[cfg(feature = "hw_target")]
+fn unmeasured_trap(trip: &TrapTrip) {
+    let mut frame = crate::trap::TrapFrame {
+        gprs: [0; 31],
+        sp_el0: 0,
+        elr_el1: trip.elr,
+        spsr_el1: ROUND_TRIP_SPSR,
+        esr_el1: trip.esr,
+        far_el1: trip.far,
+        tpidr_el0: 0,
+        reserved: 0,
+    };
+    frame.gprs[0] = trip.x0;
+    frame.gprs[1] = trip.x1;
+    frame.gprs[2] = trip.x2;
+    frame.gprs[7] = trip.x7;
+    let saved_daif = crate::interrupts::disable_interrupts();
+    crate::trap::handle_synchronous_exception(&mut frame);
+    crate::interrupts::restore_interrupts(saved_daif);
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+}
+
 /// `x1` and `x3`–`x5` of the context the last [`heap_allocations_trap`]'s
 /// entry restored: a delivered fault's message info and its second to fourth
 /// message words (a capability fault's `Addr`, `InRecvPhase` and
@@ -13179,6 +14087,136 @@ const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) ->
         x2,
         x7,
     }
+}
+
+/// An invocation by the partner whose extra capability at some index misses
+/// the root CNode's guard: the invoked capability (its own thread capability,
+/// or core 0's scheduling control for a configure), the syscall, the message
+/// info and the three `caps_or_badges` words, the reading's name and its
+/// handler reply's.
+#[cfg(feature = "hw_target")]
+struct ExtraCapGuardMismatch {
+    name: &'static str,
+    reply: &'static str,
+    x0: u64,
+    x7: u64,
+    x1: u64,
+    caps: [u64; 3],
+}
+
+/// The extra capabilities whose addresses miss the root CNode's guard,
+/// measured: a configure's scheduling context
+/// (`seL4_SchedControl_ConfigureFlags`'s extra capability 0), a bound
+/// notification (`seL4_TCB_BindNotification`'s extra
+/// capability 0), a SetSpace fault endpoint (`seL4_TCB_SetSpace`'s extra
+/// capability 0) and a SetSpace CSpace root (its extra capability 1, the
+/// fault endpoint before it found).
+#[cfg(feature = "hw_target")]
+const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 4] = [
+    ExtraCapGuardMismatch {
+        name: "configure-sched-context-guard-mismatch",
+        reply: "configure-sched-context-guard-mismatch-reply",
+        x0: SCHED_CONTROL_CAP,
+        x7: SCHED_CONTEXT_CONFIGURE,
+        x1: ONE_EXTRA_CAP | 5,
+        caps: [SCHED_CONTEXT_SLOT, 0, 0],
+    },
+    ExtraCapGuardMismatch {
+        name: "bind-notification-guard-mismatch",
+        reply: "bind-notification-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
+        x7: TCB_BIND_NOTIFICATION,
+        x1: ONE_EXTRA_CAP,
+        caps: [NOTIFICATION_SLOT, 0, 0],
+    },
+    ExtraCapGuardMismatch {
+        name: "set-fault-handler-guard-mismatch",
+        reply: "set-fault-handler-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
+        x7: TCB_SET_SPACE,
+        x1: THREE_EXTRA_CAPS | 2,
+        caps: [ENDPOINT_SLOT, CNODE_CAP, VSPACE_CAP],
+    },
+    ExtraCapGuardMismatch {
+        name: "set-space-root-guard-mismatch",
+        reply: "set-space-root-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
+        x7: TCB_SET_SPACE,
+        x1: THREE_EXTRA_CAPS | 2,
+        caps: [ENDPOINT_CAP, CNODE_SLOT, VSPACE_CAP],
+    },
+];
+
+/// **An extra capability whose address misses the root CNode's guard**,
+/// measured: the partner's invocation `trip` naming it in the shared buffer at
+/// `FRAME_VADDR`.  seL4 looks the extra capabilities up before the invocation
+/// decodes (`handleInvocation`'s `lookupExtraCaps`), so the failed lookup is
+/// the invocation's capability fault, not a decode error: delivered to the
+/// handler with the guard-mismatch words, answered, and the invocation
+/// restarted at its `SVC`.
+#[cfg(feature = "hw_target")]
+fn extra_cap_guard_mismatch(
+    trip: &ExtraCapGuardMismatch,
+    handler_waits: &RoundTrip,
+    handler_waits_again: &RoundTrip,
+    wake_handler: &RoundTrip,
+    which: &str,
+) -> bool {
+    let name = trip.name;
+    let invoke = TrapTrip {
+        x0: trip.x0,
+        x1: trip.x1,
+        x7: trip.x7,
+        ..cap_fault(name)
+    };
+    let reply = partner_step(
+        trip.reply,
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+        || !unmeasured(handler_waits, "the handler did not wait on the endpoint")
+        || !write_caps_or_badges(FRAME_VADDR, trip.caps)
+        || heap_allocations_trap(&invoke, which) != Some(true)
+    {
+        return false;
+    }
+    let info = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+    let lookup_type = TRAP_RESTORED_X5.load(Ordering::SeqCst);
+    if info != CAP_FAULT_GUARD_MISMATCH_INFO || lookup_type != 4 {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler received x1={:#x} x5={:#x}",
+            info,
+            lookup_type
+        );
+        return false;
+    }
+    if !write_buffer_words(FRAME_VADDR, OVERFLOW_BASE_WORD, &[0, 0, 0])
+        || !write_caps_or_badges(FRAME_VADDR, [0, 0, 0])
+        || !unmeasured(&reply, "the handler's reply did not return")
+    {
+        return false;
+    }
+    let (waited, _, _, resumed) = dispatch_round_trip(handler_waits_again);
+    if !matches!(waited, Dispatched::Blocked) {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the handler did not wait again"
+        );
+        return false;
+    }
+    // The fault restarts the invocation at its `SVC`, its registers as it
+    // trapped.
+    let restart = FaultRestart {
+        pc: FAULT_PC,
+        x0: trip.x0,
+        x1: trip.x1,
+    };
+    restarted_as(name, &resumed, restart)
+        && unmeasured(wake_handler, "the waiting handler was not woken")
+        && suspend_partner()
 }
 
 /// **The receive side's capability faults** (seL4-MCS `handleRecv`,
@@ -13258,11 +14296,12 @@ fn receive_side_faults(
             info: CAP_FAULT_MESSAGE_INFO,
         },
     ];
-    let bind_root = invocation(
+    let bind_root = cap_argument(
         "bind-root-notification",
         TCB_BIND_NOTIFICATION,
         ROOT_TCB_CAP,
-        [NOTIFICATION_CAP, 0, 0, 0],
+        NOTIFICATION_CAP,
+        FRAME_VADDR,
     );
     let unbind_root = invocation(
         "unbind-root-notification",
@@ -13428,9 +14467,11 @@ fn partner_restarts_send(name: &str, cptr: u64, handler_waits_again: &RoundTrip)
 /// - `cancelled-send-restarts`: the partner blocked sending on an endpoint
 ///   carved into an empty slot; the endpoint's only capability deleted, which
 ///   cancels the send and sets the partner to restart; the partner, switched
-///   in, resumes at its `SVC` with its own arguments and re-issues the send,
-///   which faults on the now-empty slot (measured), delivered to the root
-///   task waiting as its handler;
+///   in, resumes at its `SVC` with its own arguments and re-issues the send
+///   (measured): its slot now empty, the lookup finds a null capability,
+///   which `decodeInvocation` refuses with `seL4_InvalidCapability` (an
+///   error frame back to the partner, no fault); the partner then wakes the
+///   root task still waiting on the exerciser endpoint;
 /// - `suspend-resume-restarts`: the partner blocked sending on the exerciser
 ///   endpoint; suspended, which leaves it `Inactive`, then resumed (measured),
 ///   which sets it to restart; switched in, it resumes at its `SVC` with its
@@ -13443,9 +14484,8 @@ fn cancelled_ipc_restarts(
     wake_handler: &RoundTrip,
 ) -> bool {
     let carved = cap_address(EMPTY_DEST_SLOT);
-    let carve = invocation(
+    let carve = retype(
         "restart-endpoint-carve",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             ENDPOINT_TYPE,
@@ -13453,20 +14493,13 @@ fn cancelled_ipc_restarts(
             CNODE_CAP,
             EMPTY_DEST_SLOT,
         ],
+        FRAME_VADDR,
     );
     let delete = invocation(
         "restart-endpoint-delete",
         CSPACE_DELETE,
         CNODE_CAP,
         [EMPTY_DEST_SLOT, 0, 0, 0],
-    );
-    let reply = partner_step(
-        "restart-fault-reply",
-        REPLY,
-        REPLY_CAP,
-        1,
-        [FAULT_REPLY_WORD, 0],
-        false,
     );
     let suspend = invocation("restart-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
     let resume = invocation(
@@ -13483,22 +14516,18 @@ fn cancelled_ipc_restarts(
             || !unmeasured(&delete, "the blocked-on endpoint was not deleted")
             || !partner_restarts_send(name, carved, handler_waits_again)
             || heap_allocations_trap(&partner_send_trap(name, carved), which) != Some(true)
-            || !fault_delivered(name)
+            || !fault_not_delivered(name)
         {
             return false;
         }
-        let addr = TRAP_RESTORED_X3.load(Ordering::SeqCst);
-        if addr != carved {
+        let label = TRAP_RESTORED_X1.load(Ordering::SeqCst) >> 12;
+        if label != crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_CAPABILITY {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the fault names {addr:#x}, the send's address is {carved:#x}"
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the re-issued send returned label {label:#x}, not the invalid-capability error"
             );
             return false;
         }
-        if !unmeasured(&reply, "the handler's reply did not return")
-            || !partner_restarts_send(name, carved, handler_waits_again)
-            || !unmeasured(wake_handler, "the waiting handler was not woken")
-            || !suspend_partner()
-        {
+        if !unmeasured(wake_handler, "the waiting root task was not woken") || !suspend_partner() {
             return false;
         }
         let name = "suspend-resume-restarts";
@@ -13526,6 +14555,61 @@ fn cancelled_ipc_restarts(
     true
 }
 
+/// Both threads' fault endpoint set to [`FAULT_HANDLER_CAP`], unmeasured, by
+/// seL4-MCS's `TCB_SetSpace`, which needs its target suspended: the root task
+/// faults with no handler and is suspended, the partner, current in its
+/// place, sets the root task's space and resumes it, and the root task
+/// suspends the partner and sets the partner's.  The partner has no IPC buffer
+/// here, so it is given [`PARTNER_IPC_BUFFER`] on the root task's buffer frame
+/// for its extra capabilities (every word written to the root task's buffer is
+/// mirrored there) and left without one again after.
+#[cfg(feature = "hw_target")]
+fn install_fault_handlers() -> bool {
+    let partner_buffer = set_ipc_buffer(
+        "handler-install-partner-buffer",
+        PARTNER_TCB_CAP,
+        PARTNER_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let partner_buffer_emptied = set_ipc_buffer(
+        "handler-install-partner-buffer-emptied",
+        PARTNER_TCB_CAP,
+        0,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let root_space = set_space(
+        "set-root-fault-handler",
+        ROOT_TCB_CAP,
+        [FAULT_HANDLER_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
+    );
+    let partner_space = set_space(
+        "set-partner-fault-handler",
+        PARTNER_TCB_CAP,
+        [FAULT_HANDLER_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
+    );
+    let resume_root = invocation("resume-root-handled", TCB_RESUME, ROOT_TCB_CAP, [0; 4]);
+    if !unmeasured(&partner_buffer, "the partner's IPC buffer was not set")
+        || !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+    {
+        return false;
+    }
+    unmeasured_trap(&fault_trip(0, "suspend-root-unhandled"));
+    unmeasured(&root_space, "the root task's fault handler was not set")
+        && unmeasured(&resume_root, "the root task was not resumed")
+        && suspend_partner()
+        && unmeasured(&partner_space, "the partner's fault handler was not set")
+        && unmeasured(
+            &partner_buffer_emptied,
+            "the partner's IPC buffer was not emptied",
+        )
+}
+
 /// **The fault entries** (seL4's `handleFault` from each of its producers:
 /// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
 /// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
@@ -13547,19 +14631,11 @@ fn cancelled_ipc_restarts(
 ///   wakes the root task, which takes the core and releases the partner's.
 #[cfg(feature = "hw_target")]
 fn fault_entries() -> Option<bool> {
-    let set_handler = |name, tcb| {
-        invocation(
-            name,
-            TCB_SET_FAULT_HANDLER,
-            tcb,
-            [FAULT_HANDLER_CAP, 0, 0, 0],
-        )
-    };
-    let copy_handler = invocation(
+    let copy_handler = root_copy(
         "copy-fault-handler",
-        CSPACE_COPY,
-        CNODE_CAP,
-        root_slot_copy(ENDPOINT_SLOT, FAULT_HANDLER_SLOT),
+        ENDPOINT_SLOT,
+        FAULT_HANDLER_SLOT,
+        ROOT_IPC_BUFFER,
     );
     let delete_handler = invocation(
         "delete-fault-handler",
@@ -13567,18 +14643,18 @@ fn fault_entries() -> Option<bool> {
         CNODE_CAP,
         [FAULT_HANDLER_SLOT, 0, 0, 0],
     );
+    // Neither thread has a fault handler yet: the boot leaves the root task's
+    // fault-handler slot empty (seL4's root task has no `fault_ep`), and the
+    // partner's is cleared here.
     if !unmeasured(
-        &copy_handler,
-        "the fault handler's capability was not copied",
-    ) || !unmeasured(
-        &set_handler("set-root-fault-handler", ROOT_TCB_CAP),
-        "the root task's fault handler was not set",
-    ) || !unmeasured(
-        &set_handler("set-partner-fault-handler", PARTNER_TCB_CAP),
-        "the partner's fault handler was not set",
-    ) || !unmeasured(
-        &delete_handler,
-        "the fault handler's capability was not deleted",
+        &set_space(
+            "clear-partner-fault-handler",
+            PARTNER_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner's fault handler was not cleared",
     ) {
         return Some(false);
     }
@@ -13598,7 +14674,8 @@ fn fault_entries() -> Option<bool> {
     if !unmeasured(
         &copy_handler,
         "the fault handler's capability was not copied",
-    ) {
+    ) || !install_fault_handlers()
+    {
         return Some(false);
     }
     let receive_fault = RoundTrip {
@@ -13749,24 +14826,27 @@ fn fault_entries() -> Option<bool> {
     // passive handler waiting with a reply object: the fault's call lends the
     // faulting thread's context to the handler (seL4-MCS `sendFaultIPC`, the
     // call's `schedContext_donate`), each write in its slot.  The handler's
-    // reply hands the context back and restarts the faulting thread, which is
-    // then suspended and the context unbound from it.  The timer is
-    // masked across the sequence, so no tick switches the threads between steps.
+    // reply hands the context back and restarts the faulting thread.  Handing
+    // the context back takes the handler off its core (seL4-MCS
+    // `schedContext_donate`'s `tcbSchedDequeue` of the thread it leaves), so
+    // the faulting thread, running on the context, restarts the root task
+    // before suspending itself, and the root task unbinds the context.  The
+    // timer is masked across the sequence, so no tick switches the threads
+    // between steps.
     let donating_setup = [
         configure(
             "fault-donating-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            ROOT_IPC_BUFFER,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
-        invocation(
+        cap_argument(
             "fault-donating-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
+            PARTNER_TCB_CAP,
+            ROOT_IPC_BUFFER,
         ),
         invocation("fault-donating-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
     ];
@@ -13779,6 +14859,18 @@ fn fault_entries() -> Option<bool> {
         false,
     );
     let donating_teardown = [
+        invocation(
+            "fault-donating-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "fault-donating-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
         invocation(
             "fault-donating-suspend",
             TCB_SUSPEND,
@@ -13813,30 +14905,76 @@ fn fault_entries() -> Option<bool> {
     // mapped there for the run (unmeasured) and taken down after it.  The
     // faulted thread restarts as the fault reply says (seL4's
     // `handleFaultReply`).
-    let map_buffer_page = invocation(
+    let map_buffer_page = page_map(
         "fault-long-map-buffer",
-        VSPACE_MAP,
+        FRAME_CAP,
         VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+        FRAME_VADDR,
+        FRAME_PERMS,
+        ROOT_IPC_BUFFER,
     );
-    let root_buffer = invocation(
+    let root_buffer = set_ipc_buffer(
         "fault-long-root-ipc-buffer",
-        TCB_SET_IPC_BUFFER,
         ROOT_TCB_CAP,
-        [FRAME_VADDR, 0, 0, 0],
+        FRAME_VADDR,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
     );
+    // The partner answers the faults below from a buffer on the window's page
+    // too (its buffer slot is empty when the lane starts).  A third thread on
+    // core 0, at the partner's priority and with its buffer on the window's
+    // page too, sets the root task's buffer back after the window in which
+    // neither the root task nor the partner has one (`root_buffer_restored`).
+    let partner_buffer = set_ipc_buffer(
+        "fault-long-partner-ipc-buffer",
+        PARTNER_TCB_CAP,
+        FRAME_VADDR,
+        FRAME_CAP,
+        FRAME_VADDR,
+    );
+    let restorer_setup = [
+        retype(
+            "fault-long-restorer-carve",
+            UNTYPED_CAP,
+            [TCB_TYPE, RESTORER_CHILD_ID, CNODE_CAP, RESTORER_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "fault-long-restorer-set-space",
+            RESTORER_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "fault-long-restorer-set-priority",
+            TCB_SET_PRIORITY,
+            RESTORER_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        set_ipc_buffer(
+            "fault-long-restorer-ipc-buffer",
+            RESTORER_TCB_CAP,
+            FRAME_VADDR,
+            FRAME_CAP,
+            FRAME_VADDR,
+        ),
+    ];
     if !unmeasured_all(&MOVE_SETUP_PAGE, "the long fault reply's page setup failed")
         || !unmeasured(
             &map_buffer_page,
             "the long fault reply's page was not mapped",
         )
         || !unmeasured(&root_buffer, "the handler's IPC buffer was not set")
+        || !unmeasured(&partner_buffer, "the partner's IPC buffer was not set")
+        || !unmeasured_all(&restorer_setup, "the third thread's setup failed")
     {
         return Some(false);
     }
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
-        if !overflow_cap_faults(&map_buffer_page, which) {
+        if !overflow_cap_faults(which) {
             return Some(false);
         }
     }
@@ -13949,6 +15087,17 @@ fn fault_entries() -> Option<bool> {
         {
             return Some(false);
         }
+        for trip in EXTRA_CAP_GUARD_MISMATCHES.iter() {
+            if !extra_cap_guard_mismatch(
+                trip,
+                &handler_waits,
+                &handler_waits_again,
+                &wake_handler,
+                which,
+            ) {
+                return Some(false);
+            }
+        }
     }
     if !receive_side_faults(&handler_waits, &handler_waits_again, &wake_handler) {
         return Some(false);
@@ -13956,19 +15105,42 @@ fn fault_entries() -> Option<bool> {
     if !cancelled_ipc_restarts(&handler_waits, &handler_waits_again, &wake_handler) {
         return Some(false);
     }
-    let root_buffer_back = invocation(
+    // The buffers go back before the page's teardown: the root task names
+    // the boot buffer's frame capability from the window's page, and each
+    // buffer slot's copy of the window's frame capability would otherwise
+    // keep the frame alive past its delete.
+    let root_buffer_back = set_ipc_buffer(
         "fault-long-root-ipc-buffer-back",
-        TCB_SET_IPC_BUFFER,
         ROOT_TCB_CAP,
-        [ROOT_IPC_BUFFER, 0, 0, 0],
+        ROOT_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        FRAME_VADDR,
     );
-    if !unmeasured_all(
-        &MOVE_TEARDOWN[4..],
-        "the long fault reply's page teardown failed",
-    ) || !unmeasured(
+    let partner_buffer_clear = set_ipc_buffer(
+        "fault-long-partner-ipc-buffer-clear",
+        PARTNER_TCB_CAP,
+        0,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let restorer_delete = invocation(
+        "fault-long-restorer-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [RESTORER_TCB_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(
         &root_buffer_back,
         "the root task's IPC buffer was not set back",
-    ) {
+    ) || !unmeasured(
+        &partner_buffer_clear,
+        "the partner's IPC buffer slot was not emptied",
+    ) || !unmeasured(&restorer_delete, "the third thread was not deleted")
+        || !unmeasured_all(
+            &MOVE_TEARDOWN[4..],
+            "the long fault reply's page teardown failed",
+        )
+    {
         return Some(false);
     }
     // The root task's access loads its context; its receive blocks it and
@@ -14039,8 +15211,29 @@ fn dispatch_round_trip_at(
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
-    if let Some((buffer, word)) = trip.overflow {
-        if !write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[word]) {
+    if let Some((buffer, words)) = trip.caps_or_badges.map(|(b, w, _)| (b, w)) {
+        // The extra capabilities' addresses: written here, before every
+        // dispatch of the round trip, so a setup step's CNode operation names
+        // its source root as a measured one does.
+        if !write_caps_or_badges(buffer, words) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {}: the IPC buffer at \
+                 {buffer:#x} has no translation",
+                trip.name
+            );
+            return (
+                Dispatched::Failed,
+                None,
+                None,
+                Resumed {
+                    regs: [0; 6],
+                    pc: 0,
+                },
+            );
+        }
+    }
+    if let Some((buffer, words)) = trip.overflow {
+        if !write_buffer_words(buffer, OVERFLOW_BASE_WORD, &words) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {}: the IPC buffer at \
                  {buffer:#x} has no translation",
@@ -14075,7 +15268,7 @@ fn dispatch_round_trip_at(
         // The word back to the zero the boot's scrub left, outside the
         // measured window; the page was mapped a moment ago, so this write
         // finds it again.
-        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0]);
+        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0, 0, 0]);
     }
     // The restore replaced the published frame with the resumed thread's
     // context: its `x0` to `x5` and its PC are what that thread resumes with.
@@ -14201,10 +15394,6 @@ const MOVE_SC_ID: u64 = 35;
 const MOVE_SC_SLOT: u64 = 27;
 #[cfg(feature = "hw_target")]
 const MOVE_SC_CAP: u64 = cap_address(MOVE_SC_SLOT);
-/// The moved thread's priority (its context's): below the root task's, so the
-/// root task keeps core 0 whenever both are ready there.
-#[cfg(feature = "hw_target")]
-const MOVE_PRIORITY: u64 = 100;
 /// Read, execute, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const CODE_PERMS: u64 = 0b11101;
@@ -14215,51 +15404,64 @@ const SPIN_CODE_WORD: u64 = 0x1400_0000_1400_0000;
 /// returns in `x2` once the thread's receive switches core 0 back to it.
 #[cfg(feature = "hw_target")]
 const MOVE_MARKER: u64 = 0x6d6f_7665;
-/// The thread's setup, once the code page is mapped: the context carved,
-/// configured and bound to the carved thread, whose space is the root task's.
+/// The moved thread's priority: below the root task's, so the root task keeps
+/// core 0 whenever both are ready there.  The thread's own (seL4's
+/// `tcbPriority`), set by `seL4_TCB_SetPriority`: a scheduling context
+/// carries no priority, so neither the configure nor the bind gives one.
 #[cfg(feature = "hw_target")]
-const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
-    invocation(
+const MOVE_PRIORITY: u64 = 100;
+/// The thread's setup, once the code page is mapped: the context carved,
+/// configured and bound to the carved thread, whose space is the root task's
+/// and whose priority is `MOVE_PRIORITY`.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_THREAD: [RoundTrip; 6] = [
+    retype(
         "move-retype-sched-context",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+        ROOT_IPC_BUFFER,
     ),
     configure(
         "move-configure",
-        [
-            MOVE_SC_CAP,
-            SCHED_CONTEXT_BUDGET,
-            SCHED_CONTEXT_PERIOD,
-            MOVE_PRIORITY,
-        ],
+        ROOT_IPC_BUFFER,
+        MOVE_SC_CAP,
+        SCHED_CONTEXT_BUDGET,
+        SCHED_CONTEXT_PERIOD,
     ),
-    invocation(
+    retype(
         "move-retype-tcb",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "move-tcb-set-space",
-        TCB_SET_SPACE,
         CHAIN_TCB_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_priority(
+        "move-tcb-set-priority",
+        TCB_SET_PRIORITY,
+        CHAIN_TCB_CAP,
+        MOVE_PRIORITY,
+        ROOT_IPC_BUFFER,
+    ),
+    cap_argument(
         "move-bind",
         SCHED_CONTEXT_BIND,
         MOVE_SC_CAP,
-        [CHAIN_TCB_CAP, 0, 0, 0],
+        CHAIN_TCB_CAP,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The code page: three tables completing the walk to the user window's
 /// first page, a frame carved and mapped there user-executable.
 #[cfg(feature = "hw_target")]
 const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
-    invocation(
+    retype(
         "move-retype-page-table-1",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14267,16 +15469,16 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[0],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-1",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[0],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-page-table-2",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14284,16 +15486,16 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[1],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-2",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[1],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-page-table-3",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [
             PAGE_TABLE_TYPE,
@@ -14301,27 +15503,30 @@ const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
             CNODE_CAP,
             PAGE_TABLE_SLOTS[2],
         ],
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    page_table_map(
         "move-page-table-map-3",
-        PAGE_TABLE_MAP,
         PAGE_TABLE_CAPS[2],
-        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        VSPACE_CAP,
+        ROOT_IPC_BUFFER,
     ),
-    invocation(
+    retype(
         "move-retype-frame",
-        UNTYPED_RETYPE,
         UNTYPED_CAP,
         [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// The frame mapped user-executable, after its code is written.
 #[cfg(feature = "hw_target")]
-const MOVE_MAP_CODE: RoundTrip = invocation(
+const MOVE_MAP_CODE: RoundTrip = page_map(
     "move-map-code",
-    VSPACE_MAP,
+    FRAME_CAP,
     VSPACE_CAP,
-    [ROOT_ASID, FRAME_VADDR, FRAME_CAP, CODE_PERMS],
+    FRAME_VADDR,
+    CODE_PERMS,
+    ROOT_IPC_BUFFER,
 );
 /// The written code published to instruction fetch.
 #[cfg(feature = "hw_target")]
@@ -14485,6 +15690,15 @@ fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
 /// message's first overflow word ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
 fn write_buffer_words(buffer: u64, first: u64, words: &[u64]) -> bool {
+    if buffer == ROOT_IPC_BUFFER && !write_buffer_words_at(PARTNER_IPC_BUFFER, first, words) {
+        return false;
+    }
+    write_buffer_words_at(buffer, first, words)
+}
+
+/// [`write_buffer_words`] into the one buffer at `buffer`.
+#[cfg(feature = "hw_target")]
+fn write_buffer_words_at(buffer: u64, first: u64, words: &[u64]) -> bool {
     if words.len() > 3 {
         return false;
     }
@@ -14828,18 +16042,20 @@ fn remote_failed(why: &str) -> Option<bool> {
 /// The frame's copy mapped at the next page and unmapped while the root
 /// task's address space is live on core 1, and the copy's capability.
 #[cfg(feature = "hw_target")]
-const REMOTE_COPY: RoundTrip = invocation(
+const REMOTE_COPY: RoundTrip = root_copy(
     "remote-asid-frame-copy",
-    CSPACE_COPY,
-    CNODE_CAP,
-    root_slot_copy(FRAME_SLOT, MOVE_SLOT),
+    FRAME_SLOT,
+    MOVE_SLOT,
+    ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
-const REMOTE_MAP: RoundTrip = invocation(
+const REMOTE_MAP: RoundTrip = page_map(
     "remote-asid-map",
-    VSPACE_MAP,
+    MOVE_CAP,
     VSPACE_CAP,
-    [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+    FRAME_COPY_VADDR,
+    FRAME_PERMS,
+    ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
 const REMOTE_UNMAP: RoundTrip = invocation(
@@ -15147,12 +16363,10 @@ fn heap_allocations_round_trip_resuming(
 ) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    if let Some((buffer, words, path)) = trip.caps_or_badges {
-        let path_written = match path {
-            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, &path),
-            None => true,
-        };
-        if !(write_caps_or_badges(buffer, words) && path_written) {
+    // The receive path; the extra capabilities' addresses before it are
+    // written by the dispatch itself (`dispatch_round_trip_at`).
+    if let Some((buffer, _, Some(path))) = trip.caps_or_badges {
+        if !write_buffer_words(buffer, RECEIVE_PATH_WORD, &path) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the IPC buffer at \
                  {buffer:#x} has no translation"
@@ -15195,23 +16409,29 @@ fn heap_allocations_round_trip_resuming(
                 regs[0],
                 regs[1]
             );
-            // A retype that succeeded names the object it carved, its kind and
-            // its size bits as the tag word gave them: the host-side gate holds
-            // the reading to that object's own cells.  It names the object's id
-            // and the slot its capability went to, and a delete that succeeded
-            // names the slot it emptied, so the gate can relate each carved
-            // kind to the delete of its capability (WS-UC UC1).
-            if trip.syscall == UNTYPED_RETYPE
-                && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE
+            // A retype that succeeded names the objects it carved, their kind
+            // and size bits as the type and size words gave them, and their
+            // count (the second overflow word): the host-side gate holds the
+            // reading to that many of the object's own cells.  It names the
+            // first object's id (the third overflow word) and the slot its
+            // capability went to (the root, extra capability 0, and the
+            // window's offset, the first overflow word), and a delete that
+            // succeeded names the slot it emptied, so the gate can relate each
+            // carved kind to the delete of its capability (WS-UC UC1).
+            if let (UNTYPED_RETYPE, Some((_, [offset, count, child])), Some((_, [root, _, _], _))) =
+                (trip.syscall, trip.overflow, trip.caps_or_badges)
             {
-                crate::kprintln!(
-                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
-                    carved_kind(trip.msg[0] & 0xff),
-                    trip.msg[0] >> 8,
-                    trip.msg[1],
-                    trip.msg[2],
-                    trip.msg[3]
-                );
+                if regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE {
+                    crate::kprintln!(
+                        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} x{} at {} into {:#x}/{}",
+                        carved_kind(trip.msg[0]),
+                        trip.msg[1],
+                        count,
+                        child,
+                        root,
+                        offset
+                    );
+                }
             }
             if trip.syscall == CSPACE_DELETE
                 && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE
@@ -15291,6 +16511,12 @@ mod tests {
         round_lock_held_by_in, round_lock_release_in, round_lock_try_acquire_in, ROUND_LOCK_FREE,
     };
     use core::cell::Cell;
+
+    /// The exercisers' fan-out limit is the ABI's.
+    #[test]
+    fn retype_fan_out_limit_is_the_abi_limit() {
+        assert_eq!(RETYPE_FAN_OUT_LIMIT, sele4n_abi::args::RETYPE_FAN_OUT_LIMIT);
+    }
 
     /// The harness's `caps_or_badges` word is the ABI's `IpcBuffer` field,
     /// and the receive path's three words follow its three.

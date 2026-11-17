@@ -223,18 +223,17 @@ theorem spendBudgetOnCore_boundThread (st : SystemState) (c : CoreId) (tid : SeL
   unfold spendBudgetOnCore
   dsimp only
   have h1 := SystemState.rewriteObject_schedContext_getSchedContext?_self st scId
-    (cbsUpdateDeadline (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true)
+    ((sc.chargeBudget start ticks st.machine.timer))
     (SystemState.rewriteAdmissible_schedContext hSc _) hInv
   have h2 := replenishOnCore_boundThread (st.rewriteObject scId.toObjId
-    (.schedContext (cbsUpdateDeadline (sc.chargeBudget start ticks st.machine.timer)
-      st.machine.timer true)) (SystemState.rewriteAdmissible_schedContext hSc _)) c scId scId
+    (.schedContext ((sc.chargeBudget start ticks st.machine.timer))) (SystemState.rewriteAdmissible_schedContext hSc _)) c scId scId
   rw [h1] at h2
   generalize hR : replenishOnCore _ c scId = R at h2
   cases e : R.getSchedContext? scId with
   | none => rw [e] at h2; cases h2
   | some sc2 =>
     rw [e] at h2
-    refine ⟨sc2, ?_, (Option.some.inj h2).trans (chargedSchedContext_boundThread sc _ _ _)⟩
+    refine ⟨sc2, ?_, (Option.some.inj h2).trans (chargeBudget_boundThread sc _ _ _)⟩
     exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
       ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks R c tid _).get_of_not_tcb
         (fun _ e => KernelObject.noConfusion e) ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp e))

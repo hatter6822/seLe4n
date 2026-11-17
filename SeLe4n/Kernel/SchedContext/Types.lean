@@ -115,18 +115,6 @@ refused `seL4_RangeError` with `MIN_BUDGET` and `MAX_PERIOD`
 budget and period a context holds is below `2 ^ 61` (WS-SX SX1.3). -/
 def configureMaxPeriod : UInt64 := 0x1FFFFFFFFFFFFFFF
 
-/-- **The configure's parameter word**: the message word that carries the
-priority (bits 0–7) and the domain (bits 8–11), the word an out-of-range
-priority or domain names (`invalidArgument`). -/
-def configureSchedParamsWord : UInt64 := 3
-
-/-- **The configure's deadline word**: the message word that carries the
-context's first deadline, which seL4-MCS's configure does not carry.  A deadline
-is a time, held to the bound seL4-MCS holds a configure's times to
-(`configureMaxPeriod`); a deadline above it is refused `invalidArgument`, naming
-the word (WS-SX SX1.3). -/
-def configureDeadlineWord : UInt64 := 4
-
 -- ============================================================================
 -- Z1-E: ReplenishmentEntry structure
 -- ============================================================================
@@ -135,6 +123,17 @@ def configureDeadlineWord : UInt64 := 4
 seL4 uses MIN_REFILLS=2, MAX_REFILLS varies. We use 8 as a balance
 between precision and proof complexity. -/
 def maxReplenishments : Nat := 8
+
+/-- seL4-MCS's `MIN_REFILLS`: the refills every configure gives a context
+beyond its extra ones (`invokeSchedControl_ConfigureFlags` is handed
+`extra_refills + MIN_REFILLS`). -/
+def configureMinRefills : Nat := 2
+
+/-- **The most extra refills a configure admits**: seL4-MCS's
+`refill_absolute_max(cap) - MIN_REFILLS`, the `rangeErrorMax` of
+`decodeSchedControl_ConfigureFlags`'s extra-refills refusal.  A context here
+holds `maxReplenishments` refills, so this is that less `MIN_REFILLS`. -/
+def configureMaxExtraRefills : UInt64 := UInt64.ofNat (maxReplenishments - configureMinRefills)
 
 /-- A single CBS replenishment event. When `eligibleAt ≤ currentTime`,
 the `amount` is added back to the SchedContext's `budgetRemaining`. -/
@@ -240,9 +239,10 @@ end ReplyStackLink
 - `budgetRemaining`: current remaining ticks — decremented each tick,
   refilled up to `budget` on replenishment.
 - `period`: replenishment period in ticks.
-- `priority`: effective scheduling priority for bound thread.
-- `deadline`: CBS deadline for EDF tie-breaking.
-- `domain`: scheduling domain for temporal partitioning.
+- `badge`: the word a timeout fault on this context carries (seL4-MCS's
+  `scBadge`), set by a configure.
+- `sporadic`: whether the context's refills are sporadic (seL4-MCS's
+  `scSporadic`, bit 0 of a configure's flags word).
 - `periodStart`: absolute tick at which the current period started.
 - `replenishments`: pending replenishment events (bounded list).
 - `boundThread`: the thread currently bound to this SchedContext (at most one).
@@ -255,9 +255,22 @@ structure SchedContext where
   scId : SeLe4n.SchedContextId
   budget : Budget
   period : Period
-  priority : SeLe4n.Priority
-  deadline : SeLe4n.Deadline
-  domain : SeLe4n.DomainId
+  /-- WS-SX SX6.4: seL4-MCS's `scBadge`, the configure's badge word.  A
+      scheduling context carries no priority, deadline or domain: those are the
+      thread's (`TCB.priority`, `TCB.domain`), as in seL4-MCS. -/
+  badge : UInt64 := 0
+  /-- WS-SX SX6.4: seL4-MCS's `scSporadic`, bit 0
+      (`seL4_SchedContext_Sporadic`) of the configure's flags word. -/
+  sporadic : Bool := false
+  /-- seL4-MCS's `scRefillMax`: the most refills the context holds, its head
+      among them, read through `SchedContext.refillLimit`.  A configure sets it
+      to `extra_refills + MIN_REFILLS` (`MIN_REFILLS` for a round-robin
+      context, whose budget equals its period), as
+      `invokeSchedControl_ConfigureFlags` hands `refill_new` /
+      `refill_update` their `max_refills`; the refill capacity the object
+      holds, `maxReplenishments`, bounds it.  A context never configured
+      holds the capacity. -/
+  refillMax : Nat := maxReplenishments
   budgetRemaining : Budget
   periodStart : Nat := 0
   /-- WS-ZA ZA5.2: the pending replenishments, read through
@@ -451,6 +464,24 @@ theorem SchedContext.updateConsumed_cases (sc : SchedContext) :
 /-- WS-ZA ZA6.3: how many replenishments the context holds after its first. -/
 def refillTailCapacity : Nat := maxReplenishments - 1
 
+/-- **The most refills the context may hold**, its head among them: its
+`refillMax` (seL4-MCS's `scRefillMax`, which `refill_full` compares
+`refill_size` against), held between `MIN_REFILLS` and the refill capacity the
+object holds.  Every configure writes a `refillMax` in that range (the decode
+refuses `extra_refills` beyond `configureMaxExtraRefills`, and a round-robin
+configure writes `MIN_REFILLS`), so on every configured context this is its
+`refillMax`; the bound makes the capacity a fact of the definition rather than of
+the callers. -/
+@[inline] def SchedContext.refillLimit (sc : SchedContext) : Nat :=
+  min (max sc.refillMax configureMinRefills) maxReplenishments
+
+theorem SchedContext.refillLimit_le (sc : SchedContext) : sc.refillLimit ≤ maxReplenishments :=
+  Nat.min_le_right _ _
+
+theorem SchedContext.minRefills_le_refillLimit (sc : SchedContext) :
+    configureMinRefills ≤ sc.refillLimit := by
+  unfold SchedContext.refillLimit configureMinRefills maxReplenishments; omega
+
 /-- WS-ZA ZA6.3: the `i`-th replenishment after the first (`0`-based), read
 from its slot; past the last slot, an empty entry. -/
 @[inline] def SchedContext.tailSlot (sc : SchedContext) : Nat → ReplenishmentEntry
@@ -495,13 +526,13 @@ leaves the refill fields alone reads the old list (`replenishments_mk_self`). -/
 list. -/
 @[simp] theorem SchedContext.replenishments_mk_self (sc : SchedContext)
     (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
-    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (badge : UInt64) (sporadic : Bool) (refillMax : Nat)
     (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
     (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat)
     (headLinkCell : Option ReplyStackLink) (hHead : headLinkCell = some (.head scId)) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
+    (SchedContext.mk scId budget period badge sporadic refillMax budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}
@@ -547,16 +578,12 @@ entry written into its fields and the rest into its slots (ZA6.3). -/
     (sc.setTailSlot i e).period = sc.period := by
   unfold SchedContext.setTailSlot; split <;> rfl
 
-@[simp] theorem SchedContext.setTailSlot_priority (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
-    (sc.setTailSlot i e).priority = sc.priority := by
+@[simp] theorem SchedContext.setTailSlot_badge (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).badge = sc.badge := by
   unfold SchedContext.setTailSlot; split <;> rfl
 
-@[simp] theorem SchedContext.setTailSlot_deadline (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
-    (sc.setTailSlot i e).deadline = sc.deadline := by
-  unfold SchedContext.setTailSlot; split <;> rfl
-
-@[simp] theorem SchedContext.setTailSlot_domain (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
-    (sc.setTailSlot i e).domain = sc.domain := by
+@[simp] theorem SchedContext.setTailSlot_sporadic (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).sporadic = sc.sporadic := by
   unfold SchedContext.setTailSlot; split <;> rfl
 
 @[simp] theorem SchedContext.setTailSlot_budgetRemaining (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
@@ -629,23 +656,17 @@ entry written into its fields and the rest into its slots (ZA6.3). -/
   | nil => rfl
   | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_period]
 
-@[simp] theorem SchedContext.writeTail_priority (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
-    (sc.writeTail i l).priority = sc.priority := by
+@[simp] theorem SchedContext.writeTail_badge (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).badge = sc.badge := by
   induction l generalizing sc i with
   | nil => rfl
-  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_priority]
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_badge]
 
-@[simp] theorem SchedContext.writeTail_deadline (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
-    (sc.writeTail i l).deadline = sc.deadline := by
+@[simp] theorem SchedContext.writeTail_sporadic (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).sporadic = sc.sporadic := by
   induction l generalizing sc i with
   | nil => rfl
-  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_deadline]
-
-@[simp] theorem SchedContext.writeTail_domain (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
-    (sc.writeTail i l).domain = sc.domain := by
-  induction l generalizing sc i with
-  | nil => rfl
-  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_domain]
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_sporadic]
 
 @[simp] theorem SchedContext.writeTail_budgetRemaining (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
     (sc.writeTail i l).budgetRemaining = sc.budgetRemaining := by
@@ -737,16 +758,12 @@ entry written into its fields and the rest into its slots (ZA6.3). -/
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).period = sc.period := by
   simp [SchedContext.withReplenishments]
 
-@[simp] theorem SchedContext.withReplenishments_priority (sc : SchedContext)
-    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).priority = sc.priority := by
+@[simp] theorem SchedContext.withReplenishments_badge (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).badge = sc.badge := by
   simp [SchedContext.withReplenishments]
 
-@[simp] theorem SchedContext.withReplenishments_deadline (sc : SchedContext)
-    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).deadline = sc.deadline := by
-  simp [SchedContext.withReplenishments]
-
-@[simp] theorem SchedContext.withReplenishments_domain (sc : SchedContext)
-    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).domain = sc.domain := by
+@[simp] theorem SchedContext.withReplenishments_sporadic (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).sporadic = sc.sporadic := by
   simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_budgetRemaining (sc : SchedContext)
@@ -964,9 +981,6 @@ def empty (scId : SeLe4n.SchedContextId) : SchedContext :=
   { scId := scId
     budget := Budget.zero
     period := Period.default
-    priority := ⟨0⟩
-    deadline := ⟨0⟩
-    domain := ⟨0⟩
     budgetRemaining := Budget.zero }
 
 /-- Default instance uses sentinel ID and zero budget. -/
@@ -1019,17 +1033,17 @@ seL4-MCS's donation semantics: `scId?` is the reservation a thread **runs on**
 (`.bound` *or* `.donated`), while `ownScId?` is the one it **owns** (`.bound`
 alone).  The two govern different halves of a thread's scheduling parameters:
 
-* **Reservation-owned** — budget, period and deadline — come from `scId?` at
-  every binding.  A donee is charged to the donor's reservation and answers to
-  its deadline; that is what a donation *is*.
-* **Thread-owned** — base priority and domain — come from the thread's own
-  `TCB` fields, mirrored onto `ownScId?`'s SchedContext by the AK2-B
-  propagation convention and read back from it there.  A donee keeps its own
-  scheduling band and its own domain, and rises to the client's band only
-  through priority inheritance.  In seL4 these two live on the TCB
-  (`tcb->tcbPriority`, `tcb->tcbDomain`) and the scheduling context carries
-  budget and period; `schedContext_donate` moves the reservation and touches
-  neither.
+* **Reservation-owned** — budget and period — come from `scId?` at every
+  binding.  A donee is charged to the donor's reservation; that is what a
+  donation *is*.
+* **Thread-owned** — priority, deadline and domain — are the thread's own
+  `TCB` fields at every binding.  A donee keeps its own scheduling band and its
+  own domain, and rises to the client's band only through priority
+  inheritance.  In seL4 these live on the TCB (`tcb->tcbPriority`,
+  `tcb->tcbDomain`) and the scheduling context carries budget and period;
+  `schedContext_donate` moves the reservation and touches neither.  WS-SX SX6.4:
+  the context carries no priority, deadline or domain field at all, so there
+  is no mirror to keep.
 
 Reading the donor's SchedContext for a donee's thread-owned parameters is an
 authority crossing in both directions, and both were live before WS-OD
@@ -1162,7 +1176,7 @@ Non-lawful due to List comparison semantics. -/
 instance : BEq SchedContext where
   beq a b :=
     a.scId == b.scId && a.budget == b.budget && a.period == b.period &&
-    a.priority == b.priority && a.deadline == b.deadline && a.domain == b.domain &&
+    a.badge == b.badge && a.sporadic == b.sporadic &&
     a.budgetRemaining == b.budgetRemaining && a.periodStart == b.periodStart &&
     a.replenishments == b.replenishments && a.boundThread == b.boundThread &&
     -- WS-OD OD2.1: the reply-stack head participates in structural equality, so
