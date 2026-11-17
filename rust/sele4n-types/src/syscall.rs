@@ -509,7 +509,6 @@ impl Syscall {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -577,8 +577,9 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
-        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)  -- send syscall, capAddr=0
+        -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=seL4's `Send` word
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+            if r == 7 then Syscall.send.word else 0)
       })
       |>.withObject receiverId (.tcb {
         tid := ⟨301⟩
@@ -586,10 +587,10 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
-        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
+        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=seL4's `Recv` word
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
             if r == 0 then 1       -- capAddr = CPtr 1 (receive cap)
-            else if r == 7 then 1  -- syscallId = receive (1)
+            else if r == 7 then Syscall.recv.word
             else 0)
       })
       |>.withObject epId (.endpoint {})
@@ -656,8 +657,9 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
-        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
+        -- x0=0 (capPtr), x1=0 (msgInfo), x7=seL4's `Send` word
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+            if r == 7 then Syscall.send.word else 0)
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
@@ -2418,10 +2420,14 @@ private def chain26BootSequence : IO Unit := do
 -- Each test exercises the full syscallEntryChecked → decode → dispatchWithCapChecked path
 -- ============================================================================
 
-/-- Helper: build a state with a single current thread whose registers encode
-the given syscallId, capAddr, and per-syscall arguments in x2-x5.
+/-- Helper: build a state with a single current thread whose registers issue
+operation `op` as a user does (`x7` the word of the seL4 syscall it is issued
+with, its invocation label in `x1`'s label field, `SyscallId.syscall` /
+`SyscallId.msgInfoWithLabel`), capAddr, and per-syscall arguments in x2-x5.
+`msgLabel` replaces the operation's label in `x1` (an invocation under a label
+the capability's type does not take).
 The CNode at cnodeId contains a cap at slot `capAddr` targeting `targetId`. -/
-private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
+private def buildSyscallState (op : SyscallId) (capAddr : Nat)
     (targetId : SeLe4n.ObjId) (capRights : AccessRightSet)
     (extraObjects : List (SeLe4n.ObjId × SeLe4n.Model.KernelObject))
     (args : List (Nat × Nat))  -- (register index, value) for x2-x5
@@ -2442,6 +2448,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- `targetId` (WS-SX SX6.7: the service calls invoke the service-registry
     -- capability, the endpoint their extra capability 0).
     (invokedCap : Option Capability := none)
+    (msgLabel : Option Nat := none)
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2466,12 +2473,16 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
       match bufferWord (off / 8) with
       | some w => some (UInt8.ofNat ((w >>> (8 * (off % 8))) % 256))
       | none => none
+  let labelled (info : Nat) : Nat :=
+    match msgLabel with
+    | some l => (info % 4096) + l * 4096
+    | none => (op.msgInfoWithLabel (UInt64.ofNat info)).toNat
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
-             else if r.val == 7 then syscallNum
+             else if r.val == 7 then op.syscall.word.toNat
              else match args.find? (fun (idx, _) => idx == r.val) with
-                  | some (_, val) => val
-                  | none => if r.val == 1 then msgLen + extraCapWords.length * 128 else 0
+                  | some (_, val) => if r.val == 1 then labelled val else val
+                  | none => if r.val == 1 then labelled (msgLen + extraCapWords.length * 128) else 0
     SeLe4n.RegValue.ofNat v
   let mapsBuffer := !overflowWords.isEmpty || !extraCapWords.isEmpty
   let bufferMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
@@ -2527,7 +2538,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- depth 4, x4=srcIndex(0), x5=its depth 4, then rights 3 (read|write) and
   -- the badge (42) in the IPC buffer's overflow slots 0 and 1; the source root
   -- is extra capability 0, the caller's address 0 ===
-  let stMint := buildSyscallState 4 0 cnodeTarget
+  let stMint := buildSyscallState .cspaceMint 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])  -- cap to the target CNode
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 1), (3, 4), (4, 0), (5, 4)]
@@ -2551,7 +2562,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     | _ => throw <| IO.userError "chain27: target CNode not found after mint"
   | .error err => throw <| IO.userError s!"chain27: cspaceMint syscall failed: {toString err}"
   -- === cspaceDelete (syscallId=7): x2=targetSlot(0) ===
-  let stDel := buildSyscallState 7 0 cnodeTarget
+  let stDel := buildSyscallState .cspaceDelete 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 0)]  -- targetSlot=0
@@ -2567,7 +2578,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- 4 (the CNode's 4-bit radix, no guard), x4=srcIndex(0), x5=its depth 4, the
   -- rights 7 in overflow slot 0; the source root is extra capability 0, the
   -- caller's address 0, its capability to the target CNode ===
-  let stCopy := buildSyscallState 5 0 cnodeTarget
+  let stCopy := buildSyscallState .cspaceCopy 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 2), (3, 4), (4, 0), (5, 4)]
@@ -2582,7 +2593,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
   -- === cspaceMove (syscallId=6), seL4's words: x2=destIndex(3), x3=its depth
   -- 4, x4=srcIndex(0), x5=its depth 4; the source root is extra capability 0 ===
-  let stMove := buildSyscallState 6 0 cnodeTarget
+  let stMove := buildSyscallState .cspaceMove 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 3), (3, 4), (4, 0), (5, 4)]
@@ -2602,7 +2613,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- capability 0 at `srcRoot`, or none
   let copyRefusal (label : String) (dI dD sI sD : Nat) (srcRoot : List Nat)
       (want : KernelError) : IO Unit := do
-    let stBad := buildSyscallState 5 0 cnodeTarget
+    let stBad := buildSyscallState .cspaceCopy 0 cnodeTarget
       (AccessRightSet.ofList [.read, .write, .grant])
       [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] [(2, dI), (3, dD), (4, sI), (5, sD)]
       [(cnodeTarget, .cnode), (epId, .endpoint)]
@@ -2657,7 +2668,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let frameId : SeLe4n.ObjId := ⟨701⟩
   let rootCap : Capability :=
     { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] }
-  let stMap := buildSyscallState 9 0 frameId
+  let stMap := buildSyscallState .vspaceMap 0 frameId
     (AccessRightSet.ofList [.read])
     [(frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 }), (vsId, .vspaceRoot vsRoot)]
     [(2, (fixtureUserVAddr 0x2000).toNat), (3, 2), (4, 5)]
@@ -2680,7 +2691,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
       ((SeLe4n.VAddr.ofNat 0x4000), ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
     ]
   }
-  let stUnmap := buildSyscallState 10 0 vsId
+  let stUnmap := buildSyscallState .vspaceUnmap 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsWithMapping)]
     [(2, 2), (3, 0x4000)]
@@ -2696,7 +2707,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Same scenario, but naming the ASID of the *builder's own* root (`⟨1⟩` at
   -- `⟨502⟩`) while holding a capability to `⟨700⟩`.  Before the binding this
   -- unmapped a page in an address space the caller had no capability for.
-  let stConfused := buildSyscallState 10 0 vsId
+  let stConfused := buildSyscallState .vspaceUnmap 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsWithMapping)]
     [(2, 1), (3, 0x4000)]
@@ -2720,7 +2731,7 @@ private def chain29SyscallCarve : IO Unit := do
   let child : SeLe4n.ObjId := ⟨801⟩
   let rootCap : Capability :=
     { target := .object ⟨501⟩, rights := AccessRightSet.ofList [.read, .write] }
-  let st0 := buildSyscallState 36 0 utId
+  let st0 := buildSyscallState .untypedRetype 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
     [(2, 2), (3, 0), (4, 0), (5, 0)]
@@ -2736,15 +2747,16 @@ private def chain29SyscallCarve : IO Unit := do
     | _ => throw <| IO.userError "chain29: no notification at the child id after the carve"
   | .error err =>
     throw <| IO.userError s!"chain29: untypedRetype dispatch failed ({toString err})"
-  let stRetired := buildSyscallState 8 0 utId
+  let stRetired := buildSyscallState .untypedRetype 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
     [(2, 2), (3, 801), (4, 1), (5, 2)]
     [(utId, .untyped)]
     [(1, rootCap)]
+    (msgLabel := some 8)
   match syscallEntryOnBoot stRetired with
-  | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
-  | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
+  | .error _ => IO.println "operation-chain check passed [chain29: untyped invoked under a label other than Retype refused]"
+  | .ok _ => throw <| IO.userError "chain29: an untyped capability invoked under label 8 dispatched"
 
 /-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery and
 serviceRevoke through `syscallEntryChecked`, each invoked on the
@@ -2763,9 +2775,9 @@ private def chain30SyscallServiceOps : IO Unit := do
   -- The caller's state for one service call: the registry capability invoked,
   -- the endpoint (`ep`, as the previous leg left it) extra capability 0, and
   -- the interface registered.
-  let stateFor (syscallNum : Nat) (ep : SeLe4n.Model.KernelObject)
+  let stateFor (op : SyscallId) (ep : SeLe4n.Model.KernelObject)
       (args : List (Nat × Nat)) (overflow : List Nat) : IO SystemState := do
-    let st := buildSyscallState syscallNum 1 epId (AccessRightSet.ofList [.read, .write])
+    let st := buildSyscallState op 1 epId (AccessRightSet.ofList [.read, .write])
       [(epId, ep)] args [(epId, .endpoint)]
       (extraSlots := [(2, epCap)]) (overflowWords := overflow) (extraCapWords := [2])
       (invokedCap := some Capability.serviceRegistry)
@@ -2778,7 +2790,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     | _ => throw <| IO.userError "chain30: the endpoint is gone"
   -- === serviceRegister (11): x2..x5 = interface 1, 3 methods, 64, 32; the
   -- fifth word (no grant) is the IPC buffer's overflow word 0.
-  let stRegister ← stateFor 11 (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
+  let stRegister ← stateFor .serviceRegister (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
   let stAfter ← match syscallEntryOnBoot stRegister with
     | .ok (_, st) => pure st
     | .error e => throw <| IO.userError s!"chain30: serviceRegister failed ({toString e})"
@@ -2789,7 +2801,7 @@ private def chain30SyscallServiceOps : IO Unit := do
   IO.println "operation-chain check passed [chain30: serviceRegister recorded the registration]"
   let registered ← endpointOf stAfter
   -- === serviceQuery (13): no words; the registration's ServiceId is staged as x0.
-  let stQuery ← stateFor 13 registered [] []
+  let stQuery ← stateFor .serviceQuery registered [] []
   match syscallEntryOnBoot stQuery with
   | .ok (_, stQ) =>
     let x0 := (SeLe4n.Kernel.Architecture.readReturnFrame stQ ⟨500⟩).x0
@@ -2798,7 +2810,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     IO.println "operation-chain check passed [chain30: serviceQuery returned the ServiceId]"
   | .error e => throw <| IO.userError s!"chain30: serviceQuery failed ({toString e})"
   -- === serviceRevoke (12): no words; the endpoint's record is cleared.
-  let stRevoke ← stateFor 12 registered [] []
+  let stRevoke ← stateFor .serviceRevoke registered [] []
   match syscallEntryOnBoot stRevoke with
   | .ok (_, stR) =>
     match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stR with
@@ -2819,7 +2831,7 @@ private def chain31SyscallReply : IO Unit := do
   -- The reply cap targets the blocked sender via .replyCap
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 0 then ⟨0⟩       -- capAddr: slot 0 (reply cap)
-    else if r.val == 7 then ⟨3⟩  -- syscallId: reply
+    else if r.val == 7 then SeLe4n.RegValue.ofNat Syscall.send.word.toNat  -- a reply is a `Send` on the reply cap
     else ⟨0⟩
   let st0 :=
     (BootstrapBuilder.empty
@@ -2873,7 +2885,7 @@ Call is like send but marks the caller as blockedOnCall for reply. -/
 private def chain32SyscallCall : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨950⟩
   -- call (syscallId=2): targets an endpoint, no receiver → caller should block
-  let st0 := buildSyscallState 2 0 epId
+  let st0 := buildSyscallState .call 0 epId
     (AccessRightSet.ofList [.read, .write])
     [(epId, .endpoint {})]
     []  -- no extra message registers needed for call

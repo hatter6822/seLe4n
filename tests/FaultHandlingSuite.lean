@@ -1520,10 +1520,10 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
         ((pendingFaultOf s.afterFault faulter).map (fun tf => (tf.context.sp, tf.context.lr))
           == some (svcSpEl0, svcX30))
-      assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = the id"
+      assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = seL4's Call word"
         ((pendingFaultOf s.afterFault faulter).map
             (fun tf => (tf.context.gprAt 0, tf.context.gprAt 7))
-          == some (unresolvedCPtr, SyscallId.call.toNat.toUInt64))
+          == some (unresolvedCPtr, Syscall.call.word))
       assertBool "the caller is not dispatchable on the core it trapped on"
         (!dispatchableOn s.afterFault faulter c0)
       assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
@@ -1582,14 +1582,26 @@ private def runSyscallCapFaultChecks : IO Unit := do
     (seamErrorFrame (seamDispatch seamCtx .call 1) (.invalidCapability 0))
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
     (seamErrorFrame (seamDispatch permissiveCtx .call unresolvedCPtr) .policyDenied)
+  -- A declassification is selected by its label on the audit-trail capability
+  -- (an empty slot selects the syscall's own IPC operation, as seL4's null
+  -- capability decodes no label), so the audit-trail capability is parked at
+  -- slot 3 without the right the declassification needs: the arm refuses it
+  -- `illegalAuthority`.
+  let auditCapAt3 : SystemState :=
+    let cap : Capability :=
+      { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [] }
+    let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
+    { stRunning with objects := stRunning.objects.insert cnRoot cn }
+  let declassifyAt3 := SeLe4n.Testing.dispatchOperationFromAbi seamCtx c0 SyscallId.declassify 3
+      0 0 0 0 0 0 svcElr svcSpsr svcSpEl0 svcX30 auditCapAt3
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
-    (match seamDispatch seamCtx .declassify 3 with
+    (match declassifyAt3 with
      | .ok (.returns f, st) =>
-         decide (f = errorFrame (KernelError.invalidCapability 0) false) &&
+         decide (f = errorFrame KernelError.illegalAuthority false) &&
            pendingFaultOf st faulter == none &&
            (match st.declassificationRefusals.recent.get
                stRunning.declassificationRefusals.nextSlot with
-            | some r => decide (r.reason = (KernelError.invalidCapability 0)) &&
+            | some r => decide (r.reason = KernelError.illegalAuthority) &&
                         decide (r.syscall = SyscallId.declassify)
             | none => false)
      | _ => false)

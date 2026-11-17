@@ -1205,13 +1205,20 @@ private def runAuditReadEndToEnd : IO Unit := do
      | none => false
      | some w => w.toNat == callerVsp.val && w != capPtrValue.toUInt64)
   -- 10c — the confused-deputy gate at the boundary: an ordinary capability
-  -- carrying EVERY right is rejected, because it does not target the trail.
-  assertBool "10c: NEGATIVE — an all-rights capability to an ordinary object is rejected"
-    (match dispatchAudit auditLabeling SyscallId.auditRead ordinaryCapPtr 3
-        (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
-     | .ok (.returns f, _) =>
-         -- the boundary reports the error through x1's offset label
-         f.x1 != 0
+  -- carrying EVERY right does not reach the trail, because it does not target
+  -- it.  seL4 selects the operation by the capability's type
+  -- (`decodeInvocation`): a `Call` on a notification capability signals it
+  -- whatever the label, and the caller gets seL4's empty reply
+  -- (`replyFromKernel_success_empty`: x0 = 0, x1 = 0), never a trail word.
+  let ordinaryResult := dispatchAudit auditLabeling SyscallId.auditRead ordinaryCapPtr 3
+      (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState
+  assertBool "10c: NEGATIVE — an all-rights notification capability signals; the trail is not read"
+    (match ordinaryResult with
+     | .ok (.returns f, st) =>
+         f.x0 == 0 && f.x1 == 0 &&
+         (match st.getNotification? ntfnId with
+          | some n => n.state != .idle
+          | none => false)
      | _ => false)
   -- 10d — the drain returns the new visible length, and the trail really shrank.
   let drainResult := dispatchAudit auditLabeling

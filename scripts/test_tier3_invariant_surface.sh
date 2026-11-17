@@ -9174,7 +9174,7 @@ run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=45' 
 # would read back whatever the caller left there.
 run_check "INVARIANT" rg -n "10a: .status. returns the visible length \\(2\\), not the caller's own x0" tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10b: a field read returns the SELECTED entry' tests/SyscallReturnAbiSuite.lean
-run_check "INVARIANT" rg -n '10c: NEGATIVE — an all-rights capability to an ordinary object is rejected' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '10c: NEGATIVE — an all-rights notification capability signals; the trail is not read' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10e: NEGATIVE — an unconfigured deployment cannot drain' tests/SyscallReturnAbiSuite.lean
 # WS-BP BP7.7: the wait-before-signal declassified badge is DELIVERED through the
 # live restore -- the witness reads the restore target, carries a deny-all control,

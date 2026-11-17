@@ -5752,10 +5752,11 @@ private def declassChainCNodeValue : CNode :=
 
 /-- PR #874 review — stage a syscall in a thread's registers exactly as the
 boundary would: `x0` the capability pointer, `x1` the msgInfo word, `x2`-`x4`
-the message registers, `x7` the syscall id — and re-root the thread's CSpace at
+the message registers, `x7` the word of the seL4 syscall `op` is issued with (its
+label in `x1`, `SyscallId.msgInfoWithLabel`) — and re-root the thread's CSpace at
 the chain's CNode so the pointer resolves. -/
 private def declassChainStage (tid : SeLe4n.ThreadId)
-    (sysId capPtr msgInfo m0 m1 m2 : Nat) (st : SystemState) : SystemState :=
+    (op : SyscallId) (capPtr msgInfo m0 m1 m2 : Nat) (st : SystemState) : SystemState :=
   match st.getTcb? tid with
   | none => st
   | some tcb =>
@@ -5765,11 +5766,11 @@ private def declassChainStage (tid : SeLe4n.ThreadId)
               tid.toObjId
               (.tcb { (TCB.withGuardedCSpaceRoot tcb declassChainCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
                         if r == 0 then capPtr.toUInt64
-                        else if r == 1 then msgInfo.toUInt64
+                        else if r == 1 then op.msgInfoWithLabel msgInfo.toUInt64
                         else if r == 2 then m0.toUInt64
                         else if r == 3 then m1.toUInt64
                         else if r == 4 then m2.toUInt64
-                        else if r == 7 then sysId.toUInt64
+                        else if r == 7 then op.syscall.word
                         else 0) }) }
 
 /-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
@@ -5791,7 +5792,7 @@ private def declassDelivery : Option (DeclassificationAuditLog × SystemState) :
   | none => none
   | some (log₁, st₁) =>
       match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
-          (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st₁) with
+          (declassChainStage lowCurrent SyscallId.notificationWait 2 0 0 0 0 st₁) with
       | .ok ((), st) => some (log₁, st)
       | .error _ => none
 
@@ -7314,11 +7315,11 @@ dispatch really mutates the state, and which the low observer still cannot see.
 
 The caller is the fixture's **high** thread on core 1, given a CSpace that holds
 a read capability to the **high** endpoint and registers encoding `.receive`
-(`x0` = the capability pointer, `x7` = the syscall id).  The receive finds no
+(`x0` = the capability pointer, `x7` = seL4's `Recv` word).  The receive finds no
 sender and blocks it — so the object store, the endpoint queue and core 1's
 scheduler slots all move, and every one of those movements is high. -/
 private def hiCallerTcb : TCB :=
-  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then Syscall.recv.word else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -7566,7 +7567,7 @@ private def distinctRootVictim : TCB :=
 -- Every other §7.9 state decodes to `.receive`, which is undeclared — so until
 -- this fixture existed the group could only ever observe the resolver saying
 -- `none`, and the *declared* path was never exercised at all.  A caller with
--- `x7 = 20` (`.tcbSuspend`) and `x0 = 1` (a slot holding a **write** capability
+-- `x7` seL4's `Call` word with `.tcbSuspend`'s label in `x1`, and `x0 = 1` (a slot holding a **write** capability
 -- to a real TCB) resolves a genuine footprint.
 -- ---------------------------------------------------------------------------
 
@@ -7585,7 +7586,7 @@ private def suspendCNodeValue : CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
 
 private def suspendCallerTcb : TCB :=
-  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) suspendCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) suspendCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 1 then SyscallId.tcbSuspend.msgInfoWithLabel 0 else if r == 7 then SyscallId.tcbSuspend.syscall.word else 0) }
 
 private def suspendEntryState : SystemState :=
   { niState with
@@ -8652,6 +8653,26 @@ private def runRefusalSeamClassChecks : IO Unit := do
      decide (refusalSeamClass .declassify = .records) &&
      decide (SyscallId.declassify ∉ emptyList))
 
+/-- The CNode the boundary checks below re-root core 1's subject at. -/
+private def refusalSeamCNode : SeLe4n.ObjId := ⟨1034⟩
+
+/-- Core 1's subject holding the audit-trail capability at slot 5: a
+declassification is the operation its label selects on that capability's type
+(seL4's `decodeInvocation` dispatches on the invoked capability's type), so the
+boundary reads a `Call` at `x0 = 5` as the declassification only here. -/
+private def withRefusalSeamAuditCap (st : SystemState) : SystemState :=
+  match st.getTcb? highCurrent with
+  | none => st
+  | some tcb =>
+      { st with
+          objects :=
+            (st.objects.insert refusalSeamCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4
+                (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 5,
+                  { target := .auditTrail CapTarget.authorityCode,
+                    rights := AccessRightSet.ofList [.read, .write] })])))).insert
+              highCurrent.toObjId
+              (.tcb (TCB.withGuardedCSpaceRoot tcb refusalSeamCNode 60)) }
+
 /-- §10.3  SM9.B.9 — the seam write, and the security theorems it rests on. -/
 private def runRefusalSeamWriteChecks : IO Unit := do
   IO.println "--- §10.3 SM9.B.9 the refusal seam ---"
@@ -8709,7 +8730,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
     (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0
-        niState with
+        (withRefusalSeamAuditCap niState) with
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
@@ -8725,7 +8746,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
     (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.send 5 0 0 0 0 0 0 0 0 0 0
-        niState with
+        (withRefusalSeamAuditCap niState) with
      | .error _ => false
      | .ok (_, committed) =>
          decide (committed.declassificationRefusals = niState.declassificationRefusals))
@@ -8991,7 +9012,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
     (match SeLe4n.Testing.dispatchOperationFromAbi auditMonitorLabeling c1
-        SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
+        SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0 (withRefusalSeamAuditCap auditMixedState) with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get

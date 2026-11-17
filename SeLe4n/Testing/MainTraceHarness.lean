@@ -1231,8 +1231,9 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
 3. Register decode with namespace mismatch (out-of-bounds register index) -/
 private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- RDT-002: Verify standalone decode succeeds with valid registers.
-  -- x0=0 (capPtr), x1=0 (msgInfo: len=0, caps=0, label=0), x7=0 (send).
-  let validRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
+  -- x0=0 (capPtr), x1=0 (msgInfo: len=0, caps=0, label=0), x7=seL4's `Send` word.
+  let validRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+      if r == 7 then Syscall.send.word else 0)
   match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout validRegs 32 with
   | .error err =>
       IO.println s!"[RDT-001] register decode unexpected error: {reprStr err}"
@@ -1310,7 +1311,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
         if r == 1 then 127  -- length=127 > 120 → invalid
-        else if r == 7 then 0  -- valid syscall (send)
+        else if r == 7 then Syscall.send.word  -- valid syscall (seL4's `Send`)
         else 0)
   let stMalformedMsgInfo : SystemState :=
     (BootstrapBuilder.empty
@@ -1544,7 +1545,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       else if r == 3 then 20 -- msgReg[1]
       else if r == 4 then 30 -- msgReg[2]
       else if r == 5 then 40 -- msgReg[3]
-      else if r == 7 then 0  -- syscallId = send
+      else if r == 7 then Syscall.send.word  -- seL4's `Send`
       else 0)
   match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsForRoundtrip 32 with
   | .error e => IO.println s!"[KSD-008] round-trip decode error: {reprStr e}"
@@ -1570,7 +1571,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
 private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
   -- A1: Build self-contained state with 3 capabilities (endpoint, notification,
   -- CNode) per V8-A1 spec. Thread registers encode a Send syscall
-  -- (x7=0, x0=capAddr=0, x1=msgInfo with length=2).
+  -- (x7=seL4's `Send` word, x0=capAddr=0, x1=msgInfo with length=2).
   let pipeTid : SeLe4n.ObjId := ⟨700⟩
   let pipeEp  : SeLe4n.ObjId := ⟨701⟩
   let pipeCn  : SeLe4n.ObjId := ⟨702⟩
@@ -1583,7 +1584,7 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
         else if r == 1 then pipeMsgInfo.toUInt64  -- msgInfo
         else if r == 2 then 42      -- msgReg[0]
         else if r == 3 then 99      -- msgReg[1]
-        else if r == 7 then 0       -- syscallId = send
+        else if r == 7 then Syscall.send.word  -- seL4's `Send`
         else 0)
   let stPipe : SystemState :=
     (BootstrapBuilder.empty
