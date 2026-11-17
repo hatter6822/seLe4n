@@ -19,10 +19,12 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// message's extra capability 0 (`caps_or_badges[0]` of `buf`), the address,
 /// in the caller's own CSpace, of a capability to the context, resolved by
 /// `resolveSchedControlConfigureTarget`; no extra capability is
-/// `TruncatedMessage`.  A context bound to a thread homed on another core is
-/// moved, with its thread, to the control's core.  The words are seL4-MCS's:
-/// budget, period, extra refills (at most `MAX_REFILLS - MIN_REFILLS`), badge,
-/// and flags (bit 0 is `seL4_SchedContext_Sporadic`).
+/// `TruncatedMessage`; as in seL4, the capability needs no right, only the
+/// scheduling-context kind.  A context bound to a thread homed on another core
+/// is moved, with its thread, to the control's core.  The words are seL4-MCS's:
+/// budget, period, extra refills (at most `MAX_REFILLS - MIN_REFILLS`; the
+/// context then holds up to `extra_refills + MIN_REFILLS` refills), badge, and
+/// flags (bit 0 is `seL4_SchedContext_Sporadic`).
 ///
 /// This syscall requires 5 message registers, but ARM64 only provides 4
 /// inline (x2–x5). The 5th word (`flags`) is written to the IPC buffer's

@@ -1443,8 +1443,8 @@ theorem runQueueUniqueOnCore_smp_of_operated_and_frame
 -- `schedulerInvariant_perCore`.  Like `RegNodup` it is preserved by genuine
 -- multi-core dispatch (no shared-register conflict beyond the `contextMatches`
 -- conjunct already in `RegNodup`).  `schedulerPriorityMatchOnCore` preservation
--- through the SchedContext-priced run-queue inserts is gated on the
--- `boundThreadPriorityConsistent` carrier (PR-A) — see PR1b.
+-- through the run-queue inserts reads the thread's own priority (`TCB.priority`,
+-- its one home: a scheduling context carries none since WS-SX SX6.4).
 
 /-- WS-SM SM5.I PR1: the Tier-A extended structural per-core invariant —
 `RegNodup` plus the three every-transition conjuncts. -/

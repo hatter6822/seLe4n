@@ -90,7 +90,8 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
       decodeIrqControlGetArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
       decodeSetIPCBufferArgs, decodeSetAffinityArgs,
       decodeSetSpaceArgs, decodePageTableMapArgs, truncationMinimum, hL _ hT, bind,
-      Except.bind, dispatchCapabilityOnlyChecked, untypedRetypeFromCap_truncated]
+      Except.bind, dispatchCapabilityOnlyChecked, untypedRetypeFromCap_truncated,
+      resolveSchedControlConfigureTarget_short, hT]
   all_goals first | rfl | (split <;> rfl) | skip
 
 /-- A capability of the type of a routed invocation that reads arguments is one

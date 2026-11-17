@@ -519,10 +519,10 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     · rename_i scCPtr hXc
       split at hOps
       · exact absurd hOps (by simp)
-      · rename_i args hArgs
+      · rename_i v hRes
         split at hOps
         · exact absurd hOps (by simp)
-        · rename_i v hRes
+        · rename_i args hArgs
           split at hOps
           · rename_i hCore
             injection hOps with hOps
@@ -533,11 +533,11 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             simp only at hDisp
             rw [hXc] at hDisp
             simp only at hDisp
-            rw [hArgs] at hDisp
-            simp only at hDisp
             rw [hRes] at hDisp
+            simp only at hDisp
+            rw [hArgs] at hDisp
             simp only [hCore, dite_true] at hDisp
-            exact schedLockSet_schedControlConfigure_coversWrites st st' _ v _ _ _ _ S
+            exact schedLockSet_schedControlConfigure_coversWrites st st' _ v _ _ _ _ _ S
               hObjInv hDisp hSched
           · exact absurd hOps (by simp)
   -- ---- `.schedContextBind` ------------------------------------------------

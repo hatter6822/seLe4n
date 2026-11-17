@@ -639,8 +639,8 @@ theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadI
 context over the old one, places it on its release queue, and runs the
 candidacy mark and the resume tail. -/
 theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : MappingStage st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -759,8 +759,8 @@ theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
 /-- WS-ZA ZA6.4: the SchedControl configure moves the bound thread through the
 affinity change and then configures on the moved state; both are stages. -/
 theorem schedControlConfigure_mappingStage {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
       st = .ok ((), st')) : MappingStage st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure_mappingStage h

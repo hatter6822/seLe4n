@@ -5215,15 +5215,15 @@ theorem serviceQueryStaged_answer_lowEquivalent
     discharge: ≈40 LOC given the 6-phase body of `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
           SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-            vScId budget period badge flags st = .ok ((), stFinal) →
+            vScId budget period extraRefills badge flags st = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
     (hStep : SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-                vScId budget period badge flags st = .ok ((), st')) :
+                vScId budget period extraRefills badge flags st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 

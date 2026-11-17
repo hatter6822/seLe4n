@@ -1401,7 +1401,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
         (hRes := by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]) (hBank := banksKeptOffCore_of_eq (by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]))
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
-    | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
+    | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv

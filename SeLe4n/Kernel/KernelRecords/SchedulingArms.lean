@@ -345,8 +345,8 @@ theorem configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : Sche
 context over the old one, and runs the placement, the candidacy hook and the
 resume tail. -/
 theorem schedContextConfigure {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : RecordsFrame st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -497,8 +497,8 @@ theorem setThreadCpuAffinityOnCore {st st' : SystemState} {vTarget : SeLe4n.Vali
 /-- The SchedControl configure moves the bound thread through the affinity
 change and then configures on the moved state. -/
 theorem schedControlConfigure {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
       st = .ok ((), st')) : RecordsFrame st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure hInv h

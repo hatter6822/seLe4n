@@ -334,12 +334,12 @@ The exactness half of `schedLockSet_schedControlConfigure`'s one-core
 segment: every other core's queue is untouched, so the footprint is neither
 false nor wider than the operation. -/
 theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemState)
-    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     (sc : SchedContext) (c : CoreId)
     (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
     (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (hHome : ∀ t, sc.boundThread = some t → c ≠ determineTargetCore st t)
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st
       = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContextOps.schedContextConfigure at h
@@ -375,9 +375,9 @@ consumes; `…_ne_of_sc` above is the resolution-keyed form it is built from.  T
 unresolved arm is not a gap but a refusal — the transition's own second branch
 errors there — so the segment being empty costs the claim nothing. -/
 theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
-    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64) (c : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64) (c : CoreId)
     (hne : c ∉ schedContextConfigureReplenishCores st vScId.val)
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st
       = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold schedContextConfigureReplenishCores at hne
@@ -392,7 +392,7 @@ theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
   | some sc =>
       rw [hSc] at hne
       exact schedContextConfigure_replenishQueueOnCore_ne_of_sc st st' vScId budget period
-        badge flags sc c hSc (fun e => hne (by
+        extraRefills badge flags sc c hSc (fun e => hne (by
           unfold SchedContextOps.purgeReplenishCores; rw [e]
           exact List.mem_append_left _ (List.mem_singleton_self c)))
         (fun t ht e => hne (by dsimp only; rw [ht, e]; exact List.mem_append_right _ (List.mem_singleton_self _))) h

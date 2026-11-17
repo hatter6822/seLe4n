@@ -1583,9 +1583,9 @@ theorem ipcInvariantFull_of_runRequeueOnCore (st : SystemState) (c : CoreId)
 bound arm's candidacy mark and resume tail write scheduler links alone. -/
 theorem schedContextConfigure_preserves_ipcInvariantFull
     (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
-    (budget period : Nat) (badge flags : UInt64)
+    (budget period : Nat) (extraRefills badge flags : UInt64)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period badge flags
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags
        st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold SchedContextOps.schedContextConfigure at hStep
@@ -1614,7 +1614,7 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             (by
               have h := SeLe4n.Kernel.SchedContext.proj_eq_of_withoutRelease_eq (sc' := sc)
                 (sc := scP) (fun x : SchedContext => x.boundThread) hEP
-              exact (SchedContextOps.configuredSchedContext_boundThread _ _ _ _ _ _ _).trans h)
+              exact (SchedContextOps.configuredSchedContext_boundThread _ _ _ _ _ _ _ _).trans h)
           have hObjInvStored0 := storeObject_preserves_objects_invExt
             (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
             stStored vScId.val _ hObjInvCleaned hStore
@@ -1646,14 +1646,14 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
 the context's thread to the control's core, then the configure there. -/
 theorem schedControlConfigure_preserves_ipcInvariantFull
     (st st' : SystemState) (core : CoreId) (vScId : SeLe4n.ValidObjId)
-    (budget period : Nat) (badge flags : UInt64)
+    (budget period : Nat) (extraRefills badge flags : UInt64)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
        st = .ok ((), st')) :
     ipcInvariantFull st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases hStep with h | ⟨_, t, stM, sgi, -, -, -, hM, h⟩
-  · exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ hObjInv hInv h
-  · exact schedContextConfigure_preserves_ipcInvariantFull stM st' vScId _ _ _ _
+  · exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ _ hObjInv hInv h
+  · exact schedContextConfigure_preserves_ipcInvariantFull stM st' vScId _ _ _ _ _
       (setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hObjInv _ hM)
       (setThreadCpuAffinityWithMigration_preserves_ipcInvariantFull st stM t _ core sgi hObjInv hInv hM) h
 

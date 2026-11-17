@@ -505,9 +505,9 @@ release placement write release fields, the store a context over a context,
 the candidacy hook writes the scheduler alone, and the bound thread's resume
 tail writes its run-queue links. -/
 theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period : Nat} {badge flags : UInt64}
+    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period : Nat} {extraRefills badge flags : UInt64}
     (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   unfold SchedContextOps.schedContextConfigure at h
   split at h
@@ -550,8 +550,8 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
 its bound thread to the control's core, then the configure. -/
 theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure_savedRegsKeptExcept hInv h

@@ -223,14 +223,14 @@ theorem schedContextConfigureReplenishCores_of_move {st stM : SystemState} {core
 /-- **The exactness frame**: a configure through a control writes no replenish
 queue outside its footprint's replenish segment. -/
 theorem schedControlConfigure_replenishQueueOnCore_ne (st st' : SystemState) (core : CoreId)
-    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64) (c : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64) (c : CoreId)
     (hInv : st.objects.invExt)
     (hne : c ∉ schedControlConfigureReplenishCores st core vScId.val)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
       st = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨sc, t, stM, sgi, hSc, hB, hNe, hM, h⟩
-  · exact schedContextConfigure_replenishQueueOnCore_ne st st' vScId _ _ _ _ c
+  · exact schedContextConfigure_replenishQueueOnCore_ne st st' vScId _ _ _ _ _ c
       (fun hm => hne (schedContextConfigureReplenishCores_subset_schedControl _ _ _ _ hm)) h
   · rw [(schedControlConfigureWriteSet_of_move hSc hB hNe).2] at hne
     have hNeA : c ∉ setThreadCpuAffinityReplenishCores st t (some core) :=
@@ -239,7 +239,7 @@ theorem schedControlConfigure_replenishQueueOnCore_ne (st st' : SystemState) (co
       rcases schedContextConfigureReplenishCores_of_move hInv hSc hB hM c hm with e | e
       · exact hne (List.mem_append.mpr (.inr (e ▸ List.mem_cons_self ..)))
       · exact hne (List.mem_append.mpr (.inr (List.mem_cons_of_mem _ e)))
-    rw [schedContextConfigure_replenishQueueOnCore_ne stM st' vScId _ _ _ _ c hNeC h]
+    rw [schedContextConfigure_replenishQueueOnCore_ne stM st' vScId _ _ _ _ _ c hNeC h]
     exact setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne st stM t _ core sgi c hInv
       hNeA hM
 

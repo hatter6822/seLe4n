@@ -161,8 +161,8 @@ pipeline in a fixed three-step order:
 1. **Pop due entries** (`popDueReplenishments`): extract every entry
    whose `eligibleAt ≤ now` from the sorted `replenishQueue`.
 2. **Refill SchedContexts** (`refillSchedContext` × k): for each popped
-   entry, run `processReplenishments` + `cbsUpdateDeadline` on the
-   owning SchedContext.
+   entry, release the owning SchedContext's ready refills
+   (`SchedContext.releaseReadyHead`).
 3. **Process current thread's budget** (`timerTickBudget`): decrement
    the current thread's CBS budget, possibly re-enqueueing on
    exhaustion.

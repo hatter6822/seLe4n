@@ -1355,10 +1355,13 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     (`decodeSchedControl_ConfigureFlags`): the budget and the period first, each
     below the least or above the greatest refused `seL4_RangeError` with
     `MIN_BUDGET` and `MAX_PERIOD` (`configureMinBudget`, `configureMaxPeriod`), then a budget
-    above its period `seL4_RangeError` with `MIN_BUDGET` and the period, all
-    before the context's capability is looked at.  The extra-refills word is
-    checked after the context's capability type, as seL4-MCS checks it against
-    that context's size (`schedControlConfigureRefillsCheck`); the badge and
+    above its period `seL4_RangeError` with `MIN_BUDGET` and the period, then
+    extra refills that leave no room for the two refills every context holds
+    within the refill capacity the context holds (`extra_refills + MIN_REFILLS >
+    refill_absolute_max(cap)`) `seL4_RangeError` with `0` and
+    `configureMaxExtraRefills`.  The live arm checks these after the context's
+    capability is looked up and found to be a scheduling context's
+    (`resolveSchedControlConfigureTarget`), as seL4-MCS does; the badge and
     flags words take any value. -/
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
@@ -1369,6 +1372,8 @@ def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     .error (.rangeError configureMinBudget configureMaxPeriod)
   else if args.budget > args.period then
     .error (.rangeError configureMinBudget (UInt64.ofNat args.period))
+  else if configureMaxExtraRefills < args.extraRefills then
+    .error (.rangeError 0 configureMaxExtraRefills)
   else pure args
 
 /-- AK3-J: A successful checked configure decode satisfies the CBS invariants. -/
@@ -1389,10 +1394,12 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
       · simp at hOk
       · split at hOk
         · simp at hOk
-        · rename_i hB hPer hBP
-          simp only [pure, Except.pure, Except.ok.injEq] at hOk
-          subst hOk
-          refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+        · split at hOk
+          · simp at hOk
+          · rename_i hB hPer hBP _
+            simp only [pure, Except.pure, Except.ok.injEq] at hOk
+            subst hOk
+            refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
 
 /-- Z5-C: Decode schedContextUnbind arguments. No message registers needed. -/
 def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
@@ -2212,6 +2219,7 @@ nothing, and every word converted is held below `2 ^ 61` by a test before it
   else if r1 = 0 ∨ configureMaxPeriod < r1 then
     .error (.rangeError configureMinBudget configureMaxPeriod)
   else if r1 < r0 then .error (.rangeError configureMinBudget r1)
+  else if configureMaxExtraRefills < r2 then .error (.rangeError 0 configureMaxExtraRefills)
   else pure { budget := r0.toNat, period := r1.toNat, extraRefills := r2, badge := r3,
               flags := r4 }
 

@@ -223,14 +223,14 @@ theorem dispatchCapabilityOnly_mappingStage
       rcases hXc : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with _ | scCPtr
       · simp only [hXc] at hStep; cases hStep
       simp only [hXc] at hStep
-      cases hDec : decodeSchedContextConfigureArgsChecked decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vScId =>
-              simp only [hVal] at hStep
+      cases hVal : resolveSchedControlConfigureTarget tid core scCPtr decoded.msgInfo.length st with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hDec : decodeSchedContextConfigureArgsChecked decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
               split at hStep
               · exact schedControlConfigure_mappingStage hStep
               · cases hStep

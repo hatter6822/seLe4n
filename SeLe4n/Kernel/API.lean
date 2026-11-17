@@ -2499,14 +2499,24 @@ theorem resolveSchedContextBindThread_ok_authorised
 /-- **WS-ZA ZA6.4**: the scheduling context a configure through core `core`'s
 scheduling control names: seL4-MCS's `decodeSchedControl_ConfigureFlags` takes the
 context as extra capability 0 (WS-SX SX6.4), the address `scCPtr` the arm reads
-from the caller's IPC buffer, resolved in the caller's own CSpace by
-`syscallLookupCap` requiring `.write`.  The capability must name a scheduling
-context the store holds (anything else is `.invalidCapability`, seL4's answer to
-an extra capability of the wrong type); then, in seL4's order, the
-`extra_refills` word must leave room for the two refills every context holds
-(`.rangeError 0 configureMaxExtraRefills` otherwise); the control must name a core the kernel
-runs (`.invalidCapability` otherwise; boot installs a control for each core it
-runs), and `validateObjIdArg` promotes the id.  A context homed on another core
+from the caller's IPC buffer, looked up in the caller's own CSpace as
+`lookupExtraCaps` looks it up: the slot, with **no right asked of its
+capability** — seL4 checks only that the capability names a scheduling context
+(`cap_get_capType(targetCap) != cap_sched_context_cap`).  The checks: the
+message length `len` (`decodeSchedControl_ConfigureFlags`'s `TruncatedMessage`
+below `truncationMinimum .schedContextConfigure` words, seL4's
+`TIME_ARG_SIZE * 2 + 3`; every short invocation is refused before its
+arguments are resolved, `dispatchWithCapChecked_eq_truncated`); then the
+lookup (a failed lookup is the lookup's own refusal, which the entry delivers as
+a capability fault, as seL4's `lookupExtraCaps` failure is); then the
+capability's kind: an empty slot, a
+capability naming a kernel-reserved object (`syscallResolveCap`'s chokepoint)
+or one naming anything but a scheduling context the store holds is
+`.invalidCapability configureContextCapNumber`.  The words' range checks,
+the extra refills among them, come after this resolution
+(`decodeSchedContextConfigureArgsChecked`).  The control must name a core the
+kernel runs (`.invalidCapability` otherwise; boot installs a control for each
+core it runs), and `validateObjIdArg` promotes the id.  A context homed on another core
 is not refused: the configure moves it to the control's core with its thread, as
 seL4 does (`SchedContextOps.schedControlConfigure`).  Every check reads the state
 handed in; nothing is written.
@@ -2516,86 +2526,105 @@ scheduler-domain operand builder (`abiEntryLockOperands`) both read this
 definition, so the context the footprint declares and the context the transition
 configures are one reading of one extra-capability address. -/
 def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat)
-    (scCPtr : SeLe4n.CPtr) (extraRefills : UInt64) (st : SystemState) :
+    (scCPtr : SeLe4n.CPtr) (len : Nat) (st : SystemState) :
     Except KernelError SeLe4n.ValidObjId :=
+  if len < truncationMinimum .schedContextConfigure then .error .truncatedMessage else
   match st.getTcb? callerTid with
   | none => .error .objectNotFound
   | some callerTcb =>
-    let scGate : SyscallGate := {
-      callerId      := callerTid
-      cspaceRootCap := callerTcb.spaceCells[0]
-      capAddr       := scCPtr
-      requiredRight := .write
-    }
-    match syscallLookupArgumentCap configureContextCapNumber scGate st with
-    | .error e => .error e
-    | .ok (scCap, _) =>
-      match scCap.target with
-      | .object scObjId =>
-        match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
-        | none => .error (.invalidCapability configureContextCapNumber)
-        | some _ =>
-          if configureMaxExtraRefills < extraRefills then
-            .error (.rangeError 0 configureMaxExtraRefills)
-          else if core < SeLe4n.Kernel.Concurrency.numCores then validateObjIdArg scObjId
-          else .error (.invalidCapability 0)
-      | _ => .error (.invalidCapability configureContextCapNumber)
+    match lookupSlot callerTcb scCPtr st with
+    | .error f => .error (.failedLookup false f)
+    | .ok ref =>
+      match SystemState.lookupSlotCap st ref with
+      | none => .error (.invalidCapability configureContextCapNumber)
+      | some scCap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject scCap then
+          .error (.invalidCapability configureContextCapNumber)
+        else
+        match scCap.target with
+        | .object scObjId =>
+          match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+          | none => .error (.invalidCapability configureContextCapNumber)
+          | some _ =>
+            if core < SeLe4n.Kernel.Concurrency.numCores then validateObjIdArg scObjId
+            else .error (.invalidCapability 0)
+        | _ => .error (.invalidCapability configureContextCapNumber)
 
 /-- **WS-ZA ZA6.4 (the authority fact)**: a context the resolver answers is one the
-caller holds a **writable capability** to, found at `scCPtr` in the caller's own
-CSpace; the store holds it as a scheduling context, and the control names a core
-the kernel runs. -/
+caller holds a capability to, found at `scCPtr` in the caller's own CSpace, of
+the scheduling-context kind (no right is asked of it, as seL4 asks none); the
+store holds it as a scheduling context, and the control names a core the kernel
+runs. -/
 theorem resolveSchedControlConfigureTarget_ok_authorised
-    (callerTid : SeLe4n.ThreadId) (core : Nat) (scCPtr : SeLe4n.CPtr) (extraRefills : UInt64)
+    (callerTid : SeLe4n.ThreadId) (core : Nat) (scCPtr : SeLe4n.CPtr) (len : Nat)
     (st : SystemState) (v : SeLe4n.ValidObjId)
-    (h : resolveSchedControlConfigureTarget callerTid core scCPtr extraRefills st = .ok v) :
-    ∃ (callerTcb : TCB) (scCap : Capability) (sc : SchedContext),
+    (h : resolveSchedControlConfigureTarget callerTid core scCPtr len st = .ok v) :
+    ∃ (callerTcb : TCB) (ref : CSpaceAddr) (scCap : Capability) (sc : SchedContext),
       st.getTcb? callerTid = some callerTcb ∧
-      syscallLookupCap
-        { callerId := callerTid, cspaceRootCap := callerTcb.spaceCells[0],
-          capAddr := scCPtr,
-          requiredRight := .write } st = .ok (scCap, st) ∧
-      scCap.hasRight .write = true ∧
+      lookupSlot callerTcb scCPtr st = .ok ref ∧
+      SystemState.lookupSlotCap st ref = some scCap ∧
       scCap.target = .object v.val ∧
       st.getSchedContext? (SchedContextId.ofObjId v.val) = some sc ∧
       core < SeLe4n.Kernel.Concurrency.numCores := by
-  unfold resolveSchedControlConfigureTarget syscallLookupArgumentCap at h
+  unfold resolveSchedControlConfigureTarget at h
+  by_cases hLen : len < truncationMinimum .schedContextConfigure
+  · rw [if_pos hLen] at h; cases h
+  rw [if_neg hLen] at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
   | some callerTcb =>
     rw [hCaller] at h
     simp only at h
-    cases hLk : syscallLookupCap
-        { callerId := callerTid, cspaceRootCap := callerTcb.spaceCells[0],
-          capAddr := scCPtr,
-          requiredRight := .write } st with
-    | error e => rw [hLk] at h; cases h
-    | ok pair =>
-      obtain ⟨scCap, s'⟩ := pair
+    cases hLk : lookupSlot callerTcb scCPtr st with
+    | error f => rw [hLk] at h; cases h
+    | ok ref =>
       rw [hLk] at h
       simp only at h
-      obtain ⟨_, _, _, hRight, hSt⟩ :=
-        syscallLookupCap_implies_capability_held _ st scCap s' hLk
-      rw [hSt] at hLk
-      cases hTgt : scCap.target
-      case object scObjId =>
-        rw [hTgt] at h
+      cases hCap : SystemState.lookupSlotCap st ref with
+      | none => rw [hCap] at h; cases h
+      | some scCap =>
+        rw [hCap] at h
         simp only at h
-        cases hSc : st.getSchedContext? (SchedContextId.ofObjId scObjId) with
-        | none => rw [hSc] at h; cases h
-        | some sc =>
-          rw [hSc] at h
+        by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject scCap = true
+        · rw [if_pos hRes] at h; cases h
+        rw [if_neg hRes] at h
+        cases hTgt : scCap.target with
+        | object scObjId =>
+          rw [hTgt] at h
           simp only at h
-          by_cases hX : configureMaxExtraRefills < extraRefills
-          · rw [if_pos hX] at h; cases h
-          rw [if_neg hX] at h
-          by_cases hCov : core < SeLe4n.Kernel.Concurrency.numCores
-          · rw [if_pos hCov] at h
-            have hVal : v.val = scObjId := validateObjIdArg_ok_val _ _ h
-            subst hVal
-            exact ⟨callerTcb, scCap, sc, rfl, hLk, hRight, hTgt, hSc, hCov⟩
-          · rw [if_neg hCov] at h; cases h
-      all_goals (rw [hTgt] at h; cases h)
+          cases hSc : st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+          | none => rw [hSc] at h; cases h
+          | some sc =>
+            rw [hSc] at h
+            simp only at h
+            by_cases hCov : core < SeLe4n.Kernel.Concurrency.numCores
+            · rw [if_pos hCov] at h
+              have hVal : v.val = scObjId := validateObjIdArg_ok_val _ _ h
+              subst hVal
+              exact ⟨callerTcb, ref, scCap, sc, rfl, hLk, hCap, hTgt, hSc, hCov⟩
+            · rw [if_neg hCov] at h; cases h
+        | _ => rw [hTgt] at h; cases h
+
+/-- A configure's resolution reads the message length only through the
+truncation test: every length at or past the configure's minimum resolves as the
+minimum does. -/
+theorem resolveSchedControlConfigureTarget_len_of_le (callerTid : SeLe4n.ThreadId)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) {len : Nat}
+    (h : truncationMinimum .schedContextConfigure ≤ len) :
+    resolveSchedControlConfigureTarget callerTid core scCPtr len st =
+      resolveSchedControlConfigureTarget callerTid core scCPtr
+        (truncationMinimum .schedContextConfigure) st := by
+  unfold resolveSchedControlConfigureTarget
+  simp only [Nat.not_lt.mpr h, Nat.lt_irrefl, ↓reduceIte]
+
+/-- A configure shorter than its words is refused `TruncatedMessage` before its
+context is resolved. -/
+theorem resolveSchedControlConfigureTarget_short (callerTid : SeLe4n.ThreadId)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) {len : Nat}
+    (h : len < truncationMinimum .schedContextConfigure) :
+    resolveSchedControlConfigureTarget callerTid core scCPtr len st = .error .truncatedMessage := by
+  unfold resolveSchedControlConfigureTarget
+  simp only [h, ↓reduceIte]
 
 /-- **`v0.35.204`**: a TCB capability naming a reserved idle object is refused at
 the capability chokepoint — `syscallResolveCap`'s own refusal, reached through
@@ -3135,68 +3164,76 @@ theorem serviceEndpointArm_ok {sid : SyscallId} {tid : SeLe4n.ThreadId} {xc : Na
   | ok p => obtain ⟨c, e⟩ := p; rw [hR] at h; exact ⟨c, e, rfl, h⟩
 
 /-- WS-ZA ZA6.4: `resolveSchedControlConfigureTarget` in continuation form,
-through `resolveCallerCapObjectK`: no gate, slot reference, capability pair or
-result cell is built, so the configure's resolution allocates nothing
+through `lookupSlotK`: no gate, slot reference, capability pair or result cell is
+built, so the configure's resolution allocates nothing
 (`resolveSchedControlConfigureTargetK_eq`). -/
 @[inline] def resolveSchedControlConfigureTargetK {α : Type} (callerTid : SeLe4n.ThreadId)
-    (core : Nat) (scCPtr : SeLe4n.CPtr) (extraRefills : UInt64) (st : SystemState)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (len : Nat) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ValidObjId → α) : α :=
-  resolveCallerCapObjectK callerTid scCPtr .write st
-    (KernelError.argumentCapRefusal configureContextCapNumber onErr) (fun _ scObjId =>
-    match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
-    | none => onErr (.invalidCapability configureContextCapNumber)
-    | some _ =>
-      if configureMaxExtraRefills < extraRefills then
-        onErr (.rangeError 0 configureMaxExtraRefills)
-      else if core < SeLe4n.Kernel.Concurrency.numCores then
-        match validateObjIdArg scObjId with
-        | .error e => onErr e
-        | .ok v => onOk v
-      else onErr (.invalidCapability 0))
+  if len < truncationMinimum .schedContextConfigure then onErr .truncatedMessage else
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    lookupSlotK callerTcb scCPtr st
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c))) (fun cnode slot =>
+      match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+      | none => onErr (.invalidCapability configureContextCapNumber)
+      | some scCap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject scCap then
+          onErr (.invalidCapability configureContextCapNumber)
+        else
+        match scCap.target with
+        | .object scObjId =>
+          match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+          | none => onErr (.invalidCapability configureContextCapNumber)
+          | some _ =>
+            if core < SeLe4n.Kernel.Concurrency.numCores then
+              match validateObjIdArg scObjId with
+              | .error e => onErr e
+              | .ok v => onOk v
+            else onErr (.invalidCapability 0)
+        | _ => onErr (.invalidCapability configureContextCapNumber))
 
 theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
-    (core : Nat) (scCPtr : SeLe4n.CPtr) (extraRefills : UInt64) (st : SystemState)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (len : Nat) (st : SystemState)
     (onErr : KernelError → α) (onOk : SeLe4n.ValidObjId → α) :
-    resolveSchedControlConfigureTargetK callerTid core scCPtr extraRefills st onErr onOk =
-      match resolveSchedControlConfigureTarget callerTid core scCPtr extraRefills st with
+    resolveSchedControlConfigureTargetK callerTid core scCPtr len st onErr onOk =
+      match resolveSchedControlConfigureTarget callerTid core scCPtr len st with
       | .error e => onErr e
       | .ok v => onOk v := by
-  unfold resolveSchedControlConfigureTargetK
-  rw [resolveCallerCapObjectK_eq]
-  unfold resolveCallerCapObject resolveCallerCapSlot resolveSchedControlConfigureTarget
-    syscallLookupArgumentCap syscallLookupCap syscallResolveCap KernelError.argumentCapRefusal
+  unfold resolveSchedControlConfigureTargetK resolveSchedControlConfigureTarget
+  by_cases hLen : len < truncationMinimum .schedContextConfigure
+  · simp only [hLen, ↓reduceIte]
+  simp only [hLen, ↓reduceIte]
   cases st.getTcb? callerTid with
   | none => rfl
   | some callerTcb =>
-    try simp only [SyscallGate.lookupSlot_mk]
+    simp only []
+    rw [lookupSlotK_eq]
     cases lookupSlot callerTcb scCPtr st with
-    | error e => rfl
+    | error f => simp only [LookupFault.ofWords_word]
     | ok ref =>
-      dsimp only
-      cases SystemState.lookupSlotCap st ref with
+      obtain ⟨cnode, slot⟩ := ref
+      simp only []
+      cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
       | none => rfl
       | some cap =>
-        dsimp only
+        simp only []
         by_cases hI : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
-        · simp only [hI, if_true]
+        · simp only [hI, ↓reduceIte]
         · simp only [hI, Bool.false_eq_true, ↓reduceIte]
-          by_cases hR : cap.hasRight .write = true
-          · simp only [hR, ↓reduceIte]
-            cases cap.target with
-            | object oid =>
+          cases cap.target with
+          | object oid =>
+            dsimp only
+            cases st.getSchedContext? (SchedContextId.ofObjId oid) with
+            | none => rfl
+            | some _ =>
               dsimp only
-              cases st.getSchedContext? (SchedContextId.ofObjId oid) with
-              | none => rfl
-              | some _ =>
-                dsimp only
-                split
-                · rfl
-                · split
-                  · cases validateObjIdArg oid <;> rfl
-                  · rfl
-            | _ => rfl
-          · simp [hR]
+              split
+              · cases validateObjIdArg oid <;> rfl
+              · rfl
+          | _ => rfl
 
 /-- WS-ZA ZA5.2: `resolveSetSpaceAt` in continuation form, through `lookupSlotK`,
 the three source slots handed on as words (`resolveSetSpaceAtK_eq`). -/
@@ -4904,21 +4941,23 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       match callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with
       | none => .error .truncatedMessage
       | some scCPtr =>
+      -- seL4-MCS's order: the extra capability looked up (`lookupExtraCaps`,
+      -- before the decode), the length, its kind, then the words' ranges.
+      -- AL7-G / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
+      -- via the ValidObjId signature on schedContextConfigure; the
+      -- context's promotion is the resolver's.
+      match resolveSchedControlConfigureTarget tid core scCPtr decoded.msgInfo.length st with
+      | .error e => .error e
+      | .ok vScId =>
       match decodeSchedContextConfigureArgsChecked decoded with
       | .error e => .error e
       | .ok args =>
-          -- AL7-G / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
-          -- via the ValidObjId signature on schedContextConfigure; the
-          -- context's promotion is the resolver's.
-          match resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
-          | .error e => .error e
-          | .ok vScId =>
               -- The configure runs on the control's core, moving a context
               -- homed elsewhere there with its thread (seL4's
               -- `invokeSchedControl_ConfigureFlags`).
               if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
                 SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget
-                  args.period args.badge args.flags st
+                  args.period args.extraRefills args.badge args.flags st
               else .error (.invalidCapability 0)
     | _ => fun _ => .error (.invalidCapability 0)
   -- Z5-J: SchedContext bind — the SchedContext from the capability target, the
@@ -5516,16 +5555,16 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       rcases hXc : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with _ | scCPtr
       · simp only [hXc] at hStep; cases hStep
       simp only [hXc] at hStep
-      cases hDec : decodeSchedContextConfigureArgsChecked decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vScId =>
-              simp only [hVal] at hStep
+      cases hVal : resolveSchedControlConfigureTarget tid core scCPtr decoded.msgInfo.length st with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hDec : decodeSchedContextConfigureArgsChecked decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
               split at hStep
-              · exact schedControlConfigure_preserves_ipcInvariantFull st st' _ vScId _ _ _ _
+              · exact schedControlConfigure_preserves_ipcInvariantFull st st' _ vScId _ _ _ _ _
                   hObjInv hInv hStep
               · cases hStep
     all_goals try cases hStep

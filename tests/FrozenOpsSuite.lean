@@ -2590,41 +2590,25 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
      | .ok (_, st') =>
          (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? st' diffScId).isNone
      | .error _ => false)
-  -- **AK2-B**: and the SchedContext's priority reaches the bound TCB, as it does
-  -- live.  Without it every frozen post-bind state falsified
-  -- `boundThreadPriorityConsistent`.
-  expect "FO-047: the frozen bind propagates the reservation's priority to the TCB"
+  -- seL4-MCS's bind writes no priority (a scheduling context carries none since
+  -- WS-SX SX6.4): the bound thread keeps its own priority and its run-queue
+  -- bucket, live and frozen alike.
+  expect "FO-047: the frozen bind leaves the thread's own priority"
     (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
-     | .ok (_, st') => (st'.getTcb? diffA).map (·.priority) == some ⟨40⟩
+     | .ok (_, st') => (st'.getTcb? diffA).map (·.priority) == some ⟨0⟩
      | .error _ => false)
-  expect "FO-047 control: ...which is the priority the live bind writes too"
+  expect "FO-047 control: ...as the live bind does"
     ((liveSchedContextBindState ist.state diffScId diffA).bind
-      (fun st => (st.getTcb? diffA).map (·.priority)) == some ⟨40⟩)
-  -- **`v0.35.101`: and the bound thread's run-queue BUCKET moves with it.**
-  --
-  -- The eight assertions above all passed while the mirror left `diffA` in
-  -- bucket `0`, which is the shape this suite has now recorded three times: a
-  -- scenario that asserts only what it set out to measure cannot see a
-  -- divergence one field over.  `diffA` is `.ready`, so `diffAddTcb` queues it
-  -- at its TCB priority `0`; the bind propagates the reservation's `40`, and the
-  -- live Z5-G3 step re-buckets there while the frozen mirror wrote the field and
-  -- stopped -- so `frozenChooseThread`, which folds `byPriority`, went on
-  -- ordering the thread at the band the bind had just left.
-  --
-  -- `frozenStateAgrees` compares the buckets **as lists at every key either side
-  -- holds**, so `frozenRunAgrees` over the whole operation is the decisive
-  -- assertion and the per-bucket ones below are what name the offending key when
-  -- it breaks.
+      (fun st => (st.getTcb? diffA).map (·.priority)) == some ⟨0⟩)
   expect "FO-047 control: diffA starts in bucket 0, its TCB priority"
     (((freeze ist).scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
-  expect "FO-047: the live bind moves diffA into bucket 40"
+  expect "FO-047: the live bind leaves diffA in bucket 0"
     ((liveSchedContextBindState ist.state diffScId diffA).map
-      (fun st => bucketOnCore st bootCoreId (⟨40⟩ : SeLe4n.Priority))
-      == some [diffA])
+      (fun st => bucketOnCore st bootCoreId (⟨0⟩ : SeLe4n.Priority))
+      == some [diffA, diffB])
   expect "FO-047 PAYOFF: ...and so does the frozen bind"
     (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
-     | .ok (_, st') => ((st'.scheduler.byPriority.get? ⟨40⟩).getD [] == [diffA])
-                         && ((st'.scheduler.byPriority.get? ⟨0⟩).getD [] == [diffB])
+     | .ok (_, st') => ((st'.scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
      | .error _ => false)
   expect "FO-047 DIFFERENTIAL: the two post-bind states agree, buckets included"
     (frozenRunAgrees unitResultAgrees
@@ -2884,10 +2868,10 @@ SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id
 or a refusal -- so every consumer pairs its assertion with a control asserting
 `isSome`, as the bind and unbind drivers above do. -/
 private def liveSchedContextConfigureState (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (budget period : Nat) (badge flags : UInt64) :
+    (scId : SeLe4n.SchedContextId) (budget period : Nat) (extraRefills badge flags : UInt64) :
     Option SystemState := do
   let vSc ← scId.toObjId.toValid?
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period badge
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period extraRefills badge
           flags st with
   | .ok (_, st') => some st'
   | .error _ => none
@@ -2913,8 +2897,8 @@ private def differentialSchedContextConfigureKeepsOrder : IO Unit := do
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb (diffAddTcb
     (diffAddSchedContext (mkEmptyIntermediateState ()) cfgScId cfgSc) boundTcb) peerTcb
-  let live := liveSchedContextConfigureState ist.state cfgScId 100 1000 0x5A 1
-  let frozen := (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0x5A 1 (freeze ist)).toOption
+  let live := liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0x5A 1
+  let frozen := (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0x5A 1 (freeze ist)).toOption
   expect "FO-048 control: the bound thread and its peer share a bucket, in this order"
     (bucketOnCore ist.state bootCoreId ⟨0⟩ == [diffA, diffB])
   expect "FO-048 control: the frozen copy of the pre-state agrees"
@@ -2960,8 +2944,8 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
       refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 0,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let agrees (ist : IntermediateState) : Bool :=
-    match liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 (freeze ist)).toOption with
+    match liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0 (freeze ist)).toOption with
     | some l, some f => frozenStateAgrees f.2 l
     | _, _ => false
   -- (1) PLACEMENT: the bound thread is `.ready`, `.Ready` and on NO run queue.
@@ -2979,9 +2963,9 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
           | .ok (none, _) => true
           | _ => false))
   expect "FO-052: the live configure places the parked bound thread"
-    ((liveSchedContextConfigureState istParked.state cfgScId 100 1000 0 0).map
+    ((liveSchedContextConfigureState istParked.state cfgScId 100 1000 0 0 0).map
        (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA])
-  match frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 fzParked with
+  match frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0 fzParked with
   | .error e => expect s!"FO-052: the frozen configure succeeds (error: {reprStr e})" false
   | .ok (_, fz') =>
     expect "FO-052: ...and so does the frozen one, in the bucket its own priority names"
@@ -3000,9 +2984,9 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
       (fun _ h => nomatch h) (fun _ h => nomatch h))
     cfgScId readySc
   expect "FO-052 NEGATIVE: a suspended bound thread is not placed, on either surface"
-    ((liveSchedContextConfigureState istSuspended.state cfgScId 100 1000 0 0).map
+    ((liveSchedContextConfigureState istSuspended.state cfgScId 100 1000 0 0 0).map
         (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some []
-      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
+      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
             (freeze istSuspended)).toOption.map
           (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false
       && agrees istSuspended)
@@ -3017,10 +3001,10 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
     (bucketOnCore istQueued.state bootCoreId ⟨0⟩ == [diffA]
       && SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere (freeze istQueued) diffA)
   expect "FO-052: the live configure takes the thread off its run queue"
-    ((liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0).map
+    ((liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0).map
        (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [])
   expect "FO-052: ...and the frozen one takes it out of every bucket"
-    (((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
+    (((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
         (freeze istQueued)).toOption.map
       (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false)
   -- The live configure also puts the context on its home core's release queue
@@ -3030,8 +3014,8 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   expect "FO-052: ...and the two states agree whole, the release queue included"
     (agrees istQueued)
   expect "FO-052: ...the context is on its home core's release queue on both surfaces"
-    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
             (freeze istQueued)).toOption with
      | some l, some f =>
        l.scheduler.releaseHeadOnCore bootCoreId != 0
@@ -3041,8 +3025,8 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   -- NEGATIVE: the comparison sees the release queue -- the frozen result with its
   -- context's link cleared disagrees with the live one.
   expect "FO-052 NEGATIVE: a frozen state off the release queue does not agree"
-    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0,
-          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
             (freeze istQueued)).toOption with
      | some l, some f =>
        match f.2.getSchedContext? cfgScId with
@@ -3056,7 +3040,7 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   let istQueuedReady := diffAddSchedContext (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
     cfgScId readySc
   expect "FO-052 CONTROL: with budget the queued thread stays queued, and the states agree"
-    ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0).map
+    ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0 0).map
         (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA]
       && agrees istQueuedReady)
 

@@ -1079,7 +1079,7 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
     so the id check covers it. -/
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨scId, _budget, _period, _badge, _sporadic, _budgetRemaining, _periodStart,
+  | ⟨scId, _budget, _period, _badge, _sporadic, _refillMax, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -2470,7 +2470,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
     `donationChainWellFormed` violation before the first instruction runs. -/
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨_scId, _budget, _period, _badge, _sporadic, _budgetRemaining, _periodStart,
+  | ⟨_scId, _budget, _period, _badge, _sporadic, _refillMax, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -2496,10 +2496,10 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     -- place that does not exist.
     sc.releaseCoreCode == 0 &&
     -- **WS-ZA ZA6.4**: and its refills conserved: the head and the pending
-    -- refills hold the budget exactly once, within the refill storage
+    -- refills hold the budget exactly once, within the context's refill limit
     -- (`refillsConserved`), the invariant the sliding-window bound rests on.
     decide (sc.refillTotal = sc.budget.val) &&
-    decide (sc.refillSize ≤ maxReplenishments) &&
+    decide (sc.refillSize ≤ sc.refillLimit) &&
     -- **WS-ZA ZA6.5**: and no consumed time.  A boot state has charged no
     -- context (seL4-MCS's boot contexts start with `scConsumed` 0), so a
     -- config-supplied count could only report time no thread ran.
@@ -2521,7 +2521,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.donationOrigin.isNone &&
        sc.releaseCoreCode == 0 &&
        decide (sc.refillTotal = sc.budget.val) &&
-       decide (sc.refillSize ≤ maxReplenishments) &&
+       decide (sc.refillSize ≤ sc.refillLimit) &&
        sc.consumed == 0 &&
        sc.yieldFromCode == 0) := rfl
 

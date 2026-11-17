@@ -668,9 +668,9 @@ thread the context names as bound (`schedContextBindingBidirectional`), and
 that thread's key write ends in the key hook; with no live bound thread the
 write moves no thread's key. -/
 theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) (e : CoreId)
+    (budget period : Nat) (extraRefills badge flags : UInt64) (e : CoreId)
     (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period badge flags st
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold SchedContextOps.schedContextConfigure at hStep
@@ -842,15 +842,15 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
 moves the bound thread to the control's core through the affinity change, which
 covers, and then configures on the moved state, which covers. -/
 theorem schedControlConfigure_stepCovers (st st' : SystemState) (core : CoreId)
-    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64) (e : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64) (e : CoreId)
     (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
        st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   rcases SchedContextOps.schedControlConfigure_ok_cases hStep with h | ⟨_, t, stM, sgi, -, -, -, hM, h⟩
-  · exact schedContextConfigure_stepCovers st st' vScId _ _ _ _ e hObjInv hBi h
+  · exact schedContextConfigure_stepCovers st st' vScId _ _ _ _ _ e hObjInv hBi h
   · have hA := setThreadCpuAffinityWithMigration_stepCovers st stM t _ e core sgi hObjInv hM
-    have hC := schedContextConfigure_stepCovers stM st' vScId _ _ _ _ e hA.2
+    have hC := schedContextConfigure_stepCovers stM st' vScId _ _ _ _ _ e hA.2
       (setThreadCpuAffinityWithMigration_preserves_bidirectional hObjInv hBi hM) h
     exact ⟨stepCovers_trans hA.1 hC.1, hC.2⟩
 

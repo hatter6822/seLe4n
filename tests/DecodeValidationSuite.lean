@@ -186,6 +186,36 @@ def test_t11_sc_word_reader_keeps_badge_and_flag_words : IO Unit := do
     | .error e => throw <| IO.userError s!"T11: expected ok for word {w}, got {toString e}"
   IO.println "check passed [word-read badge and flag words carried verbatim]"
 
+/-- T12: the extra-refills word is range-checked as seL4-MCS's decode checks it
+(`extra_refills + MIN_REFILLS > refill_absolute_max` is a `RangeError` over
+`[0, refill_absolute_max - MIN_REFILLS]`), on both readers: the largest
+accepted count decodes, one more is refused with seL4's bounds. -/
+def test_t12_sc_extra_refills_range_checked : IO Unit := do
+  let reader (r : UInt64) : MsgRegReader := fun i =>
+    match i with
+    | 0 => .ok 1000 | 1 => .ok 10000 | 2 => .ok r | 3 => .ok 0
+    | 4 => .ok 0 | _ => .error .invalidMessageInfo
+  let max := SeLe4n.Kernel.configureMaxExtraRefills
+  match decodeSchedContextConfigureArgsChecked (stubOf #[1000, 10000, max.toNat, 0, 0]) with
+  | .ok args =>
+    expectCond "decode-validation" "largest extra-refills count kept" (args.extraRefills == max)
+  | .error e => throw <| IO.userError s!"T12: expected ok at the bound, got {toString e}"
+  match decodeSchedContextConfigureArgsCheckedBy (reader max) with
+  | .ok args =>
+    expectCond "decode-validation" "word reader: largest count kept" (args.extraRefills == max)
+  | .error e => throw <| IO.userError s!"T12: word reader expected ok, got {toString e}"
+  for over in [max + 1, 0xFFFF_FFFF_FFFF_FFFF] do
+    match decodeSchedContextConfigureArgsChecked (stubOf #[1000, 10000, over.toNat, 0, 0]) with
+    | .error (.rangeError lo hi) =>
+      expectCond "decode-validation" s!"extra refills {over}: seL4 bounds" (lo == 0 && hi == max)
+    | _ => throw <| IO.userError s!"T12: expected rangeError for extra refills {over}"
+    match decodeSchedContextConfigureArgsCheckedBy (reader over) with
+    | .error (.rangeError lo hi) =>
+      expectCond "decode-validation" s!"word reader extra refills {over}: seL4 bounds"
+        (lo == 0 && hi == max)
+    | _ => throw <| IO.userError s!"T12: word reader expected rangeError for {over}"
+  IO.println "check passed [extra-refills count range-checked with seL4 bounds]"
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
   IO.println "=== AK3-E + AK3-J Decode Validation regression suite ==="
@@ -200,6 +230,7 @@ def runAllTests : IO Unit := do
   test_t09_sc_boundary_accepted
   test_t10_sc_keeps_badge_and_flag_words
   test_t11_sc_word_reader_keeps_badge_and_flag_words
+  test_t12_sc_extra_refills_range_checked
   IO.println "=== All decode validation tests passed ==="
 
 end SeLe4n.Testing.DecodeValidation

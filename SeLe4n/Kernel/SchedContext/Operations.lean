@@ -600,6 +600,16 @@ marks the context's refills sporadic (`invokeSchedControl_ConfigureFlags`,
 `target->scSporadic = (flags & seL4_SchedContext_Sporadic) != 0`). -/
 @[inline] def sporadicOfFlags (flags : UInt64) : Bool := flags &&& 1 != 0
 
+/-- **The refill limit a configure gives the context** (seL4-MCS's `max_refills`
+argument): `MIN_REFILLS` for a round-robin context, whose budget equals its
+period (`invokeSchedControl_ConfigureFlags` calls `refill_new(target,
+MIN_REFILLS, budget, 0)`), otherwise `extra_refills + MIN_REFILLS`, the limit
+both `refill_new` and `refill_update` install.  The decode admits `extra_refills`
+up to `configureMaxExtraRefills`, so the limit is at most the capacity the object
+holds; `SchedContext.refillLimit` bounds any other. -/
+@[inline] def configuredRefillMax (budget period : Nat) (extraRefills : UInt64) : Nat :=
+  if budget = period then configureMinRefills else extraRefills.toNat + configureMinRefills
+
 /-- **WS-ZA ZA5.2**: the context `schedContextConfigure` stores, as a function of
 the stored one, so the store can rewrite it in its slot.  WS-ZA ZA6.4: its refills
 are seL4-MCS's: the head kept and trimmed to the new budget, the rest of the
@@ -608,7 +618,7 @@ budget one new period on (`SchedContext.refillUpdate`), when `keep`
 `timer` (`SchedContext.refillNew`).  Either way the refills hold the new budget
 exactly once (`refillUpdate_refillTotal`, `refillNew_refillTotal`).  The context
 is left off every release queue; the configure then places it. -/
-@[inline] def configuredSchedContext (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+@[inline] def configuredSchedContext (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
@@ -616,6 +626,7 @@ is left off every release queue; the configure then places it. -/
       period := ⟨period⟩
       badge := badge
       sporadic := sporadicOfFlags flags
+      refillMax := configuredRefillMax budget period extraRefills
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
@@ -625,7 +636,7 @@ is left off every release queue; the configure then places it. -/
 updates then reuse the context's cell when the store holds the only reference,
 where inlined into the branch on `keep` they sit in a join point that drops the
 reuse and allocates the context and its object on every configure. -/
-@[noinline] def configuredSchedContextFresh (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+@[noinline] def configuredSchedContextFresh (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
@@ -633,13 +644,14 @@ reuse and allocates the context and its object on every configure. -/
       period := ⟨period⟩
       badge := badge
       sporadic := sporadicOfFlags flags
+      refillMax := configuredRefillMax budget period extraRefills
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
   base.refillNew budget timer
 
 /-- `configuredSchedContext`'s kept-head branch (`refill_update`), out of line. -/
-@[noinline] def configuredSchedContextKept (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+@[noinline] def configuredSchedContextKept (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
@@ -647,6 +659,7 @@ reuse and allocates the context and its object on every configure. -/
       period := ⟨period⟩
       badge := badge
       sporadic := sporadicOfFlags flags
+      refillMax := configuredRefillMax budget period extraRefills
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
@@ -654,38 +667,38 @@ reuse and allocates the context and its object on every configure. -/
 
 /-- The compiled `configuredSchedContext`: the branch on `keep` first, each
 branch's updates out of line. -/
-@[inline] def configuredSchedContextImpl (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+@[inline] def configuredSchedContextImpl (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) : SchedContext :=
-  if keep then configuredSchedContextKept budget period badge flags timer sc
-  else configuredSchedContextFresh budget period badge flags timer sc
+  if keep then configuredSchedContextKept budget period extraRefills badge flags timer sc
+  else configuredSchedContextFresh budget period extraRefills badge flags timer sc
 
 /-- The compiled configured context is the configured context. -/
 @[csimp] theorem configuredSchedContext_eq_impl :
     @configuredSchedContext = @configuredSchedContextImpl := by
-  funext budget period badge flags timer keep sc
+  funext budget period extraRefills badge flags timer keep sc
   unfold configuredSchedContext configuredSchedContextImpl configuredSchedContextKept
     configuredSchedContextFresh
   cases keep <;> rfl
 
 /-- WS-ZA ZA6.6: the configure keeps the context's end of the yield link. -/
 @[simp] theorem configuredSchedContext_yieldFromCode (budget period : Nat)
-    (badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).yieldFromCode =
+    (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).yieldFromCode =
       sc.yieldFromCode := by
   unfold configuredSchedContext; cases keep <;> simp
 
 /-- The configured context reads nothing of the stored one's release fields. -/
-theorem configuredSchedContext_withoutRelease (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+theorem configuredSchedContext_withoutRelease (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    configuredSchedContext budget period badge flags timer keep sc.withoutRelease =
-      configuredSchedContext budget period badge flags timer keep sc := rfl
+    configuredSchedContext budget period extraRefills badge flags timer keep sc.withoutRelease =
+      configuredSchedContext budget period extraRefills badge flags timer keep sc := rfl
 
 /-- The configured context holds the new budget and period. -/
-theorem configuredSchedContext_budget_period (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+theorem configuredSchedContext_budget_period (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).budget =
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).budget =
         ⟨budget⟩ ∧
-      (configuredSchedContext budget period badge flags timer keep sc).period =
+      (configuredSchedContext budget period extraRefills badge flags timer keep sc).period =
         ⟨period⟩ := by
   unfold configuredSchedContext
   split
@@ -696,13 +709,13 @@ theorem configuredSchedContext_budget_period (budget period : Nat) (badge flags 
 
 /-- The configured context keeps the stored one's binding, reply stack and loan
 origin: a configure writes parameters and refills only. -/
-theorem configuredSchedContext_binding (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+theorem configuredSchedContext_binding (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).boundThreadCode =
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).boundThreadCode =
         sc.boundThreadCode ∧
-      (configuredSchedContext budget period badge flags timer keep sc).scReply =
+      (configuredSchedContext budget period extraRefills badge flags timer keep sc).scReply =
         sc.scReply ∧
-      (configuredSchedContext budget period badge flags timer keep sc).donationOrigin =
+      (configuredSchedContext budget period extraRefills badge flags timer keep sc).donationOrigin =
         sc.donationOrigin := by
   unfold configuredSchedContext
   split
@@ -714,8 +727,8 @@ theorem configuredSchedContext_binding (budget period : Nat) (badge flags : UInt
 /-- The configured context is linked on no release queue: the configure then
 places it. -/
 @[simp] theorem configuredSchedContext_releaseCoreCode
-    (budget period : Nat) (badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).releaseCoreCode =
+    (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).releaseCoreCode =
       0 := by
   unfold configuredSchedContext
   split
@@ -723,12 +736,12 @@ places it. -/
       (SchedContext.refillUpdate_refillsErased _ budget period timer)).2.2.2.2.2.2.2.2.2.2.1
   · rfl
 
-theorem configuredSchedContext_boundThread (budget period : Nat) (badge flags : UInt64) (timer : Nat)
+theorem configuredSchedContext_boundThread (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).boundThread =
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).boundThread =
       sc.boundThread := by
   unfold SchedContext.boundThread
-  rw [(configuredSchedContext_binding budget period badge flags timer keep sc).1]
+  rw [(configuredSchedContext_binding budget period extraRefills badge flags timer keep sc).1]
 
 
 /-- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: a thread a bind must PLACE.
@@ -890,7 +903,7 @@ call is idempotent and preserves sort order.
 **WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `scId` parameter has type `ValidObjId`. The Lean type system forbids any
 caller from feeding `ObjId.sentinel` into this handler. -/
-def schedContextConfigure (vScId : ValidObjId) (budget period : Nat) (badge flags : UInt64)
+def schedContextConfigure (vScId : ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     : Kernel Unit :=
   fun st =>
     match validateSchedContextParams budget period with
@@ -908,7 +921,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period : Nat) (badge flag
         -- spent; any other takes the budget in one refill released now
         -- (`refill_new`).  The refills hold the budget once either way.
         let updated : SchedContext :=
-          configuredSchedContext budget period badge flags st.machine.timer
+          configuredSchedContext budget period extraRefills badge flags st.machine.timer
             (configureKeepsHead st sc budget period) sc
         if checkAdmission st updated (some vScId.val) then
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
@@ -959,7 +972,7 @@ context, which reads only its budget and period) and a store that changes only
 the object table.  When they pass the configure's state is
 `schedContextConfigurePerform` (`schedContextConfigure_of_admitted`). -/
 @[inline] def schedContextConfigureAdmitted (st : SystemState) (vScId : ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) : Bool :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : Bool :=
   match validateSchedContextParams budget period with
   | .error _ => false
   | .ok () =>
@@ -975,7 +988,7 @@ the context rewritten in its slot (`updateSchedContext`), and, for a bound
 context, its placement on its thread's home core's release queue (WS-ZA ZA6.4)
 and the resume tail. -/
 @[inline] def schedContextConfigurePerform (st : SystemState) (vScId : ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) : SystemState :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => st
   | some sc =>
@@ -983,7 +996,7 @@ and the resume tail. -/
     let keep := configureKeepsHead st sc budget period
     let stCleaned := purgeReplenishment st scIdTyped
     let stStored0 := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
-      (configuredSchedContext budget period badge flags st.machine.timer keep)
+      (configuredSchedContext budget period extraRefills badge flags st.machine.timer keep)
     match sc.boundThread with
     | none => stStored0
     | some boundTid =>
@@ -992,7 +1005,7 @@ and the resume tail. -/
       | some boundTcb =>
         configureResumeBound (markCandidacyGainFor stStored boundTid
             (hasSufficientBudget st boundTcb)) boundTid
-          (configuredSchedContext budget period badge flags st.machine.timer keep sc)
+          (configuredSchedContext budget period extraRefills badge flags st.machine.timer keep sc)
       | none => stStored
 
 /-- **WS-ZA ZA5.2**: the compiled `schedContextConfigurePerform`.  The bound
@@ -1002,7 +1015,7 @@ store writes the object table and the context in their slots instead of
 copying both (the specification's later `match` keeps `st` and `sc` alive
 across it). -/
 @[inline] def schedContextConfigurePerformImpl (st : SystemState) (vScId : ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) : SystemState :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => st
   | some sc =>
@@ -1012,24 +1025,24 @@ across it). -/
       let timer := st.machine.timer
       (purgeReplenishment st scIdTyped).updateSchedContext
         (SchedContextId.ofObjId vScId.val)
-        (configuredSchedContext budget period badge flags timer false)
+        (configuredSchedContext budget period extraRefills badge flags timer false)
     | some boundTid =>
       let keep := configureKeepsHead st sc budget period
       let home := determineTargetCore st boundTid
       let stCleaned := purgeReplenishment st scIdTyped
       let stStored0 := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
-        (configuredSchedContext budget period badge flags st.machine.timer keep)
+        (configuredSchedContext budget period extraRefills badge flags st.machine.timer keep)
       let stStored := stStored0.releasePlace home scIdTyped
       match stStored.getTcb? boundTid with
       | some boundTcb =>
         configureResumeBound (markCandidacyGainFor stStored boundTid
             (hasSufficientBudget st boundTcb)) boundTid
-          (configuredSchedContext budget period badge flags st.machine.timer keep sc)
+          (configuredSchedContext budget period extraRefills badge flags st.machine.timer keep sc)
       | none => stStored
 
 @[csimp] theorem schedContextConfigurePerform_eq_impl :
     @schedContextConfigurePerform = @schedContextConfigurePerformImpl := by
-  funext st vScId budget period badge flags
+  funext st vScId budget period extraRefills badge flags
   unfold schedContextConfigurePerform schedContextConfigurePerformImpl
   cases st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => rfl
@@ -1047,10 +1060,10 @@ across it). -/
 /-- **WS-ZA ZA5.2**: an admitted configure succeeds, and its state is the
 perform's. -/
 theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId)
-    (budget period : Nat) (badge flags : UInt64)
-    (h : schedContextConfigureAdmitted st vScId budget period badge flags = true) :
-    schedContextConfigure vScId budget period badge flags st =
-      .ok ((), schedContextConfigurePerform st vScId budget period badge flags) := by
+    (budget period : Nat) (extraRefills badge flags : UInt64)
+    (h : schedContextConfigureAdmitted st vScId budget period extraRefills badge flags = true) :
+    schedContextConfigure vScId budget period extraRefills badge flags st =
+      .ok ((), schedContextConfigurePerform st vScId budget period extraRefills badge flags) := by
   unfold schedContextConfigureAdmitted at h
   unfold schedContextConfigure schedContextConfigurePerform
   cases hV : validateSchedContextParams budget period with
@@ -1063,11 +1076,11 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       simp only [hV, hS, Bool.and_eq_true, decide_eq_true_eq] at h
       obtain ⟨hAdm, hLeaves⟩ := h
       have hCheck : checkAdmission st
-          (configuredSchedContext budget period badge flags st.machine.timer
+          (configuredSchedContext budget period extraRefills badge flags st.machine.timer
             (configureKeepsHead st sc budget period) sc)
           (some vScId.val) = true := by
         rw [checkAdmission_eq_impl]
-        have hb := configuredSchedContext_budget_period budget period badge flags
+        have hb := configuredSchedContext_budget_period budget period extraRefills badge flags
           st.machine.timer (configureKeepsHead st sc budget period) sc
         simp only [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
           SchedContext.bandwidth, hb.1, hb.2, decide_eq_true_eq]
@@ -1078,7 +1091,7 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       have hA := purgeReplenishment_agree st ⟨vScId.val.toNat⟩
       generalize purgeReplenishment st ⟨vScId.val.toNat⟩ = stC at hW hA
       have hLeavesC : storeLeavesIndexAndTypes stC vScId.val
-          (KernelObject.schedContext (configuredSchedContext budget period badge flags
+          (KernelObject.schedContext (configuredSchedContext budget period extraRefills badge flags
              st.machine.timer (configureKeepsHead st sc budget period) sc)).objectType
             = true := by
         rw [SystemState.releaseOnlyWrite.storeLeavesIndexAndTypes_eq hW hA]
@@ -1091,13 +1104,13 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       | some sc' =>
       rw [hSC] at hSC'
       simp only [Option.map_some, Option.some.injEq] at hSC'
-      have hEq : ∀ k, configuredSchedContext budget period badge flags
+      have hEq : ∀ k, configuredSchedContext budget period extraRefills badge flags
           st.machine.timer k sc'
-          = configuredSchedContext budget period badge flags st.machine.timer k sc := by
+          = configuredSchedContext budget period extraRefills badge flags st.machine.timer k sc := by
         intro k
         rw [← configuredSchedContext_withoutRelease, hSC', configuredSchedContext_withoutRelease]
       rw [SystemState.updateSchedContext_eq_of_some hSC
-        (configuredSchedContext budget period badge flags st.machine.timer _),
+        (configuredSchedContext budget period extraRefills badge flags st.machine.timer _),
         SeLe4n.SchedContextId.toObjId_ofObjId, hEq]
       cases sc.boundThread with
       | none => rfl

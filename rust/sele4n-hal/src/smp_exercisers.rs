@@ -2838,29 +2838,6 @@ const fn cnode_refusal(
     }
 }
 
-/// `trip` refused for a second capability whose address misses the root
-/// CNode's guard: `seL4_FailedLookup`, not the source, `GuardMismatch` (4),
-/// 64 bits left and the root's guard, its width (58) the fifth word, written
-/// to the root task's buffer `msg[4]` while the window's frame is that buffer
-/// ([`RoundTrip::overflow`], as `failed-lookup-guard-mismatch`).
-#[cfg(feature = "hw_target")]
-const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
-    RoundTrip {
-        // The refusal's fifth word lands in the buffer's `msg[4]`; the trip's
-        // own overflow words, or a zero, go back after the window.
-        overflow: match trip.overflow {
-            Some(words) => Some(words),
-            None => Some((FRAME_VADDR, [0, 0, 0])),
-        },
-        returns: refused_with(
-            FAILED_LOOKUP,
-            5,
-            [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-        ),
-        ..trip
-    }
-}
-
 /// A root slot no scenario fills: the empty source a Copy is refused from.
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
@@ -3001,22 +2978,30 @@ const fn yield_to(name: &'static str) -> RoundTrip {
     }
 }
 
-/// The scheduling-context configure (WS-ZA ZA6.4): invoked on core 0's
-/// scheduling control, the context's capability at MR0, then the budget, the
-/// period and the priority-and-domain word (`priority | domain << 8`); the fifth
-/// word (the deadline) is read from the root task's IPC buffer, which the
-/// kernel's model of memory holds as zero, so deadline 0.
+/// The scheduling-context configure (seL4-MCS's
+/// `seL4_SchedControl_ConfigureFlags`): invoked on core 0's scheduling
+/// control, the context `sc_cap` extra capability 0, named in the root task's
+/// IPC buffer at `buffer` (the buffer its thread has set when the round trip
+/// runs); the budget and the period in MR0 and MR1, no extra refills and badge
+/// 0 in MR2 and MR3, and the fifth word (the flags) read from that buffer,
+/// which the kernel's model of memory holds as zero, so not sporadic.
 #[cfg(feature = "hw_target")]
-const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
+const fn configure(
+    name: &'static str,
+    buffer: u64,
+    sc_cap: u64,
+    budget: u64,
+    period: u64,
+) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SCHED_CONTEXT_CONFIGURE,
         cptr: SCHED_CONTROL_CAP,
-        msg_len: 5,
-        msg,
+        msg_len: ONE_EXTRA_CAP | 5,
+        msg: [budget, period, 0, 0],
         primed: None,
         blocks: false,
-        caps_or_badges: None,
+        caps_or_badges: Some((buffer, [sc_cap, 0, 0], None)),
         overflow: None,
         returns: None,
     }
@@ -3859,12 +3844,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "refill-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
         cap_argument(
             "refill-bind-root",
@@ -3905,12 +3888,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "sched-context-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         // The root task's buffer is the window's page since
         // `root-set-ipc-buffer`, so the endpoint, extra capability 0, is named
@@ -4090,27 +4071,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
             ),
         ),
-        // A second capability whose address misses the root CNode's guard,
-        // one per arm that resolves one (seL4's `lookupCap` of an argument,
-        // `seL4_FailedLookup` with the guard-mismatch words): the configure's
-        // scheduling context (the `.overflowOne` route), refused before
-        // anything changes, its fifth word in the buffer as above.  A bound
-        // notification and SetSpace's fault endpoint and CSpace root are
-        // extra capabilities, so their failed lookups are the invocation's
-        // capability fault (seL4's `handleInvocation` after
-        // `lookupExtraCaps`), which `extra_cap_guard_mismatch` reaches in the
-        // fault lane.  A receive's reply capability is not here: its
-        // failed lookup is the receive's capability fault (seL4-MCS
-        // `lookupReply`), which `receive_side_faults` reaches.
-        guard_mismatch_refusal(configure(
-            "configure-sched-context-guard-mismatch",
-            [
-                SCHED_CONTEXT_SLOT,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
-        )),
+        // A scheduling context, a bound notification and SetSpace's fault
+        // endpoint and CSpace root are extra capabilities, so an address that
+        // misses the root CNode's guard is the invocation's capability fault
+        // (seL4's `handleInvocation` after `lookupExtraCaps`), which
+        // `extra_cap_guard_mismatch` reaches in the fault lane.  A receive's
+        // reply capability is not here: its failed lookup is the receive's
+        // capability fault (seL4-MCS `lookupReply`), which
+        // `receive_side_faults` reaches.
         // Argument words at or above `2^63`, each read as a word: a
         // `Page_Map` rights or attributes word (WS-SX SX6.3, D6: seL4's
         // `rightsFromWord` and `vmAttributesFromWord` are total, so the wide
@@ -4247,15 +4215,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             )
         },
         RoundTrip {
-            msg_len: 6,
+            msg_len: ONE_EXTRA_CAP | 6,
             ..configure(
                 "sched-context-configure-long",
-                [
-                    SCHED_CONTEXT_CAP,
-                    SCHED_CONTEXT_BUDGET,
-                    SCHED_CONTEXT_PERIOD,
-                    PARTNER_PRIORITY,
-                ],
+                FRAME_VADDR,
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
             )
         },
         RoundTrip {
@@ -4641,12 +4607,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "postpone-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
         cap_argument(
             "postpone-bind-partner",
@@ -4705,12 +4669,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "long-send-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
         cap_argument(
             "long-send-bind-partner",
@@ -6504,12 +6466,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         receive_path("grant-reply-receive-path-closed", TAIL_IPC_BUFFER, [0; 3]),
         configure(
             "tail-send-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            TAIL_IPC_BUFFER,
+            SCHED_CONTEXT_CAP,
+            REFILL_BUDGET,
+            REFILL_PERIOD,
         ),
         cap_argument(
             "tail-send-bind-partner",
@@ -6572,12 +6532,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "suspend-donated-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "suspend-donated-bind-partner",
@@ -6631,12 +6589,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and the root task unbinds the context.
         configure(
             "donated-reply-caps-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "donated-reply-caps-bind-partner",
@@ -6792,12 +6748,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "chain-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "chain-bind-partner",
@@ -7084,12 +7038,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "third-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "third-bind-partner",
@@ -8644,12 +8596,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "stack-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "stack-bind-partner",
@@ -8751,12 +8701,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         configure(
             "stack-context-configure",
-            [
-                MOVE_SC_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            MOVE_SC_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "stack-context-bind-partner",
@@ -8922,12 +8870,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // and carves the fourth thread again.
         configure(
             "orphan-stack-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "orphan-stack-bind-partner",
@@ -13221,18 +13167,27 @@ fn overflow_cap_faults(which: &str) -> bool {
         FRAME_CAP,
         FRAME_VADDR,
     );
-    let refused_args = [
-        SCHED_CONTEXT_CAP,
-        SCHED_CONTEXT_PERIOD + 1,
-        SCHED_CONTEXT_PERIOD,
-        PARTNER_PRIORITY,
-    ];
-    let admitted_args = [
-        SCHED_CONTEXT_CAP,
-        SCHED_CONTEXT_BUDGET,
-        SCHED_CONTEXT_PERIOD,
-        PARTNER_PRIORITY,
-    ];
+    // Each configure names the context in the window's page, the root task's
+    // buffer once `root_buffer_restored` has set it back; with the buffer
+    // slot empty the kernel reads no extra capability at all.
+    let refused = |name| {
+        configure(
+            name,
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_PERIOD + 1,
+            SCHED_CONTEXT_PERIOD,
+        )
+    };
+    let admitted = |name| {
+        configure(
+            name,
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        )
+    };
     // A budget above its period is seL4-MCS's `seL4_RangeError` with
     // `MIN_BUDGET` and the period (`decodeSchedControl_ConfigureFlags`): the
     // payload carries the period the caller passed, a word read at the entry.
@@ -13248,19 +13203,19 @@ fn overflow_cap_faults(which: &str) -> bool {
     );
     let refused_fills = RoundTrip {
         returns: budget_over_period,
-        ..configure("configure-refused-fills", refused_args)
+        ..refused("configure-refused-fills")
     };
     let refused_held = RoundTrip {
         returns: budget_over_period,
-        ..configure("configure-refused-held", refused_args)
+        ..refused("configure-refused-held")
     };
     // seL4-MCS's bounds (`decodeSchedControl_ConfigureFlags`): a budget or
     // period below `MIN_BUDGET` or above `MAX_PERIOD` answers `MIN_BUDGET` and
     // `MAX_PERIOD`.  A budget of zero; a budget of `2^64 - 1` over a period
-    // past `2^63`; a budget and a period both past `2^63`; and a deadline past
-    // `2^63`, the fifth word, read from the buffer (`invalidArgument 4`).
-    // Each argument word past `2^63` is tested as a word, so none is made a
-    // heap number.
+    // past `2^63`; and a budget and a period both past `2^63`.  Each argument
+    // word past `2^63` is tested as a word, so none is made a heap number.
+    // A flags word past `2^63`, the fifth word, read from the buffer, is
+    // admitted: seL4 reads only its bit 0 (`seL4_SchedContext_Sporadic`).
     let max_period_refusal = refused_with(
         RANGE_ERROR,
         2,
@@ -13275,35 +13230,38 @@ fn overflow_cap_faults(which: &str) -> bool {
         returns: max_period_refusal,
         ..configure(
             "configure-zero-budget-max-period",
-            [SCHED_CONTEXT_CAP, 0, SCHED_CONTEXT_PERIOD, PARTNER_PRIORITY],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            0,
+            SCHED_CONTEXT_PERIOD,
         )
     };
     let wide_period = RoundTrip {
         returns: max_period_refusal,
         ..configure(
             "configure-budget-over-wide-period",
-            [SCHED_CONTEXT_CAP, u64::MAX, WIDE_PERIOD, PARTNER_PRIORITY],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            u64::MAX,
+            WIDE_PERIOD,
         )
     };
     let wide_budget_and_period = RoundTrip {
         returns: max_period_refusal,
         ..configure(
             "configure-wide-budget-and-period",
-            [
-                SCHED_CONTEXT_CAP,
-                WIDE_PERIOD,
-                WIDE_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            WIDE_PERIOD,
+            WIDE_PERIOD,
         )
     };
-    let wide_deadline = RoundTrip {
-        returns: refused_with(INVALID_ARGUMENT, 1, [Some(4), None, None, None]),
+    let wide_flags = RoundTrip {
         overflow: Some((FRAME_VADDR, [WIDE_WORD, 0, 0])),
-        ..configure("configure-wide-deadline", admitted_args)
+        ..admitted("configure-wide-flags")
     };
-    let fills = configure("configure-fills-ipc-buffer", admitted_args);
-    let held = configure("configure-held-ipc-buffer", admitted_args);
+    let fills = admitted("configure-fills-ipc-buffer");
+    let held = admitted("configure-held-ipc-buffer");
     // With the root task's buffer slot empty, a message past the inline words
     // is clamped to them (seL4's `handleInvocation`: `length > n_msgRegisters &&
     // !buffer` gives `n_msgRegisters`): the configure, one word past and two
@@ -13314,12 +13272,12 @@ fn overflow_cap_faults(which: &str) -> bool {
     // on the CNode capability as the short receive does.
     let clamped_one_word = RoundTrip {
         returns: refused(TRUNCATED_MESSAGE),
-        ..configure("configure-one-word-unmapped-buffer", admitted_args)
+        ..admitted("configure-one-word-unmapped-buffer")
     };
     let clamped_long = RoundTrip {
-        msg_len: 6,
+        msg_len: ONE_EXTRA_CAP | 6,
         returns: refused(TRUNCATED_MESSAGE),
-        ..configure("configure-long-unmapped-buffer", admitted_args)
+        ..admitted("configure-long-unmapped-buffer")
     };
     unmeasured(
         &clear_partner_buffer,
@@ -13380,7 +13338,7 @@ fn overflow_cap_faults(which: &str) -> bool {
         && heap_allocations_round_trip(&zero_budget, which) == Some(true)
         && heap_allocations_round_trip(&wide_period, which) == Some(true)
         && heap_allocations_round_trip(&wide_budget_and_period, which) == Some(true)
-        && heap_allocations_round_trip(&wide_deadline, which) == Some(true)
+        && heap_allocations_round_trip(&wide_flags, which) == Some(true)
         && heap_allocations_round_trip(&held, which) == Some(true)
         && queued_overflow_cap_fault(
             &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
@@ -13888,29 +13846,42 @@ const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) ->
     }
 }
 
-/// An invocation by the partner on its own thread capability whose extra
-/// capability at some index misses the root CNode's guard: the syscall, the
-/// message info and the three `caps_or_badges` words, the reading's name and
-/// its handler reply's.
+/// An invocation by the partner whose extra capability at some index misses
+/// the root CNode's guard: the invoked capability (its own thread capability,
+/// or core 0's scheduling control for a configure), the syscall, the message
+/// info and the three `caps_or_badges` words, the reading's name and its
+/// handler reply's.
 #[cfg(feature = "hw_target")]
 struct ExtraCapGuardMismatch {
     name: &'static str,
     reply: &'static str,
+    x0: u64,
     x7: u64,
     x1: u64,
     caps: [u64; 3],
 }
 
 /// The extra capabilities whose addresses miss the root CNode's guard,
-/// measured: a bound notification (`seL4_TCB_BindNotification`'s extra
+/// measured: a configure's scheduling context
+/// (`seL4_SchedControl_ConfigureFlags`'s extra capability 0), a bound
+/// notification (`seL4_TCB_BindNotification`'s extra
 /// capability 0), a SetSpace fault endpoint (`seL4_TCB_SetSpace`'s extra
 /// capability 0) and a SetSpace CSpace root (its extra capability 1, the
 /// fault endpoint before it found).
 #[cfg(feature = "hw_target")]
-const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
+const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 4] = [
+    ExtraCapGuardMismatch {
+        name: "configure-sched-context-guard-mismatch",
+        reply: "configure-sched-context-guard-mismatch-reply",
+        x0: SCHED_CONTROL_CAP,
+        x7: SCHED_CONTEXT_CONFIGURE,
+        x1: ONE_EXTRA_CAP | 5,
+        caps: [SCHED_CONTEXT_SLOT, 0, 0],
+    },
     ExtraCapGuardMismatch {
         name: "bind-notification-guard-mismatch",
         reply: "bind-notification-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_BIND_NOTIFICATION,
         x1: ONE_EXTRA_CAP,
         caps: [NOTIFICATION_SLOT, 0, 0],
@@ -13918,6 +13889,7 @@ const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
     ExtraCapGuardMismatch {
         name: "set-fault-handler-guard-mismatch",
         reply: "set-fault-handler-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_SET_SPACE,
         x1: THREE_EXTRA_CAPS | 2,
         caps: [ENDPOINT_SLOT, CNODE_CAP, VSPACE_CAP],
@@ -13925,6 +13897,7 @@ const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
     ExtraCapGuardMismatch {
         name: "set-space-root-guard-mismatch",
         reply: "set-space-root-guard-mismatch-reply",
+        x0: PARTNER_TCB_CAP,
         x7: TCB_SET_SPACE,
         x1: THREE_EXTRA_CAPS | 2,
         caps: [ENDPOINT_CAP, CNODE_SLOT, VSPACE_CAP],
@@ -13948,7 +13921,7 @@ fn extra_cap_guard_mismatch(
 ) -> bool {
     let name = trip.name;
     let invoke = TrapTrip {
-        x0: PARTNER_TCB_CAP,
+        x0: trip.x0,
         x1: trip.x1,
         x7: trip.x7,
         ..cap_fault(name)
@@ -13995,7 +13968,7 @@ fn extra_cap_guard_mismatch(
     // trapped.
     let restart = FaultRestart {
         pc: FAULT_PC,
-        x0: PARTNER_TCB_CAP,
+        x0: trip.x0,
         x1: trip.x1,
     };
     restarted_as(name, &resumed, restart)
@@ -14616,12 +14589,10 @@ fn fault_entries() -> Option<bool> {
     let donating_setup = [
         configure(
             "fault-donating-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
+            ROOT_IPC_BUFFER,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
         ),
         cap_argument(
             "fault-donating-bind-partner",
@@ -15164,10 +15135,6 @@ const MOVE_SC_ID: u64 = 35;
 const MOVE_SC_SLOT: u64 = 27;
 #[cfg(feature = "hw_target")]
 const MOVE_SC_CAP: u64 = cap_address(MOVE_SC_SLOT);
-/// The moved thread's priority (its context's): below the root task's, so the
-/// root task keeps core 0 whenever both are ready there.
-#[cfg(feature = "hw_target")]
-const MOVE_PRIORITY: u64 = 100;
 /// Read, execute, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const CODE_PERMS: u64 = 0b11101;
@@ -15190,12 +15157,10 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
     ),
     configure(
         "move-configure",
-        [
-            MOVE_SC_CAP,
-            SCHED_CONTEXT_BUDGET,
-            SCHED_CONTEXT_PERIOD,
-            MOVE_PRIORITY,
-        ],
+        ROOT_IPC_BUFFER,
+        MOVE_SC_CAP,
+        SCHED_CONTEXT_BUDGET,
+        SCHED_CONTEXT_PERIOD,
     ),
     retype(
         "move-retype-tcb",

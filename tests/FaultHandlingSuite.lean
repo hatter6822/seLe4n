@@ -1928,9 +1928,9 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
 
 private def scFaulter : SeLe4n.SchedContextId := SchedContextId.ofNat 1135
 
-/-- The faulted thread's own reservation.  Its `priority` and `domain` agree with
-the TCB's, which is what `boundThreadPriorityConsistent` /
-`boundThreadDomainConsistent` require of a `.bound` pair. -/
+/-- The faulted thread's own reservation, bound to it.  It carries no priority or
+domain (a scheduling context holds neither, as in seL4-MCS); those are the
+TCB's. -/
 private def faulterSc : SchedContext :=
   { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some faulter), isActive := true }

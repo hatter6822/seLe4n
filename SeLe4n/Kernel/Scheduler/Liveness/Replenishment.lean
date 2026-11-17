@@ -77,12 +77,18 @@ theorem replenishment_within_period
     eligibleAt - exhaustionTime = period.val := by
   subst hEligible; omega
 
-/-- D5-E: a charge keeps the pending refills within their capacity. -/
+/-- D5-E: a charge keeps the pending refills within the context's refill limit
+(seL4-MCS's `scRefillMax`, set by the configure's `extra_refills`), and so
+within their capacity. -/
 theorem scheduleUsed_bounded (sc : SchedContext) (a t : Nat)
-    (h : sc.refillSize ≤ maxReplenishments)
-    (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < maxReplenishments ∨
+    (h : sc.refillSize ≤ sc.refillLimit)
+    (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < sc.refillLimit ∨
       sc.replenishments ≠ []) :
-    (sc.scheduleUsed a t).refillSize ≤ maxReplenishments :=
-  sc.scheduleUsed_refillSize_le a t h hB
+    (sc.scheduleUsed a t).refillSize ≤ sc.refillLimit ∧
+      (sc.scheduleUsed a t).refillSize ≤ maxReplenishments := by
+  have h1 := sc.scheduleUsed_refillSize_le a t h hB
+  have hL := SchedContext.refillLimit_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+  rw [hL] at h1
+  exact ⟨h1, Nat.le_trans h1 sc.refillLimit_le⟩
 
 end SeLe4n.Kernel.Liveness

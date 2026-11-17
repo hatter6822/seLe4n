@@ -220,9 +220,11 @@ the slots move up one, as one straight-line record update. -/
   (if 0 < sc.budgetRemaining.val then 1 else 0) +
     (if sc.refillHeadPresent then sc.tailUsed + 1 else 0)
 
-/-- WS-ZA ZA6.4: the refills are at capacity (seL4's `refill_full`). -/
+/-- WS-ZA ZA6.4: the refills are at the context's limit (seL4's `refill_full`,
+`refill_size(sc) == sc->scRefillMax`): its `refillLimit`, which a configure sets
+from the `extra_refills` word. -/
 @[inline] def SchedContext.refillFull (sc : SchedContext) : Bool :=
-  decide (maxReplenishments ≤ sc.refillSize)
+  decide (sc.refillLimit ≤ sc.refillSize)
 
 -- ============================================================================
 -- What the edits do to the pending refills
@@ -445,6 +447,34 @@ theorem SchedContext.fields_of_pendingErased {sc sc' : SchedContext}
     f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
     f (·.releaseAt) (fun _ => rfl)⟩
 
+/-- The pending refills' edits leave the context's `refillMax`. -/
+theorem SchedContext.refillMax_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.refillMax = sc.refillMax := by
+  have h1 : sc'.pendingErased.refillMax = sc'.refillMax := rfl
+  have h2 : sc.pendingErased.refillMax = sc.refillMax := rfl
+  rw [← h1, ← h2, h]
+
+/-- The pending refills' edits leave the context's refill limit. -/
+theorem SchedContext.refillLimit_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.refillLimit = sc.refillLimit := by
+  unfold SchedContext.refillLimit; rw [SchedContext.refillMax_of_pendingErased h]
+
+/-- The refill limit as the arithmetic `omega` reads. -/
+@[simp] theorem SchedContext.refillLimit_def (sc : SchedContext) :
+    sc.refillLimit = min (max sc.refillMax 2) 8 := rfl
+
+@[simp] theorem SchedContext.refillPush_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.refillPush a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.refillPush_pendingErased a t)
+
+@[simp] theorem SchedContext.refillSetLast_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.refillSetLast a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.refillSetLast_pendingErased a t)
+
+@[simp] theorem SchedContext.refillPop_refillMax (sc : SchedContext) :
+    sc.refillPop.refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased sc.refillPop_pendingErased
+
 -- ============================================================================
 -- seL4-MCS's `schedule_used`
 -- ============================================================================
@@ -485,12 +515,17 @@ refill released at `t` (`scheduleUsedList`, `scheduleUsed_replenishments`). -/
     · split <;> simp
   · simp
 
+@[simp] theorem SchedContext.scheduleUsed_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.scheduleUsed a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+
 theorem SchedContext.scheduleUsed_replenishments (sc : SchedContext) (a t : Nat) :
     (sc.scheduleUsed a t).replenishments =
       scheduleUsedList sc.refillFull { amount := ⟨a⟩, eligibleAt := t } sc.replenishments := by
   have hNotFull : sc.refillFull = false → sc.replenishments.length < maxReplenishments := by
     intro h
     simp only [SchedContext.refillFull, decide_eq_false_iff_not, SchedContext.refillSize_eq] at h
+    have := sc.refillLimit_le
     omega
   unfold SchedContext.scheduleUsed scheduleUsedList
   by_cases hP : sc.refillHeadPresent = true
@@ -1168,10 +1203,11 @@ theorem SchedContext.refillUpdate_refillTotal (sc : SchedContext) (nb np now : N
 def SchedContext.refillsPositive (sc : SchedContext) : Prop :=
   ∀ r ∈ sc.replenishments, 0 < r.amount.val
 
-/-- WS-ZA ZA6.4: the refills, the head among them, fit the context's storage
-(seL4's `refill_size ≤ refill_max`). -/
+/-- WS-ZA ZA6.4: the refills, the head among them, fit the context's limit
+(seL4's `refill_size ≤ scRefillMax`), and so its storage
+(`SchedContext.refillLimit_le`). -/
 def SchedContext.refillsFit (sc : SchedContext) : Prop :=
-  sc.refillSize ≤ maxReplenishments
+  sc.refillSize ≤ sc.refillLimit
 
 theorem SchedContext.refillsPositive_of_replenishments {sc sc' : SchedContext}
     (h : sc'.replenishments = sc.replenishments) (hp : sc.refillsPositive) : sc'.refillsPositive :=
@@ -1189,18 +1225,21 @@ theorem SchedContext.scheduleUsed_refillsPositive (sc : SchedContext) (a t : Nat
   exact scheduleUsedList_pos _ _ _ hp ha r hr
 
 theorem SchedContext.scheduleUsed_refillSize_le (sc : SchedContext) (a t : Nat)
-    (h : sc.refillSize ≤ maxReplenishments) (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < maxReplenishments ∨
+    (h : sc.refillSize ≤ sc.refillLimit) (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < sc.refillLimit ∨
       sc.replenishments ≠ []) :
-    (sc.scheduleUsed a t).refillSize ≤ maxReplenishments := by
+    (sc.scheduleUsed a t).refillSize ≤ (sc.scheduleUsed a t).refillLimit := by
   have hB' := SchedContext.budgetRemaining_of_pendingErased (sc.scheduleUsed_pendingErased a t)
-  rw [SchedContext.refillSize_eq, hB', sc.scheduleUsed_replenishments]
+  have hL := SchedContext.refillLimit_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+  have hMin := sc.minRefills_le_refillLimit
+  unfold configureMinRefills at hMin
+  rw [hL, SchedContext.refillSize_eq, hB', sc.scheduleUsed_replenishments]
   rw [SchedContext.refillSize_eq] at h hB
   rcases scheduleUsedList_length sc.refillFull { amount := ⟨a⟩, eligibleAt := t } sc.replenishments
     with h1 | ⟨hF, h1⟩ | ⟨h0, h1⟩
   · omega
   · simp only [SchedContext.refillFull, decide_eq_false_iff_not, SchedContext.refillSize_eq] at hF
     omega
-  · rw [h1]; rw [h0] at hB h; simp at hB h ⊢; unfold maxReplenishments; split <;> omega
+  · rw [h1]; rw [h0] at hB h; simp at hB h ⊢; split <;> omega
 
 theorem SchedContext.refillBudgetCheck_refillsPositive (sc : SchedContext) (usage : Nat)
     (hp : sc.refillsPositive) : (sc.refillBudgetCheck usage).refillsPositive := by
@@ -1223,7 +1262,7 @@ theorem SchedContext.refillBudgetCheck_refillsFit (sc : SchedContext) (usage : N
     split
     · apply SchedContext.scheduleUsed_refillSize_le
       · rw [SchedContext.refillSize_eq] at hf ⊢
-        simp only [SchedContext.replenishments_mk_self] at *; split at hf <;> simp <;> omega
+        simp only [SchedContext.replenishments_mk_self, SchedContext.refillLimit_def] at *; split at hf <;> simp <;> omega
       · left; rfl
     · apply SchedContext.scheduleUsed_refillSize_le
       · rw [SchedContext.refillSize_eq] at hf ⊢
@@ -1234,7 +1273,7 @@ theorem SchedContext.refillBudgetCheck_refillsFit (sc : SchedContext) (usage : N
         simp only [SchedContext.replenishments_mk_self]
         by_cases hE : sc.replenishments = []
         · right; left; rw [SchedContext.refillSize_eq]; simp only [SchedContext.replenishments_mk_self, hE]
-          simp [maxReplenishments]; split <;> omega
+          simp; split <;> omega
         · right; right; exact hE
 
 theorem SchedContext.releaseOne_refillsPositive (sc : SchedContext) (now : Nat)
@@ -1984,10 +2023,13 @@ theorem SchedContext.refillUpdateFrom_refillsFit (sc : SchedContext) (ha ht nb n
   by_cases h : ht ≤ now
   · rw [(h1 h).2.2]
     have := hl (ha < nb) { amount := ⟨nb - ha⟩, eligibleAt := now + np }
-    unfold maxReplenishments; split <;> omega
+    have := (sc.refillUpdateFrom ha ht nb np now).minRefills_le_refillLimit
+    unfold configureMinRefills at this; split <;> omega
   · rw [(h2 h).1, (h2 h).2]
     have := hl (ha < nb) { amount := ⟨nb - ha⟩, eligibleAt := ht + np }
-    simp only [List.length_cons, Nat.lt_irrefl, if_false]; unfold maxReplenishments; omega
+    have := (sc.refillUpdateFrom ha ht nb np now).minRefills_le_refillLimit
+    unfold configureMinRefills at this
+    simp only [List.length_cons, Nat.lt_irrefl, if_false]; omega
 
 /-- After `refill_update`, a used-up head means its refill is not yet released,
 and a head holding budget is released by `now`. -/

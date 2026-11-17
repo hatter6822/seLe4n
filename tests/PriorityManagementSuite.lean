@@ -348,7 +348,8 @@ private def pm015_frozenSetMCPriority : IO Unit := do
   | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
 
 -- =============================================================================
--- AK2-B: Option B priority propagation regression tests
+-- AK2-B's propagation, retired by WS-SX SX6.4: bind and configure write no
+-- thread priority or domain
 -- =============================================================================
 
 /-- AK2-B-01 (WS-SX SX6.4): `schedContextBind` writes the two binding links
@@ -396,7 +397,7 @@ private def pm_configureWritesContextAlone : IO Unit := do
     (scObjId, .schedContext sc)
   ]
   let configure (flags : UInt64) :=
-    SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200
+    SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 0
       0xFEEDFACECAFEBEEF flags st
   match configure 1 with
   | .ok ((), st') =>
@@ -1027,7 +1028,7 @@ private def pm_pip_02_configureLeavesServerBoost : IO Unit := do
     [(scObjId, .schedContext sc)]
   expect "PM-PIP-02 precondition: the server holds the waiter's boost"
     (serverBoost st serverTid == some ⟨50⟩)
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 7 1 st with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 0 7 1 st with
   | .error e => throw <| IO.userError s!"PM-PIP-02 configure should succeed, got {repr e}"
   | .ok ((), st1) =>
     expect "PM-PIP-02 the configure leaves the server's boost at 50"
@@ -1131,7 +1132,7 @@ def main : IO Unit := do
   pm013_frozenSetPriority
   pm014_frozenSetPriorityAboveMCP
   pm015_frozenSetMCPriority
-  IO.println "--- AK2-B: Option B priority propagation ---"
+  IO.println "--- bind and configure write no thread priority or domain ---"
   pm_bindKeepsThreadPriorityAndDomain
   pm_configureWritesContextAlone
   IO.println "--- AK2-E: CBS admission ceiling-round ---"
@@ -1145,7 +1146,6 @@ def main : IO Unit := do
   pm_ak8d_01_hardwarePriorityCeilingRejects
   pm_ak8d_02_maxHardwarePriorityAccepts
   pm_ak8d_03_setMCPriorityHardwareCeilingRejects
-  IO.println "--- R5.G: schedContextConfigure domain propagation ---"
   IO.println "--- WS-OD (v0.35.3): a donee runs at its OWN priority ---"
   pm_od_01_prioritySourceClassifier
   pm_od_02_donatedReadsPreferTheTcb

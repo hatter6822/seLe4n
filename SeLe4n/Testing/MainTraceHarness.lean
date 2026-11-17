@@ -1969,7 +1969,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
   let stWithSc := st1.withObjectStored scId scObj
   let flagsProbe (badge flags : UInt64) : String :=
-    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 badge
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 badge
         flags stWithSc with
     | .error err => s!"error {reprStr err}"
     | .ok ((), stC) =>
@@ -1978,6 +1978,18 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       | none => "object not found"
   IO.println s!"[SCO-004] schedContextConfigure badge+sporadic: {flagsProbe 0xFFFFFFFFFFFFFFFF 1}"
   IO.println s!"[SCO-005] schedContextConfigure flags-bit0-only: {flagsProbe 7 2}"
+  -- seL4-MCS's `max_refills`: the context's refill limit is `extra_refills +
+  -- MIN_REFILLS`, and `MIN_REFILLS` for a round-robin context (budget = period).
+  let refillProbe (budget : Nat) (extraRefills : UInt64) : String :=
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ budget 1000
+        extraRefills 0 0 stWithSc with
+    | .error err => s!"error {reprStr err}"
+    | .ok ((), stC) =>
+      match stC.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => s!"refillMax={sc.refillMax} limit={sc.refillLimit}"
+      | none => "object not found"
+  IO.println s!"[SCO-005b] schedContextConfigure extra-refills 3: {refillProbe 100 3}"
+  IO.println s!"[SCO-005c] schedContextConfigure round-robin extra-refills 3: {refillProbe 1000 3}"
   -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
   -- A zero-budget SchedContext would store a replenishment with amount=0,
   -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
@@ -1985,7 +1997,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
 
   -- Z5-AUD-06: schedContextConfigure — success path
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 0 stWithSc with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 0 0 stWithSc with
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -2850,7 +2862,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     }
   let stSetup := st1.withObjectStored scId scObj
       |>.withObjectStored tid.toObjId (.tcb tcb0)
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 0 0 stSetup with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 0 0 0 stSetup with
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
   | .ok ((), stConfigured) =>

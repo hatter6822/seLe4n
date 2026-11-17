@@ -207,8 +207,8 @@ theorem configureResumeBound_runQueueStage (st : SystemState) (t : SeLe4n.Thread
 stores the reconfigured context over the old one, places it on its release
 queue, and runs the candidacy mark and the resume tail. -/
 theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
-    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
-    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : RunQueueStage st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -261,15 +261,15 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
               (SchedContextOps.purgeReplenishment_refined hR _)
               (SystemState.releaseRemoveAnywhere_not_queued st ⟨vScId.val.toNat⟩) c e he
           have hYs : ∀ hI : st.objects.invExt, stStored.getSchedContext? ⟨vScId.val.toNat⟩ =
-              some (SchedContextOps.configuredSchedContext budget period badge flags
+              some (SchedContextOps.configuredSchedContext budget period extraRefills badge flags
                 st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) := fun hI =>
             (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
               (storeObject_objects_eq _ _ _ _ (SchedContextOps.purgeReplenishment_objects_invExt st _ hI) hStore)
           have hWF : ∀ S : SeLe4n.SchedContextId → Prop, ¬ S ⟨vScId.val.toNat⟩ →
               st.refillsSoundExcept S → schedContextWellFormed
-                (SchedContextOps.configuredSchedContext budget period badge flags
+                (SchedContextOps.configuredSchedContext budget period extraRefills badge flags
                   st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) :=
-            fun S hs hS => SchedContextOps.configuredSchedContext_schedContextWellFormed _ _ _ _ _ _
+            fun S hs hS => SchedContextOps.configuredSchedContext_schedContextWellFormed _ _ _ _ _ _ _
               hValid sc (schedContextWellFormed_refillsPositive (hS.1 _ sc hs hSc))
           split at h
           · rename_i hUnb
@@ -1304,9 +1304,9 @@ theorem setThreadCpuAffinityOnCore_runQueueEntryStage {st st' : SystemState}
 move of the context's thread to the control's core (the affinity change's entry
 stage), then the configure there (a stage). -/
 theorem schedControlConfigure_runQueueEntryStage {core : Concurrency.CoreId}
-    {vScId : SeLe4n.ValidObjId} {budget period : Nat} {badge flags : UInt64}
+    {vScId : SeLe4n.ValidObjId} {budget period : Nat} {extraRefills badge flags : UInt64}
     {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags st =
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags st =
       .ok ((), st')) : SystemState.RunQueueEntryStage st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact RunQueueStage.entry (schedContextConfigure_runQueueStage h)

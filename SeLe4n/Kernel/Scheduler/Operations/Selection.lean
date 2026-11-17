@@ -314,9 +314,9 @@ agreement specialised to the thread**; `resolveEffectivePrioDeadline_fst_of_dona
 (WS-OD) was the `.donated` payoff.  With `TCB.priority` the base's one home the
 `.bound` arm reads that field like the other two, so the agreement hypothesis is
 discharged by nothing at all — and a reader who kept the `_of_agree` name would go
-on believing that weakening the bind/configure propagation costs the selector its
-priority ordering.  It does not: what that propagation is for is the configure
-semantics and `boundThreadPriorityConsistent`, stated at `schedContextBind`.
+on believing that the selector's priority ordering rests on a bind/configure
+propagation.  It does not, and since WS-SX SX6.4 there is none: a scheduling
+context carries no priority, so neither the bind nor the configure writes one.
 
 **Deadlines have no counterpart and must not be read as having one** — see the
 `chooseThreadEffectiveOnCore` gate below: bind copies only the priority, so a
@@ -3050,11 +3050,11 @@ thread the SchedContext's *deadline*, with the PIP boost composed on top.  For
 first component *is* `tcb.boostedPriority` at every binding, which
 `resolveEffectivePrioDeadline_fst_eq_boostedPriority` (above) states with no
 hypothesis.  Until that cut it read `sc.priority` at `.bound`, so the bridge
-needed the `boundThreadPriorityConsistent` agreement the bind and configure
-propagations establish — do not read this paragraph as still resting on them.
-**Deadlines have no such one home**: bind copies only the priority, and
-`schedContextConfigure` / `cbsUpdateDeadline` move the SC deadline with the
-TCB field untouched.  A TCB-deadline comparison (the round-6 form) therefore
+needed an agreement the bind and configure propagations established; since
+WS-SX SX6.4 a scheduling context carries no priority or deadline at all.
+**Deadlines were where the two readings parted**: the bind copied only the
+priority, and the configure moved the context's deadline with the TCB field
+untouched.  A TCB-deadline comparison (the round-6 form) therefore
 diverged from the selector exactly for the bound threads CBS scheduling
 exists for: two equal-priority bound threads with TCB deadlines `0` and SC
 deadlines 20 / 10 select the earlier-deadline candidate at any scheduling
@@ -3199,9 +3199,11 @@ an idle core, for the core's own idle thread (whose dispatch the idle fallback
 gates on its domain, and which no scheduling context can bind, so no domain
 write reaches it) and for a current thread that resolves to no TCB.  Under
 `currentThreadInActiveDomainOnCore` it is always `false`; it turns `true` when
-a write moves a running thread's `domain` — a scheduling-context reconfigure
-(`schedContextConfigureBoundPropagate`) is the one such writer — and the
-reschedule flag that write raises is what brings the core to
+a state moves a running thread's `domain` out from under it — no kernel
+transition writes a thread's domain since WS-SX SX6.4 retired the
+scheduling-context reconfigure's propagation (a context carries no domain), but
+the check reads the state rather than that history — and the reschedule flag
+raised with such a state is what brings the core to
 `handleRescheduleSgiOnCore`, which then drops the incumbent. -/
 def currentOutsideActiveDomainOnCore (st : SystemState) (c : CoreId) : Bool :=
   match st.scheduler.currentOnCore c with

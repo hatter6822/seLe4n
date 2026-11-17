@@ -142,6 +142,8 @@
 [SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.rangeError 1 1000)
 [SCO-004] schedContextConfigure badge+sporadic: badge=18446744073709551615 sporadic=true
 [SCO-005] schedContextConfigure flags-bit0-only: badge=7 sporadic=false
+[SCO-005b] schedContextConfigure extra-refills 3: refillMax=5 limit=5
+[SCO-005c] schedContextConfigure round-robin extra-refills 3: refillMax=2 limit=2
 [SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.rangeError 1 2305843009213693951)
 [SCO-006] schedContextConfigure success budget=100 period=1000
 [SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true

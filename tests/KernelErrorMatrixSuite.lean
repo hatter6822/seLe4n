@@ -579,6 +579,34 @@ private def row_rangeError_budget_over_period : KernelErrorRejection :=
       SeLe4n.Kernel.SchedContextOps.validateSchedContextParams
         (budget := 2000) (period := 1000) }
 
+/-- Row: the checked configure decode refuses an extra-refills count above the
+refill array's headroom with seL4-MCS's `seL4_RangeError` bounds
+(`[0, refill_absolute_max - MIN_REFILLS]`). -/
+private def row_rangeError_extra_refills_over_max : KernelErrorRejection :=
+  { syscall       := "decodeSchedContextConfigureArgsChecked"
+    expectedError := (.rangeError 0 SeLe4n.Kernel.configureMaxExtraRefills)
+    scenarioTag   := "SX6.4.rangeError.extra_refills_over_max"
+    scenarioDesc  := "WS-SX SX6.4: extra_refills + MIN_REFILLS above the refill" ++
+                     " capacity is refused as seL4-MCS's decode refuses it"
+    runScenario   := fun _ =>
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked
+        (mkDecoded #[rv 1000, rv 10000,
+          rv (SeLe4n.Kernel.configureMaxExtraRefills.toNat + 1), rv 0, rv 0]
+          (syscallId := SyscallId.schedContextConfigure))) }
+
+/-- Row: the configure decode refuses a message of four words, short of
+seL4-MCS's five (`SchedControl_ConfigureFlags`), as truncated. -/
+private def row_truncatedMessage_configure_four_words : KernelErrorRejection :=
+  { syscall       := "decodeSchedContextConfigureArgsChecked"
+    expectedError := .truncatedMessage
+    scenarioTag   := "SX6.4.truncatedMessage.configure_four_words"
+    scenarioDesc  := "WS-SX SX6.4: a configure message of four words, short of" ++
+                     " seL4's five, is refused as truncated"
+    runScenario   := fun _ =>
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked
+        (mkDecoded #[rv 1000, rv 10000, rv 0, rv 0]
+          (syscallId := SyscallId.schedContextConfigure))) }
+
 /-- Row: `validatePriorityAuthority` rejects priority above
 `maxHardwarePriority` with `.illegalAuthority` (AK8-D / C-M05). -/
 private def row_illegalAuthority_priority_over_hw : KernelErrorRejection :=
@@ -1002,6 +1030,8 @@ def errorMatrix : List KernelErrorRejection :=
     row_alreadyWaiting_enqueue_blocked,
     row_rangeError_budget_zero,
     row_rangeError_budget_over_period,
+    row_rangeError_extra_refills_over_max,
+    row_truncatedMessage_configure_four_words,
     row_illegalAuthority_priority_over_hw,
     row_illegalAuthority_over_mcp,
     row_invalidTypeTag,

@@ -153,8 +153,8 @@ theorem refillSchedContext_determineTargetCore (st : SystemState) (scId0 : SeLe4
       (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) rfl t)
 
 /-- WS-SM SM5.I: `refillSchedContext` preserves every SchedContext's `boundThread`
-projection (`SchedContext.releaseReadyHead` writes the refills alone and
-`cbsUpdateDeadline` the deadline alone, never `boundThread`). -/
+projection (`SchedContext.releaseReadyHead` writes the refills alone, never
+`boundThread`). -/
 theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedContextId)
     (now : Nat) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((refillSchedContext st scId0 now).getSchedContext? scId).map (·.boundThread)

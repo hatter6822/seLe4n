@@ -22,8 +22,8 @@ carried by every kernel transition the way the release queues' agreement is
   holds a pending refill is on a release queue at that refill's time.
 
 Both read a context only through its **refill view** (`SchedContext.refillView`):
-its budget, period, remaining budget, period start, refills and whether a thread
-is bound.  A step that keeps every slot's refill view and every release queue's
+its budget, period, refill limit, remaining budget, period start, refills and
+whether a thread is bound.  A step that keeps every slot's refill view and every release queue's
 entries keeps both (`refillsSound_of_agree`); a step that writes the refills
 proves it of its write.  A third fact keeps the binds placeable:
 `releaseQueuedBound`, every queued context bound, so the context a bind takes
@@ -34,7 +34,8 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- WS-ZA ZA6.4: the fields of a context its refill invariants read — the
-budget, the period, the remaining budget and period start, the refills, and
+budget, the period, the refill limit (`refillMax`), the remaining budget and
+period start, the refills, and
 the thread bound to it — with every other field erased.  WS-ZA ZA6.33: the
 bound thread is kept whole rather than as a bit, because the refill rule
 exempts a context whose holder is suspended (`releaseNoRefillStranded`), so it
@@ -43,6 +44,7 @@ def SchedContext.refillView (sc : SchedContext) : SchedContext :=
   { scId := ⟨0⟩
     budget := sc.budget
     period := sc.period
+    refillMax := sc.refillMax
     budgetRemaining := sc.budgetRemaining
     periodStart := sc.periodStart
     refillHeadPresent := sc.refillHeadPresent

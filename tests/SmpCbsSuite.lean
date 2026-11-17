@@ -1221,7 +1221,7 @@ private def runSchedContextFootprintScenarios : IO Unit := do
     (hasRunQueueWriteLock fpConfigure core1
       && (schedContextConfigureReplenishCores stCbs scId0.toObjId).all
           (fun c => (schedContextWriteSet stCbs scId0.toObjId).contains c))
-  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 0 0 stCbs with
+  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 0 0 0 stCbs with
   | .error e =>
       assertBool s!"C3b-ii: the configure must succeed (got {repr e})" false
   | .ok ((), stC) =>

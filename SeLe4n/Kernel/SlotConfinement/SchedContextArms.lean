@@ -452,9 +452,9 @@ On the bound arm the candidacy mark is a reschedule flag, and the resume tail
 alone.  WS-SX SX6.4: the configure propagates nothing to the thread, so it
 re-walks no inheritance chain. -/
 theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) (st st' : SystemState)
+    (budget period : Nat) (extraRefills badge flags : UInt64) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period badge flags st
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedContextConfigureWriteSet st vScId.val) := by
   unfold SchedContextOps.schedContextConfigure schedContextConfigureWriteSet schedContextWriteSet
@@ -597,22 +597,22 @@ moved state by `schedContextConfigure_confinedToCores`, whose write set read off
 the moved state is the pre-state's or the control's core
 (`schedContextConfigureWriteSet_of_move`). -/
 theorem schedControlConfigure_confinedToCores (core : CoreId) (vScId : SeLe4n.ValidObjId)
-    (budget period : Nat) (badge flags : UInt64) (st st' : SystemState)
+    (budget period : Nat) (extraRefills badge flags : UInt64) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
        st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedControlConfigureWriteSet st core vScId.val) := by
   rcases SchedContextOps.schedControlConfigure_ok_cases hStep with
     h | ⟨sc, t, stM, sgi, hSc, hB, hNe, hM, h⟩
   · exact observableSlotsConfinedToCores_mono
       (schedContextConfigureWriteSet_subset_schedControl st core vScId.val)
-      (schedContextConfigure_confinedToCores vScId _ _ _ _ st st' hObjInv h)
+      (schedContextConfigure_confinedToCores vScId _ _ _ _ _ st st' hObjInv h)
   · rw [(schedControlConfigureWriteSet_of_move hSc hB hNe).1]
     have hInvM := setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hObjInv _ hM
     refine observableSlotsConfinedToCores_mono (fun d hd => ?_)
       (observableSlotsConfinedToCores_trans
         (setThreadCpuAffinityWithMigration_confinedToCores st stM t (some core) core sgi hObjInv hM)
-        (schedContextConfigure_confinedToCores vScId _ _ _ _ stM st' hInvM h))
+        (schedContextConfigure_confinedToCores vScId _ _ _ _ _ stM st' hInvM h))
     rcases List.mem_append.mp hd with hd | hd
     · exact List.mem_append.mpr (.inl hd)
     · rcases schedContextConfigureWriteSet_of_move hObjInv hSc hB hM d hd with e | e

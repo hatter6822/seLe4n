@@ -1470,7 +1470,7 @@ WS-SX SX6.4: the context carries no priority, deadline or domain — those are
 the bound thread's own, as in seL4-MCS — so, like the live configure, this writes
 the context alone and propagates nothing to the bound thread. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
-    (budget period : Nat) (badge flags : UInt64) : FrozenKernel Unit :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : FrozenKernel Unit :=
   fun st =>
     -- Parameter validation: the live operation's own
     -- (`SchedContextOps.validateSchedContextParams`), so the two answer every
@@ -1491,7 +1491,7 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | some t => (frozenLookupTcb st t).any TCB.isRunnable
           | none => false
         let updated : SeLe4n.Kernel.SchedContext :=
-          SeLe4n.Kernel.SchedContextOps.configuredSchedContext budget period badge flags
+          SeLe4n.Kernel.SchedContextOps.configuredSchedContext budget period extraRefills badge flags
              st.machine.timer keep sc
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
@@ -2171,15 +2171,12 @@ def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadI
     Except KernelError FrozenSystemState :=
   frozenWriteTcbRebucketed st targetTid { targetTcb with priority := newPriority }
 
-/-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
-on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).
+/-- D2-L: Frozen-phase setPriority. Validates MCP authority, then writes the
+target thread's own TCB priority (`frozenWriteBasePriority`), at every binding.
 
-**WS-OD (v0.35.3)**: the target is chosen by
-`SchedContextBinding.ownScId?`, the same classifier the live
-`updatePrioritySource` uses, so the frozen mirror and the live operation cannot
-answer "whose priority does this write" differently.  A `.donated` thread's
-priority lands in its own TCB — writing the donor's reservation was an
-authority crossing (`docs/REGISTERED_DEBT.md` §C). -/
+WS-SX SX6.4: a scheduling context carries no priority, so the thread's TCB is
+the priority's only home, as in seL4-MCS's `setPriority`; the frozen mirror and
+the live `updatePrioritySource` write the same field. -/
 def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : FrozenKernel Unit :=
   fun st =>
@@ -2190,8 +2187,7 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
       else match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some targetTcb =>
-        -- Update the priority source (`.bound`: the SchedContext; `.unbound`
-        -- and `.donated`: the TCB).
+        -- Write the thread's own priority (its only home).
         match frozenWriteBasePriority st targetTid targetTcb newPriority with
         | .ok st' => .ok ((), st')
         | .error e => .error e

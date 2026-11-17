@@ -32,6 +32,9 @@ import SeLe4n.Kernel.SchedContext.ReleaseLinks
      Without the re-bucketing the thread would sit in the old priority
      bucket while `tcb.priority` was updated — a latent priority-inversion
      vector that an earlier draft of this work introduced.
+     *Superseded by WS-SX SX6.4:* parts 1 and 2 are retired.  A scheduling
+     context carries no priority, deadline or domain (seL4-MCS's), so the
+     bind and the configure write none of the thread's.
   3. **Consumption sites unchanged:** the four production re-enqueue
      sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
      `switchDomain`) continue to use `tcb.boostedPriority`, eliminating
@@ -356,8 +359,8 @@ noncomputable def schedule : Kernel Unit :=
     | .ok (some tid, st') =>
         match st'.getTcb? tid with
         | some tcb =>
-            -- AF1-G: Domain check uses static `tcb.domain`, safe under
-            -- `boundThreadDomainConsistent` (AE3-A: sc.domain = tcb.domain).
+            -- AF1-G: Domain check uses `tcb.domain`, the domain's one home (a
+            -- scheduling context carries none, as in seL4-MCS).
             if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
               -- WS-H12c: save outgoing thread's register context
               let stSaved := saveOutgoingContext st'
@@ -393,9 +396,9 @@ AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
   misbehaving userspace caller receives an ABI-stable "bad call" signal
   rather than a kernel-internal invariant error.
 - S-L14 `getCurrentPriority` silent fallback: addressed in AE3 by routing
-  through `resolveEffectivePrioDeadline`; the defensive `tcb.priority`
-  fallback is formally unreachable under `boundThreadDomainConsistent` +
-  `schedContextBindingConsistent` (see `Selection.lean:314–322`).
+  through `resolveEffectivePrioDeadline`, which reads the thread's own
+  priority and deadline (a scheduling context carries neither since WS-SX
+  SX6.4), so no fallback remains.
 - S-L15 `oid.toNat→ThreadId` direct cast: prefer `ThreadId.ofObjId`
   which carries sentinel handling. Existing sites are in `Lifecycle/` and
   only dispatch at verified object boundaries; any future decode path
@@ -1439,9 +1442,9 @@ def refillWakeOnCore (st : SystemState) (execCore : CoreId)
 scheduling context, and the only thread whose effective key or budget
 eligibility reads that context is the one it names as bound
 (`schedContextBindingBidirectional`), so the refill can stale a decision only
-through that thread: its deadline moves whenever the refilled budget is positive
-(`cbsUpdateDeadline … true`), and it becomes eligible when the budget comes back
-from zero.  The hook is the one every writer of a key input runs
+through that thread: it becomes eligible when the budget comes back from zero
+(a scheduling context carries no deadline since WS-SX SX6.4, so a refill moves
+no key but the budget's sign).  The hook is the one every writer of a key input runs
 (`markKeyChangeFrom`, read against the pre-refill state): it flags each core
 whose queue holds the thread when its key moved or it gained candidacy, and the
 core it runs on when its key weakened, as seL4's refill path re-sorts the

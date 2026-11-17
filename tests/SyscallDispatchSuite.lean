@@ -1853,6 +1853,8 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
   let scCap  : Capability := { target := .object scObj, rights := AccessRightSet.ofList [.write] }
   let scBCap : Capability := { target := .object scBObj, rights := AccessRightSet.ofList [.write] }
   let cnCap  : Capability := { target := .object cnId, rights := AccessRightSet.ofList [.write] }
+  -- seL4-MCS asks no right of the configure's extra capability, only its type.
+  let scBareCap : Capability := { target := .object scObj, rights := AccessRightSet.ofList [] }
   let st : SystemState :=
     mkState [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
@@ -1865,7 +1867,8 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
       (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, scCap),
              (SeLe4n.Slot.ofNat 1, Capability.schedControlOf 0),
              (SeLe4n.Slot.ofNat 2, Capability.schedControlOf 1),
-             (SeLe4n.Slot.ofNat 3, cnCap), (SeLe4n.Slot.ofNat 4, scBCap)]))
+             (SeLe4n.Slot.ofNat 3, cnCap), (SeLe4n.Slot.ofNat 4, scBCap),
+             (SeLe4n.Slot.ofNat 5, scBareCap)]))
     ]
   -- WS-SX SX6.4: seL4-MCS's `SchedControl_ConfigureFlags` words (budget 100,
   -- period 1000, extra refills, badge, flags); the context is extra capability
@@ -1936,13 +1939,52 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
            && st'.queuedOn bootCoreId tgtTid
      | .error _ => false)
     "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
+  -- The order: the length, the extra capability's lookup, its kind, then the
+  -- words' ranges (seL4-MCS's `decodeSchedControl_ConfigureFlags` checks the
+  -- kind before any word).
+  let decodedRaw (len budget : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 1,
+      msgInfo := { length := len, extraCaps := 1, label := 0 },
+      syscallId := .schedContextConfigure,
+      msgRegs := #[SeLe4n.RegValue.ofNat budget, SeLe4n.RegValue.ofNat 1000,
+        SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 0, SeLe4n.RegValue.ofNat 0],
+      inlineCount := 4, overflowCount := len - 4 }
+  expect "sd063_kind_checked_before_the_words"
+    (match dispatchSyscallAsCurrent (decodedRaw 5 0) caller bootCoreId (cfgSt 3) with
+     | .error (.invalidCapability 1) => true
+     | _ => false)
+    "a zero budget on a CNode capability is InvalidCapability(1): the kind is checked first"
+  expect "sd063_length_checked_before_the_kind"
+    (match dispatchSyscallAsCurrent (decodedRaw 4 100) caller bootCoreId (cfgSt 3) with
+     | .error .truncatedMessage => true
+     | _ => false)
+    "a four-word configure is TruncatedMessage before its extra capability's kind is read"
+  expect "sd063_lookup_checked_before_the_words"
+    (match dispatchSyscallAsCurrent (decodedRaw 5 0) caller bootCoreId
+        (cfgSt (0xFFFF_FFFF_FFFF_FFF0)) with
+     | .error (.failedLookup _ _) => true
+     | _ => false)
+    "an extra capability whose lookup fails is refused before the words' ranges are read"
+  expect "sd063_extra_cap_without_rights_configures"
+    (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 5) with
+     | .ok ((), st') => configured st' scId
+     | .error _ => false)
+    "seL4 asks no right of the configure's extra capability: a rightless one configures"
+  -- seL4-MCS's `max_refills`: the context's refill limit is `extra_refills +
+  -- MIN_REFILLS`.
+  expect "sd063_extra_refills_set_the_refill_limit"
+    (match dispatchSyscallAsCurrent (decodedWith 1 1 3) caller bootCoreId (cfgSt 0) with
+     | .ok ((), st') =>
+         (st'.getSchedContext? scId).any (fun sc => sc.refillMax == 5 && sc.refillLimit == 5)
+     | .error _ => false)
+    "a configure with 3 extra refills gives the context a refill limit of 5"
   expect "sd063_extra_cap_naming_no_sched_context_refused"
     (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 3) with
      | .error (.invalidCapability _) => true
      | _ => false)
     "extra capability 0 naming a CNode capability is not a scheduling context"
   expect "sd063_resolver_answers_the_held_context"
-    (match resolveSchedControlConfigureTarget caller 0 (SeLe4n.CPtr.ofNat 0) 0 st with
+    (match resolveSchedControlConfigureTarget caller 0 (SeLe4n.CPtr.ofNat 0) 5 st with
      | .ok v => decide (v.val = scObj)
      | .error _ => false)
     "the resolver answers the context extra capability 0 names"
@@ -2593,8 +2635,8 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
       "a bind's thread argument is refused invalidCapability 1"
     -- `.schedContextConfigure`'s context (extra capability 0).
     expect s!"argcap_configure_context_{what}"
-      (capNum (resolveSchedControlConfigureTarget caller 0 (cptr w) 0 st) == some 1 &&
-       kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) 0 st some (fun _ => none))
+      (capNum (resolveSchedControlConfigureTarget caller 0 (cptr w) 5 st) == some 1 &&
+       kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) 5 st some (fun _ => none))
          == some 1)
       "a configure's context argument is refused invalidCapability 1 on the spec and K forms"
     -- `.tcbSetSpace`: an empty root is seL4's `IllegalOperation` (seL4-MCS

@@ -1881,22 +1881,22 @@ refusal-carrying form through its continuation form
 register file `regs` through `layout` and then the overflow word `w`
 (`dispatchWithCapChecked_eq_configureBy`). -/
 @[inline] def dispatchConfigureBy (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (w : UInt64) (tid : SeLe4n.ThreadId) (xc : Nat) (cap : Capability) (st : SystemState) :
+    (w : UInt64) (tid : SeLe4n.ThreadId) (xc len : Nat) (cap : Capability) (st : SystemState) :
     Except KernelError (Unit × SystemState) :=
   match cap.target with
   | .schedControl core =>
     match callerExtraCapAddr? st tid xc 0 with
     | none => .error .truncatedMessage
     | some scCPtr =>
-    match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+    match resolveSchedControlConfigureTarget tid core scCPtr len st with
     | .error e => .error e
-    | .ok args =>
-      match resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
+    | .ok vScId =>
+      match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
       | .error e => .error e
-      | .ok vScId =>
+      | .ok args =>
         if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
           SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
-            args.badge args.flags st
+            args.extraRefills args.badge args.flags st
         else .error (.invalidCapability 0)
   | _ => .error (.invalidCapability 0)
 
@@ -1909,14 +1909,17 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
       (layout.msgRegs.map (readReg regs) ++ #[(⟨w⟩ : RegValue)]) 5)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      dispatchConfigureBy layout regs w tid decoded.msgInfo.extraCaps cap st := by
+      dispatchConfigureBy layout regs w tid decoded.msgInfo.extraCaps
+        (truncationMinimum .schedContextConfigure) cap st := by
   have hDec := decodeSchedContextConfigureArgsChecked_eq_by layout regs w decoded hRegs hLen
+  have hRes := fun core scCPtr (s : SystemState) =>
+    resolveSchedControlConfigureTarget_len_of_le tid core scCPtr s hLen
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at h
   subst h
   cases target <;>
-    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchConfigureBy, hDec]
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchConfigureBy, hDec, hRes]
   all_goals rfl
 
 /-- `dispatchConfigureBy`, refusal-carrying: the checks read first
@@ -1924,32 +1927,33 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
 alone (`schedControlConfigurePerform`), the move of a context homed on another
 core among them; a refusal is in the state handed in (`dispatchConfigureByR_eq`). -/
 @[inline] def dispatchConfigureByR (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (w : UInt64) (tid : SeLe4n.ThreadId) (xc : Nat) (cap : Capability) : RefusalCarrying Unit :=
+    (w : UInt64) (tid : SeLe4n.ThreadId) (xc len : Nat) (cap : Capability) :
+    RefusalCarrying Unit :=
   fun st =>
   match cap.target with
   | .schedControl core =>
     callerExtraCapAddrK st tid xc 0 (fun _ => .error (.truncatedMessage, st)) fun scCPtr =>
-    match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
-    | .error e => .error (e, st)
-    | .ok args =>
-      resolveSchedControlConfigureTargetK tid core scCPtr args.extraRefills st
-        (fun e => .error (e, st))
-        (fun vScId =>
+    resolveSchedControlConfigureTargetK tid core scCPtr len st
+      (fun e => .error (e, st))
+      (fun vScId =>
+      match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+      | .error e => .error (e, st)
+      | .ok args =>
         if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
           RefusalCarrying.ofChecked
             (SchedContextOps.schedControlConfigureAdmitted st ⟨core, hCore⟩ vScId args.budget
-              args.period args.badge args.flags)
+              args.period args.extraRefills args.badge args.flags)
             (fun st => SchedContextOps.schedControlConfigurePerform st ⟨core, hCore⟩ vScId
-              args.budget args.period args.badge args.flags)
+              args.budget args.period args.extraRefills args.badge args.flags)
             (SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
-              args.badge args.flags) st
+              args.extraRefills args.badge args.flags) st
         else .error (.invalidCapability 0, st))
   | _ => .error (.invalidCapability 0, st)
 
 theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (w : UInt64) (tid : SeLe4n.ThreadId) (xc : Nat) (cap : Capability) (st : SystemState) :
-    dispatchConfigureByR layout regs w tid xc cap st =
-      RefusalCarrying.ofKernel (dispatchConfigureBy layout regs w tid xc cap) st := by
+    (w : UInt64) (tid : SeLe4n.ThreadId) (xc len : Nat) (cap : Capability) (st : SystemState) :
+    dispatchConfigureByR layout regs w tid xc len cap st =
+      RefusalCarrying.ofKernel (dispatchConfigureBy layout regs w tid xc len cap) st := by
   unfold dispatchConfigureByR
   simp only [RefusalCarrying.ofKernel, dispatchConfigureBy]
   cases cap.target with
@@ -1960,19 +1964,19 @@ theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : Registe
     | none => rfl
     | some scCPtr =>
     dsimp only
-    cases decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+    rw [resolveSchedControlConfigureTargetK_eq]
+    cases resolveSchedControlConfigureTarget tid core scCPtr len st with
     | error e => rfl
-    | ok args =>
+    | ok vScId =>
       dsimp only
-      rw [resolveSchedControlConfigureTargetK_eq]
-      cases resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
+      cases decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
       | error e => rfl
-      | ok vScId =>
+      | ok args =>
         dsimp only
         by_cases hCore : core < SeLe4n.Kernel.Concurrency.numCores
         · simp only [dif_pos hCore]
           rw [RefusalCarrying.ofChecked_eq _ _ _ _ (fun hA =>
-            SchedContextOps.schedControlConfigure_of_admitted _ _ _ _ _ _ _ hA)]
+            SchedContextOps.schedControlConfigure_of_admitted _ _ _ _ _ _ _ _ hA)]
           rfl
         · simp only [dif_neg hCore]
   | _ => rfl
@@ -2000,7 +2004,8 @@ then `dispatchConfigureByR`. -/
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
         else if !syscallTargetAccepted .schedContextConfigure st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight (syscallRequiredRight .schedContextConfigure) then
-          dispatchConfigureByR SeLe4n.arm64DefaultLayout regs w tid xc cap st
+          dispatchConfigureByR SeLe4n.arm64DefaultLayout regs w tid xc
+            (truncationMinimum .schedContextConfigure) cap st
         else .error (syscallMissingRightError .schedContextConfigure, st)
 
 /-- `dispatchSyscallChecked` for a configure whose fifth word is `w`

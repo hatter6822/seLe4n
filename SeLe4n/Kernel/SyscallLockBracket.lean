@@ -632,12 +632,12 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           match callerExtraCapAddr? s tid decoded.msgInfo.extraCaps 0 with
           | none => none
           | some scCPtr =>
+          match resolveSchedControlConfigureTarget tid core scCPtr decoded.msgInfo.length s with
+          | .error _ => none
+          | .ok v =>
           match Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked decoded with
           | .error _ => none
-          | .ok args =>
-              match resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills s with
-              | .error _ => none
-              | .ok v =>
+          | .ok _ =>
                   if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
                     some { SyscallLockOperands.ofObjectTarget tid v.val with
                            controlCore := some ⟨core, hCore⟩ }

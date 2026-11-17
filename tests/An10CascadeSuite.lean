@@ -304,30 +304,33 @@ def an10_d_typed_helper_equivalence : IO Bool := do
 -- ============================================================================
 
 /-- AN10-D.6 — `getCurrentPriority` returns the **thread's own** priority for a
-bound TCB.
+bound TCB, the same answer the thread gives unbound: the binding does not decide
+the priority.
 
-WS-RR (`v0.35.133`): this asserted the SchedContext's, because the base had two
-homes and the resolver chose the reservation's for a `.bound` thread.  With
-`TCB.priority` the base's one home there is nothing to choose.  The AN10-D
-migration this row was written for — typed `getSchedContext?` in place of a raw
-store read — is unaffected: what changed is which field the answer comes from,
-not how the reservation is looked up.
-
-The fixture stays **drifted** (thread 5, reservation 42) because that is the only
-shape on which the two readings part, so the row discriminates rather than merely
-passes. -/
+WS-RR (`v0.35.133`) made `TCB.priority` the base's one home; WS-SX SX6.4 retired
+the reservation's priority altogether (seL4-MCS's scheduling context carries
+none).  The AN10-D migration this row was written for — typed `getSchedContext?`
+in place of a raw store read — is unaffected.  The row discriminates by
+comparing the bound reading against the same thread unbound, on a configured
+reservation (budget 100, period 1000), so a resolver that read anything off the
+reservation would part from the unbound answer. -/
 def an10_d_getCurrentPriority_bound : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 300
   let sc : Kernel.SchedContext :=
-    { mkEmptySchedContext 300 with }
+    { mkEmptySchedContext 300 with
+        budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
+  let unbound : TCB :=
+    { mkTcb 51 with
+        scBindingScCode := 0, scBindingOwnerCode := 0, priority := ⟨5⟩ }
   let tcb : TCB :=
-    { mkTcb 51 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0, priority := ⟨5⟩ }
+    { unbound with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+        scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)) }
-  -- For .bound, getCurrentPriority must read tcb.priority -- the one home --
-  -- and NOT the reservation's 42, which no scheduling decision consults.
-  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨5⟩
+  let get := SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st
+  return get tcb == ⟨5⟩ && get tcb == get unbound
 
 /-- AN10-D.7 — `getCurrentPriority` falls back to the TCB's own
 `priority` for an `.unbound` TCB.  This confirms the unbound branch is

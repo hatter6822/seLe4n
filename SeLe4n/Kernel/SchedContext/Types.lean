@@ -262,6 +262,15 @@ structure SchedContext where
   /-- WS-SX SX6.4: seL4-MCS's `scSporadic`, bit 0
       (`seL4_SchedContext_Sporadic`) of the configure's flags word. -/
   sporadic : Bool := false
+  /-- seL4-MCS's `scRefillMax`: the most refills the context holds, its head
+      among them, read through `SchedContext.refillLimit`.  A configure sets it
+      to `extra_refills + MIN_REFILLS` (`MIN_REFILLS` for a round-robin
+      context, whose budget equals its period), as
+      `invokeSchedControl_ConfigureFlags` hands `refill_new` /
+      `refill_update` their `max_refills`; the refill capacity the object
+      holds, `maxReplenishments`, bounds it.  A context never configured
+      holds the capacity. -/
+  refillMax : Nat := maxReplenishments
   budgetRemaining : Budget
   periodStart : Nat := 0
   /-- WS-ZA ZA5.2: the pending replenishments, read through
@@ -455,6 +464,24 @@ theorem SchedContext.updateConsumed_cases (sc : SchedContext) :
 /-- WS-ZA ZA6.3: how many replenishments the context holds after its first. -/
 def refillTailCapacity : Nat := maxReplenishments - 1
 
+/-- **The most refills the context may hold**, its head among them: its
+`refillMax` (seL4-MCS's `scRefillMax`, which `refill_full` compares
+`refill_size` against), held between `MIN_REFILLS` and the refill capacity the
+object holds.  Every configure writes a `refillMax` in that range (the decode
+refuses `extra_refills` beyond `configureMaxExtraRefills`, and a round-robin
+configure writes `MIN_REFILLS`), so on every configured context this is its
+`refillMax`; the bound makes the capacity a fact of the definition rather than of
+the callers. -/
+@[inline] def SchedContext.refillLimit (sc : SchedContext) : Nat :=
+  min (max sc.refillMax configureMinRefills) maxReplenishments
+
+theorem SchedContext.refillLimit_le (sc : SchedContext) : sc.refillLimit ≤ maxReplenishments :=
+  Nat.min_le_right _ _
+
+theorem SchedContext.minRefills_le_refillLimit (sc : SchedContext) :
+    configureMinRefills ≤ sc.refillLimit := by
+  unfold SchedContext.refillLimit configureMinRefills maxReplenishments; omega
+
 /-- WS-ZA ZA6.3: the `i`-th replenishment after the first (`0`-based), read
 from its slot; past the last slot, an empty entry. -/
 @[inline] def SchedContext.tailSlot (sc : SchedContext) : Nat → ReplenishmentEntry
@@ -499,13 +526,13 @@ leaves the refill fields alone reads the old list (`replenishments_mk_self`). -/
 list. -/
 @[simp] theorem SchedContext.replenishments_mk_self (sc : SchedContext)
     (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
-    (badge : UInt64) (sporadic : Bool)
+    (badge : UInt64) (sporadic : Bool) (refillMax : Nat)
     (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
     (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat)
     (headLinkCell : Option ReplyStackLink) (hHead : headLinkCell = some (.head scId)) :
-    (SchedContext.mk scId budget period badge sporadic budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
+    (SchedContext.mk scId budget period badge sporadic refillMax budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}

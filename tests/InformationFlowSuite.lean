@@ -130,12 +130,15 @@ def test_configuredSchedContext_post_state_shape : IO Bool := do
       isActive := false
       refillHeadPresent := true, refillHeadAmount := 50, refillHeadEligibleAt := 0 }
   let post := SeLe4n.Kernel.SchedContextOps.configuredSchedContext
-                (budget := 100) (period := 1000) (badge := 0xAB) (flags := 3)
-                (timer := 7) (keep := false) scInit
+                (budget := 100) (period := 1000) (extraRefills := 3) (badge := 0xAB)
+                (flags := 3) (timer := 7) (keep := false) scInit
   if post.budget.val ≠ 100 then return false
   if post.period.val ≠ 1000 then return false
   if post.badge ≠ 0xAB then return false
   if !post.sporadic then return false
+  -- seL4-MCS's `max_refills`: `extra_refills + MIN_REFILLS`.
+  if post.refillMax ≠ 5 then return false
+  if post.refillLimit ≠ 5 then return false
   if post.budgetRemaining.val ≠ 100 then return false
   if post.periodStart ≠ 7 then return false
   return !post.refillHeadPresent && post.refillTotal == 100
@@ -156,8 +159,8 @@ def test_schedContext_configure_budget_held_once : IO Bool := do
       isActive := true
       refillHeadPresent := true, refillHeadAmount := 20, refillHeadEligibleAt := 590 }
   let cfg := fun keep => SeLe4n.Kernel.SchedContextOps.configuredSchedContext
-                (budget := 100) (period := 1000) (badge := 0) (flags := 0)
-                (timer := 100) (keep := keep) scInit
+                (budget := 100) (period := 1000) (extraRefills := 0) (badge := 0)
+                (flags := 0) (timer := 100) (keep := keep) scInit
   let kept := cfg true
   let fresh := cfg false
   -- The kept head is the 30 left of the old one, never the whole new budget.

@@ -378,7 +378,7 @@ private def configureBound (pre : SystemState := stBound) : IO SystemState := do
   match scBound.toObjId.toValid? with
   | none => throw (IO.userError "scBound has no valid object id")
   | some vSc =>
-    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc 1 10 0 0 pre with
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc 1 10 0 0 0 pre with
     | .ok (_, post) => pure post
     | .error e =>
       IO.println s!"  FAIL: schedContextConfigure returned {repr e}"

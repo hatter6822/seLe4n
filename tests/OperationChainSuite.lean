@@ -2438,6 +2438,10 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- caller's IPC buffer, a CNode operation's source root): when given, the
     -- buffer's page is mapped and the message info names them (`x1` bits 7..8).
     (extraCapWords : List Nat := [])
+    -- The capability at `capAddr` when it is not an object capability to
+    -- `targetId` (WS-SX SX6.7: the service calls invoke the service-registry
+    -- capability, the endpoint their extra capability 0).
+    (invokedCap : Option Capability := none)
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2484,7 +2488,8 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode (CNode.ofList 4 (
-          (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights } : Capability))
+          (SeLe4n.Slot.ofNat capAddr,
+            invokedCap.getD ({ target := .object targetId, rights := capRights } : Capability))
           :: extraSlots.map (fun (n, c) => (SeLe4n.Slot.ofNat n, c)))))
     |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := bufferMappings })
     |>.withLifecycleObjectType tid.toObjId .tcb
@@ -2741,47 +2746,66 @@ private def chain29SyscallCarve : IO Unit := do
   | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
   | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
 
-/-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery, serviceRevoke. -/
+/-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery and
+serviceRevoke through `syscallEntryChecked`, each invoked on the
+service-registry capability (slot 1) with the endpoint's capability (slot 2) as
+extra capability 0 (WS-SX SX6.7).  Strict: every leg must succeed and leave its
+effect — the register records the registration on the endpoint, the query
+stages its `ServiceId` as the caller's return word, the revoke clears the
+endpoint's record. -/
 private def chain30SyscallServiceOps : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨900⟩
-  -- === serviceRegister (syscallId=11): x2=ifaceId(1), x3=methodCount(3), x4=maxMsg(1024), x5=maxResp(512)
-  -- Note: serviceRegister needs 5 msgRegs (x2-x6), but regCount=32 provides plenty
-  let st0 := buildSyscallState 11 0 epId
-    (AccessRightSet.ofList [.read, .write])
-    [(epId, .endpoint {})]
-    [(2, 1), (3, 3), (4, 1024), (5, 512)]
-    [(epId, .endpoint)]
-  match syscallEntryOnBoot st0 with
-  | .ok (_, stAfter) =>
-    -- Verify service was registered
-    -- Verify dispatch reached the serviceRegister handler
-    -- The endpoint should record the registration (the service registry)
-    let svcFound := (stAfter.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
-    if svcFound then
-      IO.println "operation-chain check passed [chain30: serviceRegister dispatch modified state]"
-    else
-      IO.println "operation-chain check passed [chain30: serviceRegister dispatch reached]"
-    -- === serviceQuery (syscallId=13): dispatch on registered state
-    -- (Uses stAfter from serviceRegister, not a fresh state)
-    match syscallEntryOnBoot
-        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
-    | .ok _ =>
-      IO.println "operation-chain check passed [chain30: serviceQuery dispatch]"
+  let epCap : Capability :=
+    { target := .object epId, rights := AccessRightSet.ofList [.read, .write] }
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨1⟩, methodCount := 3, maxMessageSize := 64,
+      maxResponseSize := 32, requiresGrant := false }
+  -- The caller's state for one service call: the registry capability invoked,
+  -- the endpoint (`ep`, as the previous leg left it) extra capability 0, and
+  -- the interface registered.
+  let stateFor (syscallNum : Nat) (ep : SeLe4n.Model.KernelObject)
+      (args : List (Nat × Nat)) (overflow : List Nat) : IO SystemState := do
+    let st := buildSyscallState syscallNum 1 epId (AccessRightSet.ofList [.read, .write])
+      [(epId, ep)] args [(epId, .endpoint)]
+      (extraSlots := [(2, epCap)]) (overflowWords := overflow) (extraCapWords := [2])
+      (invokedCap := some Capability.serviceRegistry)
+    match SeLe4n.Kernel.registerInterface iface st with
+    | .ok ((), st') => pure st'
+    | .error e => throw <| IO.userError s!"chain30: interface registration failed ({toString e})"
+  let endpointOf (st : SystemState) : IO SeLe4n.Model.KernelObject :=
+    match st.getObject? epId with
+    | some ep@(.endpoint _) => pure ep
+    | _ => throw <| IO.userError "chain30: the endpoint is gone"
+  -- === serviceRegister (11): x2..x5 = interface 1, 3 methods, 64, 32; the
+  -- fifth word (no grant) is the IPC buffer's overflow word 0.
+  let stRegister ← stateFor 11 (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
+  let stAfter ← match syscallEntryOnBoot stRegister with
+    | .ok (_, st) => pure st
+    | .error e => throw <| IO.userError s!"chain30: serviceRegister failed ({toString e})"
+  let reg ← match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stAfter with
+    | .ok (reg, _) => pure reg
+    | .error e =>
+      throw <| IO.userError s!"chain30: serviceRegister left no registration on the endpoint ({toString e})"
+  IO.println "operation-chain check passed [chain30: serviceRegister recorded the registration]"
+  let registered ← endpointOf stAfter
+  -- === serviceQuery (13): no words; the registration's ServiceId is staged as x0.
+  let stQuery ← stateFor 13 registered [] []
+  match syscallEntryOnBoot stQuery with
+  | .ok (_, stQ) =>
+    let x0 := (SeLe4n.Kernel.Architecture.readReturnFrame stQ ⟨500⟩).x0
+    unless x0 == reg.sid.val.toUInt64 do
+      throw <| IO.userError s!"chain30: serviceQuery staged x0 = {x0}, expected the ServiceId {reg.sid.val}"
+    IO.println "operation-chain check passed [chain30: serviceQuery returned the ServiceId]"
+  | .error e => throw <| IO.userError s!"chain30: serviceQuery failed ({toString e})"
+  -- === serviceRevoke (12): no words; the endpoint's record is cleared.
+  let stRevoke ← stateFor 12 registered [] []
+  match syscallEntryOnBoot stRevoke with
+  | .ok (_, stR) =>
+    match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stR with
     | .error _ =>
-      -- Query may fail if state not perfectly set up — dispatch path still exercised
-      IO.println "operation-chain check passed [chain30: serviceQuery dispatch reached]"
-    -- === serviceRevoke (syscallId=12): dispatch on registered state
-    -- (Uses stAfter from serviceRegister, not a fresh state)
-    match syscallEntryOnBoot
-        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
-    | .ok (_, stFinal) =>
-      IO.println "operation-chain check passed [chain30: serviceRevoke dispatch]"
-      let _ := stFinal
-    | .error _ =>
-      IO.println "operation-chain check passed [chain30: serviceRevoke dispatch reached]"
-  | .error err =>
-    -- Even if registration fails, the dispatch path was exercised
-    IO.println s!"operation-chain check passed [chain30: serviceRegister dispatch reached ({toString err})]"
+      IO.println "operation-chain check passed [chain30: serviceRevoke cleared the registration]"
+    | .ok _ => throw <| IO.userError "chain30: the registration survived serviceRevoke"
+  | .error e => throw <| IO.userError s!"chain30: serviceRevoke failed ({toString e})"
 
 /-- T7-C: IPC reply via syscallEntryChecked (syscallId=3).
 Requires a blocked caller to reply to. -/

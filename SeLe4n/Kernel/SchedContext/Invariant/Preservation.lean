@@ -65,11 +65,11 @@ the stored record held the full budget as its remaining budget *and* a refill of
 the full budget one period on — two budgets in the first period after every
 configure. -/
 theorem configuredSchedContext_schedContextWellFormed
-    (budget period : Nat) (badge flags : UInt64) (timer : Nat) (keep : Bool)
+    (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool)
     (hValid : validateSchedContextParams budget period = .ok ())
     (sc : SchedContext) (hPos : sc.refillsPositive) :
     schedContextWellFormed
-      (configuredSchedContext budget period badge flags timer keep sc) := by
+      (configuredSchedContext budget period extraRefills badge flags timer keep sc) := by
   obtain ⟨hP, hB0, hBP⟩ := validateSchedContextParams_implies_wellFormed
     budget period hValid
   unfold configuredSchedContext
@@ -82,8 +82,8 @@ theorem configuredSchedContext_schedContextWellFormed
 and the pending refills of the stored context sum to the new budget, whichever
 of seL4-MCS's two forms the configure takes. -/
 theorem configuredSchedContext_refillTotal
-    (budget period : Nat) (badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period badge flags timer keep sc).refillTotal =
+    (budget period : Nat) (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).refillTotal =
       budget := by
   unfold configuredSchedContext
   split
@@ -98,9 +98,9 @@ rejects failed validation before touching any state. Composing this with
 `scId` is `configuredSchedContext` of the stored context (by construction in
 `schedContextConfigure`), and its well-formedness follows from validation. -/
 theorem schedContextConfigure_success_implies_validated
-    (vScId : ValidObjId) (budget period : Nat) (badge flags : UInt64)
+    (vScId : ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     (st st' : SystemState)
-    (hOk : schedContextConfigure vScId budget period badge flags st = .ok ((), st')) :
+    (hOk : schedContextConfigure vScId budget period extraRefills badge flags st = .ok ((), st')) :
     validateSchedContextParams budget period = .ok () := by
   unfold schedContextConfigure at hOk
   split at hOk
