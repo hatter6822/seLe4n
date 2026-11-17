@@ -210,16 +210,26 @@ theorem CarveRequest.windowAdmissibleW_eq (st : SystemState) (k n count : Nat)
 -- Every check of the window, before any write
 -- ============================================================================
 
-/-- **The first refusal of the window's slots** `i, i + 1, …` (`k` of them):
-each an addressable, empty slot of the destination CNode (`cspaceDstRefusal`),
-as seL4's `decodeUntypedInvocation` asks `ensureEmptySlot` of every slot before
-it reads the untyped (`seL4_DeleteFirst`). -/
-def retypeWindowSlotsRefusal (st : SystemState) (dst : CSpaceAddr) : Nat → Nat → Option KernelError
+/-- **The first refusal of the window's slots** `i, i + 1, …` (`k` of them) in
+the CNode `dstCnode` from slot `dstSlot`: each an addressable, empty slot
+(`cspaceDstRefusal`, read inlined as `untypedRetypeDstRefusal` so no slot
+reference is built), as seL4's `decodeUntypedInvocation` asks `ensureEmptySlot`
+of every slot before it reads the untyped (`seL4_DeleteFirst`). -/
+def retypeWindowSlotsRefusal (st : SystemState) (dstCnode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) :
+    Nat → Nat → Option KernelError
   | _, 0 => none
   | i, k + 1 =>
-    match cspaceDstRefusal (retypeChildSlot dst i) st with
+    match untypedRetypeDstRefusal ⟨dstCnode, SeLe4n.Slot.ofNat (dstSlot.toNat + i)⟩ st with
     | .error e => some e
-    | .ok () => retypeWindowSlotsRefusal st dst (i + 1) k
+    | .ok () => retypeWindowSlotsRefusal st dstCnode dstSlot (i + 1) k
+
+/-- The window's slot refusal is `cspaceDstRefusal` of each slot in turn. -/
+theorem retypeWindowSlotsRefusal_eq (st : SystemState) (dst : CSpaceAddr) (i k : Nat) :
+    retypeWindowSlotsRefusal st dst.cnode dst.slot i (k + 1) =
+      match cspaceDstRefusal (retypeChildSlot dst i) st with
+      | .error e => some e
+      | .ok () => retypeWindowSlotsRefusal st dst.cnode dst.slot (i + 1) k := by
+  rw [retypeWindowSlotsRefusal, untypedRetypeDstRefusal_eq]; rfl
 
 /-- **The first refusal of the window's object ids** `i, i + 1, …` (`k` of
 them), `retypeFromUntyped`'s checks of each: not the untyped's own id, held by
@@ -261,7 +271,7 @@ ASIDs (`asidsOk`) and the kernel heap for all of them (`heapOk`).
       match st.getUntyped? untypedId with
       | none => some .untypedTypeMismatch
       | some ut =>
-        match retypeWindowSlotsRefusal st dst 0 count with
+        match retypeWindowSlotsRefusal st dst.cnode dst.slot 0 count with
         | some e => some e
         | none =>
           if !retypeResetAdmitted st src ut then some .revocationRequired
