@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -202,8 +202,9 @@ page tables, the mapping and the frame capability in the root CNode and in the
 TCB's buffer slot (`TCB.ipcBufferSlot`, seL4's `tcbBuffer`), and every boot
 entry performs the eight writes the boot owes and installs the drained state
 (D15). The exerciser's IPC-buffer untyped and its boot-time invocations are
-deleted. **Standing constraints for new code:** a TCB has three space slots;
-a slot walk, invariant or teardown covers all three. A boot stage that owes
+deleted. **Standing constraints for new code:** a TCB has four space slots
+since SX6.5 (CSpace root, VSpace root, IPC buffer, fault handler); a slot
+walk, invariant or teardown covers all four. A boot stage that owes
 physical writes records them on the intermediate state
 (`recordBootPhysicalWrites`); every hardware entry passes the HAL's performer
 to the boot wrapper, which performs them and installs the drained state, and a
@@ -211,6 +212,25 @@ host or simulation entry passes none and so refuses a boot that owes any. No
 boot stage writes memory any other way. The
 root task's memory is the binding's reservation, never an untyped the root task
 retypes at boot.
+
+SX6 (`v0.37.32`) made capability arguments extra capabilities, as seL4's
+`lookupExtraCaps` reads them: the dispatch prologue looks a message's extra
+capabilities up after the invoked capability and before the decode (a failed
+lookup is `CapFault` at the failing address; the declassifying calls return
+it, so the refusal ledger records it), and CNode Copy/Mint/Move, Untyped_Retype
+(a window of up to 26 objects), IRQControl_Get, PageTable_Map, Page_Map (on the
+frame capability), SetPriority/SetMCPriority, BindNotification,
+SchedContext_Bind, SchedControl_ConfigureFlags, IRQHandler_SetNotification,
+SetSpace (fault endpoint, CSpace and VSpace roots, the handler in a fourth TCB
+slot), SetIPCBuffer, declassify (on the audit-trail capability) and the
+service calls (on a service-registry capability) take theirs from it.
+**Standing constraints for new code:** an invocation's capability argument is
+an extra capability (`callerExtraCapAddr?`, `callerExtraCapAddrK` in compiled
+arms), never a capability address in a message register; a missing one is
+`TruncatedMessage`; an argument's right is asked only where seL4 asks it;
+a retype window's refusals are all read before its first carve, and its
+`count` is bounded by `retypeFanOutLimit`, derived from `maxLockSetSize`, so a
+change to the carve's base locks moves the limit with it.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

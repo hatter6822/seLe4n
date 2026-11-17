@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.31` (`lakefile.toml`) |
+| **Package version** | `0.37.32` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 639,815 across 639 Lean files |
 | **Test LoC** | 90,396 across 70 Lean test suites |
@@ -5939,6 +5939,35 @@ in-place retype's `v0.36.123` refusal order, and its CSpaceAddr family that
 still read the target first, are retired with it.  A `.retype` holder still
 learns whether a child id is occupied (`.childIdCollision`), the
 error-versus-success channel `docs/REGISTERED_DEBT.md` registers.
+
+### 8.6.2 The Retype Window (`v0.37.32`)
+
+seL4's `Untyped_Retype` creates `num_objects` objects of one kind in one call,
+up to the build-time option `CONFIG_RETYPE_FAN_OUT_LIMIT` (WS-SX SX6.3, D9).
+The model configures it at 26 and derives it from the lock ceiling: the carve
+takes six base locks and one write lock per child (`carvedChildLocks`), so
+`retypeFanOutLimit := maxLockSetSize - retypeBaseLocks` (32 − 6), and the two
+cannot drift.  Object `i` of a window takes id `childId + i` and the
+destination slot `offset + i` (`retypeChildId`, `retypeChildSlot`,
+`Lifecycle/Operations/RetypeWindow.lean`).
+
+`untypedRetypeWindowRefusal` reads every refusal from the state the call is
+handed, in `decodeUntypedInvocation`'s order: the window's range (an offset
+past the CNode is `RangeError(0, slots − 1)`, a count of 0 or past the limit
+`RangeError(1, 26)`, a window past the CNode's end `RangeError(1, slots −
+offset)`), every slot empty (`DeleteFirst`), the reset, the region for all
+`n` objects and the device rule; then the model's checks of all `n` ids, the
+store's capacity for `n` more objects, `n` free ASIDs for VSpace roots
+(`freshAsidsFrom`) and the kernel heap for `n` objects with the tables'
+growth (`windowHeapBytes`).  Only then do the carves run
+(`untypedRetypeWindowWrites`).  On tables that hold `invExt`, an admitted
+window runs every carve (`untypedRetypeWindow_admitsEveryCarve`,
+`Lifecycle/Operations/RetypeWindowAdmission.lean`): no refusal follows a
+write.  The compiled loop (`untypedRetypeWindowCode`, `_eq`) allocates
+nothing of its own, so a window of `n` objects builds `n` times one object's
+cells (the QEMU heap gate's `untyped-retype-window-three` and
+`untyped-retype-window-full`, and `untyped-retype-window-over-limit` refused
+at 27).
 
 ### 8.7 TLB Flush Requirements for Production Paths
 All production VSpace operations must use TLB-flushing variants to ensure
