@@ -242,8 +242,10 @@ for driver in drivers:
         # measured the same way.  The gate holds that each run's reading
         # happened once, after the round trip returned a frame or blocked as it
         # should, is a delta, and is zero, except a retype's: a retype that
-        # succeeded names the object it carved (`carved <kind>/<size bits>`),
-        # and its reading must be exactly that object's own cells.  Each
+        # succeeded names the object it carved and how many
+        # (`carved <kind>/<size bits> x<count>`, a retype window carving
+        # `count` objects of one kind), and its reading must be exactly that
+        # many of that object's own cells.  Each
         # reading also prints the bytes of the cells it counted, by size
         # (WS-UC UC1): the sizes must account for exactly the counted cells
         # and the bytes for exactly the sizes, and the bytes are pinned beside
@@ -253,7 +255,7 @@ for driver in drivers:
         for m in unparsed:
             failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
-        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
+        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) x(\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
         # their bytes: the object's record and the cells it is built of, its
@@ -881,7 +883,15 @@ for driver in drivers:
             "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",
             "owned-cnode-slot-delete", "owned-cnode-delete", "owned-cnode-escaped-move",
             "owned-cnode-escaped-delete", "owned-cnode-untyped-reset",
-        }
+            # WS-SX SX6.5: retype windows -- one past the fan-out limit
+            # refused RangeError(1, 26), three endpoints in one retype read as
+            # three endpoints' cells, and a full window of 26; each carved
+            # slot's capability deleted and the untyped reset.
+            "untyped-retype-window-over-limit", "untyped-retype-window-three",
+            "window-three-delete-0", "window-three-delete-1", "window-three-delete-2",
+            "window-three-untyped-reset", "untyped-retype-window-full",
+            "window-full-untyped-reset",
+        } | {f"window-full-delete-{i}" for i in range(26)}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
             failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed ^ expected)} differ from the pinned set")
@@ -892,7 +902,7 @@ for driver in drivers:
             key = (m.group(1), m.group(2) is not None)
             if key in carved:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)}: named two carves in one run")
-            carved[key] = m.group(3)
+            carved[key] = (m.group(3), int(m.group(4)))
         for name in sorted(observed | expected):
             for first in (True, False):
                 which = "first call" if first else "steady state"
@@ -975,11 +985,16 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: the kernel-entry site {site} has no measured reading that entered it")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:5])
-            kind = carved.get((m.group(1), m.group(2) is not None))
+            kind, count = carved.get((m.group(1), m.group(2) is not None), (None, 0))
             if kind is not None and kind not in carve_cells:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
                 continue
-            pin, byte_pin = carve_cells[kind] if kind is not None else (0, 0)
+            if kind is not None and not 1 <= count <= 26:
+                failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {count} objects, not a window of 1 to 26: {m.group(0)!r}")
+                continue
+            # A window of `count` objects carves each with its own cells: the
+            # pin is the object's, times the count.
+            pin, byte_pin = (carve_cells[kind][0] * count, carve_cells[kind][1] * count) if kind is not None else (0, 0)
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
                 continue
@@ -995,9 +1010,9 @@ for driver in drivers:
             elif sum(size * count for size, count in groups) != int(m.group(6)):
                 failures.append(f"heap-allocations-per-syscall: the bytes are not the sizes' total: {m.group(0)!r}")
             elif delta != pin and kind is not None:
-                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {delta}, the object's own cells are {pin}: {m.group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} x{count} read {delta}, the objects' own cells are {pin}: {m.group(0)!r}")
             elif int(m.group(6)) != byte_pin and kind is not None:
-                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {m.group(6)} bytes, the object's own cells' bytes are {byte_pin}: {m.group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} x{count} read {m.group(6)} bytes, the objects' own cells' bytes are {byte_pin}: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
         # WS-UC UC1: every kind the retype's decode accepts has a carve
@@ -1025,7 +1040,7 @@ for driver in drivers:
                 kinds.append(re.sub(r"([A-Z])", lambda c: "-" + c.group(1).lower(), m.group(2)))
             if not kinds:
                 failures.append("heap-allocations-per-syscall: the retype's decode answered no object kind")
-        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
+        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ x\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
         delete_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: deleted (0x[0-9a-f]+/\d+)$")
         events = []
         for line in lines:
@@ -1071,7 +1086,8 @@ for driver in drivers:
         # from another object, moves the frees off it.
         owned_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: owned-cnode-retire: core 0( \(first call\))?: allocated (\d+) freed (\d+)$")
         owned = [m for m in (owned_re.fullmatch(line) for line in lines) if m]
-        owned_cnode = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]
+        owned_carves = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]
+        owned_cnode = [c[0] if c is not None and c[1] == 1 else None for c in owned_carves]
         if owned_cnode[0] is None or owned_cnode[0] != owned_cnode[1] or owned_cnode[0] not in carve_cells:
             failures.append(f"heap-allocations-per-syscall: owned-cnode-retire: the carve named {owned_cnode}, not one pinned CNode kind in both runs")
         elif not owned_cnode[0].startswith("cnode/"):

@@ -2763,22 +2763,36 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
     }
 }
 
-/// **The untyped retype** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3): the
-/// invoked untyped `untyped` and the exerciser's carve `[type, child, root,
-/// slot]` — `type` the object's `KernelObjectType` tag with its size bits
-/// above bit 8, `child` the new object's id, `root` the destination CNode's
-/// capability address and `slot` the slot in it.  Seven words: the type and
-/// the size inline, the node index and depth 0 (the destination is the root
-/// capability itself), then the window's offset (`slot`), its object count
-/// (one) and the model's object id word, read from the caller's IPC buffer at
-/// `buffer` ([`RoundTrip::overflow`]); the root is extra capability 0,
-/// written to the same buffer ([`RoundTrip::caps_or_badges`]).
+/// **The untyped retype** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3) of one
+/// object: [`retype_window`] with an object count of one.
 #[cfg(feature = "hw_target")]
 const fn retype(name: &'static str, untyped: u64, carve: [u64; 4], buffer: u64) -> RoundTrip {
+    retype_window(name, untyped, carve, 1, buffer)
+}
+
+/// **A retype window** (seL4's `seL4_Untyped_Retype`, WS-SX SX6.3): the
+/// invoked untyped `untyped` and the exerciser's carve `[type, child, root,
+/// slot]` — `type` the object's `KernelObjectType` tag with its size bits
+/// above bit 8, `child` the first object's id, `root` the destination CNode's
+/// capability address and `slot` the window's first slot in it — for `count`
+/// objects, object `i` at id `child + i` into slot `slot + i`.  Seven words:
+/// the type and the size inline, the node index and depth 0 (the destination
+/// is the root capability itself), then the window's offset (`slot`), its
+/// object count and the model's object id word, read from the caller's IPC
+/// buffer at `buffer` ([`RoundTrip::overflow`]); the root is extra capability
+/// 0, written to the same buffer ([`RoundTrip::caps_or_badges`]).
+#[cfg(feature = "hw_target")]
+const fn retype_window(
+    name: &'static str,
+    untyped: u64,
+    carve: [u64; 4],
+    count: u64,
+    buffer: u64,
+) -> RoundTrip {
     RoundTrip {
         msg_len: ONE_EXTRA_CAP | 7,
         caps_or_badges: Some((buffer, [carve[2], 0, 0], None)),
-        overflow: Some((buffer, [carve[3], 1, carve[1]])),
+        overflow: Some((buffer, [carve[3], count, carve[1]])),
         ..invocation(
             name,
             UNTYPED_RETYPE,
@@ -2838,17 +2852,20 @@ const fn cnode_refusal(
     }
 }
 
-/// A root slot no scenario fills: the empty source a Copy is refused from.
+/// A root slot no scenario leaves filled (the full retype window fills and
+/// empties it, [`WINDOW_FULL_SCENARIO`]): the empty source a Copy is refused
+/// from.
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
 
-/// The address of a root slot no scenario fills, named as a thread-space
+/// The address of a root slot no scenario leaves filled, named as a thread-space
 /// set's fault endpoint ([`set_space`]) to leave the thread with no fault
 /// handler.
 #[cfg(feature = "hw_target")]
 const NO_FAULT_HANDLER: u64 = cap_address(EMPTY_SOURCE_SLOT);
 
-/// A root slot no scenario fills: the destination of the empty-source Copy.
+/// A root slot no scenario leaves filled: the destination of the empty-source
+/// Copy.
 /// seL4's `decodeCNodeInvocation` refuses an occupied destination before it
 /// looks the source up, and the copy slot still holds the boot audit
 /// capability (`AUDIT_SLOT`) when the refusal scenarios run.
@@ -3194,6 +3211,165 @@ const SCHED_CONTEXT_PERIOD: u64 = 10_000;
 #[cfg(feature = "hw_target")]
 const PARTNER_PRIORITY: u64 = 255;
 
+/// The retype windows' root slots and object ids: the windows start at the
+/// first root slot no boot object holds past the service registry's
+/// (`SERVICE_REGISTRY_SLOT`), and their ids above every other carve's.  A
+/// full window ([`RETYPE_FAN_OUT_LIMIT`] objects) fills root slots 37 to 62,
+/// past the empty slots the refusal and walk scenarios name (48 to 52) and the
+/// read-only audit slot (60, deleted before these scenarios run); each window
+/// deletes every capability it wrote, so it leaves those slots empty again.
+#[cfg(feature = "hw_target")]
+const WINDOW_FIRST_SLOT: u64 = 37;
+#[cfg(feature = "hw_target")]
+const WINDOW_THREE_CHILD_ID: u64 = 40;
+#[cfg(feature = "hw_target")]
+const WINDOW_FULL_CHILD_ID: u64 = 44;
+
+/// seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`: the most objects one retype carves.
+#[cfg(feature = "hw_target")]
+const RETYPE_FAN_OUT_LIMIT: u64 = sele4n_abi::args::RETYPE_FAN_OUT_LIMIT;
+
+/// **A three-object retype window** (WS-SX SX6.5): a window one object past
+/// [`RETYPE_FAN_OUT_LIMIT`] refused `RangeError(1, limit)` (seL4's
+/// `decodeUntypedInvocation` range check on the object count) with nothing
+/// carved, then three endpoints carved into root slots 37 to 39 in one call,
+/// read as three endpoints' cells; each capability deleted, which retires
+/// its endpoint, and the untyped reset, so the next run carves where this one
+/// did.
+#[cfg(feature = "hw_target")]
+const WINDOW_THREE_SCENARIO: [RoundTrip; 6] = [
+    RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(1), Some(RETYPE_FAN_OUT_LIMIT), None, None],
+        ),
+        ..retype_window(
+            "untyped-retype-window-over-limit",
+            UNTYPED_CAP,
+            [
+                ENDPOINT_TYPE,
+                WINDOW_THREE_CHILD_ID,
+                CNODE_CAP,
+                WINDOW_FIRST_SLOT,
+            ],
+            RETYPE_FAN_OUT_LIMIT + 1,
+            ROOT_IPC_BUFFER,
+        )
+    },
+    retype_window(
+        "untyped-retype-window-three",
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            WINDOW_THREE_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        3,
+        ROOT_IPC_BUFFER,
+    ),
+    invocation(
+        "window-three-delete-0",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "window-three-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT + 1, 0, 0, 0],
+    ),
+    invocation(
+        "window-three-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT + 2, 0, 0, 0],
+    ),
+    invocation(
+        "window-three-untyped-reset",
+        UNTYPED_RESET,
+        UNTYPED_CAP,
+        [0; 4],
+    ),
+];
+
+/// The names of the full window's deletes, one per carved slot.
+#[cfg(feature = "hw_target")]
+const WINDOW_FULL_DELETE_NAMES: [&str; RETYPE_FAN_OUT_LIMIT as usize] = [
+    "window-full-delete-0",
+    "window-full-delete-1",
+    "window-full-delete-2",
+    "window-full-delete-3",
+    "window-full-delete-4",
+    "window-full-delete-5",
+    "window-full-delete-6",
+    "window-full-delete-7",
+    "window-full-delete-8",
+    "window-full-delete-9",
+    "window-full-delete-10",
+    "window-full-delete-11",
+    "window-full-delete-12",
+    "window-full-delete-13",
+    "window-full-delete-14",
+    "window-full-delete-15",
+    "window-full-delete-16",
+    "window-full-delete-17",
+    "window-full-delete-18",
+    "window-full-delete-19",
+    "window-full-delete-20",
+    "window-full-delete-21",
+    "window-full-delete-22",
+    "window-full-delete-23",
+    "window-full-delete-24",
+    "window-full-delete-25",
+];
+
+/// **A full retype window** (WS-SX SX6.5): [`RETYPE_FAN_OUT_LIMIT`] endpoints
+/// carved into root slots 37 to 62 in one call, read as that many endpoints'
+/// cells; each capability deleted, which retires its endpoint, and the
+/// untyped reset.
+#[cfg(feature = "hw_target")]
+static WINDOW_FULL_SCENARIO: [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 2] =
+    window_full_scenario();
+
+/// Builds [`WINDOW_FULL_SCENARIO`]: the carve, a delete of each slot it
+/// filled, in order, and the untyped's reset.
+#[cfg(feature = "hw_target")]
+const fn window_full_scenario() -> [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 2] {
+    const RESET: RoundTrip = invocation(
+        "window-full-untyped-reset",
+        UNTYPED_RESET,
+        UNTYPED_CAP,
+        [0; 4],
+    );
+    let mut steps = [RESET; RETYPE_FAN_OUT_LIMIT as usize + 2];
+    steps[0] = retype_window(
+        "untyped-retype-window-full",
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            WINDOW_FULL_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        RETYPE_FAN_OUT_LIMIT,
+        ROOT_IPC_BUFFER,
+    );
+    let mut i = 0;
+    while i < RETYPE_FAN_OUT_LIMIT as usize {
+        steps[i + 1] = invocation(
+            WINDOW_FULL_DELETE_NAMES[i],
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [WINDOW_FIRST_SLOT + i as u64, 0, 0, 0],
+        );
+        i += 1;
+    }
+    steps
+}
+
 /// The capability invocations outside IPC (WS-ZA ZA5.1), each sequence issued
 /// by the root task with the partner suspended, and each leaving the state it
 /// found, so its second run is its steady state:
@@ -3226,9 +3402,13 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   suspended, which leaves it bound (seL4's suspend unbinds nothing), and
 ///   unbound.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
-///   from that buffer), queried and revoked.
+///   from that buffer), queried and revoked;
+/// - a retype window one past the fan-out limit refused, three endpoints
+///   carved in one retype and each deleted ([`WINDOW_THREE_SCENARIO`]), and
+///   a full window of the limit's endpoints carved and each deleted
+///   ([`WINDOW_FULL_SCENARIO`]), each group ending in the untyped's reset.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 11] = [
     &[
         root_copy("cspace-copy", NOTIFICATION_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
         root_move("cspace-move", COPY_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
@@ -9411,6 +9591,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
     &LIFECYCLE_SCENARIO,
+    &WINDOW_THREE_SCENARIO,
+    &WINDOW_FULL_SCENARIO,
 ];
 
 /// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A
@@ -16189,22 +16371,24 @@ fn heap_allocations_round_trip_resuming(
                 regs[0],
                 regs[1]
             );
-            // A retype that succeeded names the object it carved, its kind and
-            // its size bits as the type and size words gave them: the
-            // host-side gate holds the reading to that object's own cells.  It
-            // names the object's id (the third overflow word) and the slot its
+            // A retype that succeeded names the objects it carved, their kind
+            // and size bits as the type and size words gave them, and their
+            // count (the second overflow word): the host-side gate holds the
+            // reading to that many of the object's own cells.  It names the
+            // first object's id (the third overflow word) and the slot its
             // capability went to (the root, extra capability 0, and the
             // window's offset, the first overflow word), and a delete that
             // succeeded names the slot it emptied, so the gate can relate each
             // carved kind to the delete of its capability (WS-UC UC1).
-            if let (UNTYPED_RETYPE, Some((_, [offset, _, child])), Some((_, [root, _, _], _))) =
+            if let (UNTYPED_RETYPE, Some((_, [offset, count, child])), Some((_, [root, _, _], _))) =
                 (trip.syscall, trip.overflow, trip.caps_or_badges)
             {
                 if regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE {
                     crate::kprintln!(
-                        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
+                        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} x{} at {} into {:#x}/{}",
                         carved_kind(trip.msg[0]),
                         trip.msg[1],
+                        count,
                         child,
                         root,
                         offset
