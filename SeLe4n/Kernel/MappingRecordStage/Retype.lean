@@ -109,9 +109,9 @@ theorem untypedRetypeFromCap_mappingStage {tid : SeLe4n.ThreadId}
     {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
     {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
-    MappingStage st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
-  exact untypedRetypeObject_mappingStage hCarve
+    MappingStage st st' :=
+  (untypedRetypeFromCap_chain h).rel (P := fun _ => True) MappingStage.refl
+    (fun h1 h2 => h1.trans h2) (fun _ _ => trivial)
+    (fun _ hC => untypedRetypeObject_mappingStage hC) trivial
 
 end SeLe4n.Kernel

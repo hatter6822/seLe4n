@@ -444,7 +444,7 @@ theorem cspaceRevokeCdtFinalising_crossCoreNonInterference
 /-- WS-ZA ZA5.4 part 14 (**the live `.untypedRetype` arm, cross-core**): the
 carve — every kernel object is made this way — is invisible on every core.  It
 takes the executing core only to read the domain a carved thread starts in, and
-writes the object store and the CDT alone. -/
+writes the object store and the CDT alone, once per object of its window. -/
 theorem untypedRetypeFromCap_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
@@ -453,10 +453,14 @@ theorem untypedRetypeFromCap_crossCoreNonInterference
     (hStep : untypedRetypeFromCap tid executingCore srcAddr root? args? st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
-  obtain ⟨_, _, _, _, _, _, _, -, -, -, -, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid executingCore srcAddr root? args? st st' hStep
-  exact crossCoreNonInterference_ofCores ctx observer (by simp)
-    (untypedRetypeObject_confinedToCores _ _ _ _ st st' hInv hCarve) hShared
+  have hConf : observableSlotsConfinedToCores st st' [] :=
+    (untypedRetypeFromCap_chain hStep).rel (P := fun s => s.objects.invExt)
+      (R := fun a b => observableSlotsConfinedToCores a b [])
+      (fun s => observableSlotsConfinedToCores_refl s [])
+      (fun h1 h2 => observableSlotsConfinedToCores_trans h1 h2)
+      (fun hP hC => untypedRetypeObject_preserves_objects_invExt hP hC)
+      (fun hP hC => untypedRetypeObject_confinedToCores _ _ _ _ _ _ hP hC) hInv
+  exact crossCoreNonInterference_ofCores ctx observer (by simp) hConf hShared
 
 /-- WS-ZA ZA5.4 part 26 (**the live `.tcbSetSpace` arm, through the zombie
 delete, cross-core**): invisible on every core outside

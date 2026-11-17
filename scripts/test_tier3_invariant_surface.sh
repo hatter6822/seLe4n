@@ -4029,11 +4029,12 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def untypedRetypeAdmittedAt [^\n]*\
 run_check "INVARIANT" rg -n -U '^def CarveRequest\.heapAdmitted \(st : SystemState\) \(req : CarveRequest\) : Bool :=\n  decide \(req\.heapBytes st ≤ st\.machine\.kernelHeapFreeBytes\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_heapRefused_stateUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
-# The routed retype arm answers the heap refusal itself, then every other carve
-# refusal from the checks' words (`untypedRetypeRefusalCode`), so the general
-# path (a second decode) never runs for a carve; and a refusal crosses the
-# boundary as scalar words, building no frame or outcome.
-run_check "INVARIANT" rg -n -U '^            \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*              if !CarveRequest\.heapAdmittedW st k n then\n                \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n([ \t]*(--[^\n]*)?\n)*              if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild\.val\n                  k n asid then\n                \.ok \(\(\), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot\n[^\n]*\n              else\n                \.error \(untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                  vChild\.val k n asid, st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# The routed retype arm answers every refusal of the window from the checks'
+# words (`untypedRetypeWindowRefusalCode`) before any write, then makes the
+# carves in place (`untypedRetypeWindowCode`), so the general path (a second
+# decode) never runs for a carve; and a refusal crosses the boundary as scalar
+# words, building no frame or outcome.
+run_check "INVARIANT" rg -n -U '^            \(fun srcCnode srcSlot dstCnode dstSlot =>\n              match retypeChildIdsRefusal vChild\.val 1 \(args\.numObjects - 1\) with\n              \| some e => \.error \(e, st\)\n              \| none =>\n([ \t]*(--[^\n]*)?\n)*              match untypedRetypeWindowRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                  vChild\.val k n args\.numObjects with\n              \| some e => \.error \(e, st\)\n              \| none =>\n                \.ok \(\(\), untypedRetypeWindowCode srcCnode srcSlot dstCnode dstSlot vChild\.val k n\n                  dom core asid 0 args\.numObjects st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeRefusalCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -4079,7 +4080,14 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_tcb($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_endpoint($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) =>\n            match retypeChildIdsRefusal vChild\.val 1 \(args\.numObjects - 1\) with\n            \| some e => \.error e\n            \| none => untypedRetypeWindow src vChild\.val dst req args\.numObjects st' SeLe4n/Kernel/API.lean
+# A window's refusals all precede its writes, in seL4's order (every slot
+# empty, then the region for every object), and every write is a successful
+# single carve (`untypedRetypeWindowWrites_chain`).
+run_check "INVARIANT" rg -n -U 'def untypedRetypeWindow \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    match untypedRetypeWindowRefusal st src dst childId req count with\n    \| some e => \.error e\n    \| none => \.ok \(\(\), untypedRetypeWindowWrites src dst childId req 0 count st\)$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeWindowRefusalWith[^\n]*(\n([ \t][^\n]*)?)*        match retypeWindowSlotsRefusal st dst 0 count with(\n([ \t][^\n]*)?)*          if !retypeResetAdmitted st src ut then some \.revocationRequired\n          else if !ut\.canAllocate \(alignedCarveIndex ty size ut \(retypeFreeIndex st src utCap\)\)\n              \(count \* size\) then' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowWrites_chain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 # WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
 # 0, the CNode the root itself at depth 0 or the slot its index and depth name,
@@ -4088,7 +4096,7 @@ run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*    match lookupSlot callerTcb srcAddr st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveRetypeSlots[^\n]*(\n([ \t][^\n]*)?)*        match retypeDestinationCNode \(SystemState\.lookupSlotCap st rootRef\) index depth st with(\n([ \t][^\n]*)?)*          match retypeWindowRefusal size offset count with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def retypeDestinationCNode[^\n]*(\n([ \t][^\n]*)?)*    if depth = 0 then \.ok rootCap\? else' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def retypeWindowRefusal[^\n]*\n  if size - 1 < offset then some \(\.rangeError 0 \(size - 1\)\.toUInt64\)\n  else if count < 1 ∨ retypeFanOutLimit < count then\n    some \(\.rangeError 1 retypeFanOutLimit\.toUInt64\)\n  else if size - offset < count then some \(\.rangeError 1 \(size - offset\)\.toUInt64\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def retypeWindowRefusal[^\n]*\n  if size - 1 < offset then some \(\.rangeError 0 \(size - 1\)\.toUInt64\)\n  else if count < 1 ∨ Concurrency\.retypeFanOutLimit < count then\n    some \(\.rangeError 1 Concurrency\.retypeFanOutLimit\.toUInt64\)\n  else if size - offset < count then some \(\.rangeError 1 \(size - offset\)\.toUInt64\)$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveRetypeSlotsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'resolveIssuingSlots[^A]|issuingDestinationCapNumber' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4116,7 +4124,7 @@ run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_pageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem of_fresh_inert_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeObject_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact \(\(untypedRetypeFromCap_chain hStep\)\.preserves(\n([ \t][^\n]*)?)*          untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ _ _ hP\.1 hP\.2 hC' SeLe4n/Kernel/API.lean
 # WS-ZA ZA5.4 part 17: the carve keeps the capability bundle.  The carved
 # object lands at an id that held nothing, holding no capability and no link;
 # the install and its .retype edge are a copy's.  A CNode request carries its
@@ -4128,7 +4136,7 @@ run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityI
 run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
 run_check "INVARIANT" rg -n '^  \| cnode \(radixBits : Nat\) \(bounded : radixBits ≤ maxCSpaceDepth\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st. hInv hCarve$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  \(untypedRetypeFromCap_chain h\)\.preserves\n    \(fun hP hC => untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ _ _ _ hP hC\) hInv$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '\bdepthBounded\b' SeLe4n
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean

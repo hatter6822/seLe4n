@@ -2822,8 +2822,8 @@ theorem dispatchWithCapChecked_eq_retypeBy (ctx : LabelingContext)
 
 /-- `dispatchRetypeBy`, refusal-carrying: the root read in continuation form
 (`callerExtraCapAddrK`), the request as words (`carveRequestWordsK`), read by
-the carve's checks and writes (`untypedRetypeAdmittedCode`,
-`untypedRetypePerformCode`), so no request is built, and the slots in
+the window's checks and carves (`untypedRetypeWindowRefusalCode`,
+`untypedRetypeWindowCode`), so no request is built, and the slots in
 continuation form (`resolveRetypeSlotsK`); a refusal is in the state handed in
 (`dispatchRetypeByR_eq`). -/
 @[inline] def dispatchRetypeByR (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -2844,19 +2844,19 @@ continuation form (`resolveRetypeSlotsK`); a refusal is in the state handed in
           resolveRetypeSlotsK tid capAddr rootAddr args.nodeIndex args.nodeDepth args.nodeOffset
             args.numObjects st (fun e => .error (e, st))
             (fun srcCnode srcSlot dstCnode dstSlot =>
-              -- The kernel heap's refusal, answered here in the state the arm
-              -- was handed: the carve's first check.
-              if !CarveRequest.heapAdmittedW st k n then
-                .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) else
-              -- Every other refusal is read from the checks' words as well
-              -- (`untypedRetypeRefusalCode`).
-              if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
-                  k n asid then
-                .ok ((), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
-                  vChild.val k n dom core asid st)
-              else
-                .error (untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
-                  vChild.val k n asid, st)))
+              match retypeChildIdsRefusal vChild.val 1 (args.numObjects - 1) with
+              | some e => .error (e, st)
+              | none =>
+              -- Every refusal of the window, read from the request's words in
+              -- the state the arm was handed, before any write
+              -- (`untypedRetypeWindowRefusalCode`); then the carves, each its
+              -- own compiled admission and writes (`untypedRetypeWindowCode`).
+              match untypedRetypeWindowRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
+                  vChild.val k n args.numObjects with
+              | some e => .error (e, st)
+              | none =>
+                .ok ((), untypedRetypeWindowCode srcCnode srcSlot dstCnode dstSlot vChild.val k n
+                  dom core asid 0 args.numObjects st)))
   | _ => .error (.invalidCapability 0, st)
 
 theorem dispatchRetypeByR_eq (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -2900,26 +2900,24 @@ theorem dispatchRetypeByR_eq (tid : SeLe4n.ThreadId) (executingCore : Concurrenc
           | ok pr =>
             obtain ⟨src, dst⟩ := pr
             dsimp only
-            rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
-              untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req,
-              untypedRetypeRefusalCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
-            have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
-                vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
-                (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
-                untypedRetypePerformAt src dst vChild.val req s := fun s =>
-              untypedRetypePerformCode_eq src dst vChild.val (.ofNat 0) executingCore (.ofNat 0)
-                req s
-            simp only [hP]
-            cases hH : req.heapAdmitted st
-            · simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX,
-                hQ, hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
-            · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-              cases hA : untypedRetypeAdmittedAt st src dst vChild.val req
-              · simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel,
-                  dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX, hQ, hV, hR, hH,
-                  untypedRetypeObject_refused hA]
-              · simp only [↓reduceIte, RefusalCarrying.ofKernel, dispatchRetypeBy,
-                  untypedRetypeFromCap, hT, hD, hX, hQ, hV, hR, untypedRetypeObject_of_admitted hA]
+            cases hI : retypeChildIdsRefusal vChild.val 1 (args.numObjects - 1) with
+            | some e =>
+              simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD, hX,
+                hQ, hV, hR, hI]
+            | none =>
+              dsimp only
+              rw [untypedRetypeWindowRefusalCode_eq_req st ⟨src.cnode, src.slot⟩
+                ⟨dst.cnode, dst.slot⟩ vChild.val (.ofNat 0) executingCore (.ofNat 0) req
+                args.numObjects,
+                untypedRetypeWindowCode_eq ⟨src.cnode, src.slot⟩ ⟨dst.cnode, dst.slot⟩ vChild.val
+                (.ofNat 0) executingCore (.ofNat 0) req 0 args.numObjects st]
+              cases hW : untypedRetypeWindowRefusal st src dst vChild.val req args.numObjects with
+              | some e =>
+                simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD,
+                  hX, hQ, hV, hR, hI, untypedRetypeWindow, hW]
+              | none =>
+                simp [RefusalCarrying.ofKernel, dispatchRetypeBy, untypedRetypeFromCap, hT, hD,
+                  hX, hQ, hV, hR, hI, untypedRetypeWindow, hW]
   | _ => simp [RefusalCarrying.ofKernel, dispatchRetypeBy, hT]
 
 /-- An untyped retype's taint step leaves the state as its arm left it. -/

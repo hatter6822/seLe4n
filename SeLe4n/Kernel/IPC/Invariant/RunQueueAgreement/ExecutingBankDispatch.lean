@@ -291,9 +291,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
         ((bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e'))
-    | (obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ _ h
-       exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
-         (untypedRetypeObject_stepCovers e' hInv hBi hPlaced hU))
+    | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
+         (untypedRetypeFromCap_stepCovers e' hInv hBi hPlaced h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]

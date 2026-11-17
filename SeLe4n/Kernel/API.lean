@@ -3500,12 +3500,6 @@ theorem resolveIssuingSlotsAtK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
           rw [lookupSlotForCNodeOpK_eq]
           cases lookupSlotForCNodeOp false rootCap index depth st <;> rfl
 
-/-- **WS-SX SX6.3 (D9): seL4's fan-out limit** (`CONFIG_RETYPE_FAN_OUT_LIMIT`):
-the most objects one `seL4_Untyped_Retype` creates.  The model's configuration
-is one object per call; a count past it, or of none, is
-`seL4_RangeError (1, limit)`. -/
-def retypeFanOutLimit : Nat := 1
-
 /-- **WS-SX SX6.3 (D9): the destination CNode a retype's root, index and depth
 name** (seL4's `decodeUntypedInvocation`).  At depth 0 the destination is the
 root capability itself; past it, the slot `lookupTargetSlot` (`lookupSlotForCNodeOp`)
@@ -3541,12 +3535,13 @@ def retypeDestinationCNode (rootCap? : Option Capability) (index : SeLe4n.CPtr)
 /-- **WS-SX SX6.3 (D9): the window a retype names in its destination CNode**,
 seL4's checks in its order: an offset past the last slot is
 `seL4_RangeError (0, size - 1)`; a count of none or past the fan-out limit
-`seL4_RangeError (1, retypeFanOutLimit)`; a window past the CNode's end
+(`Concurrency.retypeFanOutLimit`, seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`)
+`seL4_RangeError (1, limit)`; a window past the CNode's end
 `seL4_RangeError (1, size - offset)`. -/
 def retypeWindowRefusal (size offset count : Nat) : Option KernelError :=
   if size - 1 < offset then some (.rangeError 0 (size - 1).toUInt64)
-  else if count < 1 ∨ retypeFanOutLimit < count then
-    some (.rangeError 1 retypeFanOutLimit.toUInt64)
+  else if count < 1 ∨ Concurrency.retypeFanOutLimit < count then
+    some (.rangeError 1 Concurrency.retypeFanOutLimit.toUInt64)
   else if size - offset < count then some (.rangeError 1 (size - offset).toUInt64)
   else none
 
@@ -3777,30 +3772,6 @@ theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreI
     | (right; right; right; right; right; right; right; right; right;
         exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
-/-- WS-ZA ZA6.35: `freshAsidFrom` as a code: `0` for no ASID, `a + 1` for
-ASID `a`, so the scan builds no `some`. -/
-def freshAsidCodeFrom (st : SystemState) : Nat → Nat → Nat
-  | 0, _ => 0
-  | fuel + 1, n =>
-      if n < st.machine.maxASID then
-        if (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone then n + 1
-        else freshAsidCodeFrom st fuel (n + 1)
-      else 0
-
-theorem freshAsidFrom_eq_code (st : SystemState) : ∀ (fuel n : Nat),
-    freshAsidFrom st fuel n =
-      match freshAsidCodeFrom st fuel n with
-      | 0 => none
-      | a + 1 => some (SeLe4n.ASID.ofNat a)
-  | 0, _ => rfl
-  | fuel + 1, n => by
-    unfold freshAsidFrom freshAsidCodeFrom
-    split
-    · split
-      · rfl
-      · exact freshAsidFrom_eq_code st fuel (n + 1)
-    · rfl
-
 /-- WS-ZA ZA6.35: **`carveRequestOf?` as words, handed to a continuation** —
 the kind's code, the size, the thread's domain and core and the root's ASID
 (`CarveRequest.ofWords`), so the decode builds neither a request nor an
@@ -3856,12 +3827,24 @@ theorem carveRequestWordsK_eq {α : Type} (st : SystemState) (executingCore : Co
   case vspaceRoot =>
     simp only [carveRequestWordsK, carveRequestOf?, freshAsid?,
       freshAsidFrom_eq_code st st.machine.maxASID 1]
-    split
-    · split <;> rfl
-    · rfl
+    by_cases hB : sizeBits = 0
+    · simp only [hB, ↓reduceIte]
+      cases freshAsidCodeFrom st st.machine.maxASID 1 <;> rfl
+    · simp only [hB, ↓reduceIte]
   all_goals
     simp only [carveRequestWordsK, carveRequestOf?]
     split <;> rfl
+
+/-- **WS-SX SX6.3 (D9): the ids of a window's objects `i, i + 1, …`** (`k` of
+them), each a raw operand the first object's id names (`retypeChildId`), so each
+passes `validateObjIdArg` as the first does — no reserved idle object — and is
+refused with the same error, at the id's argument word. -/
+def retypeChildIdsRefusal (childId : SeLe4n.ObjId) : Nat → Nat → Option KernelError
+  | _, 0 => none
+  | i, k + 1 =>
+    match validateObjIdArg (retypeChildId childId i) with
+    | .error e => some (e.forArgumentWord UntypedRetypeArgs.childIdWord)
+    | .ok _ => retypeChildIdsRefusal childId (i + 1) k
 
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
 `.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
@@ -3876,8 +3859,11 @@ domain — anything else `.invalidArgument`).  The child id is a raw operand, so
 passes `validateObjIdArg` — no reserved idle object and not the sentinel —
 before anything is resolved.  Then the two slots (`resolveRetypeSlots`: the
 invoked capability's own slot, and the window's first slot in the CNode the root,
-index and depth name, in range), then `untypedRetypeObject`, whose own guards
-decide everything else. -/
+index and depth name, in range and with a count of 1 to seL4's fan-out limit),
+then the ids of the window's other objects, `childId + 1` onward
+(`retypeChildIdsRefusal`, WS-SX SX6.3), then the window (`untypedRetypeWindow`):
+every refusal before any write, then one carve per object, object `i` at id
+`childId + i` into slot `offset + i`. -/
 def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
@@ -3897,7 +3883,10 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.Co
           match resolveRetypeSlots tid srcAddr rootAddr args.nodeIndex args.nodeDepth
               args.nodeOffset args.numObjects st with
           | .error e => .error e
-          | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
+          | .ok (src, dst) =>
+            match retypeChildIdsRefusal vChild.val 1 (args.numObjects - 1) with
+            | some e => .error e
+            | none => untypedRetypeWindow src vChild.val dst req args.numObjects st
 
 /-- A retype whose message is short is `seL4_TruncatedMessage` whether or not it
 names its root: seL4 answers both with the one error. -/
@@ -4008,9 +3997,10 @@ theorem irqHandlerSetNotificationFromCap_ok (tid : SeLe4n.ThreadId)
       exact ⟨args, src, rfl, h⟩
 
 /-- **WS-BP BP7.1**: what a successful `.untypedRetype` consists of — the typed
-decode, the carve request, the validated child id, the resolved slots, and the
-carve.  The case analysis has one owner, so the invariant and non-interference
-proofs read these equations. -/
+decode, the carve request, the validated child id, the resolved slots, the
+window's other ids, and the window (WS-SX SX6.3: every refusal before any
+write, then the carves).  The case analysis has one owner, so the invariant and
+non-interference proofs read these equations. -/
 theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
     (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
@@ -4022,7 +4012,8 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
       validateObjIdArg args.childId = .ok vChild ∧
       resolveRetypeSlots tid srcAddr rootAddr args.nodeIndex args.nodeDepth args.nodeOffset
         args.numObjects st = .ok (src, dst) ∧
-      untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
+      retypeChildIdsRefusal vChild.val 1 (args.numObjects - 1) = none ∧
+      untypedRetypeWindow src vChild.val dst req args.numObjects st = .ok ((), st') := by
   unfold untypedRetypeFromCap at h
   cases hRt : root? with
   | none => rw [hRt] at h; cases h
@@ -4050,21 +4041,36 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
         | ok pr =>
           obtain ⟨src, dst⟩ := pr
           rw [hR] at h
-          exact ⟨args, rootAddr, req, vChild, src, dst, rfl, rfl, hQ, hV, hR, h⟩
+          simp only at h
+          cases hI : retypeChildIdsRefusal vChild.val 1 (args.numObjects - 1) with
+          | some e => rw [hI] at h; cases h
+          | none =>
+            rw [hI] at h
+            exact ⟨args, rootAddr, req, vChild, src, dst, rfl, rfl, hQ, hV, hR, hI, h⟩
+
+/-- **A successful `.untypedRetype` is a chain of successful carves**
+(`untypedRetypeWindow_ok`): every invariant a single carve keeps, the arm keeps
+(`RetypeCarveChain.preserves`, `RetypeCarveChain.rel`). -/
+theorem untypedRetypeFromCap_chain {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
+    {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError UntypedRetypeArgs} {st st' : SystemState}
+    (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    RetypeCarveChain st st' := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hW⟩ :=
+    untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
+  exact (untypedRetypeWindow_ok hW).2
 
 /-- **WS-ZA ZA5.4 part 17: the `.untypedRetype` arm preserves the capability
-bundle** — the carve keeps every conjunct
-(`untypedRetypeObject_preserves_capabilityInvariantBundle`) of whatever request
-the decode built. -/
+bundle** — every carve of the window keeps every conjunct
+(`untypedRetypeObject_preserves_capabilityInvariantBundle`). -/
 theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle (tid : SeLe4n.ThreadId)
     (ec : Concurrency.CoreId) (srcAddr : SeLe4n.CPtr) (root? : Option SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
     (hInv : capabilityInvariantBundle st)
     (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
-  obtain ⟨_, _, req, _, _, _, _, _, _, _, _, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid ec srcAddr root? args? st st' h
-  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st' hInv hCarve
+    capabilityInvariantBundle st' :=
+  (untypedRetypeFromCap_chain h).preserves
+    (fun hP hC => untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ _ _ _ hP hC) hInv
 
 /-- WS-ZA ZA5.4: **`.untypedReset` on the invoked slot.**  The free index is in
 the invoked capability, so the arm resolves the capability address to its slot
@@ -5457,8 +5463,11 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ _ st st' hStep
-      exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
+      exact ((untypedRetypeFromCap_chain hStep).preserves
+        (P := fun s => s.objects.invExt ∧ ipcInvariantFull s)
+        (fun hP hC => ⟨untypedRetypeObject_preserves_objects_invExt hP.1 hC,
+          untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ _ _ hP.1 hP.2 hC⟩)
+        ⟨hObjInv, hInv⟩).2
     all_goals try cases hStep
   case untypedReset =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

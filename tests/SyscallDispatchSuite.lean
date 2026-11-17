@@ -2722,10 +2722,12 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     "a retype's destination is the window's offset in the CNode the root names"
   expect "retype_window_refusals"
     ((match retypeAt 3 0 16 1 with | .error (.rangeError 0 15) => true | _ => false) &&
-     (match retypeAt 3 0 5 0 with | .error (.rangeError 1 1) => true | _ => false) &&
-     (match retypeAt 3 0 5 2 with | .error (.rangeError 1 1) => true | _ => false) &&
+     (match retypeAt 3 0 5 0 with | .error (.rangeError 1 26) => true | _ => false) &&
+     (match retypeAt 3 0 5 27 with | .error (.rangeError 1 26) => true | _ => false) &&
+     (match retypeAt 3 0 5 12 with | .error (.rangeError 1 11) => true | _ => false) &&
+     (match retypeAt 3 0 5 11 with | .ok _ => true | .error _ => false) &&
      retypeAtK 3 0 16 1 == some (some (.rangeError 0 15)))
-    "an offset past the CNode is rangeError 0 and a count outside the fan-out rangeError 1"
+    "an offset past the CNode is rangeError 0, a count outside the fan-out of 26 rangeError 1, and a window past the CNode rangeError 1 to its end"
   -- A handler issue's destination (WS-SX SX6.3, D10): the root CNode is extra
   -- capability 0 and the slot its index and depth (seL4's `lookupTargetSlot`):
   -- the CNode capability at slot 3 names slot 5 by index 5 at depth 4; a root

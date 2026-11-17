@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
 import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
 import SeLe4n.Kernel.Lifecycle.Operations.RetypePerform
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeWindow
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
 /-!
@@ -26,6 +27,7 @@ A thin re-export hub over the lifecycle child modules:
 | `Operations.RetypeWrappers`                  | A released ASID's shootdown round, and the carve-scrub discharge |
 | `Operations.CarvedObjectErase`               | The store's erase of a carved object (`retireCarvedObject`), which the final-delete retire runs |
 | `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset (seL4's `resetUntypedCap`), the carve's dispatch-level entry, and the space-slot write |
+| `Operations.RetypeWindow`                    | A retype of `count` objects: every check before any write, then one carve per object |
 
 **WS-ZA ZA5.4 part 14**: there is no in-place retype.  Every kernel object is
 carved from an untyped at its free index (`untypedRetypeObject`), so the

@@ -45,8 +45,10 @@ pub struct UntypedRetypeArgs {
 }
 
 /// seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT` in the model's configuration: the
-/// most objects one retype creates.  Lean: `retypeFanOutLimit`.
-pub const RETYPE_FAN_OUT_LIMIT: u64 = 1;
+/// most objects one retype creates — 26, so the carve's lock footprint (six
+/// base locks and one per object) fills the 32-lock ceiling exactly.  Lean:
+/// `Concurrency.retypeFanOutLimit`.
+pub const RETYPE_FAN_OUT_LIMIT: u64 = 26;
 
 /// The smallest child untyped a carve makes, as a power of two: one page.
 /// Lean: `minUntypedSizeBits`.

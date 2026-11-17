@@ -27,13 +27,15 @@ pub struct RetypeDestination {
 /// `seL4_Untyped_Retype`.
 ///
 /// Lean: the `.untypedRetype` arm (API.lean, `untypedRetypeFromCap`), WS-BP
-/// BP7.1.  Requires the `Retype` right on `untyped_cap`.  The kernel places the
-/// new object at the untyped's watermark, stores it as object `child_id` —
-/// which must hold no object yet — and installs a capability to it in the
-/// window `dst` names (WS-SX SX6.3, D9): `num_objects` slots from
-/// `dst.node_offset` in the destination CNode, each empty, the count in
-/// `1..=`[`RETYPE_FAN_OUT_LIMIT`] and the window inside the CNode (seL4's
-/// `RangeError` otherwise).  No right is required of `dst.root`.  As in seL4
+/// BP7.1.  Requires the `Retype` right on `untyped_cap`.  The kernel carves
+/// `num_objects` objects of one kind, one after another from the untyped's
+/// watermark, stores object `i` as object `child_id + i` — each of which must
+/// hold no object yet — and installs a capability to object `i` in slot
+/// `dst.node_offset + i` of the window `dst` names (WS-SX SX6.3, D9): every
+/// slot empty (`TargetSlotOccupied` otherwise, before anything is written),
+/// the count in `1..=`[`RETYPE_FAN_OUT_LIMIT`] and the window inside the CNode
+/// (seL4's `RangeError` otherwise).  Every check precedes every write, so a
+/// refused retype creates nothing.  No right is required of `dst.root`.  As in seL4
 /// the message is the six words `type`, `size_bits`, `node_index`,
 /// `node_depth`, `node_offset`, `num_objects`, then the model's `child_id`;
 /// words 4 to 6 go in the IPC buffer's message registers 4 to 6 and `dst.root`
@@ -47,7 +49,8 @@ pub struct RetypeDestination {
 /// of `2^size_bits` bytes, `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
 /// `MAX_UNTYPED_SIZE_BITS`], handed back with read, write and retype.
 /// [`TypeTag::VSpaceRoot`]: an address space on one zeroed RAM page under an
-/// ASID the kernel picks (`ResourceExhausted` when every ASID is taken).
+/// ASID the kernel picks, the least free one for each root in turn
+/// (`ResourceExhausted` when fewer ASIDs are free than roots requested).
 /// [`TypeTag::PageTable`]: one zeroed table page.  The other kernel objects —
 /// [`TypeTag::Tcb`], [`TypeTag::Endpoint`], [`TypeTag::Notification`],
 /// [`TypeTag::CNode`], [`TypeTag::Reply`] and [`TypeTag::SchedContext`] — are

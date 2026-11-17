@@ -689,6 +689,21 @@ theorem queuedOn_of_keyInputsOf {pre post : SystemState} {t : SeLe4n.ThreadId}
     | none => cases o <;> simp_all [keyInputsOf]
     | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
 
+/-- **Every thread's bound scheduling context is one the store holds** — the
+half of `schedContextBindingBidirectional` the coverage of a fresh slot reads:
+a slot the store did not hold is no thread's scheduling context.  Unlike the
+whole bidirectional binding it rides each carve's key frame
+(`untypedRetypeObject_preserves_boundSchedContextsPresent`), so it holds at
+every carve of a window. -/
+def boundSchedContextsPresent (st : SystemState) : Prop :=
+  ∀ (t : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+    st.objects[t.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding.scId? = some scId →
+    ∃ sc : SeLe4n.Kernel.SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc)
+
+theorem schedContextBindingBidirectional.boundSchedContextsPresent {st : SystemState}
+    (h : schedContextBindingBidirectional st) : boundSchedContextsPresent st :=
+  fun t tcb scId hT hB => let ⟨sc, hS, _⟩ := h t tcb scId hT hB; ⟨sc, hS⟩
+
 /-- **A step that fills one empty slot with an object queued nowhere covers**:
 no thread placed before it lives at the slot (each has a TCB) or reads its
 deadline there (the binding reciprocity names a scheduling context stored
@@ -699,7 +714,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     (hAbs : pre.objects[X]? = none)
     (hUnq : ∀ c (t : SeLe4n.ThreadId), t.toObjId = X → post.queuedOn c t = false)
     (hSched : post.scheduler = pre.scheduler)
-    (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre)
+    (hBi : boundSchedContextsPresent pre) (hPlaced : placedThreadsHaveTcbs pre)
     (hRes : post.machine.residentCode = pre.machine.residentCode)
     (hBk : post.machine.coreRegs = pre.machine.coreRegs) :
     stepCovers e pre post := by
@@ -707,7 +722,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     intro t ht
     refine schedKeyView_eq_of_slotUnread hFrame ht ?_
     intro tcb hT sc hsc hEq
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    obtain ⟨sco, hSo⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched],
@@ -720,7 +735,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
     intro tcb hT sc hsc hEq
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    obtain ⟨sco, hSo⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   · rw [hSched] at ht
     refine schedKeyNotWeakened_of_eq (hKeyNe t (fun hEq => ?_)).symm
@@ -772,7 +787,7 @@ child's slot was empty and the object stored there is queued nowhere — a carve
 TCB is inactive with empty links — and no other key input moved. -/
 theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hBi : boundSchedContextsPresent st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -780,6 +795,101 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
   exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced
     (untypedRetypeObject_residentCode hInv h) (untypedRetypeObject_coreRegs hInv h), hInv'⟩
+
+/-- A carve keeps every placed thread's TCB: it moves no scheduler state, and
+every slot but the fresh child's keeps its key inputs. -/
+theorem untypedRetypeObject_preserves_placedThreadsHaveTcbs {src dst : CSpaceAddr}
+    {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hP : placedThreadsHaveTcbs st)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    placedThreadsHaveTcbs st' := by
+  obtain ⟨hFrame, hAbs, -, hSched, -⟩ :=
+    untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
+  intro c t ht
+  rw [hSched] at ht
+  have hT := hP c t ht
+  have hne : t.toObjId ≠ childId := by
+    intro hEq
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+    have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+    rw [hEq, hAbs] at this; cases this
+  have hk := congrArg Option.isSome (getTcb?_keyFields_of_keyInputsOf (hFrame _ hne))
+  simp only [Option.isSome_map] at hk
+  rw [hk]; exact hT
+
+/-- A carve keeps every thread's bound scheduling context in the store: a
+carved thread is unbound, and every other slot keeps its key inputs — a
+thread's binding, and whether a slot holds a scheduling context. -/
+theorem untypedRetypeObject_preserves_boundSchedContextsPresent {src dst : CSpaceAddr}
+    {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hP : boundSchedContextsPresent st)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    boundSchedContextsPresent st' := by
+  obtain ⟨hFrame, hAbs, -, -, -⟩ :=
+    untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
+  intro t tcb scId hT hB
+  by_cases hC : t.toObjId = childId
+  · exfalso
+    obtain ⟨_, _, _, _, _, _, _, _, hWL, _⟩ :=
+      untypedRetypeObject_ok_carved src dst childId req st st' hInv h
+    rw [← hC, hT] at hWL
+    cases req with
+    | tcb dom core =>
+      obtain ⟨tcb', hT', -, -, -, -, -, -, -, -, hUnb, -⟩ :=
+        untypedRetypeObject_ok_tcb src dst childId dom core st st' hInv h
+      rw [← hC, hT] at hT'
+      cases hT'
+      rw [hUnb] at hB; cases hB
+    | _ => simp [CarveRequest.object, KernelObject.withoutLinks] at hWL
+  · have hk := hFrame _ hC
+    rw [hT] at hk
+    cases hpre : st.objects[t.toObjId]? with
+    | none => rw [hpre] at hk; simp [keyInputsOf] at hk
+    | some o =>
+      rw [hpre] at hk
+      cases o with
+      | tcb tcb0 =>
+        simp only [keyInputsOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at hk
+        obtain ⟨sc, hS⟩ := hP t tcb0 scId hpre (hk.2.2.1 ▸ hB)
+        have hne : scId.toObjId ≠ childId := by
+          intro hEq; rw [hEq, hAbs] at hS; cases hS
+        have hk2 := hFrame _ hne
+        rw [hS] at hk2
+        cases hpost : st'.objects[scId.toObjId]? with
+        | none => rw [hpost] at hk2; simp [keyInputsOf] at hk2
+        | some o' =>
+          rw [hpost] at hk2
+          cases o' with
+          | schedContext sc' => exact ⟨sc', rfl⟩
+          | _ => simp [keyInputsOf] at hk2
+      | _ => simp [keyInputsOf] at hk
+
+/-- **WS-SX SX6.3 (D9): the `.untypedRetype` arm covers**: each carve of its
+window covers (`untypedRetypeObject_stepCovers`), and each keeps what the next
+carve's coverage reads — the object table, every bound scheduling context and
+every placed thread's TCB. -/
+theorem untypedRetypeFromCap_stepCovers (e : CoreId) {tid : SeLe4n.ThreadId}
+    {ec : CoreId} {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
+    {st st' : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  have hChain := untypedRetypeFromCap_chain h
+  have hKeep : ∀ {src dst : CSpaceAddr} {childId : SeLe4n.ObjId} {req : CarveRequest}
+      {s s1 : SystemState},
+      (s.objects.invExt ∧ boundSchedContextsPresent s ∧ placedThreadsHaveTcbs s) →
+      untypedRetypeObject src childId dst req s = .ok ((), s1) →
+      (s1.objects.invExt ∧ boundSchedContextsPresent s1 ∧ placedThreadsHaveTcbs s1) :=
+    fun hP hC => ⟨untypedRetypeObject_preserves_objects_invExt hP.1 hC,
+      untypedRetypeObject_preserves_boundSchedContextsPresent hP.1 hP.2.1 hC,
+      untypedRetypeObject_preserves_placedThreadsHaveTcbs hP.1 hP.2.2 hC⟩
+  have hP0 : st.objects.invExt ∧ boundSchedContextsPresent st ∧ placedThreadsHaveTcbs st :=
+    ⟨hInv, hBi.boundSchedContextsPresent, hPlaced⟩
+  exact ⟨hChain.rel (stepCovers_refl e) stepCovers_trans hKeep
+      (fun hP hC => (untypedRetypeObject_stepCovers e hP.1 hP.2.1 hP.2.2 hC).1) hP0,
+    (hChain.preserves hKeep hP0).1⟩
 
 /-! ### The finalising destroyers -/
 
@@ -1424,8 +1534,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact setIPCBufferOp_stepCovers _ _ hB.1.2.1 hB.1.1 hB.2 hU
         | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ _ hB hU)
   all_goals
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ _ h
-    exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU
+    exact untypedRetypeFromCap_stepCovers ec hInv hBi hPlaced h
 
 /-! ### The checked dispatcher -/
 
