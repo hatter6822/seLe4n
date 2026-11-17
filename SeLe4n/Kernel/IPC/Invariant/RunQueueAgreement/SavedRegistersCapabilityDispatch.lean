@@ -500,57 +500,14 @@ theorem setThreadCpuAffinityWithMigration_savedRegsKeptExcept {W : SeLe4n.Thread
     rfl
   · exact TCB.map_proj_eq_of_map_withoutRunLinks_eq _ (hNe u hu)
 
-/-- The configure's propagation into its bound thread: the thread's priority and
-domain rewritten in place, and its bucket re-keyed. -/
-theorem schedContextConfigureBoundPropagate_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    (stStored : SystemState) (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId)
-    (boundTcb : TCB) (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (hInv : stStored.objects.invExt) :
-    savedRegsKeptExcept W stStored
-      (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound
-        priority domain) := by
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  have hP : ∀ s : SystemState, savedRegsKeptExcept W stStored s → s.objects.invExt →
-      savedRegsKeptExcept W stStored (match s.getTcbWitnessed? boundTid with
-        | some ⟨currentTcb, hCurrent⟩ =>
-          if currentTcb.domain.val = domain ∨
-             ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId then s
-          else s.rewriteObject boundTid.toObjId (KernelObject.tcb { currentTcb with domain := ⟨domain⟩ })
-            (SystemState.rewriteAdmissible_tcb hCurrent _)
-        | none => s) := fun s k hI => by
-    split
-    · rename_i currentTcb hCurrent _
-      split
-      · exact k
-      · exact k.trans (.rewriteObject_tcb _ hI ((SystemState.getTcb?_eq_some_iff _ _ _).mp hCurrent) rfl)
-    · exact k
-  apply hP
-  · split
-    · exact .refl _
-    · dsimp only
-      have k1 := savedRegsKeptExcept.rewriteObject_tcb (W := W)
-        (SystemState.rewriteAdmissible_tcb hBound { boundTcb with priority := ⟨priority⟩ }) hInv
-        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hBound) rfl
-      split
-      · exact k1.trans (.of_runLinks (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _))
-      · exact k1
-  · split
-    · exact hInv
-    · dsimp only
-      have hI1 := SystemState.rewriteObject_preserves_objects_invExt stStored boundTid.toObjId _
-        (SystemState.rewriteAdmissible_tcb hBound { boundTcb with priority := ⟨priority⟩ }) hInv
-      split
-      · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hI1
-      · exact hI1
-
 /-- **The configure writes no saved register**: the replenishment purge and the
 release placement write release fields, the store a context over a context,
-and the bound thread's propagation, key hooks, boost re-walk and resume tail
-priority, domain, run-queue links and boost codes. -/
+the candidacy hook writes the scheduler alone, and the bound thread's resume
+tail writes its run-queue links. -/
 theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period priority deadline domain : Nat}
+    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period : Nat} {badge flags : UInt64}
     (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st =
+    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   unfold SchedContextOps.schedContextConfigure at h
   split at h
@@ -583,18 +540,7 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
             split at h
             · rename_i boundTcb hBound _
               cases h
-              have k4 := k3.trans (schedContextConfigureBoundPropagate_savedRegsKeptExcept _
-                ⟨vScId.val.toNat⟩ _ _ hBound priority domain hI3)
-              have hI4 := SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
-                _ ⟨vScId.val.toNat⟩ _ _ hBound priority domain hI3
-              have hI5 : (markKeyChangeFor (markCandidacyGainFor
-                  (SchedContextOps.schedContextConfigureBoundPropagate _ ⟨vScId.val.toNat⟩ boundTid boundTcb
-                    hBound priority domain) boundTid (hasSufficientBudget st boundTcb)) boundTid
-                  (effectiveSchedParams st boundTcb)).objects.invExt := by
-                rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]; exact hI4
-              exact ((k4.trans (.of_objects_eq (by rw [markKeyChangeFor_objects,
-                markCandidacyGainFor_objects]))).trans (.of_repropagateFromWaiter _ boundTid
-                (determineTargetCore st boundTid) st.objects.size hI5)).trans
+              exact (k3.trans (.of_objects_eq (markCandidacyGainFor_objects _ _ _))).trans
                 (.of_runLinks (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks _ _ _))
             · cases h; exact k3
       · cases h
@@ -604,8 +550,8 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
 its bound thread to the control's core, then the configure. -/
 theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain st =
+    {budget period : Nat} {badge flags : UInt64} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure_savedRegsKeptExcept hInv h
@@ -614,8 +560,8 @@ theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
         (setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hInv _ hM) h)
 
 /-- **The bind writes no saved register**: a context over a context, the bound
-thread's binding codes and priority, its bucket and the key hooks, and the
-release placement. -/
+thread's binding codes, its placement on its home queue, and the release
+placement. -/
 theorem schedContextBind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {vThreadId : SeLe4n.ValidThreadId}
     (hInv : st.objects.invExt)
@@ -634,32 +580,22 @@ theorem schedContextBind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
       · cases h
       split at h
       · cases h
-      split at h
-      · cases h
         have hO : st.objects[vScId.val]? = some (.schedContext sc) :=
           (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
         refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SystemState.releasePlace_agree _ _ _))
-        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
         split
         · refine savedRegsKeptExcept.trans ?_
-            (.of_runLinks (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _))
+            (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
+          refine savedRegsKeptExcept.trans ?_
+            (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
           refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
           · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
               (fun x hx => by cases hx)
           · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-        · split
-          · refine savedRegsKeptExcept.trans ?_
-              (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
-            refine savedRegsKeptExcept.trans ?_
-              (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
-            refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-            · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-                (fun x hx => by cases hx)
-            · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-          · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-            · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-                (fun x hx => by cases hx)
-            · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+        · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+          · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
+              (fun x hx => by cases hx)
+          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
       all_goals cases h
     · cases h
   · cases h
@@ -801,15 +737,12 @@ theorem schedContextUnbindOnCore_savedRegsWrittenFree {e : CoreId} {st st' : Sys
 
 /-! ### The priority arms -/
 
-/-- The priority write: the bound context's band and the thread's priority. -/
+/-- The priority write: the thread's priority alone. -/
 theorem updatePrioritySource_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · exact (savedRegsKeptExcept.updateSchedContext st _ _ hInv).trans (.updateTcb _ tid _
-      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl))
-  · exact .updateTcb st tid _ hInv (fun _ => rfl)
+  exact .updateTcb st tid _ hInv (fun _ => rfl)
 
 /-- The bucket re-key writes run-queue links and the scheduler alone. -/
 theorem migrateRunQueueBucketOnCore_machine (st : SystemState) (tid : SeLe4n.ThreadId)

@@ -533,7 +533,7 @@ list is built.  No-op if the SchedContext is not found. -/
 def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (now : Nat) : SystemState :=
   st.updateSchedContext scId fun sc =>
-    cbsUpdateDeadline (sc.releaseReadyHead now) now true
+    (sc.releaseReadyHead now)
 
 -- ============================================================================
 -- Z6-E: Timeout blocked threads on budget expiry
@@ -688,7 +688,7 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
         -- period after its release (`schedule_used`), and the context waits on
         -- the release queue for its first pending refill (`releaseKey?`).
         let now := st.machine.timer
-        let sc''' := cbsUpdateDeadline (sc.chargeBudget now 1 (now + 1)) now true
+        let sc''' := (sc.chargeBudget now 1 (now + 1))
         -- Write updated SchedContext back (the in-place rewrite under the witnessed lookup)
         let st' := { st.rewriteObject scId.toObjId (.schedContext sc''')
                        (SystemState.rewriteAdmissible_schedContext hSc sc''') with
@@ -698,7 +698,7 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
           | some t => (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId t
           | none => st'.scheduler.replenishQueueOnCore bootCoreId
         -- AG1-A: Re-enqueue current thread at effective priority (base + PIP boost)
-        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore bootCoreId rq).setRunQueueOnCore bootCoreId ((st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc))) }
+        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore bootCoreId rq).setRunQueueOnCore bootCoreId ((st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid))) }
         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
         -- by this SchedContext. Budget is now 0, so all such threads must unblock.
         -- AK2-D (S-M02): Errors are surfaced via the diagnostic
@@ -819,7 +819,7 @@ noncomputable def handleYieldWithBudget : Kernel Unit :=
                            (SystemState.rewriteAdmissible_schedContext h sc'') with
               scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq }
             -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
-            let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)
+            let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid)
             let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st''
           | none =>
@@ -1746,7 +1746,7 @@ pre-state after the refill. -/
       match st.getTcb? t with
       | some tcb =>
         let preElig := hasSufficientBudget st tcb
-        let preDeadline := effectiveDeadline st tcb
+        let preDeadline := tcb.deadline
         markKeyChangeParts (markCandidacyGainFor (refillWakeOnCoreImpl st execCore scId now) t preElig)
           t tcb.boostedPriority preDeadline tcb.domain
       | none =>
@@ -1931,14 +1931,14 @@ shares; the tick then times out the SchedContext's IPC-blocked threads
     (scId : SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat) : SystemState :=
   let now := st.machine.timer
-  let sc''' := cbsUpdateDeadline (sc.chargeBudget start ticks now) now true
+  let sc''' := (sc.chargeBudget start ticks now)
   let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
     (SystemState.rewriteAdmissible_schedContext hSc sc''')
   -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
   -- `replenishOnCore`: the context goes on core `c`'s release queue at its
   -- place, its first pending refill's release (WS-ZA ZA6.3, ZA6.4).
   let stReplenished := replenishOnCore st' c scId
-  stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid sc)
+  stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid)
 
 /-- WS-ZA ZA4.3: the compiled `sliceExpireOnCore`.  The TCB is written in its
 slot (`modifyObject`), so a state the caller owns has neither the TCB nor the
@@ -1959,40 +1959,38 @@ object table rebuilt; proven equal to the specification
   rfl
 
 /-- WS-ZA ZA6.3: the context a charge writes back: `ticks` run from `start`
-charged by `now` (`SchedContext.chargeBudget`, WS-ZA ZA6.4), the deadline rule
-applied.  A call, so the slot's rewrite is one straight-line write of the object
+charged by `now` (`SchedContext.chargeBudget`, WS-ZA ZA6.4).  A call, so the slot's rewrite is one straight-line write of the object
 it holds and reuses that object's cell. -/
 @[noinline] def chargeSchedContext (s : SchedContext) (start ticks now : Nat) : SchedContext :=
-  cbsUpdateDeadline (s.chargeBudget start ticks now) now true
+  (s.chargeBudget start ticks now)
 
 /-- WS-ZA ZA6.3: the priority a thread is re-enqueued at: its boosted priority
-(`resolveEffectivePrioDeadline_fst_eq_boostedPriority`), or `fallback` when the
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority`), or the lowest when the
 store holds no thread under `tid`.  Read as one number, with no pair built for
 the deadline the insert does not read. -/
-@[noinline] def insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
-    (fallback : SeLe4n.Priority) : SeLe4n.Priority :=
+@[noinline] def insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId) : SeLe4n.Priority :=
   match st.getTcb? tid with
   | some tcb => tcb.boostedPriority
-  | none => fallback
+  | none => ⟨0⟩
 
-theorem resolveInsertPriority_eq_insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
-    (sc : SchedContext) : resolveInsertPriority st tid sc = insertPriorityOf st tid sc.priority := by
+theorem resolveInsertPriority_eq_insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId) :
+    resolveInsertPriority st tid = insertPriorityOf st tid := by
   unfold resolveInsertPriority insertPriorityOf
   cases st.getTcb? tid with
   | none => rfl
   | some tcb => exact resolveEffectivePrioDeadline_fst_eq_boostedPriority st tcb
 
 /-- WS-ZA ZA6.3: the budget spend's writes, handed the charge (`ticks` from
-`start`) and the fallback priority read off the context: the context rewritten
+`start`): the context rewritten
 in its slot (`chargeSchedContext`), placed on core `c`'s release queue
 (`replenishOnCore`) and `tid` re-enqueued.  A call, so the caller's context is
 not held across the rewrite of its slot. -/
 @[noinline] def spendBudgetWrite (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (scId : SchedContextId) (start ticks : Nat) (fallback : SeLe4n.Priority) : SystemState :=
+    (scId : SchedContextId) (start ticks : Nat) : SystemState :=
   let now := st.machine.timer
   let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
     chargeSchedContext s start ticks now)
-  let prio := insertPriorityOf st' tid fallback
+  let prio := insertPriorityOf st' tid
   (replenishOnCore st' c scId).runEnqueueOnCore c tid prio
 
 /-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
@@ -2005,7 +2003,7 @@ Proven equal to the specification (`spendBudgetOnCore_eq_impl`). -/
 @[inline] def spendBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
     (_hSc : st.getSchedContext? scId = some sc) (start ticks : Nat) : SystemState :=
-  spendBudgetWrite st c tid scId start ticks sc.priority
+  spendBudgetWrite st c tid scId start ticks
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
   funext st c tid scId sc hSc start ticks
@@ -2273,7 +2271,7 @@ re-inserting a copy of the object, so the store is updated in place. -/
     | some ⟨sc, hSc⟩ =>
       let now := st.machine.timer
       if sc.tickExhausts (now - 1) then
-        (budgetExhaustOnCore st c tid (tcb.boostedPriority, effectiveDeadline st tcb, tcb.domain)
+        (budgetExhaustOnCore st c tid (tcb.boostedPriority, tcb.deadline, tcb.domain)
           scId sc hSc 1, true)
       else
         (st.modifyObject scId.toObjId

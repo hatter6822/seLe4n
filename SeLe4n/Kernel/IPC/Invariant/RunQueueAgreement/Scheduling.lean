@@ -105,77 +105,61 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
           split at h
           · cases h
           · split at h
-            · cases h
-            · split at h
-              · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
-                  (SchedContextId.ofObjId vScId.val) sc).mp hSc
-                obtain ⟨-, -, -, -, -, -, -, -, -, hRel1, hRel2, hRel3⟩ :=
-                  SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased st.machine.timer)
-                simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-                subst h
-                -- The context written bound (a frame off it: its refills may be
-                -- pending off every queue until the placement closes the write).
-                have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vScId.val) st
-                    (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none })
-                      (SystemState.rewriteAdmissible_schedContext hSc _)) :=
-                  SystemState.RunQueueFrameStage.insert rfl rfl rfl
-                    (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                    (SystemState.objStateMono_nonTcb
-                      (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-                    (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; simp [objYieldCodes])
-                    (hR := fun _ => by
-                      rw [show st.objects[vScId.val]? = _ from hScRaw]
-                      simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
-                        hRel2, hRel3])
-                refine SystemState.RunQueueFrameStage.closePlace ?_ (fun S hs hI _ _ hS => ?_)
-                · refine SystemState.RunQueueFrameStage.trans ?_
-                    (SystemState.RunQueueStage.toFrame (markKeyChangeFor_runQueueStage _ _ _) _)
-                  split
-                  · rename_i hMem
-                    refine SystemState.RunQueueFrameStage.trans ?_ (SystemState.RunQueueStage.toFrame
-                      (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hMem) _)
-                    exact hIns.trans (by exact (SystemState.RunQueueStage.toFrame
-                      (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _))
-                  · split
-                    · rename_i hPlace
-                      refine SystemState.RunQueueFrameStage.trans ?_ (SystemState.RunQueueStage.toFrame
-                        (SystemState.RunQueueStage.markReschedulePendingOnCore _ _) _)
-                      exact SystemState.RunQueueFrameStage.then_enqueue (hIns.trans
-                        (by exact (SystemState.RunQueueStage.toFrame (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _)))
-                        (bindPlacesParkedThread_not_current hPlace) (bindPlacesParkedThread_runnable hPlace hTcb)
-                        (homedOn_determineTargetCore _ _)
-                    · exact hIns.trans (by exact (SystemState.RunQueueStage.toFrame
-                        (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _))
-                · -- The placement's facts: the context was unbound, so no entry
-                  -- named it, and it is written well formed and bound.
-                  have hN : ∀ c e, e ∈ (st.scheduler.replenishQueueOnCore c).entries →
-                      e.1 ≠ ⟨vScId.val.toNat⟩ := by
-                    intro c e he hes
-                    obtain ⟨a, ha, hb⟩ := hS.2.2 c e (by rw [hes]; exact hs) he
-                    rw [hes] at ha
-                    have : a = sc := Option.some.inj (ha.symm.trans hSc)
-                    subst this
-                    exact hUnb hb
-                  have hYs : (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) (SystemState.rewriteAdmissible_schedContext hSc _)).getSchedContext? ⟨vScId.val.toNat⟩ = some { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
-                    SystemState.rewriteObject_schedContext_getSchedContext?_self st
-                      (SchedContextId.ofObjId vScId.val) _ (SystemState.rewriteAdmissible_schedContext hSc _) hI
-                  have hWF : schedContextWellFormed { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
-                    releaseReadyHead_preserves_schedContextWellFormed sc _ (hS.1 _ sc hs hSc)
-                  split
-                  · intro hXR
-                    exact SystemState.closePlace_facts hYs hN hWF rfl
-                      ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans
-                        ((SystemState.RefillsKeptOff.runRequeueOnCore _ _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)))) hXR _
-                  · split
-                    · intro hXR
-                      exact SystemState.closePlace_facts hYs hN hWF rfl
-                        ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans
-                          ((SystemState.RefillsKeptOff.markReschedulePendingOnCore _ _ _).trans
-                            ((SystemState.RefillsKeptOff.runEnqueueOnCore _ _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI))))) hXR _
-                    · intro hXR
-                      exact SystemState.closePlace_facts hYs hN hWF rfl
-                        ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI))) hXR _
-              all_goals cases h
+            · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+                (SchedContextId.ofObjId vScId.val) sc).mp hSc
+              obtain ⟨-, -, -, -, -, -, -, -, -, hRel1, hRel2, hRel3⟩ :=
+                SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased st.machine.timer)
+              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+              subst h
+              -- The context written bound (a frame off it: its refills may be
+              -- pending off every queue until the placement closes the write).
+              have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vScId.val) st
+                  (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none })
+                    (SystemState.rewriteAdmissible_schedContext hSc _)) :=
+                SystemState.RunQueueFrameStage.insert rfl rfl rfl
+                  (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                  (SystemState.objStateMono_nonTcb
+                    (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+                  (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; simp [objYieldCodes])
+                  (hR := fun _ => by
+                    rw [show st.objects[vScId.val]? = _ from hScRaw]
+                    simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
+                      hRel2, hRel3])
+              refine SystemState.RunQueueFrameStage.closePlace ?_ (fun S hs hI _ _ hS => ?_)
+              · split
+                · rename_i hPlace
+                  refine SystemState.RunQueueFrameStage.trans ?_ (SystemState.RunQueueStage.toFrame
+                    (SystemState.RunQueueStage.markReschedulePendingOnCore _ _) _)
+                  exact SystemState.RunQueueFrameStage.then_enqueue (hIns.trans
+                    (by exact (SystemState.RunQueueStage.toFrame (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _)))
+                    (bindPlacesParkedThread_not_current hPlace) (bindPlacesParkedThread_runnable hPlace hTcb)
+                    (homedOn_determineTargetCore _ _)
+                · exact hIns.trans (by exact (SystemState.RunQueueStage.toFrame
+                    (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _))
+              · -- The placement's facts: the context was unbound, so no entry
+                -- named it, and it is written well formed and bound.
+                have hN : ∀ c e, e ∈ (st.scheduler.replenishQueueOnCore c).entries →
+                    e.1 ≠ ⟨vScId.val.toNat⟩ := by
+                  intro c e he hes
+                  obtain ⟨a, ha, hb⟩ := hS.2.2 c e (by rw [hes]; exact hs) he
+                  rw [hes] at ha
+                  have : a = sc := Option.some.inj (ha.symm.trans hSc)
+                  subst this
+                  exact hUnb hb
+                have hYs : (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) (SystemState.rewriteAdmissible_schedContext hSc _)).getSchedContext? ⟨vScId.val.toNat⟩ = some { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+                  SystemState.rewriteObject_schedContext_getSchedContext?_self st
+                    (SchedContextId.ofObjId vScId.val) _ (SystemState.rewriteAdmissible_schedContext hSc _) hI
+                have hWF : schedContextWellFormed { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+                  releaseReadyHead_preserves_schedContextWellFormed sc _ (hS.1 _ sc hs hSc)
+                split
+                · intro hXR
+                  exact SystemState.closePlace_facts hYs hN hWF rfl
+                    ((SystemState.RefillsKeptOff.markReschedulePendingOnCore _ _ _).trans
+                      ((SystemState.RefillsKeptOff.runEnqueueOnCore _ _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)))) hXR _
+                · intro hXR
+                  exact SystemState.closePlace_facts hYs hN hWF rfl
+                    (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)) hXR _
+            all_goals cases h
         · cases h
   · cases h
 
@@ -194,45 +178,6 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_tcb {st : Sy
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
       simp only [objRefillView, tcbRefillView, hTS])
     (hY := by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
-
-/-- The configure's bound-thread propagation: TCB rewrites that keep the
-thread's run-queue fields, and a re-bucket of a thread its home queue holds. -/
-theorem schedContextConfigureBoundPropagate_runQueueStage (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat) :
-    RunQueueStage stStored (SchedContextOps.schedContextConfigureBoundPropagate stStored scId
-      boundTid boundTcb hBound priority domain) := by
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  dsimp only
-  split
-  · rename_i cur hCur hEq
-    split
-    · clear hEq hCur
-      split
-      · exact RunQueueStage.refl _
-      · split
-        · rename_i hM
-          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
-          exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
-        · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
-    · refine RunQueueStage.trans ?_ (RunQueueStage.rewriteObject_tcb hCur (fun _ => by rfl) _)
-      clear hEq hCur
-      split
-      · exact RunQueueStage.refl _
-      · split
-        · rename_i hM
-          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
-          exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
-        · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
-  · rename_i hEq
-    clear hEq
-    split
-    · exact RunQueueStage.refl _
-    · split
-      · rename_i hM
-        refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
-        exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
-      · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
 
 /-- WS-ZA ZA6.4: the configure's resume tail: a removal of a queued thread the
 context can no longer run, the guarded placement of a parked one (the bind's
@@ -259,11 +204,11 @@ theorem configureResumeBound_runQueueStage (st : SystemState) (t : SeLe4n.Thread
     · exact RunQueueStage.refl _
 
 /-- The configure purges the context's replenishment (a replenish-queue write),
-stores the reconfigured context over the old one, and runs the bound-thread
-propagation, the key hook and the chain re-walk. -/
+stores the reconfigured context over the old one, places it on its release
+queue, and runs the candidacy mark and the resume tail. -/
 theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState}
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st =
+    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
       .ok ((), st')) : RunQueueStage st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -316,15 +261,15 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
               (SchedContextOps.purgeReplenishment_refined hR _)
               (SystemState.releaseRemoveAnywhere_not_queued st ⟨vScId.val.toNat⟩) c e he
           have hYs : ∀ hI : st.objects.invExt, stStored.getSchedContext? ⟨vScId.val.toNat⟩ =
-              some (SchedContextOps.configuredSchedContext budget period priority deadline domain
+              some (SchedContextOps.configuredSchedContext budget period badge flags
                 st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) := fun hI =>
             (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
               (storeObject_objects_eq _ _ _ _ (SchedContextOps.purgeReplenishment_objects_invExt st _ hI) hStore)
           have hWF : ∀ S : SeLe4n.SchedContextId → Prop, ¬ S ⟨vScId.val.toNat⟩ →
               st.refillsSoundExcept S → schedContextWellFormed
-                (SchedContextOps.configuredSchedContext budget period priority deadline domain
+                (SchedContextOps.configuredSchedContext budget period badge flags
                   st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) :=
-            fun S hs hS => SchedContextOps.configuredSchedContext_schedContextWellFormed _ _ _ _ _ _ _
+            fun S hs hS => SchedContextOps.configuredSchedContext_schedContextWellFormed _ _ _ _ _ _
               hValid sc (schedContextWellFormed_refillsPositive (hS.1 _ sc hs hSc))
           split at h
           · rename_i hUnb
@@ -343,15 +288,10 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
                   (by rw [SchedContextOps.configuredSchedContext_boundThread, hBnd]; rfl)
                   (.refl _ _) hXR _
             split at h
-            · rename_i boundTcb hBound _
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
+            · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact hP.trans
-                (((((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
-                  (markCandidacyGainFor_runQueueStage _ _ _)).trans
-                  (markKeyChangeFor_runQueueStage _ _ _)).trans
-                  (PriorityInheritance.repropagateFromWaiter_runQueueStage _ _ _ _)).trans
-                  (configureResumeBound_runQueueStage _ _ _))
+              exact hP.trans ((markCandidacyGainFor_runQueueStage _ _ _).trans
+                (configureResumeBound_runQueueStage _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]; exact hP
       · exact absurd h (by simp)
@@ -1364,9 +1304,9 @@ theorem setThreadCpuAffinityOnCore_runQueueEntryStage {st st' : SystemState}
 move of the context's thread to the control's core (the affinity change's entry
 stage), then the configure there (a stage). -/
 theorem schedControlConfigure_runQueueEntryStage {core : Concurrency.CoreId}
-    {vScId : SeLe4n.ValidObjId} {budget period priority deadline domain : Nat}
+    {vScId : SeLe4n.ValidObjId} {budget period : Nat} {badge flags : UInt64}
     {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain st =
+    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags st =
       .ok ((), st')) : SystemState.RunQueueEntryStage st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact RunQueueStage.entry (schedContextConfigure_runQueueStage h)
@@ -1592,13 +1532,6 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_schedContext
       (SystemState.rewriteObject_schedContext_getSchedContext?_self st scId sc' hA hI) h
       (hWF (h0.1 scId sc hs h)) hK hBT
 
-/-- The context a charge writes back names the thread it named. -/
-theorem chargedSchedContext_boundThread (sc : SchedContext) (start ticks now : Nat) :
-    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).boundThread = sc.boundThread := by
-  unfold SchedContext.boundThread
-  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
-    (SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start ticks now)).2.2.2.2.2.2.1]
-
 theorem chargeBudget_boundThread (sc : SchedContext) (start ticks now : Nat) :
     (sc.chargeBudget start ticks now).boundThread = sc.boundThread := by
   unfold SchedContext.boundThread
@@ -1606,10 +1539,9 @@ theorem chargeBudget_boundThread (sc : SchedContext) (start ticks now : Nat) :
 
 /-- The context a refill writes back names the thread it named. -/
 theorem refilledSchedContext_boundThread (sc : SchedContext) (now : Nat) :
-    (cbsUpdateDeadline (sc.releaseReadyHead now) now true).boundThread = sc.boundThread := by
+    ((sc.releaseReadyHead now)).boundThread = sc.boundThread := by
   unfold SchedContext.boundThread
-  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
-    (SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
+  rw [(SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
 
 /-- **A tick that does not use the head up leaves the context no place**: its
 head still holds budget (`chargeBudget_tick_pos`). -/
@@ -1738,9 +1670,8 @@ theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrenc
       (fun _ => by simp only [SchedContext.releaseLinkOn, h1, h2, h3]))
     (fun S hs hI _ _ hS _ => SystemState.closePlace_facts_bound
       (SystemState.rewriteObject_schedContext_getSchedContext?_self st scId _ _ hI)
-      (cbsUpdateDeadline_preserves_schedContextWellFormed _ _ _
-        (chargeBudget_preserves_schedContextWellFormed _ _ _ _ (hS.1 scId sc hs hSc)))
-      (by rw [chargedSchedContext_boundThread]; exact hP.1)
+      (chargeBudget_preserves_schedContextWellFormed _ _ _ _ (hS.1 scId sc hs hSc))
+      (by rw [chargeBudget_boundThread]; exact hP.1)
       (by
         unfold SystemState.releaseFreeFor
         rw [SystemState.releaseCoreOf_rewriteObject_schedContext _ _ _ _ hSc hI h2]
@@ -1928,9 +1859,8 @@ theorem drainPass_runQueueStage (s : SystemState) (c : Concurrency.CoreId)
   have hq : s.releaseQueuedOn c x = true := ((hQ c).queued x).mpr (hx ▸ releaseHead_mem (hQ c) h0)
   obtain ⟨b, hb, hbd⟩ := hS.2.2 c _ hs ((hQ c).mem_of_queued hq)
   have hA := processOneReplenishmentOnCore_releaseStateAgree s c x now hI
-  refine SystemState.closePlace_facts_bound (u := cbsUpdateDeadline (b.releaseReadyHead now) now true)
-    ?_ (cbsUpdateDeadline_preserves_schedContextWellFormed _ _ _
-      (releaseReadyHead_preserves_schedContextWellFormed _ _ (hS.1 x b hs hb)))
+  refine SystemState.closePlace_facts_bound (u := (b.releaseReadyHead now))
+    ?_ (releaseReadyHead_preserves_schedContextWellFormed _ _ (hS.1 x b hs hb))
     (by rw [refilledSchedContext_boundThread]; exact hbd) ?_
   · rw [processOneReplenishmentOnCore_getSchedContext? s c x now hI, refillSchedContext,
       SystemState.updateSchedContext_getSchedContext?_self _ _ _ hI, hb]

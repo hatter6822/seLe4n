@@ -1074,12 +1074,12 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 /-- PR #889 review round 8: a boot **SchedContext**'s own id (`scId`, which
     `replenishScOnCore` keys the replenishment queue by), its bound thread and
     — since WS-OD OD2.1 — its reply-stack head (`scReply`, a Reply object id).
-    Budgets, periods, priorities, replenishment entries and the consumed time hold no id.
+    Budgets, periods, the badge, replenishment entries and the consumed time hold no id.
     The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`),
     so the id check covers it. -/
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+  | ⟨scId, _budget, _period, _badge, _sporadic, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -2460,7 +2460,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 
 /-- A boot **SchedContext** has a well-formed CBS budget, no bound thread and
     (WS-OD OD2.1) an empty reply stack.  `scId` is pinned to the slot by
-    `PlatformConfig.wellFormed`; `priority`, `deadline`, `domain`, `periodStart`
+    `PlatformConfig.wellFormed`; `badge`, `sporadic`, `periodStart`
     and `isActive` are the deployment's.
 
     `scReply` is refused for the same reason `bootSafeReplyCheck` refuses a
@@ -2470,7 +2470,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
     `donationChainWellFormed` violation before the first instruction runs. -/
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+  | ⟨_scId, _budget, _period, _badge, _sporadic, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -6477,7 +6477,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     rw [hTlb]; exact Architecture.tlbConsistent_empty _
   -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants at boot)
   have hExtBundle : schedulerInvariantBundleExtended ist.state := by
-    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- budgetPositive: every boot TCB is `.unbound`, whose budget arm is `True`.
       intro tid _
       cases hGet : ist.state.getTcb? tid with
@@ -6501,19 +6501,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2.1
         rw [hNone] at hBound; cases hBound
     · exact hEffective
-    · -- boundThreadDomainConsistent: all TCBs have .unbound at boot
-      intro tid scId
-      show match ist.state.objects[tid.toObjId]? with
-        | some (.tcb tcb) => tcb.schedContextBinding = .bound scId → _ | _ => True
-      cases hLookup : ist.state.objects[tid.toObjId]? with
-      | none => trivial
-      | some obj =>
-        cases obj with
-        | tcb tcb =>
-          intro hBound
-          have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
-          rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
-        | _ => trivial
   -- AG7-D, WS-ZA ZA4.4: notificationWaiterConsistent — boot notifications
   -- have empty queues, no boot TCB is blocked on anything, and no boot TCB
   -- holds a notification-queue link.

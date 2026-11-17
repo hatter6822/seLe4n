@@ -3449,22 +3449,6 @@ theorem hasSufficientBudget_unbound_legacy
     hasSufficientBudget st tcb = true := by
   simp [hasSufficientBudget, hUnbound]
 
-/-- Z4-U3: `cbsUpdateDeadline` preserves per-object `wellFormed`.
-Composes with Z4-S2 for the full exhaustion pipeline:
-chargeBudget → cbsUpdateDeadline. -/
-theorem cbsUpdateDeadline_preserves_wf
-    (sc : SchedContext) (now : Nat) (preempt : Bool)
-    (h : sc.wellFormed) :
-    (cbsUpdateDeadline sc now preempt).wellFormed := by
-  simp [cbsUpdateDeadline]
-  split
-  · -- Deadline updated case: only deadline field changes
-    simp [SchedContext.wellFormed]
-    obtain ⟨hp, hbp, hrb, hrl⟩ := h
-    exact ⟨hp, hbp, hrb, hrl⟩
-  · -- No update: identity
-    exact h
-
 -- ============================================================================
 -- AN5-B (SCH-M03): Replenishment pipeline ordering preservation
 -- ============================================================================

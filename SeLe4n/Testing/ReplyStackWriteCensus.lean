@@ -317,10 +317,10 @@ def chainNeutralConstructors : List (Name × String) :=
     -- onto one writer, so it now neither stores directly nor constructs directly
     -- and is outside both disjuncts of the frontier.  A chain write added back
     -- to its own body puts it back in the candidate set on the day it is written.
-  , (`SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority,
-      "`{ sc with priority := _ }` on the owned SchedContext and `{ tcb with priority := _ }` on the thread; `scReply` is in neither assignment list")
-  , (`SeLe4n.Kernel.FrozenOps.frozenSetMCPriority,
-      "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
+    -- WS-SX SX6.4: `frozenWriteBasePriority`, `frozenSetMCPriority`,
+    -- `updatePrioritySource`, `setMCPriorityOp` and `setMCPriorityOnCore` left
+    -- it the same way: a context carries no priority, so the priority writers
+    -- build no SchedContext record at all.
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeContext,
@@ -328,7 +328,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenResumeThread,
       "a blocked thread's suspend through `frozenSuspendThread` (neutral, above), then the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in any")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
-      "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
+      "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`); `scReply` is untouched")
     -- ---------------------------------------------------------------------
     -- Reached through a helper, which is what the frontier started following
     -- at `v0.35.13`.  Each of these composes `Model.linkReply` and touches no
@@ -415,14 +415,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "the admitted suspend: the notification wait's cancel in its slots or the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut), the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; its own body builds no chain-bearing record")
   , (`SeLe4n.Kernel.cancelReplyHolder,
       "a busy reply's holder cancelled by a receive (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`): the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut) and the holder's `threadState`; its own body builds no chain-bearing record")
-  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
-      "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,
-      "WS-ZA ZA5.2: its own stores are `updateTcb` writes of `maxControlledPriority`, `ipcBuffer`, the fault handler and the CSpace/VSpace roots; every SchedContext or Reply it reaches is written by a helper (`updatePrioritySource`, the affinity's replenishment migration, the suspend and resume performs) that answers for its own update")
-  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp,
-      "`{ targetTcb with maxControlledPriority := _ }`; writes no SchedContext field at all")
-  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore,
-      "the per-core spelling of the same MCP write; same reason")
+      "WS-ZA ZA5.2: its own stores are `updateTcb` writes of `maxControlledPriority`, `ipcBuffer`, the fault handler and the CSpace/VSpace roots; every SchedContext or Reply it reaches is written by a helper (the affinity's replenishment migration, the suspend and resume performs) that answers for its own update")
   , (`SeLe4n.Kernel.timerTickBudget,
       "`{ sc with budgetRemaining := _, … }` plus the TCB's time slice; `scReply` is untouched")
   , (`SeLe4n.Kernel.timerTickBudgetOnCore,

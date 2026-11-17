@@ -431,9 +431,9 @@ theorem setThreadCpuAffinityWithMigration_readyKeptStage {S : SeLe4n.ThreadId �
     rw [hPair]; exact hr x hx
 
 theorem schedControlConfigure_readyKeptStage {S : SeLe4n.ThreadId → Prop} {core : CoreId}
-    {vScId : SeLe4n.ValidObjId} {budget period priority deadline domain : Nat}
+    {vScId : SeLe4n.ValidObjId} {budget period : Nat} {badge flags : UInt64}
     {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain st =
+    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags st =
       .ok ((), st')) : readyKeptStage S st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact .of_stage (schedContextConfigure_runQueueStage h)
@@ -955,11 +955,14 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case schedControl core =>
       try dsimp only [] at hStep
+      rcases hXc : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with _ | scCPtr
+      · simp only [hXc] at hStep; cases hStep
+      simp only [hXc] at hStep
       cases hDec : decodeSchedContextConfigureArgsChecked decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hVal : resolveSchedControlConfigureTarget tid core args.scCPtr st with
+          cases hVal : resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep

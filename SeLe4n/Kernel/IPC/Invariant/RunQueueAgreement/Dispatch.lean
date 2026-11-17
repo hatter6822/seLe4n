@@ -501,11 +501,14 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case schedControl core =>
       try dsimp only [] at hStep
+      rcases hXc : callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0 with _ | scCPtr
+      · simp only [hXc] at hStep; cases hStep
+      simp only [hXc] at hStep
       cases hDec : decodeSchedContextConfigureArgsChecked decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hVal : resolveSchedControlConfigureTarget tid core args.scCPtr st with
+          cases hVal : resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills st with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep

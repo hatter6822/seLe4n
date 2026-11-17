@@ -1348,7 +1348,7 @@ mint's refusal short of its sixth; no other syscall is routed here
   | .cspaceCopy => copyOperandArmR ctx tid xc regs w
   | .cspaceMint => shortArgsOperandArmR .cspaceMint
   | .untypedRetype => shortArgsOperandArmR .untypedRetype
-  | _ => configureOperandArmR regs w tid
+  | _ => configureOperandArmR regs w tid xc
 
 theorem dispatchOverflowOneCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)

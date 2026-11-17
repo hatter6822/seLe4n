@@ -61,7 +61,6 @@ theorem resumeContext_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.T
   · exact stepCovers_trans
       (stepCovers_of_keys_sched
         (keyInputsEq_updateSchedContext hInv
-          (fun sc => SchedContext.refillUnblockCheck_deadline sc _)
           (fun sc => SchedContext.refillUnblockCheck_budgetPositive sc _))
         (SystemState.updateSchedContext_scheduler _ _ _)
         (by rw [SystemState.updateSchedContext_machine])
@@ -213,7 +212,7 @@ theorem cutCancelledCallerHead_stepCovers (e : CoreId) (st : SystemState) (tcb :
       have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hI hS
       refine ⟨stepCovers_trans hC (stepCovers_of_keys_sched
         (keyInputsEq_trans (keyInputsEq_storeObject hI hS (by rw [hO]; rfl))
-          (keyInputsEq_updateSchedContext hI1 (fun _ => rfl)))
+          (keyInputsEq_updateSchedContext hI1))
         (by rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq _ _ _ _ hS])
         (by rw [SystemState.updateSchedContext_machine, storeObject_machine_eq _ _ _ _ hS])
         (banksKeptOffCore_of_eq (by

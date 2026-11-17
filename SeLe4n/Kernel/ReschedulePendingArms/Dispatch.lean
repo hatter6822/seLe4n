@@ -495,9 +495,8 @@ theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st
   unfold schedKeyView
   rw [hx, hpre]
   simp only [Option.map_some, Option.some.injEq]
-  rw [effectiveSchedParams_congr_binding (st := st) (st' := retireFinalObject ec target recorder st)
-    (a := x) (b := x) rfl (fun sc hsc => by
-    rw [retireFinalObject_getSchedContext?_named ec target recorder st hObjInv hI hL hx sc hsc])]
+  rw [effectiveSchedParams_congr_keyFields (st := st)
+    (st' := retireFinalObject ec target recorder st) (a := x) (b := x) rfl]
 
 /-- **The retire keeps the budget eligibility of every thread it keeps**, by the
 same context-stays argument. -/
@@ -651,8 +650,7 @@ theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId
   · simp at hT
   · rename_i b a
     simp only [Option.map_some, Option.some.injEq] at hT ⊢
-    rw [effectiveSchedParams_congr_binding hT (fun sc hsc =>
-      getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
+    rw [effectiveSchedParams_congr_keyFields hT]
 
 /-- The budget-eligibility twin of `schedKeyView_eq_of_slotUnread`: a step that
 moves no key input off slot `X` keeps the eligibility of every thread neither
@@ -939,7 +937,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       have hK1 : keyInputsEq s s1 := keyInputsEq_storeObject h.2 hS (by
         rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hR]; rfl)
       have hK2 : keyInputsEq s1 (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }) :=
-        keyInputsEq_updateSchedContext hI1 (fun _ => rfl)
+        keyInputsEq_updateSchedContext hI1
       have hSch : (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }).scheduler =
           s.scheduler := by
         rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq s s1 _ _ hS]
@@ -1403,7 +1401,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
         (hRes := by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]) (hBank := banksKeptOffCore_of_eq (by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]))
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
-    | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
+    | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv

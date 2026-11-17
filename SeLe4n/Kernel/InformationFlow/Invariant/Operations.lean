@@ -3509,63 +3509,28 @@ end EndpointQueueRemoveProjection
 -- AK6-F.2c: updatePrioritySource + setPriorityOp preservation
 -- ============================================================================
 
-/-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects` via
-    direct insert, at either the target TCB (no priority source) or the
-    SchedContext the binding's priority source names. When the written object is
-    non-observable, projection is preserved by
-    `objects_insert_preserves_projection_high`.
-
-    **WS-OD (v0.35.3)**: `hScHigh` is stated over
-    `SchedContextBinding.ownScId?`, so it ranges over `.bound` alone.
-    A `.donated` thread's priority write lands in its own TCB, which `hTcbHigh`
-    already covers, and demanding the *donor's* reservation be non-observable
-    would refuse a state where a low donee is retuned by a low principal while
-    the client is high — a case the operation no longer touches. -/
+/-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects`, at
+    the target TCB (WS-SX SX6.4: a scheduling context carries no priority, so no
+    reservation is written at any binding). When the TCB is non-observable,
+    projection is preserved by `objects_insert_preserves_projection_high`. -/
 theorem updatePrioritySource_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPriority : SeLe4n.Priority)
     (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
-    (hScHigh : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
-                        objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) =
     projectState ctx observer st := by
-  -- `v0.35.98`: the `.bound` arm writes **both** homes of the base priority, so
-  -- it is two applications of one frame, each at its own non-observability
-  -- hypothesis -- and `hTcbHigh`, which that arm did not consume before, is
-  -- what discharges the second.  The thread half is shared, since both arms
-  -- perform it (the `.bound` arm over the reservation-written state).
-  have hTcbStep : ∀ (s : SystemState), s.objects.invExt →
-      projectState ctx observer
-        (s.updateTcb tid fun t => { t with priority := newPriority })
-        = projectState ctx observer s := by
-    intro s hs
-    cases hT : s.getTcb? tid with
-    | some t =>
-        rw [SystemState.updateTcb_eq_of_some hT]
-        exact objects_insert_preserves_projection_high ctx observer s tid.toObjId _
-          hTcbHigh hs
-    | none =>
-        rw [SystemState.updateTcb_eq_self_of_none hT]
+  -- WS-SX SX6.4: the write is the target's own TCB at every binding.
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · -- the priority source resolves (`.bound scId`): the reservation, then the thread
-    rename_i scId hSrc
-    rw [hTcbStep _
-      (SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv)]
-    cases hSc : st.getSchedContext? scId with
-    | some sc =>
-        -- present: the typed rewrite is the insert, and the frame lemma applies
-        rw [SystemState.updateSchedContext_eq_of_some hSc]
-        exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-          (hScHigh scId hSrc) hObjInv
-    | none =>
-        -- absent: the typed rewrite is the identity
-        rw [SystemState.updateSchedContext_eq_self_of_none hSc]
-  · -- no priority source (`.unbound` / `.donated`): the target's own TCB
-    exact hTcbStep st hObjInv
+  cases hT : st.getTcb? tid with
+  | some t =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+        hTcbHigh hObjInv
+  | none =>
+      rw [SystemState.updateTcb_eq_self_of_none hT]
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4552,7 +4517,7 @@ theorem setThreadCpuAffinityOnCore_preserves_projection
 -- ============================================================================
 
 /-- AK6-F Step 3: `setPriorityOp` preserves projection when the target TCB
-    and any bound/donated SchedContext are non-observable, under a
+    is non-observable, under a
     "schedule-branch preserves projection" witness supplied by the caller.
 
     The caller supplies `hSchedProj` for the post-preemption path — if the
@@ -4565,10 +4530,6 @@ theorem setPriorityOp_preserves_projection
     (newPriority : SeLe4n.Priority)
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHigh : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
-                = some (.tcb targetTcb) →
-                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
                     projectState ctx observer stMid = projectState ctx observer st →
@@ -4584,18 +4545,12 @@ theorem setPriorityOp_preserves_projection
     · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
-        -- AN10-B: post-migration `setPriorityOp` reads via `getTcb?`;
-        -- bridge from the typed-helper hypothesis to the raw lookup
-        -- expected by `hScHigh`.
-        have hTargetRaw :
-            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
-          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         have hProj1 :
             projectState ctx observer
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority) =
             projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTargetRaw) hObjInv
+            newPriority hTargetObjHigh hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucket
@@ -4689,9 +4644,6 @@ theorem setPriorityOnCore_preserves_projection
     (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hCoherent : ∀ t : SeLe4n.ThreadId,
         threadObservable ctx observer t = false →
         objectObservable ctx observer t.toObjId = false)
@@ -4718,7 +4670,7 @@ theorem setPriorityOnCore_preserves_projection
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val
                 targetTcb newPriority) = projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+            newPriority hTargetObjHigh hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
@@ -4755,11 +4707,6 @@ theorem setMCPriorityOp_preserves_projection
     (newMCP : SeLe4n.Priority)
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHighForUpdated : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
-                = some (.tcb targetTcb) →
-                ∀ scId,
-                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
                     projectState ctx observer stMid = projectState ctx observer st →
@@ -4775,12 +4722,6 @@ theorem setMCPriorityOp_preserves_projection
     · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget _
-        -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
-        -- bridge from the typed-helper hypothesis to the raw lookup
-        -- expected by `hScHighForUpdated`.
-        have hTargetRaw :
-            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
-          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         -- The post-MCP-update state (after F2):
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
@@ -4799,8 +4740,7 @@ theorem setMCPriorityOp_preserves_projection
                   stAfterMCP vTargetTid.val targetTcb' newMCP) =
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
-                 targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTargetRaw scId hB) hObjInvMCP]
+                 targetTcb' newMCP hTargetObjHigh hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer
@@ -4841,10 +4781,6 @@ theorem setMCPriorityOnCore_preserves_projection
     (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHighForUpdated : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId,
-                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hCoherent : ∀ t : SeLe4n.ThreadId,
         threadObservable ctx observer t = false →
         objectObservable ctx observer t.toObjId = false)
@@ -4882,8 +4818,7 @@ theorem setMCPriorityOnCore_preserves_projection
                   stAfterMCP vTargetTid.val targetTcb' newMCP) =
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
-                 targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+                 targetTcb' newMCP hTargetObjHigh hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer
@@ -5280,15 +5215,15 @@ theorem serviceQueryStaged_answer_lowEquivalent
     discharge: ≈40 LOC given the 6-phase body of `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64)
     (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
           SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-            vScId budget period priority deadline domain st = .ok ((), stFinal) →
+            vScId budget period badge flags st = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
     (hStep : SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-                vScId budget period priority deadline domain st = .ok ((), st')) :
+                vScId budget period badge flags st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 

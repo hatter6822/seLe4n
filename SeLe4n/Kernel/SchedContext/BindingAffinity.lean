@@ -542,11 +542,10 @@ private theorem unbind_read_frame (vScId : ValidObjId) (st st' : SystemState)
 /-- **The `schedContextBind` characterisation**: a successful bind read an
 *unbound* SchedContext and an existing TCB, and produced exactly the two-insert
 object write — the SchedContext, its head made ready, bound to the thread, the
-TCB bound to the SchedContext at the SchedContext's priority — with **every
+TCB bound to the SchedContext — with **every
 replenish queue untouched** until the last step, which places the context on
 its thread's home core's release queue (WS-ZA ZA6.4, seL4-MCS's `postpone`).
-The possible home-core run-queue rebucket and the thread-index update are
-erased here: only what the invariant proofs read survives. -/
+The possible home-core run-queue placement is erased here: only what the invariant proofs read survives. -/
 private theorem schedContextBind_ok_char
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
@@ -561,8 +560,7 @@ private theorem schedContextBind_ok_char
                              donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
-            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
-            priority := sc.priority })) } ∧
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } ∧
       mid.objects.invExt ∧
       (∀ c, mid.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) ∧
       st' = mid.releasePlace (determineTargetCore { st with objects := ((st.objects.insert vScId.val
@@ -571,8 +569,7 @@ private theorem schedContextBind_ok_char
                              donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
-            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
-            priority := sc.priority })) } vThreadId.val)
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } vThreadId.val)
         (SchedContextId.ofObjId vScId.val) := by
   simp only [schedContextBind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
@@ -600,52 +597,37 @@ private theorem schedContextBind_ok_char
         have hNoLive : replyFrameOnLiveStack st tcb = false := by
           cases hL : replyFrameOnLiveStack st tcb with
           | false => rfl
-          | true => rw [hL] at h; split at h <;> simp at h
+          | true => rw [hL] at h; simp at h
         simp only [hNoLive, Bool.false_eq_true, if_false] at h
         refine ⟨tcb, rfl, ?_⟩
-        cases hDom : tcb.domain != sc.domain with
-        | true => rw [hDom] at h; simp at h
-        | false =>
-          rw [hDom] at h
-          simp only [Bool.false_eq_true, if_false] at h
-          cases hBind : tcb.schedContextBinding with
-          | bound scb => rw [hBind] at h; cases h
-          | donated scb owner => rw [hBind] at h; cases h
-          | unbound =>
-            rw [hBind] at h; simp only [] at h
-            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
-            -- insert under the pre-state's TCB witness.
-            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
-              vThreadId.val tcb _ hObjInv hTcb] at h
-            cases h
-            refine ⟨_, ?_, ?_, ?_, rfl⟩
-            · -- objects: both rebucket arms move the thread through its TCB
-              -- run-queue links over the double-insert store (WS-ZA ZA4.5), and
-              -- the reschedule-pending hook writes no object.
-              intro x
-              simp only [markKeyChangeFor_objects]
-              split
-              · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
-              · split
-                · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
-                · rfl
-            · simp only [markKeyChangeFor_objects]
-              split
-              · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _
-                  ((st.objects.insert _ _).insert_preserves_invExt _ _
-                    (st.objects.insert_preserves_invExt _ _ hObjInv))
-              · split
-                · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
-                    ((st.objects.insert _ _).insert_preserves_invExt _ _
-                      (st.objects.insert_preserves_invExt _ _ hObjInv))
-                · exact (st.objects.insert _ _).insert_preserves_invExt _ _
-                    (st.objects.insert_preserves_invExt _ _ hObjInv)
-            · -- the replenish queues: the rebucket writes a run queue (and the
-              -- placement arm a reschedule-pending flag) only.
-              intro c
-              simp only [markKeyChangeFor_replenishQueueOnCore]
-              repeat' split
-              all_goals simp
+        cases hBind : tcb.schedContextBinding with
+        | bound scb => rw [hBind] at h; cases h
+        | donated scb owner => rw [hBind] at h; cases h
+        | unbound =>
+          rw [hBind] at h; simp only [] at h
+          -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+          -- insert under the pre-state's TCB witness.
+          rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+            vThreadId.val tcb _ hObjInv hTcb] at h
+          cases h
+          refine ⟨_, ?_, ?_, ?_, rfl⟩
+          · -- objects: the placement moves the thread through its TCB
+            -- run-queue links over the double-insert store (WS-ZA ZA4.5).
+            intro x
+            split
+            · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+            · rfl
+          · split
+            · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
+                ((st.objects.insert _ _).insert_preserves_invExt _ _
+                  (st.objects.insert_preserves_invExt _ _ hObjInv))
+            · exact (st.objects.insert _ _).insert_preserves_invExt _ _
+                (st.objects.insert_preserves_invExt _ _ hObjInv)
+          · -- the replenish queues: the placement writes a run queue and a
+            -- reschedule-pending flag only.
+            intro c
+            repeat' split
+            all_goals simp
 
 /-- The read-frame a successful bind leaves behind: every queue entry was there
 before, or is the bound context's own on its thread's home core (the release
@@ -680,12 +662,11 @@ private theorem schedContextBind_read_frame
   obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
     ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
         { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) })
-    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) }
+    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) }
     (SchedContextId.ofObjId vScId.val) sc
     { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
     vThreadId.val tcb
-    { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
-               priority := sc.priority }
+    { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
     hObjInv hScRaw hTcbRaw rfl rfl rfl
   have hS : st'.objectsAgreeOffSchedulerLinks _ := hst ▸
     (objectsAgreeOffSchedulerLinks.of_releaseLinks (releasePlace_agree mid _ _)).trans
@@ -698,8 +679,7 @@ private theorem schedContextBind_read_frame
                              donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
-            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
-            priority := sc.priority })) } vThreadId.val
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } vThreadId.val
     · rcases releasePlace_entries_cases mid _ _ c e he with m | ⟨hs, _⟩
       · rw [hQEq c] at m; exact Or.inl m
       · exact Or.inr ⟨hs, hc.trans (hTgt _)⟩

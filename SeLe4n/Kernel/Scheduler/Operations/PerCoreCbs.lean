@@ -1380,7 +1380,7 @@ theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
 from `now - 1` charged by `now` (WS-ZA ZA6.4, `SchedContext.chargeBudget`), and
 its deadline moved on. -/
 abbrev spentSchedContext (sc : SchedContext) (now : Nat) : SchedContext :=
-  cbsUpdateDeadline (sc.chargeBudget (now - 1) 1 now) now true
+  (sc.chargeBudget (now - 1) 1 now)
 
 /-- **The spent context's place is in the future**: the charge ends in the
 release at `now`, so a used-up head's first pending refill is released after
@@ -1388,16 +1388,14 @@ release at `now`, so a used-up head's first pending refill is released after
 theorem spentSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) :
     ∀ t, (spentSchedContext sc now).releaseKey? = some t → t > now := by
   intro t ht
-  rw [cbsUpdateDeadline_releaseKey] at ht
   exact sc.chargeBudget_releaseKey_gt _ _ now t ht
 
 /-- **A refilled context's place is in the future**: the release at `now` takes
 every pending refill released by `now` while the head is used up. -/
 theorem refilledSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) :
-    ∀ t, (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseKey? = some t →
+    ∀ t, ((sc.releaseReadyHead now)).releaseKey? = some t →
       t > now := by
   intro t ht
-  rw [cbsUpdateDeadline_releaseKey] at ht
   exact sc.releaseReadyHead_releaseKey_gt now t ht
 
 

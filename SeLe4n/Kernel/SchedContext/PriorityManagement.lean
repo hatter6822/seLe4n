@@ -258,86 +258,27 @@ object. -/
     getCurrentPriorityChecked st tcb = .ok tcb.priority := by
   simp [getCurrentPriorityChecked, h]
 
-/-- Helper: update the priority of a thread's **priority source** — the object
-`SchedContextBinding.ownScId?` names — and store it.  Returns the
-updated state.
+/-- Helper: write a thread's new base priority into its own TCB, the priority's
+one home, and return the updated state.
 
-**WS-OD (v0.35.3) — the write follows the read, and a donee's priority is its
-own.**  A `.donated` thread's priority now lands in **its own TCB**, not in the
-donor's SchedContext.  Writing the reservation was an authority crossing: the
-donor's scheduling context is the *client's* object, and
-`.tcbSetPriority` / `.tcbSetMCPriority` are authorised by a TCB write
-capability on the **target** plus the caller's MCP headroom — neither of which
-says anything about the client.  A caller holding a TCB capability on a passive
-server could therefore retune the priority of every client that had called it,
-and the effect outlived the call: `returnDonatedSchedContext` hands the
-reservation back with the rewritten field, so the client resumed at a band it
-never asked for.  Reachable at call depth 1 and, since the donation chain
-became transitive, at every depth.  Registered in
-`docs/REGISTERED_DEBT.md` §C and closed here.
+**WS-OD (v0.35.3) — a donee's priority is its own.**  `.tcbSetPriority` /
+`.tcbSetMCPriority` are authorised by a TCB write capability on the **target**
+plus the caller's MCP headroom, which says nothing about a donor; writing the
+donor's reservation was an authority crossing (registered in
+`docs/REGISTERED_DEBT.md` §C and closed at `v0.35.3`).
 
-Writing the TCB is also the only spelling that makes the syscall *work*: with
-the read split (`SystemState.threadBasePriority`) a write to the donor's
-reservation would no longer be observed by the scheduler at all, so a
-`.tcbSetPriority` on a donee would silently do nothing while corrupting an
-unrelated object.
-
-**Invariant dependency**: for a `.bound` thread, requires
-`schedContextBindingConsistent` to guarantee the SchedContext exists.
-If it does not (invariant violation), the function defensively returns
-the state unchanged. This no-op path is dead code when invariants hold.
-
-**Both arms are the typed in-place rewrite** (`v0.35.71`): the reservation
-through `SystemState.updateSchedContext`, whose identity-on-absent arm *is*
-the defensive no-op above, and the thread through `SystemState.updateTcb`.
-The record handed in classifies the binding; the write rewrites the record
-the store holds, so a caller that resolved `tcb` at an earlier state cannot
-write a stale copy of it back. -/
+**WS-SX SX6.4**: a scheduling context carries no priority at all (seL4-MCS's
+`sched_context_t` holds budget, period and refills), so there is no reservation
+to write at any binding and no mirror to keep in step.  The record handed in is
+no longer read; the write rewrites the record the store holds
+(`SystemState.updateTcb`), so a caller that resolved the thread at an earlier
+state cannot write a stale copy back. -/
 @[inline] def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
-  match tcb.schedContextBinding.ownScId? with
-  | some scId =>
-    -- `.bound`: the base priority is the TCB's, and the reservation carries the
-    -- band it was configured to; this writes both.
-    --
-    -- **WS-RR (`v0.35.133`): do not read the SchedContext write as redundant.**
-    -- Until that cut `SystemState.threadBasePriority` read `sc.priority` here
-    -- while `TCB.boostedPriority` -- the bucket every run-queue *insert* is keyed
-    -- by (`enqueueRunnableOnCore`, `preemptCurrentOnCore`) -- read `tcb.priority`,
-    -- so the two writes were the two halves of one base.  With one home the TCB
-    -- write is what changes the thread's band and the SchedContext write is what
-    -- keeps `boundThreadPriorityConsistent` true -- the statement that a
-    -- reservation's configured band tracks its bound thread's.  Dropping it would
-    -- leave the mirror stale at the old value for the next `schedContextBind` of
-    -- this reservation to propagate back, since that operation writes
-    -- `tcb.priority := sc.priority`.  (`schedContextConfigure` writes its
-    -- caller's argument to both homes, so it is not a route back; naming it here
-    -- was wrong and is corrected at `v0.35.136`.)
-    --
-    -- `boundThreadPriorityConsistent` is the agreement between them,
-    -- `schedContextBind` establishes it and
-    -- `schedContextConfigureBoundPropagate` maintains it; until `v0.35.98` this
-    -- arm wrote the reservation alone, so the syscall whose entire job is to
-    -- change a priority was the one writer that broke it.  Measured on the
-    -- live per-core path: `.tcbSetPriority` demoted a bound thread from 50 to
-    -- 10, `migrateRunQueueBucketOnCore` re-bucketed it at 10, and its first
-    -- wake re-inserted it at `tcb.boostedPriority` -- **50**, the band the
-    -- demotion had just removed -- permanently, since every later wake reads
-    -- the same stale field.  A demotion that does not stick is a
-    -- temporal-isolation break in the mixed-criticality deployments MCS exists
-    -- for; a promotion that does not stick is the latency failure in the other
-    -- direction.
-    --
-    -- The SchedContext first and the thread second, mirroring
-    -- `schedContextBind`'s order, so the two establish the same agreement the
-    -- same way round.  Each half is an identity where its object is absent, so
-    -- the arm is total and a dangling `.bound` (an invariant violation) still
-    -- gets the TCB write rather than being silently dropped whole.
-    (st.updateSchedContext scId fun sc => { sc with priority := newPriority }).updateTcb tid
-      fun t => { t with priority := newPriority }
-  | none =>
-    -- `.unbound` and `.donated`: the thread's own TCB, which is its only home.
-    st.updateTcb tid fun t => { t with priority := newPriority }
+    (_tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
+  -- WS-SX SX6.4: the thread's own TCB at every binding, its priority's only
+  -- home: a scheduling context carries no priority (seL4-MCS's
+  -- `setPriority` writes `tcb->tcbPriority` alone).
+  st.updateTcb tid fun t => { t with priority := newPriority }
 
 /-- **The frame belongs to the write** (`v0.35.98`).  `updatePrioritySource`
 moves objects and nothing else, at either binding — stated once here rather than
@@ -352,12 +293,8 @@ theorem updatePrioritySource_only_modifies_objects
     ∃ objects', updatePrioritySource st tid tcb newPriority
       = { st with objects := objects' } := by
   unfold updatePrioritySource
-  split
-  · rw [SystemState.updateTcb_eq_objects_update,
-      SystemState.updateSchedContext_eq_objects_update]
-    exact ⟨_, rfl⟩
-  · rw [SystemState.updateTcb_eq_objects_update]
-    exact ⟨_, rfl⟩
+  rw [SystemState.updateTcb_eq_objects_update]
+  exact ⟨_, rfl⟩
 
 /-- The priority write keeps the object store well-formed — a typed
 read-modify-write at each binding. -/
@@ -366,10 +303,7 @@ theorem updatePrioritySource_preserves_objects_invExt
     (newPriority : SeLe4n.Priority) (hInv : st.objects.invExt) :
     (updatePrioritySource st tid tcb newPriority).objects.invExt := by
   unfold updatePrioritySource
-  split
-  · exact SystemState.updateTcb_preserves_objects_invExt _ _ _
-      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
-  · exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
 /-- WS-OD (v0.35.3): the payoff — a priority update on a **donated** thread
 writes that thread's own TCB and nothing else, so the donor's reservation is
@@ -386,7 +320,6 @@ theorem updatePrioritySource_donated (st : SystemState) (tid : SeLe4n.ThreadId)
       { st with objects :=
           st.objects.insert tid.toObjId (.tcb { tcb with priority := newPriority }) } := by
   unfold updatePrioritySource
-  rw [show tcb.schedContextBinding.ownScId? = none by simp [h]]
   exact SystemState.updateTcb_eq_of_some hTcb _
 
 /-- WS-OD (v0.35.3): the security statement, in the form the finding was
@@ -406,7 +339,6 @@ theorem updatePrioritySource_donated_preserves_donor_schedContext
     (updatePrioritySource st tid tcb newPriority).getSchedContext? scId =
       st.getSchedContext? scId := by
   unfold updatePrioritySource
-  rw [show tcb.schedContextBinding.ownScId? = none by simp [h]]
   exact SystemState.updateTcb_getSchedContext? st tid _ hExt scId
 
 /-- Helper: if a thread is in the run queue, remove it and re-insert at
@@ -508,30 +440,12 @@ theorem migrateRunQueueBucketOnCore_objects_invExt (st : SystemState)
   · exact hInv
 
 /-- WS-ZA ZA4.5: the priority write keeps the run queues in agreement with the
-links — it writes a reservation and the thread's `priority`, neither a link. -/
+links — it writes the thread's `priority`, no link. -/
 theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) :
     SystemState.RunQueueStage st (updatePrioritySource st tid tcb newPriority) := by
   unfold updatePrioritySource
-  split
-  · refine SystemState.RunQueueStage.trans (SystemState.RunQueueStage.of_invExt fun h0 =>
-      SystemState.RunQueueStage.of_link (.of_frames (fun h r => ⟨?_, ?_⟩)
-        (fun h => ?rel) (fun h => by exact Kernel.RefillViewsKept.updateSchedContext _ _ _ h fun _ => rfl)
-        (fun h => by exact Kernel.YieldLinksKept.updateSchedContext _ _ _ h fun _ => rfl))
-        ?_ ?_ ?_)
-      (SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl))
-    case rel => exact .updateSchedContext _ _ _ h (fun _ => ⟨rfl, rfl, rfl⟩)
-    · exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ h
-    · exact SystemState.runQueueRefined_of_frame
-        (fun c t => SystemState.runLinkOn_of_getTcb?
-          (SystemState.updateSchedContext_getTcb? _ _ _ h t) c)
-        (by rw [SystemState.updateSchedContext_scheduler])
-        (by rw [SystemState.updateSchedContext_scheduler]) r
-    · intro c t h'; rwa [SystemState.updateSchedContext_scheduler] at h'
-    · intro c t h'
-      rwa [SystemState.queuedOn_of_getTcb? (SystemState.updateSchedContext_getTcb? _ _ _ h0 t)] at h'
-    · exact SystemState.StateMono.of_getTcb (SystemState.updateSchedContext_getTcb? _ _ _ h0)
-  · exact SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl)
+  exact SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl)
 
 /-- WS-ZA ZA4.5: the priority write keeps every thread's core code. -/
 theorem updatePrioritySource_runCoreCode (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -540,12 +454,8 @@ theorem updatePrioritySource_runCoreCode (st : SystemState) (tid : SeLe4n.Thread
     ((updatePrioritySource st tid tcb newPriority).getTcb? y).map TCB.runCoreCode =
       (st.getTcb? y).map TCB.runCoreCode := by
   unfold updatePrioritySource
-  split
-  · rw [SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
-      (fun _ => rfl) (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv),
-      SystemState.updateSchedContext_getTcb? _ _ _ hInv]
-  · exact SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
-      (fun _ => rfl) hInv y
+  exact SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
+    (fun _ => rfl) hInv y
 
 /-- WS-ZA ZA4.5: the bucket migration keeps the agreement — it re-keys a thread
 its home queue holds, which under the agreement that core's links queue. -/
@@ -565,7 +475,7 @@ theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
 Sequence:
 1. Look up caller TCB, validate MCP authority
 2. Look up target TCB
-3. Update priority on SchedContext (if bound) or TCB (if unbound)
+3. Update the priority on the target's TCB
 4. If target is in run queue, perform bucket migration (remove + re-insert)
 5. If target is current and priority decreased, trigger reschedule
 

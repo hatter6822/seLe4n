@@ -793,7 +793,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
   match st.getTcb? tid with
   | some t0 =>
     let p0 := t0.boostedPriority
-    let d0 := effectiveDeadline st t0
+    let d0 := t0.deadline
     let dom0 := t0.domain
     let e0 := hasSufficientBudget st t0
     let st1 := st.updateSchedContext scId fun sc =>

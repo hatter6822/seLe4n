@@ -78,11 +78,11 @@ specification's). -/
             let first := donationFirstPushCode donor scId
             let originC := SeLe4n.reuseSome donor.idCell client
             let cp := donor.boostedPriority
-            let cd := effectiveDeadline st donor
+            let cd := donor.deadline
             let cdom := donor.domain
             let ce := hasSufficientBudget st donor
             let sp := srv.boostedPriority
-            let sd := effectiveDeadline st srv
+            let sd := srv.deadline
             let sdom := srv.domain
             let se := hasSufficientBudget st srv
             let s1 := st.updateSchedContext scId fun s =>
@@ -122,7 +122,7 @@ theorem markKeyChangeFrom_of_getTcb (pre post : SystemState) (tid : SeLe4n.Threa
     (h : pre.getTcb? tid = some t) :
     markKeyChangeFrom pre post tid =
       markKeyChangeParts (markCandidacyGainFor post tid (hasSufficientBudget pre t)) tid
-        t.boostedPriority (effectiveDeadline pre t) t.domain := by
+        t.boostedPriority (t.deadline) t.domain := by
   unfold markKeyChangeFrom
   rw [h]
   dsimp only

@@ -1116,7 +1116,7 @@ built pair of pairs, so the parts go to the key hook's parts form
       | .bound scId | .donated scId _ =>
         match st.getSchedContextWitnessed? scId with
         | some ⟨sc, hSc⟩ =>
-          let d := effectiveDeadline st tcb
+          let d := tcb.deadline
           .ok (scheduleEffectiveOnCoreTotal (markKeyChangeParts
             (spendBudgetOnCore st c tid scId sc hSc st.machine.timer sc.budget.val) tid
             tcb.boostedPriority d tcb.domain) c)

@@ -626,13 +626,16 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                          affinity := some affinity }
       -- WS-ZA ZA6.4: a configure names its context through the SAME resolver
       -- the live arm configures through (`resolveSchedControlConfigureTarget`):
-      -- a context capability at MR0, the invoked capability a core's
-      -- scheduling control.
+      -- the context capability is extra capability 0 (WS-SX SX6.4), the invoked
+      -- capability a core's scheduling control.
       | .schedContextConfigure, .schedControl core =>
+          match callerExtraCapAddr? s tid decoded.msgInfo.extraCaps 0 with
+          | none => none
+          | some scCPtr =>
           match Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked decoded with
           | .error _ => none
           | .ok args =>
-              match resolveSchedControlConfigureTarget tid core args.scCPtr s with
+              match resolveSchedControlConfigureTarget tid core scCPtr args.extraRefills s with
               | .error _ => none
               | .ok v =>
                   if hCore : core < SeLe4n.Kernel.Concurrency.numCores then

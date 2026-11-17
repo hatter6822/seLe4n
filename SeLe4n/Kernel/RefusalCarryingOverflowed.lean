@@ -91,7 +91,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
       decodeSetIPCBufferArgs, decodeSetAffinityArgs,
       decodeSetSpaceArgs, decodePageTableMapArgs, truncationMinimum, hL _ hT, bind,
       Except.bind, dispatchCapabilityOnlyChecked, untypedRetypeFromCap_truncated]
-  all_goals first | rfl | skip
+  all_goals first | rfl | (split <;> rfl) | skip
 
 /-- A capability of the type of a routed invocation that reads arguments is one
 its arguments are read under, so a short message reaching the arm is refused
@@ -261,7 +261,7 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
     (executingCore : Concurrency.CoreId) (capAddr : SeLe4n.CPtr) (xc : Nat) :
     Option Capability → RefusalCarrying Unit :=
   match sid with
-  | .schedContextConfigure => configureOperandArmR rf w tid
+  | .schedContextConfigure => configureOperandArmR rf w tid xc
   | .serviceRegister => serviceRegisterOperandArmR ctx tid xc rf w
   | .cspaceCopy => copyOperandArmR ctx tid xc rf w
   | .cspaceMint => mintOperandArmR ctx tid xc rf w w1

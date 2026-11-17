@@ -469,15 +469,12 @@ theorem resumeThreadOnCore_mappingStage {st st' : SystemState}
 
 /-! ### Priorities -/
 
-/-- The priority's source write: the bound context's band and the thread's
-priority, each in place. -/
+/-- The priority's source write: the thread's priority, in place. -/
 theorem updatePrioritySource_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (p : SeLe4n.Priority) :
     MappingStage st (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
-  · exact updateTcb_mappingStage _ _ _
+  exact updateTcb_mappingStage _ _ _
 
 theorem migrateRunQueueBucketOnCore_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (homeCore : CoreId) :
@@ -600,8 +597,8 @@ theorem MappingStage.rewriteObject_schedContext_schedulerOnly {st : SystemState}
   MappingStage.of_objects_eq_left (st0 := { st with scheduler := s }) rfl
     (MappingStage.rewriteObject_schedContext (st := { st with scheduler := s }) h _ _)
 
-/-- The bind writes the context's bound thread and the thread's binding and
-priority in place, re-buckets or places the thread, then the key hook. -/
+/-- The bind writes the context's bound thread and the thread's binding in
+place, then places a parked thread. -/
 theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
     {st st' : SystemState} (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) :
     MappingStage st st' := by
@@ -616,64 +613,20 @@ theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n
         · split at h
           · cases h
           · split at h
-            · cases h
-            · split at h
-              · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-                subst h
-                refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
-                refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
-                split
-                · refine MappingStage.trans ?_ (runRequeueOnCore_mappingStage _ _ _ _)
-                  exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
-                    (updateTcb_mappingStage _ _ _)
-                · split
-                  · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
-                      (SystemState.markReschedulePendingOnCore_objects _ _))
-                    refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
-                    exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
-                      (updateTcb_mappingStage _ _ _)
-                  · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
-                      (updateTcb_mappingStage _ _ _)
-              all_goals cases h
+            · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+              subst h
+              refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
+              split
+              · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
+                  (SystemState.markReschedulePendingOnCore_objects _ _))
+                refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
+                exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+                  (updateTcb_mappingStage _ _ _)
+              · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+                  (updateTcb_mappingStage _ _ _)
+            all_goals cases h
         · cases h
   · cases h
-
-/-- The configure's bound-thread propagation: thread rewrites in place and a
-re-bucket. -/
-theorem schedContextConfigureBoundPropagate_mappingStage (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat) :
-    MappingStage stStored (SchedContextOps.schedContextConfigureBoundPropagate stStored scId
-      boundTid boundTcb hBound priority domain) := by
-  have hP : ∀ (P : Prop) [Decidable P], MappingStage stStored
-      (if P then stStored else
-        if (stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)).queuedOn
-            (determineTargetCore (stStored.rewriteObject boundTid.toObjId
-              (.tcb { boundTcb with priority := ⟨priority⟩ })
-              (SystemState.rewriteAdmissible_tcb hBound _)) boundTid) boundTid then
-          (stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)).runRequeueOnCore
-            (determineTargetCore (stStored.rewriteObject boundTid.toObjId
-              (.tcb { boundTcb with priority := ⟨priority⟩ })
-              (SystemState.rewriteAdmissible_tcb hBound _)) boundTid) boundTid
-            ({ boundTcb with priority := ⟨priority⟩ } : TCB).boostedPriority
-        else stStored.rewriteObject boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ })
-            (SystemState.rewriteAdmissible_tcb hBound _)) := by
-    intro P _
-    split
-    · exact MappingStage.refl _
-    · split
-      · exact (MappingStage.rewriteObject_tcb hBound _).trans (runRequeueOnCore_mappingStage _ _ _ _)
-      · exact MappingStage.rewriteObject_tcb hBound _
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  dsimp only
-  split
-  · rename_i cur hCur hEq
-    split
-    · exact hP _
-    · exact (hP _).trans (MappingStage.rewriteObject_tcb hCur _)
-  · exact hP _
 
 /-- The configure's resume tail writes run-queue links alone. -/
 theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadId)
@@ -683,11 +636,11 @@ theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadI
     (configureResumeBound_onlyObjectsSchedulerDiffer st t sc).ghostsKept
 
 /-- The configure purges the context's replenishment, stores the reconfigured
-context over the old one, and runs the bound-thread propagation, the key hook
-and the chain re-walk. -/
+context over the old one, places it on its release queue, and runs the
+candidacy mark and the resume tail. -/
 theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState}
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st =
+    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st =
       .ok ((), st')) : MappingStage st st' := by
   cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none =>
@@ -718,15 +671,11 @@ theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2]; exact hS1
           · split at h
-            · rename_i boundTcb hBound _
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
+            · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
               exact ((hS1.trans (releasePlace_mappingStage _ _ _)).trans
-                ((((schedContextConfigureBoundPropagate_mappingStage _ _ _ _ hBound _ _).trans
-                  (markCandidacyGainFor_mappingStage _ _ _)).trans
-                  (markKeyChangeFor_mappingStage _ _ _)).trans
-                  (repropagateFromWaiter_mappingStage _ _ _ _))).trans
-                  (configureResumeBound_mappingStage _ _ _)
+                (markCandidacyGainFor_mappingStage _ _ _)).trans
+                (configureResumeBound_mappingStage _ _ _)
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]; exact hS1.trans (releasePlace_mappingStage _ _ _)
       · exact absurd h (by simp)
@@ -810,8 +759,8 @@ theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
 /-- WS-ZA ZA6.4: the SchedControl configure moves the bound thread through the
 affinity change and then configures on the moved state; both are stages. -/
 theorem schedControlConfigure_mappingStage {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState}
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain
+    {budget period : Nat} {badge flags : UInt64} {st st' : SystemState}
+    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags
       st = .ok ((), st')) : MappingStage st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure_mappingStage h

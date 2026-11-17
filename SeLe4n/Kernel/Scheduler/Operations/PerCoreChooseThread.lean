@@ -928,13 +928,11 @@ theorem hasSufficientBudget_objects_congr (s₁ s₂ : SystemState) (tcb : TCB)
   unfold hasSufficientBudget SystemState.getSchedContext?
   rw [h]
 
-/-- SM5.A budget helper: `resolveEffectivePrioDeadline` reads the state only
-through the object store, so two states with equal `objects` agree on it. -/
+/-- SM5.A budget helper: `resolveEffectivePrioDeadline` reads no state at all
+(WS-SX SX6.4: the thread's own fields), so any two states agree on it. -/
 theorem resolveEffectivePrioDeadline_objects_congr (s₁ s₂ : SystemState) (tcb : TCB)
-    (h : s₁.objects = s₂.objects) :
-    resolveEffectivePrioDeadline s₁ tcb = resolveEffectivePrioDeadline s₂ tcb := by
-  unfold resolveEffectivePrioDeadline SystemState.getSchedContext?
-  rw [h]
+    (_h : s₁.objects = s₂.objects) :
+    resolveEffectivePrioDeadline s₁ tcb = resolveEffectivePrioDeadline s₂ tcb := rfl
 
 /-- SM5.A budget helper: the effective fold reads the state only through the
 object store (the run queue / active domain enter as explicit arguments), so

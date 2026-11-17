@@ -1447,8 +1447,7 @@ private def witnessTcbBound : TCB :=
   { witnessTcbFresh with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound witnessScId), scBindingOwnerCode := 0 }
 
 private def witnessScFresh : SeLe4n.Kernel.SchedContext :=
-  { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
+  { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, budgetRemaining := ⟨1⟩ }
 
 private def witnessScBound : SeLe4n.Kernel.SchedContext :=
   { witnessScFresh with boundThreadCode := SeLe4n.ThreadId.optCode (some witnessTid) }

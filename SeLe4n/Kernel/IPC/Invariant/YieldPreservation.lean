@@ -59,13 +59,12 @@ theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
     ipcInvariantFull (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   have hPre := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   have hAdm := SystemState.rewriteAdmissible_schedContext hSc
-    (cbsUpdateDeadline (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true)
+    ((sc.chargeBudget start ticks st.machine.timer))
   have h1 : ipcInvariantFull (st.rewriteObject scId.toObjId _ hAdm) :=
     insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId sc _
       hObjInv hInv hPre (by
         unfold SchedContext.boundThread
-        rw [(cbsUpdateDeadline_refills _ _ _).2.2.2.2.2,
-          (SchedContext.fields_of_refillsErased
+        rw [(SchedContext.fields_of_refillsErased
             (sc.chargeBudget_refillsErased start ticks st.machine.timer)).2.2.2.2.2.2.1])
   unfold spendBudgetOnCore
   dsimp only

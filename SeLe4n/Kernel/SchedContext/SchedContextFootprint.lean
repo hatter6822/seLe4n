@@ -97,19 +97,15 @@ def schedContextConfigureReplenishCores (st : SystemState) (scObjId : SeLe4n.Obj
   | none => []
 
 /-- **The cores a `.schedContextConfigure` may write** — the bound thread's home
-core, where the propagated priority re-buckets it (`schedContextWriteSet`), and,
-when that thread is reply-blocked on a server, the home cores of the inheritance
-chain the propagated priority re-walks (`waiterChainWriteSet`).
+core, where the resume tail places or removes it (`schedContextWriteSet`).
 
-The chain segment is read from the **pre-state**, though the walk runs after the
-SchedContext store and the propagation: neither moves a home core or a blocking
-edge (`schedContextConfigureBoundPropagate_tcbChainFields`). -/
+WS-SX SX6.4: the configure writes the context alone, as seL4-MCS's
+`invokeSchedControl_ConfigureFlags` does: it propagates no priority to the
+thread, so it re-walks no inheritance chain and the chain segment this set
+carried is gone. -/
 def schedContextConfigureWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
     List CoreId :=
-  schedContextWriteSet st scObjId ++
-    match SchedContextOps.schedContextBoundThread? st scObjId with
-    | some tid => waiterChainWriteSet st tid (determineTargetCore st tid) st.objects.size
-    | none => []
+  schedContextWriteSet st scObjId
 
 -- ============================================================================
 -- §5  The `.schedContextBind` arm
@@ -283,8 +279,8 @@ theorem schedLockSet_schedContextUnbindOnCore_no_replenishQueue_of_unbound
 
 /-- **A `.schedContextBind` writes one replenish queue: its thread's home core's.**
 
-Its steps are the SchedContext rewrite, the TCB rewrite, an optional run-queue
-re-bucket, the reschedule-flag update and (WS-ZA ZA6.4) the release placement on
+Its steps are the SchedContext rewrite, the TCB rewrite, an optional placement
+of a parked thread with its reschedule flag, and (WS-ZA ZA6.4) the release placement on
 the thread's home core; only the last moves a replenishment, and on that core
 alone.  The exactness half of `schedLockSet_schedContextBindOnCore`'s replenish
 segment. -/
@@ -305,62 +301,31 @@ theorem schedContextBind_replenishQueueOnCore_ne (st st' : SystemState)
           split at h
           · exact absurd h (by simp)
           · split at h
+            · dsimp only at h
+              rw [Except.ok.injEq, Prod.mk.injEq] at h
+              rw [← h.2, SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (by
+                  rw [determineTargetCore_congr st _ vThreadId.val (by
+                    rw [SystemState.updateTcb_getTcb?_self _ _ _
+                        (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv),
+                      SystemState.rewriteObject_schedContext_getTcb? st _ _ _ hObjInv, hTcb]
+                    rfl)]
+                  exact hne)]
+              -- Two arms since WS-SX SX6.4: the placement of a parked runnable
+              -- thread, and the identity.  Both write a run queue (and the
+              -- placement a reschedule-pending flag) or nothing, so neither
+              -- moves a replenish queue.
+              split
+              · simp only [SystemState.markReschedulePendingOnCore,
+                  SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+                  SystemState.runEnqueueOnCore_scheduler]
+                split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                  SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
+                  SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+              · simp only [SystemState.updateTcb_scheduler,
+                  SystemState.rewriteObject_scheduler]
             · exact absurd h (by simp)
-            · split at h
-              · dsimp only at h
-                rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2, SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (by
-                    rw [determineTargetCore_congr st _ vThreadId.val (by
-                      rw [SystemState.updateTcb_getTcb?_self _ _ _
-                          (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv),
-                        SystemState.rewriteObject_schedContext_getTcb? st _ _ _ hObjInv, hTcb]
-                      rfl)]
-                    exact hne),
-                  markKeyChangeFor_replenishQueueOnCore]
-                -- Three arms since Cut B2 (`v0.35.182`): the re-bucket, the
-                -- placement of a parked runnable thread, and the identity.  All
-                -- three write a run queue (and the placement a reschedule-pending
-                -- flag) or nothing, so none moves a replenish queue.
-                split
-                · simp only [SystemState.runRequeueOnCore_scheduler,
-                    SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-                    SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
-                    SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-                · split
-                  · simp only [SystemState.markReschedulePendingOnCore,
-                      SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
-                      SystemState.runEnqueueOnCore_scheduler]
-                    split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-                      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
-                      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-                  · simp only [SystemState.updateTcb_scheduler,
-                      SystemState.rewriteObject_scheduler]
-              · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)
-
-/-- **`v0.35.168`: the configure's bound-thread propagation writes no replenish
-queue.**
-
-Its two halves are a priority rewrite with an optional run-queue re-bucket and a
-domain rewrite; a `rewriteObject` frames the scheduler outright and the re-bucket
-(`runRequeueOnCore`) writes run-queue state only.  What the arm *does* write is
-the purge one step earlier, which is what
-`schedContextConfigure_replenishQueueOnCore_ne_of_sc` below is stated over. -/
-theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (c : CoreId) :
-    (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid boundTcb
-        hBound priority domain).scheduler.replenishQueueOnCore c
-      = stStored.scheduler.replenishQueueOnCore c := by
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  dsimp only
-  repeat' split
-  all_goals
-    simp [SystemState.rewriteObject_scheduler,
-      SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- **`v0.35.168`: a `.schedContextConfigure` writes exactly one replenish
 queue** — the one the SC's own release link names, where its purge lands.
@@ -369,12 +334,12 @@ The exactness half of `schedLockSet_schedControlConfigure`'s one-core
 segment: every other core's queue is untouched, so the footprint is neither
 false nor wider than the operation. -/
 theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemState)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64)
     (sc : SchedContext) (c : CoreId)
     (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
     (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (hHome : ∀ t, sc.boundThread = some t → c ≠ determineTargetCore st t)
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st
       = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContextOps.schedContextConfigure at h
@@ -392,12 +357,9 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
           rw [← h.2, hSched]
           exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ hne
         · split at h
-          · rename_i boundTcb hBound _
-            rw [Except.ok.injEq, Prod.mk.injEq] at h
+          · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2, SchedContextOps.configureResumeBound_replenishQueueOnCore,
-              PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
-              markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
-              schedContextConfigureBoundPropagate_replenishQueueOnCore,
+              markCandidacyGainFor_replenishQueueOnCore,
               SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (hHome _ (by assumption)), hSched]
             exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ hne
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
@@ -413,9 +375,9 @@ consumes; `…_ne_of_sc` above is the resolution-keyed form it is built from.  T
 unresolved arm is not a gap but a refusal — the transition's own second branch
 errors there — so the segment being empty costs the claim nothing. -/
 theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat) (c : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64) (c : CoreId)
     (hne : c ∉ schedContextConfigureReplenishCores st vScId.val)
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+    (h : SchedContextOps.schedContextConfigure vScId budget period badge flags st
       = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold schedContextConfigureReplenishCores at hne
@@ -430,7 +392,7 @@ theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
   | some sc =>
       rw [hSc] at hne
       exact schedContextConfigure_replenishQueueOnCore_ne_of_sc st st' vScId budget period
-        priority deadline domain sc c hSc (fun e => hne (by
+        badge flags sc c hSc (fun e => hne (by
           unfold SchedContextOps.purgeReplenishCores; rw [e]
           exact List.mem_append_left _ (List.mem_singleton_self c)))
         (fun t ht e => hne (by dsimp only; rw [ht, e]; exact List.mem_append_right _ (List.mem_singleton_self _))) h

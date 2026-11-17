@@ -1954,31 +1954,38 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
 
 private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- Z5-AUD-01: validateSchedContextParams — valid params
-  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 0
+  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000
   IO.println s!"[SCO-001] validateSchedContextParams valid: {reprStr validResult}"
   -- Z5-AUD-02: validateSchedContextParams — zero period rejected
-  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0 50 0 0
+  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0
   IO.println s!"[SCO-002] validateSchedContextParams zero-period: {reprStr zeroPeriod}"
   -- Z5-AUD-03: validateSchedContextParams — budget > period rejected
-  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000 50 0 0
+  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000
   IO.println s!"[SCO-003] validateSchedContextParams budget>period: {reprStr budgetOver}"
-  -- Z5-AUD-04: validateSchedContextParams — priority > max rejected
-  let prioOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 256 0 0
-  IO.println s!"[SCO-004] validateSchedContextParams priority>max: {reprStr prioOver}"
-  -- Z5-AUD-05: validateSchedContextParams — domain >= numDomains rejected
-  let domainOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 16
-  IO.println s!"[SCO-005] validateSchedContextParams domain>=16: {reprStr domainOver}"
-  -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
-  -- A zero-budget SchedContext would store a replenishment with amount=0,
-  -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
-  let zeroBudget := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 0 1000 50 0 0
-  IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
-
-  -- Z5-AUD-06: schedContextConfigure — success path
+  -- WS-SX SX6.4: the configure records seL4's badge word and the flags' sporadic
+  -- bit (`seL4_SchedContext_Sporadic`, bit 0); the context carries no priority
+  -- or domain, so no word is range-checked against one.
   let scId : SeLe4n.ObjId := ⟨5000⟩
   let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
   let stWithSc := st1.withObjectStored scId scObj
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 50 0 0 stWithSc with
+  let flagsProbe (badge flags : UInt64) : String :=
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 badge
+        flags stWithSc with
+    | .error err => s!"error {reprStr err}"
+    | .ok ((), stC) =>
+      match stC.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => s!"badge={sc.badge} sporadic={sc.sporadic}"
+      | none => "object not found"
+  IO.println s!"[SCO-004] schedContextConfigure badge+sporadic: {flagsProbe 0xFFFFFFFFFFFFFFFF 1}"
+  IO.println s!"[SCO-005] schedContextConfigure flags-bit0-only: {flagsProbe 7 2}"
+  -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
+  -- A zero-budget SchedContext would store a replenishment with amount=0,
+  -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
+  let zeroBudget := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 0 1000
+  IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
+
+  -- Z5-AUD-06: schedContextConfigure — success path
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 0 0 stWithSc with
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -1991,7 +1998,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scForBind : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
   let stForBind := st1.withObjectStored scId (.schedContext scForBind)
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stForBind with
   | .error err =>
@@ -2052,25 +2059,26 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let withExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall (some scId)
   IO.println s!"[SCO-012] admission without-exclude={withoutExclude} with-exclude={withExclude}"
 
-  -- Z5-AUD-13: schedContextBind — thread in RunQueue triggers re-insertion
-  -- Tests Z5-G3: when a thread is already in RunQueue, bind must remove and
-  -- re-insert it at the SchedContext's priority (not the old TCB priority).
+  -- Z5-AUD-13: schedContextBind — a queued thread keeps its key.
+  -- WS-SX SX6.4: seL4-MCS's `schedContext_bindTCB` writes only the two links;
+  -- the thread's priority is its own, so a thread already queued stays in the
+  -- bucket of its own priority (0 here).
   let tidRQ : SeLe4n.ThreadId := ⟨1⟩
   let scForRQ : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨200⟩, budgetRemaining := ⟨100⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
   -- thread in RunQueue at default prio 0
   let stForRQ := queueBoot ((resetBootQueue st1).withObjectStored scId (.schedContext scForRQ))
     (atPrioZero [tidRQ]) none
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tidRQ, by decide⟩ stForRQ with
   | .error err =>
-    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
+    IO.println s!"[SCO-013] schedContextBind runqueue-keeps-key: error {reprStr err}"
   | .ok ((), stBoundRQ) =>
     let inQueue := (stBoundRQ.queuedOn bootCoreId tidRQ)
     let newPrio := match (stBoundRQ.queuedPriorityOn bootCoreId tidRQ) with
       | some p => p.toNat
       | none => 9999
-    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: inQueue={inQueue} prio={newPrio}"
+    IO.println s!"[SCO-013] schedContextBind runqueue-keeps-key: inQueue={inQueue} prio={newPrio}"
 
   -- Z5-AUD-14: schedContextUnbind — current thread triggers preemption guard
   -- Tests Z5-H1: when the bound thread IS the current thread, unbind must
@@ -2139,7 +2147,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Tests the case where tcb.schedContextBinding is not .unbound.
   let scForBind2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩ }
+    budget := ⟨100⟩, period := ⟨1000⟩ }
   let tcbAlreadyBound : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨9999⟩), scBindingOwnerCode := 0 }  -- already bound to SC 9999
@@ -2247,8 +2255,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let victimReply : SeLe4n.Kernel.Reply := {
     replyId := rH, callerCode := SeLe4n.ThreadId.optCode (some vTid), next := some (.head scH) }
   let holderSc : SeLe4n.Kernel.SchedContext := {
-    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
-    deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, budgetRemaining := ⟨1000⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some hTid), scReply := some rH }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some hTid, tail := some hTid } {})
   let stR := st1.withObjectStored epH (.endpoint epObj)
@@ -2610,7 +2617,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let sc : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid) }
   let stDon := st1.withObjectStored callerTid.toObjId callerTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext sc)
@@ -2651,7 +2658,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let scDonated : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid) }
   let stRet := st1.withObjectStored callerTid.toObjId callerDonated
       |>.withObjectStored serverTid.toObjId serverDonated
       |>.withObjectStored scId.toObjId (.schedContext scDonated)
@@ -2784,7 +2791,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let scDepth2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨600⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), scReply := some outerReplyId, priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), scReply := some outerReplyId }
   let stChain2 := st1.withObjectStored callerTid.toObjId midTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext scDepth2)
@@ -2843,7 +2850,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     }
   let stSetup := st1.withObjectStored scId scObj
       |>.withObjectStored tid.toObjId (.tcb tcb0)
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 50 0 0 stSetup with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 0 0 stSetup with
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
   | .ok ((), stConfigured) =>

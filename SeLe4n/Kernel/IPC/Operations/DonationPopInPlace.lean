@@ -68,11 +68,11 @@ the specification's). -/
             let rnext := r.next
             let outer := popOuterCode st r
             let op := ot.boostedPriority
-            let od := effectiveDeadline st ot
+            let od := ot.deadline
             let odom := ot.domain
             let oe := hasSufficientBudget st ot
             let hp := ht.boostedPriority
-            let hd := effectiveDeadline st ht
+            let hd := ht.deadline
             let hdom := ht.domain
             let he := hasSufficientBudget st ht
             let s1 := st.updateSchedContext scId fun s =>

@@ -377,12 +377,6 @@ theorem settleReturnedContext_runQueueStage {st X : SystemState}
 -- Z5-F1: Parameter validation
 -- ============================================================================
 
-/-- Maximum priority value (seL4: 255). -/
-def maxPriorityVal : Nat := 255
-
-/-- Maximum number of scheduling domains (seL4: 16). -/
-def numDomainsVal : Nat := 16
-
 /-- Z5-F1: Validate SchedContext configuration parameters.
 Returns error if any parameter violates well-formedness constraints:
 - `period > 0` (required for CBS), and at most `configureMaxPeriod`
@@ -392,29 +386,24 @@ Returns error if any parameter violates well-formedness constraints:
   entries; also, a zero-budget SchedContext cannot make progress and
   starves its bound thread)
 - `budget ≤ period` (cannot use more than 100% of a period)
-- `priority ≤ maxPriority` (within valid priority range)
-- `domain < numDomains` (within valid domain range)
-- `deadline ≤ configureMaxPeriod` (WS-SX SX1.3: a deadline is a time, held to
-  the bound a configure's times are held to, `configureDeadlineWord`)
 
 Each refusal is seL4-MCS's (`decodeSchedControl_ConfigureFlags`): a budget or
 period below the least or above the greatest is `seL4_RangeError` with
 `MIN_BUDGET` and `MAX_PERIOD`
 (`configureMinBudget`, `configureMaxPeriod`), and a budget above its period
-`seL4_RangeError` with `MIN_BUDGET` and the period.  The priority and the domain
-share the parameter word (`configureSchedParamsWord`), which an out-of-range one
-names (`invalidArgument`).  The configure's decode answers the budget and
-period refusals first, in this order (`decodeSchedContextConfigureArgsChecked`). -/
-@[inline] def validateSchedContextParams (budget period priority deadline domain : Nat)
+`seL4_RangeError` with `MIN_BUDGET` and the period.  The configure's decode
+answers these refusals first, in this order
+(`decodeSchedContextConfigureArgsChecked`).  WS-SX SX6.4: a configure carries no
+priority, deadline or domain (seL4-MCS's `seL4_SchedControl_ConfigureFlags`
+words are budget, period, extra refills, badge and flags), so none is
+validated here. -/
+@[inline] def validateSchedContextParams (budget period : Nat)
     : Except KernelError Unit :=
   if period == 0 || configureMaxPeriod.toNat < period then
     .error (.rangeError configureMinBudget configureMaxPeriod)
   else if budget == 0 || configureMaxPeriod.toNat < budget then
     .error (.rangeError configureMinBudget configureMaxPeriod)
   else if budget > period then .error (.rangeError configureMinBudget (UInt64.ofNat period))
-  else if priority > maxPriorityVal then .error (.invalidArgument configureSchedParamsWord)
-  else if domain ≥ numDomainsVal then .error (.invalidArgument configureSchedParamsWord)
-  else if configureMaxPeriod.toNat < deadline then .error (.invalidArgument configureDeadlineWord)
   else .ok ()
 
 -- ============================================================================
@@ -592,153 +581,6 @@ reconfiguration builds nothing. -/
 -- Z5-F3: schedContextConfigure
 -- ============================================================================
 
-/-- WS-OD (v0.35.3): may a reconfiguration of SchedContext `scId` propagate its
-**thread-owned** parameters — base priority and domain — into `boundTcb`?
-
-Exactly when `boundTcb` **owns** that reservation.  One predicate for both
-halves of `schedContextConfigureBoundPropagate`, so they provably gate on the
-same fact: a domain gate that asked the question a second way would be the
-"one question, two answers" shape `CLAUDE.md` forbids, and the two halves
-disagreeing is how half a fix reads as a whole one. -/
-def schedContextConfigurePropagates (boundTcb : TCB)
-    (scId : SeLe4n.SchedContextId) : Prop :=
-  boundTcb.schedContextBinding.ownScId? = some scId
-
-instance (boundTcb : TCB) (scId : SeLe4n.SchedContextId) :
-    Decidable (schedContextConfigurePropagates boundTcb scId) := by
-  unfold schedContextConfigurePropagates; infer_instance
-
-/-- A donee's thread-owned parameters are never propagated to: it owns no
-reservation, so no reconfiguration of the one it runs on reaches its TCB. -/
-@[simp] theorem schedContextConfigurePropagates_donated (boundTcb : TCB)
-    {scId held : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (h : boundTcb.schedContextBinding = .donated held owner) :
-    ¬ schedContextConfigurePropagates boundTcb scId := by
-  simp [schedContextConfigurePropagates, h]
-
-/-- A thread that owns the reconfigured reservation is propagated to — the
-`.bound` case, so neither half of the propagation is dead code. -/
-@[simp] theorem schedContextConfigurePropagates_bound (boundTcb : TCB)
-    {scId : SeLe4n.SchedContextId}
-    (h : boundTcb.schedContextBinding = .bound scId) :
-    schedContextConfigurePropagates boundTcb scId := by
-  simp [schedContextConfigurePropagates, h]
-
-/-- The bound-thread propagation tail of `schedContextConfigure`, factored so
-the invariant surface can speak about it by name: rewrite the bound TCB's
-priority (when it moved), re-bucket the thread on its home core (when queued),
-then align its domain (when it moved) — **all of it gated on
-`schedContextConfigurePropagates`**, one predicate over
-`SchedContextBinding.ownScId?` that both halves consult.
-
-**WS-OD (v0.35.3) — the mirror authority crossing.**  `sc.boundThread` is the
-thread the reservation is *charged to*, which after a donation is the **donee**,
-not the owner: `donateSchedContext` writes `boundThread := some serverTid`.
-Propagating a reconfiguration there unconditionally let a caller holding a
-capability on the **client's** reservation rewrite the **server's** own
-`TCB.priority` *and* `TCB.domain` — the mirror of the crossing
-`updatePrioritySource` had, and permanent, since the donee keeps both fields
-after the donation returns.  Neither is the caller's to set: `.tcbSetPriority`
-answers to a TCB-write right over the target plus an MCP ceiling, and the domain
-is the partition the thread runs in.
-
-Both halves are propagations of the **thread-owned** parameters onto the
-reservation the thread owns — the AK2-B convention — and the invariants they
-maintain (`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`) are
-both `.bound`-only, so gating on ownership is the exact relation rather than a
-weakening: it fires on every state those invariants constrain.  `scId?` would be
-the wrong classifier here, and the wrong one is what the crossing was.  Both
-halves consult the **one** predicate, so a later cut cannot gate one and not the
-other.
-
-Budget, period and deadline are **reservation-owned** and are written by
-`schedContextConfigure` itself, on the SchedContext, where a donee reads them
-at every depth.  A reconfiguration therefore still retunes the donee's budget
-and deadline, which is correct: that is the reservation the caller holds. -/
-def schedContextConfigureBoundPropagate (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId)
-    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb)
-    (priority domain : Nat) : SystemState :=
-  let stProp : SystemState :=
-    if boundTcb.priority.val = priority ∨
-       ¬ schedContextConfigurePropagates boundTcb scId then
-      stStored
-    else
-      let newPri : SeLe4n.Priority := ⟨priority⟩
-      let boundTcb2 : TCB := { boundTcb with priority := newPri }
-      -- The bound TCB is handed in, so the write is the typed in-place rewrite
-      -- under the store's witness for it (`v0.35.71`): `schedContextConfigure`
-      -- resolves the thread once, through the witnessed lookup, and passes the
-      -- proof down rather than looking the record up a second time.
-      let stWithTcb : SystemState :=
-        stStored.rewriteObject boundTid.toObjId (KernelObject.tcb boundTcb2)
-          (SystemState.rewriteAdmissible_tcb hBound boundTcb2)
-      -- The bucket the thread now belongs in, read off the record that is
-      -- being stored: `TCB.boostedPriority` (`Model/Object/Types.lean`) is the
-      -- one answer the run queue is keyed by, and taking it from `boundTcb2`
-      -- rather than re-deriving it from `priority` is what stops the stored
-      -- priority and the bucket from being computed by two expressions.
-      let effectivePri : SeLe4n.Priority := boundTcb2.boostedPriority
-      let boundHome := determineTargetCore stWithTcb boundTid
-      -- The thread leaves its bucket and rejoins the new one through its TCB
-      -- run-queue links (WS-ZA ZA4.5).
-      if stWithTcb.queuedOn boundHome boundTid then
-        stWithTcb.runRequeueOnCore boundHome boundTid effectivePri
-      else stWithTcb
-  -- The domain half reads the record the priority half may have rewritten, so
-  -- it resolves the thread again -- through the witnessed lookup, whose
-  -- witness is its own rewrite's proof -- and writes only when the domain
-  -- moved: the `if` stays outside the rewrite so an unchanged domain is no
-  -- write at all, as before.
-  match stProp.getTcbWitnessed? boundTid with
-  | some ⟨currentTcb, hCurrent⟩ =>
-    if currentTcb.domain.val = domain ∨
-       ¬ schedContextConfigurePropagates boundTcb scId then stProp
-    else
-      let newDom : SeLe4n.DomainId := ⟨domain⟩
-      let currentTcb2 : TCB := { currentTcb with domain := newDom }
-      stProp.rewriteObject boundTid.toObjId (KernelObject.tcb currentTcb2)
-        (SystemState.rewriteAdmissible_tcb hCurrent currentTcb2)
-  | none => stProp
-
-/-- The propagation tail keeps the object store's invariant: its two writes are
-TCB rewrites, and the re-bucket writes only run-queue links and the scheduler.  The chain re-walk
-`schedContextConfigure` runs after it needs this. -/
-theorem schedContextConfigureBoundPropagate_preserves_objects_invExt (stStored : SystemState)
-    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
-    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (hInv : stStored.objects.invExt) :
-    (schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound priority
-      domain).objects.invExt := by
-  unfold schedContextConfigureBoundPropagate
-  have hProp : ∀ s : SystemState, s.objects.invExt →
-      ∀ (hW : ∀ t, s.getTcbWitnessed? boundTid = some t → True),
-      (match s.getTcbWitnessed? boundTid with
-        | some ⟨currentTcb, hCurrent⟩ =>
-          if currentTcb.domain.val = domain ∨
-             ¬ schedContextConfigurePropagates boundTcb scId then s
-          else
-            s.rewriteObject boundTid.toObjId (KernelObject.tcb { currentTcb with domain := ⟨domain⟩ })
-              (SystemState.rewriteAdmissible_tcb hCurrent { currentTcb with domain := ⟨domain⟩ })
-        | none => s).objects.invExt := by
-    intro s hs _
-    split
-    · split
-      · exact hs
-      · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hs
-    · exact hs
-  apply hProp _ _ (fun _ _ => trivial)
-  split
-  · exact hInv
-  · dsimp only []
-    have hW := SystemState.rewriteObject_preserves_objects_invExt stStored boundTid.toObjId
-      (KernelObject.tcb { boundTcb with priority := ⟨priority⟩ })
-      (SystemState.rewriteAdmissible_tcb hBound _) hInv
-    split
-    · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hW
-    · exact hW
-
 /-- **WS-ZA ZA6.4**: whether a configure keeps the context's head refill
 (seL4-MCS's `refill_update`) rather than starting its refills afresh
 (`refill_new`): exactly when the context is in use — configured before, its
@@ -753,6 +595,11 @@ already used. -/
     | some t => (st.getTcb? t).any TCB.isRunnable
     | none => false
 
+/-- seL4-MCS's `seL4_SchedContext_Sporadic`: bit 0 of a configure's flags word
+marks the context's refills sporadic (`invokeSchedControl_ConfigureFlags`,
+`target->scSporadic = (flags & seL4_SchedContext_Sporadic) != 0`). -/
+@[inline] def sporadicOfFlags (flags : UInt64) : Bool := flags &&& 1 != 0
+
 /-- **WS-ZA ZA5.2**: the context `schedContextConfigure` stores, as a function of
 the stored one, so the store can rewrite it in its slot.  WS-ZA ZA6.4: its refills
 are seL4-MCS's: the head kept and trimmed to the new budget, the rest of the
@@ -761,15 +608,14 @@ budget one new period on (`SchedContext.refillUpdate`), when `keep`
 `timer` (`SchedContext.refillNew`).  Either way the refills hold the new budget
 exactly once (`refillUpdate_refillTotal`, `refillNew_refillTotal`).  The context
 is left off every release queue; the configure then places it. -/
-@[inline] def configuredSchedContext (budget period priority deadline domain timer : Nat)
+@[inline] def configuredSchedContext (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
       budget := ⟨budget⟩
       period := ⟨period⟩
-      priority := ⟨priority⟩
-      deadline := ⟨deadline⟩
-      domain := ⟨domain⟩
+      badge := badge
+      sporadic := sporadicOfFlags flags
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
@@ -779,30 +625,28 @@ is left off every release queue; the configure then places it. -/
 updates then reuse the context's cell when the store holds the only reference,
 where inlined into the branch on `keep` they sit in a join point that drops the
 reuse and allocates the context and its object on every configure. -/
-@[noinline] def configuredSchedContextFresh (budget period priority deadline domain timer : Nat)
+@[noinline] def configuredSchedContextFresh (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
       budget := ⟨budget⟩
       period := ⟨period⟩
-      priority := ⟨priority⟩
-      deadline := ⟨deadline⟩
-      domain := ⟨domain⟩
+      badge := badge
+      sporadic := sporadicOfFlags flags
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
   base.refillNew budget timer
 
 /-- `configuredSchedContext`'s kept-head branch (`refill_update`), out of line. -/
-@[noinline] def configuredSchedContextKept (budget period priority deadline domain timer : Nat)
+@[noinline] def configuredSchedContextKept (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (sc : SchedContext) : SchedContext :=
   let base : SchedContext :=
     { sc with
       budget := ⟨budget⟩
       period := ⟨period⟩
-      priority := ⟨priority⟩
-      deadline := ⟨deadline⟩
-      domain := ⟨domain⟩
+      badge := badge
+      sporadic := sporadicOfFlags flags
       releaseNextCode := 0
       releaseCoreCode := 0
       releaseAt := 0 }
@@ -810,38 +654,38 @@ reuse and allocates the context and its object on every configure. -/
 
 /-- The compiled `configuredSchedContext`: the branch on `keep` first, each
 branch's updates out of line. -/
-@[inline] def configuredSchedContextImpl (budget period priority deadline domain timer : Nat)
+@[inline] def configuredSchedContextImpl (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) : SchedContext :=
-  if keep then configuredSchedContextKept budget period priority deadline domain timer sc
-  else configuredSchedContextFresh budget period priority deadline domain timer sc
+  if keep then configuredSchedContextKept budget period badge flags timer sc
+  else configuredSchedContextFresh budget period badge flags timer sc
 
 /-- The compiled configured context is the configured context. -/
 @[csimp] theorem configuredSchedContext_eq_impl :
     @configuredSchedContext = @configuredSchedContextImpl := by
-  funext budget period priority deadline domain timer keep sc
+  funext budget period badge flags timer keep sc
   unfold configuredSchedContext configuredSchedContextImpl configuredSchedContextKept
     configuredSchedContextFresh
   cases keep <;> rfl
 
 /-- WS-ZA ZA6.6: the configure keeps the context's end of the yield link. -/
-@[simp] theorem configuredSchedContext_yieldFromCode (budget period priority deadline domain
-    timer : Nat) (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period priority deadline domain timer keep sc).yieldFromCode =
+@[simp] theorem configuredSchedContext_yieldFromCode (budget period : Nat)
+    (badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period badge flags timer keep sc).yieldFromCode =
       sc.yieldFromCode := by
   unfold configuredSchedContext; cases keep <;> simp
 
 /-- The configured context reads nothing of the stored one's release fields. -/
-theorem configuredSchedContext_withoutRelease (budget period priority deadline domain timer : Nat)
+theorem configuredSchedContext_withoutRelease (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    configuredSchedContext budget period priority deadline domain timer keep sc.withoutRelease =
-      configuredSchedContext budget period priority deadline domain timer keep sc := rfl
+    configuredSchedContext budget period badge flags timer keep sc.withoutRelease =
+      configuredSchedContext budget period badge flags timer keep sc := rfl
 
 /-- The configured context holds the new budget and period. -/
-theorem configuredSchedContext_budget_period (budget period priority deadline domain timer : Nat)
+theorem configuredSchedContext_budget_period (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period priority deadline domain timer keep sc).budget =
+    (configuredSchedContext budget period badge flags timer keep sc).budget =
         ⟨budget⟩ ∧
-      (configuredSchedContext budget period priority deadline domain timer keep sc).period =
+      (configuredSchedContext budget period badge flags timer keep sc).period =
         ⟨period⟩ := by
   unfold configuredSchedContext
   split
@@ -852,13 +696,13 @@ theorem configuredSchedContext_budget_period (budget period priority deadline do
 
 /-- The configured context keeps the stored one's binding, reply stack and loan
 origin: a configure writes parameters and refills only. -/
-theorem configuredSchedContext_binding (budget period priority deadline domain timer : Nat)
+theorem configuredSchedContext_binding (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period priority deadline domain timer keep sc).boundThreadCode =
+    (configuredSchedContext budget period badge flags timer keep sc).boundThreadCode =
         sc.boundThreadCode ∧
-      (configuredSchedContext budget period priority deadline domain timer keep sc).scReply =
+      (configuredSchedContext budget period badge flags timer keep sc).scReply =
         sc.scReply ∧
-      (configuredSchedContext budget period priority deadline domain timer keep sc).donationOrigin =
+      (configuredSchedContext budget period badge flags timer keep sc).donationOrigin =
         sc.donationOrigin := by
   unfold configuredSchedContext
   split
@@ -870,8 +714,8 @@ theorem configuredSchedContext_binding (budget period priority deadline domain t
 /-- The configured context is linked on no release queue: the configure then
 places it. -/
 @[simp] theorem configuredSchedContext_releaseCoreCode
-    (budget period priority deadline domain timer : Nat) (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period priority deadline domain timer keep sc).releaseCoreCode =
+    (budget period : Nat) (badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period badge flags timer keep sc).releaseCoreCode =
       0 := by
   unfold configuredSchedContext
   split
@@ -879,12 +723,12 @@ places it. -/
       (SchedContext.refillUpdate_refillsErased _ budget period timer)).2.2.2.2.2.2.2.2.2.2.1
   · rfl
 
-theorem configuredSchedContext_boundThread (budget period priority deadline domain timer : Nat)
+theorem configuredSchedContext_boundThread (budget period : Nat) (badge flags : UInt64) (timer : Nat)
     (keep : Bool) (sc : SchedContext) :
-    (configuredSchedContext budget period priority deadline domain timer keep sc).boundThread =
+    (configuredSchedContext budget period badge flags timer keep sc).boundThread =
       sc.boundThread := by
   unfold SchedContext.boundThread
-  rw [(configuredSchedContext_binding budget period priority deadline domain timer keep sc).1]
+  rw [(configuredSchedContext_binding budget period badge flags timer keep sc).1]
 
 
 /-- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: a thread a bind must PLACE.
@@ -979,7 +823,7 @@ def configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : SchedCon
     match st.getTcb? t with
     | some tcb =>
       if bindPlacesParkedThread st t tcb sc then
-        (st.runEnqueueOnCore home t (resolveInsertPriority st t sc)).markReschedulePendingOnCore home
+        (st.runEnqueueOnCore home t (resolveInsertPriority st t)).markReschedulePendingOnCore home
       else if st.scheduler.currentOnCore home == some t && !sc.budgetRemaining.isPositive then
         st.markReschedulePendingOnCore home
       else st
@@ -1046,10 +890,10 @@ call is idempotent and preserves sort order.
 **WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `scId` parameter has type `ValidObjId`. The Lean type system forbids any
 caller from feeding `ObjId.sentinel` into this handler. -/
-def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline domain : Nat)
+def schedContextConfigure (vScId : ValidObjId) (budget period : Nat) (badge flags : UInt64)
     : Kernel Unit :=
   fun st =>
-    match validateSchedContextParams budget period priority deadline domain with
+    match validateSchedContextParams budget period with
     | .error e => .error e
     | .ok () =>
       -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
@@ -1064,7 +908,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
         -- spent; any other takes the budget in one refill released now
         -- (`refill_new`).  The refills hold the budget once either way.
         let updated : SchedContext :=
-          configuredSchedContext budget period priority deadline domain st.machine.timer
+          configuredSchedContext budget period badge flags st.machine.timer
             (configureKeepsHead st sc budget period) sc
         if checkAdmission st updated (some vScId.val) then
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
@@ -1075,17 +919,9 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           -- computed elsewhere misses an entry left on another core, which then
           -- still fires: two budgets in the first period.
           let stCleaned := purgeReplenishment st scIdTyped
-          -- AK2-B option B (S-H04): if the SchedContext is currently bound to a
-          -- thread and configure changes the SC priority, propagate the new
-          -- priority into the bound TCB's `priority` field AND re-bucket the
-          -- thread in the RunQueue if present (so `schedulerPriorityMatch`'s
-          -- `threadPriority[tid]? = tcb.boostedPriority` continues to
-          -- hold under the new TCB priority). Without the RunQueue migration
-          -- the thread would remain in the old priority bucket while
-          -- `tcb.priority` was updated — a latent priority-inversion vector.
-          -- We preserve any existing `pipBoost` by re-inserting at
-          -- `max(new priority, pipBoost)`, matching `migrateRunQueueBucket`
-          -- in `PriorityManagement.lean`.
+          -- WS-SX SX6.4: the configure writes the context alone, as seL4-MCS's
+          -- `invokeSchedControl_ConfigureFlags` does: the context carries no
+          -- priority or domain, so nothing is propagated to its thread.
           match storeObject vScId.val (KernelObject.schedContext updated) stCleaned with
           | .error e => .error e
           | .ok ((), stStored0) =>
@@ -1097,42 +933,20 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
               -- `schedContext_resume` postponing it), so its refill is not
               -- stranded: the release queue is what wakes the thread.
               let stStored := stStored0.releasePlace (determineTargetCore st boundTid) scIdTyped
-
-              -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration;
-              -- witnessed since `v0.35.71`, so the propagation writes the record
-              -- under the store's proof for it.
-              match stStored.getTcbWitnessed? boundTid with
-              | some ⟨boundTcb, hBound⟩ =>
-                -- The reschedule-SGI accumulator (KSC-1): the bound thread's
-                -- effective key read against the PRE-state's reservation (the
-                -- SC store above moved its deadline and the propagation may
-                -- move its priority); `markKeyChangeFor` flags its placement
-                -- exactly when the key the selector orders by changed, so an
-                -- immaterial reconfigure flags nothing.
-                --
-                -- A bound thread reply-blocked on a server lends that server its
-                -- priority, so a priority propagated here re-walks the server's
-                -- inheritance chain (`repropagateFromWaiter`); the boost it held
-                -- was computed from the old priority.  The walk runs as the bound
-                -- thread's home core, the core this configure's footprint locks.
-                --
-                -- The reset refills `budgetRemaining`, so a bound thread that had
-                -- exhausted its budget becomes one the chooser may pick: a
-                -- candidacy gain on the cores queueing it, flagged beside the
-                -- key change (`markCandidacyGainFor`, read against the PRE-state's
-                -- budget like the key).
+              match stStored.getTcb? boundTid with
+              | some boundTcb =>
+                -- The reschedule-SGI accumulator (KSC-1): the reset refills
+                -- `budgetRemaining`, so a bound thread that had exhausted its
+                -- budget becomes one the chooser may pick: a candidacy gain on
+                -- the cores queueing it (`markCandidacyGainFor`, read against
+                -- the PRE-state's budget).  The thread's scheduling key is its
+                -- own priority and deadline, which the configure does not move.
                 --
                 -- WS-ZA ZA6.4: then seL4-MCS's resume tail
                 -- (`configureResumeBound`): a thread the configured context can
                 -- run now is placed, one it cannot is taken off its queue.
-                let preKey := effectiveSchedParams st boundTcb
-                .ok ((), configureResumeBound (PriorityInheritance.repropagateFromWaiter
-                  (markKeyChangeFor (markCandidacyGainFor
-                    (schedContextConfigureBoundPropagate stStored scIdTyped
-                      boundTid boundTcb hBound priority domain) boundTid
-                    (hasSufficientBudget st boundTcb)) boundTid preKey) boundTid
-                  (determineTargetCore st boundTid) st.objects.size)
-                  boundTid updated)
+                .ok ((), configureResumeBound (markCandidacyGainFor stStored boundTid
+                  (hasSufficientBudget st boundTcb)) boundTid updated)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
@@ -1145,8 +959,8 @@ context, which reads only its budget and period) and a store that changes only
 the object table.  When they pass the configure's state is
 `schedContextConfigurePerform` (`schedContextConfigure_of_admitted`). -/
 @[inline] def schedContextConfigureAdmitted (st : SystemState) (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat) : Bool :=
-  match validateSchedContextParams budget period priority deadline domain with
+    (budget period : Nat) (badge flags : UInt64) : Bool :=
+  match validateSchedContextParams budget period with
   | .error _ => false
   | .ok () =>
     match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
@@ -1159,9 +973,9 @@ the object table.  When they pass the configure's state is
 /-- **WS-ZA ZA5.2**: `schedContextConfigure`'s writes: the replenishment purge,
 the context rewritten in its slot (`updateSchedContext`), and, for a bound
 context, its placement on its thread's home core's release queue (WS-ZA ZA6.4)
-and the specification's propagation over the stored state. -/
+and the resume tail. -/
 @[inline] def schedContextConfigurePerform (st : SystemState) (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat) : SystemState :=
+    (budget period : Nat) (badge flags : UInt64) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => st
   | some sc =>
@@ -1169,22 +983,16 @@ and the specification's propagation over the stored state. -/
     let keep := configureKeepsHead st sc budget period
     let stCleaned := purgeReplenishment st scIdTyped
     let stStored0 := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
-      (configuredSchedContext budget period priority deadline domain st.machine.timer keep)
+      (configuredSchedContext budget period badge flags st.machine.timer keep)
     match sc.boundThread with
     | none => stStored0
     | some boundTid =>
       let stStored := stStored0.releasePlace (determineTargetCore st boundTid) scIdTyped
-      match stStored.getTcbWitnessed? boundTid with
-      | some ⟨boundTcb, hBound⟩ =>
-        configureResumeBound (PriorityInheritance.repropagateFromWaiter
-          (markKeyChangeFor (markCandidacyGainFor
-            (schedContextConfigureBoundPropagate stStored scIdTyped
-              boundTid boundTcb hBound priority domain) boundTid
+      match stStored.getTcb? boundTid with
+      | some boundTcb =>
+        configureResumeBound (markCandidacyGainFor stStored boundTid
             (hasSufficientBudget st boundTcb)) boundTid
-            (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objects.size)
-          boundTid
-          (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
+          (configuredSchedContext budget period badge flags st.machine.timer keep sc)
       | none => stStored
 
 /-- **WS-ZA ZA5.2**: the compiled `schedContextConfigurePerform`.  The bound
@@ -1194,7 +1002,7 @@ store writes the object table and the context in their slots instead of
 copying both (the specification's later `match` keeps `st` and `sc` alive
 across it). -/
 @[inline] def schedContextConfigurePerformImpl (st : SystemState) (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat) : SystemState :=
+    (budget period : Nat) (badge flags : UInt64) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => st
   | some sc =>
@@ -1204,30 +1012,24 @@ across it). -/
       let timer := st.machine.timer
       (purgeReplenishment st scIdTyped).updateSchedContext
         (SchedContextId.ofObjId vScId.val)
-        (configuredSchedContext budget period priority deadline domain timer false)
+        (configuredSchedContext budget period badge flags timer false)
     | some boundTid =>
       let keep := configureKeepsHead st sc budget period
       let home := determineTargetCore st boundTid
       let stCleaned := purgeReplenishment st scIdTyped
       let stStored0 := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
-        (configuredSchedContext budget period priority deadline domain st.machine.timer keep)
+        (configuredSchedContext budget period badge flags st.machine.timer keep)
       let stStored := stStored0.releasePlace home scIdTyped
-      match stStored.getTcbWitnessed? boundTid with
-      | some ⟨boundTcb, hBound⟩ =>
-        configureResumeBound (PriorityInheritance.repropagateFromWaiter
-          (markKeyChangeFor (markCandidacyGainFor
-            (schedContextConfigureBoundPropagate stStored scIdTyped
-              boundTid boundTcb hBound priority domain) boundTid
+      match stStored.getTcb? boundTid with
+      | some boundTcb =>
+        configureResumeBound (markCandidacyGainFor stStored boundTid
             (hasSufficientBudget st boundTcb)) boundTid
-            (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objects.size)
-          boundTid
-          (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
+          (configuredSchedContext budget period badge flags st.machine.timer keep sc)
       | none => stStored
 
 @[csimp] theorem schedContextConfigurePerform_eq_impl :
     @schedContextConfigurePerform = @schedContextConfigurePerformImpl := by
-  funext st vScId budget period priority deadline domain
+  funext st vScId budget period badge flags
   unfold schedContextConfigurePerform schedContextConfigurePerformImpl
   cases st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => rfl
@@ -1245,13 +1047,13 @@ across it). -/
 /-- **WS-ZA ZA5.2**: an admitted configure succeeds, and its state is the
 perform's. -/
 theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat)
-    (h : schedContextConfigureAdmitted st vScId budget period priority deadline domain = true) :
-    schedContextConfigure vScId budget period priority deadline domain st =
-      .ok ((), schedContextConfigurePerform st vScId budget period priority deadline domain) := by
+    (budget period : Nat) (badge flags : UInt64)
+    (h : schedContextConfigureAdmitted st vScId budget period badge flags = true) :
+    schedContextConfigure vScId budget period badge flags st =
+      .ok ((), schedContextConfigurePerform st vScId budget period badge flags) := by
   unfold schedContextConfigureAdmitted at h
   unfold schedContextConfigure schedContextConfigurePerform
-  cases hV : validateSchedContextParams budget period priority deadline domain with
+  cases hV : validateSchedContextParams budget period with
   | error e => simp [hV] at h
   | ok u =>
     cases u
@@ -1261,11 +1063,11 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       simp only [hV, hS, Bool.and_eq_true, decide_eq_true_eq] at h
       obtain ⟨hAdm, hLeaves⟩ := h
       have hCheck : checkAdmission st
-          (configuredSchedContext budget period priority deadline domain st.machine.timer
+          (configuredSchedContext budget period badge flags st.machine.timer
             (configureKeepsHead st sc budget period) sc)
           (some vScId.val) = true := by
         rw [checkAdmission_eq_impl]
-        have hb := configuredSchedContext_budget_period budget period priority deadline domain
+        have hb := configuredSchedContext_budget_period budget period badge flags
           st.machine.timer (configureKeepsHead st sc budget period) sc
         simp only [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
           SchedContext.bandwidth, hb.1, hb.2, decide_eq_true_eq]
@@ -1276,8 +1078,8 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       have hA := purgeReplenishment_agree st ⟨vScId.val.toNat⟩
       generalize purgeReplenishment st ⟨vScId.val.toNat⟩ = stC at hW hA
       have hLeavesC : storeLeavesIndexAndTypes stC vScId.val
-          (KernelObject.schedContext (configuredSchedContext budget period priority deadline
-            domain st.machine.timer (configureKeepsHead st sc budget period) sc)).objectType
+          (KernelObject.schedContext (configuredSchedContext budget period badge flags
+             st.machine.timer (configureKeepsHead st sc budget period) sc)).objectType
             = true := by
         rw [SystemState.releaseOnlyWrite.storeLeavesIndexAndTypes_eq hW hA]
         simpa [KernelObject.objectType] using hLeaves
@@ -1289,13 +1091,13 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       | some sc' =>
       rw [hSC] at hSC'
       simp only [Option.map_some, Option.some.injEq] at hSC'
-      have hEq : ∀ k, configuredSchedContext budget period priority deadline domain
+      have hEq : ∀ k, configuredSchedContext budget period badge flags
           st.machine.timer k sc'
-          = configuredSchedContext budget period priority deadline domain st.machine.timer k sc := by
+          = configuredSchedContext budget period badge flags st.machine.timer k sc := by
         intro k
         rw [← configuredSchedContext_withoutRelease, hSC', configuredSchedContext_withoutRelease]
       rw [SystemState.updateSchedContext_eq_of_some hSC
-        (configuredSchedContext budget period priority deadline domain st.machine.timer _),
+        (configuredSchedContext budget period badge flags st.machine.timer _),
         SeLe4n.SchedContextId.toObjId_ofObjId, hEq]
       cases sc.boundThread with
       | none => rfl
@@ -1420,20 +1222,10 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
       else
         match st.getTcb? vThreadId.val with
         | some tcb =>
-          -- AE3-A/U-11: Domain consistency check — reject cross-domain binding.
-          -- The domain filter (chooseBestRunnableInDomainEffective) uses tcb.domain
-          -- but effective priority resolves from sc.domain. Mismatched domains would
-          -- cause a thread to pass the domain filter by TCB domain but be prioritized
-          -- by SchedContext domain.
-          if tcb.domain != sc.domain then .error (.invalidArgument 0)
-          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
-          -- live stack (`next.isSome`) is owed a context by the pop that reaches
-          -- that frame, and the pop writes its binding; giving it a second
-          -- context now would be overwritten by that pop, orphaning this one.
-          -- Refused while the frame is on a stack; a frame with no upward link
-          -- (`next = none`), or one below a severed cut whose link nothing
-          -- answers, is owed nothing, and binding is allowed.
-          else if replyFrameOnLiveStack st tcb then .error .illegalState
+          -- WS-SX SX6.4: no domain check: seL4-MCS's `decodeSchedContext_Bind`
+          -- refuses a bound context, a bound thread, and a blocked thread with
+          -- an unreleased context, and a context carries no domain.
+          if replyFrameOnLiveStack st tcb then .error .illegalState
           else
           -- Z5-G1: Precondition check — TCB must be unbound.
           -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
@@ -1446,24 +1238,9 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- per-bind state checks.
           match tcb.schedContextBinding with
           | .unbound =>
-            -- Z5-G2: Bidirectional binding
-            -- AK2-B option B (S-H04): Propagate SC priority to TCB priority.
-            -- This establishes `tcb.priority = sc.priority` at bind time.
-            -- Matches seL4 MCS, where bind transfers scheduling authority from
-            -- the TCB to its bound SchedContext.
-            --
-            -- **WS-RR (`v0.35.133`): do not read this write as redundant.**  Its
-            -- original justification was that `schedulerPriorityMatch` and
-            -- `effectiveParamsMatchRunQueue` jointly forced `tcb.priority =
-            -- sc.priority` in the extended bundle with no operation establishing
-            -- it.  That is no longer true: with `TCB.priority` the base's one
-            -- home neither predicate reads a reservation, so the pair forces
-            -- nothing here.  What the write is for now is the thing it always
-            -- *did* — it is how a reservation configures its bound thread's
-            -- band, it is what `boundThreadPriorityConsistent` states, and with
-            -- the field the only home the scheduler reads, deleting it would
-            -- make `schedContextBind` silently not apply the band it is being
-            -- asked to apply.
+            -- Z5-G2: Bidirectional binding.  WS-SX SX6.4: the thread keeps its
+            -- own priority, deadline and domain, as seL4-MCS's
+            -- `schedContext_bindTCB` writes only the two links.
             let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
             -- **WS-HP HP10.4: a bind ends any loan, so the origin clears.**  The
             -- thread now *owns* this reservation, which is the state the origin
@@ -1487,66 +1264,42 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- rewrite over the rewritten state -- its lookup is re-resolved
             -- there, because a witness taken at `st` does not carry across a
             -- rewrite without `invExt`, which executable code has no proof of.
-            -- The record it writes is the stored one with its binding and
-            -- priority moved: exactly what the raw insert wrote from `tcb`.
+            -- The record it writes is the stored one with its binding moved.
             let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
               (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
             let st2 := st1.updateTcb vThreadId.val fun t =>
-              { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
-                       priority := sc.priority }
-            -- Z5-G3: If thread is in RunQueue, remove and re-insert at
-            -- SchedContext-derived priority. Under dequeue-on-dispatch, only
-            -- runnable-but-not-current threads are in the RunQueue. After bind,
-            -- the effective priority resolves from the SchedContext, so we must
-            -- update the RunQueue entry to match.
-            -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
-            -- AG1-A: Now uses effective priority (base + PIP boost) to ensure
-            -- PIP-boosted threads are placed in the correct bucket.
-            -- WS-SM SM8.B (review round 13): the bound thread's HOME core, not the
-            -- boot core — see `schedContextConfigure` above for the defect this fixes.
-            --
+              { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
             -- **WS-RR RR8.12 Cut B2 (`v0.35.182`): a bind PLACES a parked
-            -- runnable thread**, which is seL4-MCS's `SCHED_ENQUEUE` tail and
-            -- which this kernel did not do.  The `else` arm below used to be
-            -- `st2` unconditionally, so a runnable thread on no run queue —
-            -- exactly what Cut B1's reclaim parks — kept a reservation it could
-            -- never spend: `chooseThreadOnCore` selects only from
-            -- `runQueueOnCore`.  `bindPlacesParkedThread` is the guard, and its
-            -- four conjuncts are why placing is safe here (see its docstring):
-            -- the fourth (PR #900 review, `v0.36.1`) is the reservation's own
-            -- budget, so a bind never places a thread the selector would then
-            -- skip forever.  The insert priority is `resolveInsertPriority`, the
-            -- SAME one the re-bucket arm uses, so the two arms cannot disagree
-            -- about which bucket a bound thread belongs in.
+            -- runnable thread**, seL4-MCS's `SCHED_ENQUEUE` tail.  A runnable
+            -- thread on no run queue — exactly what Cut B1's reclaim parks —
+            -- would otherwise keep a reservation it could never spend:
+            -- `chooseThreadOnCore` selects only from `runQueueOnCore`.
+            -- `bindPlacesParkedThread` is the guard, and its four conjuncts are
+            -- why placing is safe here (see its docstring): the fourth (PR #900
+            -- review, `v0.36.1`) is the reservation's own budget, so a bind never
+            -- places a thread the selector would then skip forever.  A thread
+            -- already queued stays where it is: the bind moves neither its
+            -- priority nor its deadline, so its bucket and key are unchanged
+            -- (WS-SX SX6.4).  The placement is on the bound thread's HOME core
+            -- (WS-SM SM8.B), through its TCB run-queue links (WS-ZA ZA4.5).
             let bindHome := determineTargetCore st2 vThreadId.val
-            -- Both arms move the thread through its TCB run-queue links
-            -- (WS-ZA ZA4.5).
-            let st3 := if st2.queuedOn bindHome vThreadId.val then
-              st2.runRequeueOnCore bindHome vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
-            else if bindPlacesParkedThread st2 vThreadId.val tcb scR then
+            let st3 := if bindPlacesParkedThread st2 vThreadId.val tcb scR then
               -- The reschedule-SGI accumulator (KSC-1): the placement is a
               -- wake on `bindHome` (the diff's queue rule), flagged as such.
               (st2.runEnqueueOnCore bindHome vThreadId.val
-                (resolveInsertPriority st2 vThreadId.val sc)).markReschedulePendingOnCore bindHome
+                (resolveInsertPriority st2 vThreadId.val)).markReschedulePendingOnCore bindHome
             else st2
-            -- The reschedule-SGI accumulator (KSC-1): the bind moved the
-            -- thread's effective key (its deadline is the reservation's now,
-            -- its priority the reservation's); the hook flags a re-bucketed
-            -- or current thread's core exactly when that key changed.
-            --
             -- WS-ZA ZA6.4: then the context waits on the home core's release
             -- queue for a head not yet released (seL4-MCS's `postpone`), so a
             -- thread bound to an exhausted context is woken by its refill.
-            .ok ((), (markKeyChangeFor st3 vThreadId.val (effectiveSchedParams st tcb)).releasePlace
-              bindHome scIdTyped)
+            .ok ((), st3.releasePlace bindHome scIdTyped)
           | _ => .error .illegalState
         | none => .error .objectNotFound
     | none => .error .objectNotFound
 
 /-- **WS-ZA ZA5.2**: `schedContextBind`'s checks, read before anything is
 written: the context is stored, binds no thread and heads no reply stack; the
-thread is stored, shares the context's domain, is owed no context by a live
-reply stack, and is unbound.  When they pass the operation's state is
+thread is stored, is owed no context by a live reply stack, and is unbound.  When they pass the operation's state is
 `schedContextBindPerform` (`schedContextBind_of_admitted`), so the routed arm
 writes the context and the thread in place instead of holding the pre-state for
 a refusal that cannot come. -/
@@ -1561,8 +1314,7 @@ a refusal that cannot come. -/
       match st.getTcb? vThreadId.val with
       | none => false
       | some tcb =>
-        if tcb.domain != sc.domain then false
-        else if replyFrameOnLiveStack st tcb then false
+        if replyFrameOnLiveStack st tcb then false
         else
           match tcb.schedContextBinding with
           | .unbound => true
@@ -1570,8 +1322,7 @@ a refusal that cannot come. -/
 
 /-- **WS-ZA ZA5.2**: `schedContextBind`'s writes, the operation's success arm
 written out over the same lookups: the context names the thread, the thread is
-bound at the context's priority, the run-queue stage re-keys or places it on its
-home core, and the key hook flags the cores whose decision the move stales. -/
+bound, and a parked runnable thread is placed on its home core. -/
 @[inline] def schedContextBindPerform (st : SystemState) (vScId : ValidObjId)
     (vThreadId : ValidThreadId) : SystemState :=
   match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
@@ -1587,17 +1338,13 @@ home core, and the key hook flags the cores whose decision the move stales. -/
       let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
         (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
       let st2 := st1.updateTcb vThreadId.val fun t =>
-        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
-                 priority := sc.priority }
+        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
       let bindHome := determineTargetCore st2 vThreadId.val
-      let st3 := if st2.queuedOn bindHome vThreadId.val then
-        st2.runRequeueOnCore bindHome vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
-      else if bindPlacesParkedThread st2 vThreadId.val tcb scR then
+      let st3 := if bindPlacesParkedThread st2 vThreadId.val tcb scR then
         (st2.runEnqueueOnCore bindHome vThreadId.val
-          (resolveInsertPriority st2 vThreadId.val sc)).markReschedulePendingOnCore bindHome
+          (resolveInsertPriority st2 vThreadId.val)).markReschedulePendingOnCore bindHome
       else st2
-      (markKeyChangeFor st3 vThreadId.val (effectiveSchedParams st tcb)).releasePlace bindHome
-        scIdTyped
+      st3.releasePlace bindHome scIdTyped
 
 /-- **WS-ZA ZA5.2**: an admitted bind succeeds, and its state is the perform's. -/
 theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
@@ -1619,22 +1366,19 @@ theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
     | none => simp [hT] at h
     | some tcb =>
       simp only [hT] at h ⊢
-      by_cases hD : (tcb.domain != sc.domain) = true
-      · simp [hD] at h
       by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp [hD, hL] at h
-      simp only [hD, hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
+      · simp [hL] at h
+      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
       cases hBind : tcb.schedContextBinding with
       | unbound => rfl
       | bound _ => simp [hBind] at h
       | donated _ _ => simp [hBind] at h
 
 /-- **WS-ZA ZA5.2**: the compiled `schedContextBindPerform`.  Every read of the
-pre-state — the context's priority and budget, the thread's runnability and its
-old key as three parts — is made before the first write, so neither the state,
-the context nor the TCB is held across a write and each is written in its slot
-(`updateSchedContext`, `updateTcb`); the placement reads the written state only
-(`schedContextBindPerform_eq_impl`). -/
+pre-state — the context's budget and the thread's runnability — is made before
+the first write, so neither the state, the context nor the TCB is held across a
+write and each is written in its slot (`updateSchedContext`, `updateTcb`); the
+placement reads the written state only (`schedContextBindPerform_eq_impl`). -/
 @[inline] def schedContextBindPerformImpl (st : SystemState) (vScId : ValidObjId)
     (vThreadId : ValidThreadId) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
@@ -1644,37 +1388,30 @@ the context nor the TCB is held across a write and each is written in its slot
     | none => st
     | some tcb =>
       let now := st.machine.timer
-      let scPrio := sc.priority
       -- The released head's budget, read off the fields when nothing is due
       -- (the release then writes nothing, `releaseReadyHead_of_not_due`).
       let scFunded := if sc.releaseDue now then (sc.releaseReadyHead now).budgetRemaining.isPositive
         else sc.budgetRemaining.isPositive
       let runnable := tcb.isRunnable
-      let p0 := tcb.boostedPriority
-      let d0 := effectiveDeadline st tcb
-      let dom0 := tcb.domain
       let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
       let st1 := st.updateSchedContext (SchedContextId.ofObjId vScId.val) fun s =>
         { s.releaseReadyHead now with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
                                       donationOrigin := none }
       let st2 := st1.updateTcb vThreadId.val fun t =>
-        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
-                 priority := scPrio }
+        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
       let bindHome := determineTargetCore st2 vThreadId.val
       -- The insertion band, `resolveInsertPriority`'s, as the boosted priority
       -- every arm of the resolver yields
       -- (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`): the resolver's
-      -- pair, and the closure its fallback is shared through, are never built.
+      -- pair is never built.
       let insertPrio : SeLe4n.Priority := match st2.getTcb? vThreadId.val with
         | some t => t.boostedPriority
-        | none => scPrio
-      let st3 := if st2.queuedOn bindHome vThreadId.val then
-        st2.runRequeueOnCore bindHome vThreadId.val insertPrio
-      else if !isIdleThreadId vThreadId.val && (placedCoreOf? st2 vThreadId.val).isNone &&
+        | none => ⟨0⟩
+      let st3 := if !isIdleThreadId vThreadId.val && (placedCoreOf? st2 vThreadId.val).isNone &&
           runnable && scFunded then
         (st2.runEnqueueOnCore bindHome vThreadId.val insertPrio).markReschedulePendingOnCore bindHome
       else st2
-      (markKeyChangeParts st3 vThreadId.val p0 d0 dom0).releasePlace bindHome scIdTyped
+      st3.releasePlace bindHome scIdTyped
 
 @[csimp] theorem schedContextBindPerform_eq_impl :
     @schedContextBindPerform = @schedContextBindPerformImpl := by
@@ -1690,8 +1427,7 @@ the context nor the TCB is held across a write and each is written in its slot
     | none => rfl
     | some tcb =>
       dsimp only
-      rw [SystemState.updateSchedContext_eq_of_some hS, markKeyChangeFor_eq_parts,
-        effectiveSchedParams_eq_parts]
+      rw [SystemState.updateSchedContext_eq_of_some hS]
       simp only [resolveInsertPriority, resolveEffectivePrioDeadline_fst_eq_boostedPriority]
       have hF : (if sc.releaseDue st.machine.timer then
             (sc.releaseReadyHead st.machine.timer).budgetRemaining.isPositive
@@ -2096,7 +1832,7 @@ across a write and each is written in its slot
         let wasCurrent := runCore?.isSome
         let legacyPrio := tcb.boostedPriority
         let p0 := tcb.boostedPriority
-        let d0 := effectiveDeadline st tcb
+        let d0 := tcb.deadline
         let dom0 := tcb.domain
         let e0 := hasSufficientBudget st tcb
         let st1 := unbindVacateRunningCore st runCore?
@@ -2237,41 +1973,35 @@ theorem schedContextBind_places_parked_thread
           split at h
           · exact absurd h (by simp)
           · split at h
+            · dsimp only at h
+              rw [Except.ok.injEq, Prod.mk.injEq] at h
+              rw [← h.2, releasePlace_runnableOnSomeCore]
+              -- The guard transports from the pre-state: both of the bind's
+              -- writes are object rewrites, so the intermediate state's
+              -- scheduler IS the pre-state's.
+              have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+                  (pf : _) (f : TCB → TCB),
+                  ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                    = a.scheduler := by
+                intro a b o pf f
+                rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+              split
+              · -- The placement arm: Cut B2's own write.
+                rename_i hPlace
+                refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
+                  (bindPlacesParkedThread_not_idle hPlace)
+                exact (bindWrites_runQueueRefined st _ _ _ _ _
+                  (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
+              · -- The identity arm is UNREACHABLE under the hypothesis: the
+                -- guard is the pre-state's, which this arm's condition denies.
+                rename_i hParkArm
+                exfalso
+                rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
+                  (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
+                rotate_left; · intro _; rfl
+                rw [hPark] at hParkArm
+                simp at hParkArm
             · exact absurd h (by simp)
-            · split at h
-              · dsimp only at h
-                rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2, releasePlace_runnableOnSomeCore, markKeyChangeFor_runnableOnSomeCore]
-                -- The guard transports from the pre-state: both of the bind's
-                -- writes are object rewrites, so the intermediate state's
-                -- scheduler IS the pre-state's.
-                have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                    (pf : _) (f : TCB → TCB),
-                    ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                      = a.scheduler := by
-                  intro a b o pf f
-                  rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-                split
-                · -- The re-bucket arm: the thread was already queued, so it stays.
-                  exact runnableOnSomeCore_of_requeue _ _ _ _ (bindWrites_runQueueRefined st _ _ _ _ _
-                    (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
-                · split
-                  · -- The placement arm: Cut B2's own write.
-                    rename_i hPlace
-                    refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
-                      (bindPlacesParkedThread_not_idle hPlace)
-                    exact (bindWrites_runQueueRefined st _ _ _ _ _
-                      (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
-                  · -- The identity arm is UNREACHABLE under the hypothesis: the
-                    -- guard is the pre-state's, which this arm's condition denies.
-                    rename_i hParkArm
-                    exfalso
-                    rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
-                      (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
-                    rotate_left; · intro _; rfl
-                    rw [hPark] at hParkArm
-                    simp at hParkArm
-              · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)
 
@@ -2286,8 +2016,8 @@ with no refill ever due, while the bind reported success.  Here a thread the bin
 finds on no scheduler slot stays on none when the reservation's budget is zero
 once its head refill released by now is taken (WS-ZA ZA6.4: the bind then
 postpones the context on the release queue, so the refill wakes the thread);
-the re-bucket arm cannot fire (the thread is on no run queue), the placement arm
-cannot (its fourth conjunct is false), and the identity arm moves no slot.
+the placement arm cannot fire (its fourth conjunct is false), and the identity
+arm moves no slot.
 
 Stated over `placedCoreOf?`, which reads the scheduler alone, so the claim covers
 the current slots as well as the run queues and needs no object-store invariant. -/
@@ -2333,38 +2063,28 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
           split at h
           · exact absurd h (by simp)
           · split at h
+            · dsimp only at h
+              rw [Except.ok.injEq, Prod.mk.injEq] at h
+              rw [← h.2, releasePlace_placedCoreOf?]
+              have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+                  (pf : _) (f : TCB → TCB),
+                  ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                    = a.scheduler := by
+                intro a b o pf f
+                rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+              split
+              · -- The placement arm needs the guard, whose budget conjunct is false.
+                rename_i hParkArm
+                exfalso
+                rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
+                exact Bool.false_ne_true hParkArm
+              · -- The identity arm moves no scheduler slot.
+                refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
+                · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
+                  exact hSched _ _ _ _ _
+                · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
+                    (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
             · exact absurd h (by simp)
-            · split at h
-              · dsimp only at h
-                rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2, releasePlace_placedCoreOf?, markKeyChangeFor_placedCoreOf?]
-                have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                    (pf : _) (f : TCB → TCB),
-                    ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                      = a.scheduler := by
-                  intro a b o pf f
-                  rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-                split
-                · -- The re-bucket arm needs the thread on a run queue, which it is not.
-                  rename_i hMem
-                  exfalso
-                  rw [(bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv).queuedOn,
-                    hNotQueued] at hMem
-                  · exact Bool.false_ne_true hMem
-                  · intro _; rfl
-                · split
-                  · -- The placement arm needs the guard, whose budget conjunct is false.
-                    rename_i hParkArm
-                    exfalso
-                    rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
-                    exact Bool.false_ne_true hParkArm
-                  · -- The identity arm moves no scheduler slot.
-                    refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
-                    · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
-                      exact hSched _ _ _ _ _
-                    · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
-                        (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
-              · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)
 

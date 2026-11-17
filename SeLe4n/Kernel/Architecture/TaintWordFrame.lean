@@ -424,36 +424,17 @@ theorem effectiveParamsMatchRunQueue_of_objectsAgreeOffTaint
     rw [h0] at h1; exact h1
   · trivial
 
-theorem boundThreadDomainConsistent_of_objectsAgreeOffTaint
-    (hA : st.objectsAgreeOffTaint { st with objects := O })
-    (h : boundThreadDomainConsistent st) :
-    boundThreadDomainConsistent { st with objects := O } := by
-  intro tid scId
-  have h1 := h tid scId
-  split
-  · rename_i t hT
-    obtain ⟨t0, w, h0, rfl⟩ := objectsAgreeOffTaint.tcb_back_eq hA hT
-    rw [h0] at h1
-    intro hb
-    have h2 := h1 hb
-    split
-    · rename_i sc hS
-      rw [(objectsAgreeOffTaint.inert_iff hA _ rfl).mp hS] at h2; exact h2
-    · trivial
-  · trivial
-
 theorem schedulerInvariantBundleExtended_of_objectsAgreeOffTaint
     (hA : st.objectsAgreeOffTaint { st with objects := O })
     (h : schedulerInvariantBundleExtended st) :
     schedulerInvariantBundleExtended { st with objects := O } := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := h
   exact ⟨schedulerInvariantBundleFull_of_objectsAgreeOffTaint hA h1,
     budgetPositive_of_objectsAgreeOffTaint hA h2,
     currentBudgetPositive_of_objectsAgreeOffTaint hA h3,
     schedContextsWellFormed_of_objectsAgreeOffTaint hA h4, h5,
     schedContextBindingConsistent_of_objectsAgreeOffTaint hA h6,
-    effectiveParamsMatchRunQueue_of_objectsAgreeOffTaint hA h7,
-    boundThreadDomainConsistent_of_objectsAgreeOffTaint hA h8⟩
+    effectiveParamsMatchRunQueue_of_objectsAgreeOffTaint hA h7⟩
 
 /-! ### The capability conjuncts -/
 

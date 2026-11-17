@@ -98,7 +98,7 @@ theorem schedControlConfigureWriteSet_of_move {st : SystemState} {core : CoreId}
   refine ⟨?_, ?_⟩ <;> simp only [hSc, hMv]
 
 /-- The footprint holds the bound thread's home core's run-queue write lock — the
-bucket propagation's own. -/
+resume tail's own. -/
 theorem schedLockSet_schedControlConfigure_contains_home_runQueue_write
     (st : SystemState) (core : CoreId) (scObjId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
@@ -179,30 +179,14 @@ theorem schedContextConfigureWriteSet_of_move {st stM : SystemState} {core : Cor
     (hM : setThreadCpuAffinityWithMigration st t (some core) core = .ok (stM, sgi))
     (d : CoreId) (hd : d ∈ schedContextConfigureWriteSet stM scObjId) :
     d = core ∨ d ∈ schedContextConfigureWriteSet st scObjId := by
-  obtain ⟨hHomeNe, hHomeT, hEdge⟩ :=
+  obtain ⟨-, hHomeT, -⟩ :=
     SchedContextOps.setThreadCpuAffinityWithMigration_chainShape hInv hM
-  have hInvM := setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hInv _ hM
-  have hIdx := (SchedContextOps.setThreadCpuAffinityWithMigration_scView hInv hInvM hM).2
   obtain ⟨scM, hScM, hBM⟩ := schedContextBoundThread?_of_move hInv hSc hM
   have hBT : SchedContextOps.schedContextBoundThread? stM scObjId = some t := by
     unfold SchedContextOps.schedContextBoundThread?; rw [hScM]; exact hBM.trans hB
-  have hBT0 : SchedContextOps.schedContextBoundThread? st scObjId = some t := by
-    unfold SchedContextOps.schedContextBoundThread?; rw [hSc]; exact hB
-  unfold schedContextConfigureWriteSet schedContextWriteSet at hd ⊢
-  rw [hBT] at hd
-  rw [hBT0]
-  rcases List.mem_append.mp hd with hd | hd
-  · rw [List.mem_singleton] at hd
-    exact .inl (hd.trans hHomeT)
-  · rw [hIdx] at hd
-    rcases PriorityInheritance.waiterChainWriteSet_mem_of_homeOverride stM st t core _
-        (determineTargetCore st t) _ hInvM hInv
-        (fun x => by
-          by_cases hx : x = t
-          · subst hx; exact .inr hHomeT
-          · exact .inl (hHomeNe x hx)) hEdge d hd with h | h
-    · exact .inl h
-    · exact .inr (List.mem_append.mpr (.inr h))
+  unfold schedContextConfigureWriteSet schedContextWriteSet at hd
+  rw [hBT, List.mem_singleton] at hd
+  exact .inl (hd.trans hHomeT)
 
 /-- **The moved configure writes the pre-state configure's replenish queues or
 the control's core's.** -/
@@ -239,14 +223,14 @@ theorem schedContextConfigureReplenishCores_of_move {st stM : SystemState} {core
 /-- **The exactness frame**: a configure through a control writes no replenish
 queue outside its footprint's replenish segment. -/
 theorem schedControlConfigure_replenishQueueOnCore_ne (st st' : SystemState) (core : CoreId)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat) (c : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (badge flags : UInt64) (c : CoreId)
     (hInv : st.objects.invExt)
     (hne : c ∉ schedControlConfigureReplenishCores st core vScId.val)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain
+    (h : SchedContextOps.schedControlConfigure core vScId budget period badge flags
       st = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨sc, t, stM, sgi, hSc, hB, hNe, hM, h⟩
-  · exact schedContextConfigure_replenishQueueOnCore_ne st st' vScId _ _ _ _ _ c
+  · exact schedContextConfigure_replenishQueueOnCore_ne st st' vScId _ _ _ _ c
       (fun hm => hne (schedContextConfigureReplenishCores_subset_schedControl _ _ _ _ hm)) h
   · rw [(schedControlConfigureWriteSet_of_move hSc hB hNe).2] at hne
     have hNeA : c ∉ setThreadCpuAffinityReplenishCores st t (some core) :=
@@ -255,7 +239,7 @@ theorem schedControlConfigure_replenishQueueOnCore_ne (st st' : SystemState) (co
       rcases schedContextConfigureReplenishCores_of_move hInv hSc hB hM c hm with e | e
       · exact hne (List.mem_append.mpr (.inr (e ▸ List.mem_cons_self ..)))
       · exact hne (List.mem_append.mpr (.inr (List.mem_cons_of_mem _ e)))
-    rw [schedContextConfigure_replenishQueueOnCore_ne stM st' vScId _ _ _ _ _ c hNeC h]
+    rw [schedContextConfigure_replenishQueueOnCore_ne stM st' vScId _ _ _ _ c hNeC h]
     exact setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne st stM t _ core sgi c hInv
       hNeA hM
 

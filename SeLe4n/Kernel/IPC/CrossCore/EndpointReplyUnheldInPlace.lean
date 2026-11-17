@@ -338,7 +338,7 @@ theorem returnUnheldSchedContextInPlace_msg (r : SeLe4n.ThreadId)
     intro x; unfold popOuterCode; simp only [SystemState.getReply?_mapTcbInPlace]
   unfold returnUnheldSchedContextInPlace
   simp only [SystemState.getSchedContext?_mapTcbInPlace, SystemState.getReply?_mapTcbInPlace,
-    effectiveDeadline_msg, hasSufficientBudget_msg, hPop]
+    hasSufficientBudget_msg, hPop]
   cases st.getSchedContext? scId with
   | none => rfl
   | some sc =>
@@ -356,7 +356,7 @@ theorem returnUnheldSchedContextInPlace_msg (r : SeLe4n.ThreadId)
           try (with_reducible rfl)
         all_goals
           try simp only [Option.map_some, TCB.withMessageSlots_boostedPriority,
-            TCB.withMessageSlots_domain, effectiveDeadline_withMessageSlots,
+            TCB.withMessageSlots_domain, deadline_withMessageSlots,
             hasSufficientBudget_withMessageSlots]
           try dsimp only
           cases rr.prev with

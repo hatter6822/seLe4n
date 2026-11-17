@@ -64,7 +64,7 @@ of six words is refused short of its seventh. -/
   match sid with
   | .schedContextConfigure =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
-      configureOperandArmR rf w tid) st
+      configureOperandArmR rf w tid xc) st
   | .cspaceCopy =>
     overflowedLongArmWith executingCore tid sid length capWord xc (fun w rf =>
       copyOperandArmR ctx tid xc rf w) st

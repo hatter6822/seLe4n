@@ -266,15 +266,15 @@ configure is invisible on every core outside its subject's home core and the
 cores of the inheritance chain it re-walks. -/
 theorem schedContextConfigure_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (vScId : SeLe4n.ValidObjId)
-    (budget period priority deadline domain : Nat) (st st' : SystemState) (c : CoreId)
+    (budget period : Nat) (badge flags : UInt64) (st st' : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period badge flags st
       = .ok ((), st'))
     (hne : c ∉ schedContextConfigureWriteSet st vScId.val)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (schedContextConfigure_confinedToCores vScId budget period priority deadline domain
+    (schedContextConfigure_confinedToCores vScId budget period badge flags
       st st' hObjInv hStep) hShared
 
 /-- WS-ZA ZA6.4 (**the live `.schedContextConfigure` non-interference**): a
@@ -283,15 +283,15 @@ configure's write set and, on a move, the bound thread's old home and the
 control's core (`schedControlConfigureWriteSet`). -/
 theorem schedControlConfigure_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (core : CoreId) (vScId : SeLe4n.ValidObjId)
-    (budget period priority deadline domain : Nat) (st st' : SystemState) (c : CoreId)
+    (budget period : Nat) (badge flags : UInt64) (st st' : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
-      domain st = .ok ((), st'))
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period badge flags
+       st = .ok ((), st'))
     (hne : c ∉ schedControlConfigureWriteSet st core vScId.val)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (schedControlConfigure_confinedToCores core vScId budget period priority deadline domain
+    (schedControlConfigure_confinedToCores core vScId budget period badge flags
       st st' hObjInv hStep) hShared
 
 /-- SM8.B.3 (**the live `.schedContextUnbind` arm, cross-core**): an unbind is

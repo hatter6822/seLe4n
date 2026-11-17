@@ -286,7 +286,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
           (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
     | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
-        (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
+        (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)
         (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
