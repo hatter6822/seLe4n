@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.Architecture.RegisterDecode
 
 /-!
 # The operation a syscall selects (WS-SX SX7)
@@ -240,5 +241,80 @@ TCB for selects nothing. -/
   match st.getTcb? tid with
   | some tcb => selectedOperationCode st tcb layout regs
   | none => SyscallId.encodingBound
+
+
+/-- No label names the send or the call: both are IPC, selected by the
+syscall and an endpoint capability, never by a message label. -/
+theorem SyscallId.ofLabel?_ne_ipc {l : Nat} {sid : SyscallId} (h : SyscallId.ofLabel? l = some sid) :
+    sid ≠ .send ∧ sid ≠ .call := by
+  have hl := SyscallId.label?_ofLabel? h
+  constructor <;> (rintro rfl; simp [SyscallId.label?] at hl)
+
+/-- An invocation selects the send or the call only as its own IPC operation
+`base`. -/
+theorem invocationOperation_ipc {base : SyscallId} {ty : Option CapType} {label : Nat}
+    {op : SyscallId} (h : invocationOperation base ty label = some op)
+    (hop : op = .send ∨ op = .call) : op = base := by
+  unfold invocationOperation at h
+  split at h
+  all_goals first
+    | (injection h with h; subst h
+       first | rfl | (rcases hop with h | h <;> cases h <;> rfl))
+    | skip
+  all_goals
+    split at h
+    · rename_i o ho
+      split at h
+      · injection h with h; subst h
+        exact absurd hop (by
+          have := SyscallId.ofLabel?_ne_ipc ho
+          rintro (h | h) <;> simp_all)
+      · cases h
+    · cases h
+
+/-- **A selected send or call is the blocked-sender code of the same frame**:
+the send is selected only by Send or NBSend and the call only by Call, so the
+frame's syscall word answers the same operation the selection answered
+(`RegisterDecode.blockedSenderCode`).  This is the bridge between the entry's
+route and the sender-frame reads a rendezvous makes of that frame. -/
+theorem blockedSenderCode_of_selected {st : SystemState} {tcb : TCB}
+    {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
+    (h : selectedOperationCode st tcb layout regs = SyscallId.send.toNat ∨
+      selectedOperationCode st tcb layout regs = SyscallId.call.toNat) :
+    SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode layout regs =
+      selectedOperationCode st tcb layout regs := by
+  have hS : ∃ op, selectedOperation st tcb layout regs = some op ∧ (op = .send ∨ op = .call) ∧
+      selectedOperationCode st tcb layout regs = op.toNat := by
+    unfold selectedOperationCode at h ⊢
+    cases hO : selectedOperation st tcb layout regs with
+    | none => simp only [hO] at h; rcases h with h | h <;> cases h
+    | some op =>
+      simp only [hO] at h ⊢
+      refine ⟨op, rfl, ?_, rfl⟩
+      rcases h with h | h
+      · exact .inl (SyscallId.toNat_injective h)
+      · exact .inr (SyscallId.toNat_injective h)
+  obtain ⟨op, hO, hop, hC⟩ := hS
+  rw [hC]
+  unfold selectedOperation at hO
+  unfold SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode
+  cases hW : Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
+  | none => simp only [hW] at hO; cases hO
+  | some sys =>
+    simp only [hW] at hO
+    have hR : ∀ ty, receiveOperation ty ≠ .send ∧ receiveOperation ty ≠ .call := by
+      intro ty; unfold receiveOperation; split <;> exact ⟨by decide, by decide⟩
+    cases sys <;> simp only [Syscall.selectOperation] at hO
+    all_goals first
+      | (have := invocationOperation_ipc hO hop; subst this; rfl)
+      | (injection hO with hO; subst hO
+         first
+           | (rcases hop with h | h <;> cases h)
+           | (exact absurd hop (by rintro (h | h) <;> simp_all)))
+      | (split at hO
+         · injection hO with hO; subst hO; rcases hop with h | h <;> cases h
+         · rename_i o heq
+           injection hO with hO; subst hO
+           exact absurd hop (by rintro (h | h) <;> simp_all))
 
 end SeLe4n.Model

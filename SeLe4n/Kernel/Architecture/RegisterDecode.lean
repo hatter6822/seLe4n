@@ -142,9 +142,9 @@ send or a call already selected its endpoint when it blocked, so the message
 it carries is read as that IPC's (seL4 copies a blocked sender's message
 registers at the rendezvous whatever its capability now names). -/
 @[inline] def blockedSenderCode (layout : SyscallRegisterLayout) (regs : RegisterFile) : Nat :=
-  if readRegWord regs layout.syscallNumReg = Syscall.call.word then
-    SyscallId.call.toNat
-  else SyscallId.send.toNat
+  match Syscall.ofWord? (readRegWord regs layout.syscallNumReg) with
+  | some .call => SyscallId.call.toNat
+  | _ => SyscallId.send.toNat
 
 /-- No number at or above `SyscallId.encodingBound` names a syscall. -/
 theorem syscallId_ofNat?_eq_none_of_ge {k : Nat} (hk : SyscallId.encodingBound ≤ k) :
