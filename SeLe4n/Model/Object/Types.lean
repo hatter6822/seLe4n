@@ -5281,6 +5281,14 @@ namespace Syscall
 /-- The register word seL4 numbers the syscall with: `-number`. -/
 @[inline] def word (s : Syscall) : UInt64 := 0 - s.number.toUInt64
 
+/-- The register word of the syscall numbered `n`, the number the seam takes
+(`word` at a syscall's own number, `word_eq_wordOfNumber`). -/
+@[inline] def wordOfNumber (n : UInt32) : UInt64 := 0 - n.toUInt64
+
+/-- The number a register word carries, as the seam takes it: the word
+negated, narrowed (exact for every word `ofWord?` names a syscall by). -/
+@[inline] def numberOfWord (w : UInt64) : UInt32 := (0 - w).toUInt32
+
 /-- The syscall a register word names: the word negated, read as a number
 only below `2 ^ 32`, so a full-width word builds no heap number. -/
 @[inline] def ofWord? (w : UInt64) : Option Syscall :=

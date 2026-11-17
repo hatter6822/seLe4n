@@ -362,24 +362,33 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
   have hC : MappingStage st (cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) :=
     hW.trans (cancelReceiveBusyReply_mappingStage ctx e _)
+  have hRec : ∀ (s : SystemState) (op : UInt32) (k : KernelError),
+      MappingStage s (Platform.FFI.recordSyscallRefusal ctx e op tid k x0 s) := fun s op k =>
+    MappingStage.of_objects_eq
+      (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+      (by unfold Platform.FFI.recordSyscallRefusal; split
+          · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
+          · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   dsimp only at h
   split at h
   · split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
-        (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
-    · cases h
-      have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
-          MappingStage s (Architecture.recordErrorOverflow s t k) := fun s t k =>
-        MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
-          (by unfold Architecture.recordErrorOverflow; split <;>
-                exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
-      exact (hC.trans (hOv _ _ _)).trans (MappingStage.of_objects_eq
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
-        (by unfold Platform.FFI.recordSyscallRefusal; split
-            · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
-            · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩))
+    · -- WS-SX SX7.2: an `NBSend`'s dropped fault resumes, nothing written
+      split at h
+      · cases h; exact hC
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
+          (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
+    · split at h
+      · cases h
+        have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
+            MappingStage s (Architecture.recordErrorOverflow s t k) := fun s t k =>
+          MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
+            (by unfold Architecture.recordErrorOverflow; split <;>
+                  exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
+        exact (hC.trans (hOv _ _ _)).trans (hRec _ _ _)
+      · cases h
+        exact hC.trans (hRec _ _ _)
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_mappingStage P1 hE)
@@ -401,6 +410,7 @@ theorem stageCallerReturnFor_mappingStage (caller? : Option SeLe4n.ThreadId)
       · exact writeReturnFrameToTcb_mappingStage post tid f
   | blocks => exact MappingStage.refl _
   | faulted => exact MappingStage.refl _
+  | resumes => exact MappingStage.refl _
 
 /-- **The syscall step keeps the mappings recorded**: the ABI dispatch, the
 caller's return staging, the local scheduling point, the residency settlement

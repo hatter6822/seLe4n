@@ -602,8 +602,8 @@ state the step runs on; a capability that does not resolve or names no
 endpoint with a sender names none, and one the step then refuses only reads
 words the step never uses.  A code, so the entry builds no `Option`. -/
 @[inline] def rendezvousSenderCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (capWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.receive.toNat ∨ opCode.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -636,10 +636,10 @@ invoked reply capability answers (`replyAnsweredCaller?`, the receiver of
 seL4's `doReplyTransfer` capability transfer).  A thread the step then takes no
 capability for only has three words read that the step never uses. -/
 @[inline] def transferReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (capWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.receive.toNat ∨ opCode.toNat = SyscallId.replyRecv.toNat then
     tid.toNat + 1
-  else if syscallId.toNat = SyscallId.send.toNat ∨ syscallId.toNat = SyscallId.call.toNat then
+  else if opCode.toNat = SyscallId.send.toNat ∨ opCode.toNat = SyscallId.call.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -658,7 +658,7 @@ capability for only has three words read that the step never uses. -/
             | _ => 0
           | none => 0)
     | none => 0
-  else if syscallId.toNat = SyscallId.reply.toNat then
+  else if opCode.toNat = SyscallId.reply.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -685,8 +685,8 @@ The reply-receive's other receive path, its receive leg's, is the caller's own
 (`transferReceiverCode`).  A thread the step then takes no capability for only
 has three words read that the step never uses. -/
 @[inline] def replyRecvAnsweredCallerCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (replyWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (replyWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord replyWord) st
@@ -739,8 +739,8 @@ free pair is answered.  A sender whose buffer does not resolve has none read. -/
 message info.  The entry's capture reads exactly these (its second
 `captureOverflowRuns`); this list states them for the host suites. -/
 def rendezvousSenderOverflowAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : List SeLe4n.PAddr :=
-  match rendezvousSenderCode st tid syscallId capWord with
+    (opCode : UInt32) (capWord : UInt64) : List SeLe4n.PAddr :=
+  match rendezvousSenderCode st tid opCode capWord with
   | 0 => []
   | k + 1 =>
     match st.getTcb? ⟨k⟩ with
@@ -809,10 +809,16 @@ word is built: the entry allocates nothing for its overflow words. -/
     match st.getTcb? tid with
     | none => pure 0
     | some tcb =>
+      -- WS-SX SX7.2: the operation the trapped words select (seL4's
+      -- `handleSyscall` then `decodeInvocation` / `handleRecv`), read from the
+      -- frame before it is saved, on the state the step runs on; the captures
+      -- below are keyed on it, as the step's decode is
+      let opCode := (operationCodeOfWords st tcb (Syscall.wordOfNumber syscallId) capWord
+        msgInfo).toUInt32
       let stop := Architecture.IpcBufferRead.overflowStop msgInfo
       let n0 ← captureOverflowRuns st tcb stop stop 0 0
       let n1 ← captureSenderCapAddrs st tcb msgInfo n0
-      let n ← match rendezvousSenderCode st tid syscallId capWord with
+      let n ← match rendezvousSenderCode st tid opCode capWord with
         | 0 => pure n1
         | k + 1 =>
           match st.getTcb? ⟨k⟩ with
@@ -822,7 +828,7 @@ word is built: the entry allocates nothing for its overflow words. -/
             let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1
             captureSenderCapAddrs st stcb sInfo n2
           | none => pure n1
-      let n3 ← match transferReceiverCode st tid syscallId capWord with
+      let n3 ← match transferReceiverCode st tid opCode capWord with
         | 0 => pure n
         | k + 1 =>
           match st.getTcb? ⟨k⟩ with
@@ -830,7 +836,7 @@ word is built: the entry allocates nothing for its overflow words. -/
           | none => pure n
       -- A reply-receive's reply leg transfers into the caller it answers: that
       -- caller's receive path, the entry's second.
-      match replyRecvAnsweredCallerCode st tid syscallId replyWord with
+      match replyRecvAnsweredCallerCode st tid opCode replyWord with
       | 0 => pure n3
       | k + 1 =>
         match st.getTcb? ⟨k⟩ with

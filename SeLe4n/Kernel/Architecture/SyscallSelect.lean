@@ -333,15 +333,19 @@ theorem selectionCodeOfKind_eq (sys : Syscall) (k : KernelObjectType) (label : N
   rw [← selectionCodeImpl_eq]
   cases sys <;> cases k <;> rfl
 
-/-- **`selectedOperationCode` as compiled**: no `Option`, no `Except`, no
-`CapType` is built (`selectedOperationCode_eq_k`). -/
-def selectedOperationCodeK (st : SystemState) (tcb : TCB)
-    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Nat :=
-  match Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
+/-- **The selected operation's code from the three words it reads**: the
+syscall word (`x7`), the invoked capability's address (`x0`) and the
+message-info word (`x1`), the thread's CSpace read on `st`.  No `Option`, no
+`Except`, no `CapType` is built.  The compiled selection
+(`selectedOperationCodeK`) reads its words from a register file; the entry's
+capture reads them from the trapped frame before it is saved. -/
+def operationCodeOfWords (st : SystemState) (tcb : TCB) (sysWord capWord infoWord : UInt64) :
+    Nat :=
+  match Syscall.ofWord? sysWord with
   | none => SyscallId.encodingBound
   | some sys =>
-    let label := msgInfoWordLabel (SeLe4n.readRegWord regs layout.msgInfoReg)
-    lookupSlotK tcb (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord regs layout.capPtrReg)) st
+    let label := msgInfoWordLabel infoWord
+    lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
       (fun _ _ _ _ => selectionCodeImpl sys none label)
       (fun cnode slot =>
         match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
@@ -360,9 +364,16 @@ def selectedOperationCodeK (st : SystemState) (tcb : TCB)
           | .serviceRegistry _ => selectionCodeImpl sys (some .serviceRegistry) label
           | .cnodeSlotWord _ => selectionCodeImpl sys (some .cnodeSlot) label)
 
+/-- **`selectedOperationCode` as compiled** (`selectedOperationCode_eq_k`):
+`operationCodeOfWords` on the register file's three words. -/
+@[inline] def selectedOperationCodeK (st : SystemState) (tcb : TCB)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Nat :=
+  operationCodeOfWords st tcb (SeLe4n.readRegWord regs layout.syscallNumReg)
+    (SeLe4n.readRegWord regs layout.capPtrReg) (SeLe4n.readRegWord regs layout.msgInfoReg)
+
 @[csimp] theorem selectedOperationCode_eq_k : @selectedOperationCode = @selectedOperationCodeK := by
   funext st tcb layout regs
-  unfold selectedOperationCode selectedOperation selectedOperationCodeK
+  unfold selectedOperationCode selectedOperation selectedOperationCodeK operationCodeOfWords
   cases Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
   | none => rfl
   | some sys =>

@@ -152,6 +152,10 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
                  tid ke with
              | some fault =>
+                 if syscallId = Syscall.nbSend.number.toUInt32 then
+                   .ok (.resumes, cancelReceiveBusyReply ctx executingCore
+                     (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                 else
                  .ok (.faulted,
                       Platform.FFI.deliverSyscallCapFault ctx executingCore
                         (cancelReceiveBusyReply ctx executingCore
@@ -160,17 +164,32 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
                           ipcBufferAddr spEl0 x30) elr spsr)
              | none =>
+                 if syscallId = Syscall.call.number.toUInt32 then
                  .ok (.returns (Architecture.errorFrameFor
                         (cancelReceiveBusyReply ctx executingCore
                           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
                         tid ke),
-                      Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                      Platform.FFI.recordSyscallRefusal ctx executingCore
+                        (Platform.FFI.seamOperationCode
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+                        tid ke x0
                         (Architecture.recordErrorOverflow
                           (cancelReceiveBusyReply ctx executingCore
                             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
                           tid ke))
+                 else
+                 .ok (.resumes,
+                      Platform.FFI.recordSyscallRefusal ctx executingCore
+                        (Platform.FFI.seamOperationCode
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+                        tid ke x0
+                        (cancelReceiveBusyReply ctx executingCore
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)))
          | .ok ((), st') =>
-             .ok (Platform.FFI.syscallReturnOutcome syscallId st' tid, st')) := by
+             .ok (Platform.FFI.syscallReturnOutcome
+               (Platform.FFI.seamOperationCode
+                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+               st' tid, st')) := by
   unfold abiEntryPlan at h
   unfold Platform.FFI.syscallDispatchFromAbi
   by_cases hCtx : isInsecureDefaultContext ctx

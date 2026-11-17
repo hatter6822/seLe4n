@@ -80,6 +80,7 @@ def stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     | none => post
   | .blocks => post
   | .faulted => post
+  | .resumes => post
 
 /-- The staging of a current caller, as compiled: the frame written into the
 caller's saved context in its object slot (`writeReturnFrameToTcb`) and into
@@ -106,6 +107,7 @@ slot (`stageCurrentCallerReturn`). -/
     | none => post
   | .blocks => post
   | .faulted => post
+  | .resumes => post
 
 theorem stageCurrentCallerReturn_eq (post : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (f : SyscallReturnFrame) :
@@ -138,6 +140,7 @@ theorem stageCallerReturnFor_destroyed (tid : SeLe4n.ThreadId) (post : SystemSta
     exact SystemState.updateTcb_eq_self_of_none hT _
   | blocks => rfl
   | faulted => rfl
+  | resumes => rfl
 
 /-- WS-ZA ZA4: `stageCallerReturnFor` from the outcome's boundary words
 (`SyscallOutcome.words`, `stageCallerReturnFor_eq_words`): a returning
@@ -190,6 +193,11 @@ theorem stageCallerReturn_blocks (pre post : SystemState) (c : CoreId) :
 theorem stageCallerReturn_faulted (pre post : SystemState) (c : CoreId) :
     stageCallerReturn pre post c .faulted = post := rfl
 
+/-- A caller that resumes unchanged (WS-SX SX7.2) stages nothing: its saved
+context keeps the registers it trapped with. -/
+theorem stageCallerReturn_resumes (pre post : SystemState) (c : CoreId) :
+    stageCallerReturn pre post c .resumes = post := rfl
+
 /-- **WS-LS LS2.3**: staging a caller's result writes a register context and
 the core's bank, never the scheduler — whichever caller the seam captured. -/
 theorem stageCallerReturnFor_scheduler (caller? : Option SeLe4n.ThreadId)
@@ -202,6 +210,7 @@ theorem stageCallerReturnFor_scheduler (caller? : Option SeLe4n.ThreadId)
       · simp [writeReturnFrameToTcb, SystemState.updateTcb_scheduler]
       · simp [writeReturnFrameToTcb, SystemState.updateTcb_scheduler]
     · rfl
+  · rfl
   · rfl
   · rfl
 

@@ -1055,21 +1055,34 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             exact hReplyF)
     rw [hNoFault] at hD
     simp only at hD
-    rw [syscallDispatchCrossCoreStep_of_ok hD]
-    dsimp only
     have hCancel := cancelReceiveBusyReply_coversWrites ctx e tid tcb decoded _ stSpilled ops S U
       hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs hDec hFillObj
       (fun gate => recvBusyReplyHolderCode_congr_objects ctx tid gate decoded hFillObj)
       (fun n => by rw [hFilled]) hOps hSched hU
-    refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
-      (footprintCoversWrites_trans U
+    -- WS-SX SX7.2: a `Call` writes the error's fifth word to its IPC buffer;
+    -- any other syscall writes nothing but the refusal record
+    by_cases hC : syscallId = Syscall.call.number.toUInt32
+    · rw [if_pos hC] at hD
+      rw [syscallDispatchCrossCoreStep_of_ok hD]
+      dsimp only
+      refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
+        (footprintCoversWrites_trans U
+          (footprintCoversWrites_trans U
+            (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch) hCancel)
+          (footprintCoversWrites_of_scheduler_eq U hTable
+            (Architecture.recordErrorOverflow_scheduler _ tid ke)))
+        (footprintCoversWrites_of_scheduler_eq U hTable
+          (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e _ tid ke x0 _)))
+        (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
+    · rw [if_neg hC] at hD
+      rw [syscallDispatchCrossCoreStep_of_ok hD]
+      dsimp only
+      refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
         (footprintCoversWrites_trans U
           (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch) hCancel)
         (footprintCoversWrites_of_scheduler_eq U hTable
-          (Architecture.recordErrorOverflow_scheduler _ tid ke)))
-      (footprintCoversWrites_of_scheduler_eq U hTable
-        (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e syscallId tid ke x0 _)))
-      (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
+          (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e _ tid ke x0 _)))
+        (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
 
 /-! ### The timer and reschedule entries' tails
 

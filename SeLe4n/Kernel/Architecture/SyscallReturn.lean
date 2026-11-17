@@ -1555,6 +1555,14 @@ inductive SyscallOutcome where
   restore staged; the halt (`halt_after_delivered_syscall_fault`) is reached
   only on a core with no restore staged. -/
   | faulted
+  /-- WS-SX SX7.2: the caller **resumes with the registers it trapped with**.
+  seL4's `handleInvocation` answers an invocation's error with
+  `replyFromKernel_error` only when `isCall`; a `Send`, `NBSend` or the send
+  half of a compound syscall that fails writes no message register, so the
+  thread returns from its `SVC` with `x0`-`x5` exactly as it left them.  No
+  frame exists for it, nothing is staged, and the trap layer writes nothing
+  over the trapped `x0`-`x5`. -/
+  | resumes
   deriving Repr, DecidableEq
 
 namespace SyscallOutcome
@@ -1564,11 +1572,13 @@ namespace SyscallOutcome
 `0` = a frame was written, `1` = the caller blocked and no frame exists,
 `2` = the caller faulted at the seam (PR #887 review round 5) — no frame,
 and, where the context restore staged no successor, the trap layer halts
-rather than resumes it. -/
+rather than resumes it, `3` = the caller resumes with the registers it trapped
+with (WS-SX SX7.2) — no frame, and the trap layer writes none. -/
 def tagWord : SyscallOutcome → UInt64
   | .returns _ => 0
   | .blocks    => 1
   | .faulted   => 2
+  | .resumes   => 3
 
 /-- The tags are distinct — a blocked outcome cannot be mistaken for a
 frame delivery at the boundary. -/
@@ -1587,6 +1597,12 @@ restore (WS-BP BP7.6) staged no successor, and the two must never be confused at
 theorem tagWord_faulted_ne_blocks : tagWord .faulted ≠ tagWord .blocks := by
   simp [tagWord]
 
+/-- The four tags are pairwise distinct: an unchanged resume is never read as
+a frame delivery (which would write `x0`-`x5`), a block or a fault. -/
+theorem tagWord_resumes_ne {o : SyscallOutcome} (h : o ≠ .resumes) :
+    tagWord .resumes ≠ tagWord o := by
+  cases o <;> simp_all [tagWord]
+
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
 zeroed (no return value exists for it — RA.C.9; its real frame is staged
 by the unblocking arm and delivered by the context restore (WS-BP BP7.6)).
@@ -1598,6 +1614,7 @@ def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .returns f => f
   | .blocks    => .zero
   | .faulted   => .zero
+  | .resumes   => .zero
 
 /-- WS-ZA ZA4: **what the boundary reads of an outcome**: its tag and its
 mailbox frame's six words.  The live entry carries these words across the
@@ -1609,12 +1626,14 @@ outcome nor its frame. -/
    o.mailboxFrame.x4, o.mailboxFrame.x5)
 
 /-- **The outcome the boundary's words name**: tag `0` the frame of the six
-words, `1` a blocked caller, any other tag a faulted one. -/
+words, `1` a blocked caller, `3` an unchanged resume, any other tag a faulted
+one. -/
 @[inline] def ofWords :
     UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 → SyscallOutcome
   | (tag, w0, w1, w2, w3, w4, w5) =>
     if tag = 0 then .returns { x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
     else if tag = 1 then .blocks
+    else if tag = 3 then .resumes
     else .faulted
 
 /-- An outcome's words name it: the boundary loses nothing of an outcome. -/
