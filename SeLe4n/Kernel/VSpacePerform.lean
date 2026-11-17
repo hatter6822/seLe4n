@@ -864,7 +864,8 @@ theorem pageTableMap_of_admitted (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n
   unfold Architecture.pageTableMap
   rw [hGT, hGR]
   dsimp only
-  simp only [hLive, hTB', hAddr, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hM]
+  simp only [hLive, hTB', Architecture.pageTableAddressable_isCanonical hAddr, hAddr,
+    Bool.not_true, Bool.false_eq_true, ↓reduceIte, hM]
   rw [hS1]
   dsimp only
   rw [hS2]

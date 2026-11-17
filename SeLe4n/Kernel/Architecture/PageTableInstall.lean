@@ -62,6 +62,15 @@ lower address would take that slot. -/
 def pageTableAddressable (vaddr : SeLe4n.VAddr) : Bool :=
   vaddr.inUserWindow
 
+/-- An address a table may cover is canonical: past the user top is refused
+first (`pageTableMap`), so the user window's check never meets it. -/
+theorem pageTableAddressable_isCanonical {vaddr : SeLe4n.VAddr}
+    (h : pageTableAddressable vaddr = true) : vaddr.isCanonical = true := by
+  simp only [pageTableAddressable, SeLe4n.VAddr.inUserWindow, Bool.and_eq_true,
+    decide_eq_true_eq] at h
+  simp only [SeLe4n.VAddr.isCanonical, decide_eq_true_eq]
+  exact h.2
+
 /-- **A slot lies beneath the install `inst`**: a deeper level whose index,
 shifted up to `inst`'s level, is `inst`'s — a table the walk reaches only
 through the one installed at `inst`. -/
