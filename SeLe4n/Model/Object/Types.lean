@@ -5297,6 +5297,12 @@ only below `2 ^ 32`, so a full-width word builds no heap number. -/
 theorem ofNumber?_number (s : Syscall) : ofNumber? s.number = some s := by
   cases s <;> rfl
 
+theorem word_eq_wordOfNumber (s : Syscall) : s.word = wordOfNumber s.number.toUInt32 := by
+  cases s <;> rfl
+
+theorem numberOfWord_word (s : Syscall) : numberOfWord s.word = s.number.toUInt32 := by
+  cases s <;> rfl
+
 theorem ofWord?_word (s : Syscall) : ofWord? s.word = some s := by
   cases s <;> decide
 
@@ -5388,6 +5394,27 @@ def label? : SyscallId → Option Nat
   | .tcbSetAffinity => some 66
   | .send | .receive | .call | .reply | .notificationSignal | .notificationWait
   | .replyRecv | .yield => none
+
+/-- **The syscall a user issues an operation with**, as libsel4's stubs do
+(the Rust mirror is `sele4n_types::SyscallId::syscall`): a labelled
+invocation is a `Call`, its result and its error coming back; a send, a
+signal and a reply through a reply capability are a `Send`; a wait is a
+`Wait`, a receive a `Recv`. -/
+def syscall : SyscallId → Syscall
+  | .send | .reply | .notificationSignal => .send
+  | .receive => .recv
+  | .notificationWait => .wait
+  | .replyRecv => .replyRecv
+  | .yield => .yield
+  | _ => .call
+
+/-- The message-info word an operation is issued with: `msgInfo` with the
+operation's label in seL4's label field (bits 12 and up), or unchanged for the
+operations no label selects. -/
+def msgInfoWithLabel (sid : SyscallId) (msgInfo : UInt64) : UInt64 :=
+  match sid.label? with
+  | some l => (msgInfo &&& (0xFFF : UInt64)) ||| (l.toUInt64 <<< (12 : UInt64))
+  | none => msgInfo
 
 /-- The operation an invocation label names, `label?`'s inverse. -/
 def ofLabel? : Nat → Option SyscallId

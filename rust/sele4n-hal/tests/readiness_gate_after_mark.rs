@@ -18,7 +18,7 @@
 
 use sele4n_hal::lean_ready::LeanRuntimeReadyOnCore;
 use sele4n_hal::svc_dispatch::{
-    dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, SyscallId, ERROR_LABEL_BASE,
+    dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, Syscall, ERROR_LABEL_BASE,
 };
 use sele4n_hal::trap::{handle_synchronous_exception, TrapFrame};
 
@@ -58,7 +58,7 @@ fn dispatch_svc_routes_to_inner_dispatcher() {
     // 17 -> label 18) error frame into core 0's mailbox slot and
     // returns outcome tag 0.  WS-RA: a kernel rejection arrives as an
     // ordinary FRAME whose x1 label carries the error, undecoded here.
-    let result = dispatch_svc(SyscallId::Send.to_u32());
+    let result = dispatch_svc(Syscall::Send.word());
     assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
     // The frame's x1 word is the status label in MessageInfo position
     // (the top of the 52-bit label range, base 2^52 - 256).
@@ -67,25 +67,33 @@ fn dispatch_svc_routes_to_inner_dispatcher() {
 
 /// The argument-count prefilter is retired: a message shorter than its
 /// invocation's arguments reaches the kernel, which refuses it
-/// `TruncatedMessage` after the capability lookup, in seL4's order.  On the
-/// host lane the kernel is the stand-in, so every such call reaches it and
-/// returns its frame.
+/// `TruncatedMessage` after the capability lookup, in seL4's order.  The
+/// operation is the kernel's to select (WS-SX SX7), so every one of seL4's
+/// eleven syscalls reaches it; on the host lane the kernel is the stand-in,
+/// which answers each with its frame.
 #[test]
-fn short_messages_reach_the_kernel() {
+fn every_syscall_reaches_the_kernel() {
     mark_this_core_ready();
-    for sid in [
-        SyscallId::CSpaceMint,
-        SyscallId::TcbSetPriority,
-        SyscallId::TcbSetMCPriority,
-        SyscallId::TcbSetIPCBuffer,
-        SyscallId::TcbSetAffinity,
-        SyscallId::SchedContextConfigure,
-    ] {
+    for sys in Syscall::ALL {
         assert_eq!(
-            dispatch_svc(sid as u32),
+            dispatch_svc(sys.word()),
             Ok(SvcOutcome::Frame(error_frame_regs(17))),
-            "a call to {sid:?} must reach the kernel whatever its length",
+            "{sys:?} must reach the kernel whatever its length",
         );
+    }
+}
+
+/// WS-SX SX7.2: a trap whose `x7` is seL4's word for a syscall is dispatched
+/// (the host stand-in answers with its frame, discriminant 17).
+#[test]
+fn syscall_word_on_ready_core_is_dispatched() {
+    mark_this_core_ready();
+    for sys in Syscall::ALL {
+        let mut frame = zero_frame();
+        frame.esr_el1 = EC_SVC_AARCH64 << 26;
+        frame.gprs[7] = sys.word();
+        handle_synchronous_exception(&mut frame);
+        assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 17) << 12, "{sys:?}");
     }
 }
 
@@ -109,11 +117,11 @@ fn unknown_syscall_id_on_ready_core_publishes_status_frame() {
 }
 
 /// Moved from `trap`'s unit tests at PR #889 review (see above): the syscall
-/// number is validated at its full 64-bit width.  `0x1_0000_0002` narrows to
-/// syscall 2, which an `as u32` would have dispatched (the host stub answers
-/// it with the `notImplemented` frame, discriminant 17); it is an unknown
-/// syscall, and on the host lane that is the `invalidSyscallNumber` status
-/// frame (31).
+/// word is validated at its full 64-bit width.  `0x1_0000_0002`'s negation
+/// is no 32-bit number, so it names no syscall (the host stub would answer a
+/// dispatched one with the `notImplemented` frame, discriminant 17); it is an
+/// unknown syscall, and on the host lane that is the `invalidSyscallNumber`
+/// status frame (31).
 #[test]
 fn wide_syscall_number_on_ready_core_is_unknown_syscall() {
     mark_this_core_ready();
@@ -127,24 +135,26 @@ fn wide_syscall_number_on_ready_core_is_unknown_syscall() {
 }
 
 /// PR #889 review: with the core ready, the prefilter runs and refuses as
-/// before — the gate moved ahead of it, it did not replace it.  (This was
-/// `svc_dispatch`'s unit test `dispatch_svc_rejects_invalid_syscall_id`; the
-/// gate made its answer depend on readiness, which the lib binary cannot
-/// assume.)
+/// before — the gate moved ahead of it, it did not replace it.  WS-SX SX7.2:
+/// the prefilter is `Syscall::from_word` in the trap's `SVC` arm, and the
+/// operation numbers the pre-SX7 ABI carried in `x7` name no syscall: each is
+/// an unknown syscall (on the host lane the `invalidSyscallNumber` status
+/// frame, 31), never a dispatch.
 #[test]
 fn prefilter_still_refuses_on_a_ready_core() {
     mark_this_core_ready();
-    assert_eq!(
-        dispatch_svc(SyscallId::ENCODING_BOUND),
-        Err(DispatchError::InvalidSyscallId),
-        "an out-of-range id is refused by the prefilter once the core is ready"
-    );
-    // The retired in-place retype's number names no syscall.
-    assert_eq!(
-        dispatch_svc(SyscallId::RETIRED[0]),
-        Err(DispatchError::InvalidSyscallId),
-        "a retired id is refused by the prefilter"
-    );
+    for word in 0u64..64 {
+        assert_eq!(
+            dispatch_svc(word),
+            Err(DispatchError::InvalidSyscallId),
+            "x7 = {word}"
+        );
+        let mut frame = zero_frame();
+        frame.esr_el1 = EC_SVC_AARCH64 << 26;
+        frame.gprs[7] = word;
+        handle_synchronous_exception(&mut frame);
+        assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 12, "x7 = {word}");
+    }
 }
 
 /// Moved from `trap`'s unit tests at PR #889 review: an `SVC` increments the
@@ -189,6 +199,7 @@ fn svc_arm_never_publishes_a_success_label() {
     mark_this_core_ready();
     let mut frame = zero_frame();
     frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
+    frame.gprs[7] = Syscall::Send.word();
     handle_synchronous_exception(&mut frame);
     let label = frame.x1() >> 12;
     assert_ne!(
@@ -217,6 +228,7 @@ fn handle_sync_reads_esr_from_frame() {
     mark_this_core_ready();
     let mut frame = zero_frame();
     frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
+    frame.gprs[7] = Syscall::Send.word();
     handle_synchronous_exception(&mut frame);
     assert_eq!(frame.x0(), 0);
     assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 17) << 12);

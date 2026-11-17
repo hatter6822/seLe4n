@@ -922,10 +922,10 @@ for driver in drivers:
         # round trip.  The arms are derived by the router itself
         # (`scripts/exerciser_route_coverage.lean`, run by Lean, which routes
         # every syscall number and message-info shape the ABI decodes); the
-        # evidence is each pinned scenario's routed words and answer, as the
+        # evidence is each pinned scenario's operation, routed words and answer, as the
         # exerciser printed them beside its reading, routed by the same
         # router.  A tool that cannot run, or answers nonzero, fails the gate.
-        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed op=([0-9]+) x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
         # A round trip is evidence for its arm only if its reading's window
         # entered the kernel through the syscall entry: a trip the HAL refused
         # before the kernel ran measured no arm.
@@ -940,7 +940,7 @@ for driver in drivers:
             m = routed_re.fullmatch(line)
             key = (m.group(1), m.group(2) is not None) if m else None
             if m and m.group(1) in expected and key in runs and key in svc_entered:
-                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)}")
+                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)} {m.group(6)}")
         try:
             coverage = subprocess.run(
                 ["lake", "env", "lean", "--run", "scripts/exerciser_route_coverage.lean"],

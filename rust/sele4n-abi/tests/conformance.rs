@@ -46,7 +46,11 @@ fn xval_001_endpoint_send() {
             (1, 2 | (0x10 << 12), "x1=MessageInfo"),
             (2, 0xAAAA, "x2=msg_reg[0]"),
             (3, 0xBBBB, "x3=msg_reg[1]"),
-            (6, 0, "x7=SyscallId::Send"),
+            (
+                6,
+                SyscallId::Send.syscall().word(),
+                "x7=SyscallId::Send's syscall word",
+            ),
         ],
     );
 }
@@ -65,7 +69,11 @@ fn xval_002_endpoint_receive() {
         &[
             (0, 200, "x0=CPtr"),
             (1, 0, "x1=MessageInfo(empty)"),
-            (6, 1, "x7=SyscallId::Receive"),
+            (
+                6,
+                SyscallId::Receive.syscall().word(),
+                "x7=SyscallId::Receive's syscall word",
+            ),
         ],
     );
 }
@@ -85,7 +93,11 @@ fn xval_003_endpoint_call() {
             (0, 300, "x0=CPtr"),
             (1, 1 | (42 << 12), "x1=MessageInfo"),
             (2, 0xDEAD, "x2=msg_reg[0]"),
-            (6, 2, "x7=SyscallId::Call"),
+            (
+                6,
+                SyscallId::Call.syscall().word(),
+                "x7=SyscallId::Call's syscall word",
+            ),
         ],
     );
 }
@@ -99,7 +111,17 @@ fn xval_004_endpoint_reply() {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Reply,
     };
-    verify_regs(&req, &[(0, 400, "x0=CPtr"), (6, 3, "x7=SyscallId::Reply")]);
+    verify_regs(
+        &req,
+        &[
+            (0, 400, "x0=CPtr"),
+            (
+                6,
+                SyscallId::Reply.syscall().word(),
+                "x7=SyscallId::Reply's syscall word",
+            ),
+        ],
+    );
 }
 
 // ============================================================================
@@ -141,7 +163,11 @@ fn xval_005_cspace_mint() {
             (3, 64, "x3=destDepth"),
             (4, 20, "x4=srcIndex"),
             (5, 64, "x5=srcDepth"),
-            (6, 4, "x7=SyscallId::CSpaceMint"),
+            (
+                6,
+                SyscallId::CSpaceMint.syscall().word(),
+                "x7=SyscallId::CSpaceMint's syscall word",
+            ),
         ],
     );
 }
@@ -174,7 +200,11 @@ fn xval_006_cspace_copy() {
             (3, 64, "x3=destDepth"),
             (4, 5, "x4=srcIndex"),
             (5, 8, "x5=srcDepth"),
-            (6, 5, "x7=SyscallId::CSpaceCopy"),
+            (
+                6,
+                SyscallId::CSpaceCopy.syscall().word(),
+                "x7=SyscallId::CSpaceCopy's syscall word",
+            ),
         ],
     );
 }
@@ -202,7 +232,11 @@ fn xval_007_cspace_move() {
             (3, 64, "x3=destDepth"),
             (4, 7, "x4=srcIndex"),
             (5, 8, "x5=srcDepth"),
-            (6, 6, "x7=SyscallId::CSpaceMove"),
+            (
+                6,
+                SyscallId::CSpaceMove.syscall().word(),
+                "x7=SyscallId::CSpaceMove's syscall word",
+            ),
         ],
     );
 }
@@ -224,7 +258,11 @@ fn xval_008_cspace_delete() {
         &req,
         &[
             (2, 99, "x2=targetSlot"),
-            (6, 7, "x7=SyscallId::CSpaceDelete"),
+            (
+                6,
+                SyscallId::CSpaceDelete.syscall().word(),
+                "x7=SyscallId::CSpaceDelete's syscall word",
+            ),
         ],
     );
 }
@@ -264,7 +302,11 @@ fn xval_009_untyped_retype_kernel_object() {
             (3, 4, "x3=size_bits(radix)"),
             (4, 3, "x4=nodeIndex"),
             (5, 64, "x5=nodeDepth"),
-            (6, 36, "x7=SyscallId::UntypedRetype"),
+            (
+                6,
+                SyscallId::UntypedRetype.syscall().word(),
+                "x7=SyscallId::UntypedRetype's syscall word",
+            ),
         ],
     );
 }
@@ -295,7 +337,11 @@ fn xval_010_vspace_map() {
             (2, 0x1000, "x2=vaddr"),
             (3, 2, "x3=rights (CanRead)"),
             (4, 1, "x4=attr (PageCacheable)"),
-            (6, 9, "x7=SyscallId::VSpaceMap"),
+            (
+                6,
+                SyscallId::VSpaceMap.syscall().word(),
+                "x7=SyscallId::VSpaceMap's syscall word",
+            ),
         ],
     );
 }
@@ -319,7 +365,11 @@ fn xval_011_vspace_unmap() {
         &[
             (2, 2, "x2=asid"),
             (3, 0x3000, "x3=vaddr"),
-            (6, 10, "x7=SyscallId::VSpaceUnmap"),
+            (
+                6,
+                SyscallId::VSpaceUnmap.syscall().word(),
+                "x7=SyscallId::VSpaceUnmap's syscall word",
+            ),
         ],
     );
 }
@@ -355,12 +405,20 @@ fn xval_012_service_register() {
         &req,
         &[
             (0, 1200, "x0=CPtr(service registry)"),
-            (1, 5 | (1 << 7), "x1=MessageInfo(length 5, one extra cap)"),
+            (
+                1,
+                5 | (1 << 7) | (57 << 12),
+                "x1=MessageInfo(length 5, one extra cap, label 57)",
+            ),
             (2, 7, "x2=interfaceId"),
             (3, 5, "x3=methodCount"),
             (4, 256, "x4=maxMessageSize"),
             (5, 128, "x5=maxResponseSize"),
-            (6, 11, "x7=SyscallId::ServiceRegister"),
+            (
+                6,
+                SyscallId::ServiceRegister.syscall().word(),
+                "x7=SyscallId::ServiceRegister's syscall word",
+            ),
         ],
     );
     // Verify 5th parameter in IPC buffer overflow slot
@@ -387,8 +445,16 @@ fn xval_013_service_revoke() {
         &req,
         &[
             (0, 1300, "x0=CPtr(service registry)"),
-            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
-            (6, 12, "x7=SyscallId::ServiceRevoke"),
+            (
+                1,
+                (1 << 7) | (58 << 12),
+                "x1=MessageInfo(one extra cap, label 58)",
+            ),
+            (
+                6,
+                SyscallId::ServiceRevoke.syscall().word(),
+                "x7=SyscallId::ServiceRevoke's syscall word",
+            ),
         ],
     );
 }
@@ -406,8 +472,16 @@ fn xval_014_service_query() {
         &req,
         &[
             (0, 1400, "x0=CPtr(service registry)"),
-            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
-            (6, 13, "x7=SyscallId::ServiceQuery"),
+            (
+                1,
+                (1 << 7) | (59 << 12),
+                "x1=MessageInfo(one extra cap, label 59)",
+            ),
+            (
+                6,
+                SyscallId::ServiceQuery.syscall().word(),
+                "x7=SyscallId::ServiceQuery's syscall word",
+            ),
         ],
     );
 }
@@ -439,8 +513,8 @@ fn xval_015_notification_signal() {
     assert_eq!(regs[5], 0, "x5=msg_regs[3] must be zero");
     assert_eq!(
         regs[6],
-        SyscallId::NotificationSignal.to_u64(),
-        "x7=SyscallId::NotificationSignal"
+        SyscallId::NotificationSignal.syscall().word(),
+        "x7=SyscallId::NotificationSignal's syscall word"
     );
 }
 
@@ -461,8 +535,8 @@ fn xval_016_notification_wait() {
     assert_eq!(regs[0], 600, "x0=CPtr(notification)");
     assert_eq!(
         regs[6],
-        SyscallId::NotificationWait.to_u64(),
-        "x7=SyscallId::NotificationWait"
+        SyscallId::NotificationWait.syscall().word(),
+        "x7=SyscallId::NotificationWait's syscall word"
     );
 
     // Simulate kernel response (WS-RA): badge = 0xBEEF in x0, success
@@ -1248,7 +1322,7 @@ fn abi_constants_match_lean() {
     assert_eq!(MAX_EXTRA_CAPS, 3, "MAX_EXTRA_CAPS must be 3");
 }
 
-/// W1-F-1: notification_signal encodes SyscallId::NotificationSignal (14)
+/// W1-F-1: notification_signal encodes seL4_SysSend (WS-SX SX7)
 /// with an empty message: the badge is the capability's, not an operand.
 #[test]
 fn notification_signal_encoding() {
@@ -1259,12 +1333,16 @@ fn notification_signal_encoding() {
         syscall_id: SyscallId::NotificationSignal,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[6], 14, "x7=SyscallId::NotificationSignal must be 14");
+    assert_eq!(
+        regs[6],
+        Syscall::Send.word(),
+        "x7=seL4_SysSend: a signal is Send on a notification"
+    );
     assert_eq!(regs[1], 0, "x1=MessageInfo(empty)");
     assert_eq!(regs[2], 0, "x2=msg_regs[0] carries no badge");
 }
 
-/// W1-F-1: notification_wait encodes SyscallId::NotificationWait (15).
+/// W1-F-1: notification_wait encodes seL4_SysWait (WS-SX SX7).
 #[test]
 fn notification_wait_encoding() {
     let req = SyscallRequest {
@@ -1274,10 +1352,10 @@ fn notification_wait_encoding() {
         syscall_id: SyscallId::NotificationWait,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[6], 15, "x7=SyscallId::NotificationWait must be 15");
+    assert_eq!(regs[6], Syscall::Wait.word(), "x7=seL4_SysWait");
 }
 
-/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16) and places the
+/// W1-F-1: endpoint_reply_recv encodes seL4_SysReplyRecv and places the
 /// server-supplied reply capability pointer in msg_regs[0] (faithful seL4-MCS).
 #[test]
 fn endpoint_reply_recv_encoding() {
@@ -1289,7 +1367,7 @@ fn endpoint_reply_recv_encoding() {
         syscall_id: SyscallId::ReplyRecv,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv must be 16");
+    assert_eq!(regs[6], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
     assert_eq!(
         regs[2], reply_cap,
         "x2=msg_regs[0] must carry the reply cap pointer"
@@ -1324,7 +1402,7 @@ fn endpoint_reply_recv_register_layout() {
     assert_eq!(regs[2], reply_cap, "x2=MR[0] must be the reply cap pointer");
     assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
     assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
-    assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv");
+    assert_eq!(regs[6], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
 }
 
 // ============================================================================
@@ -2262,7 +2340,9 @@ fn abi_layout_matches_the_lean_table() {
         cap_addr: CPtr::from(0xC0DE_0000u64),
         msg_info,
         msg_regs: [0xA000_0000, 0xA000_0001, 0xA000_0002, 0xA000_0003],
-        syscall_id: SyscallId::CspaceRevoke,
+        // A send keeps the caller's label (an invocation's label is its
+        // operation's), so every field is a distinct sentinel.
+        syscall_id: SyscallId::Send,
     };
     let regs = encode_syscall(&request).expect("the request encodes");
     let register_of = |value: u64| -> u64 {
@@ -2291,7 +2371,7 @@ fn abi_layout_matches_the_lean_table() {
     }
     rendered.push_str(&std::format!(
         "register syscallNum x{}\n",
-        register_of(SyscallId::CspaceRevoke.to_u64())
+        register_of(Syscall::Send.word())
     ));
     rendered.push_str(&std::format!(
         "maxMessageRegisters {}\n",
@@ -2546,11 +2626,18 @@ fn wrappers_name_their_syscalls() {
         let regs = host_capture::last_request();
         assert_eq!(
             regs[6],
-            sid.to_u64(),
-            "{name}: captured x7 must be the wrapper's own syscall id"
+            sid.syscall().word(),
+            "{name}: captured x7 must be the word of the wrapper's syscall"
         );
-        MessageInfo::decode(regs[1])
+        let mi = MessageInfo::decode(regs[1])
             .unwrap_or_else(|_| panic!("{name}: wrapper x1 must decode as MessageInfo"));
+        if let Some(label) = sid.label() {
+            assert_eq!(
+                mi.label(),
+                label,
+                "{name}: captured x1 must carry the operation's invocation label"
+            );
+        }
         covered.borrow_mut()[sid.to_u64() as usize] = true;
     };
 

@@ -8708,7 +8708,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- class a monitor cannot see.  The *policy-path* refusals travel the same
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
-    (match SeLe4n.Testing.dispatchFromAbi ctx c1 declassId 5 0 0 0 0 0 0 0 0 0 0
+    (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0
         niState with
      | .error _ => false
      | .ok (outcome, committed) =>
@@ -8724,7 +8724,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
-    (match SeLe4n.Testing.dispatchFromAbi ctx c1 sendId 5 0 0 0 0 0 0 0 0 0 0
+    (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.send 5 0 0 0 0 0 0 0 0 0 0
         niState with
      | .error _ => false
      | .ok (_, committed) =>
@@ -8990,8 +8990,8 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- dispatch-level check exercises is explicit; the genuine downgrade
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
-    (match SeLe4n.Testing.dispatchFromAbi auditMonitorLabeling c1
-        (SyscallId.declassify.toNat.toUInt32) 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
+    (match SeLe4n.Testing.dispatchOperationFromAbi auditMonitorLabeling c1
+        SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get
@@ -11524,8 +11524,8 @@ capability is extra capability 0, slot 5).  The plan authorizes hop 1 and
 refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 2
+  SeLe4n.Testing.dispatchOperationFromAbi signalReceiverDeniedLabeling c1
+    SyscallId.declassifySignal 2
     (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
@@ -11536,8 +11536,8 @@ notification, so the refusal is the policy gate's own `.declassificationDenied`
 rather than a resolution failure. -/
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 2
+  SeLe4n.Testing.dispatchOperationFromAbi declassifyDenyAllLabeling c1
+    SyscallId.declassify 2
     (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0 0 0 0 0 0 0 0 0
     (SeLe4n.Testing.withSenderCapAddrs seamBoundaryState highCurrent #[SeLe4n.CPtr.ofNat 3])
 

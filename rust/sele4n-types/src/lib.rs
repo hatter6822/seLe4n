@@ -97,7 +97,7 @@ pub const ERROR_LABEL_BASE: u64 = (1 << 52) - 256;
 // The range is exactly the top of seL4's 52-bit label field.
 const _: () = assert!(ERROR_LABEL_BASE == 0xF_FFFF_FFFF_FF00);
 const _: () = assert!(ERROR_LABEL_BASE + 255 == (1 << 52) - 1);
-pub use syscall::SyscallId;
+pub use syscall::{Syscall, SyscallId};
 
 // AN8-E (R-HAL-L2): The 52-line AK4-H audit-notes block previously inlined
 // here is canonical-archived in `docs/AUDIT_NOTES.md` so this file stays

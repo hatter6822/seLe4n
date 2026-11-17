@@ -1447,7 +1447,7 @@ private def svcX30 : UInt64 := 0xBEEF
 CPtr and an empty message, through the typed ABI entry the hardware calls. -/
 private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt64) :
     Except KernelError (SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
+  SeLe4n.Testing.dispatchOperationFromAbi ctx c0 sid cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
 /-- An address that misses the root CNode's guard (its 62 guard bits are 0, and
@@ -1569,7 +1569,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
     let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
     { stRunning with objects := stRunning.objects.insert cnRoot cn }
   let deleteAt3 (st : SystemState) :=
-    SeLe4n.Testing.dispatchFromAbi seamCtx c0 SyscallId.cspaceDelete.toNat.toUInt32 3 0 0 0 0 0 0
+    SeLe4n.Testing.dispatchOperationFromAbi seamCtx c0 SyscallId.cspaceDelete 3 0 0 0 0 0 0
       svcElr svcSpsr svcSpEl0 svcX30 st
   assertBool "a delete whose message is shorter than its argument, through a CNode capability that carries its right, is refused truncatedMessage"
     (seamErrorFrame (deleteAt3 (cnodeCapAt3 [.read, .write])) .truncatedMessage)
@@ -1818,7 +1818,7 @@ label in `x1`, and the reply capability's CPtr as MR0 in `x2`.  The reply
 payload (MR1..) is empty, so the answer is the label alone. -/
 private def handlerReplyRecvOnCore1 (label : Nat) (st : SystemState) :
     Except KernelError (SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi entryLabeling c1 SyscallId.replyRecv.toNat.toUInt32
+  SeLe4n.Testing.dispatchOperationFromAbi entryLabeling c1 SyscallId.replyRecv
     handlerCPtr.toNat.toUInt64
     (MessageInfo.encode { length := 1, extraCaps := 0, label := label }).toUInt64
     replyCapCPtr.toNat.toUInt64 0 0 0 0 0 0 0 0 (withHandlerReplyCap st)

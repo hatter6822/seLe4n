@@ -1517,14 +1517,12 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     frame.x7(),
                 );
             }
-            // PR #887 review round 3: the syscall number is the FULL 64-bit
-            // `x7`.  Narrowing first would make `0x1_0000_0002` syscall 2; a
-            // word the ABI cannot name is an unknown syscall, delivered to the
+            // PR #887 review round 3: the syscall is named by the FULL 64-bit
+            // `x7`.  WS-SX SX7.2: the word is seL4's syscall number negated
+            // (`Syscall::from_word`, `dispatch_svc`'s prefilter); a word that
+            // names none of the eleven is an unknown syscall, delivered to the
             // thread's fault handler like any other, with the full word.
-            let dispatched = match u32::try_from(frame.x7()) {
-                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),
-                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
-            };
+            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());
             // WS-BP BP7.6: the Lean dispatch installed what this core resumes —
             // the caller with its result staged in its context, the thread its
             // syscall switched to, or the idle loop — so the handler returns
@@ -1544,6 +1542,11 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // documented collision.
             match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
+                // WS-SX SX7.2: a non-`Call` whose error seL4 discards resumes
+                // with the registers it trapped with: nothing is written over
+                // the trapped `x0`-`x5` (`handleInvocation` replies only
+                // `if (isCall)`).
+                Ok(crate::svc_dispatch::SvcOutcome::Resumed) => {}
                 // PR #887 review round 5: the caller took a fault at the
                 // seam (a failed capability lookup delivered to its handler,
                 // or the fail-closed suspend).  No frame exists, and the
@@ -1568,7 +1571,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     // success and never as a kernel-emitted error.
                     frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
                 }
-                // PR #887 review: a syscall number outside `SyscallId` is
+                // PR #887 review: a word that names no `Syscall` is
                 // seL4's `UnknownSyscall` fault — delivered to the thread's
                 // fault handler (so a handler can emulate the call), not an
                 // `invalidSyscallNumber` frame handed back to the thread.

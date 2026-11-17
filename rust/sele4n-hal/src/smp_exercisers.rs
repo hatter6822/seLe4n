@@ -1547,6 +1547,80 @@ struct RoundTrip {
     overflow: Option<(u64, [u64; 3])>,
 }
 
+/// **The seL4 syscall and invocation label an operation is issued with**, as
+/// libsel4's stubs issue it: a send, a signal and a reply through a reply
+/// capability are a `Send`, a receive a `Recv`, a wait a `Wait`, the
+/// reply-receive and the yield their own syscalls, and every labelled
+/// invocation a `Call` carrying its label.  The scenarios name their steps by
+/// the kernel's operation code (the constants below); this is the table that
+/// turns one into the words a user thread traps with.  The canonical table is
+/// `sele4n_types::SyscallId::{syscall, label}`, which a host test holds this one
+/// equal to.  `None` for a code no operation takes.
+#[cfg(any(feature = "hw_target", test))]
+const fn op_encoding(op: u64) -> Option<(crate::svc_dispatch::Syscall, u64)> {
+    use crate::svc_dispatch::Syscall;
+    let label = match op {
+        0 | 3 | 14 => return Some((Syscall::Send, 0)),
+        1 => return Some((Syscall::Recv, 0)),
+        2 => return Some((Syscall::Call, 0)),
+        15 => return Some((Syscall::Wait, 0)),
+        16 => return Some((Syscall::ReplyRecv, 0)),
+        41 => return Some((Syscall::Yield, 0)),
+        4 => 22,
+        5 => 21,
+        6 => 23,
+        7 => 19,
+        9 => 46,
+        10 => 47,
+        11 => 57,
+        12 => 58,
+        13 => 59,
+        17 => 33,
+        18 => 34,
+        19 => 35,
+        20 => 12,
+        21 => 13,
+        22 => 6,
+        23 => 7,
+        24 => 10,
+        25 => 66,
+        26 => 14,
+        27 => 15,
+        28 => 60,
+        29 => 42,
+        30 => 61,
+        31 => 62,
+        32 => 63,
+        33 => 64,
+        35 => 18,
+        36 => 1,
+        38 => 11,
+        39 => 44,
+        40 => 45,
+        42 => 37,
+        43 => 38,
+        44 => 27,
+        45 => 26,
+        46 => 28,
+        47 => 29,
+        _ => return None,
+    };
+    Some((Syscall::Call, label))
+}
+
+/// The `x7` and `x1` words a step issuing operation `op` traps with: the
+/// syscall's word, and `msg_info` with the operation's label in seL4's label
+/// field (bits 12 and up).  A code no operation takes passes through as the
+/// raw `x7` word, so a scenario can trap with a word that names no syscall.
+#[cfg(any(feature = "hw_target", test))]
+const fn op_frame_words(op: u64, msg_info: u64) -> (u64, u64) {
+    match op_encoding(op) {
+        Some((syscall, 0)) => (syscall.word(), msg_info),
+        Some((syscall, label)) => (syscall.word(), (msg_info & 0xFFF) | (label << 12)),
+        None => (op, msg_info),
+    }
+}
+
 /// `Send` (`SyscallId` 0).
 #[cfg(feature = "hw_target")]
 const SEND: u64 = 0;
@@ -3334,18 +3408,20 @@ static WINDOW_FULL_SCENARIO: [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 1] =
 /// filled, in order.
 #[cfg(feature = "hw_target")]
 const fn window_full_scenario() -> [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 1] {
-    let mut steps = [retype_window(
-        "untyped-retype-window-full",
-        UNTYPED_CAP,
-        [
-            ENDPOINT_TYPE,
-            WINDOW_FULL_CHILD_ID,
-            CNODE_CAP,
-            WINDOW_FIRST_SLOT,
-        ],
-        RETYPE_FAN_OUT_LIMIT,
-        ROOT_IPC_BUFFER,
-    ); RETYPE_FAN_OUT_LIMIT as usize + 1];
+    let mut steps = [const {
+        retype_window(
+            "untyped-retype-window-full",
+            UNTYPED_CAP,
+            [
+                ENDPOINT_TYPE,
+                WINDOW_FULL_CHILD_ID,
+                CNODE_CAP,
+                WINDOW_FIRST_SLOT,
+            ],
+            RETYPE_FAN_OUT_LIMIT,
+            ROOT_IPC_BUFFER,
+        )
+    }; RETYPE_FAN_OUT_LIMIT as usize + 1];
     let mut i = 0;
     while i < RETYPE_FAN_OUT_LIMIT as usize {
         steps[i + 1] = invocation(
@@ -9670,7 +9746,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
 /// CNode's carve pin: every cell the carve made comes back, the escaped copy
 /// holding none of them, and no other.
 #[cfg(feature = "hw_target")]
-const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
+const CARVED_CNODE_RETIRE: [RoundTrip; 7] = [
     retype(
         "untyped-retype-owned-cnode",
         UNTYPED_CAP,
@@ -9801,7 +9877,7 @@ fn carved_cnode_retire(which: &str) -> Option<bool> {
 /// measured; the last rewinds the boot untyped, so the steady-state run
 /// starts where the first did.
 #[cfg(feature = "hw_target")]
-static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
+static LIFECYCLE_SCENARIO: [RoundTrip; 80] = [
     // A child untyped carved, and an endpoint carved from it (its recorder a
     // carved untyped, not the boot one); its reset refused while the
     // endpoint's capability is its derivation child; its revoke, which deletes
@@ -11921,22 +11997,25 @@ impl core::fmt::Display for ReadingBytes {
     }
 }
 
-/// The words the kernel routed a measured round trip by, as its frame carried
-/// them (`x7` the syscall number, `x1` the message-info word): the host-side
-/// gate routes them with the kernel's own router to tell which syscall arm the
-/// reading measured (`scripts/exerciser_route_coverage.lean`), and the label
-/// word it was answered with (`x1`), or `blocked` for a trip that blocked.
+/// The operation a measured round trip issued and the words the kernel routed
+/// it by, as its frame carried them (`x7` the syscall word, `x1` the
+/// message-info word with the operation's label): the host-side gate checks the
+/// words are the operation's and routes them with the kernel's own router to
+/// tell which syscall arm the reading measured
+/// (`scripts/exerciser_route_coverage.lean`), and the label word it was answered
+/// with (`x1`), or `blocked` for a trip that blocked.
 #[cfg(feature = "hw_target")]
 fn print_routed(trip: &RoundTrip, core: usize, which: &str, outcome: &Dispatched) {
-    let (x7, x1) = (trip.syscall, trip.msg_len);
+    let op = trip.syscall;
+    let (x7, x1) = op_frame_words(op, trip.msg_len);
     let name = trip.name;
     match outcome {
         Dispatched::Returned(regs) => crate::kprintln!(
-            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered {:#x}",
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed op={op} x7={x7:#x} x1={x1:#x} answered {:#x}",
             regs[1]
         ),
         _ => crate::kprintln!(
-            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered blocked"
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed op={op} x7={x7:#x} x1={x1:#x} answered blocked"
         ),
     }
 }
@@ -13101,6 +13180,18 @@ struct TrapTrip {
     x7: u64,
 }
 
+/// The `x7` and `x1` words a trap scenario's frame carries: an `SVC`'s
+/// operation issued as a user issues it ([`op_frame_words`]); any other
+/// exception's registers as the scenario names them.
+#[cfg(feature = "hw_target")]
+fn trap_trip_words(trip: &TrapTrip) -> (u64, u64) {
+    if crate::trap::classify_synchronous_exception(trip.esr) == crate::trap::sync_class::SVC {
+        op_frame_words(trip.x7, trip.x1)
+    } else {
+        (trip.x7, trip.x1)
+    }
+}
+
 /// The PC a fault scenario's thread traps at: an EL0 address of the user
 /// window, which nothing maps (the trap is synthesised, never executed).
 #[cfg(feature = "hw_target")]
@@ -13940,10 +14031,11 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
         tpidr_el0: 0,
         reserved: 0,
     };
+    let (x7, x1) = trap_trip_words(trip);
     frame.gprs[0] = trip.x0;
-    frame.gprs[1] = trip.x1;
+    frame.gprs[1] = x1;
     frame.gprs[2] = trip.x2;
-    frame.gprs[7] = trip.x7;
+    frame.gprs[7] = x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core as usize);
     let loads = crate::fp_context::load_commits_on(core as usize);
@@ -14005,10 +14097,11 @@ fn unmeasured_trap(trip: &TrapTrip) {
         tpidr_el0: 0,
         reserved: 0,
     };
+    let (x7, x1) = trap_trip_words(trip);
     frame.gprs[0] = trip.x0;
-    frame.gprs[1] = trip.x1;
+    frame.gprs[1] = x1;
     frame.gprs[2] = trip.x2;
-    frame.gprs[7] = trip.x7;
+    frame.gprs[7] = x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     crate::trap::handle_synchronous_exception(&mut frame);
     crate::interrupts::restore_interrupts(saved_daif);
@@ -15204,13 +15297,14 @@ fn dispatch_round_trip_at(
         tpidr_el0: 0,
         reserved: 0,
     };
+    let (syscall_word, msg_info) = op_frame_words(trip.syscall, trip.msg_len);
     frame.gprs[0] = trip.cptr;
-    frame.gprs[1] = trip.msg_len;
+    frame.gprs[1] = msg_info;
     frame.gprs[2] = trip.msg[0];
     frame.gprs[3] = trip.msg[1];
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
-    frame.gprs[7] = trip.syscall;
+    frame.gprs[7] = syscall_word;
     if let Some((buffer, words)) = trip.caps_or_badges.map(|(b, w, _)| (b, w)) {
         // The extra capabilities' addresses: written here, before every
         // dispatch of the round trip, so a setup step's CNode operation names
@@ -15257,7 +15351,7 @@ fn dispatch_round_trip_at(
         // The `SVC` arm's own order: the classification, then the dispatch.
         let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
         let dispatched = if class == crate::trap::sync_class::SVC {
-            crate::svc_dispatch::dispatch_svc(trip.syscall as u32)
+            crate::svc_dispatch::dispatch_svc(syscall_word)
         } else {
             Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
         };
@@ -16511,6 +16605,30 @@ mod tests {
         round_lock_held_by_in, round_lock_release_in, round_lock_try_acquire_in, ROUND_LOCK_FREE,
     };
     use core::cell::Cell;
+
+    /// The operation table the scenarios trap with is the canonical one: every
+    /// operation code the kernel decodes is issued with
+    /// `sele4n_types::SyscallId::{syscall, label}`'s syscall and label, and a
+    /// code no operation takes is passed through untranslated.
+    #[test]
+    fn op_encoding_matches_sele4n_types() {
+        for op in 0..64u64 {
+            match sele4n_types::SyscallId::from_u64(op) {
+                Some(sid) => {
+                    let (syscall, label) = op_encoding(op).expect("a decoded operation");
+                    assert_eq!(syscall.word(), sid.syscall().word(), "operation {op}");
+                    assert_eq!(label, sid.label().unwrap_or(0), "operation {op}");
+                    let (x7, x1) = op_frame_words(op, 0x5);
+                    assert_eq!(x7, sid.syscall().word(), "operation {op}");
+                    assert_eq!(x1, 0x5 | (sid.label().unwrap_or(0) << 12), "operation {op}");
+                }
+                None => {
+                    assert_eq!(op_encoding(op), None, "code {op}");
+                    assert_eq!(op_frame_words(op, 0x5), (op, 0x5), "code {op}");
+                }
+            }
+        }
+    }
 
     /// The exercisers' fan-out limit is the ABI's.
     #[test]

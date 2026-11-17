@@ -199,12 +199,12 @@ private def witnessState : SystemState :=
 /-- Drive the full FFI dispatch seam exactly as the export does: caller
 resolved via `currentOnCore`, args staged by `writeFfiRegistersToTcb`, the
 checked entry, and the WS-RA outcome exit (`syscallReturnOutcome`). -/
-private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
+private def dispatchFromAbi (sid : SyscallId) (msgInfoRaw : UInt64)
     (x2 : UInt64) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi trustedLabeling
+  SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling
     SeLe4n.Kernel.Concurrency.bootCoreId
-    syscallId.toUInt32
+    sid
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
     0 0 0 0 0 st
 
@@ -373,11 +373,11 @@ private def replyCapabilityNoGrant : Capability :=
 full inline register window — the RA.B.5b scenarios interleave syscalls
 from two cores. -/
 private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : Nat) (msgInfoRaw : UInt64) (capPtr : UInt64)
+    (sid : SyscallId) (msgInfoRaw : UInt64) (capPtr : UInt64)
     (x2 x3 x4 : UInt64) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi trustedLabeling core
-    syscallId.toUInt32 capPtr msgInfoRaw x2 x3 x4 0
+  SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling core
+    sid capPtr msgInfoRaw x2 x3 x4 0
     0 0 0 0 0 st
 
 -- ============================================================================
@@ -395,7 +395,7 @@ private def runUnitReturnWitness : IO Unit := do
   -- MessageInfo {length := 1, extraCaps := 0, label := 0} encodes to 1;
   -- x2 carries the badge argument for the signal.
   let msgInfoRaw : UInt64 := 1
-  match dispatchFromAbi SyscallId.notificationSignal.toNat msgInfoRaw
+  match dispatchFromAbi SyscallId.notificationSignal msgInfoRaw
       forgedBadge.toUInt64 witnessState with
   | .error e =>
       assertBool s!"the signal dispatch reaches the FFI seam (got .error {reprStr e})" false
@@ -430,13 +430,13 @@ back, and `badge()` — reading `x0` — hands back exactly 42. -/
 private def runBadgeDeliveryWitness : IO Unit := do
   IO.println "-- §5 inverted witness B: the signal-before-wait badge round trip DELIVERS"
   let msgInfoRaw : UInt64 := 1
-  match dispatchFromAbi SyscallId.notificationSignal.toNat msgInfoRaw
+  match dispatchFromAbi SyscallId.notificationSignal msgInfoRaw
       forgedBadge.toUInt64 witnessState with
   | .error e =>
       assertBool s!"the signal leg dispatches (got .error {reprStr e})" false
   | .ok (_, stSignalled) => do
       -- The wait leg: msgInfo {length := 0} encodes to 0.
-      match dispatchFromAbi SyscallId.notificationWait.toNat 0 0 stSignalled with
+      match dispatchFromAbi SyscallId.notificationWait 0 0 stSignalled with
       | .error e =>
           assertBool s!"the wait leg dispatches (got .error {reprStr e})" false
       | .ok (outcome, st') => do
@@ -496,7 +496,7 @@ frame is the unblocking transition's to write with delivery at the
 SM10.1 context restore (plan §3.5). -/
 private def runBlockedOutcomeWitness : IO Unit := do
   IO.println "-- §7 the blocked outcome: a wait with no pending badge blocks, no frame"
-  match dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState with
+  match dispatchFromAbi SyscallId.notificationWait 0 0 witnessState with
   | .error e =>
       assertBool s!"the blocking wait dispatches (got .error {reprStr e})" false
   | .ok (outcome, st') => do
@@ -522,11 +522,11 @@ the badge frame.  Returns (pre-signal staged x0, post-signal frame). -/
 private def waitThenSignalScenario :
     Except KernelError (UInt64 × Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 0 0 twoThreadState
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 0 0 twoThreadState
   if out1 != .blocks then throw .illegalState
   let preStagedX0 := (stagedFrame st1 callerTid).x0
   let (_, st2) ← dispatchFromAbiOn core1
-    SyscallId.notificationSignal.toNat 1 capPtrValue.toUInt64
+    SyscallId.notificationSignal 1 capPtrValue.toUInt64
     forgedBadge.toUInt64 0 0 st1
   pure (preStagedX0, stagedFrame st2 callerTid)
 
@@ -537,12 +537,12 @@ notification's pending word after a second, unwaited signal. -/
 private def badgeFromCapScenario (sigCap : Nat) (len x2 : UInt64) :
     Except KernelError (Kernel.Architecture.SyscallReturnFrame × Option Badge) := do
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 0 0 twoThreadState
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 0 0 twoThreadState
   if out1 != .blocks then throw .illegalState
   let (_, st2) ← dispatchFromAbiOn core1
-    SyscallId.notificationSignal.toNat len sigCap.toUInt64 x2 0 0 st1
+    SyscallId.notificationSignal len sigCap.toUInt64 x2 0 0 st1
   let (_, st3) ← dispatchFromAbiOn core1
-    SyscallId.notificationSignal.toNat len sigCap.toUInt64 x2 0 0 st2
+    SyscallId.notificationSignal len sigCap.toUInt64 x2 0 0 st2
   pure (stagedFrame st2 callerTid,
     (st3.getNotification? ntfnId).bind (·.pendingBadge))
 
@@ -552,10 +552,10 @@ endpoint (core 0); the peer sends `[7, 8]` under the badge-9 endpoint cap
 private def receiveThenSendScenario :
     Except KernelError (Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 twoThreadState
   if out1 != .blocks then throw .illegalState
   let (_, st2) ← dispatchFromAbiOn core1
-    SyscallId.send.toNat 2 epCapPtr.toUInt64 7 8 0 st1
+    SyscallId.send 2 epCapPtr.toUInt64 7 8 0 st1
   pure (stagedFrame st2 callerTid)
 
 /-- 9c: blocked plain sender.  The peer's send parks (no receiver, core 1);
@@ -567,11 +567,11 @@ private def sendThenReceiveScenario :
     Except KernelError (UInt64 × Kernel.Architecture.SyscallOutcome ×
       Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn core1
-    SyscallId.send.toNat 2 epCapPtr.toUInt64 7 8 0 twoThreadState
+    SyscallId.send 2 epCapPtr.toUInt64 7 8 0 twoThreadState
   if out1 != .blocks then throw .illegalState
   let preStagedX0 := (stagedFrame st1 peerTid).x0
   let (out2, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st1
+    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st1
   pure (preStagedX0, out2, stagedFrame st2 peerTid)
 
 /-- 9d: the reply delivery — `.call`'s `.message` frame.  The caller is
@@ -582,7 +582,7 @@ frame is the reply message frame.  Returns (the caller's post ipcState is
 private def replyDeliveryScenario :
     Except KernelError (Bool × Kernel.Architecture.SyscallReturnFrame) := do
   let (_, st1) ← dispatchFromAbiOn core1
-    SyscallId.reply.toNat 2 replyCapPtr.toUInt64 21 22 0 replyPendingState
+    SyscallId.reply 2 replyCapPtr.toUInt64 21 22 0 replyPendingState
   let ready := match st1.getTcb? callerTid with
     | some tcb => tcb.ipcState == .ready
     | none => false
@@ -600,7 +600,7 @@ private def replyCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
   let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
   let msgInfoRaw : UInt64 := (2 + (1 <<< 7) : Nat).toUInt64
   let (_, st1) ← dispatchFromAbiOn core1
-    SyscallId.reply.toNat msgInfoRaw replyCapPtr.toUInt64 21 22 0 st0
+    SyscallId.reply msgInfoRaw replyCapPtr.toUInt64 21 22 0 st0
   let slot0Occupied := match st1.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
     | _ => false
@@ -614,7 +614,7 @@ private def replyRecvDeliveryScenario :
     Except KernelError (Kernel.Architecture.SyscallOutcome ×
       Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn core1
-    SyscallId.replyRecv.toNat 3 epCapPtr.toUInt64
+    SyscallId.replyRecv 3 epCapPtr.toUInt64
     replyCapPtr.toUInt64 31 32 replyPendingState
   pure (out1, stagedFrame st1 callerTid)
 
@@ -635,7 +635,7 @@ private def replyRecvCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
   let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
   let msgInfoRaw : UInt64 := (3 + (1 <<< 7) : Nat).toUInt64
   let (out1, st1) ← dispatchFromAbiOn core1
-    SyscallId.replyRecv.toNat msgInfoRaw epCapPtr.toUInt64
+    SyscallId.replyRecv msgInfoRaw epCapPtr.toUInt64
     replyCapPtr.toUInt64 31 32 st0
   let slot0Occupied := match st1.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
@@ -661,7 +661,7 @@ private def serviceQueryScenario :
     { iface := iface, endpointCap := epCap } st1
   let st2 := SeLe4n.Testing.withSenderCapAddrs st2 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.serviceQuery.toNat
+    SyscallId.serviceQuery
     (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     registryCapPtr.toUInt64 0 0 0 st2
 
@@ -676,8 +676,8 @@ private def serviceRegisterScenario :
       maxResponseSize := 64, requiresGrant := false }
   let ((), st1) ← Kernel.registerInterface iface twoThreadState
   let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
-  SeLe4n.Testing.dispatchFromAbi trustedLabeling SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.serviceRegister.toNat.toUInt32 registryCapPtr.toUInt64
+  SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.serviceRegister registryCapPtr.toUInt64
     (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     910 1 64 64 0 0 0 0 0 st1
 
@@ -688,7 +688,7 @@ frame — which is also the value it should observe when later resumed. -/
 private def selfSuspendScenario :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.tcbSuspend.toNat 0 selfTcbCapPtr.toUInt64 0 0 0 twoThreadState
+    SyscallId.tcbSuspend 0 selfTcbCapPtr.toUInt64 0 0 0 twoThreadState
 
 /-- 9h: capability-transfer honesty (PR #866 round-2).  The caller blocks
 in `.receive`; the peer sends body `[7]` plus ONE extra capability
@@ -704,7 +704,7 @@ private def capsSendScenario (epPtr : Nat) :
   -- (seL4's `seL4_SetCapReceivePath`).
   let st0 := SeLe4n.Testing.withReceiveSlot twoThreadState callerTid ⟨0x7701⟩ 0
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
+    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
   -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7, and
   -- the extra-cap address is the sender's IPC buffer's `caps_or_badges[0]`
@@ -712,7 +712,7 @@ private def capsSendScenario (epPtr : Nat) :
   let msgInfoRaw : UInt64 := (1 + (1 <<< 7) : Nat).toUInt64
   let st1 := SeLe4n.Testing.withSenderCapAddrs st1 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
   let (_, st2) ← dispatchFromAbiOn core1
-    SyscallId.send.toNat msgInfoRaw epPtr.toUInt64 7 0 0 st1
+    SyscallId.send msgInfoRaw epPtr.toUInt64 7 0 0 st1
   let slot0Occupied := match st2.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
     | _ => false
@@ -811,15 +811,15 @@ private def auditWitnessState : SystemState :=
 
 /-- Drive the FFI seam with three inline message registers and a chosen
 capability pointer — the audit reads' operand shape. -/
-private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Nat)
+private def dispatchAudit (ctx : LabelingContext) (sid : SyscallId) (capPtr : Nat)
     (regCount : Nat) (r0 r1 r2 : Nat) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   -- `MessageInfo {length, extraCaps := 0, label := 0}` encodes to `length`
   -- (the §4 note pins the same identity for length 1).
   let msgInfoRaw : UInt64 := regCount.toUInt64
-  SeLe4n.Testing.dispatchFromAbi ctx
+  SeLe4n.Testing.dispatchOperationFromAbi ctx
     SeLe4n.Kernel.Concurrency.bootCoreId
-    syscallId.toUInt32
+    sid
     capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
     0 0 0 0 0 st
 
@@ -864,11 +864,11 @@ pin, so any change in the return convention diverges the fixture. -/
 private def returnAbiTraceLines : List String :=
   let signalMsgInfo : UInt64 := 1
   let signalled :=
-    dispatchFromAbi SyscallId.notificationSignal.toNat signalMsgInfo
+    dispatchFromAbi SyscallId.notificationSignal signalMsgInfo
       forgedBadge.toUInt64 witnessState
   let waitAfterSignal :=
     match signalled with
-    | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
+    | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait 0 0 st
     | e => e
   -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
   -- discriminant (the newest being `.failedLookup` at 60); every
@@ -895,7 +895,7 @@ private def returnAbiTraceLines : List String :=
   , outcomeLine "unit signal (cap ptr 5)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
   , outcomeLine "blocking wait (idle notification)"
-      (dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState)
+      (dispatchFromAbi SyscallId.notificationWait 0 0 witnessState)
   , s!"[ret-abi] error labels: every discriminant below {errorCount} round-trips or is retired = {labelRoundtrips}; retired {retired} unassigned = {retiredUnassigned}; {errorCount} unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
@@ -920,10 +920,10 @@ private def returnAbiTraceLines : List String :=
   -- because "the reader hands back a word it computed rather than the caller's
   -- own `x0`" is exactly the kind of claim a fixture makes checkable in a diff.
   , outcomeLine "audit status (visible length 2, monitor)"
-      (dispatchAudit auditLabeling SyscallId.auditRead.toNat auditCapPtr 3
+      (dispatchAudit auditLabeling SyscallId.auditRead auditCapPtr 3
         (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState)
   , outcomeLine "audit drain of one entry (new visible length 1)"
-      (dispatchAudit auditLabeling SyscallId.auditDrain.toNat auditCapPtr 1
+      (dispatchAudit auditLabeling SyscallId.auditDrain auditCapPtr 1
         1 0 0 auditWitnessState)
   -- PR #866 round-2: the transfer-honesty observable — a grant-denied
   -- transfer's staged frame reports extraCaps 0 (x1 = 1, length only),
@@ -1084,8 +1084,8 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   | .error e => assertBool s!"9f'' interface registers (got .error {reprStr e})" false
   | .ok st1 => do
       let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
-      let (r, stC) := SeLe4n.Testing.dispatchCrossCoreStep trustedLabeling
-        SeLe4n.Kernel.Concurrency.bootCoreId SyscallId.serviceRegister.toNat.toUInt32
+      let (r, stC) := SeLe4n.Testing.dispatchOperationCrossCoreStep trustedLabeling
+        SeLe4n.Kernel.Concurrency.bootCoreId SyscallId.serviceRegister
         registryCapPtr.toUInt64
         (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
         910 1 64 64 0 0 0 0 0 st1
@@ -1183,7 +1183,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- 10a — `status`: the visible length, through the real boundary.  The caller is
   -- the configured monitor, so its view is the whole two-entry trail.
   let statusResult := dispatchAudit auditLabeling
-    SyscallId.auditRead.toNat auditCapPtr 3
+    SyscallId.auditRead auditCapPtr 3
     (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState
   assertBool "10a: `status` returns the visible length (2), not the caller's own x0"
     (match auditReturnedWord statusResult with
@@ -1199,7 +1199,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- kernel selected, not the operand the caller supplied.
   let (fieldOp, fieldIdx, fieldChunk) := Kernel.encodeAuditReadOp (.field 1 .targetObject 0)
   let fieldResult := dispatchAudit auditLabeling
-    SyscallId.auditRead.toNat auditCapPtr 3 fieldOp fieldIdx fieldChunk auditWitnessState
+    SyscallId.auditRead auditCapPtr 3 fieldOp fieldIdx fieldChunk auditWitnessState
   assertBool "10b: a field read returns the SELECTED entry's value"
     (match auditReturnedWord fieldResult with
      | none => false
@@ -1207,7 +1207,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- 10c — the confused-deputy gate at the boundary: an ordinary capability
   -- carrying EVERY right is rejected, because it does not target the trail.
   assertBool "10c: NEGATIVE — an all-rights capability to an ordinary object is rejected"
-    (match dispatchAudit auditLabeling SyscallId.auditRead.toNat ordinaryCapPtr 3
+    (match dispatchAudit auditLabeling SyscallId.auditRead ordinaryCapPtr 3
         (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
      | .ok (.returns f, _) =>
          -- the boundary reports the error through x1's offset label
@@ -1215,7 +1215,7 @@ private def runAuditReadEndToEnd : IO Unit := do
      | _ => false)
   -- 10d — the drain returns the new visible length, and the trail really shrank.
   let drainResult := dispatchAudit auditLabeling
-    SyscallId.auditDrain.toNat auditCapPtr 1 1 0 0 auditWitnessState
+    SyscallId.auditDrain auditCapPtr 1 1 0 0 auditWitnessState
   assertBool "10d: the drain returns the new visible length (1)"
     (match auditReturnedWord drainResult with
      | none => false
@@ -1230,7 +1230,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- monitor the same call fails closed, and the trail is untouched.
   assertBool "10e: NEGATIVE — an unconfigured deployment cannot drain"
     (match dispatchAudit auditUnconfiguredLabeling
-        SyscallId.auditDrain.toNat auditCapPtr 1 1 0 0 auditWitnessState with
+        SyscallId.auditDrain auditCapPtr 1 1 0 0 auditWitnessState with
      | .ok (.returns f, st) =>
          f.x1 != 0 && st.declassificationAuditLog.length == 2
      | _ => false)
@@ -1243,7 +1243,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- audit reader" in the deployment shape that provisions a capability.
   assertBool "10f: NEGATIVE — an unconfigured deployment cannot read, even holding the audit capability"
     (match dispatchAudit auditUnconfiguredLabeling
-        SyscallId.auditRead.toNat auditCapPtr 3
+        SyscallId.auditRead auditCapPtr 3
         (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
      | .ok (.returns f, st) =>
          f.x1 != 0 && st.declassificationAuditLog.length == 2 &&
@@ -1256,7 +1256,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- call answered `.illegalAuthority`; the load-bearing negative pins that
   -- error out.
   assertBool "10g: a both-axes-wrong capability is refused for its TARGET — invalidCapability, not illegalAuthority"
-    (match dispatchAudit auditLabeling SyscallId.auditRead.toNat rightlessCapPtr 3
+    (match dispatchAudit auditLabeling SyscallId.auditRead rightlessCapPtr 3
         (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
      | .ok (.returns f, _) =>
          f.x1 == (Kernel.Architecture.errorFrame (KernelError.invalidCapability 0) false).x1 &&
@@ -1266,7 +1266,7 @@ private def runAuditReadEndToEnd : IO Unit := do
   -- passes the target gate and is refused by the ARM's rights check on a
   -- drain — `.illegalAuthority`, from the second gate, with the trail intact.
   assertBool "10h: a read-only audit capability passes the target gate and fails the drain's rights gate"
-    (match dispatchAudit auditLabeling SyscallId.auditDrain.toNat readOnlyAuditCapPtr 1
+    (match dispatchAudit auditLabeling SyscallId.auditDrain readOnlyAuditCapPtr 1
         1 0 0 auditWitnessState with
      | .ok (.returns f, st) =>
          f.x1 == (Kernel.Architecture.errorFrame KernelError.illegalAuthority false).x1 &&
@@ -1506,10 +1506,10 @@ private def declassDeniedLabeling : LabelingContext :=
 dispatch, the caller's return staging, the local scheduling point and the
 restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
 private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
+    (sid : SyscallId) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreBracketedStep ctx core
     (.ofRegisterFile { (default : SeLe4n.RegisterFile) with
-      x0 := capPtr, x1 := msgInfoRaw, x2 := x2, x7 := syscallId.toUInt64 })
+      x0 := capPtr, x1 := sid.msgInfoWithLabel msgInfoRaw, x2 := x2, x7 := sid.syscall.word })
     st
 
 /-- The end-to-end run: wait on the boot core, declassify-signal from core 1,
@@ -1521,11 +1521,11 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
       List (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind) ×
       List DeclassificationEvent × Option Kernel.Architecture.SyscallReturnFrame :=
   let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 twoThreadState
   -- The audit-trail capability invoked, the notification named as extra
   -- capability 0 (message info: one word, one extra capability).
   let st1 := SeLe4n.Testing.withSenderCapAddrs st1 peerTid #[SeLe4n.CPtr.ofNat declassCapPtr]
-  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat
+  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal
     (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     declassAuditCapPtr.toUInt64 forgedBadge.toUInt64 st1
   let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
@@ -1655,12 +1655,12 @@ private def overflowSendRun (rxWrite sync : Bool) :
       List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
   let st0 := mappedBuffersState rxWrite
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
+    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
   let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
   let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
-  let (_, st2) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling core1
-    SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+  let (_, st2) ← SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling core1
+    SyscallId.send epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 stS
   pure (stagedFrame st2 callerTid, SeLe4n.Testing.pendingWrites st2, addrs)
 
@@ -1679,8 +1679,8 @@ entry reads the blocked sender's slots as well as the caller's
 private def blockedSenderReceiveRun (senderToo : Bool) :
     Except KernelError (List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
   let st0 := mappedBuffersState true
-  let (out1, st1) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling core1
-    SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+  let (out1, st1) ← SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling core1
+    SyscallId.send epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 (syncSenderOverflow st0 sevenRegisters)
   if out1 != .blocks then throw .illegalState
   let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 callerTid 0 ++
@@ -1692,7 +1692,7 @@ private def blockedSenderReceiveRun (senderToo : Bool) :
   let stS := Kernel.Architecture.IpcBufferRead.syncUserWords st1
     (Kernel.Architecture.IpcBufferRead.encodeWordPairs pairs) pairs.length
   let (_, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 stS
+    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 stS
   pure (SeLe4n.Testing.pendingWrites st2, addrs)
 
 private def runOverflowDeliveryWitnesses : IO Unit := do
@@ -1723,11 +1723,11 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   -- THE SEAM: the same send through the atomic step the hardware entry commits
   -- surfaces the three stores to the runtime and commits a state that owes none.
   match dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-      SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
+      SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
   | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
   | .ok (_, st1) => do
-      let (r, stC) := SeLe4n.Testing.dispatchCrossCoreStep trustedLabeling core1
-        SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+      let (r, stC) := SeLe4n.Testing.dispatchOperationCrossCoreStep trustedLabeling core1
+        SyscallId.send epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
         0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
       assertBool "12 SEAM: the step hands the runtime the three user-word stores"
         (SeLe4n.Testing.ledgerWrites r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0x55,

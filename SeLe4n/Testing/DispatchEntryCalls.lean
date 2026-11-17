@@ -42,6 +42,17 @@ open SeLe4n.Kernel
   Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
     ipcBufferAddr elr spsr spEl0 x30 st
 
+/-- `dispatchFromAbi` issuing operation `sid` as a user does: the seL4 number
+of the syscall it is issued with, and its label in the message-info word
+(`SyscallId.syscall`, `SyscallId.msgInfoWithLabel`). -/
+def dispatchOperationFromAbi (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (sid : SyscallId)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    Except KernelError (Architecture.SyscallOutcome × SystemState) :=
+  dispatchFromAbi ctx executingCore sid.syscall.number.toUInt32 x0 (sid.msgInfoWithLabel x1)
+    x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+
 /-- `syscallDispatchCrossCoreStep`, compiled once. -/
 @[noinline] def dispatchCrossCoreStep (ctx : LabelingContext)
     (execCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
@@ -53,6 +64,19 @@ open SeLe4n.Kernel
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
     ipcBufferAddr elr spsr spEl0 x30 st
+
+/-- `dispatchCrossCoreStep` issuing operation `sid` as a user does
+(`dispatchOperationFromAbi`). -/
+def dispatchOperationCrossCoreStep (ctx : LabelingContext)
+    (execCore : SeLe4n.Kernel.Concurrency.CoreId) (sid : SyscallId)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) :
+    (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  dispatchCrossCoreStep ctx execCore sid.syscall.number.toUInt32 x0 (sid.msgInfoWithLabel x1)
+    x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
 
 /-- `syscallDispatchCrossCoreBracketedStep`: the bracket runs its step, so this
 is the cross-core step at the trapped context's words. -/

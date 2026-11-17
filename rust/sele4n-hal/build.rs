@@ -10097,11 +10097,12 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
 }
 
 /// PR #887 review round 7: is the SVC arm's `let dispatched = …` statement
-/// the dispatch itself?  Its initializer must be
-/// `match u32::try_from(frame.x7()) { … }` (the full-width syscall number of
-/// review round 3) with exactly two arms: `Ok(syscall_id)` evaluating to
-/// `crate::svc_dispatch::dispatch_svc(syscall_id)` and `Err(_)` to
-/// `Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)`.
+/// the dispatch itself?  Its initializer must be exactly
+/// `crate::svc_dispatch::dispatch_svc(frame.x7())`: the full-width syscall
+/// word of review round 3, handed whole to the dispatch, whose prefilter
+/// (WS-SX SX7.2, `Syscall::from_word`) names the syscall or answers the
+/// unknown-syscall error.  A narrowed word, a wrapped or substituted result,
+/// or a dispatch kept in a string is refused.
 fn dispatched_binding_status(statement: &str) -> Result<(), String> {
     let (pattern, init) = let_binding_parts(strip_leading_attributes(statement))
         .ok_or_else(|| "the `dispatched` statement is not a `let` binding".to_string())?;
@@ -10110,45 +10111,11 @@ fn dispatched_binding_status(statement: &str) -> Result<(), String> {
             "the dispatch result is bound through `{pattern}`, not `dispatched`"
         ));
     }
-    if !init.starts_with("match u32::try_from(frame.x7()) {") {
+    let init = collapse_whitespace(init.trim().trim_end_matches(';').trim());
+    if init != "crate::svc_dispatch::dispatch_svc(frame.x7())" {
         return Err(format!(
-            "`dispatched` is bound from `{}`, not from the full-width syscall-number match \
-             `match u32::try_from(frame.x7()) {{ … }}`",
-            collapse_whitespace(init)
-        ));
-    }
-    let arms = match_arm_spans(init)
-        .ok_or_else(|| "the `dispatched` binding's match could not be parsed".to_string())?;
-    let mut pairs: Vec<(String, String)> = arms
-        .iter()
-        .map(|arm| {
-            (
-                collapse_whitespace(init[arm.pattern.0..arm.pattern.1].trim()),
-                collapse_whitespace(
-                    init[arm.body.0..arm.body.1]
-                        .trim()
-                        .trim_end_matches(',')
-                        .trim(),
-                ),
-            )
-        })
-        .collect();
-    pairs.sort();
-    let expected: Vec<(String, String)> = vec![
-        (
-            "Err(_)".to_string(),
-            "Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)".to_string(),
-        ),
-        (
-            "Ok(syscall_id)".to_string(),
-            "crate::svc_dispatch::dispatch_svc(syscall_id)".to_string(),
-        ),
-    ];
-    if pairs != expected {
-        return Err(format!(
-            "`dispatched` is bound from a match whose arms are {pairs:?}; the routed value \
-             must be `crate::svc_dispatch::dispatch_svc(syscall_id)` on \
-             `Ok(syscall_id)` and the unknown-syscall error on `Err(_)`"
+            "`dispatched` is bound from `{init}`, not from the dispatch of the full-width \
+             syscall word `crate::svc_dispatch::dispatch_svc(frame.x7())`"
         ));
     }
     Ok(())
@@ -10174,10 +10141,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     frame.x7(),
                 );
             }
-            let dispatched = match u32::try_from(frame.x7()) {
-                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),
-                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
-            };
+            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());
             if crate::trap::take_restored() {
                 return;
             }
@@ -10313,8 +10277,13 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         ),
         (
             "the routed value not the dispatch's result (the dispatch kept in a string)",
-            "                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n",
-            "                Ok(syscall_id) => {\n                    let _ = \"crate::svc_dispatch::dispatch_svc(syscall_id)\";\n                    Ok(crate::svc_dispatch::SvcOutcome::Blocked)\n                }\n",
+            "            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());\n",
+            "            let dispatched = {\n                let _ = \"crate::svc_dispatch::dispatch_svc(frame.x7())\";\n                Ok(crate::svc_dispatch::SvcOutcome::Blocked)\n            };\n",
+        ),
+        (
+            "the syscall word narrowed before the dispatch (the call kept)",
+            "            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());\n",
+            "            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7() as u32 as u64);\n",
         ),
         (
             "a statement after the terminal routing match",
@@ -10325,8 +10294,8 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         // mutation keeps the gate's tokens and breaks the relation.
         (
             "the readiness gate after the dispatched binding (the narrowing runs ungated)",
-            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n",
-            "            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());\n",
+            "            let dispatched = crate::svc_dispatch::dispatch_svc(frame.x7());\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
         ),
         (
             "the readiness gate nested under an unrelated condition",
