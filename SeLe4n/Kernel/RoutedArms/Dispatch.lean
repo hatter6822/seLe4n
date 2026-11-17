@@ -59,6 +59,7 @@ continuations are compiled once. -/
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
       match hRt : SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
+              (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
               SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
       | .signal capAddr =>
         finish .notificationSignal capAddr.word

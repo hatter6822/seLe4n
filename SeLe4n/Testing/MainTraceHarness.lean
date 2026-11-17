@@ -1233,7 +1233,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   -- RDT-002: Verify standalone decode succeeds with valid registers.
   -- x0=0 (capPtr), x1=0 (msgInfo: len=0, caps=0, label=0), x7=0 (send).
   let validRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
-  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout validRegs 32 with
+  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout validRegs 32 with
   | .error err =>
       IO.println s!"[RDT-001] register decode unexpected error: {reprStr err}"
   | .ok decoded =>
@@ -1546,7 +1546,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       else if r == 5 then 40 -- msgReg[3]
       else if r == 7 then 0  -- syscallId = send
       else 0)
-  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsForRoundtrip 32 with
+  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsForRoundtrip 32 with
   | .error e => IO.println s!"[KSD-008] round-trip decode error: {reprStr e}"
   | .ok decoded =>
     let msgRegsSize := decoded.msgRegs.size
@@ -1610,7 +1610,7 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
       |>.buildChecked)
 
   -- A2: Verify register decode extracts correct typed IDs
-  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout pipeRegs 32 with
+  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout pipeRegs 32 with
   | .error e => IO.println s!"[PIP-001] A2 register decode error: {reprStr e}"
   | .ok decoded =>
     let decodeOk := decoded.syscallId == .send && decoded.capAddr.toNat == 0 && decoded.msgRegs.size == 4

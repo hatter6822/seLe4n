@@ -2604,7 +2604,7 @@ def runWSJ1DecodeChecks : IO Unit := do
   let _ ← expectOkVal "J1 validateRegBound boundary (31 < 32)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
-  -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
+  -- J1-NEG-04: decodeSyscallCode with value beyond modeled set → invalidSyscallNumber
   -- WS-RR RR8.16 (`v0.35.190`): SyscallId now covers 0..35 (count=36,
   -- +cspaceRevoke — `seL4_CNode_Revoke`, the arm the revocation family had never
   -- had — on top of PR #887's +tcbSetFaultHandler, WS-SM SM9.C.8's
@@ -2613,50 +2613,50 @@ def runWSJ1DecodeChecks : IO Unit := do
   -- 36 is the first invalid number.  The six most recent additions are each
   -- checked as VALID, so the boundary is pinned from both sides and a future
   -- off-by-one in `ofNat?` cannot pass silently.
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (30 = declassify)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (31 = auditRead)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨31⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (32 = auditDrain)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (30 = declassify)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 30)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (31 = auditRead)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 31)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (32 = auditDrain)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 32)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (33 = declassifySignal)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 33)
   -- WS-SX SX6.5: 34, the retired tcbSetFaultHandler, names no syscall.
-  expectErr "J1 decodeSyscallId retired (34)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
+  expectErr "J1 decodeSyscallCode retired (34)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 34)
     .invalidSyscallNumber
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (35 = cspaceRevoke)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (36 = untypedRetype)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨36⟩)
-  expectErr "J1 decodeSyscallId retired code (37, the untyped reset)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨37⟩) .invalidSyscallNumber
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (38 = tcbSetSpace)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨38⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (40 = pageTableUnmap)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨40⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (41 = yield)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨41⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (42 = schedContextConsumed)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨42⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (43 = schedContextYieldTo)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨43⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (44 = irqHandlerAck)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨44⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (47 = irqHandlerClear)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨47⟩)
-  expectErr "J1 decodeSyscallId invalid (48)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨48⟩)
-    .invalidSyscallNumber
-
-  -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
-  expectErr "J1 decodeSyscallId invalid (9999)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨9999⟩)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (35 = cspaceRevoke)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 35)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (36 = untypedRetype)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 36)
+  expectErr "J1 decodeSyscallCode retired code (37, the untyped reset)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 37) .invalidSyscallNumber
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (38 = tcbSetSpace)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 38)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (40 = pageTableUnmap)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 40)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (41 = yield)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 41)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (42 = schedContextConsumed)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 42)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (43 = schedContextYieldTo)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 43)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (44 = irqHandlerAck)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 44)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (47 = irqHandlerClear)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 47)
+  expectErr "J1 decodeSyscallCode invalid (48)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 48)
     .invalidSyscallNumber
 
-  -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceRevoke) → success
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (12)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨12⟩)
+  -- J1-NEG-05: decodeSyscallCode with large invalid number → invalidSyscallNumber
+  expectErr "J1 decodeSyscallCode invalid (9999)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 9999)
+    .invalidSyscallNumber
+
+  -- J1-NEG-06: decodeSyscallCode with valid boundary (12 = serviceRevoke) → success
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (12)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 12)
 
   -- J1-NEG-07: decodeMsgInfo with oversized length → invalidMessageInfo
   -- maxMessageRegisters = 120 (7-bit field max 127, but bounded to 120).
@@ -2683,9 +2683,9 @@ def runWSJ1DecodeChecks : IO Unit := do
   let _ ← expectOkVal "J1 decodeCapPtr zero-valued register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr ⟨0⟩)
 
-  -- J1-NEG-11: decodeSyscallId with zero → valid (SyscallId.send = 0)
-  let _ ← expectOkVal "J1 decodeSyscallId zero-valued register (send)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨0⟩)
+  -- J1-NEG-11: decodeSyscallCode with zero → valid (SyscallId.send = 0)
+  let _ ← expectOkVal "J1 decodeSyscallCode zero-valued register (send)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 0)
 
   -- J1-NEG-12: decodeMsgInfo with zero → valid (length=0, extraCaps=0, label=0)
   let _ ← expectOkVal "J1 decodeMsgInfo zero-valued register"
@@ -2701,7 +2701,7 @@ def runWSJ1DecodeChecks : IO Unit := do
   }
   let defaultRegs : SeLe4n.RegisterFile := default
   expectErr "J1 decodeSyscallArgs out-of-bounds layout register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badLayout defaultRegs 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat badLayout defaultRegs 32)
     .invalidRegister
 
   -- J1-NEG-14: decodeSyscallArgs with out-of-bounds msgReg → invalidRegister
@@ -2712,17 +2712,18 @@ def runWSJ1DecodeChecks : IO Unit := do
     syscallNumReg := ⟨7⟩
   }
   expectErr "J1 decodeSyscallArgs out-of-bounds msgReg"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badMsgRegLayout defaultRegs 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat badMsgRegLayout defaultRegs 32)
     .invalidRegister
 
-  -- J1-NEG-15: decodeSyscallArgs with invalid syscall number in register → invalidSyscallNumber
-  -- Write syscall number 99 into x7.
+  -- J1-NEG-15: decodeSyscallArgs under a code naming no operation → invalidSyscallNumber.
+  -- x7 holds 99, a word naming none of seL4's eleven syscalls, so the selection
+  -- answers `SyscallId.encodingBound` (`selectedOperationCode`), which the decode refuses.
   let regsInvalidSyscall : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
-        if r == 7 then 99  -- invalid syscall number
+        if r == 7 then 99  -- no seL4 syscall
         else 0)
   expectErr "J1 decodeSyscallArgs invalid syscall in register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.encodingBound SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
     .invalidSyscallNumber
 
   -- J1-NEG-16: decodeSyscallArgs with malformed msgInfo in register → invalidMessageInfo
@@ -2733,14 +2734,14 @@ def runWSJ1DecodeChecks : IO Unit := do
         else if r == 7 then 0  -- valid syscall (send)
         else 0)
   expectErr "J1 decodeSyscallArgs malformed msgInfo in register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
     .invalidMessageInfo
 
   -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
   -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send
   -- K-A: Also verify msgRegs are populated with correct count (4 for ARM64 layout).
   let decoded ← expectOkVal "J1 decodeSyscallArgs all-zero registers (valid)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout default 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout default 32)
   unless decoded.msgRegs.size == 4 do
     throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
@@ -2957,8 +2958,8 @@ private def runWSKGDeterminismChecks : IO Unit := do
 
   -- K-G-DET-01: Layer 1+2 decode determinism (double invocation)
   let detRegs : SeLe4n.RegisterFile := default
-  let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
-  let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
+  let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout detRegs 32
+  let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout detRegs 32
   -- S2-A: Determinism checks use structural equality via DecidableEq.
   -- Except ε α gets DecidableEq from the instance above when both ε and α have it.
   unless r1 == r2 do

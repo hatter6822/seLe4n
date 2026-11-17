@@ -122,6 +122,7 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
       | .error _ => none
       | .ok (regs, _) =>
         match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+                (threadOperationCode stRegs tid SeLe4n.arm64DefaultLayout regs)
                 stRegs tid SeLe4n.arm64DefaultLayout regs 32 with
         | .error _ => none
         | .ok decoded =>
@@ -191,6 +192,9 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            (threadOperationCode
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+              tid' SeLe4n.arm64DefaultLayout regs)
             (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)
@@ -222,6 +226,9 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
             tid.toObjId = some (.tcb tcb) ∧
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+          (threadOperationCode
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+            SeLe4n.arm64DefaultLayout tcb.registerContext)
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
         stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 := by
@@ -245,6 +252,9 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            (threadOperationCode
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+              tid' SeLe4n.arm64DefaultLayout regs)
             (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)

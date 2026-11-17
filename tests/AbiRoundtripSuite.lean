@@ -127,7 +127,7 @@ private def t01_service_register_full_abi : IO Unit := do
   let overflow : Array UInt64 := #[1]                        -- MR[4] = requiresGrant=1
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
@@ -154,7 +154,7 @@ private def t02_service_register_bounds_rejected : IO Unit := do
   let overflow : Array UInt64 := #[0]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
     throw <| IO.userError "base decode unexpectedly failed"
@@ -177,7 +177,7 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
   let overflow : Array UInt64 := #[1]                      -- MR[4] = flags (sporadic)
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
@@ -202,7 +202,7 @@ private def t04_sc_configure_budget_above_period_rejected : IO Unit := do
   let overflow : Array UInt64 := #[0]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
     throw <| IO.userError "base decode unexpectedly failed"
@@ -226,7 +226,7 @@ private def t05_cspace_mint_no_overflow : IO Unit := do
   let overflow : Array UInt64 := #[0x07, 42]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
@@ -251,7 +251,7 @@ private def t06_cspace_mint_rights_bits_ignored : IO Unit := do
   let overflow : Array UInt64 := #[0x200007, 42]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
     throw <| IO.userError "base decode unexpectedly failed"
@@ -270,7 +270,7 @@ private def t07_cspace_copy_minimal : IO Unit := do
   let overflow : Array UInt64 := #[0x07]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
     throw <| IO.userError s!"decode failed: {toString e}"
@@ -292,7 +292,7 @@ private def t08_size_invariant_across_syscalls : IO Unit := do
   -- Check invariant for 5-arg service_register
   let st1 := buildAbiState 11 5 #[1, 10, 256, 128] #[1]
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st1 tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState 11 st1 tid SeLe4n.arm64DefaultLayout
           (regsOf st1 tid) 32 with
   | .ok d =>
     expect "size-invariant serviceRegister"
@@ -301,7 +301,7 @@ private def t08_size_invariant_across_syscalls : IO Unit := do
     throw <| IO.userError "serviceRegister decode failed"
   -- Check invariant for 5-arg cspaceMint
   let st2 := buildAbiState 4 5 #[10, 3, 20, 0x07 * 65536 + 64 * 256 + 64] #[42]
-  match decodeSyscallArgsFromState st2 tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState 4 st2 tid SeLe4n.arm64DefaultLayout
           (regsOf st2 tid) 32 with
   | .ok d =>
     expect "size-invariant cspaceMint"
@@ -320,7 +320,7 @@ private def t09_service_register_grant_strict : IO Unit := do
   let overflow : Array UInt64 := #[2]  -- requires_grant=2 → reject
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
     throw <| IO.userError "base decode unexpectedly failed"
@@ -346,7 +346,7 @@ private def t10_unknown_tid_fails : IO Unit := do
   let st := buildAbiState syscallId msgLen inline overflow
   -- Use a non-existent tid for the decode call
   let bogusTid : SeLe4n.ThreadId := ⟨9999⟩
-  match decodeSyscallArgsFromState st bogusTid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState syscallId st bogusTid SeLe4n.arm64DefaultLayout
           (regsOf st ⟨900⟩) 32 with
   | .ok decoded =>
     expect "unknown tid clamped to the inline words"

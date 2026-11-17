@@ -862,7 +862,8 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     (hRegsObjInv : stRegs.objects.invExt)
     (hCur : stRegs.scheduler.currentOnCore e = some tid)
     (hTcbRegs : stRegs.getObject? tid.toObjId = some (.tcb tcb))
-    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState stRegs tid
+    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+      (threadOperationCode stRegs tid SeLe4n.arm64DefaultLayout tcb.registerContext) stRegs tid
       SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded)
     (hFillObj : stSpilled.objects = stRegs.objects)
     (hCode : ∀ gate, recvBusyReplyHolderCode ctx tid gate decoded stSpilled

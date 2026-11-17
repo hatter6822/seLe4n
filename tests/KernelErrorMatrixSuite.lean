@@ -232,16 +232,16 @@ private def row_truncatedMessage_mint_five_words : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs (mkDecoded
         #[rv 0, rv 64, rv 0, rv 64, rv 31])) }
 
-/-- Row: `decodeSyscallId` rejects an unknown syscall number with
+/-- Row: `decodeSyscallCode` rejects a code naming no operation with
 `.invalidSyscallNumber`. -/
 private def row_invalidSyscallNumber : KernelErrorRejection :=
-  { syscall       := "decodeSyscallId"
+  { syscall       := "decodeSyscallCode"
     expectedError := .invalidSyscallNumber
     scenarioTag   := "AN11A.2.invalidSyscallNumber.unknown"
-    scenarioDesc  := "Decoding a register value that is not a modeled" ++
-                     " syscall id (255) returns .invalidSyscallNumber"
+    scenarioDesc  := "Decoding a selected code that is not a modeled" ++
+                     " operation code (255) returns .invalidSyscallNumber"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId (rv 255)) }
+      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 255) }
 
 /-- Row: `decodeMsgInfo` rejects malformed message-info word with
 `.invalidMessageInfo`.  `MessageInfo.decode` returns `none` on length or

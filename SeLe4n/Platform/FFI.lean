@@ -3233,6 +3233,7 @@ def syscallCapFaultAt (layout : SeLe4n.SyscallRegisterLayout) (st s : SystemStat
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid layout tcb.registerContext)
         st tid layout tcb.registerContext 32 with
     | .error _ => none
     | .ok decoded =>
@@ -3308,6 +3309,7 @@ def syscallCapFaultOfW (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid layout tcb.registerContext)
         st tid layout tcb.registerContext 32 with
     | .error _ => none
     | .ok decoded =>
@@ -3388,6 +3390,7 @@ theorem syscallCapFaultAt_none_of_no_fault_phase (layout : SeLe4n.SyscallRegiste
     (decoded : SeLe4n.Model.SyscallDecodeResult)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid layout tcb.registerContext)
         st tid layout tcb.registerContext 32 = .ok decoded)
     (hNot : capFaultReceivePhase? decoded.syscallId = none) :
     syscallCapFaultAt layout st s tid ke = none := by
@@ -3401,6 +3404,7 @@ theorem syscallCapFaultAt_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayo
     (decoded : SeLe4n.Model.SyscallDecodeResult) (inRecv : Bool)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid layout tcb.registerContext)
         st tid layout tcb.registerContext 32 = .ok decoded)
     (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
     (hLookup : syscallOperandLookup decoded.syscallId
@@ -4784,6 +4788,8 @@ theorem syscallDispatchFromAbi_implies_capability_held
     isInsecureDefaultContext ctx = false ∧
     ∃ regs decoded,
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+          SeLe4n.arm64DefaultLayout regs)
         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         tid SeLe4n.arm64DefaultLayout regs 32 = Except.ok decoded ∧
       (decoded.syscallId ≠ .yield →
