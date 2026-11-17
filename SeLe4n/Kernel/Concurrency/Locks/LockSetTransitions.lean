@@ -1607,12 +1607,15 @@ what makes the two sides meet on the same subject.
 
 The target's lock is supplied by the caller rather than derived here, because a
 `LockKey` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
-declassify capability names `.object targetId` of any kind.  `none` is the
+target capability (extra capability 0 of the audit-trail invocation,
+`resolveDeclassifyTarget`) names `.object targetId` of any kind.  `none` is the
 capless/unresolved shape and is definitionally the identity, so every pin taken
 before this member existed survives by `rfl`.
 
-Caller CNode stays **read**: capability resolution reads it and nothing keys a
-taint write at a CSpace root on this path.  The transition's other write is the
+Caller CNode stays **read**: capability resolution reads it — both the invoked
+audit-trail capability and the target in extra capability 0 resolve through the
+caller's root CNode — and nothing keys a taint write at a CSpace root on this
+path.  The transition's other write is the
 audit-trail append — a `SystemState` field, not an object — and since PR #870
 round 7
 that write is declared through the **state-level lock** in write mode:
@@ -1649,7 +1652,8 @@ write, rather than as a fresh list.  The transition *is* the ordinary signal
 plus an audit append (`declassifiedSignal_ordinary_eq_signal` proves the
 unauthorized-hop-free case is literally `notificationSignalOnCore`), so its
 object-level footprint must be exactly the signal's: the caller TCB read, the
-CSpace root read, the notification write, the woken waiter's TCB write, and —
+CSpace root read (through which both the invoked audit-trail capability and the
+notification in extra capability 0 resolve), the notification write, the woken waiter's TCB write, and —
 on the seL4 bound-delivery path — the bound TCB's endpoint write and the bound
 TCB's own write.  Writing those out again here would let the two drift the
 moment SM6.B's footprint changes; composing them cannot.

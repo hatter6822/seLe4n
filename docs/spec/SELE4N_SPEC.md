@@ -8035,8 +8035,9 @@ capability, so no word the caller writes can set a badge bit.  Before
 notification write capability forge any badge bits, another client's or an
 interrupt handler's.
 
-`.declassifySignal` takes its badge the same way
-(`dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
+`.declassifySignal` takes its badge the same way, from the notification
+capability it names as extra capability 0 (the invoked capability is the audit
+trail's; `dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
 as notification badge bits, and a declassifying signal whose two hops are
 ordinary is the ordinary signal, so a register-supplied badge was a second
 forging path.  What it declassifies is the delivery of the capability's badge
@@ -8397,7 +8398,6 @@ seLe4n extension: it sits after the type and before the length.
 |---------|---------------|-------|---------------|
 | `send`, `call` | `decodeInvocation`, endpoint case | lookup, type, CanSend | `.invalidCapability` (seL4 `InvalidCapability`, invalid capability number 0) |
 | `notificationSignal` | `decodeInvocation`, notification case | lookup, type, CanSend | `.invalidCapability`, as seL4 |
-| `declassifySignal` | no counterpart (signals a notification) | lookup, type, CanSend | `.invalidCapability`, as the signal |
 | `receive`, `notificationWait` | `handleRecv` | lookup, type, CanReceive | capability fault, receive phase, lookup failure `.invalidCapability` (seL4 `missing_capability`) |
 | `replyRecv` | MCS `handleSyscall` `SysReplyRecv`: `handleInvocation` on the reply, then `handleRecv` | lookup, type, CanReceive on the endpoint | capability fault, receive phase, as `receive` |
 | `reply` | no MCS counterpart (MCS replies through the reply object) | lookup, type, right (extension) | `.illegalAuthority` |
@@ -8410,7 +8410,8 @@ seLe4n extension: it sits after the type and before the length.
 | `schedContextConfigure` | `decodeSchedControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqControlGet` | `decodeIRQControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqHandlerAck`, `irqHandlerSetNotification`, `irqHandlerClear` | `decodeIRQHandlerInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
-| `serviceRegister`, `serviceRevoke`, `serviceQuery`, `declassify`, `auditRead`, `auditDrain` | no counterpart | lookup, type, right, length | `.illegalAuthority` |
+| `serviceRegister`, `serviceRevoke`, `serviceQuery` | no counterpart | lookup, type, right, length | `.illegalAuthority` |
+| `declassify`, `declassifySignal`, `auditRead`, `auditDrain` | no counterpart: invocations of the audit-trail capability; `declassify` and `declassifySignal` take their target (any object; a notification with the write right for the signal) as extra capability 0, an absent one refused `.truncatedMessage`, an unusable one `.invalidCapability 1` | lookup, type, right, length, then extra capability 0 | `.illegalAuthority` |
 
 seL4's CNode, TCB, untyped, scheduling, page-table and IRQ capabilities carry
 no rights, so seL4 checks none of these rights; the model's are extensions.

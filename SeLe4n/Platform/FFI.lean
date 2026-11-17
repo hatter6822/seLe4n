@@ -2465,13 +2465,16 @@ plan requires SM9.B not to duplicate. -/
 /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): **re-resolve the receiver
 a refused second hop was about**, from the pre-state the seam already holds.
 
-Mirrors the dispatch's own resolution exactly — the caller's TCB, its CSpace
-root capability, `lookupSlot` on the supplied pointer, the slot's
-capability, and the notification the capability targets — and then runs the
-*same* `declassifiedSignalReceiver?` the transition's second-hop gate ran on
-the *same* pre-state, so the two resolutions cannot disagree
-(`refusedSignalReceiver?_resolves`).  `none` on any resolution failure: a
-refusal whose capability never resolved has no second hop to name.
+Mirrors the dispatch's own resolution exactly — the caller's TCB, the invoked
+audit-trail capability at the supplied pointer, the notification capability in
+extra capability 0 (WS-SX SX6.7: the IPC buffer's first capability pointer,
+counted by the message-info word in the caller's saved registers, as the routed
+entry counts it — `routedExtraCapCount`), and the notification that capability
+targets — and then runs the *same* `declassifiedSignalReceiver?` the
+transition's second-hop gate ran on the *same* pre-state, so the two
+resolutions cannot disagree (`refusedSignalReceiver?_resolves`).  `none` on any
+resolution failure: a refusal whose capabilities never resolved has no second
+hop to name.
 
 The SM9.B landing deferred this on the ground that "the seam cannot see" the
 resolved receiver.  The premise was wrong: the transition resolves its receiver
@@ -2481,23 +2484,26 @@ caller's `x0`, so the receiver is a pure re-computation — the SM8.D
 assumed. -/
 def refusedSignalReceiver? (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) : Option SeLe4n.ThreadId :=
-  -- WS-SM SM9.D.7: the four resolution steps are `syscallOperandCap?`, shared
-  -- with the taint-propagation planner.  They used to be spelled out here; one
-  -- resolver means the seam's re-resolution and the planner's cannot drift
-  -- apart, which matters because both claim to name the object the dispatch
-  -- arm acted on.
-  match syscallOperandCap? st tid capPtr with
+  -- WS-SM SM9.D.7: the resolution steps are the taint planner's
+  -- (`declassifyPlanOperand?`, over `syscallOperandCap?`); one resolver means
+  -- the seam's re-resolution and the planner's cannot drift apart, which
+  -- matters because both claim to name the object the dispatch arm acted on.
+  match st.getTcb? tid with
   | none => none
-  | some cap =>
-    match cap.target with
-    | .object nid => declassifiedSignalReceiver? st nid
-    | _ => none
+  | some tcb =>
+    match declassifyPlanOperand? st tid capPtr
+        (routedExtraCapCount .declassifySignal tcb.registerContext) with
+    | none => none
+    | some cap =>
+      match cap.target with
+      | .object nid => declassifiedSignalReceiver? st nid
+      | _ => none
 
-/-- `refusedSignalReceiver?` as its code (`ThreadId.optCode`): the operand
-resolved through the continuation-passing walk (`lookupSlotK`),
-the slot's capability matched where it is read, and the notification's receiver
-as its code (`declassifiedSignalReceiverCode`), so the seam's re-resolution
-builds no slot reference, no `some` and no result
+/-- `refusedSignalReceiver?` as its code (`ThreadId.optCode`): both
+capabilities resolved through the continuation-passing walk (`lookupSlotK`),
+each slot's capability matched where it is read, and the notification's
+receiver as its code (`declassifiedSignalReceiverCode`), so the seam's
+re-resolution builds no slot reference, no `some` and no result
 (`ofOptCode_refusedSignalReceiverCode`). -/
 @[inline] def refusedSignalReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) : Nat :=
@@ -2508,41 +2514,78 @@ builds no slot reference, no `some` and no result
       (fun cnode slot =>
         match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
         | none => 0
-        | some cap =>
-          match cap.target with
-          | .object nid => declassifiedSignalReceiverCode st nid
-          | _ => 0)
+        | some _ =>
+          match callerExtraCapAddr? st tid
+              (routedExtraCapCount .declassifySignal tcb.registerContext) 0 with
+          | none => 0
+          | some addr =>
+            lookupSlotK tcb addr st (fun _ _ _ _ => 0)
+              (fun cnode' slot' =>
+                match SystemState.lookupSlotCap st { cnode := cnode', slot := slot' } with
+                | none => 0
+                | some cap =>
+                  match cap.target with
+                  | .object nid => declassifiedSignalReceiverCode st nid
+                  | _ => 0))
 
 @[simp] theorem ofOptCode_refusedSignalReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) :
     SeLe4n.ThreadId.ofOptCode (refusedSignalReceiverCode st tid capPtr) =
       refusedSignalReceiver? st tid capPtr := by
-  unfold refusedSignalReceiverCode refusedSignalReceiver? syscallOperandCap?
-  rcases st.getTcb? tid with _ | tcb
+  unfold refusedSignalReceiverCode refusedSignalReceiver? declassifyPlanOperand?
+    syscallOperandCap?
+  rcases hT : st.getTcb? tid with _ | tcb
   · rfl
   · dsimp only
     rw [lookupSlotK_eq]
     rcases lookupSlot tcb capPtr st with _ | ⟨cn, sl⟩
     · rfl
     · dsimp only
-      rcases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with _ | cap
+      rcases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with _ | cap0
       · rfl
       · dsimp only
-        rcases cap.target <;> simp
+        rcases callerExtraCapAddr? st tid
+            (routedExtraCapCount .declassifySignal tcb.registerContext) 0 with _ | addr
+        · rfl
+        · dsimp only
+          rw [lookupSlotK_eq]
+          rcases lookupSlot tcb addr st with _ | ⟨cn', sl'⟩
+          · rfl
+          · dsimp only
+            rcases SystemState.lookupSlotCap st { cnode := cn', slot := sl' } with _ | cap
+            · rfl
+            · dsimp only
+              rcases cap.target <;> simp
 
 /-- WS-SM SM9.C.1: on the resolution path the dispatch itself took, the seam's
 re-resolution **is** the transition's — both are `declassifiedSignalReceiver?`
 at the same state and the same notification, so the record below names exactly
-the thread the second-hop gate refused. -/
+the thread the second-hop gate refused.  The path: the invoked capability
+resolved, and extra capability 0 — counted by the caller's saved message-info
+word — resolved to the notification (`resolveDeclassifySignalTarget`). -/
 theorem refusedSignalReceiver?_resolves (st : SystemState) (tid : SeLe4n.ThreadId)
-    (capPtr : SeLe4n.CPtr) (tcb : TCB)
-    (ref : SlotRef) (cap : Capability) (nid : SeLe4n.ObjId)
+    (capPtr : SeLe4n.CPtr) (tcb : TCB) (auditCap ntfnCap : Capability)
+    (nid : SeLe4n.ObjId)
     (hTcb : st.getTcb? tid = some tcb)
-    (hRef : lookupSlot tcb capPtr st = .ok ref)
-    (hSlot : SystemState.lookupSlotCap st ref = some cap)
-    (hTarget : cap.target = .object nid) :
+    (hOp : syscallOperandCap? st tid capPtr = some auditCap)
+    (hRes : resolveDeclassifySignalTarget tid
+      (routedExtraCapCount .declassifySignal tcb.registerContext) st = .ok (ntfnCap, nid)) :
     refusedSignalReceiver? st tid capPtr = declassifiedSignalReceiver? st nid := by
-  simp only [refusedSignalReceiver?, syscallOperandCap?, hTcb, hRef, hSlot, hTarget]
+  unfold resolveDeclassifySignalTarget at hRes
+  cases hR : resolveDeclassifyTarget tid
+      (routedExtraCapCount .declassifySignal tcb.registerContext) st with
+  | error e => rw [hR] at hRes; cases hRes
+  | ok r =>
+    obtain ⟨cap, oid⟩ := r
+    rw [hR] at hRes
+    simp only [] at hRes
+    split at hRes
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hRes
+      obtain ⟨hCap, hOid⟩ := hRes
+      rw [hCap, hOid] at hR
+      obtain ⟨addr, hA, hC, hT, -⟩ := resolveDeclassifyTarget_ok tid _ st ntfnCap nid hR
+      simp only [refusedSignalReceiver?, hTcb, declassifyPlanOperand?, hOp, hA, hC, hT]
+    · cases hRes
 
 /-- WS-SM SM9.C.1: the ledger record's `refusedReceiver` fill — the re-resolved
 receiver **exactly when** the refusal is the declassifying signal's second hop,
@@ -2809,9 +2852,9 @@ when a receiver **was** resolved
 re-resolution runs the same `declassifiedSignalReceiver?` on the same pre-state
 the transition's gate read (`refusedSignalReceiver?_resolves`), so the recorded
 identity is exactly the one the gate refused.  The resolution premises are the
-dispatch's own — the caller's TCB, its CSpace root, the capability at the
-supplied pointer targeting the notification — which is what holds whenever the
-dispatch produced this discriminant in the first place.
+dispatch's own — the caller's TCB, the invoked capability at the supplied
+pointer, and extra capability 0 resolved to the notification — which is what
+holds whenever the dispatch produced this discriminant in the first place.
 
 This closes the §3.1 obligation the SM9.B landing moved here: without it a
 monitor reading `.declassificationDeniedAtReceiver` beside a raw `CPtr` could
@@ -2821,13 +2864,13 @@ the *success* path is required to audit exactly that destination
 theorem refusalRecord_names_failed_hop
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (tid : SeLe4n.ThreadId) (x0 : UInt64) (st : SystemState)
-    (tcb : TCB) (ref : SlotRef) (cap : Capability)
+    (tcb : TCB) (auditCap ntfnCap : Capability)
     (notifId : SeLe4n.ObjId) (actorDomain : SecurityDomain)
     (hDecode : SyscallId.ofNat? syscallId.toNat = some .declassifySignal)
     (hTcb : st.getTcb? tid = some tcb)
-    (hRef : lookupSlot tcb (SeLe4n.CPtr.ofNat x0.toNat) st = .ok ref)
-    (hSlot : SystemState.lookupSlotCap st ref = some cap)
-    (hTarget : cap.target = .object notifId)
+    (hOp : syscallOperandCap? st tid (SeLe4n.CPtr.ofNat x0.toNat) = some auditCap)
+    (hRes : resolveDeclassifySignalTarget tid
+      (routedExtraCapCount .declassifySignal tcb.registerContext) st = .ok (ntfnCap, notifId))
     (hPlan : declassifiedSignalPlan (liftLegacyContext ctx) ctx.declassificationPolicy
       notifId actorDomain st = .error .declassificationDeniedAtReceiver) :
     ∃ receiver,
@@ -2851,8 +2894,8 @@ theorem refusalRecord_names_failed_hop
   have hSeam : refusalReceiverFor st tid .declassifySignal
       .declassificationDeniedAtReceiver x0 = some receiver := by
     rw [refusalReceiverFor_receiver_hop,
-      refusedSignalReceiver?_resolves st tid (SeLe4n.CPtr.ofNat x0.toNat) tcb ref cap
-        notifId hTcb hRef hSlot hTarget, hRecv]
+      refusedSignalReceiver?_resolves st tid (SeLe4n.CPtr.ofNat x0.toNat) tcb auditCap ntfnCap
+        notifId hTcb hOp hRes, hRecv]
   rw [hSeam]
 
 /-- WS-SM SM9.B.9 (**the frame**): recording a refusal writes the ledger and

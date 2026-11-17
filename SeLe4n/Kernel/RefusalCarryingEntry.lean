@@ -1520,7 +1520,8 @@ noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
                     st kGen kRes (kLook sid))
       | .audited sid capAddr =>
         dispatchOperandCheckedK sid capAddr tid executingCore (routedExtraCapCount sid tcb.registerContext)
-          (auditedOperandArmR ctx sid tcb.registerContext capAddr tid executingCore) st kGen kRes
+          (auditedOperandArmR ctx sid tcb.registerContext capAddr tid executingCore
+            (routedExtraCapCount sid tcb.registerContext)) st kGen kRes
           (kLook sid)
       | .overflowed sid capAddr len =>
           -- a five-word invocation behind the long route's operand dispatch,

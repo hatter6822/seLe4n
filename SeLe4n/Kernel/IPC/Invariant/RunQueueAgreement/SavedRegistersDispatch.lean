@@ -387,13 +387,17 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       hBNR hInv hRR
     exact hW (w.trans (.of_kept (stageDeliveredMessage_savedRegsKeptExcept _ tid _ i).1
       fun _ e => e ▸ hFr))
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1] at hF ⊢
     exact hF (savedRegsKept.of_objects_eq rfl)
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

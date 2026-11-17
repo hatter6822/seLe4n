@@ -37,7 +37,7 @@ results reported. -/
   | some (.tcb tcb) =>
     dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
       (auditedOperandArmR ctx sid tcb.registerContext (SeLe4n.CPtr.ofWord capWord) tid
-        executingCore)
+        executingCore xc)
       st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
       entryReportLookup entryReportLookupAtW
   | _ => entryReportGeneral (.error (.illegalState, st))

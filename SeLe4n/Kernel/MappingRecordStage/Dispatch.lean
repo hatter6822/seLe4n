@@ -729,9 +729,13 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)
-  case none.declassify.object targetId =>
-    exact declassifyObjectFromCore_mappingStage h
-  case none.declassifySignal.object notifId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
+    · exact declassifyObjectFromCore_mappingStage h
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

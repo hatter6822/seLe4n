@@ -6040,7 +6040,7 @@ run_check "INVARIANT" rg -n '^  \| signal \(capAddr : CPtr\)$' SeLe4n/Kernel/Arc
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_notificationSignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId ntfnCap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge$' SeLe4n/Kernel/RefusalCarryingDispatch.lean
 run_negative_check "INVARIANT" rg -n 'Badge\.ofWord \(auditedArgWord regs 0\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def waitRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Wait.lean
@@ -9524,7 +9524,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_stored_ok\b'
 # WS-SX SX2: an audited call's general form runs that call's arm alone, so its
 # compiled path carries no other syscall's arm; the audit read's tag word reads
 # the reason's discriminant off the slot's code, rebuilding no error.
-run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def auditedArmSpec \(ctx : LabelingContext\) \(sid : SyscallId\) \(capAddr : SeLe4n\.CPtr\)\n    \(regs : SeLe4n\.RegisterFile\) \(tid : SeLe4n\.ThreadId\) \(executingCore : Concurrency\.CoreId\)\n    \(xc : Nat\) \(cap : Capability\) : Kernel Unit :=\n  match sid with\n  \| \.declassify =>\n    match cap\.target with$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_negative_check "INVARIANT" rg -n 'dispatchWithCapChecked ctx \(auditedDecoded' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def auditGeneralR\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_eq_auditedArmSpec\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean

@@ -536,13 +536,17 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT
       hBNR hInv hRR
     exact ((hW hS w).trans (bankFrame.stageDeliveredMessage_caller _ i)).bankAgree hA
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     exact (bankFrame.of_frame rfl rfl rfl).bankAgree hA
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

@@ -891,9 +891,13 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
       exact RecordsStage.of_fst_eq
         (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW
     · cases h
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     exact .of_frameK fun hI => RecordsFrame.declassifyObjectFromCore hI h
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

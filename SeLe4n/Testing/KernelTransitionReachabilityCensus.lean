@@ -1121,6 +1121,14 @@ def nonExecutedTransitionsPlain : List Name :=
   -- arms equal to.  Since the trail read and the drain refuse in place
   -- (`auditReadTrailR`, `auditedArmSpec_auditDrain_refused`) no arm runs it.
   , `SeLe4n.Kernel.auditGeneralR
+  -- The audited calls' specification arm (`dispatchWithCapChecked_eq_auditedArmSpec`).
+  -- WS-SX SX6.7: since the declassifying calls take their target as extra
+  -- capability 0, their general routed forms run the target-resolved arms
+  -- (`declassifyTargetSpec`, `declassifySignalTargetSpec`), each proven the
+  -- specification's on the audit-trail capability
+  -- (`auditedArmSpec_declassify_trail`, `auditedArmSpec_declassifySignal_trail`),
+  -- so no arm runs the specification itself.
+  , `SeLe4n.Kernel.auditedArmSpec
   , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread

@@ -1674,13 +1674,17 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
     exact stepCoversInv_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCoversInv
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     exact ⟨stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl, hInv⟩
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

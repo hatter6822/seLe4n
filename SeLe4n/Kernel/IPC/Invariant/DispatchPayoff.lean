@@ -620,8 +620,9 @@ structure checkedSyscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) : Prop where
   base : syscallDispatchQuiescence decoded tid executingCore gate cap st
-  declassifySignalNoBoundTarget : ∀ notifId,
-    decoded.syscallId = .declassifySignal → cap.target = .object notifId →
+  declassifySignalNoBoundTarget : ∀ ntfnCap notifId,
+    decoded.syscallId = .declassifySignal →
+    resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId) →
     boundDeliveryTarget? st notifId = none
 
 /-- **The receive arm past its flow gate preserves the bundle** — on the state
@@ -1220,7 +1221,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case declassify =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object targetId =>
+        case auditTrail code =>
+          cases hR : resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok pr =>
+          obtain ⟨_, targetId⟩ := pr
+          simp only [hR] at hStep
           obtain ⟨tidC, hCur, hEq⟩ := declassifyObjectFromCore_frame_of_ok
             (liftLegacyContext ctx) ctx.declassificationPolicy
             executingCore targetId st st' hStep
@@ -1230,11 +1236,16 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case declassifySignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object notifId =>
-              have hNoBound := hQ.declassifySignalNoBoundTarget notifId hSy hTgt
+        case auditTrail code =>
+          cases hR : resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok pr =>
+              obtain ⟨ntfnCap, notifId⟩ := pr
+              simp only [hR] at hStep
+              have hNoBound := hQ.declassifySignalNoBoundTarget ntfnCap notifId hSy hR
               cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
                   (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                  cap.signalBadge executingCore st with
+                  ntfnCap.signalBadge executingCore st with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   cases res1 with
@@ -1245,13 +1256,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       have hSigInv : ipcInvariantFull st1 :=
                         notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          cap.signalBadge executingCore st st1 sgi1 hNoBound
+                          ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone hDisp
                       have hObjInv1 : st1.objects.invExt :=
                         notificationSignalDeclassifiedOnCore_preserves_objects_invExt
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          cap.signalBadge executingCore st st1 sgi1
+                          ntfnCap.signalBadge executingCore st st1 sgi1
                           hObjInv hDisp
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
@@ -1859,7 +1870,7 @@ theorem checkedSyscallDispatchQuiescence_inhabited :
     checkedSyscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCap witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited, by
-    intro notifId hSy
+    intro ntfnCap notifId hSy
     simp [witnessDecoded] at hSy⟩
 
 -- ============================================================================
@@ -2380,17 +2391,21 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
     simp [witnessDecodedDeclassifySignal, receivesWithoutReply] at hSy
 
 /-- **The checked confinement is exercised**: the `.declassifySignal` decode
-and the object target both fire, and `boundDeliveryTarget? = none` is
-computed on the present object. -/
+fires, and `boundDeliveryTarget? = none` is computed on every object the
+extra-capability resolver could name — the witness store holds no
+notification, so the lookup the confinement reads is `none` at every id. -/
 theorem checkedSyscallDispatchQuiescence_inhabited_declassifySignal :
     checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid Concurrency.bootCoreId
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited_declassifySignal, by
-    intro notifId hSy hTgt
-    injection hTgt with hObj
-    subst hObj
+    intro ntfnCap notifId _ _
+    have hN : witnessSt3.getNotification? notifId = none := by
+      unfold SystemState.getNotification?
+      rw [witnessSt3_lookup]
+      by_cases h1 : (witnessScId.toObjId == notifId) = true <;>
+        by_cases h2 : (witnessTid.toObjId == notifId) = true <;> simp [h1, h2]
     unfold boundDeliveryTarget?
-    rw [witnessSt3_getNotification_tcbSlot]⟩
+    rw [hN]⟩
 
 /-- A fresh reply object at slot `⟨3⟩`: the reply arm's object-lookup premise
 fires against a real stored reply.  Its `caller` is `none` -- the retype

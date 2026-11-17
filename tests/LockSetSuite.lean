@@ -502,9 +502,9 @@ example : permittedKinds .tcbSetMCPriority =
 example : permittedKinds .tcbSetIPCBuffer =
     [.tcb, .cnode, .page, .endpoint, .notification, .objStore] := by decide
 -- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
--- about the arm rather than a relaxation.  The live arm hands
--- `cap.target = .object targetId` to a transition that commits a `storeObject`
--- at it, and SM9.D.17's `targetLock : Option LockId` carries that object's own
+-- about the arm rather than a relaxation.  The live arm hands the object its
+-- extra capability 0 names (`resolveDeclassifyTarget`, the invoked capability
+-- being the audit trail's) to a transition that commits a `storeObject` at it, and SM9.D.17's `targetLock : Option LockId` carries that object's own
 -- lock into the resolved footprint — so a downgrade of an endpoint, a
 -- notification, a reply, a scheduling context, a VSpace root, an untyped region
 -- or a page frame contributes that kind.  Listing three left

@@ -1529,14 +1529,18 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
       P.current P.notIdle hRR).trans (endpointReplyRecvOnCore_runQueueEntryStage P.objInv
         P.refined P.dequeued P.queueHeads P.current P.notIdle hRR).1
       (.of_stage (stageDeliveredMessage_runQueueStage _ _ _))
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     refine readyKeptStage.of_stage ?_
     exact SystemState.RunQueueStage.of_frame rfl rfl rfl
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
