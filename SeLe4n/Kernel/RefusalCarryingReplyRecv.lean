@@ -585,7 +585,7 @@ write.  Any other takes the specification's path (`replyRecvCapsArmR_eq`). -/
   fun st =>
     match st.getTcb? tid with
     | some stcb =>
-        match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+        match Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.replyRecv.toNat SeLe4n.arm64DefaultLayout
             stcb.registerContext with
         | .replyRecv _ _ =>
             match st.getTcb? c with
@@ -708,8 +708,8 @@ theorem replyRecvCapsArmR_blocks_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.T
     (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hS : st.getTcb? tid = some stcb)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .replyRecv capAddr mi)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.replyRecv.toNat
+      SeLe4n.arm64DefaultLayout stcb.registerContext = .replyRecv capAddr mi)
     (hC : st.getTcb? c = some ct)
     (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4)) = true)
     (hB : replyRecvBlocksFast st epId tid c rid = true) :
@@ -728,8 +728,8 @@ theorem replyRecvCapsArmR_donated_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.
     (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hS : st.getTcb? tid = some stcb)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .replyRecv capAddr mi)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.replyRecv.toNat
+      SeLe4n.arm64DefaultLayout stcb.registerContext = .replyRecv capAddr mi)
     (hC : st.getTcb? c = some ct)
     (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4)) = true)
     (hB : replyRecvBlocksFast st epId tid c rid = false)
@@ -750,8 +750,8 @@ theorem replyRecvCapsArmR_unheld_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.T
     (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hS : st.getTcb? tid = some stcb)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .replyRecv capAddr mi)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.replyRecv.toNat
+      SeLe4n.arm64DefaultLayout stcb.registerContext = .replyRecv capAddr mi)
     (hC : st.getTcb? c = some ct)
     (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4)) = true)
     (hB : replyRecvBlocksFast st epId tid c rid = false)
@@ -863,8 +863,9 @@ routed capability-free call, read from its saved registers. -/
     | some s =>
       match st.getTcb? s with
       | some sTcb =>
-        match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-            sTcb.registerContext with
+        match Architecture.RegisterDecode.registerRoutedSyscallOf
+            (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+            SeLe4n.arm64DefaultLayout sTcb.registerContext with
         | .call _ _ => true
         | _ => false
       | none => false
@@ -905,8 +906,9 @@ the next arm is reached from one site and is inlined once. -/
         | some s =>
           match st.getTcb? s with
           | some sTcb =>
-            match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-                sTcb.registerContext with
+            match Architecture.RegisterDecode.registerRoutedSyscallOf
+                (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+                SeLe4n.arm64DefaultLayout sTcb.registerContext with
             | .call _ mi =>
               .ok ((), performReplyRecvCallTakeDelivered st c tid rid epId s sTcb.queueNextCode
                 ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st tid)
@@ -1020,8 +1022,9 @@ caller queued by a `Call` and is donated its context, the call-take arm
         | some s =>
           match st.getTcb? s with
           | some sTcb =>
-            match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-                sTcb.registerContext with
+            match Architecture.RegisterDecode.registerRoutedSyscallOf
+                (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+                SeLe4n.arm64DefaultLayout sTcb.registerContext with
             | .send _ mi =>
               if replyRecvReplyInertW st tid c grant then
                 let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout
@@ -1031,7 +1034,7 @@ caller queued by a `Call` and is donated its context, the call-take arm
               else
                 match st.getTcb? tid with
                 | some stcb =>
-                  match Architecture.RegisterDecode.registerRoutedSyscallOf
+                  match Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.replyRecv.toNat
                       SeLe4n.arm64DefaultLayout stcb.registerContext with
                   | .replyRecv _ _ =>
                     match st.getTcb? c with
@@ -1194,8 +1197,9 @@ takes read on the pre-state; `replyRecvUnheldArmR` otherwise. -/
         | some s =>
           match st.getTcb? s with
           | some sTcb =>
-            match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
-                sTcb.registerContext with
+            match Architecture.RegisterDecode.registerRoutedSyscallOf
+                (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+                SeLe4n.arm64DefaultLayout sTcb.registerContext with
             | .call _ mi =>
               .ok ((), performReplyRecvDonatedCallTakeDelivered st c tid rid
                 ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId s
@@ -2364,7 +2368,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (st : SystemState)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
@@ -2455,7 +2459,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (st : SystemState)
     (hRR : decoded.syscallId = .replyRecv)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr decoded.msgInfo)
     (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
     (hCaller : gate.callerId = tid)
@@ -2512,7 +2516,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
     (st : SystemState) (tcb : TCB) (ref : CSpaceAddr)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
     (hRR : decoded.syscallId = .replyRecv)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr decoded.msgInfo)
     (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
@@ -2572,7 +2576,7 @@ theorem dispatchReplyRecvLongCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st : SystemState)
     (hRR : decoded.syscallId = .replyRecv)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr decoded.msgInfo)
     (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
     (hRead : ∀ j, j < decoded.msgInfo.length - 4 →
