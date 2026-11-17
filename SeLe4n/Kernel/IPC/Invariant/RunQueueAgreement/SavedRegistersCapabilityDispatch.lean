@@ -484,39 +484,6 @@ theorem unbindNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {s
               (fun x hx => by cases hx))
         · cases h; exact k1
 
-/-- The IPC-buffer write stores the thread with its buffer address alone. -/
-theorem setIPCBufferOp_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {addr : SeLe4n.VAddr} (hInv : st.objects.invExt)
-    (h : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    savedRegsKeptExcept W st st' := by
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at h
-  split at h
-  · cases h
-  · split at h
-    · rename_i tcb hT
-      dsimp only at h
-      split at h
-      · rename_i hS
-        cases h
-        exact .storeObject_tcb hInv ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hS rfl
-      · cases h
-    · cases h
-
-/-- The fault-handler install rewrites the thread with its handler alone. -/
-theorem setThreadFaultHandlerOp_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
-    (hInv : st.objects.invExt) (h : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    savedRegsKeptExcept W st st' := by
-  unfold setThreadFaultHandlerOp at h
-  split at h
-  · cases h
-  · rename_i tcb hT _
-    split at h
-    · cases h
-    · cases h
-      unfold installFaultHandler
-      exact .rewriteObject_tcb _ hInv ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) rfl
-
 /-- The affinity change rewrites the moved thread's affinity and run-queue
 links, and no other thread's TCB but its links. -/
 theorem setThreadCpuAffinityWithMigration_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
@@ -533,57 +500,14 @@ theorem setThreadCpuAffinityWithMigration_savedRegsKeptExcept {W : SeLe4n.Thread
     rfl
   · exact TCB.map_proj_eq_of_map_withoutRunLinks_eq _ (hNe u hu)
 
-/-- The configure's propagation into its bound thread: the thread's priority and
-domain rewritten in place, and its bucket re-keyed. -/
-theorem schedContextConfigureBoundPropagate_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    (stStored : SystemState) (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId)
-    (boundTcb : TCB) (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (hInv : stStored.objects.invExt) :
-    savedRegsKeptExcept W stStored
-      (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound
-        priority domain) := by
-  unfold SchedContextOps.schedContextConfigureBoundPropagate
-  have hP : ∀ s : SystemState, savedRegsKeptExcept W stStored s → s.objects.invExt →
-      savedRegsKeptExcept W stStored (match s.getTcbWitnessed? boundTid with
-        | some ⟨currentTcb, hCurrent⟩ =>
-          if currentTcb.domain.val = domain ∨
-             ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId then s
-          else s.rewriteObject boundTid.toObjId (KernelObject.tcb { currentTcb with domain := ⟨domain⟩ })
-            (SystemState.rewriteAdmissible_tcb hCurrent _)
-        | none => s) := fun s k hI => by
-    split
-    · rename_i currentTcb hCurrent _
-      split
-      · exact k
-      · exact k.trans (.rewriteObject_tcb _ hI ((SystemState.getTcb?_eq_some_iff _ _ _).mp hCurrent) rfl)
-    · exact k
-  apply hP
-  · split
-    · exact .refl _
-    · dsimp only
-      have k1 := savedRegsKeptExcept.rewriteObject_tcb (W := W)
-        (SystemState.rewriteAdmissible_tcb hBound { boundTcb with priority := ⟨priority⟩ }) hInv
-        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hBound) rfl
-      split
-      · exact k1.trans (.of_runLinks (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _))
-      · exact k1
-  · split
-    · exact hInv
-    · dsimp only
-      have hI1 := SystemState.rewriteObject_preserves_objects_invExt stStored boundTid.toObjId _
-        (SystemState.rewriteAdmissible_tcb hBound { boundTcb with priority := ⟨priority⟩ }) hInv
-      split
-      · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hI1
-      · exact hI1
-
 /-- **The configure writes no saved register**: the replenishment purge and the
 release placement write release fields, the store a context over a context,
-and the bound thread's propagation, key hooks, boost re-walk and resume tail
-priority, domain, run-queue links and boost codes. -/
+the candidacy hook writes the scheduler alone, and the bound thread's resume
+tail writes its run-queue links. -/
 theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period priority deadline domain : Nat}
+    {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {budget period : Nat} {extraRefills badge flags : UInt64}
     (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st =
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   unfold SchedContextOps.schedContextConfigure at h
   split at h
@@ -616,18 +540,7 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
             split at h
             · rename_i boundTcb hBound _
               cases h
-              have k4 := k3.trans (schedContextConfigureBoundPropagate_savedRegsKeptExcept _
-                ⟨vScId.val.toNat⟩ _ _ hBound priority domain hI3)
-              have hI4 := SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
-                _ ⟨vScId.val.toNat⟩ _ _ hBound priority domain hI3
-              have hI5 : (markKeyChangeFor (markCandidacyGainFor
-                  (SchedContextOps.schedContextConfigureBoundPropagate _ ⟨vScId.val.toNat⟩ boundTid boundTcb
-                    hBound priority domain) boundTid (hasSufficientBudget st boundTcb)) boundTid
-                  (effectiveSchedParams st boundTcb)).objects.invExt := by
-                rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]; exact hI4
-              exact ((k4.trans (.of_objects_eq (by rw [markKeyChangeFor_objects,
-                markCandidacyGainFor_objects]))).trans (.of_repropagateFromWaiter _ boundTid
-                (determineTargetCore st boundTid) st.objects.size hI5)).trans
+              exact (k3.trans (.of_objects_eq (markCandidacyGainFor_objects _ _ _))).trans
                 (.of_runLinks (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks _ _ _))
             · cases h; exact k3
       · cases h
@@ -637,8 +550,8 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
 its bound thread to the control's core, then the configure. -/
 theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {core : CoreId} {vScId : SeLe4n.ValidObjId}
-    {budget period priority deadline domain : Nat} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags st =
       .ok ((), st')) : savedRegsKeptExcept W st st' := by
   rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
   · exact schedContextConfigure_savedRegsKeptExcept hInv h
@@ -647,8 +560,8 @@ theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
         (setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hInv _ hM) h)
 
 /-- **The bind writes no saved register**: a context over a context, the bound
-thread's binding codes and priority, its bucket and the key hooks, and the
-release placement. -/
+thread's binding codes, its placement on its home queue, and the release
+placement. -/
 theorem schedContextBind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {vThreadId : SeLe4n.ValidThreadId}
     (hInv : st.objects.invExt)
@@ -667,32 +580,22 @@ theorem schedContextBind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
       · cases h
       split at h
       · cases h
-      split at h
-      · cases h
         have hO : st.objects[vScId.val]? = some (.schedContext sc) :=
           (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
         refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SystemState.releasePlace_agree _ _ _))
-        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
         split
         · refine savedRegsKeptExcept.trans ?_
-            (.of_runLinks (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _))
+            (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
+          refine savedRegsKeptExcept.trans ?_
+            (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
           refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
           · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
               (fun x hx => by cases hx)
           · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-        · split
-          · refine savedRegsKeptExcept.trans ?_
-              (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
-            refine savedRegsKeptExcept.trans ?_
-              (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
-            refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-            · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-                (fun x hx => by cases hx)
-            · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-          · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-            · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-                (fun x hx => by cases hx)
-            · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+        · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+          · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
+              (fun x hx => by cases hx)
+          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
       all_goals cases h
     · cases h
   · cases h
@@ -834,15 +737,12 @@ theorem schedContextUnbindOnCore_savedRegsWrittenFree {e : CoreId} {st st' : Sys
 
 /-! ### The priority arms -/
 
-/-- The priority write: the bound context's band and the thread's priority. -/
+/-- The priority write: the thread's priority alone. -/
 theorem updatePrioritySource_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · exact (savedRegsKeptExcept.updateSchedContext st _ _ hInv).trans (.updateTcb _ tid _
-      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl))
-  · exact .updateTcb st tid _ hInv (fun _ => rfl)
+  exact .updateTcb st tid _ hInv (fun _ => rfl)
 
 /-- The bucket re-key writes run-queue links and the scheduler alone. -/
 theorem migrateRunQueueBucketOnCore_machine (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1541,44 +1441,88 @@ theorem threadSlotSet_scheduler_machine (ec : CoreId) (st : SystemState) (tid : 
   exact ⟨hs.trans (threadSlotCopied_scheduler _ _ _ _ _ _ _),
     hm.trans (threadSlotCopied_machine _ _ _ _ _ _ _)⟩
 
+/-- A buffer-address write changes no thread's saved registers. -/
+theorem savedRegs_updateTcb_ipcBuffer {st : SystemState} (hInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr) (u : SeLe4n.ThreadId) :
+    (st.updateTcb tid (fun t => { t with ipcBuffer := addr })).savedRegs u = st.savedRegs u := by
+  by_cases h : u = tid
+  · subst h
+    unfold SystemState.savedRegs
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+    cases st.getTcb? u <;> rfl
+  · exact savedRegs_updateTcb_ne hInv h
+
+/-- WS-SX SX6.6: **a buffer change writes the saved registers of no thread
+another core holds**: the buffer slot's set writes only a thread its retire
+removes (`threadSlotSet_savedRegs`), the address write none, and neither moves
+the scheduler or the machine. -/
+theorem setIPCBufferOp_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (hInv : st.objects.invExt)
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : savedRegsKeptOffCore e st st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  intro d hd u hu
+  obtain ⟨hs, hm⟩ := threadSlotSet_scheduler_machine ec st vtid.val TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  have hI1 := (threadSlotCopied_tcb hInv hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0).2
+  have hI2 := (retireFinalObject_frame ec (slotRetireTarget st vtid.val.toObjId TCB.ipcBufferSlot)
+    (recorderFor st (slotRetireTarget st vtid.val.toObjId TCB.ipcBufferSlot) vtid.val.toObjId
+      TCB.ipcBufferSlot) _ hI1).1
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform at hu ⊢
+  rw [SystemState.updateTcb_scheduler, SystemState.updateTcb_machine, hs, hm] at hu
+  rw [savedRegs_updateTcb_ipcBuffer (by unfold threadSlotSet; exact hI2)]
+  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.ipcBufferSlot
+      (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+      (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+      Architecture.IpcBufferValidation.ipcBufferSlotRights 0 u with r | r
+  · exact r
+  · exfalso
+    rcases hu with x | x
+    · exact (r d hd).1 x
+    · exact (r d hd).2 x
+
 /-- WS-ZA ZA6.25: **a space change writes the saved registers only of threads no
 core holds after it**: each slot set writes only a thread its retire removes,
 and neither moves the scheduler or the machine. -/
 theorem copyThreadSpaces_savedRegs {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (hInv : st.objects.invExt)
-    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') (u : SeLe4n.ThreadId) :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
+    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') (u : SeLe4n.ThreadId) :
     st'.savedRegs u = st.savedRegs u ∨ offCoreFree e st' u := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hInv h
   obtain ⟨hs1, hm1⟩ := threadSlotSet_scheduler_machine ec st vtid.val TCB.cspaceRootSlot
     cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
   obtain ⟨hs2, hm2⟩ := threadSlotSet_scheduler_machine ec
     (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData)
     vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
-  unfold copyThreadSpacesPerform
-  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
-      vrSrc.slot TCB.vspaceRootRights 0 u with r2 | r2
-  · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.cspaceRootSlot cnSrc.cnode
-        cnSrc.slot TCB.cspaceRootRights cnData u with r1 | r1
-    · exact .inl (r2.trans r1)
-    · right; unfold offCoreFree at r1 ⊢; rw [hs2, hm2, hs1, hm1]; exact r1
-  · right; unfold offCoreFree at r2 ⊢; rw [hs2, hm2]; exact r2
+  obtain ⟨hs3, hm3⟩ := threadSlotSet_scheduler_machine ec
+    (threadSlotSet ec (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights cnData) vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
+      TCB.vspaceRootRights 0)
+    vtid.val TCB.faultHandlerSlot fhSrc.cnode fhSrc.slot TCB.faultHandlerRights 0
+  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI2 hT2 TCB.faultHandlerSlot fhSrc.cnode
+      fhSrc.slot TCB.faultHandlerRights 0 u with r3 | r3
+  · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
+        vrSrc.slot TCB.vspaceRootRights 0 u with r2 | r2
+    · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.cspaceRootSlot cnSrc.cnode
+          cnSrc.slot TCB.cspaceRootRights cnData u with r1 | r1
+      · exact .inl (r3.trans (r2.trans r1))
+      · right; unfold offCoreFree at r1 ⊢; rw [hs3, hm3, hs2, hm2, hs1, hm1]; exact r1
+    · right; unfold offCoreFree at r2 ⊢; rw [hs3, hm3, hs2, hm2]; exact r2
+  · right; unfold offCoreFree at r3 ⊢; rw [hs3, hm3]; exact r3
 
 /-- WS-ZA ZA6.25: **the space change through the zombie delete writes the saved
 registers of no thread another core holds**: the zombie passes are a delete
 chain (`finaliseCensusChain`), and the plain space change writes only threads no
 core holds after it (`copyThreadSpaces_savedRegs`). -/
 theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (B : FinaliseCensusBase st)
-    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (B : FinaliseCensusBase st)
+    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     savedRegsKeptOffCore e st st' := by
   rcases copyThreadSpacesZombie_cases h with h1 | ⟨n, s, hR, rfl | h2⟩
   · intro d hd t ht
@@ -1592,7 +1536,8 @@ theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : Sy
       (fun d _ hQ => hQ.finalise B d) (.start hB)).2.2
   · have Q := hR.chain.closed (finaliseCensusChain e st) (fun _ _ _ hQ hD => hQ.delete B hD)
       (fun d _ hQ => hQ.finalise B d) (.start hB)
-    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData Q.1.2.1.2.1 Q.1.2.1.1 Q.1.2.2 h2).1
+    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData fhSrc Q.1.2.1.2.1
+      Q.1.2.1.1 Q.1.2.2 h2).1
     exact savedRegsKeptOffCore_extend Q.2.2 C (stepCovers_trans Q.1.1 C)
       (fun t => (copyThreadSpaces_savedRegs (e := e) Q.1.2.1.2.1 h2 t).imp_right .inr)
 
@@ -1693,7 +1638,10 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
   all_goals subst hK
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
+  all_goals try unfold serviceEndpointArm at h
   all_goals (repeat' split at h)
+  all_goals first | (cases h; done) | skip
+  all_goals try (dsimp only at h; repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals first
     | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h
@@ -1709,7 +1657,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (irqHandlerAck_savedRegsKept h)
     | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB (irqHandlerClear_ok h).2
     | exact hF (irqControlGet_savedRegsKept hInv
-        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+        (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
     | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
@@ -1730,6 +1678,5 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
         | exact hW (setPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (setMCPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)
-        | exact hX (setIPCBufferOp_savedRegsKeptExcept hInv hS)
-        | exact hX (setThreadFaultHandlerOp_savedRegsKeptExcept hInv hS)
+        | exact setIPCBufferOp_savedRegsKeptOffCore hInv hS
         | exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS)

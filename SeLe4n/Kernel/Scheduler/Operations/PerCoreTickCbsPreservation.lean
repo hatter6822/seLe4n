@@ -123,12 +123,6 @@ theorem processOneReplenishmentOnCore_releaseStateAgree (st : SystemState) (ec :
     SystemState.releaseStateAgree (processOneReplenishmentOnCore st ec scId now) st := by
   have hR : SystemState.releaseStateAgree (refillSchedContext st scId now) st :=
     SystemState.releaseStateAgree.updateSchedContext st scId _ hInv (fun sc => by
-      have hD : ∀ x : SchedContext, (cbsUpdateDeadline x now true).releaseNextCode = x.releaseNextCode ∧
-          (cbsUpdateDeadline x now true).releaseCoreCode = x.releaseCoreCode ∧
-          (cbsUpdateDeadline x now true).releaseAt = x.releaseAt := by
-        intro x; unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl⟩
-      obtain ⟨h1, h2, h3⟩ := hD (sc.releaseReadyHead now)
-      rw [h1, h2, h3]
       obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
         SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)
       exact ⟨h4, h5, h6⟩)

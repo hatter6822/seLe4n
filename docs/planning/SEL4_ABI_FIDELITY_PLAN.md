@@ -86,7 +86,7 @@ facts it rests on are restated here.
   - Today the label carries `errorLabelBase + code` so that a receive's fault tag
     (1–6) or delivered label is never read as an error
     (`ofErrorLabel?_none_of_lt_base`, `faultLabel_lt_errorLabelBase`).
-  - Once SX3, SX4, SX6 and SX8 make F1 true here, a receive never yields an error
+  - Once SX3, SX4, SX7 and SX8 make F1 true here, a receive never yields an error
     frame. seL4's codes 1–10 can then sit in the label with no receive-side collision.
   - One overlap remains, and it is seL4's own: a Call on an endpoint can answer
     `seL4_InvalidCapability` (a capability without the send right,
@@ -95,7 +95,7 @@ facts it rests on are restated here.
   - SX10 makes the switch and proves the receive half as a theorem.
 - **F3. Extra capabilities need an IPC buffer.** `lookupExtraCaps` with no
   buffer finds none (`tcb.c:392`). So the exerciser's boot-time invocations
-  must be gone (SX5) before invocations take extra capabilities (SX7).
+  must be gone (SX5) before invocations take extra capabilities (SX6).
 - **F4. The heap gate holds every non-carve kernel entry at 0 cells**
   (WS-UC, `scripts/qemu_exerciser_lib.sh`).
   - A nullary `KernelError` is a boxed scalar.
@@ -204,7 +204,7 @@ The label is unchanged until SX10.
 |---|---|---|---|
 | SX1.1 | `LookupFault` (`invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft bitsFound`, `guardMismatch bitsLeft guardFound bitsFound`, seL4's `lookup_fault`). The D2 payload fields; `depthMismatch` retires into `failedLookup`. Every site sets its number: `invalidCapability` is `0` for the invoked capability and `i + 1` for argument capability `i`, and every argument capability (a receive's or reply-receive's reply capability included) is resolved through one boundary that applies it (`syscallLookupArgumentCap`, and `KernelError.argumentCapRefusal` in the compiled forms). The CNode-op refusals take seL4's: an empty source is `failedLookup true (missingCapability srcDepth)` (`cnode.c:111`). | The discriminant round trip over codes (`toDiscriminant`, `ofDiscriminant?`), the payload ignored; every `cases e <;> decide` restated per code. | `main_trace_smoke.expected` (error `Repr`); Tier 3 `KernelError` anchors; the `rust/sele4n-types/src/error.rs` mirror; `test_rust_conformance.sh` |
 | SX1.2 | `errorFrame` carries the payload in seL4's MR order (x2–x5), with MR4 written to the caller's buffer `msg[4]` (D3) and the length as `setMR` returns it. Compiled refusal arms pass the payload unboxed (D2b). `syscallAbiVersion` 4 → 5. | `errorFrame_payload_roundtrip`. The error path's frame theorem restated: it changes only the caller's `msg[4]`, on a 5-word payload with a buffer. `errorFrame_x1_decodes` gains the length. | `syscall_return_abi.expected`; `abi_layout.expected` (version, payload offsets); `rust/sele4n-abi` frame decode |
-| SX1.3 | **LANDED at `v0.37.21`.** A user word at or above `2^63` stays a word on the entry path. `RegValue` is a `UInt64` (`RegValue.word`, `.val` its `toNat`); the syscall number, the message info and the capability address are decoded from the word (`@[csimp]` `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and the router's `registerRoutedSyscallOf_eq_word`; `decodeCapPtr` reads the word as the address, and the `invalidCapPtr` refusal of a value past `2^64` it can no longer meet is deleted, its code 35 retired beside 37, no other code renumbered). The routed decodes test a range on the word before making a `Nat` (`wordLtNat`): the VSpace map and unmap's ASID and address and a map's permissions (`pagePermissionsOfWord?`), and an affinity (`SetAffinityArgs.affinityRaw : UInt64`, `decodeAffinity` on the word). A mint's badge is tested on its word (`badge.word = 0`). The fault and overflow words are read as words (`pairAddrIs`, `syncedWordFromW`, `@[csimp] syncedWordFrom_eq_w`). A configure refuses a budget or period above seL4-MCS's `MAX_PERIOD` (`UINT64_MAX / 8` ticks) with `rangeError`, as `decodeSchedContextConfigureArgsChecked` and `validateSchedContextParams` now do, and a deadline word above it with `invalidArgument 4`, so no stored budget, period or deadline reaches `2^63`. The raw-slot decodes that SX7.2, SX7.5 and SX9.1 re-decode, and the model-only calls SX6.1 re-encodes, keep their conversion; they are a registered row. | The register round trips restated on the word (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`); `setAffinityArgs` round trip without its word hypothesis; `decodeSchedContextConfigureArgsChecked_invariants` and `validateSchedContextParams_implies_wellFormed` gain the bound; `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and reply-receive decode theorems on `replyAddr.word`. | QEMU: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`, `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`, `mint-wide-badged-notification` (now measured), `configure-wide-budget-and-period`, `configure-wide-deadline`; `configure-zero-budget-max-period` and `configure-budget-over-wide-period` now expect the `MAX_PERIOD` refusal |
+| SX1.3 | **LANDED at `v0.37.21`.** A user word at or above `2^63` stays a word on the entry path. `RegValue` is a `UInt64` (`RegValue.word`, `.val` its `toNat`); the syscall number, the message info and the capability address are decoded from the word (`@[csimp]` `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and the router's `registerRoutedSyscallOf_eq_word`; `decodeCapPtr` reads the word as the address, and the `invalidCapPtr` refusal of a value past `2^64` it can no longer meet is deleted, its code 35 retired beside 37, no other code renumbered). The routed decodes test a range on the word before making a `Nat` (`wordLtNat`): the VSpace map and unmap's ASID and address and a map's permissions (`pagePermissionsOfWord?`), and an affinity (`SetAffinityArgs.affinityRaw : UInt64`, `decodeAffinity` on the word). A mint's badge is tested on its word (`badge.word = 0`). The fault and overflow words are read as words (`pairAddrIs`, `syncedWordFromW`, `@[csimp] syncedWordFrom_eq_w`). A configure refuses a budget or period above seL4-MCS's `MAX_PERIOD` (`UINT64_MAX / 8` ticks) with `rangeError`, as `decodeSchedContextConfigureArgsChecked` and `validateSchedContextParams` now do, and a deadline word above it with `invalidArgument 4`, so no stored budget, period or deadline reaches `2^63`. The raw-slot decodes that SX6.3, SX6.6 and SX9.1 re-decode, and the model-only calls SX7.1 re-encodes, keep their conversion; they are a registered row. | The register round trips restated on the word (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`); `setAffinityArgs` round trip without its word hypothesis; `decodeSchedContextConfigureArgsChecked_invariants` and `validateSchedContextParams_implies_wellFormed` gain the bound; `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and reply-receive decode theorems on `replyAddr.word`. | QEMU: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`, `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`, `mint-wide-badged-notification` (now measured), `configure-wide-budget-and-period`, `configure-wide-deadline`; `configure-zero-budget-max-period` and `configure-budget-over-wide-period` now expect the `MAX_PERIOD` refusal |
 
 **Acceptance (QEMU):**
 - `range-error-payload`: Copy with depth 65 returns MR0 = 1, MR1 = 64.
@@ -242,7 +242,7 @@ heap gate also runs the five second-capability guard-mismatch refusals
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX3.1 | **LANDED at `v0.37.24`.** The wrong-kind and missing-right faults were already the lookup's (`receiveGateRefuses`, scenarios `receive-wrong-type-cap-fault`, `wait-wrong-type-cap-fault`, `reply-recv-wrong-type-cap-fault`, `receive-no-right-cap-fault`); a notification bound to another thread now joins them (`receiveBoundRefuses`, `notificationBoundElsewhere`), checked in the lookup gate and again in the wait arm after the flow check. Recv and Wait answer `CapFault(cptr, inRecv)` with `missingCapability 0` for each of: a capability of the wrong kind, a missing receive right, or a notification bound to another thread (`syscall.c:470`–`:513`). | `capFaultReceivePhase?` partition restated. Every receive arm returns no error frame but the two that SX4 and SX8 retire. | `fault_handling_4core.expected`; `main_trace_smoke.expected` |
-| SX3.2 | **LANDED at `v0.37.24`.** `lookupReplyCap` is seL4-MCS's `lookupReply`: a failed lookup is its own lookup fault, a slot that holds no usable reply capability `missingCapability 0`, and the receive and reply-receive refuse with `failedLookup` carrying it. `syscallCapFaultOf` raises it as `CapFault(replyCPtr, true)` when the reply capability's lookup, re-run on the refusal's state, fails with that fault (`receiveReplyFaults`); the compiled entry re-runs the same lookup in place (`lookupReplyCapK`, `replyLookupRefusalW`) and reports the fault under report kind 3. The argument-number refusals of the reply capability are deleted. A reply object that is not free (SX4) and a reply-receive with no caller (SX6.2) keep their error frames until their rows. A failed reply-capability lookup on a receive faults, as `lookupReply` does (`syscall.c:387`). This closes the note at `SeLe4n/Platform/FFI.lean:3073`. | `syscallCapFaultOf` covers the reply lookup. | the same |
+| SX3.2 | **LANDED at `v0.37.24`.** `lookupReplyCap` is seL4-MCS's `lookupReply`: a failed lookup is its own lookup fault, a slot that holds no usable reply capability `missingCapability 0`, and the receive and reply-receive refuse with `failedLookup` carrying it. `syscallCapFaultOf` raises it as `CapFault(replyCPtr, true)` when the reply capability's lookup, re-run on the refusal's state, fails with that fault (`receiveReplyFaults`); the compiled entry re-runs the same lookup in place (`lookupReplyCapK`, `replyLookupRefusalW`) and reports the fault under report kind 3. The argument-number refusals of the reply capability are deleted. A reply object that is not free (SX4) and a reply-receive with no caller (SX7.2) keep their error frames until their rows. A failed reply-capability lookup on a receive faults, as `lookupReply` does (`syscall.c:387`). This closes the note at `SeLe4n/Platform/FFI.lean:3073`. | `syscallCapFaultOf` covers the reply lookup. | the same |
 
 **Acceptance:** `recv-wrong-kind-faults`, `recv-no-read-right-faults`,
 `reply-recv-bad-reply-faults`. Landed as `receive-wrong-type-cap-fault` and
@@ -277,42 +277,31 @@ sender; the restarted send faults), `suspend-resume-restarts`.
 - `root-ipc-buffer-cap`: an Unmap and remap round trip.
 - The census re-pinned on both platforms' boot.
 
-### SX6 — seL4's syscall set and invocation labels
+### SX6 — Capability arguments as extra capabilities (D6–D12)
 
-| Sub-task | Change | Proofs | Gates and fixtures |
-|---|---|---|---|
-| SX6.1 | **Labels:** Call or Send on a kernel-object capability selects its operation by the message label, numbered as seL4's generated `invocation_label` for aarch64 MCS. Model-only calls (service, audit, declassify, `mintReplyCap`) take labels after seL4's last. **Error delivery:** only Call receives an error; Send discards it (`syscall.c:371`). **Retired:** the per-operation syscall numbers. | The decode round trips; seam coverage per (capability type, label); the lock footprints per label; the dispatch non-interference cases; `#assert_decoder_arities`. | `abi_layout.expected` (the label table); `rust/sele4n-abi` `SyscallNumber` and labels, and the `sele4n-sys` wrappers; `check_live_arm_per_core_routing.py`; `main_trace_smoke.expected` |
-| SX6.2 | The IPC syscalls become seL4-MCS's 11 (Call −1 … Yield −11, `syscall.xml`, order kept). Signal is Send on a notification; a reply is Send on a reply capability. `.reply`, `.notificationSignal` and `.notificationWait` retire, and NBSend, NBRecv, NBWait, NBSendRecv and NBSendWait are added. A failed NBSend lookup is silent; NBRecv does not block. A ReplyRecv with no caller to answer replies to no one and still receives, and Recv on a notification and Wait on an endpoint follow `handleRecv`'s capability-type switch (left by SX3.2). SX6 also settles the invoked capability's two failures as seL4's `handleInvocation` (`syscall.c`) does: a failed lookup of the invoked capability (`lookupCapAndSlot`) is a capability fault on the blocking Send and Call and is dropped on NBSend, and an empty slot, which the lookup answers with a null capability, is `decodeInvocation`'s `seL4_InvalidCapability` error, delivered only to Call (`syscall.c`, `if (isCall) replyFromKernel_error`). | `registerRoutedSyscall` and `syscallReadsOverflow` restated; the `capFaultReceivePhase?` partition; the IPC bundle for each NB arm. | the same; `syscall_return_abi.expected`; `smp_ipc_4core.expected` |
-| SX6.3 | Recv, ReplyRecv and NBSendRecv read the reply capability from x6 (`replyRegister`). | The routed-decode theorems for the receive arms. | `abi_layout.expected` (`register reply x6`) |
-
-**Acceptance:**
-- The whole exerciser suite re-encoded, at its current heap pins.
-- `nb-send-bad-cap-silent`.
-- `nb-recv-empty-returns`.
-- `send-invocation-error-discarded`.
-
-### SX7 — Capability arguments as extra capabilities (D6–D12)
-
-`lookupExtraCaps` runs at decode (`tcb.c:386`).
+`lookupExtraCaps` (`tcb.c:386`) runs in the dispatch prologue, as seL4's `handleInvocation` runs it: after the invoked capability's `lookupCapAndSlot` and before `decodeInvocation` (SX6.1).
 - A failed lookup is `CapFault(that cptr, send phase)`.
+- The receive-phase syscalls look none up; in SysReplyRecv a failed lookup skips the reply half with no fault.
 - A missing extra capability is TruncatedMessage.
 - A capability of the wrong kind is `invalidCapability (i + 1)`.
 - IPC transfers still look their capabilities up at the rendezvous (`thread.c:213`).
 
 Every sub-task re-derives `maxLockSetSize` for the lookup paths it adds.
-SX7 routes and measures the 22 invocation arms that still fall back to `dispatchInvocationBy` on refusal, so each refusal reads 0.
-SX7 also renumbers argument capabilities and words to seL4's operand layout, and owns the last open numbering items:
+SX6 routes and measures the 22 invocation arms that still fall back to `dispatchInvocationBy` on refusal, so each refusal reads 0.
+SX6 also renumbers argument capabilities and words to seL4's operand layout, and owns the last open numbering items:
 - SetSpace's CSpace root becomes argument 2 and its VSpace root argument 3, because the MCS fault endpoint is argument 1.
 - The Untyped_Retype and IRQControl_Get destination lookups become `FailedLookup` with their depth operand.
 - Page_Map's invoked and argument capabilities follow seL4: the frame capability is invoked, and the VSpace is extra capability 0.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX7.1 | The lookup itself. CNode Copy, Mint and Move: `srcRoot` is extra capability 0, and the words follow seL4 (D12); `CNodeOpWord` retires. | The decode round trips and `_error_iff`; the `capFaultReceivePhase?` send-phase case; the CNode arms' preservation. | `abi_layout.expected` (`cnodeCopyBit` block out, caps base in); `sele4n-abi` `args/cspace.rs`, `encode.rs` |
-| SX7.2 | Untyped_Retype (D9), IRQControl_Get (D10), PageTable_Map, Page_Map on the frame capability (D6). | The retype loop's carve theorems; the map arms' preservation; the mapping-record stage. | `args/lifecycle.rs`, `args/vspace.rs` |
-| SX7.3 | SetPriority and SetMCPriority with an authority TCB (D11); BindNotification; SchedContext_Bind; SchedControl_ConfigureFlags; IRQHandler_SetNotification. | The MCP authority theorems restated over the authority capability. | `args/tcb.rs`, `args/sched_context.rs` |
-| SX7.4 | SetSpace in the MCS shape: the fault endpoint, CSpace root and VSpace root as extra capabilities 0–2. A TCB fault-handler slot (D8). `tcbSetFaultHandler` retires. Fault delivery reads the slot, and answers `missingCapability 0` when it holds no endpoint (`faulthandler.c:99`). A CSpace or VSpace root argument whose slot is empty or holds no object capability gets seL4's answer for it, where SX1 still answers `invalidCapability` through `resolveCallerCapSlot`. | The fault-delivery family over the slot; the slot invariants; `cnodeCapGeometry` kept by SetSpace. | `fault_handling_4core.expected` |
-| SX7.5 | SetIPCBuffer: the frame capability is derived into SX5.2's slot (D7). Every buffer read goes through `lookupIPCBuffer`. `ipcBufferWordPAddr?` and `tlbFillIpcBufferOnCore` retire. | Every theorem citing the retired read, restated over the frame capability. The buffer-in-one-frame fact taken from the capability. | Tier 3 IPC-buffer anchors; `syscall_return_abi.expected` |
+| SX6.1 | **LANDED at `v0.37.32`.** seL4's `lookupExtraCaps` in the dispatch prologue (`handleInvocation`): for every invocation, after the invoked capability resolves and before decode and the type and right checks, the message's extra capabilities are looked up from the caller's IPC buffer `caps_or_badges` words (`lookupExtraCaps`, its allocation-free entry form `extraCapsLookupK`). A failed lookup raises `CapFault(that cptr, false)`, delivered through `deliverSyscallLookupFault` at the failing address. The receive-phase syscalls skip it (`handleRecv`). In SysReplyRecv a failed lookup skips the reply half with no fault, and the receive still runs (`handleInvocation` with `isBlocking = false` on the reply capability). An empty invoked slot is no lookup failure (`lookupCapAndSlot` hands the null capability on): the extra capabilities are looked up first, then `decodeInvocation` refuses it with `seL4_InvalidCapability`, an error and no fault, except in the receive phase (`handleRecv`); this is the empty-slot half of SX7.2's lookup rule, brought forward because the prologue fixes its order. A declared lock footprint covers every lookup the prologue makes, because the gate is declared only for a single-level root. | `syscallInvokeTyped_ok` (and `_extraCaps`); `dispatchSyscallChecked_extraCaps_before_null`; `abiEntryGate_lookupSlot_root`; `syscallCapFaultAt` and `syscallCapFaultOfW` at the failing address; `syscallEntryCheckedK_outcome_eq`; `extraCapsLookupK_eq`. | QEMU allocation gate: every non-carve reading 0 |
+| SX6.2 | **LANDED at `v0.37.32`.** CNode Copy, Mint and Move: `srcRoot` is extra capability 0, and the words follow seL4 (D12); `CNodeOpWord` retires. | The decode round trips and `_error_iff`; the `capFaultReceivePhase?` send-phase case; the CNode arms' preservation. | `abi_layout.expected` (`cnodeCopyBit` block out, caps base in); `sele4n-abi` `args/cspace.rs`, `encode.rs` |
+| SX6.3 | **LANDED at `v0.37.32`.** Untyped_Retype (D9) — a window of up to `CONFIG_RETYPE_FAN_OUT_LIMIT` objects, configured at 26 and derived from the lock ceiling (`retypeFanOutLimit := maxLockSetSize - retypeBaseLocks`), every refusal read before the first carve (`untypedRetypeWindow_admitsEveryCarve`), IRQControl_Get (D10), PageTable_Map, Page_Map on the frame capability (D6). The retype's object id, IRQControl_Get's line and PageTable_Map's address are read on the word (`windowWordOf`, `wordLtNat` before any `Nat`); a line past the board's last is seL4's `RangeError(0, maxIRQ)` and a table address past the user top seL4's `InvalidArgument 0`. | The retype loop's carve theorems; the map arms' preservation; the mapping-record stage; the retype, IRQControl_Get and PageTable_Map round trips below `windowWordBound`. | `args/lifecycle.rs`, `args/vspace.rs`; QEMU: `untyped-retype-wide-child-id`, `irq-control-get-wide-line`, `page-table-map-wide-vaddr` |
+| SX6.4 | **LANDED at `v0.37.32`.** SetPriority and SetMCPriority with an authority TCB (D11); BindNotification; SchedContext_Bind; SchedControl_ConfigureFlags; IRQHandler_SetNotification. | The MCP authority theorems restated over the authority capability. | `args/tcb.rs`, `args/sched_context.rs` |
+| SX6.5 | **LANDED at `v0.37.32`.** SetSpace in the MCS shape: the fault endpoint, CSpace root and VSpace root as extra capabilities 0–2. A TCB fault-handler slot (D8). `tcbSetFaultHandler` retires. Fault delivery reads the slot, and answers `missingCapability 0` when it holds no endpoint (`faulthandler.c:99`). A CSpace or VSpace root argument whose slot is empty or holds no object capability gets seL4's answer for it, where SX1 still answers `invalidCapability` through `resolveCallerCapSlot`. | The fault-delivery family over the slot; the slot invariants; `cnodeCapGeometry` kept by SetSpace. | `fault_handling_4core.expected` |
+| SX6.6 | **LANDED at `v0.37.32`.** SetIPCBuffer: the frame capability is derived into SX5.2's slot (D7). Every buffer read goes through `lookupIPCBuffer`. `ipcBufferWordPAddr?` and `tlbFillIpcBufferOnCore` retire. The buffer address is read on the word (`ipcBufferAddrOfWord`), keeping its zero-ness and page offset, the only parts the kernel reads. | Every theorem citing the retired read, restated over the frame capability. The buffer-in-one-frame fact taken from the capability. `ipcBufferAddrOfWord_eq_zero_iff`, `ipcBufferAddrOfWord_mod_page`. | Tier 3 IPC-buffer anchors; `syscall_return_abi.expected`; QEMU: `tcb-set-ipc-buffer-wide-unaligned` |
+| SX6.7 | **LANDED at `v0.37.32`.** The model-only calls get invocation targets of their own, so SX7's labels never select an operation on an endpoint or a notification (seL4: Send/Call on an endpoint is IPC and Send on a notification signals, whatever the label). `declassify` and `declassifySignal` are invoked on the `.auditTrail` capability, with the object or the notification as extra capability 0. A service-registry capability type is the target of `serviceRegister`, `serviceRevoke` and `serviceQuery`, with the endpoint as extra capability 0. Depends on SX6.2. | The service and declassification arms' preservation and non-interference restated over the new target and the extra capability. | The service and declassify QEMU scenarios re-encoded at their pins |
 
 **Acceptance:**
 - `extra-cap-lookup-fault`.
@@ -322,6 +311,21 @@ SX7 also renumbers argument capabilities and words to seL4's operand layout, and
 - `set-priority-authority`.
 - `fault-handler-not-endpoint`.
 - `set-ipc-buffer-frame-cap`.
+- the service and declassify scenarios on their new targets.
+
+### SX7 — seL4's syscall set and invocation labels
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX7.1 | **Labels:** Call or Send on a kernel-object capability selects its operation by the message label, numbered as seL4's generated `invocation_label` for aarch64 MCS. Model-only calls (service, audit, declassify, `mintReplyCap`) take labels after seL4's last. **Error delivery:** only Call receives an error; Send discards it (`syscall.c:371`). **Retired:** the per-operation syscall numbers. | The decode round trips; seam coverage per (capability type, label); the lock footprints per label; the dispatch non-interference cases; `#assert_decoder_arities`. | `abi_layout.expected` (the label table); `rust/sele4n-abi` `SyscallNumber` and labels, and the `sele4n-sys` wrappers; `check_live_arm_per_core_routing.py`; `main_trace_smoke.expected` |
+| SX7.2 | The IPC syscalls become seL4-MCS's 11 (Call −1 … Yield −11, `syscall.xml`, order kept). Signal is Send on a notification; a reply is Send on a reply capability. `.reply`, `.notificationSignal` and `.notificationWait` retire, and NBSend, NBRecv, NBWait, NBSendRecv and NBSendWait are added. A failed NBSend lookup is silent; NBRecv does not block. A ReplyRecv with no caller to answer replies to no one and still receives, and Recv on a notification and Wait on an endpoint follow `handleRecv`'s capability-type switch (left by SX3.2). SX7 also settles the invoked capability's two failures as seL4's `handleInvocation` (`syscall.c`) does: a failed lookup of the invoked capability (`lookupCapAndSlot`) is a capability fault on the blocking Send and Call and is dropped on NBSend, and an empty slot, which the lookup answers with a null capability, is `decodeInvocation`'s `seL4_InvalidCapability` error, delivered only to Call (`syscall.c`, `if (isCall) replyFromKernel_error`). The error itself landed in SX6.1; this row keeps its delivery only to Call. | `registerRoutedSyscall` and `syscallReadsOverflow` restated; the `capFaultReceivePhase?` partition; the IPC bundle for each NB arm. | the same; `syscall_return_abi.expected`; `smp_ipc_4core.expected` |
+| SX7.3 | Recv, ReplyRecv and NBSendRecv read the reply capability from x6 (`replyRegister`). | The routed-decode theorems for the receive arms. | `abi_layout.expected` (`register reply x6`) |
+
+**Acceptance:**
+- The whole exerciser suite re-encoded, at its current heap pins.
+- `nb-send-bad-cap-silent`.
+- `nb-recv-empty-returns`.
+- `send-invocation-error-discarded`.
 
 ### SX8 — Timeout faults and the MCS TCB calls
 
@@ -351,7 +355,7 @@ SX7 also renumbers argument capabilities and words to seL4's operand layout, and
 
 ### SX10 — seL4's error codes in the label (D1)
 
-This row needs F1 to hold. SX3, SX4, SX6 and SX8 made it hold.
+This row needs F1 to hold. SX3, SX4, SX7 and SX8 made it hold.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
@@ -364,7 +368,8 @@ handler's receive reads fault tags only.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX11.1 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX11, it is the very next PR, landed before any next-row code. | none | `check_claim_evidence_citations.py` |
+| SX11.1 | WS-CV's CV1.2, folded into WS-SX (maintainer's decision; WS-CV closes alongside WS-SX at `v0.38.0`): the information-flow surface (`ObservableState.machineRegs`, the per-core fragments, `lowEquivalentSliceOnCoreCheckWithRegs`) moves to lawful equality, and `RegisterFile.beq_iff_eq'` / `beq_self` / `beq_symm` / `beq_trans` (`SeLe4n/Machine.lean:528-539`) retire with their last consumer. At `origin/main` that is 51 citing sites in 13 files; the build enumerates them when the lemmas are deleted. The spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations change in the same row. **Zero allocation**: proofs and the test-side `…CheckWithRegs` comparison only, no compiled entry. | The `machineRegs` unwinding relations re-proved on lawful equality; every `beq_*` citing site rewritten to `beq_iff_eq` / decidable equality before the lemmas are deleted. | Tier 3 anchor `machineRegs_beq_self` retires |
+| SX11.2 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX11, it is the very next PR, landed before any next-row code. **WS-CV's closure (its CV5.2), in the same row** (consumes SX11.1): the `v0.36.47` register-file debt row is deleted from `docs/REGISTERED_DEBT.md`; the WS-CV section of `docs/agent_guide/WORKSTREAM_CONTEXT.md` moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; `CONTEXT_BY_VALUE_PLAN.md` moves to `docs/dev_history/planning/`, every live link to it (a search for `CONTEXT_BY_VALUE_PLAN` outside `docs/dev_history/`) repointed to cite it by workstream ID; and `HIERARCHICAL_CBS_PLAN.md` is re-checked against it, which the plan refresh above covers. | none | `check_claim_evidence_citations.py` |
 
 ## 5. Estimate
 
@@ -375,22 +380,22 @@ handler's receive reads fault tags only.
 | SX3 | 1 |
 | SX4 | 2 |
 | SX5 | 3–4 |
-| SX6 | 3–4 |
-| SX7 | 5–6 |
+| SX6 | 5–6 |
+| SX7 | 3–4 |
 | SX8 | 2–3 |
 | SX9 | 2 |
 | SX10 | 1 |
-| SX11 | 1 |
+| SX11 | 2 |
 
 About 25–30 sessions in all. The largest risks:
 - the boot base case (SX5.3);
-- the IPC-buffer read path (SX7.5);
+- the IPC-buffer read path (SX6.6);
 - keeping refusals at 0 heap cells (D2b).
 
 ## 6. Asides recorded at planning
 
 - `tcbSetAffinity` has no seL4-MCS counterpart: a thread's core follows its
-  scheduling context's `SchedControl` core. SX6.1 gives it a model-only label.
+  scheduling context's `SchedControl` core. SX7.1 gives it a model-only label.
   Retiring it is the owner's call, and it is not registered as debt.
 - The `partialResolution` row of `docs/REGISTERED_DEBT.md` table C is
   unaffected. IPC keeps seL4's drop-on-failure, and invocations fault, as seL4

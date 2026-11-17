@@ -90,16 +90,7 @@ theorem getSchedContext?_frame
 theorem effectiveSchedParams_frame
     (st st' : SystemState) (tcb : TCB)
     (hObjects : st'.objects = st.objects) :
-    effectiveSchedParams st' tcb = effectiveSchedParams st tcb := by
-  unfold effectiveSchedParams
-  -- The two sides differ only at the `st'.getSchedContext?` / `st.getSchedContext?`
-  -- read; for unbound the result is fully determined by tcb fields.
-  split
-  · rfl  -- unbound: no SC lookup
-  · rename_i scId _
-    rw [getSchedContext?_frame st st' scId hObjects]
-  · rename_i scId _ _
-    rw [getSchedContext?_frame st st' scId hObjects]
+    effectiveSchedParams st' tcb = effectiveSchedParams st tcb := rfl
 
 /-- Helper for `computeMaxWaiterPriority_frame`: a pointwise-equal closure
     produces equal folds.  Used after the waiter list is shown equal.
@@ -365,14 +356,7 @@ theorem blockingServer_of_objectsAgreeOffRunLinks
 theorem effectiveSchedParams_frame_per_field
     (st st' : SystemState) (tcb : TCB)
     (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId) :
-    effectiveSchedParams st' tcb = effectiveSchedParams st tcb := by
-  unfold effectiveSchedParams
-  split
-  · rfl
-  · rename_i scId _
-    rw [hSc scId]
-  · rename_i scId _ _
-    rw [hSc scId]
+    effectiveSchedParams st' tcb = effectiveSchedParams st tcb := rfl
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase P1: Per-field frame for waitersOf

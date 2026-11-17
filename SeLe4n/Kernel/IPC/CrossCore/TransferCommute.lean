@@ -77,10 +77,10 @@ theorem getUntyped?_mapTcbInPlace_blind (Z : SystemState) (k : SeLe4n.ObjId) :
   objects_read_mapTcbInPlace (G := G) x Z k (fun o => match o with
     | some (.untyped u) => some u | _ => none) (fun _ => rfl)
 
-theorem getVSpaceRoot?_mapTcbInPlace_blind (Z : SystemState) (k : SeLe4n.ObjId) :
-    (Z.mapTcbInPlace x G).getVSpaceRoot? k = Z.getVSpaceRoot? k :=
+theorem getFrame?_mapTcbInPlace_blind (Z : SystemState) (k : SeLe4n.ObjId) :
+    (Z.mapTcbInPlace x G).getFrame? k = Z.getFrame? k :=
   objects_read_mapTcbInPlace (G := G) x Z k (fun o => match o with
-    | some (.vspaceRoot r) => some r | _ => none) (fun _ => rfl)
+    | some (.frame f) => some f | _ => none) (fun _ => rfl)
 
 include hG in
 theorem slotLinkNodeWord_mapTcbInPlace_blind (Z : SystemState) (o : SeLe4n.ObjId)
@@ -424,14 +424,13 @@ theorem ipcTransferSingleCap_noResizeDue (cap : Capability) (src : SlotRef) (dst
   exact untypedSourceSetFull_noResizeDue _ _ _
     (cdtAddChild_noResizeDue _ _ _ _ (cspaceInsertSlot_noResizeDue _ _ _ _ hNo hIns))
 
-/-- The buffer word resolver reads only VSpace roots and the machine. -/
-theorem ipcBufferWordPAddr?_mapTcbInPlace (Z : SystemState) (tcb : TCB) (idx : Nat)
-    (w : Bool) :
-    Architecture.IpcBufferRead.ipcBufferWordPAddr? (Z.mapTcbInPlace x G) tcb idx w =
-      Architecture.IpcBufferRead.ipcBufferWordPAddr? Z tcb idx w := by
-  unfold Architecture.IpcBufferRead.ipcBufferWordPAddr?
-  rw [getVSpaceRoot?_mapTcbInPlace_blind (G := G) x]
-  rfl
+/-- The buffer lookup reads only frames, and the word resolver only the
+machine. -/
+theorem lookupIPCBuffer_mapTcbInPlace (Z : SystemState) (tcb : TCB) (w : Bool) :
+    Architecture.IpcBufferRead.lookupIPCBuffer w (Z.mapTcbInPlace x G) tcb =
+      Architecture.IpcBufferRead.lookupIPCBuffer w Z tcb :=
+  Architecture.IpcBufferRead.bufferFrameBase?_congr
+    (getFrame?_mapTcbInPlace_blind (G := G) x Z) _ _ _
 
 /-- A badge write commutes with the thread write. -/
 theorem recordUnwrappedBadge_mapTcbInPlace (Z : SystemState) (rtcb : TCB) (i : Nat)
@@ -439,7 +438,7 @@ theorem recordUnwrappedBadge_mapTcbInPlace (Z : SystemState) (rtcb : TCB) (i : N
     recordUnwrappedBadge (Z.mapTcbInPlace x G) rtcb i b =
       (recordUnwrappedBadge Z rtcb i b).mapTcbInPlace x G := by
   unfold recordUnwrappedBadge
-  rw [ipcBufferWordPAddr?_mapTcbInPlace (G := G) x]
+  rw [lookupIPCBuffer_mapTcbInPlace (G := G) x]
   split <;> rfl
 
 theorem recordUnwrappedBadge_noResizeDue (Z : SystemState) (rtcb : TCB) (i : Nat)

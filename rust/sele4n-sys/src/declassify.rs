@@ -4,12 +4,18 @@
 //! Lean: `SeLe4n/Kernel/InformationFlow/Declassification.lean` —
 //! `declassifyObjectFromCore`, reached through `API.dispatchWithCapChecked`'s
 //! `.declassify` arm.  Added in WS-SM SM8.C.9.
+//!
+//! Both calls are invocations of the **audit-trail capability** (WS-SX SX6.7),
+//! so no message label selects an operation on an endpoint or a notification:
+//! the object released into is the message's extra capability 0
+//! (`caps_or_badges[0]` of the caller's IPC buffer), as seL4 passes an
+//! argument capability.
 
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Authorize and record a declassification into the object named by
-/// `target_cap`.
+/// `target_cap`, invoked on `audit_cap`.
 ///
 /// # What it does
 ///
@@ -28,16 +34,23 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 ///
 /// # Arguments
 ///
-/// Only the capability.  Neither security domain is a parameter: the source is
-/// read off the subject the executing core is running and the destination off
-/// the target object, so a caller cannot record a downgrade between two domains
-/// it has nothing to do with.  Requires the **write** right (the flow direction
-/// is subject → object).
+/// The audit-trail capability (invoked, with its **write** right: recording a
+/// downgrade appends to the trail) and the target's capability, written to
+/// `buf.caps_or_badges[0]` as extra capability 0.  Neither security domain is
+/// a parameter: the source is read off the subject the executing core is
+/// running and the destination off the target object, so a caller cannot
+/// record a downgrade between two domains it has nothing to do with.  The
+/// target capability needs the **write** right too (the flow direction is
+/// subject → object).
 ///
 /// # Errors
 ///
-/// * `IllegalAuthority` / `InvalidCapability` — the capability does not carry
-///   `write`, or does not name an object.
+/// * `InvalidCapability` (number 0) — `audit_cap` is not the audit-trail
+///   capability.
+/// * `IllegalAuthority` — `audit_cap` or `target_cap` does not carry `write`.
+/// * `TruncatedMessage` — no extra capability was named.
+/// * `InvalidCapability` (number 1) — `target_cap` names an empty slot or no
+///   object.
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject to attribute the downgrade to.
 /// * `ObjectNotFound` — the capability names an object that is not in the
@@ -50,10 +63,15 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// * `AuditLogCapacityExceeded` — the audit trail is full.  The downgrade was
 ///   **refused rather than performed unrecorded**; drain the trail.
 #[inline]
-pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
+pub fn declassify(
+    audit_cap: CPtr,
+    target_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = target_cap.raw();
     invoke_syscall(SyscallRequest {
-        cap_addr: target_cap,
-        msg_info: MessageInfo::new_const(0, 0, 0),
+        cap_addr: audit_cap,
+        msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::Declassify,
     })
@@ -92,8 +110,10 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///
 /// # Arguments
 ///
-/// The notification capability, and nothing else.  The badge is the
-/// capability's own (Lean: `Capability.signalBadge`,
+/// The audit-trail capability (invoked, with its **write** right) and the
+/// notification capability, written to `buf.caps_or_badges[0]` as extra
+/// capability 0.  The badge is the notification capability's own (Lean:
+/// `Capability.signalBadge`,
 /// `dispatchWithCapChecked_declassifySignal_badge_of_cap`): what crosses the
 /// label boundary is the identity the capability was minted with, so a
 /// declassifying signal can no more forge another sender's badge bits than an
@@ -105,8 +125,13 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///
 /// # Errors
 ///
-/// * `IllegalAuthority` / `InvalidCapability` — the capability does not carry
-///   `write`, or does not name an object.
+/// * `InvalidCapability` (number 0) — `audit_cap` is not the audit-trail
+///   capability.
+/// * `IllegalAuthority` — `audit_cap` or `notification_cap` does not carry
+///   `write`.
+/// * `TruncatedMessage` — no extra capability was named.
+/// * `InvalidCapability` (number 1) — `notification_cap` names an empty slot
+///   or anything but a notification.
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject to attribute the downgrade to.
 /// * `DeclassificationDenied` — the **first** hop (signaller → notification)
@@ -121,12 +146,17 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///   record is refused rather than performed unaudited (Lean:
 ///   `declassifiedSignal_never_unaudited`).
 #[inline]
-pub fn declassify_signal(notification_cap: CPtr) -> KernelResult<SyscallResponse> {
+pub fn declassify_signal(
+    audit_cap: CPtr,
+    notification_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = notification_cap.raw();
     invoke_syscall(SyscallRequest {
-        cap_addr: notification_cap,
-        // The ordinary signal's frame exactly: an empty message, since the
-        // badge is the capability's and no message register is read.
-        msg_info: MessageInfo::new_const(0, 0, 0),
+        cap_addr: audit_cap,
+        // No message register is read: the badge is the notification
+        // capability's.  One extra capability, the notification.
+        msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::DeclassifySignal,
     })

@@ -220,9 +220,11 @@ the slots move up one, as one straight-line record update. -/
   (if 0 < sc.budgetRemaining.val then 1 else 0) +
     (if sc.refillHeadPresent then sc.tailUsed + 1 else 0)
 
-/-- WS-ZA ZA6.4: the refills are at capacity (seL4's `refill_full`). -/
+/-- WS-ZA ZA6.4: the refills are at the context's limit (seL4's `refill_full`,
+`refill_size(sc) == sc->scRefillMax`): its `refillLimit`, which a configure sets
+from the `extra_refills` word. -/
 @[inline] def SchedContext.refillFull (sc : SchedContext) : Bool :=
-  decide (maxReplenishments ≤ sc.refillSize)
+  decide (sc.refillLimit ≤ sc.refillSize)
 
 -- ============================================================================
 -- What the edits do to the pending refills
@@ -429,7 +431,7 @@ erasure. -/
 theorem SchedContext.fields_of_pendingErased {sc sc' : SchedContext}
     (h : sc'.pendingErased = sc.pendingErased) :
     sc'.scId = sc.scId ∧ sc'.budget = sc.budget ∧ sc'.period = sc.period ∧
-      sc'.priority = sc.priority ∧ sc'.deadline = sc.deadline ∧ sc'.domain = sc.domain ∧
+      sc'.badge = sc.badge ∧ sc'.sporadic = sc.sporadic ∧ sc'.yieldFromCode = sc.yieldFromCode ∧
       sc'.budgetRemaining = sc.budgetRemaining ∧ sc'.periodStart = sc.periodStart ∧
       sc'.boundThreadCode = sc.boundThreadCode ∧ sc'.scReply = sc.scReply ∧
       sc'.donationOrigin = sc.donationOrigin ∧ sc'.isActive = sc.isActive ∧
@@ -438,12 +440,40 @@ theorem SchedContext.fields_of_pendingErased {sc sc' : SchedContext}
   have f : ∀ {α : Type} (g : SchedContext → α), (∀ s, g s.pendingErased = g s) →
       g sc' = g sc := fun g hg => by rw [← hg sc', h, hg]
   exact ⟨f (·.scId) (fun _ => rfl), f (·.budget) (fun _ => rfl), f (·.period) (fun _ => rfl),
-    f (·.priority) (fun _ => rfl), f (·.deadline) (fun _ => rfl), f (·.domain) (fun _ => rfl),
+    f (·.badge) (fun _ => rfl), f (·.sporadic) (fun _ => rfl), f (·.yieldFromCode) (fun _ => rfl),
     f (·.budgetRemaining) (fun _ => rfl), f (·.periodStart) (fun _ => rfl),
     f (·.boundThreadCode) (fun _ => rfl), f (·.scReply) (fun _ => rfl),
     f (·.donationOrigin) (fun _ => rfl), f (·.isActive) (fun _ => rfl),
     f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
     f (·.releaseAt) (fun _ => rfl)⟩
+
+/-- The pending refills' edits leave the context's `refillMax`. -/
+theorem SchedContext.refillMax_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.refillMax = sc.refillMax := by
+  have h1 : sc'.pendingErased.refillMax = sc'.refillMax := rfl
+  have h2 : sc.pendingErased.refillMax = sc.refillMax := rfl
+  rw [← h1, ← h2, h]
+
+/-- The pending refills' edits leave the context's refill limit. -/
+theorem SchedContext.refillLimit_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.refillLimit = sc.refillLimit := by
+  unfold SchedContext.refillLimit; rw [SchedContext.refillMax_of_pendingErased h]
+
+/-- The refill limit as the arithmetic `omega` reads. -/
+@[simp] theorem SchedContext.refillLimit_def (sc : SchedContext) :
+    sc.refillLimit = min (max sc.refillMax 2) 8 := rfl
+
+@[simp] theorem SchedContext.refillPush_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.refillPush a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.refillPush_pendingErased a t)
+
+@[simp] theorem SchedContext.refillSetLast_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.refillSetLast a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.refillSetLast_pendingErased a t)
+
+@[simp] theorem SchedContext.refillPop_refillMax (sc : SchedContext) :
+    sc.refillPop.refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased sc.refillPop_pendingErased
 
 -- ============================================================================
 -- seL4-MCS's `schedule_used`
@@ -485,12 +515,17 @@ refill released at `t` (`scheduleUsedList`, `scheduleUsed_replenishments`). -/
     · split <;> simp
   · simp
 
+@[simp] theorem SchedContext.scheduleUsed_refillMax (sc : SchedContext) (a t : Nat) :
+    (sc.scheduleUsed a t).refillMax = sc.refillMax :=
+  SchedContext.refillMax_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+
 theorem SchedContext.scheduleUsed_replenishments (sc : SchedContext) (a t : Nat) :
     (sc.scheduleUsed a t).replenishments =
       scheduleUsedList sc.refillFull { amount := ⟨a⟩, eligibleAt := t } sc.replenishments := by
   have hNotFull : sc.refillFull = false → sc.replenishments.length < maxReplenishments := by
     intro h
     simp only [SchedContext.refillFull, decide_eq_false_iff_not, SchedContext.refillSize_eq] at h
+    have := sc.refillLimit_le
     omega
   unfold SchedContext.scheduleUsed scheduleUsedList
   by_cases hP : sc.refillHeadPresent = true
@@ -816,7 +851,7 @@ theorem SchedContext.refillsErased_of_pendingErased {sc sc' : SchedContext}
 theorem SchedContext.fields_of_refillsErased {sc sc' : SchedContext}
     (h : sc'.refillsErased = sc.refillsErased) :
     sc'.scId = sc.scId ∧ sc'.budget = sc.budget ∧ sc'.period = sc.period ∧
-      sc'.priority = sc.priority ∧ sc'.deadline = sc.deadline ∧ sc'.domain = sc.domain ∧
+      sc'.badge = sc.badge ∧ sc'.sporadic = sc.sporadic ∧ sc'.yieldFromCode = sc.yieldFromCode ∧
       sc'.boundThreadCode = sc.boundThreadCode ∧ sc'.scReply = sc.scReply ∧
       sc'.donationOrigin = sc.donationOrigin ∧
       sc'.releaseNextCode = sc.releaseNextCode ∧ sc'.releaseCoreCode = sc.releaseCoreCode ∧
@@ -824,7 +859,7 @@ theorem SchedContext.fields_of_refillsErased {sc sc' : SchedContext}
   have f : ∀ {α : Type} (g : SchedContext → α), (∀ s, g s.refillsErased = g s) →
       g sc' = g sc := fun g hg => by rw [← hg sc', h, hg]
   exact ⟨f (·.scId) (fun _ => rfl), f (·.budget) (fun _ => rfl), f (·.period) (fun _ => rfl),
-    f (·.priority) (fun _ => rfl), f (·.deadline) (fun _ => rfl), f (·.domain) (fun _ => rfl),
+    f (·.badge) (fun _ => rfl), f (·.sporadic) (fun _ => rfl), f (·.yieldFromCode) (fun _ => rfl),
     f (·.boundThreadCode) (fun _ => rfl), f (·.scReply) (fun _ => rfl),
     f (·.donationOrigin) (fun _ => rfl),
     f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
@@ -909,11 +944,6 @@ theorem SchedContext.refillUnblockCheck_releaseAt (sc : SchedContext) (t : Nat) 
 theorem SchedContext.refillUnblockCheck_boundThread (sc : SchedContext) (t : Nat) :
     (sc.refillUnblockCheck t).boundThread = sc.boundThread :=
   by have h := congrArg (fun x : SchedContext => x.boundThread) (sc.refillUnblockCheck_refillsErased t)
-     exact h
-
-theorem SchedContext.refillUnblockCheck_deadline (sc : SchedContext) (t : Nat) :
-    (sc.refillUnblockCheck t).deadline = sc.deadline :=
-  by have h := congrArg (fun x : SchedContext => x.deadline) (sc.refillUnblockCheck_refillsErased t)
      exact h
 
 /-- **The charge writes the refills alone.** -/
@@ -1173,10 +1203,11 @@ theorem SchedContext.refillUpdate_refillTotal (sc : SchedContext) (nb np now : N
 def SchedContext.refillsPositive (sc : SchedContext) : Prop :=
   ∀ r ∈ sc.replenishments, 0 < r.amount.val
 
-/-- WS-ZA ZA6.4: the refills, the head among them, fit the context's storage
-(seL4's `refill_size ≤ refill_max`). -/
+/-- WS-ZA ZA6.4: the refills, the head among them, fit the context's limit
+(seL4's `refill_size ≤ scRefillMax`), and so its storage
+(`SchedContext.refillLimit_le`). -/
 def SchedContext.refillsFit (sc : SchedContext) : Prop :=
-  sc.refillSize ≤ maxReplenishments
+  sc.refillSize ≤ sc.refillLimit
 
 theorem SchedContext.refillsPositive_of_replenishments {sc sc' : SchedContext}
     (h : sc'.replenishments = sc.replenishments) (hp : sc.refillsPositive) : sc'.refillsPositive :=
@@ -1194,18 +1225,21 @@ theorem SchedContext.scheduleUsed_refillsPositive (sc : SchedContext) (a t : Nat
   exact scheduleUsedList_pos _ _ _ hp ha r hr
 
 theorem SchedContext.scheduleUsed_refillSize_le (sc : SchedContext) (a t : Nat)
-    (h : sc.refillSize ≤ maxReplenishments) (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < maxReplenishments ∨
+    (h : sc.refillSize ≤ sc.refillLimit) (hB : sc.budgetRemaining.val = 0 ∨ sc.refillSize < sc.refillLimit ∨
       sc.replenishments ≠ []) :
-    (sc.scheduleUsed a t).refillSize ≤ maxReplenishments := by
+    (sc.scheduleUsed a t).refillSize ≤ (sc.scheduleUsed a t).refillLimit := by
   have hB' := SchedContext.budgetRemaining_of_pendingErased (sc.scheduleUsed_pendingErased a t)
-  rw [SchedContext.refillSize_eq, hB', sc.scheduleUsed_replenishments]
+  have hL := SchedContext.refillLimit_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+  have hMin := sc.minRefills_le_refillLimit
+  unfold configureMinRefills at hMin
+  rw [hL, SchedContext.refillSize_eq, hB', sc.scheduleUsed_replenishments]
   rw [SchedContext.refillSize_eq] at h hB
   rcases scheduleUsedList_length sc.refillFull { amount := ⟨a⟩, eligibleAt := t } sc.replenishments
     with h1 | ⟨hF, h1⟩ | ⟨h0, h1⟩
   · omega
   · simp only [SchedContext.refillFull, decide_eq_false_iff_not, SchedContext.refillSize_eq] at hF
     omega
-  · rw [h1]; rw [h0] at hB h; simp at hB h ⊢; unfold maxReplenishments; split <;> omega
+  · rw [h1]; rw [h0] at hB h; simp at hB h ⊢; split <;> omega
 
 theorem SchedContext.refillBudgetCheck_refillsPositive (sc : SchedContext) (usage : Nat)
     (hp : sc.refillsPositive) : (sc.refillBudgetCheck usage).refillsPositive := by
@@ -1228,7 +1262,7 @@ theorem SchedContext.refillBudgetCheck_refillsFit (sc : SchedContext) (usage : N
     split
     · apply SchedContext.scheduleUsed_refillSize_le
       · rw [SchedContext.refillSize_eq] at hf ⊢
-        simp only [SchedContext.replenishments_mk_self] at *; split at hf <;> simp <;> omega
+        simp only [SchedContext.replenishments_mk_self, SchedContext.refillLimit_def] at *; split at hf <;> simp <;> omega
       · left; rfl
     · apply SchedContext.scheduleUsed_refillSize_le
       · rw [SchedContext.refillSize_eq] at hf ⊢
@@ -1239,7 +1273,7 @@ theorem SchedContext.refillBudgetCheck_refillsFit (sc : SchedContext) (usage : N
         simp only [SchedContext.replenishments_mk_self]
         by_cases hE : sc.replenishments = []
         · right; left; rw [SchedContext.refillSize_eq]; simp only [SchedContext.replenishments_mk_self, hE]
-          simp [maxReplenishments]; split <;> omega
+          simp; split <;> omega
         · right; right; exact hE
 
 theorem SchedContext.releaseOne_refillsPositive (sc : SchedContext) (now : Nat)
@@ -1989,10 +2023,13 @@ theorem SchedContext.refillUpdateFrom_refillsFit (sc : SchedContext) (ha ht nb n
   by_cases h : ht ≤ now
   · rw [(h1 h).2.2]
     have := hl (ha < nb) { amount := ⟨nb - ha⟩, eligibleAt := now + np }
-    unfold maxReplenishments; split <;> omega
+    have := (sc.refillUpdateFrom ha ht nb np now).minRefills_le_refillLimit
+    unfold configureMinRefills at this; split <;> omega
   · rw [(h2 h).1, (h2 h).2]
     have := hl (ha < nb) { amount := ⟨nb - ha⟩, eligibleAt := ht + np }
-    simp only [List.length_cons, Nat.lt_irrefl, if_false]; unfold maxReplenishments; omega
+    have := (sc.refillUpdateFrom ha ht nb np now).minRefills_le_refillLimit
+    unfold configureMinRefills at this
+    simp only [List.length_cons, Nat.lt_irrefl, if_false]; omega
 
 /-- After `refill_update`, a used-up head means its refill is not yet released,
 and a head holding budget is released by `now`. -/
@@ -2011,50 +2048,7 @@ theorem SchedContext.refillUpdateFrom_ready (sc : SchedContext) (ha ht nb np now
     refine ⟨fun hp => by simp only [s] at hp; rw [hB] at hp; omega, fun _ r hr => ?_⟩
     simp only [s] at hr; rw [hR] at hr; simp at hr; subst hr; simp only; omega
 
--- ============================================================================
--- The CBS deadline rule
--- ============================================================================
-
-/-- CBS deadline assignment rule. When a SchedContext is replenished after
-exhaustion, set deadline to `currentTime + period`. If budget was not exhausted
-(continuing execution), deadline is unchanged. -/
-def cbsUpdateDeadline (sc : SchedContext) (currentTime : Nat)
-    (wasExhausted : Bool) : SchedContext :=
-  if wasExhausted && sc.budgetRemaining.isPositive then
-    { sc with deadline := ⟨currentTime + sc.period.val⟩ }
-  else
-    sc
-
-/-- WS-ZA ZA6.3: the deadline rule writes none of the context's release-queue
-fields. -/
-theorem cbsUpdateDeadline_release (sc : SchedContext) (currentTime : Nat) (wasExhausted : Bool) :
-    (cbsUpdateDeadline sc currentTime wasExhausted).releaseNextCode = sc.releaseNextCode ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).releaseCoreCode = sc.releaseCoreCode ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).releaseAt = sc.releaseAt := by
-  unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl⟩
-
-/-- The deadline rule writes only the deadline: the refills read the same. -/
-theorem cbsUpdateDeadline_refills (sc : SchedContext) (currentTime : Nat) (wasExhausted : Bool) :
-    (cbsUpdateDeadline sc currentTime wasExhausted).budgetRemaining = sc.budgetRemaining ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).periodStart = sc.periodStart ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).replenishments = sc.replenishments ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).budget = sc.budget ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).period = sc.period ∧
-      (cbsUpdateDeadline sc currentTime wasExhausted).boundThreadCode = sc.boundThreadCode := by
-  unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-/-- WS-ZA ZA6.3/ZA6.4: the deadline rule after an operation that writes the
-refills alone writes none of the context's release-queue fields. -/
-theorem cbsUpdateDeadline_release_of_refillsErased {sc x : SchedContext}
-    (h : x.refillsErased = sc.refillsErased) (now : Nat) (b : Bool) :
-    (cbsUpdateDeadline x now b).releaseNextCode = sc.releaseNextCode ∧
-      (cbsUpdateDeadline x now b).releaseCoreCode = sc.releaseCoreCode ∧
-      (cbsUpdateDeadline x now b).releaseAt = sc.releaseAt := by
-  obtain ⟨h1, h2, h3⟩ := cbsUpdateDeadline_release x now b
-  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ := SchedContext.fields_of_refillsErased h
-  exact ⟨h1.trans h4, h2.trans h5, h3.trans h6⟩
-
-/-! WS-ZA ZA6.6: the refill operations and the deadline rule keep the context's
+/-! WS-ZA ZA6.6: the refill operations keep the context's
 end of the yield link. -/
 
 @[simp] theorem SchedContext.releaseReadyHead_yieldFromCode (sc : SchedContext) (now : Nat) :
@@ -2085,28 +2079,25 @@ end of the yield link. -/
     (sc.chargeBudget a u now).yieldFromCode = sc.yieldFromCode :=
   SchedContext.yieldFromCode_of_refillsErased (sc.chargeBudget_refillsErased a u now)
 
-@[simp] theorem cbsUpdateDeadline_yieldFromCode (sc : SchedContext) (now : Nat) (b : Bool) :
-    (cbsUpdateDeadline sc now b).yieldFromCode = sc.yieldFromCode := by
-  unfold cbsUpdateDeadline; split <;> rfl
-
-/-- WS-ZA ZA6.3: the budget spend's record (the charge, then the deadline rule)
-writes none of the context's release-queue fields. -/
+/-- WS-ZA ZA6.3: the budget spend's record (the charge) writes none of the
+context's release-queue fields. -/
 theorem spendRecord_release (sc : SchedContext) (start ticks now : Nat) :
-    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseNextCode =
-        sc.releaseNextCode ∧
-      (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseCoreCode =
-        sc.releaseCoreCode ∧
-      (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseAt = sc.releaseAt :=
-  cbsUpdateDeadline_release_of_refillsErased (sc.chargeBudget_refillsErased start ticks now) now true
+    (sc.chargeBudget start ticks now).releaseNextCode = sc.releaseNextCode ∧
+      (sc.chargeBudget start ticks now).releaseCoreCode = sc.releaseCoreCode ∧
+      (sc.chargeBudget start ticks now).releaseAt = sc.releaseAt := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+    SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start ticks now)
+  exact ⟨h4, h5, h6⟩
 
-/-- WS-ZA ZA6.3: the drain's refill record (the release, then the deadline rule)
-writes none of the context's release-queue fields. -/
+/-- WS-ZA ZA6.3: the drain's refill record (the release) writes none of the
+context's release-queue fields. -/
 theorem refillRecord_release (sc : SchedContext) (now : Nat) :
-    (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseNextCode = sc.releaseNextCode ∧
-      (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseCoreCode =
-        sc.releaseCoreCode ∧
-      (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseAt = sc.releaseAt :=
-  cbsUpdateDeadline_release_of_refillsErased (sc.releaseReadyHead_refillsErased now) now true
+    (sc.releaseReadyHead now).releaseNextCode = sc.releaseNextCode ∧
+      (sc.releaseReadyHead now).releaseCoreCode = sc.releaseCoreCode ∧
+      (sc.releaseReadyHead now).releaseAt = sc.releaseAt := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+    SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)
+  exact ⟨h4, h5, h6⟩
 
 -- ============================================================================
 -- Admission

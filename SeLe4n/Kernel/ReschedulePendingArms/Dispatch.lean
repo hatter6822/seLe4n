@@ -106,19 +106,17 @@ theorem threadSlotCopied_machine (st : SystemState) (tid : SeLe4n.ThreadId) (slo
     rw [e] <;>
     simp [threadSlotCleared, storeTcbWith_machine, SystemState.updateTcb_machine]
 
-theorem setThreadFaultHandlerOp_machine_eq {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cptr : SeLe4n.CPtr} (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    st'.machine = st.machine := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          rfl
+/-- WS-SX SX6.6: a buffer change writes no machine state: the slot set's copy
+and retire write none, nor does the address write. -/
+theorem setIPCBufferOp_machine_eq {ec : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr}
+    (h : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : st'.machine = st.machine := by
+  obtain ⟨c, s, t, -, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform h
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform threadSlotSet
+  rw [SystemState.updateTcb_machine, (retireFinalObject_fields ec _ _ _).2.2,
+    threadSlotCopied_machine]
 
 theorem setConsumed_machine (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
     (setConsumed st s t).machine = st.machine := by
@@ -367,10 +365,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (threadSlotCopied_machine _ _ _ _ _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (setThreadFaultHandlerOp_machine_eq (by assumption)).trans ?_;
-   machine_chain))
-macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (setIPCBufferOp_machine_eq _ _ _ _ (by assumption)).trans ?_;
+  (with_reducible refine (setIPCBufferOp_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (setConsumed_machine _ _ _).trans ?_; machine_chain))
@@ -500,9 +495,8 @@ theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st
   unfold schedKeyView
   rw [hx, hpre]
   simp only [Option.map_some, Option.some.injEq]
-  rw [effectiveSchedParams_congr_binding (st := st) (st' := retireFinalObject ec target recorder st)
-    (a := x) (b := x) rfl (fun sc hsc => by
-    rw [retireFinalObject_getSchedContext?_named ec target recorder st hObjInv hI hL hx sc hsc])]
+  rw [effectiveSchedParams_congr_keyFields (st := st)
+    (st' := retireFinalObject ec target recorder st) (a := x) (b := x) rfl]
 
 /-- **The retire keeps the budget eligibility of every thread it keeps**, by the
 same context-stays argument. -/
@@ -597,25 +591,41 @@ theorem threadSlotSet_stepCovers (e ec : CoreId) {st : SystemState} {tid : SeLe4
       ((SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights data).preserves hL))
 
 theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hObjInv : st.objects.invExt)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
     (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData hCL)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hObjInv hStep
+  have I1 := (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).1
+  have L1 := threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
+  have I2 := (threadSlotSet_preserves_ipcInvariantFull ec hI1 I1 L1.budgets hT1
+    TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0).1
+  have L2 := threadSlotSet_preserves_schedContextLinkInvariant ec hI1 L1 hT1
+    TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
   exact stepCoversInv_trans (threadSlotSet_stepCovers e ec hObjInv hI hL hT _ _ _ _ _).1
-    (threadSlotSet_stepCovers e ec hI1
-      (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT _ _ _ _ _).1
-      (threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT _ _ _ _ _) hT1' _ _ _ _ _)
+    (stepCoversInv_trans (threadSlotSet_stepCovers e ec hI1 I1 L1 hT1 _ _ _ _ _).1
+      (threadSlotSet_stepCovers e ec hI2 I2 L2 hT2 _ _ _ _ _))
+
+/-- WS-SX SX6.6: **a buffer change covers**: the buffer slot's set covers
+(`threadSlotSet_stepCovers`), and the address write moves no key input. -/
+theorem setIPCBufferOp_stepCovers (e ec : CoreId) {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr}
+    {addr : SeLe4n.VAddr} (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st)
+    (hL : schedContextLinkInvariant st)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  have h1 := threadSlotSet_stepCovers e ec hObjInv hI hL hT TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  exact stepCoversInv_trans h1.1 ((updateTcb_ipcBuffer_keyFrame _ vtid.val addr h1.2).stepCoversInv
+    (hRes := by rw [SystemState.updateTcb_machine])
+    (hBank := banksKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine])))
 
 /-! ### Retype -/
 
@@ -640,8 +650,7 @@ theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId
   · simp at hT
   · rename_i b a
     simp only [Option.map_some, Option.some.injEq] at hT ⊢
-    rw [effectiveSchedParams_congr_binding hT (fun sc hsc =>
-      getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
+    rw [effectiveSchedParams_congr_keyFields hT]
 
 /-- The budget-eligibility twin of `schedKeyView_eq_of_slotUnread`: a step that
 moves no key input off slot `X` keeps the eligibility of every thread neither
@@ -680,6 +689,21 @@ theorem queuedOn_of_keyInputsOf {pre post : SystemState} {t : SeLe4n.ThreadId}
     | none => cases o <;> simp_all [keyInputsOf]
     | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
 
+/-- **Every thread's bound scheduling context is one the store holds** — the
+half of `schedContextBindingBidirectional` the coverage of a fresh slot reads:
+a slot the store did not hold is no thread's scheduling context.  Unlike the
+whole bidirectional binding it rides each carve's key frame
+(`untypedRetypeObject_preserves_boundSchedContextsPresent`), so it holds at
+every carve of a window. -/
+def boundSchedContextsPresent (st : SystemState) : Prop :=
+  ∀ (t : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+    st.objects[t.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding.scId? = some scId →
+    ∃ sc : SeLe4n.Kernel.SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc)
+
+theorem schedContextBindingBidirectional.boundSchedContextsPresent {st : SystemState}
+    (h : schedContextBindingBidirectional st) : boundSchedContextsPresent st :=
+  fun t tcb scId hT hB => let ⟨sc, hS, _⟩ := h t tcb scId hT hB; ⟨sc, hS⟩
+
 /-- **A step that fills one empty slot with an object queued nowhere covers**:
 no thread placed before it lives at the slot (each has a TCB) or reads its
 deadline there (the binding reciprocity names a scheduling context stored
@@ -690,7 +714,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     (hAbs : pre.objects[X]? = none)
     (hUnq : ∀ c (t : SeLe4n.ThreadId), t.toObjId = X → post.queuedOn c t = false)
     (hSched : post.scheduler = pre.scheduler)
-    (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre)
+    (hBi : boundSchedContextsPresent pre) (hPlaced : placedThreadsHaveTcbs pre)
     (hRes : post.machine.residentCode = pre.machine.residentCode)
     (hBk : post.machine.coreRegs = pre.machine.coreRegs) :
     stepCovers e pre post := by
@@ -698,7 +722,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     intro t ht
     refine schedKeyView_eq_of_slotUnread hFrame ht ?_
     intro tcb hT sc hsc hEq
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    obtain ⟨sco, hSo⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched],
@@ -711,7 +735,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
     intro tcb hT sc hsc hEq
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    obtain ⟨sco, hSo⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   · rw [hSched] at ht
     refine schedKeyNotWeakened_of_eq (hKeyNe t (fun hEq => ?_)).symm
@@ -763,7 +787,7 @@ child's slot was empty and the object stored there is queued nowhere — a carve
 TCB is inactive with empty links — and no other key input moved. -/
 theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hBi : boundSchedContextsPresent st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -771,6 +795,101 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
   exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced
     (untypedRetypeObject_residentCode hInv h) (untypedRetypeObject_coreRegs hInv h), hInv'⟩
+
+/-- A carve keeps every placed thread's TCB: it moves no scheduler state, and
+every slot but the fresh child's keeps its key inputs. -/
+theorem untypedRetypeObject_preserves_placedThreadsHaveTcbs {src dst : CSpaceAddr}
+    {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hP : placedThreadsHaveTcbs st)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    placedThreadsHaveTcbs st' := by
+  obtain ⟨hFrame, hAbs, -, hSched, -⟩ :=
+    untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
+  intro c t ht
+  rw [hSched] at ht
+  have hT := hP c t ht
+  have hne : t.toObjId ≠ childId := by
+    intro hEq
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+    have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+    rw [hEq, hAbs] at this; cases this
+  have hk := congrArg Option.isSome (getTcb?_keyFields_of_keyInputsOf (hFrame _ hne))
+  simp only [Option.isSome_map] at hk
+  rw [hk]; exact hT
+
+/-- A carve keeps every thread's bound scheduling context in the store: a
+carved thread is unbound, and every other slot keeps its key inputs — a
+thread's binding, and whether a slot holds a scheduling context. -/
+theorem untypedRetypeObject_preserves_boundSchedContextsPresent {src dst : CSpaceAddr}
+    {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hP : boundSchedContextsPresent st)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    boundSchedContextsPresent st' := by
+  obtain ⟨hFrame, hAbs, -, -, -⟩ :=
+    untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
+  intro t tcb scId hT hB
+  by_cases hC : t.toObjId = childId
+  · exfalso
+    obtain ⟨_, _, _, _, _, _, _, _, hWL, _⟩ :=
+      untypedRetypeObject_ok_carved src dst childId req st st' hInv h
+    rw [← hC, hT] at hWL
+    cases req with
+    | tcb dom core =>
+      obtain ⟨tcb', hT', -, -, -, -, -, -, -, -, hUnb, -⟩ :=
+        untypedRetypeObject_ok_tcb src dst childId dom core st st' hInv h
+      rw [← hC, hT] at hT'
+      cases hT'
+      rw [hUnb] at hB; cases hB
+    | _ => simp [CarveRequest.object, KernelObject.withoutLinks] at hWL
+  · have hk := hFrame _ hC
+    rw [hT] at hk
+    cases hpre : st.objects[t.toObjId]? with
+    | none => rw [hpre] at hk; simp [keyInputsOf] at hk
+    | some o =>
+      rw [hpre] at hk
+      cases o with
+      | tcb tcb0 =>
+        simp only [keyInputsOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at hk
+        obtain ⟨sc, hS⟩ := hP t tcb0 scId hpre (hk.2.2.1 ▸ hB)
+        have hne : scId.toObjId ≠ childId := by
+          intro hEq; rw [hEq, hAbs] at hS; cases hS
+        have hk2 := hFrame _ hne
+        rw [hS] at hk2
+        cases hpost : st'.objects[scId.toObjId]? with
+        | none => rw [hpost] at hk2; simp [keyInputsOf] at hk2
+        | some o' =>
+          rw [hpost] at hk2
+          cases o' with
+          | schedContext sc' => exact ⟨sc', rfl⟩
+          | _ => simp [keyInputsOf] at hk2
+      | _ => simp [keyInputsOf] at hk
+
+/-- **WS-SX SX6.3 (D9): the `.untypedRetype` arm covers**: each carve of its
+window covers (`untypedRetypeObject_stepCovers`), and each keeps what the next
+carve's coverage reads — the object table, every bound scheduling context and
+every placed thread's TCB. -/
+theorem untypedRetypeFromCap_stepCovers (e : CoreId) {tid : SeLe4n.ThreadId}
+    {ec : CoreId} {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
+    {st st' : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (h : untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  have hChain := untypedRetypeFromCap_chain h
+  have hKeep : ∀ {src dst : CSpaceAddr} {childId : SeLe4n.ObjId} {req : CarveRequest}
+      {s s1 : SystemState},
+      (s.objects.invExt ∧ boundSchedContextsPresent s ∧ placedThreadsHaveTcbs s) →
+      untypedRetypeObject src childId dst req s = .ok ((), s1) →
+      (s1.objects.invExt ∧ boundSchedContextsPresent s1 ∧ placedThreadsHaveTcbs s1) :=
+    fun hP hC => ⟨untypedRetypeObject_preserves_objects_invExt hP.1 hC,
+      untypedRetypeObject_preserves_boundSchedContextsPresent hP.1 hP.2.1 hC,
+      untypedRetypeObject_preserves_placedThreadsHaveTcbs hP.1 hP.2.2 hC⟩
+  have hP0 : st.objects.invExt ∧ boundSchedContextsPresent st ∧ placedThreadsHaveTcbs st :=
+    ⟨hInv, hBi.boundSchedContextsPresent, hPlaced⟩
+  exact ⟨hChain.rel (stepCovers_refl e) stepCovers_trans hKeep
+      (fun hP hC => (untypedRetypeObject_stepCovers e hP.1 hP.2.1 hP.2.2 hC).1) hP0,
+    (hChain.preserves hKeep hP0).1⟩
 
 /-! ### The finalising destroyers -/
 
@@ -928,7 +1047,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       have hK1 : keyInputsEq s s1 := keyInputsEq_storeObject h.2 hS (by
         rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hR]; rfl)
       have hK2 : keyInputsEq s1 (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }) :=
-        keyInputsEq_updateSchedContext hI1 (fun _ => rfl)
+        keyInputsEq_updateSchedContext hI1
       have hSch : (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }).scheduler =
           s.scheduler := by
         rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq s s1 _ _ hS]
@@ -1072,18 +1191,20 @@ theorem cspaceDeleteSlotZombie_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
 one finalising delete or finalisation at a time, then the plain space change
 (`copyThreadSpaces_stepCovers`). -/
 theorem copyThreadSpacesZombie_stepCovers (e ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hB : finalisingDeleteBundle st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr) (hB : finalisingDeleteBundle st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
-  · exact copyThreadSpaces_stepCovers e ec st st' vtid cnSrc vrSrc cnData hB.1.2.1 hB.1.1 hB.2 h1
+  · exact copyThreadSpaces_stepCovers e ec st st' vtid cnSrc vrSrc cnData fhSrc hB.1.2.1 hB.1.1 hB.2
+      h1
   · have h := hR.chain.closed (coversWithDeleteBundle e st)
       (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
     exact ⟨h.1, h.2.1.2.1⟩
   · have h := hR.chain.closed (coversWithDeleteBundle e st)
       (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
     exact stepCoversInv_trans h.1
-      (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData h.2.1.2.1 h.2.1.1 h.2.2 h2)
+      (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData fhSrc h.2.1.2.1 h.2.1.1 h.2.2
+        h2)
 
 /-- WS-ZA ZA6.9: **the Consumed invocation covers**: `setConsumed` moves no key
 input and no scheduler field. -/
@@ -1364,13 +1485,16 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals subst hK
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
+  all_goals try unfold serviceEndpointArm at h
   all_goals (repeat' split at h)
+  all_goals first | (cases h; done) | skip
+  all_goals try (dsimp only at h; repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
     | exact irqHandlerAck_stepCovers hInv h
     | exact irqHandlerClear_stepCovers hB h
     | exact irqControlGet_stepCovers hInv
-        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2
+        (irqControlGetFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2
     | exact irqHandlerSetNotification_stepCovers hB
         (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
@@ -1407,14 +1531,10 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
-        | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]))
-        | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hU]))
-        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ hB hU)
+        | exact setIPCBufferOp_stepCovers _ _ hB.1.2.1 hB.1.1 hB.2 hU
+        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ _ hB hU)
   all_goals
-    obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
-    exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU
+    exact untypedRetypeFromCap_stepCovers ec hInv hBi hPlaced h
 
 /-! ### The checked dispatcher -/
 
@@ -1496,6 +1616,38 @@ theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   · exact ⟨stepCovers_refl e st, hInv⟩
   · exact cancelReplyHolder_stepCovers e st _ ec hInv
 
+/-- A receive run on its busy-reply-cancelled state covers: the cancel, the
+dual-queue receive, the rendezvous hand-off and the two stagings.  The
+`.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
+theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {gate : SyscallGate}
+    {epId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : receiveResolvedArm decoded gate tid epId e
+      (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold receiveResolvedArm at h
+  obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
+  generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
+  simp only at h
+  split at h
+  · cases h
+  split at h
+  · rename_i st1 dequeued summ sgi hRecv
+    split at h
+    · cases h
+    rename_i stDon hHand
+    cases h
+    obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
+    obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
+    have hS1 := stageWokenSendCompletion_keyFrame stDon
+      ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
+    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
+    exact stepCoversInv_trans
+      (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
+      hS2.stepCoversInv
+  · cases h
+
 /-- **Every arm `dispatchWithCapChecked` routes covers** on the executing core,
 the capability-only arms it delegates included. -/
 theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1551,28 +1703,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
   case none.receive.object epId =>
     split at h
     · cases h
-    unfold receiveResolvedArm at h
-    obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
-    generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · rename_i st1 dequeued summ sgi hRecv
-      split at h
-      · cases h
-      rename_i stDon hHand
-      cases h
-      obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
-      obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
-      have hS1 := stageWokenSendCompletion_keyFrame stDon
-        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-      have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
-      exact stepCoversInv_trans
-        (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
-        hS2.stepCoversInv
-    · cases h
+    exact receiveResolvedArm_cancelled_stepCovers e hInv h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1613,9 +1744,12 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [cspaceMove_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceMove_machine_eq h]))
     · cases h
-  case none.serviceRegister.object epId =>
+  case none.serviceRegister.serviceRegistry _ =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    replace h := serviceEndpointArm_ok h
+    obtain ⟨_, epId, -, h⟩ := h
+    try dsimp only at h
     unfold registerServiceChecked at h
     split at h
     · exact (registerService_keyFrame hInv h).stepCoversInv
@@ -1643,19 +1777,27 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
     · cases h
   case none.replyRecv.object epId =>
+    split at h
+    · cases h
+    split at h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
     exact stepCoversInv_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCoversInv
-  case none.declassify.object targetId =>
+  case none.declassify.auditTrail code =>
+    split at h
+    · cases h
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     exact ⟨stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl, hInv⟩
-  case none.declassifySignal.object notifId =>
+  case none.declassifySignal.auditTrail code =>
+    split at h
+    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1732,11 +1874,7 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
-  have hD := dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
+  have hD := dispatchSyscallChecked_stepCovers (st := st) hInv
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h

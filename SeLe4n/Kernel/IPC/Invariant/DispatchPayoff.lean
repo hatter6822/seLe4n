@@ -379,7 +379,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
   callNotSelfRendezvous : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
     ∀ ep receiverTid, st.getEndpoint? epId = some ep →
       ep.receiveQ.head = some receiverTid → tid ≠ receiverTid
-  recvStage : ∀ epId replyIdOpt, decoded.syscallId = .receive →
+  recvStage : ∀ epId replyIdOpt, receivesWithoutReply decoded tid st →
     cap.target = .object epId →
     resolveRecvReplyId gate decoded st = .ok replyIdOpt →
     -- **WS-OD OD4.4**: the arm's pre-receive cleanup pops whatever donation the
@@ -595,7 +595,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       timeout-budget fact) is a fact of the state the dispatch is handed, and
       a busy reply's receive runs on the cancelled state; this field keeps the
       arm on the states those facts describe. -/
-  recvReplyNotBusy : decoded.syscallId = .receive →
+  recvReplyNotBusy : receivesWithoutReply decoded tid st →
     busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none
 
 /-! ## §5  The flow-checked dispatch tier (WS-RR RR3.22, third item)
@@ -620,9 +620,105 @@ structure checkedSyscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) : Prop where
   base : syscallDispatchQuiescence decoded tid executingCore gate cap st
-  declassifySignalNoBoundTarget : ∀ notifId,
-    decoded.syscallId = .declassifySignal → cap.target = .object notifId →
+  declassifySignalNoBoundTarget : ∀ ntfnCap notifId,
+    decoded.syscallId = .declassifySignal →
+    resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId) →
     boundDeliveryTarget? st notifId = none
+
+/-- **The receive arm past its flow gate preserves the bundle** — on the state
+its busy-reply cancel leaves (`dispatchWithCapChecked`'s `.receive` arm, and the
+`.replyRecv` arm whose reply half an extra capability skips). -/
+private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (st st' : SystemState) (epId : SeLe4n.ObjId)
+    (hPack : syscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hSel : receivesWithoutReply decoded tid st)
+    (hTgt : cap.target = .object epId)
+    (hStep : receiveResolvedArm decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  have hBudgets := hPack.reachable.allTimeoutBudgetsNone
+  have hInv := hPack.reachable.ipcInvariantFull
+  have hObjInv := hPack.reachable.objects_invExt
+  rw [cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none
+    (hPack.recvReplyNotBusy hSel)] at hStep
+  unfold receiveResolvedArm at hStep
+  cases hRid : resolveRecvReplyId gate decoded st with
+  | error e => simp only [hRid] at hStep; cases hStep
+  | ok replyIdOpt =>
+      simp only [hRid] at hStep
+      obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
+          hRecvNotOwner⟩ :=
+        hPack.recvStage epId replyIdOpt hSel hTgt hRid
+      obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
+      have hFresh := readyThread_endpointQueueFresh st tid tcbC
+        hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
+        ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
+      have hTailR := recvTailCrossQueueFresh st epId
+        hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
+      have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
+        epId tid replyIdOpt
+        executingCore st hInv hObjInv hCleanupStack hBudgets
+        hFresh hTailR hRidFresh
+        (fun tcb hTcb => by
+          rw [hTC] at hTcb
+          obtain rfl := Option.some.inj hTcb
+          exact readyThread_notBlockedOnReceive tcbC hReadyC)
+        (fun tcb hTcb => by
+          rw [hTC] at hTcb
+          obtain rfl := Option.some.inj hTcb
+          exact hReadyC)
+      cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
+          executingCore st with
+      | mk st1 res1 =>
+          rw [hRecv] at hStep hRecvInv
+          cases res1 with
+          | error e => simp only [] at hStep; cases hStep
+          | ok triple =>
+              obtain ⟨nextThread, summary, sgi1⟩ := triple
+              -- WS-OD OD3.6: the `Except`/`Prod` destructuring moved into
+              -- the donation branch below -- the donation match now sits
+              -- between the receive and the staging, so `hStep` is not yet
+              -- an `.ok` equation here.  What remains is the iota
+              -- reduction of the receive's own match.
+              simp only [] at hStep
+              have hObjInv1 : st1.objects.invExt :=
+                hRecvInvExt st1 _ hRecv
+              -- **WS-OD OD3.6**: the rendezvous donation runs between the
+              -- receive and the staging, so the composition passes through
+              -- it.  Its donor-blocked obligation comes from the arm's own
+              -- guard (`rendezvousDequeuedCall_blockedOnReply`); only the
+              -- whole-store not-owner fact is the pack's, and the pack
+              -- states it over this very stage's committed state.
+              -- **WS-OD OD3.14**: and the priority half runs with it,
+              -- under one reading of the guard, so the composition passes
+              -- through the hand-off rather than the donation alone.  The
+              -- chain walk adds no obligation: it writes `pipBoost` and
+              -- run-queue buckets, which the bundle reads nowhere.
+              cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
+                  executingCore with
+              | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
+              | ok stDon =>
+                  rw [hDonation] at hStep
+                  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  have hDonInv : ipcInvariantFull stDon :=
+                    applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon
+                      tid nextThread executingCore hObjInv1 hRecvInv
+                      (fun s sTcb sc0 hs => by
+                        rw [hRecv] at hRecvNotOwner
+                        exact hRecvNotOwner s sTcb sc0 hs)
+                      hDonation
+                  have hDonObj : stDon.objects.invExt :=
+                    applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
+                      tid nextThread executingCore hObjInv1 hDonation
+                  have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
+                    ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
+                  have hSCobj := stageWokenSendCompletion_objects_invExt stDon
+                    ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj
+                  rw [← hStep]
+                  exact stageDeliveredMessage_preserves_ipcInvariantFull _ tid _
+                    hSCobj hSC
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall
 `dispatchWithCapChecked` routes preserves `ipcInvariantFull`.  The
@@ -732,84 +828,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         case object epId =>
           split at hStep
           · cases hStep
-          · rw [cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none
-              (hPack.recvReplyNotBusy hSy)] at hStep
-            unfold receiveResolvedArm at hStep
-            cases hRid : resolveRecvReplyId gate decoded st with
-            | error e => simp only [hRid] at hStep; cases hStep
-            | ok replyIdOpt =>
-                simp only [hRid] at hStep
-                obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
-                    hRecvNotOwner⟩ :=
-                  hPack.recvStage epId replyIdOpt hSy hTgt hRid
-                obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-                have hFresh := readyThread_endpointQueueFresh st tid tcbC
-                  hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
-                  ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
-                have hTailR := recvTailCrossQueueFresh st epId
-                  hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
-                have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-                  epId tid replyIdOpt
-                  executingCore st hInv hObjInv hCleanupStack hBudgets
-                  hFresh hTailR hRidFresh
-                  (fun tcb hTcb => by
-                    rw [hTC] at hTcb
-                    obtain rfl := Option.some.inj hTcb
-                    exact readyThread_notBlockedOnReceive tcbC hReadyC)
-                  (fun tcb hTcb => by
-                    rw [hTC] at hTcb
-                    obtain rfl := Option.some.inj hTcb
-                    exact hReadyC)
-                cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
-                    executingCore st with
-                | mk st1 res1 =>
-                    rw [hRecv] at hStep hRecvInv
-                    cases res1 with
-                    | error e => simp only [] at hStep; cases hStep
-                    | ok triple =>
-                        obtain ⟨nextThread, summary, sgi1⟩ := triple
-                        -- WS-OD OD3.6: the `Except`/`Prod` destructuring moved into
-                        -- the donation branch below -- the donation match now sits
-                        -- between the receive and the staging, so `hStep` is not yet
-                        -- an `.ok` equation here.  What remains is the iota
-                        -- reduction of the receive's own match.
-                        simp only [] at hStep
-                        have hObjInv1 : st1.objects.invExt :=
-                          hRecvInvExt st1 _ hRecv
-                        -- **WS-OD OD3.6**: the rendezvous donation runs between the
-                        -- receive and the staging, so the composition passes through
-                        -- it.  Its donor-blocked obligation comes from the arm's own
-                        -- guard (`rendezvousDequeuedCall_blockedOnReply`); only the
-                        -- whole-store not-owner fact is the pack's, and the pack
-                        -- states it over this very stage's committed state.
-                        -- **WS-OD OD3.14**: and the priority half runs with it,
-                        -- under one reading of the guard, so the composition passes
-                        -- through the hand-off rather than the donation alone.  The
-                        -- chain walk adds no obligation: it writes `pipBoost` and
-                        -- run-queue buckets, which the bundle reads nowhere.
-                        cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
-                            executingCore with
-                        | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
-                        | ok stDon =>
-                            rw [hDonation] at hStep
-                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                            have hDonInv : ipcInvariantFull stDon :=
-                              applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon
-                                tid nextThread executingCore hObjInv1 hRecvInv
-                                (fun s sTcb sc0 hs => by
-                                  rw [hRecv] at hRecvNotOwner
-                                  exact hRecvNotOwner s sTcb sc0 hs)
-                                hDonation
-                            have hDonObj : stDon.objects.invExt :=
-                              applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
-                                tid nextThread executingCore hObjInv1 hDonation
-                            have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
-                              ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
-                            have hSCobj := stageWokenSendCompletion_objects_invExt stDon
-                              ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj
-                            rw [← hStep]
-                            exact stageDeliveredMessage_preserves_ipcInvariantFull _ tid _
-                              hSCobj hSC
+          · exact receiveResolvedArm_cancelled_preserves_ipcInvariantFull ctx decoded tid
+              executingCore gate cap st st' epId hPack (Or.inl hSy) hTgt hStep
         all_goals cases hStep
       case call =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -954,7 +974,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -982,7 +1003,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -1004,7 +1026,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               · cases hStep
               rename_i hG
               cases hR : resolveCNodeOpSlots tid cap args.destIndex args.destDepth
-                  args.srcRoot args.srcIndex args.srcDepth st with
+                  (callerExtraCapAddr? st tid decoded.msgInfo.extraCaps 0) args.srcIndex
+                  args.srcDepth st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
               obtain ⟨src, dst⟩ := p
@@ -1017,11 +1040,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case serviceRegister =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object epId =>
+        case serviceRegistry _ =>
           cases hDec : decodeServiceRegisterArgs decoded with
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              replace hStep := serviceEndpointArm_ok hStep
+              obtain ⟨_, epId, -, hStep⟩ := hStep
+              try dsimp only at hStep
               unfold registerServiceChecked at hStep
               split at hStep
               · exact registerService_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
@@ -1159,6 +1185,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         case object epId =>
           split at hStep
           · cases hStep
+          cases hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
+          | some xf =>
+            -- an extra capability fails: the reply half is skipped, the receive runs
+            simp only [hXc] at hStep
+            exact receiveResolvedArm_cancelled_preserves_ipcInvariantFull ctx decoded tid
+              executingCore gate cap st st' epId hPack (Or.inr ⟨hSy, by simp [hXc]⟩) hTgt hStep
+          | none =>
+          simp only [hXc] at hStep
           · cases hRR : resolveReplyRecvReply gate decoded st with
             | error e => simp only [hRR] at hStep; cases hStep
             | ok triple =>
@@ -1190,7 +1224,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case declassify =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object targetId =>
+        case auditTrail code =>
+          cases hR : resolveDeclassifyTarget tid decoded.msgInfo.extraCaps st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok pr =>
+          obtain ⟨_, targetId⟩ := pr
+          simp only [hR] at hStep
           obtain ⟨tidC, hCur, hEq⟩ := declassifyObjectFromCore_frame_of_ok
             (liftLegacyContext ctx) ctx.declassificationPolicy
             executingCore targetId st st' hStep
@@ -1200,11 +1239,16 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         all_goals cases hStep
       case declassifySignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
-        case object notifId =>
-              have hNoBound := hQ.declassifySignalNoBoundTarget notifId hSy hTgt
+        case auditTrail code =>
+          cases hR : resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok pr =>
+              obtain ⟨ntfnCap, notifId⟩ := pr
+              simp only [hR] at hStep
+              have hNoBound := hQ.declassifySignalNoBoundTarget ntfnCap notifId hSy hR
               cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
                   (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                  cap.signalBadge executingCore st with
+                  ntfnCap.signalBadge executingCore st with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   cases res1 with
@@ -1215,13 +1259,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       have hSigInv : ipcInvariantFull st1 :=
                         notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          cap.signalBadge executingCore st st1 sgi1 hNoBound
+                          ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone hDisp
                       have hObjInv1 : st1.objects.invExt :=
                         notificationSignalDeclassifiedOnCore_preserves_objects_invExt
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          cap.signalBadge executingCore st st1 sgi1
+                          ntfnCap.signalBadge executingCore st st1 sgi1
                           hObjInv hDisp
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
@@ -1360,7 +1404,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       cases obj with
       | tcb tcb =>
           simp only [hT] at hStep
-          cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+          cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (decodedExtraCapsFault? st tid decoded) (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }) st with
           | error e => rw [hInvk] at hStep; cases hStep
           | ok pair =>
               obtain ⟨u, stPost⟩ := pair; cases u
@@ -1403,8 +1447,7 @@ private def witnessTcbBound : TCB :=
   { witnessTcbFresh with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound witnessScId), scBindingOwnerCode := 0 }
 
 private def witnessScFresh : SeLe4n.Kernel.SchedContext :=
-  { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
+  { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, budgetRemaining := ⟨1⟩ }
 
 private def witnessScBound : SeLe4n.Kernel.SchedContext :=
   { witnessScFresh with boundThreadCode := SeLe4n.ThreadId.optCode (some witnessTid) }
@@ -1811,7 +1854,7 @@ theorem syscallDispatchQuiescence_inhabited :
   · intro epId hSy
     simp [witnessDecoded] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecoded] at hSy
+    simp [witnessDecoded, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecoded] at hSy
   · intro notifId hSy
@@ -1821,7 +1864,7 @@ theorem syscallDispatchQuiescence_inhabited :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecoded] at hSy
   · intro hSy
-    simp [witnessDecoded] at hSy
+    simp [witnessDecoded, receivesWithoutReply] at hSy
 
 /-- The checked-tier pack is inhabited too: the base witness plus the
 declassifying signal's confinement, vacuous at a `.send`-shaped decode. -/
@@ -1829,7 +1872,7 @@ theorem checkedSyscallDispatchQuiescence_inhabited :
     checkedSyscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCap witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited, by
-    intro notifId hSy
+    intro ntfnCap notifId hSy
     simp [witnessDecoded] at hSy⟩
 
 -- ============================================================================
@@ -1943,7 +1986,7 @@ theorem syscallDispatchQuiescence_inhabited_signal :
   · intro epId hSy
     simp [witnessDecodedSignal] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedSignal] at hSy
+    simp [witnessDecodedSignal, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedSignal] at hSy
   · intro notifId hSy hTgt
@@ -1956,7 +1999,7 @@ theorem syscallDispatchQuiescence_inhabited_signal :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedSignal] at hSy
   · intro hSy
-    simp [witnessDecodedSignal] at hSy
+    simp [witnessDecodedSignal, receivesWithoutReply] at hSy
 
 /-- Every stored TCB is the witness thread's: the store's one TCB slot,
 characterised for the detachedness fields that quantify over the store. -/
@@ -2068,23 +2111,17 @@ private theorem witnessSt3_getTcb_seven :
       (SeLe4n.ObjId.ofNat 7).toNat).toObjId = SeLe4n.ObjId.ofNat 7 from rfl,
     witnessSt3_lookup_seven]
 
-/-- The capability-only pack against any register-free decode and the absent
-endpoint capability: the decoders refuse on the empty register file, and the
-object-target fields discharge on the empty slot. -/
+/-- The capability-only pack against any register-free decode other than a
+SchedContext bind and the absent endpoint capability: the bind field is about
+another syscall, and the object-target fields discharge on the empty slot. -/
 private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
-    (hRegs : decoded.msgRegs = #[]) :
+    (hSid : decoded.syscallId ≠ .schedContextBind) :
     capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
     ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ _ hRes
-    have hErr : ∃ e, decodeSchedContextBindArgs decoded = .error e := by
-      simp only [decodeSchedContextBindArgs, hRegs, requireMessageLength, requireMsgReg, bind,
-        Except.bind]
-      split <;> simp
-    obtain ⟨e, he⟩ := hErr
-    simp only [resolveSchedContextBindThread, he] at hRes
-    cases hRes
+  · intro _ _ hSy
+    exact absurd hSy hSid
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj
@@ -2103,7 +2140,7 @@ the state whose invariant is already proven. -/
 theorem syscallDispatchQuiescence_inhabited_send :
     syscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded (by simp [witnessDecoded]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
@@ -2119,7 +2156,7 @@ theorem syscallDispatchQuiescence_inhabited_send :
   · intro epId hSy
     simp [witnessDecoded] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecoded] at hSy
+    simp [witnessDecoded, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecoded] at hSy
   · intro notifId hSy
@@ -2129,7 +2166,7 @@ theorem syscallDispatchQuiescence_inhabited_send :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecoded] at hSy
   · intro hSy
-    simp [witnessDecoded] at hSy
+    simp [witnessDecoded, receivesWithoutReply] at hSy
 
 /-- A `.receive` decode with an explicit zero-length message info: the reply
 resolver's length gate reduces syntactically, so the premise fires with
@@ -2150,7 +2187,7 @@ state. -/
 theorem syscallDispatchQuiescence_inhabited_receive :
     syscallDispatchQuiescence witnessDecodedRecv witnessTid Concurrency.bootCoreId witnessGateRecv
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv (by simp [witnessDecodedRecv]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
@@ -2211,7 +2248,7 @@ the rendezvous field on the computed absent-endpoint lookup. -/
 theorem syscallDispatchQuiescence_inhabited_call :
     syscallDispatchQuiescence witnessDecodedCall witnessTid Concurrency.bootCoreId witnessGateCall
       witnessCapEndpoint witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall rfl,
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall (by simp [witnessDecodedCall]),
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
@@ -2231,7 +2268,7 @@ theorem syscallDispatchQuiescence_inhabited_call :
     rw [witnessSt3_getEndpoint_seven] at hEp
     cases hEp
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedCall] at hSy
+    simp [witnessDecodedCall, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedCall] at hSy
   · intro notifId hSy
@@ -2241,7 +2278,7 @@ theorem syscallDispatchQuiescence_inhabited_call :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedCall] at hSy
   · intro hSy
-    simp [witnessDecodedCall] at hSy
+    simp [witnessDecodedCall, receivesWithoutReply] at hSy
 
 /-- A `.cspaceMint` decode whose registers decode: destIndex 0 (also the bind
 decoder's thread id -- the sentinel, so that field refuses at validation),
@@ -2249,8 +2286,8 @@ srcRoot 999 (also the retype decoder's type tag -- invalid, so that decoder
 refuses), srcIndex 3, the operation word 3 (destination depth 3, source depth
 and rights 0), badge word 5. -/
 private def witnessDecodedMint : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 5, extraCaps := 0, label := 0 },
-    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨3⟩, ⟨5⟩] }
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 6, extraCaps := 1, label := 0 },
+    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨3⟩, ⟨3⟩, ⟨3⟩, ⟨3⟩, ⟨5⟩] }
 
 private def witnessGateMint : SyscallGate :=
   { callerId := witnessTid, cspaceRootCap := none,
@@ -2277,11 +2314,12 @@ theorem syscallDispatchQuiescence_inhabited_mint :
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     have hWords : Architecture.SyscallArgDecode.decodeCSpaceMintArgs witnessDecodedMint
-        = Architecture.SyscallArgDecode.cnodeMintArgsOfWords (SeLe4n.CPtr.ofNat 0)
-            (SeLe4n.CPtr.ofNat 999) (SeLe4n.CPtr.ofNat 3) 3 5 := rfl
+        = .ok { Architecture.SyscallArgDecode.cnodeOpArgsOfWords 0 3 3 3 with
+                rights := Architecture.SyscallArgDecode.cnodeRightsOfWord 3,
+                badge := SeLe4n.Badge.ofWord 5 } := rfl
     rw [hWords] at hDec
-    rw [Architecture.SyscallArgDecode.cnodeMintArgsOfWords_badge hDec]
-    exact SeLe4n.Badge.ofNatMasked_valid _
+    cases hDec
+    exact SeLe4n.Badge.valid_of_word _
   · intro epId hSy
     simp [witnessDecodedMint] at hSy
   · intro epId hSy
@@ -2289,7 +2327,7 @@ theorem syscallDispatchQuiescence_inhabited_mint :
   · intro epId hSy
     simp [witnessDecodedMint] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedMint] at hSy
+    simp [witnessDecodedMint, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedMint] at hSy
   · intro notifId hSy
@@ -2299,7 +2337,7 @@ theorem syscallDispatchQuiescence_inhabited_mint :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedMint] at hSy
   · intro hSy
-    simp [witnessDecodedMint] at hSy
+    simp [witnessDecodedMint, receivesWithoutReply] at hSy
 
 /-- A `.declassifySignal` decode: the checked tier's confinement fires. -/
 private def witnessDecodedDeclassifySignal : SyscallDecodeResult :=
@@ -2342,7 +2380,7 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
   · intro epId hSy
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedDeclassifySignal] at hSy
+    simp [witnessDecodedDeclassifySignal, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro notifId hSy
@@ -2352,20 +2390,24 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro hSy
-    simp [witnessDecodedDeclassifySignal] at hSy
+    simp [witnessDecodedDeclassifySignal, receivesWithoutReply] at hSy
 
 /-- **The checked confinement is exercised**: the `.declassifySignal` decode
-and the object target both fire, and `boundDeliveryTarget? = none` is
-computed on the present object. -/
+fires, and `boundDeliveryTarget? = none` is computed on every object the
+extra-capability resolver could name — the witness store holds no
+notification, so the lookup the confinement reads is `none` at every id. -/
 theorem checkedSyscallDispatchQuiescence_inhabited_declassifySignal :
     checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid Concurrency.bootCoreId
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited_declassifySignal, by
-    intro notifId hSy hTgt
-    injection hTgt with hObj
-    subst hObj
+    intro ntfnCap notifId _ _
+    have hN : witnessSt3.getNotification? notifId = none := by
+      unfold SystemState.getNotification?
+      rw [witnessSt3_lookup]
+      by_cases h1 : (witnessScId.toObjId == notifId) = true <;>
+        by_cases h2 : (witnessTid.toObjId == notifId) = true <;> simp [h1, h2]
     unfold boundDeliveryTarget?
-    rw [witnessSt3_getNotification_tcbSlot]⟩
+    rw [hN]⟩
 
 /-- A fresh reply object at slot `⟨3⟩`: the reply arm's object-lookup premise
 fires against a real stored reply.  Its `caller` is `none` -- the retype
@@ -2572,7 +2614,7 @@ theorem syscallDispatchQuiescence_inhabited_reply :
   · intro epId hSy
     simp [witnessDecodedReply] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedReply] at hSy
+    simp [witnessDecodedReply, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy hTgt hReply hCaller
     injection hTgt with hRid
     subst hRid
@@ -2590,7 +2632,7 @@ theorem syscallDispatchQuiescence_inhabited_reply :
     -- the fact it rested on is unchanged and still consumed here.
     exact absurd (witnessSt4_no_pendingFault callerTid) (by rw [hF]; simp)
   · intro hSy
-    simp [witnessDecodedReply] at hSy
+    simp [witnessDecodedReply, receivesWithoutReply] at hSy
 
 /-- A `.schedContextBind` decode whose one register decodes (capability address
 5 — `v0.35.204`; a raw thread id until then): the bind field's donation
@@ -2642,7 +2684,7 @@ theorem syscallDispatchQuiescence_inhabited_bind :
   · intro epId hSy
     simp [witnessDecodedBind] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedBind] at hSy
+    simp [witnessDecodedBind, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedBind] at hSy
   · intro notifId hSy
@@ -2652,7 +2694,7 @@ theorem syscallDispatchQuiescence_inhabited_bind :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedBind] at hSy
   · intro hSy
-    simp [witnessDecodedBind] at hSy
+    simp [witnessDecodedBind, receivesWithoutReply] at hSy
 
 /-- A `.tcbSuspend` decode with the TCB-object capability: the
 thread-quiescence field fires under its own arm and is proven of the
@@ -2700,7 +2742,7 @@ theorem syscallDispatchQuiescence_inhabited_suspend :
   · intro epId hSy
     simp [witnessDecodedSuspend] at hSy
   · intro epId replyIdOpt hSy
-    simp [witnessDecodedSuspend] at hSy
+    simp [witnessDecodedSuspend, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedSuspend] at hSy
   · intro notifId hSy
@@ -2710,6 +2752,6 @@ theorem syscallDispatchQuiescence_inhabited_suspend :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedSuspend] at hSy
   · intro hSy
-    simp [witnessDecodedSuspend] at hSy
+    simp [witnessDecodedSuspend, receivesWithoutReply] at hSy
 
 end SeLe4n.Kernel

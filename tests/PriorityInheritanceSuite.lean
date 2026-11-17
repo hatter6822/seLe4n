@@ -200,7 +200,6 @@ private def pip013_doesNotAffectOthers : IO Unit := do
 private def pip014_effectiveSchedParamsSchedContextBound : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := ⟨10⟩, budget := ⟨100⟩, period := ⟨1000⟩,
-    priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩
   }
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 10

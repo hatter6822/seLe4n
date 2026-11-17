@@ -325,6 +325,7 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   | .schedControl _ => true
   -- WS-ZA ZA6.32: the interrupt authorities name no object.
   | .irqControl _ => true
+  | .serviceRegistry _ => true
   | .irqHandler _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's

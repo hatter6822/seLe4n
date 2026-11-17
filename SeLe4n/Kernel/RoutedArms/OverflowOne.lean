@@ -13,11 +13,12 @@ import SeLe4n.Kernel.RoutedArms.Report
 # The one-overflow-word route's arm, out of line
 
 The routed entry's `.overflowOne` arm (`syscallEntryCheckedK`): a
-scheduling-context configure, a service register or a CNode mint, its fifth
-word read from overflow slot 0 of the caller's IPC buffer, as its own function.  The syscall
+scheduling-context configure, a service register or a CNode copy, its fifth
+word read from overflow slot 0 of the caller's IPC buffer, or a CNode mint short
+of its sixth, as its own function.  The syscall
 and the operand's address cross as words, the state owned, and the result is
-the state with its report pushed (`RoutedArms.Report`); the read, the TLB
-fill and its undo are the entry's own.
+the state with its report pushed (`RoutedArms.Report`); the read is the
+entry's own.
 The caller's saved register file is read here, off the state the arm is
 handed, rather than crossing the call: passed in, it would be held across the
 whole arm by the entry's reference, and every write to it the arm makes would
@@ -35,27 +36,26 @@ it, and so does a five-word invocation whose overflow slot does not read: its
 message clamped to the inline words, as seL4's `handleInvocation` clamps a
 message with no IPC buffer, it is short of its fifth argument. -/
 @[noinline] def shortArgsRoutedArm (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
-    (sid : SyscallId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    (sid : SyscallId) (capWord : UInt64) (xc : Nat) (st : SystemState) : SystemState :=
+  dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
     (shortArgsOperandArmR sid) st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1)
-    entryReportLookup entryReportLookupW
+    entryReportLookup entryReportLookupAtW
 
 /-- **The one-overflow-word arm**: the overflow word read, then
-`dispatchOverflowOneCheckedR` on the state with this core's TLB holding the
-buffer's translation, a refusal handing back the TLB the entry held; its
+`dispatchOverflowOneCheckedR` on the state it is handed; its
 refusal reported under the entry's resolved or lookup continuation as the
 dispatch told them apart, a result under the first. -/
 @[noinline] def overflowOneRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (st : SystemState) :
+    (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (xc : Nat) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-      (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
-      (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
-        (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
+      (fun _ => shortArgsRoutedArm executingCore tid sid capWord xc st)
+      (fun w => dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
+        (overflowOneOperandArmR ctx sid tcb.registerContext w tid xc) st entryReportGeneral
         (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
-        entryReportLookupW)
+        entryReportLookupAtW)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

@@ -611,10 +611,22 @@ attributed by disassembling the traced image.
   instead of copying a shared empty table; the heap admission counts them
   (`carvedVSpaceRootHeapBytes`).  Before, the object group was 3 / 104 and the
   pin 14 / 376.
-- **Thread** (since `v0.37.31`): the object group is 15 / 1960 — the thread's
+- **Thread** (since `v0.37.32`): the object group is 18 / 2080 — the thread's
   three space slots, their 24 derivation-link words (216 B), its empty space
-  cells and its two spare space records, each built at exact capacity
-  (48 B and 40 B), so the carve's copies keep it.  The pin is 19 / 2064.
+  cells and its three spare space records (the IPC-buffer slot's since WS-SX
+  SX6.6, which `TCB_SetIPCBuffer` writes over: a `some` cell, a capability
+  record and its target, 16 + 80 + 16 B), each array built at exact capacity
+  (48 B and 48 B), so the carve's copies keep it.  The pin was 22 / 2184; it
+  was 19 / 2064 at `v0.37.31`, with two spare records.  Since WS-SX SX6.5 the
+  thread has a fourth space slot, the fault handler's: its derivation-link
+  array holds 32 words (216 → 280 B) and its space-cell array four entries
+  (48 → 56 B), while the TCB record loses the retired `faultHandlerSet` and
+  `faultHandlerWord` scalars (the generated C's `lean_alloc_ctor(0, 43, 199)`,
+  9 scalar bytes fewer, 560 → 552 B), and the slot gets its own spare record
+  (seL4-MCS's `tcbFaultHandler` CTE, so SetSpace's fault-endpoint copy writes
+  over it in place: a `some` cell, a capability record and its target,
+  16 + 80 + 16 B) in a spare array of four entries (48 → 56 B).  The pin is
+  25 / 2368.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
   (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).  Gone since

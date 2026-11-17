@@ -207,8 +207,6 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_tcbSetIPCBuffer .lockSet,
     lkst! "lockSet for tcbSetAffinity"
       lockSet_tcbSetAffinity .lockSet,
-    lkst! "lockSet for tcbSetFaultHandler"
-      lockSet_tcbSetFaultHandler .lockSet,
     lkst! "lockSet for tcbSetSpace"
       lockSet_tcbSetSpace .lockSet,
     lkst! "lockSet for pageTableMap"
@@ -298,8 +296,6 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_tcbSetIPCBuffer .consistency,
     lkst! "lockSet_consistent for tcbSetAffinity"
       lockSet_consistent_tcbSetAffinity .consistency,
-    lkst! "lockSet_consistent for tcbSetFaultHandler"
-      lockSet_consistent_tcbSetFaultHandler .consistency,
     lkst! "lockSet_consistent for tcbSetSpace"
       lockSet_consistent_tcbSetSpace .consistency,
     lkst! "lockSet_consistent for pageTableMap"
@@ -399,20 +395,23 @@ A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check.  WS-ZA ZA6.9
 added the `schedContextConsumed` lockSet + consistency pair, and WS-ZA ZA6.29
 the `schedContextYieldTo` pair, and WS-ZA ZA6.32 the `irqHandlerAck`,
-`irqControlGet`, `irqHandlerSetNotification` and `irqHandlerClear` pairs. -/
+`irqControlGet`, `irqHandlerSetNotification` and `irqHandlerClear` pairs.
+WS-SX SX6.5 removed the `tcbSetFaultHandler` pair with the syscall: seL4-MCS
+sets the fault endpoint in `TCB_SetSpace`, whose footprint gained the
+endpoint's read. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 111 := by decide
+    lockSetTheorems.length = 109 := by decide
 
-/-- WS-SM SM3.B: 45 entries in the `lockSet` category (one per statically
+/-- WS-SM SM3.B: 44 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 45 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
   decide
 
-/-- WS-SM SM3.B: 45 entries in the `consistency` category (one per statically
+/-- WS-SM SM3.B: 44 entries in the `consistency` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 45 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

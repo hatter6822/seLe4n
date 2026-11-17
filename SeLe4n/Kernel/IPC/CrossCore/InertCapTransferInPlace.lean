@@ -126,7 +126,7 @@ theorem getCNode?_sendRendezvousWoken (st : SystemState) (endpointId : SeLe4n.Ob
     (wakeThread (storeSendRendezvous st endpointId r next msg) r core).1.getCNode? id =
       st.getCNode? id := by
   rw [storeSendRendezvous_eq_with]
-  have hg : ∀ t, (receiveCompleteTcb msg t).vspaceRoot = t.vspaceRoot ∧
+  have hg : ∀ t, (receiveCompleteTcb msg t).spaceCells[2] = t.spaceCells[2] ∧
       (receiveCompleteTcb msg t).ipcBuffer = t.ipcBuffer := fun t => by
     unfold receiveCompleteTcb TCB.setIpcState; exact ⟨rfl, rfl⟩
   have a1 := ipcBufferReadsAgree_storeSendRendezvousWith st endpointId r next

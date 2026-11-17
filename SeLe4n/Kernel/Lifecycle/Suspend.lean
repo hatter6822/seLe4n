@@ -642,7 +642,7 @@ def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : Co
   | some tcb =>
     let target := determineTargetCore st tid
     let p0 := tcb.boostedPriority
-    let d0 := effectiveDeadline st tcb
+    let d0 := tcb.deadline
     let dom0 := tcb.domain
     let e0 := hasSufficientBudget st tcb
     let st2 := resumeContext (markKeyChangeParts
@@ -669,7 +669,7 @@ theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidTh
         = markKeyChangeParts
             (markCandidacyGainFor (resumeReadyMidState st vtid.val) vtid.val
               (hasSufficientBudget st tcb)) vtid.val tcb.boostedPriority
-            (effectiveDeadline st tcb) tcb.domain := by
+            (tcb.deadline) tcb.domain := by
       unfold markKeyChangeFrom
       simp only [hT]
       rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
@@ -1185,7 +1185,7 @@ across a write (`cutHeadFrameKeepingContext_eq_impl`). -/
           | .donated s _ =>
             if s = scId then
               let p0 := ht.boostedPriority
-              let d0 := effectiveDeadline st2 ht
+              let d0 := ht.deadline
               let dom0 := ht.domain
               let e0 := hasSufficientBudget st2 ht
               markKeyChangeParts

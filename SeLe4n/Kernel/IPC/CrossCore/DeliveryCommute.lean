@@ -395,12 +395,6 @@ theorem effectiveSchedParams_msg (st : SystemState) (t : TCB) :
   unfold effectiveSchedParams
   simp only [SystemState.getSchedContext?_mapTcbInPlace]
 
-theorem effectiveDeadline_msg (st : SystemState) (t : TCB) :
-    effectiveDeadline (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) t =
-      effectiveDeadline st t := by
-  unfold effectiveDeadline
-  simp only [SystemState.getSchedContext?_mapTcbInPlace]
-
 theorem computeMaxWaiterPriority_msg (st : SystemState) (tid : SeLe4n.ThreadId) :
     PriorityInheritance.computeMaxWaiterPriority
         (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) tid =
@@ -446,15 +440,15 @@ theorem markKeyChangeParts_msg (st : SystemState) (tid : SeLe4n.ThreadId) (p0 : 
       (markKeyChangeParts st tid p0 d0 dom0).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
   unfold markKeyChangeParts
   have hBody : ∀ t : TCB,
-      (if (p0 == t.boostedPriority && d0.val == (effectiveDeadline st t).val &&
+      (if (p0 == t.boostedPriority && d0.val == (t.deadline).val &&
             dom0 == t.domain) = true then st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)
        else markKeyFlagsOver (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) tid t.runCoreCode
-          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (effectiveDeadline st t).val) ||
+          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (t.deadline).val) ||
             dom0 != t.domain) allCores) =
-      (if (p0 == t.boostedPriority && d0.val == (effectiveDeadline st t).val &&
+      (if (p0 == t.boostedPriority && d0.val == (t.deadline).val &&
             dom0 == t.domain) = true then st
        else markKeyFlagsOver st tid t.runCoreCode
-          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (effectiveDeadline st t).val) ||
+          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (t.deadline).val) ||
             dom0 != t.domain) allCores).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
     intro t
     split
@@ -463,13 +457,13 @@ theorem markKeyChangeParts_msg (st : SystemState) (tid : SeLe4n.ThreadId) (p0 : 
   rcases getTcb?_msg_cases r ρ μ π st tid with h | ⟨_, h⟩ <;> rw [h]
   · cases st.getTcb? tid with
     | none => rfl
-    | some t => simp only [effectiveDeadline_msg]; exact hBody t
+    | some t => exact hBody t
   · cases st.getTcb? tid with
     | none => rfl
-    | some t => simp only [Option.map_some, effectiveDeadline_msg]; exact hBody t
+    | some t => simp only [Option.map_some]; exact hBody t
 
-theorem effectiveDeadline_withMessageSlots (st : SystemState) (t : TCB) :
-    effectiveDeadline st (TCB.withMessageSlots ρ μ π t) = effectiveDeadline st t := rfl
+theorem deadline_withMessageSlots (st : SystemState) (t : TCB) :
+    (TCB.withMessageSlots ρ μ π t).deadline = t.deadline := rfl
 
 /-- A TCB update at a thread commutes with the delivery when it is at another
 thread or leaves the message slots alone. -/
@@ -504,7 +498,7 @@ theorem updatePipBoostOnCore_msg (st : SystemState) (c : CoreId) (tid : SeLe4n.T
               c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
           else (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).updateTcb tid fun x =>
               { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
-          tid tcb.boostedPriority (effectiveDeadline st tcb) tcb.domain) =
+          tid tcb.boostedPriority (tcb.deadline) tcb.domain) =
       (if (tcb.pipBoostCode == SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then st
        else
         markKeyChangeParts
@@ -515,7 +509,7 @@ theorem updatePipBoostOnCore_msg (st : SystemState) (c : CoreId) (tid : SeLe4n.T
               c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
           else st.updateTcb tid fun x =>
               { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
-          tid tcb.boostedPriority (effectiveDeadline st tcb) tcb.domain).mapTcbInPlace r
+          tid tcb.boostedPriority (tcb.deadline) tcb.domain).mapTcbInPlace r
         (TCB.withMessageSlots ρ μ π) := by
     intro tcb
     split
@@ -528,13 +522,13 @@ theorem updatePipBoostOnCore_msg (st : SystemState) (c : CoreId) (tid : SeLe4n.T
   rcases getTcb?_msg_cases r ρ μ π st tid with h | ⟨_, h⟩ <;> rw [h]
   · cases st.getTcb? tid with
     | none => rfl
-    | some tcb => dsimp only; rw [effectiveDeadline_msg]; exact hBody tcb
+    | some tcb => dsimp only; exact hBody tcb
   · cases st.getTcb? tid with
     | none => rfl
     | some tcb =>
       simp only [Option.map_some, TCB.withMessageSlots_pipBoostCode, TCB.withMessageSlots_boostedPriority,
         TCB.withMessageSlots_domain, TCB.withMessageSlots_runCoreCode, TCB.withMessageSlots_priority,
-        effectiveDeadline_withMessageSlots, effectiveDeadline_msg]
+        deadline_withMessageSlots]
       exact hBody tcb
 
 theorem propagatePipChainStateWalk_msg (st : SystemState) (tid : SeLe4n.ThreadId) (fuel : Nat)

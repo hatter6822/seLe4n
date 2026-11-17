@@ -5,11 +5,12 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 42 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 46 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
-/// Number 8, the retired in-place `lifecycleRetype`, is reserved: no variant
-/// carries it and it is never reassigned (see [`SyscallId::RETIRED`]).
+/// Numbers 8, the retired in-place `lifecycleRetype`, and 34, the retired
+/// `tcbSetFaultHandler`, are reserved: no variant carries them and they are
+/// never reassigned (see [`SyscallId::RETIRED`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 pub enum SyscallId {
@@ -92,14 +93,8 @@ pub enum SyscallId {
     // reading a bare "denied" cannot tell an unauthorized caller from an
     // authorized caller aimed at an unauthorized sink.
     DeclassifySignal = 33,
-    /// PR #887 review: install a thread's fault-handler CPtr — seL4's
-    /// `TCB_SetSpace` fault endpoint.  The CPtr (`x2`) is interpreted in the
-    /// **target** thread's CSpace and validated kernel-side at set time:
-    /// it must resolve to an endpoint capability carrying send and grant or
-    /// grant-reply, the same check the fault path applies at delivery.
-    /// The first writer of `TCB.faultHandler`: without it every fault on a
-    /// live system took the fail-closed suspend.
-    TcbSetFaultHandler = 34,
+    // 34: retired (WS-SX SX6.5, `tcbSetFaultHandler`: seL4-MCS installs the
+    // fault endpoint in `TCB_SetSpace`, extra capability 0); reserved.
     /// WS-RR RR8.16 (`v0.35.190`): revoke every capability derived from the one
     /// in the named slot — seL4's `seL4_CNode_Revoke`.
     ///
@@ -199,7 +194,7 @@ pub enum SyscallId {
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 47;
+    pub const COUNT: usize = 46;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
@@ -207,8 +202,10 @@ impl SyscallId {
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
-    /// carved from an untyped by `UntypedRetype` (36), as in seL4.
-    pub const RETIRED: [u64; 1] = [8];
+    /// carved from an untyped by `UntypedRetype` (36), as in seL4.  `34` was
+    /// `tcbSetFaultHandler`; since WS-SX SX6.5 the fault endpoint is
+    /// `TcbSetSpace`'s (38) extra capability 0, as in seL4-MCS.
+    pub const RETIRED: [u64; 2] = [8, 34];
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -247,7 +244,6 @@ impl SyscallId {
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
-            34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
@@ -306,9 +302,6 @@ impl SyscallId {
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
             Self::TcbSetAffinity => AccessRight::Write,
-            // PR #887 review: configuring a fault handler is a thread
-            // configuration write, like every other TCB_* invocation.
-            Self::TcbSetFaultHandler => AccessRight::Write,
             Self::TcbBindNotification | Self::TcbUnbindNotification => AccessRight::Write,
             // PR #822 Phase H: deriving a reply cap requires grant authority on the
             // source object cap (matches the cspaceMint/Copy/Move family).
@@ -382,7 +375,7 @@ mod tests {
 
     #[test]
     fn retired_lifecycle_retype_number_is_reserved() {
-        assert_eq!(SyscallId::RETIRED, [8]);
+        assert_eq!(SyscallId::RETIRED, [8, 34]);
         assert!(SyscallId::from_u64(8).is_none());
     }
 
@@ -501,15 +494,10 @@ mod tests {
     }
 
     #[test]
-    fn tcb_set_fault_handler_discriminant() {
-        // PR #887 review: fault-handler configuration, appended so every
-        // earlier discriminant is unchanged.
-        assert_eq!(SyscallId::TcbSetFaultHandler.to_u64(), 34);
-        assert_eq!(SyscallId::from_u64(34), Some(SyscallId::TcbSetFaultHandler));
-        assert_eq!(
-            SyscallId::TcbSetFaultHandler.required_right(),
-            AccessRight::Write
-        );
+    fn retired_tcb_set_fault_handler_number_is_reserved() {
+        // WS-SX SX6.5: the fault endpoint is TcbSetSpace's extra capability 0.
+        assert!(SyscallId::RETIRED.contains(&34));
+        assert!(SyscallId::from_u64(34).is_none());
     }
 
     #[test]
@@ -575,7 +563,7 @@ mod tests {
             assert_eq!(sid.required_right(), AccessRight::Write);
         }
         assert_eq!(SyscallId::from_u64(48), None);
-        assert_eq!(SyscallId::COUNT, 47);
+        assert_eq!(SyscallId::COUNT, 46);
         assert_eq!(SyscallId::ENCODING_BOUND, 48);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),

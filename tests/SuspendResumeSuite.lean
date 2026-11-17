@@ -319,7 +319,6 @@ private def sr017_suspendBoundSchedContext : IO Unit := do
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
@@ -470,7 +469,6 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (some tid),
       budget := ⟨1000⟩, period := ⟨1000⟩,
-      priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
       budgetRemaining := ⟨1000⟩, isActive := true, refillTailCount := 0 }
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
@@ -956,7 +954,6 @@ private def sr036_suspendCancelsYieldTo : IO Unit := do
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, yieldFromCode := 2 }
   let tcb := { mkTcb 1 .Ready with yieldToCode := 51 }
   let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
@@ -974,7 +971,6 @@ private def sr037_frozenSuspendCancelsYieldTo : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, yieldFromCode := 2 }
   let fst := mkFrozenState [(⟨1⟩, .tcb { mkTcb 1 .Ready with yieldToCode := 51 }),
     (⟨50⟩, .schedContext sc)]
@@ -991,7 +987,6 @@ private def sr037_frozenSuspendCancelsYieldTo : IO Unit := do
 private def yieldLinkedState : SystemState :=
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, consumed := 7, yieldFromCode := 2 }
   mkState [(⟨1⟩, .tcb { mkTcb 1 .Ready with yieldToCode := 51 }), (⟨50⟩, .schedContext sc)]
 
@@ -1032,11 +1027,11 @@ private def sr040_liveFrozenSuspendAgree : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scBound : SeLe4n.Kernel.SchedContext := {
     scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    budgetRemaining := ⟨1000⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩), isActive := true }
   let scYield : SeLe4n.Kernel.SchedContext := {
     scId := SeLe4n.SchedContextId.ofNat 60, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    budgetRemaining := ⟨1000⟩,
     yieldFromCode := 2 }
   let tcb := { mkTcb 1 .Ready with
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound (SeLe4n.SchedContextId.ofNat 50)),
@@ -1074,7 +1069,6 @@ which has consumed 7 units; thread 2 unlinked. -/
 private def yieldLinkedCurrentState (current : SeLe4n.ThreadId) : SystemState :=
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, consumed := 7, yieldFromCode := 2 }
   mkState [(⟨1⟩, .tcb { mkTcb 1 .Running with yieldToCode := 51 }),
     (⟨2⟩, .tcb (mkTcb 2 .Running)), (⟨50⟩, .schedContext sc)] (some current)
@@ -1400,7 +1394,7 @@ private def sr048_stallWaitsForTheRemoteSave : IO Unit := do
 earlier yielder (`0` for none). -/
 private def yieldToContext (bound : Nat) (yieldFrom : Nat := 0) : SeLe4n.Kernel.SchedContext :=
   { scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    budgetRemaining := ⟨1000⟩,
     consumed := 7, boundThreadCode := bound, yieldFromCode := yieldFrom }
 
 /-- A caller current on the boot core (thread `caller`, MCP `mcp`), the target
@@ -1551,7 +1545,6 @@ private def exhaustedBoundParts (state : ThreadState) : TCB × SeLe4n.Kernel.Sch
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
-    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨0⟩, refillHeadPresent := true, refillHeadAmount := 1000,
     refillHeadEligibleAt := 5000, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
   let tcb := { mkTcb 1 state with

@@ -106,18 +106,19 @@ fn xval_004_endpoint_reply() {
 // CSpace syscalls (RUST-XVAL-005 through RUST-XVAL-008)
 // ============================================================================
 
-/// RUST-XVAL-005: CSpace mint register layout: a copy's four words, and the
-/// badge in the IPC buffer's overflow slot 0 (message register 4).  The Lean
-/// side's XVAL-003 encodes the same arguments to the same five words.
+/// RUST-XVAL-005: CSpace mint register layout, seL4's `seL4_CNode_Mint`
+/// word order: destIndex, destDepth, srcIndex, srcDepth in x2..x5, and the
+/// rights and the badge in the IPC buffer's message registers 4 and 5.  The
+/// source root is the message's extra capability 0, not a word.  The Lean
+/// side's XVAL-003 encodes the same arguments to the same six words.
 #[test]
 fn xval_005_cspace_mint() {
     let args = cspace::CSpaceMintArgs {
         copy: cspace::CSpaceCopyArgs {
             slots: cspace::CNodeOpArgs {
                 dest_index: CPtr::from(10u64),
-                src_root: CPtr::from(3u64),
-                src_index: CPtr::from(20u64),
                 dest_depth: 64,
+                src_index: CPtr::from(20u64),
                 src_depth: 64,
             },
             rights: AccessRights::try_from(0x07u8).unwrap(), // read|write|grant
@@ -125,10 +126,10 @@ fn xval_005_cspace_mint() {
         badge: Badge::from(999u64),
     };
     let encoded = args.encode();
-    assert_eq!(encoded, [10, 3, 20, 64 | (64 << 8) | (7 << 16), 999]);
+    assert_eq!(encoded, [10, 64, 20, 64, 7, 999]);
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(6, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
     };
@@ -137,64 +138,60 @@ fn xval_005_cspace_mint() {
         &[
             (0, 500, "x0=CPtr"),
             (2, 10, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 20, "x4=srcIndex"),
-            (5, 64 | (64 << 8) | (7 << 16), "x5=depths|rights<<16"),
+            (5, 64, "x5=srcDepth"),
             (6, 4, "x7=SyscallId::CSpaceMint"),
         ],
     );
 }
 
-/// RUST-XVAL-006: CSpace copy register layout.
+/// RUST-XVAL-006: CSpace copy register layout (seL4's `seL4_CNode_Copy`:
+/// the four slot words in x2..x5, the rights in message register 4).
 #[test]
 fn xval_006_cspace_copy() {
     let args = cspace::CSpaceCopyArgs {
         slots: cspace::CNodeOpArgs {
             dest_index: CPtr::from(15u64),
-            src_root: CPtr::from(3u64),
-            src_index: CPtr::from(5u64),
             dest_depth: 64,
+            src_index: CPtr::from(5u64),
             src_depth: 8,
         },
         rights: AccessRights::try_from(0x03u8).unwrap(),
     };
     let encoded = args.encode();
+    assert_eq!(encoded, [15, 64, 5, 8, 3]);
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new(5, 1, 0).unwrap(),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceCopy,
     };
     verify_regs(
         &req,
         &[
             (2, 15, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 5, "x4=srcIndex"),
-            (
-                5,
-                64 | (8 << 8) | (3 << 16),
-                "x5=destDepth|srcDepth<<8|rights<<16",
-            ),
+            (5, 8, "x5=srcDepth"),
             (6, 5, "x7=SyscallId::CSpaceCopy"),
         ],
     );
 }
 
-/// RUST-XVAL-007: CSpace move register layout.
+/// RUST-XVAL-007: CSpace move register layout (seL4's `seL4_CNode_Move`).
 #[test]
 fn xval_007_cspace_move() {
     let args = cspace::CSpaceMoveArgs {
         dest_index: CPtr::from(14u64),
-        src_root: CPtr::from(3u64),
-        src_index: CPtr::from(7u64),
         dest_depth: 64,
+        src_index: CPtr::from(7u64),
         src_depth: 8,
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(700u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(4, 1, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMove,
     };
@@ -202,9 +199,9 @@ fn xval_007_cspace_move() {
         &req,
         &[
             (2, 14, "x2=destIndex"),
-            (3, 3, "x3=srcRoot"),
+            (3, 64, "x3=destDepth"),
             (4, 7, "x4=srcIndex"),
-            (5, 64 | (8 << 8), "x5=destDepth|srcDepth<<8"),
+            (5, 8, "x5=srcDepth"),
             (6, 6, "x7=SyscallId::CSpaceMove"),
         ],
     );
@@ -239,29 +236,34 @@ fn xval_008_cspace_delete() {
 /// RUST-XVAL-009: the carve's register layout.  WS-ZA ZA5.4 part 14 retired the
 /// in-place `lifecycleRetype` (syscall 8) this vector used to pin; every object
 /// is now carved from an untyped, so the vector pins the carve of a kernel
-/// object with a size — a CNode of radix 4.
+/// object with a size — a CNode of radix 4.  WS-SX SX6.3 (D9): seL4's word
+/// order, the first four in x2–x5 and the rest in the IPC buffer.
 #[test]
 fn xval_009_untyped_retype_kernel_object() {
     let args = lifecycle::UntypedRetypeArgs {
         new_type: TypeTag::CNode,
         size_bits: 4,
+        node_index: CPtr::from(3u64),
+        node_depth: 64,
+        node_offset: 7,
+        num_objects: 1,
         child_id: ObjId::from(42u64),
-        dst_cnode: CPtr::from(3u64),
-        dst_slot: Slot::from(7u64),
     };
+    let e = args.encode();
+    assert_eq!(&e[4..], &[7, 1, 42], "MR4..MR6 = offset, count, child id");
     let req = SyscallRequest {
         cap_addr: CPtr::from(900u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: args.encode(),
+        msg_info: MessageInfo::new(7, 1, 0).unwrap(),
+        msg_regs: [e[0], e[1], e[2], e[3]],
         syscall_id: SyscallId::UntypedRetype,
     };
     verify_regs(
         &req,
         &[
-            (2, 3 | (4 << 8), "x2=newType(CNode)|radix<<8"),
-            (3, 42, "x3=childId"),
-            (4, 3, "x4=dstCNode"),
-            (5, 7, "x5=dstSlot"),
+            (2, 3, "x2=newType(CNode)"),
+            (3, 4, "x3=size_bits(radix)"),
+            (4, 3, "x4=nodeIndex"),
+            (5, 64, "x5=nodeDepth"),
             (6, 36, "x7=SyscallId::UntypedRetype"),
         ],
     );
@@ -271,29 +273,28 @@ fn xval_009_untyped_retype_kernel_object() {
 // VSpace syscalls (RUST-XVAL-010 through RUST-XVAL-011)
 // ============================================================================
 
-/// RUST-XVAL-010: VSpace map register layout.
+/// RUST-XVAL-010: VSpace map register layout (WS-SX SX6.3, D6: seL4's
+/// `Page_Map` words; the frame is the invoked capability and the address
+/// space is extra capability 0).
 #[test]
 fn xval_010_vspace_map() {
-    let args = vspace::VSpaceMapArgs {
-        asid: Asid::from(1u64),
-        vaddr: VAddr::from(0x1000u64),
-        frame: CPtr::from(0x2000u64), // WS-BP BP7.1: a frame capability address
-        perms: PagePerms::try_from(0x05u64).unwrap(), // read|execute
-    };
+    let args = vspace::VSpaceMapArgs::from_perms(
+        VAddr::from(0x1000u64),
+        PagePerms::try_from(0x15u64).unwrap(), // read|execute|cacheable
+    );
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1000u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new(3, 1, 0).unwrap(),
+        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
     };
     verify_regs(
         &req,
         &[
-            (2, 1, "x2=asid"),
-            (3, 0x1000, "x3=vaddr"),
-            (4, 0x2000, "x4=frame capability address"),
-            (5, 0x05, "x5=perms"),
+            (2, 0x1000, "x2=vaddr"),
+            (3, 2, "x3=rights (CanRead)"),
+            (4, 1, "x4=attr (PageCacheable)"),
             (6, 9, "x7=SyscallId::VSpaceMap"),
         ],
     );
@@ -339,17 +340,22 @@ fn xval_012_service_register() {
     };
     let encoded = args.encode();
     // Service register needs 5 msg regs: 4 inline + 1 IPC buffer overflow.
+    // WS-SX SX6.7: invoked on the service-registry capability, the endpoint
+    // extra capability 0.
     let mut buf = IpcBuffer::new();
     buf.set_mr(4, encoded[4]).unwrap();
+    buf.caps_or_badges[0] = 1201;
     let req = SyscallRequest {
         cap_addr: CPtr::from(1200u64),
-        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(5, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
     };
     verify_regs(
         &req,
         &[
+            (0, 1200, "x0=CPtr(service registry)"),
+            (1, 5 | (1 << 7), "x1=MessageInfo(length 5, one extra cap)"),
             (2, 7, "x2=interfaceId"),
             (3, 5, "x3=methodCount"),
             (4, 256, "x4=maxMessageSize"),
@@ -363,24 +369,25 @@ fn xval_012_service_register() {
         1,
         "IPC buffer[4]=requiresGrant(true)"
     );
+    assert_eq!(buf.caps_or_badges[0], 1201, "extra cap 0 = the endpoint");
 }
 
 /// RUST-XVAL-013: Service revoke register layout.
 #[test]
 fn xval_013_service_revoke() {
     // The revoke reads no message register: the kernel removes the
-    // registration the invoked endpoint records.
+    // registration the endpoint, extra capability 0, records.
     let req = SyscallRequest {
         cap_addr: CPtr::from(1300u64),
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
     };
     verify_regs(
         &req,
         &[
-            (0, 1300, "x0=CPtr"),
-            (1, 0, "x1=MessageInfo(empty)"),
+            (0, 1300, "x0=CPtr(service registry)"),
+            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
             (6, 12, "x7=SyscallId::ServiceRevoke"),
         ],
     );
@@ -391,15 +398,15 @@ fn xval_013_service_revoke() {
 fn xval_014_service_query() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(1400u64),
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
     };
     verify_regs(
         &req,
         &[
-            (0, 1400, "x0=CPtr"),
-            (1, 0, "x1=MessageInfo(empty)"),
+            (0, 1400, "x0=CPtr(service registry)"),
+            (1, 1 << 7, "x1=MessageInfo(one extra cap)"),
             (6, 13, "x7=SyscallId::ServiceQuery"),
         ],
     );
@@ -567,7 +574,7 @@ fn message_info_exhaustive_bounds() {
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
 /// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
 /// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain;
-/// PR #887 review: +TcbSetFaultHandler).
+/// PR #887 review: +TcbSetFaultHandler, retired at 34 by WS-SX SX6.5).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in live_syscall_numbers() {
@@ -626,9 +633,8 @@ fn cspace_args_roundtrip_all() {
         copy: cspace::CSpaceCopyArgs {
             slots: cspace::CNodeOpArgs {
                 dest_index: CPtr::from(2u64),
-                src_root: CPtr::from(1u64),
-                src_index: CPtr::from(1u64),
                 dest_depth: 64,
+                src_index: CPtr::from(1u64),
                 src_depth: 64,
             },
             rights: AccessRights::try_from(0x1Fu8).unwrap(),
@@ -643,9 +649,8 @@ fn cspace_args_roundtrip_all() {
     let copy = cspace::CSpaceCopyArgs {
         slots: cspace::CNodeOpArgs {
             dest_index: CPtr::from(4u64),
-            src_root: CPtr::from(1u64),
-            src_index: CPtr::from(3u64),
             dest_depth: 64,
+            src_index: CPtr::from(3u64),
             src_depth: 64,
         },
         rights: AccessRights::ALL,
@@ -657,9 +662,8 @@ fn cspace_args_roundtrip_all() {
 
     let mv = cspace::CSpaceMoveArgs {
         dest_index: CPtr::from(6u64),
-        src_root: CPtr::from(1u64),
-        src_index: CPtr::from(5u64),
         dest_depth: 1,
+        src_index: CPtr::from(5u64),
         src_depth: 2,
     };
     assert_eq!(cspace::CSpaceMoveArgs::decode(&mv.encode()).unwrap(), mv);
@@ -745,50 +749,30 @@ fn message_info_new_rejects_oversized_label() {
     );
 }
 
-/// T3-D/M-NEW-10: VSpaceMapArgs perms validation at decode boundary.
-///
-/// Verify valid permission values roundtrip correctly and invalid values
-/// are rejected at decode.
+/// WS-SX SX6.3 (D6): every permission set reaches seL4's two words and back:
+/// read and write are the rights word's `CanRead` and `CanWrite`, execute is
+/// `ExecuteNever` clear and cacheable is `PageCacheable`.
 #[test]
-fn vspace_map_args_perms_roundtrip() {
-    // All valid 5-bit values (0x00 through 0x1F) roundtrip correctly
+fn vspace_map_args_perms_words() {
     for perm_val in 0..=0x1Fu64 {
-        let args = vspace::VSpaceMapArgs {
-            asid: Asid::from(1u64),
-            vaddr: VAddr::from(0x1000u64),
-            frame: CPtr::from(3u64),
-            perms: PagePerms::try_from(perm_val).unwrap(),
-        };
-        let decoded = vspace::VSpaceMapArgs::decode(&args.encode()).unwrap();
-        assert_eq!(
-            decoded, args,
-            "Roundtrip failed for perms=0x{:02x}",
-            perm_val
-        );
+        let perms = PagePerms::try_from(perm_val).unwrap();
+        let args = vspace::VSpaceMapArgs::from_perms(VAddr::from(0x1000u64), perms);
+        assert_eq!(args.rights & 2 != 0, perms.contains(PagePerms::READ));
+        assert_eq!(args.rights & 1 != 0, perms.contains(PagePerms::WRITE));
+        assert_eq!(args.attr & 4 == 0, perms.contains(PagePerms::EXECUTE));
+        assert_eq!(args.attr & 1 != 0, perms.contains(PagePerms::CACHEABLE));
+        assert_eq!(vspace::VSpaceMapArgs::decode(&args.encode()).unwrap(), args);
     }
 }
 
-/// T3-D: Invalid permission values are rejected at decode.
-/// V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
-/// because the message structure is correct — the argument value is invalid.
+/// WS-SX SX6.3 (D6): the words are total, as seL4's `rightsFromWord` and
+/// `vmAttributesFromWord` are; only a short message is refused.
 #[test]
-fn vspace_map_args_invalid_perms_rejected() {
-    // 0x20 — first value outside 5-bit range
+fn vspace_map_args_words_total() {
+    assert!(vspace::VSpaceMapArgs::decode(&[0x1000, 0xFF, u64::MAX]).is_ok());
     assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-        Err(KernelError::InvalidArgument)
-    );
-
-    // 0xFF — common garbage value
-    assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-        Err(KernelError::InvalidArgument)
-    );
-
-    // u64::MAX — extreme case
-    assert_eq!(
-        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-        Err(KernelError::InvalidArgument)
+        vspace::VSpaceMapArgs::decode(&[0x1000, 2]),
+        Err(KernelError::InvalidMessageInfo)
     );
 }
 
@@ -1079,17 +1063,17 @@ fn thread_on_different_core_decode() {
 fn untyped_retype_invalid_type_tag() {
     // Type tag 10 (first invalid, after PageTable = 9 — WS-BP BP7.1)
     assert_eq!(
-        lifecycle::UntypedRetypeArgs::decode(&[10, 42, 0, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[10, 0, 0, 0, 0, 1, 42]),
         Err(KernelError::InvalidTypeTag)
     );
-    // The low byte all ones
+    // A full byte
     assert_eq!(
-        lifecycle::UntypedRetypeArgs::decode(&[0xFF, 42, 0, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[0xFF, 0, 0, 0, 0, 1, 42]),
         Err(KernelError::InvalidTypeTag)
     );
     // Every valid tag decodes
     for i in 0..=9u64 {
-        assert!(lifecycle::UntypedRetypeArgs::decode(&[i, 42, 0, 0]).is_ok());
+        assert!(lifecycle::UntypedRetypeArgs::decode(&[i, 0, 0, 0, 0, 1, 42]).is_ok());
     }
 }
 
@@ -1102,20 +1086,19 @@ fn ipc_buffer_inline_error_variant() {
     }
 }
 
-/// CSpaceMintArgs decode returns InvalidArgument for a word with a bit set
-/// past the rights field (the message's structure is right, its argument is
-/// not); every 5-bit rights mask decodes, since the kernel masks with it.
+/// CSpaceMintArgs decode refuses no rights word: seL4's `rightsFromWord`
+/// reads the low bits and ignores the rest, and the kernel masks with them.
+/// Only a message shorter than six words is refused.
 #[test]
-fn cspace_mint_invalid_rights_error_variant() {
+fn cspace_mint_rights_word_never_refused() {
+    let wide = cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, u64::MAX, 42]).unwrap();
+    assert_eq!(wide.copy.rights, AccessRights::ALL);
+    let high = cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 1 << 21, 42]).unwrap();
+    assert_eq!(high.copy.rights, AccessRights::EMPTY);
     assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, 3, 1 << 21, 42]),
-        Err(KernelError::InvalidArgument)
+        cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 5]),
+        Err(KernelError::InvalidMessageInfo)
     );
-    assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, 3, u64::MAX, 42]),
-        Err(KernelError::InvalidArgument)
-    );
-    assert!(cspace::CSpaceMintArgs::decode(&[1, 2, 3, 0x1F << 16, 42]).is_ok());
 }
 
 /// V1-G (M-RS-5): PagePerms checked_bitor rejects W^X violations.
@@ -1236,10 +1219,11 @@ fn kernel_error_variant_count() {
 /// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42; WS-ZA
 /// ZA6.29 added SchedContextYieldTo at 43; WS-ZA ZA6.32 added IrqHandlerAck at
 /// 44 and IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to
-/// 47, leaving 47 variants under an encoding bound of 48).
+/// 47; WS-SX SX6.5 retired TcbSetFaultHandler at 34, leaving 46 variants
+/// under an encoding bound of 48).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 47;
+    const SYSCALL_COUNT: u64 = 46;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     assert_eq!(SyscallId::ENCODING_BOUND, 48);
     for i in live_syscall_numbers() {
@@ -1395,13 +1379,14 @@ fn sched_context_boundary() {
 /// WS-BP BP7.1's UntypedRetype,
 /// UntypedReset, TcbSetSpace, PageTableMap and PageTableUnmap, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
-/// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
+/// PR #887's review round's TcbSetFaultHandler (retired by WS-SX SX6.5, whose
+/// SetSpace installs the fault endpoint), WS-SM SM9.C.8's
 /// DeclassifySignal, WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's
 /// Declassify, WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 47);
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1424,34 +1409,22 @@ fn sched_context_required_rights() {
 
 // --- AA1-F: SchedContext arg decode conformance ---
 
-/// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip.
+/// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip — seL4-MCS's
+/// `SchedControl_ConfigureFlags` words (WS-SX SX6.4): budget, period, extra
+/// refills, badge, flags; the context is extra capability 0, not a word.
 #[test]
 fn sched_context_configure_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs {
-        sched_context: CPtr::from((1u64 << 63) | 4),
         budget: 1000,
         period: 5000,
-        priority: 200,
-        deadline: 10000,
-        domain: 3,
-    };
-    let encoded = args.encode().unwrap();
-    let decoded = SchedContextConfigureArgs::decode(&encoded).unwrap();
-    assert_eq!(decoded, args);
-}
-
-/// AA1-F-2: SchedContextBindArgs encode/decode roundtrip.
-#[test]
-fn sched_context_bind_roundtrip() {
-    use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    // `v0.35.204`: the operand is the TCB capability's address (`CPtr`), no
-    // longer a raw `ThreadId` — see `resolveSchedContextBindThread`.
-    let args = SchedContextBindArgs {
-        tcb_cap: CPtr::from(42u64),
+        extra_refills: 6,
+        badge: (1u64 << 63) | 4,
+        flags: 1,
     };
     let encoded = args.encode();
-    let decoded = SchedContextBindArgs::decode(&encoded).unwrap();
+    assert_eq!(encoded, [1000, 5000, 6, (1u64 << 63) | 4, 1]);
+    let decoded = SchedContextConfigureArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
 }
 
@@ -1475,120 +1448,35 @@ fn sched_context_configure_insufficient_regs() {
     );
 }
 
-/// AA1-F-5: SchedContextConfigureArgs — the priority is the parameter word's
-/// low byte (WS-ZA ZA6.4: priority and domain share MR3), so the word 256 reads
-/// as priority 0 in domain 1.  The encoder therefore refuses a priority of 256
-/// (or a domain of 16) rather than masking it into that other configuration.
+/// AA1-F-5: SchedContextConfigureArgs — every word is carried verbatim: the
+/// kernel range-checks the times and extra refills and stores the badge and
+/// flags as given, so the ABI neither masks nor refuses a bit.
 #[test]
-fn sched_context_configure_priority_is_low_byte() {
+fn sched_context_configure_words_verbatim() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 256, 10000]).unwrap();
-    assert_eq!(args.priority, 0);
-    assert_eq!(args.domain, 1);
-}
-
-/// AA1-F-5b: the encoder refuses priority 256 and domain 16 with the error the
-/// decode and the kernel return for the same word, and encodes nothing.
-#[test]
-fn sched_context_configure_encode_refuses_out_of_range() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let valid = SchedContextConfigureArgs {
-        sched_context: CPtr::from(7u64),
-        budget: 1000,
-        period: 5000,
-        priority: 255,
-        deadline: 10000,
-        domain: 15,
-    };
-    assert!(valid.encode().is_ok());
-    let priority_256 = SchedContextConfigureArgs {
-        priority: 256,
-        ..valid
-    };
-    assert_eq!(
-        priority_256.encode(),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-    let domain_16 = SchedContextConfigureArgs {
-        domain: 16,
-        ..valid
-    };
-    assert_eq!(domain_16.encode(), Err(KernelError::InvalidSyscallArgument));
-}
-
-/// AA1-F-6: SchedContextBindArgs boundary — empty registers.
-#[test]
-fn sched_context_bind_insufficient_regs() {
-    use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    assert_eq!(
-        SchedContextBindArgs::decode(&[]),
-        Err(KernelError::InvalidMessageInfo)
-    );
-}
-
-/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain.
-/// AG2-A: Domain 16 is first invalid (Lean numDomainsVal = 16, zero-indexed 0..=15).
-#[test]
-fn sched_context_configure_invalid_domain() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    // Domain 16 is the first invalid value
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-    // Domain 256 is also invalid (well beyond range)
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (256 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-}
-
-/// AA1-F-8: SchedContextConfigureArgs — max valid priority (255) and domain (15).
-/// AG2-A: Domain max updated from 255 to 15 to match Lean numDomainsVal = 16.
-#[test]
-fn sched_context_configure_max_valid() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 255 | (15 << 8), 10000]).unwrap();
-    assert_eq!(args.sched_context, CPtr::from(7u64));
-    assert_eq!(args.priority, 255);
-    assert_eq!(args.domain, 15);
-    assert_eq!(args.budget, 1000);
-    assert_eq!(args.period, 5000);
-    assert_eq!(args.deadline, 10000);
-}
-
-/// AA1-F-9: SchedContextConfigureArgs — zero-valued fields accepted.
-#[test]
-fn sched_context_configure_zero_values() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
-    assert_eq!(args.sched_context, CPtr::from(0u64));
-    assert_eq!(args.budget, 0);
-    assert_eq!(args.period, 0);
-    assert_eq!(args.priority, 0);
-    assert_eq!(args.deadline, 0);
-    assert_eq!(args.domain, 0);
+    for regs in [[0u64; 5], [u64::MAX; 5], [1, 2, 3, 4, 5]] {
+        let args = SchedContextConfigureArgs::decode(&regs).unwrap();
+        assert_eq!(args.encode(), regs);
+    }
 }
 
 // --- AA1-G: SchedContext TypeTag retype conformance ---
 
-/// AA1-G-1: the carve of a TypeTag::SchedContext (discriminant 6), its size in
-/// MR0's upper bits.
+/// AA1-G-1: the carve of a TypeTag::SchedContext (discriminant 6), its size the
+/// second word.
 #[test]
 fn untyped_retype_sched_context() {
     let args = lifecycle::UntypedRetypeArgs {
         new_type: TypeTag::SchedContext,
         size_bits: lifecycle::MIN_SCHED_CONTEXT_SIZE_BITS,
+        node_index: CPtr::from(0u64),
+        node_depth: 0,
+        node_offset: 1,
+        num_objects: 1,
         child_id: ObjId::from(42u64),
-        dst_cnode: CPtr::from(3u64),
-        dst_slot: Slot::from(1u64),
     };
     let encoded = args.encode();
-    assert_eq!(
-        encoded[0] & 0xFF,
-        6,
-        "TypeTag::SchedContext must encode as 6"
-    );
+    assert_eq!(encoded[0], 6, "TypeTag::SchedContext must encode as 6");
     let decoded = lifecycle::UntypedRetypeArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
 }
@@ -1713,12 +1601,12 @@ fn tcb_set_affinity_roundtrip() {
     assert_eq!(sid.to_u64(), 25);
 }
 
-/// PR #887 review: TcbSetFaultHandler roundtrip (discriminant 34).
+/// WS-SX SX6.5: discriminant 34 (the retired TcbSetFaultHandler) decodes to
+/// nothing — seL4-MCS's TCB_SetSpace installs the fault endpoint.
 #[test]
-fn tcb_set_fault_handler_roundtrip() {
-    let sid = SyscallId::from_u64(34).expect("TcbSetFaultHandler must exist");
-    assert_eq!(sid, SyscallId::TcbSetFaultHandler);
-    assert_eq!(sid.to_u64(), 34);
+fn retired_tcb_set_fault_handler_number_decodes_to_nothing() {
+    assert!(SyscallId::RETIRED.contains(&34));
+    assert!(SyscallId::from_u64(34).is_none());
 }
 
 /// WS-RR RR8.16: CspaceRevoke roundtrip (discriminant 35).
@@ -1824,11 +1712,11 @@ fn vspace_unify_instruction_roundtrip() {
 /// WS-SM SM8.C.9: Declassify roundtrip (discriminant 30).
 ///
 /// Authorize and audit a cross-domain downgrade.  Requires the **write** right:
-/// the flow direction is subject -> object (the caller releases its information
-/// into the target object's domain), matching API.lean
-/// `syscallRequiredRight .declassify = .write`.  It takes no inline argument
-/// registers — the capability names the target and both domains are resolved
-/// kernel-side.
+/// recording a downgrade appends to the audit trail, matching API.lean
+/// `syscallRequiredRight .declassify = .write` on the invoked audit-trail
+/// capability.  It takes no inline argument registers — the target is extra
+/// capability 0 (which needs `write` too: the flow runs subject -> object) and
+/// both domains are resolved kernel-side.
 #[test]
 fn declassify_roundtrip() {
     let sid = SyscallId::from_u64(30).expect("Declassify must exist");
@@ -1849,7 +1737,8 @@ fn syscall_boundary() {
     assert!(SyscallId::from_u64(47).is_some()); // Last valid
     assert!(SyscallId::from_u64(48).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
-    assert_eq!(SyscallId::COUNT, 47);
+    assert!(SyscallId::from_u64(34).is_none()); // Retired (WS-SX SX6.5)
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -1968,10 +1857,6 @@ fn tcb_ops_require_write() {
         AccessRight::Write
     );
     assert_eq!(
-        SyscallId::TcbSetFaultHandler.required_right(),
-        AccessRight::Write
-    );
-    assert_eq!(
         SyscallId::TcbBindNotification.required_right(),
         AccessRight::Write
     );
@@ -2034,11 +1919,9 @@ fn tcb_args_errors() {
         Err(KernelError::InvalidMessageInfo)
     );
 
-    // D3: Unaligned address
-    assert_eq!(
-        SetIPCBufferArgs::decode(&[513]),
-        Err(KernelError::AlignmentError)
-    );
+    // D3: an unaligned address decodes; the kernel refuses it with
+    // AlignmentError after the frame capability (seL4's checkValidIPCBuffer).
+    assert_eq!(SetIPCBufferArgs::decode(&[513]).unwrap().buffer_addr, 513);
     assert_eq!(
         SetIPCBufferArgs::decode(&[]),
         Err(KernelError::InvalidMessageInfo)
@@ -2053,10 +1936,11 @@ fn sys_tcb_module_exports() {
     // function signatures exist by referencing them as fn pointers.
     let _suspend: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_suspend;
     let _resume: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_resume;
-    let _set_prio: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+    let _set_prio: fn(CPtr, CPtr, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_priority;
-    let _set_mcp: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_mcp;
-    let _set_buf: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+    let _set_mcp: fn(CPtr, CPtr, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
+        sele4n_sys::tcb::tcb_set_mcp;
+    let _set_buf: fn(CPtr, u64, CPtr, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::tcb::tcb_set_ipc_buffer;
 }
 
@@ -2064,58 +1948,10 @@ fn sys_tcb_module_exports() {
 // AG2 — Pre-Hardware Rust ABI Fixes conformance tests
 // ============================================================================
 
-/// AG2-A-1: MAX_DOMAIN matches Lean numDomainsVal = 16 (zero-indexed 0..=15).
-#[test]
-fn max_domain_matches_lean() {
-    use sele4n_abi::args::sched_context::MAX_DOMAIN;
-    assert_eq!(
-        MAX_DOMAIN, 15,
-        "MAX_DOMAIN must be 15 (Lean numDomainsVal = 16, zero-indexed)"
-    );
-}
-
-/// AG2-A-2: Domain 15 accepted, domain 16 rejected at decode boundary.
-#[test]
-fn domain_boundary_validation() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-
-    // WS-ZA ZA6.4: the domain is bits 8–11 of MR3, beside the priority.
-    // Domain 15 (max valid) — accepted
-    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (15 << 8), 10000]).unwrap();
-    assert_eq!(args.domain, 15);
-
-    // Domain 16 (first invalid) — rejected
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
-}
-
-/// AG2-A-3: All valid domain values (0..=15) accepted at decode.
-#[test]
-fn all_valid_domains_accepted() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    for domain in 0..=15u64 {
-        let result =
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]);
-        assert!(result.is_ok(), "Domain {} should be accepted", domain);
-        assert_eq!(result.unwrap().domain, domain);
-    }
-}
-
-/// AG2-A-4: All invalid domain values (16..=255 and beyond) rejected at decode.
-#[test]
-fn invalid_domains_rejected() {
-    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    for domain in [16u64, 17, 100, 255, 256, u64::MAX >> 8] {
-        assert_eq!(
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]),
-            Err(KernelError::InvalidSyscallArgument),
-            "Domain {} should be rejected",
-            domain
-        );
-    }
-}
+// AG2-A-1..4 (domain range at the configure decode) retired by WS-SX SX6.4:
+// seL4-MCS's configure carries no domain (a thread's domain is set by
+// `seL4_DomainSet_Set`), so the configure words are carried verbatim
+// (`sched_context_configure_words_verbatim`).
 
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
@@ -2128,8 +1964,9 @@ fn sys_sched_context_module_exports() {
     // `v0.35.204`: `sched_context_bind` takes the TCB **capability** (`CPtr`),
     // matching the Lean `SchedContextBindArgs.tcbCPtr` operand; the typed
     // `ThreadId` it took until then was the raw operand the kernel no longer
-    // binds through.
-    let _bind: fn(CPtr, CPtr) -> KernelResult<SyscallResponse> =
+    // binds through.  WS-SX SX6.4: the capability is extra capability 0, so
+    // the wrapper takes the caller's IPC buffer.
+    let _bind: fn(CPtr, CPtr, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_bind;
     let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_unbind;
@@ -2256,7 +2093,6 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::TcbSetMCPriority
         | SyscallId::TcbSetIPCBuffer
         | SyscallId::TcbSetAffinity
-        | SyscallId::TcbSetFaultHandler
         | SyscallId::TcbBindNotification
         | SyscallId::TcbUnbindNotification
         | SyscallId::MintReplyCap
@@ -2481,37 +2317,38 @@ fn abi_layout_matches_the_lean_table() {
     rendered.push_str(&std::format!("maxLabel {}\n", message_info::MAX_LABEL));
     rendered.push_str(&std::format!("errorLabelBase {ERROR_LABEL_BASE}\n"));
     rendered.push_str(&std::format!("syscallAbiVersion {SYSCALL_ABI_VERSION}\n"));
-    // The CNode operation word, measured as the Lean side measures it: a
-    // copy's decode (a mint's too) of `2^j` alone names a depth or the rights
-    // mask, and a move's names a depth; a bit the decode refuses is reserved.
-    for j in 0..64 {
-        let word = 1u64 << j;
-        let owner = match cspace::CSpaceCopyArgs::decode(&[0, 0, 0, word]) {
-            Ok(a) => {
-                let (d, s, r) = (a.slots.dest_depth, a.slots.src_depth, a.rights.raw());
-                if d != 0 && s == 0 && r == 0 {
+    // The IPC buffer word that holds extra capability 0's address: a CNode
+    // operation's source root, seL4's `excaprefs[0]`.
+    rendered.push_str(&std::format!(
+        "ipcBufferCapsOrBadgesBase {}\n",
+        core::mem::offset_of!(IpcBuffer, caps_or_badges) / 8
+    ));
+    // A mint's six words in seL4's `decodeCNodeInvocation` order, measured
+    // as the Lean side measures them: decode `[1, 2, 3, 4, 5, 6]` and name
+    // the field each word lands in.
+    match cspace::CSpaceMintArgs::decode(&[1, 2, 3, 4, 5, 6]) {
+        Err(_) => rendered.push_str("cnodeMintWord refused\n"),
+        Ok(a) => {
+            for i in 0..6u64 {
+                let v = i + 1;
+                let owner = if a.copy.slots.dest_index.raw() == v {
+                    "destIndex"
+                } else if a.copy.slots.dest_depth == v {
                     "destDepth"
-                } else if s != 0 && d == 0 && r == 0 {
+                } else if a.copy.slots.src_index.raw() == v {
+                    "srcIndex"
+                } else if a.copy.slots.src_depth == v {
                     "srcDepth"
-                } else if r != 0 && d == 0 && s == 0 {
+                } else if u64::from(a.copy.rights.raw()) == v {
                     "rights"
+                } else if a.badge.raw() == v {
+                    "badge"
                 } else {
-                    "inconsistent"
-                }
+                    "unread"
+                };
+                rendered.push_str(&std::format!("cnodeMintWord {i} {owner}\n"));
             }
-            Err(_) => "reserved",
-        };
-        rendered.push_str(&std::format!("cnodeCopyBit {j} {owner}\n"));
-    }
-    for j in 0..64 {
-        let word = 1u64 << j;
-        let owner = match cspace::CSpaceMoveArgs::decode(&[0, 0, 0, word]) {
-            Ok(a) if a.dest_depth != 0 && a.src_depth == 0 => "destDepth",
-            Ok(a) if a.src_depth != 0 && a.dest_depth == 0 => "srcDepth",
-            Ok(_) => "inconsistent",
-            Err(_) => "reserved",
-        };
-        rendered.push_str(&std::format!("cnodeMoveBit {j} {owner}\n"));
+        }
     }
     // The error payload's message-register layout, measured as the Lean side
     // measures it: each shape is built with the sentinels `0xA1`, `0xA2`,
@@ -2638,7 +2475,7 @@ fn return_shape_value_returning_surface() {
 #[test]
 fn return_shape_matches_wrapper_signatures() {
     let _wait: fn(CPtr) -> KernelResult<Badge> = sele4n_sys::ipc::notification_wait;
-    let _query: fn(CPtr) -> KernelResult<sele4n_types::ServiceId> =
+    let _query: fn(CPtr, CPtr, &mut IpcBuffer) -> KernelResult<sele4n_types::ServiceId> =
         sele4n_sys::service::service_query;
     let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
         sele4n_sys::ipc::endpoint_receive;
@@ -2770,70 +2607,56 @@ fn wrappers_name_their_syscalls() {
 
     let slots = cspace::CNodeOpArgs {
         dest_index: CPtr::from(1u64),
-        src_root: cap,
-        src_index: CPtr::from(0u64),
         dest_depth: 64,
+        src_index: CPtr::from(0u64),
         src_depth: 64,
     };
-    let _ =
-        sele4n_sys::cspace::cspace_mint(cap, slots, AccessRights::ALL, Badge::from(1u64), &mut buf);
+    let _ = sele4n_sys::cspace::cspace_mint(
+        cap,
+        cap,
+        slots,
+        AccessRights::ALL,
+        Badge::from(1u64),
+        &mut buf,
+    );
     assert_names("cspace_mint", SyscallId::CSpaceMint);
-    let _ = sele4n_sys::cspace::cspace_copy(cap, slots, AccessRights::ALL);
+    let _ = sele4n_sys::cspace::cspace_copy(cap, cap, slots, AccessRights::ALL, &mut buf);
     assert_names("cspace_copy", SyscallId::CSpaceCopy);
-    let _ = sele4n_sys::cspace::cspace_move(cap, slots);
+    let _ = sele4n_sys::cspace::cspace_move(cap, cap, slots, &mut buf);
     assert_names("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
     assert_names("cspace_delete", SyscallId::CSpaceDelete);
     let _ = sele4n_sys::cspace::cspace_revoke(cap, Slot::from(0u64));
     assert_names("cspace_revoke", SyscallId::CspaceRevoke);
 
-    let _ = sele4n_sys::lifecycle::untyped_retype_tcb(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let dst = sele4n_sys::lifecycle::RetypeDestination {
+        root: cap,
+        node_index: CPtr::from(0u64),
+        node_depth: 0,
+        node_offset: 3,
+    };
+    let _ = sele4n_sys::lifecycle::untyped_retype_tcb(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_tcb)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_endpoint(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_endpoint(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_endpoint)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_notification(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_notification(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_notification)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_cnode(
-        cap,
-        4,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_cnode(cap, 4, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_cnode)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_reply(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_reply(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_reply)",
         SyscallId::UntypedRetype,
@@ -2842,49 +2665,35 @@ fn wrappers_name_their_syscalls() {
         cap,
         8,
         ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
+        dst,
+        &mut buf,
     );
     assert_names(
         "untyped_retype (untyped_retype_sched_context)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_frame(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_frame(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_frame)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_untyped(
-        cap,
-        21,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_untyped(cap, 21, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_untyped)",
         SyscallId::UntypedRetype,
     );
-    let _ = sele4n_sys::lifecycle::untyped_retype_vspace_root(
-        cap,
-        ObjId::from(1u64),
-        CPtr::from(2u64),
-        Slot::from(3u64),
-    );
+    let _ =
+        sele4n_sys::lifecycle::untyped_retype_vspace_root(cap, ObjId::from(1u64), dst, &mut buf);
     assert_names(
         "untyped_retype (untyped_retype_vspace_root)",
         SyscallId::UntypedRetype,
     );
     let _ = sele4n_sys::lifecycle::untyped_reset(cap);
     assert_names("untyped_reset", SyscallId::UntypedReset);
-    let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, 0);
+    let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, cap, 0, 0, &mut buf);
     assert_names("tcb_set_space", SyscallId::TcbSetSpace);
-    let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64));
+    let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64), &mut buf);
     assert_names("page_table_map", SyscallId::PageTableMap);
     let _ = sele4n_sys::vspace::page_table_unmap(cap);
     assert_names("page_table_unmap", SyscallId::PageTableUnmap);
@@ -2896,9 +2705,9 @@ fn wrappers_name_their_syscalls() {
     assert_names("sched_context_yield_to", SyscallId::SchedContextYieldTo);
     let _ = sele4n_sys::irq::irq_handler_ack(cap);
     assert_names("irq_handler_ack", SyscallId::IrqHandlerAck);
-    let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, Slot::from(0u64));
+    let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, cap, 64, &mut buf);
     assert_names("irq_control_get", SyscallId::IrqControlGet);
-    let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap);
+    let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap, &mut buf);
     assert_names(
         "irq_handler_set_notification",
         SyscallId::IrqHandlerSetNotification,
@@ -2908,9 +2717,9 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,
-        Asid::from(1u64),
-        VAddr::from(0x1000u64),
         CPtr::from(2u64),
+        VAddr::from(0x1000u64),
+        &mut buf,
     );
     assert_names("vspace_map", SyscallId::VSpaceMap);
     let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));
@@ -2924,6 +2733,7 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::service::service_register(
         cap,
+        cap,
         InterfaceId::from(1u64),
         1,
         64,
@@ -2932,9 +2742,9 @@ fn wrappers_name_their_syscalls() {
         &mut buf,
     );
     assert_names("service_register", SyscallId::ServiceRegister);
-    let _ = sele4n_sys::service::service_revoke(cap);
+    let _ = sele4n_sys::service::service_revoke(cap, cap, &mut buf);
     assert_names("service_revoke", SyscallId::ServiceRevoke);
-    let _ = sele4n_sys::service::service_query(cap);
+    let _ = sele4n_sys::service::service_query(cap, cap, &mut buf);
     assert_names("service_query", SyscallId::ServiceQuery);
 
     let _ = sele4n_sys::sched_context::sched_context_configure(
@@ -2948,7 +2758,7 @@ fn wrappers_name_their_syscalls() {
         &mut buf,
     );
     assert_names("sched_context_configure", SyscallId::SchedContextConfigure);
-    let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64));
+    let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64), &mut buf);
     assert_names("sched_context_bind", SyscallId::SchedContextBind);
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
     assert_names("sched_context_unbind", SyscallId::SchedContextUnbind);
@@ -2957,17 +2767,15 @@ fn wrappers_name_their_syscalls() {
     assert_names("tcb_suspend", SyscallId::TcbSuspend);
     let _ = sele4n_sys::tcb::tcb_resume(cap);
     assert_names("tcb_resume", SyscallId::TcbResume);
-    let _ = sele4n_sys::tcb::tcb_set_priority(cap, 1);
+    let _ = sele4n_sys::tcb::tcb_set_priority(cap, cap, 1, &mut buf);
     assert_names("tcb_set_priority", SyscallId::TcbSetPriority);
-    let _ = sele4n_sys::tcb::tcb_set_mcp(cap, 1);
+    let _ = sele4n_sys::tcb::tcb_set_mcp(cap, cap, 1, &mut buf);
     assert_names("tcb_set_mcp", SyscallId::TcbSetMCPriority);
-    let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000);
+    let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000, cap, &mut buf);
     assert_names("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
     assert_names("tcb_set_affinity", SyscallId::TcbSetAffinity);
-    let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
-    assert_names("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
-    let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
+    let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap, &mut buf);
     assert_names("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);
     assert_names("tcb_unbind_notification", SyscallId::TcbUnbindNotification);
@@ -2975,9 +2783,9 @@ fn wrappers_name_their_syscalls() {
     let _ = sele4n_sys::cspace::mint_reply_cap(cap, Slot::from(0u64), Slot::from(1u64));
     assert_names("mint_reply_cap", SyscallId::MintReplyCap);
 
-    let _ = sele4n_sys::declassify::declassify(cap);
+    let _ = sele4n_sys::declassify::declassify(cap, cap, &mut buf);
     assert_names("declassify", SyscallId::Declassify);
-    let _ = sele4n_sys::declassify::declassify_signal(cap);
+    let _ = sele4n_sys::declassify::declassify_signal(cap, cap, &mut buf);
     assert_names("declassify_signal", SyscallId::DeclassifySignal);
     assert_no_badge_operand("declassify_signal");
 

@@ -602,23 +602,22 @@ def frozenBindPlacesParkedThread (st : FrozenSystemState) (tid : SeLe4n.ThreadId
     && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
     && sc.budgetRemaining.isPositive
 
-/-- **Cut B2**: write a bound TCB, re-bucketing it if it was queued and
-**placing** it if it was parked and runnable.
+/-- **Cut B2**: write a bound TCB, **placing** it if it was parked and runnable.
 
-`frozenWriteTcbRebucketed`'s bind-specific sibling, and deliberately not a
-widening of it: the other two callers of that writer are priority writes
-(`updatePipBoostOnCore`'s and `migrateRunQueueBucketOnCore`'s mirrors), and a
-priority write must not make a parked thread schedulable — only a bind, which
-hands the thread a reservation, may.  Both arms call `frozenRebucketRunnable`,
-which drops `tid` from every bucket (a no-op when it is in none) and appends it
-to the one `newPrio` names, so the placement and the re-bucket are one write with
-two admissions rather than two writes. -/
+The bind's writer, and deliberately not a widening of `frozenWriteTcbRebucketed`:
+the other callers of that one are priority writes, and a priority write must not
+make a parked thread schedulable — only a bind, which hands the thread a
+reservation, may.  A thread already queued is left where it is: the bind moves
+neither its priority nor its deadline (WS-SX SX6.4, seL4-MCS's
+`schedContext_bindTCB`), so its bucket and its place in it are unchanged, as the
+live bind leaves them.  The placement appends the thread to the bucket its
+effective priority names (`frozenRebucketRunnable`). -/
 def frozenWriteTcbBoundPlaced (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (after : TCB) (sc : SeLe4n.Kernel.SchedContext) : Except KernelError FrozenSystemState :=
   match frozenWithObjectStored st tid.toObjId (.tcb after) with
   | .error e => .error e
   | .ok st' =>
-      if frozenQueuedAnywhere st' tid || frozenBindPlacesParkedThread st' tid after sc then
+      if frozenBindPlacesParkedThread st' tid after sc then
         .ok (frozenRebucketRunnable st' tid after.boostedPriority)
       else .ok st'
 

@@ -98,7 +98,7 @@ mapping (`threadSlotsRecordNoMapping`), so the record it loses witnessed
 nothing, and the copy it writes records none. -/
 theorem threadSlotCopied_preserves_liveMappingsRecorded {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t)
-    {slot : SeLe4n.Slot} (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    {slot : SeLe4n.Slot} (hs : slot.toNat < 4) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
     (threadSlotCopied st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
   obtain ⟨hFar, -⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights data
@@ -143,7 +143,7 @@ object after the copy (`threadSlotCopied_retireTargetUnnamed`). -/
 theorem threadSlotSet_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} {slot : SeLe4n.Slot}
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
-    (hs : slot.toNat < 3) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (hs : slot.toNat < 4) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (data : UInt64) (hL : st.liveMappingsRecorded) :
     (threadSlotSet ec st tid slot srcCNode srcSlot rights data).liveMappingsRecorded := by
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
@@ -154,23 +154,29 @@ theorem threadSlotSet_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     (threadSlotCopied_retireTargetUnnamed hInv hT hs srcCNode srcSlot rights data)
     (threadSlotCopied_preserves_liveMappingsRecorded hObjInv hT hs srcCNode srcSlot rights data hL)
 
-/-- **Setting a thread's space keeps the mappings recorded**: each of its two
-slot sets does (`threadSlotSet_preserves_liveMappingsRecorded`), the second from
-the capability bundle the first keeps
-(`threadSlotSet_preserves_capabilityInvariantBundle`). -/
+/-- **Setting a thread's space keeps the mappings recorded**: each of its three
+slot sets does (`threadSlotSet_preserves_liveMappingsRecorded`), each after the
+first from the capability bundle the ones before it keep
+(`cspaceRootSet_preserves_capabilityInvariantBundle`,
+`rootSets_preserves_capabilityInvariantBundle`). -/
 theorem copyThreadSpaces_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    {fhSrc : CSpaceAddr}
     (hInv : capabilityInvariantBundle st) (hL : st.liveMappingsRecorded)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     st'.liveMappingsRecorded := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨tcb, hT, -, -, hCn, hVr, -, rfl⟩ := copyThreadSpaces_ok hStep
   have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
   have hL1 := threadSlotSet_preserves_liveMappingsRecorded ec hInv hT (by decide) cnSrc.cnode
     cnSrc.slot TCB.cspaceRootRights cnData (slot := TCB.cspaceRootSlot) hL
   obtain ⟨t1, hT1⟩ := cspaceRootSet_getTcb? ec hObjInv hT hCn
+  have hL2 := threadSlotSet_preserves_liveMappingsRecorded ec
+    (cspaceRootSet_preserves_capabilityInvariantBundle ec hInv hT hCn) hT1
+    (slot := TCB.vspaceRootSlot) (by decide) vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0 hL1
+  obtain ⟨t2, hT2⟩ := rootSets_getTcb? ec (vrSrc := vrSrc) hObjInv hT hCn
   exact threadSlotSet_preserves_liveMappingsRecorded ec
-    (cspaceRootSet_preserves_capabilityInvariantBundle ec hInv hT hCn) hT1 (by decide)
-    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0 hL1
+    (rootSets_preserves_capabilityInvariantBundle ec hInv hT hCn hVr) hT2
+    (slot := TCB.faultHandlerSlot) (by decide) fhSrc.cnode fhSrc.slot TCB.faultHandlerRights 0 hL2
 
 /-- **Setting a thread's space through the zombie delete keeps the mappings
 recorded**: the loop's passes are finalising deletes and finalisations, which
@@ -182,8 +188,8 @@ ones. -/
 theorem copyThreadSpacesZombie_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
     {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
     (hInv : capabilityInvariantBundle st) (hW : teardownWellFormed st)
-    (hL : st.liveMappingsRecorded)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hL : st.liveMappingsRecorded) {fhSrc : CSpaceAddr}
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     st'.liveMappingsRecorded := by
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
   · exact copyThreadSpaces_preserves_liveMappingsRecorded ec hInv hL h1

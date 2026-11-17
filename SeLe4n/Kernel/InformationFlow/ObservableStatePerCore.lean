@@ -1008,6 +1008,7 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   -- WS-ZA ZA6.32: an interrupt-control capability names no object, constant
   -- `true`; a handler capability names its line's interrupt node.
   | irqControl _ => exact h
+  | serviceRegistry _ => exact h
   | irqHandler l => exact objectObservable_monotone ctx hFlow (irqNodeId l) h
 
 /-- SM8.A.4: the SM7.D per-core instruction-cache view is invisible to every

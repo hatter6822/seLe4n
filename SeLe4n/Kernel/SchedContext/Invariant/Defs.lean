@@ -26,7 +26,6 @@ refill engine (`Budget.lean`, seL4-MCS's refills) keeps them.
 - `chargeBudget_preserves_schedContextWellFormed`: the charge (the tick's and the
   yield's)
 - `releaseReadyHead_preserves_schedContextWellFormed`: the drain's release
-- `cbsUpdateDeadline_preserves_schedContextWellFormed`: the deadline rule
 - `refillNew_schedContextWellFormed` / `refillUpdate_schedContextWellFormed`:
   configure's refills, at valid parameters
 
@@ -166,13 +165,6 @@ theorem refillUnblockCheck_preserves_schedContextWellFormed (sc : SchedContext) 
     (SchedContext.refillUnblockCheck_refillsPositive _ _ (schedContextWellFormed_refillsPositive h))
     ⟨by rw [SchedContext.refillUnblockCheck_refillTotal, hb]; exact h.2.2.2.2.1,
       SchedContext.refillUnblockCheck_refillsFit _ _ h.2.2.2.2.2⟩
-
-/-- The deadline rule keeps the bundle: it writes only the deadline. -/
-theorem cbsUpdateDeadline_preserves_schedContextWellFormed (sc : SchedContext) (t : Nat) (b : Bool)
-    (h : schedContextWellFormed sc) : schedContextWellFormed (cbsUpdateDeadline sc t b) := by
-  unfold cbsUpdateDeadline; split
-  · exact h
-  · exact h
 
 /-- **`refill_new` at valid parameters is well formed**: the budget in one
 refill, none pending. -/

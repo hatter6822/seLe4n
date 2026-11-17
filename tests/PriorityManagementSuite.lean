@@ -176,14 +176,15 @@ private def pm008_setMCPriorityCapsExisting : IO Unit := do
 -- D2-M4: SchedContext binding tests
 -- ============================================================================
 
-/-- PM-009: setPriority on SchedContext-bound thread updates SchedContext priority. -/
+/-- PM-009: setPriority on a SchedContext-bound thread writes the thread's own
+priority and leaves its context untouched (WS-SX SX6.4: seL4-MCS's context
+carries no priority; `invokeTCB_ThreadControlSched` writes `tcbPriority`). -/
 private def pm009_setPriorityBoundThread : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨30⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
@@ -193,10 +194,11 @@ private def pm009_setPriorityBoundThread : IO Unit := do
   ]
   match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
-    -- SchedContext priority should be updated
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) => expect "bound TCB priority updated to 80" (tcb.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "target TCB not found"
     match st'.objects[scId.toObjId]? with
-    | some (.schedContext sc') =>
-      expect "SchedContext priority updated to 80" (sc'.priority == ⟨80⟩)
+    | some (.schedContext sc') => expect "SchedContext untouched" (sc' == sc)
     | _ => throw <| IO.userError "SchedContext not found"
   | .error e => throw <| IO.userError s!"setPriority bound should succeed, got {repr e}"
 
@@ -216,26 +218,17 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
     | _ => throw <| IO.userError "target TCB not found"
   | .error e => throw <| IO.userError s!"setPriority unbound should succeed, got {repr e}"
 
-/-- PM-010b: setMCPriority caps priority on SchedContext-bound thread.
-
-WS-RR (`v0.35.133`): the fixture used to carry `tcb.priority = 30` beside a bound
-reservation at 80 -- a state `boundThreadPriorityConsistent` forbids, and one the
-old two-homes reading made meaningful because the cap consulted the RESERVATION's
-field.  With `TCB.priority` the base's one home the cap reads the thread, so the
-state the kernel actually maintains is the one to test: both homes at 80, capped
-to 50, and **both** asserted afterwards -- the TCB assertion being the one the
-suite never made and the one that would have caught `v0.35.98`. -/
+/-- PM-010b: setMCPriority caps priority on a SchedContext-bound thread: the
+cap writes the thread's own base priority and leaves its context untouched. -/
 private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
-  -- Target runs at 80 and its reservation is configured to 80 (the propagation
-  -- `schedContextBind` establishes); we set MCP to 50, so the cap must fire.
+  -- Target runs at 80; we set MCP to 50, so the cap must fire.
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 80) (mcp := 150) (binding := .bound scId))),
@@ -243,65 +236,15 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
   ]
   match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
-    -- Verify MCP was updated on TCB, and that the cap wrote the thread's own
-    -- base priority -- the one home every scheduling decision reads.
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
       expect "MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
       expect "TCB base priority capped to 50" (tcb.priority == ⟨50⟩)
     | _ => throw <| IO.userError "target TCB not found"
-    -- ...and that the configured band on the reservation moved with it, which is
-    -- what keeps `boundThreadPriorityConsistent` true across the cap.
     match st'.objects[scId.toObjId]? with
-    | some (.schedContext sc') =>
-      expect "SchedContext priority capped to 50" (sc'.priority == ⟨50⟩)
+    | some (.schedContext sc') => expect "SchedContext untouched by the cap" (sc' == sc)
     | _ => throw <| IO.userError "SchedContext not found after MCP cap"
   | .error e => throw <| IO.userError s!"setMCPriority bound cap should succeed, got {repr e}"
-
-/-- PM-010c: the MCP cap reads the THREAD's band, not its reservation's.
-
-The discriminating witness for `v0.35.133`, and the only shape that can be one:
-on a state satisfying `boundThreadPriorityConsistent` the two readings agree by
-construction, so what separates them is a **drifted** state -- exactly the state
-`v0.35.98` produced, where a demotion wrote one home and left the mirror stale.
-
-Here the thread runs at 30 and its reservation still reads 80.  The new MCP is 50.
-The thread's band is already below the ceiling, so the cap must NOT fire and
-nothing may be rewritten; the retired reading saw the reservation's 80, capped,
-and would have driven the thread's band DOWN to 50 on the strength of a field no
-scheduling decision consults.  A revert of the one-home collapse fails here. -/
-private def pm010c_setMCPriorityReadsThreadNotReservation : IO Unit := do
-  let callerTid : SeLe4n.ThreadId := ⟨1⟩
-  let targetTid : SeLe4n.ThreadId := ⟨2⟩
-  let scId : SeLe4n.SchedContextId := ⟨51⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150) (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc)
-  ]
-  -- The retired resolver's answer, computed beside the live one so the
-  -- assertions below are known to discriminate rather than merely to pass.
-  let retiredReservationReading : SeLe4n.Priority := sc.priority
-  expect "the two readings disagree on this state"
-    (!(retiredReservationReading == ⟨30⟩))
-  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
-  | .ok st' =>
-    match st'.objects[targetTid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
-      expect "the thread keeps its own band -- no cap fired" (tcb.priority == ⟨30⟩)
-    | _ => throw <| IO.userError "target TCB not found"
-    match st'.objects[scId.toObjId]? with
-    | some (.schedContext sc') =>
-      expect "the stale mirror is left alone -- the cap did not consult it"
-        (sc'.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "SchedContext not found"
-  | .error e => throw <| IO.userError s!"setMCPriority should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M5: MCP authority transitivity
@@ -405,230 +348,79 @@ private def pm015_frozenSetMCPriority : IO Unit := do
   | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
 
 -- =============================================================================
--- AK2-B: Option B priority propagation regression tests
+-- AK2-B's propagation, retired by WS-SX SX6.4: bind and configure write no
+-- thread priority or domain
 -- =============================================================================
 
-/-- AK2-B-01: `schedContextBind` propagates `sc.priority` into `tcb.priority`. -/
-private def pm_ak2b_01_bindPropagatesPriority : IO Unit := do
+/-- AK2-B-01 (WS-SX SX6.4): `schedContextBind` writes the two binding links
+alone, as seL4-MCS's `schedContext_bindTCB` does: the thread keeps its own
+priority and domain, and a thread in a domain other than 0 binds (seL4 checks
+no domain at bind). -/
+private def pm_bindKeepsThreadPriorityAndDomain : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨42⟩
   let scObjId : SeLe4n.ObjId := ⟨100⟩
   let scId : SeLe4n.SchedContextId := ⟨100⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨77⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := 0
   }
   let st := mkState [
-    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 10) (mcp := 200))),
+    (targetTid.toObjId, .tcb { mkTcb 42 (prio := 10) (mcp := 200) with domain := ⟨2⟩ }),
     (scObjId, .schedContext sc)
   ]
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scObjId, by decide⟩ ⟨targetTid, by decide⟩ st with
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "tcb.priority propagated from sc.priority (10 -> 77)"
-        (tcb.priority == ⟨77⟩)
+      expect "bind keeps tcb.priority (10)" (tcb.priority == ⟨10⟩)
+      expect "bind keeps tcb.domain (2)" (tcb.domain == ⟨2⟩)
+      expect "bind writes the binding" (tcb.schedContextBinding == .bound scId)
     | _ => throw <| IO.userError "bound TCB not found"
   | .error e =>
     throw <| IO.userError s!"schedContextBind failed: {repr e}"
 
-/-- AK2-B-02: `schedContextConfigure` on already-bound SchedContext
-propagates the new priority into the bound TCB. -/
-private def pm_ak2b_02_configurePropagatesPriority : IO Unit := do
-  let targetTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  -- Pre-state: sc.priority = 50, tcb.priority = 50 (after bind)
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let st := mkState [
-    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Reconfigure to sc.priority = 123
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
-  | .ok ((), st') =>
-    match st'.objects[targetTid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "tcb.priority propagated from new sc.priority (50 -> 123)"
-        (tcb.priority == ⟨123⟩)
-    | _ => throw <| IO.userError "bound TCB not found"
-    match st'.objects[scObjId]? with
-    | some (.schedContext sc') =>
-      expect "sc.priority updated to 123" (sc'.priority == ⟨123⟩)
-    | _ => throw <| IO.userError "SC not found"
-  | .error e =>
-    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
-/-- AK2-B-03: `schedContextConfigure` re-buckets the bound thread in the
-RunQueue when SC priority changes. Prior to this test the configure path
-left the thread in its old bucket, violating `schedulerPriorityMatch`. -/
-private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
+/-- AK2-B-02 (WS-SX SX6.4): `schedContextConfigure` on an already-bound
+SchedContext writes the context alone: the badge word is stored, bit 0 of the
+flags word is the sporadic flag, and the bound thread's priority and domain
+are untouched (seL4-MCS's `invokeSchedControl_ConfigureFlags`). -/
+private def pm_configureWritesContextAlone : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨42⟩
   let scObjId : SeLe4n.ObjId := ⟨100⟩
   let scId : SeLe4n.SchedContextId := ⟨100⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let stBase := mkState [
-    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Insert the bound thread into the RunQueue at its current priority 50.
-  let st : SystemState := enqueueAllOnCore stBase bootCoreId [(targetTid, ⟨50⟩)]
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
-  | .ok ((), st') =>
-    -- After reconfigure, the RunQueue's cached priority for this thread
-    -- must match the new priority (123), not the old (50).
-    match (st'.queuedPriorityOn bootCoreId targetTid) with
-    | some prio =>
-      expect "RunQueue bucket migrated to new priority (50 -> 123)"
-        (prio == ⟨123⟩)
-    | none =>
-        throw <| IO.userError
-          "RunQueue missing thread after reconfigure (thread was present before)"
-  | .error e =>
-    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
--- =============================================================================
--- R5.G (DEEP-SCH-06): Domain propagation in schedContextConfigure
--- =============================================================================
-
-/-- R5.G-01: `schedContextConfigure` propagates a new domain into the bound
-    TCB.  Pre-R5 the `boundThreadDomainConsistent` invariant could drift on
-    every reconfigure that changed `sc.domain` without touching `tcb.domain`. -/
-private def pm_r5g_01_configurePropagatesDomain : IO Unit := do
-  let targetTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  -- Pre-state: sc.domain = 0, tcb.domain = 0 (consistent at bind time).
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let st := mkState [
-    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Reconfigure to domain = 3 (priority unchanged at 50).
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 3 st with
-  | .ok ((), st') =>
-    match st'.objects[targetTid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "tcb.domain propagated from new sc.domain (0 -> 3)"
-        (tcb.domain == ⟨3⟩)
-    | _ => throw <| IO.userError "bound TCB not found"
-    match st'.objects[scObjId]? with
-    | some (.schedContext sc') =>
-      expect "sc.domain updated to 3" (sc'.domain == ⟨3⟩)
-    | _ => throw <| IO.userError "SC not found"
-  | .error e =>
-    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
-/-- R5.G-02: When the new domain matches the existing TCB domain, the
-    propagation block is a no-op (state otherwise unchanged). -/
-private def pm_r5g_02_configureDomainNoopWhenEqual : IO Unit := do
-  let targetTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  -- Pre-state: both at domain = 5.
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨5⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (targetTid.toObjId, .tcb { mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId) with domain := ⟨5⟩ }),
+      (binding := .bound scId) with domain := ⟨3⟩ }),
     (scObjId, .schedContext sc)
   ]
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 5 st with
+  let configure (flags : UInt64) :=
+    SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 0
+      0xFEEDFACECAFEBEEF flags st
+  match configure 1 with
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "tcb.domain preserved at 5 (no-op propagation)"
-        (tcb.domain == ⟨5⟩)
+      expect "configure keeps the bound tcb.priority (50)" (tcb.priority == ⟨50⟩)
+      expect "configure keeps the bound tcb.domain (3)" (tcb.domain == ⟨3⟩)
     | _ => throw <| IO.userError "bound TCB not found"
+    match st'.objects[scObjId]? with
+    | some (.schedContext sc') =>
+      expect "badge stored verbatim" (sc'.badge == 0xFEEDFACECAFEBEEF)
+      expect "flags bit 0 sets sporadic" (sc'.sporadic == true)
+    | _ => throw <| IO.userError "SC not found"
   | .error e =>
     throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
-/-- R5.G-03: Joint priority+domain reconfigure propagates both fields. -/
-private def pm_r5g_03_configurePropagatesBothFields : IO Unit := do
-  let targetTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let st := mkState [
-    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Reconfigure to priority = 123, domain = 7.
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 7 st with
+  match configure 0xFFFFFFFFFFFFFFFE with
   | .ok ((), st') =>
-    match st'.objects[targetTid.toObjId]? with
-    | some (.tcb tcb) =>
-      expect "tcb.priority updated to 123" (tcb.priority == ⟨123⟩)
-      expect "tcb.domain updated to 7" (tcb.domain == ⟨7⟩)
-    | _ => throw <| IO.userError "bound TCB not found"
+    match st'.objects[scObjId]? with
+    | some (.schedContext sc') =>
+      expect "flags bits above bit 0 are ignored" (sc'.sporadic == false)
+    | _ => throw <| IO.userError "SC not found"
   | .error e =>
     throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
-/-- R5.G-04: substantive invariant preservation — after
-    `schedContextConfigure` succeeds on a state where the bound TCB and
-    SC start with matching domains, the
-    `boundThreadDomainConsistent` invariant continues to hold (the
-    domain propagation block ensures the SC and TCB domains move in
-    lockstep).
-
-    This is the runtime witness for
-    `schedContextConfigure_preserves_boundThreadDomainConsistent`. -/
-private def pm_r5g_04_substantive_invariant_preservation : IO Unit := do
-  let targetTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
-  }
-  let initTcb := { mkTcb 42 (prio := 50) (mcp := 200) (binding := .bound scId)
-                   with domain := ⟨0⟩ }
-  let st := mkState [
-    (targetTid.toObjId, .tcb initTcb),
-    (scObjId, .schedContext sc)
-  ]
-  -- Pre-state: tcb.domain = 0 = sc.domain (consistent).
-  -- Reconfigure to domain = 7.
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 7 st with
-  | .ok ((), st') =>
-    -- Post-state: both should have domain = 7.
-    match st'.objects[targetTid.toObjId]?, st'.objects[scObjId]? with
-    | some (.tcb tcb'), some (.schedContext sc') =>
-      -- boundThreadDomainConsistent at (targetTid, scId) requires tcb'.domain = sc'.domain.
-      expect "tcb'.domain = sc'.domain (invariant preserved)"
-        (tcb'.domain == sc'.domain)
-      expect "tcb'.domain = ⟨7⟩ (post-propagation)" (tcb'.domain == ⟨7⟩)
-      expect "sc'.domain = ⟨7⟩" (sc'.domain == ⟨7⟩)
-    | _, _ => throw <| IO.userError "bound TCB or SC not found"
-  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-
--- =============================================================================
--- AK2-E: CBS admission ceiling-round regression
--- =============================================================================
 
 /-- AK2-E-01: `Bandwidth.utilization` is ceiling-round for a non-divisible
 ratio. For `budget = 1`, `period = 3`: `1 * 1000 / 3 = 333` (truncation)
@@ -751,8 +543,9 @@ private def pm_ak8d_03_setMCPriorityHardwareCeilingRejects : IO Unit := do
 --
 -- Every check below is written so it FAILS on the pre-fix kernel and cannot be
 -- satisfied by the write merely disappearing: each asserts *which* object moved
--- and *which* did not, and `pm_od_06` is the `.bound` control that the write
--- still happens where it should.
+-- and *which* did not.  WS-SX SX6.4 closed the class structurally: a context
+-- carries no priority, so the checks now assert the donated context is left
+-- exactly as it was.
 
 /-- The donee's own base priority, distinct from the donor's band so the two
 readings are distinguishable. -/
@@ -761,20 +554,18 @@ private def odDoneePriority : Nat := 30
 /-- The donor's band, carried by the reservation. -/
 private def odDonorPriority : Nat := 70
 
-/-- The donor's domain, carried by the reservation and deliberately **not** the
-donee's (`mkTcb` builds every thread in domain `0`), so every assertion about
-which domain a donee is reported in discriminates rather than passing by
-coincidence. -/
-private def odDonorDomain : Nat := 3
+/-- The domain the donee is given in the reading test, deliberately **not** the
+default (`mkTcb` builds every thread in domain `0`), so the domain component
+discriminates rather than passing by coincidence. -/
+private def odDoneeDomain : Nat := 3
 
-/-- The donated reservation: the donor's priority, deadline and domain, held by
-the donee (`boundThread`), exactly as `donateSchedContext` leaves it — a
-donation crosses domains freely, unlike `schedContextBind`, which refuses a
-cross-domain bind. -/
+/-- The donated reservation: the donor's budget, held by the donee
+(`boundThread`), exactly as `donateSchedContext` leaves it.  A context carries
+no priority, deadline or domain (WS-SX SX6.4, seL4-MCS), so a donation lends
+only the budget. -/
 private def odDonatedSc (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     : SeLe4n.Kernel.SchedContext :=
   { scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨odDonorPriority⟩, deadline := ⟨500⟩, domain := ⟨odDonorDomain⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some holder) }
 
 /-- A caller (1) with authority, a passive server (2) holding a donated context,
@@ -811,10 +602,11 @@ private def pm_od_01_prioritySourceClassifier : IO Unit := do
      | some s => (SchedContextBinding.bound scId).scId? == some s
      | none   => false)
 
-/-- WS-OD: every priority READER prefers the donee's own band, while the
-deadline and domain still come from the donated reservation.  A check on the
-priority alone would be satisfied by a kernel that had dropped the reservation
-entirely, so the deadline and domain are asserted in the same breath. -/
+/-- WS-OD: every priority READER reads the donee's own band, and since WS-SX
+SX6.4 its deadline and domain too: the donated reservation lends a budget and
+carries no scheduling parameter (seL4-MCS).  The donee is given a deadline and
+a domain of its own, distinct from every default, so each component of the
+reading discriminates. -/
 private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := odDonationState scId
@@ -827,15 +619,11 @@ private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
       (match getCurrentPriorityChecked st donee with
        | .ok p => p == ⟨odDoneePriority⟩
        | .error _ => false)
-    expect "resolveEffectivePrioDeadline: the donee's 30 on the donor's deadline 500"
+    let donee := { donee with deadline := ⟨500⟩, domain := ⟨odDoneeDomain⟩ }
+    expect "resolveEffectivePrioDeadline: the donee's own 30 and its own deadline 500"
       (decide (resolveEffectivePrioDeadline st donee = (⟨odDoneePriority⟩, ⟨500⟩)))
-    -- The donor's DEADLINE (reservation-owned) with the donee's own priority
-    -- and domain (thread-owned).  The reservation sits in domain 3 and the
-    -- donee in 0, so the third component discriminates.
-    expect "effectiveSchedParams: the donee's own 30 and domain 0, the donor's deadline 500"
-      (decide (effectiveSchedParams st donee = (⟨odDoneePriority⟩, ⟨500⟩, ⟨0⟩)))
-    expect "NEGATIVE (the defect): the donee is not reported in the donor's domain 3"
-      (!((effectiveSchedParams st donee).2.2 == ⟨odDonorDomain⟩))
+    expect "effectiveSchedParams: the donee's own 30, deadline 500 and domain 3"
+      (decide (effectiveSchedParams st donee = (⟨odDoneePriority⟩, ⟨500⟩, ⟨odDoneeDomain⟩)))
     expect "effectiveBucketPriority is the TCB-only reading the run queue records"
       (effectiveBucketPriority st donee == donee.boostedPriority)
     -- NEGATIVE (the defect): none of the readings is the donor's band.
@@ -846,7 +634,8 @@ private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
 
 /-- WS-OD: **the security regression.**  `setPriorityOp` on the donee
 writes the donee's TCB and leaves the donor's reservation — and the donor's own
-TCB — untouched.  Pre-fix this wrote `SchedContext.priority := 80`. -/
+TCB — untouched.  Pre-fix this wrote the reservation's priority (a field WS-SX
+SX6.4 removed: a context carries no priority). -/
 private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := odDonationState scId
@@ -861,14 +650,8 @@ private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
     | _ => throw <| IO.userError "donee TCB not found after setPriority"
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
-      expect "THE FIX: the donor's reservation keeps its own priority 70"
-        (sc'.priority == ⟨odDonorPriority⟩)
-      let scRef := odDonatedSc scId ⟨2⟩
-      expect "...and the reservation is otherwise untouched"
-        (sc'.budget == scRef.budget && sc'.period == scRef.period &&
-         sc'.deadline == scRef.deadline && sc'.domain == scRef.domain &&
-         sc'.budgetRemaining == scRef.budgetRemaining &&
-         sc'.boundThread == scRef.boundThread)
+      expect "THE FIX: the donor's reservation is untouched"
+        (sc' == odDonatedSc scId ⟨2⟩)
     | _ => throw <| IO.userError "donated SchedContext not found after setPriority"
     match st'.objects[(⟨3⟩ : SeLe4n.ThreadId).toObjId]? with
     | some (.tcb donor') =>
@@ -896,7 +679,7 @@ private def pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor : IO Unit := do
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
       expect "THE FIX: the MCP cap does not reach the donor's reservation"
-        (sc'.priority == ⟨odDonorPriority⟩)
+        (sc' == odDonatedSc scId ⟨2⟩)
     | _ => throw <| IO.userError "donated SchedContext not found after setMCPriority"
 
 /-- WS-OD: the frozen mirror answers the same question the same way.
@@ -920,243 +703,12 @@ private def pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor : IO Unit := do
     | _ => throw <| IO.userError "frozen donee TCB not found"
     match fst'.objects.get? scId.toObjId with
     | some (.schedContext sc') =>
-      expect "frozen: the donor's reservation keeps its own priority 70"
-        (sc'.priority == ⟨odDonorPriority⟩)
+      expect "frozen: the donor's reservation is untouched"
+        (sc' == odDonatedSc scId ⟨2⟩)
     | _ => throw <| IO.userError "frozen donated SchedContext not found"
 
-/-- WS-OD: **the control.**  On a `.bound` thread the write still lands
-in the reservation and *not* in the TCB, so none of the checks above can be
-satisfied by the priority write having simply been removed.  This is the
-relation-preserving direction: the token (`updatePrioritySource` writing a
-SchedContext) is still there; only which binding reaches it has changed. -/
-private def pm_od_06_boundControlStillWritesTheReservation : IO Unit := do
-  let scId : SeLe4n.SchedContextId := ⟨50⟩
-  let sc : SeLe4n.Kernel.SchedContext :=
-    { odDonatedSc scId ⟨2⟩ with priority := ⟨odDoneePriority⟩ }
-  let st := mkState [
-    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (⟨2⟩, .tcb (mkTcb 2 (prio := odDoneePriority) (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc)
-  ]
-  match bootSetPriority st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
-  | .error e => throw <| IO.userError s!"setPriority on a bound thread should succeed, got {repr e}"
-  | .ok st' =>
-    match st'.objects[scId.toObjId]? with
-    | some (.schedContext sc') =>
-      expect "control: a BOUND thread's reservation is still written to 80"
-        (sc'.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "bound SchedContext not found after setPriority"
-    match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
-    | some (.tcb tcb') =>
-      -- **Corrected at `v0.35.98`.**  This asserted `tcb'.priority ==
-      -- odDoneePriority` — that a bound thread's own TCB is *not* written —
-      -- which was the defect rather than the contract: the base priority of a
-      -- `.bound` thread has two homes and every run-queue insert reads the TCB
-      -- one, so leaving it stale reverted the demotion at the thread's next
-      -- wake.  What WS-OD (`v0.35.3`) actually guarantees is the *donee* split
-      -- asserted by `pm_od_03` / `pm_od_04` above (a donee's update spares the
-      -- **donor's** reservation), not that a bound thread's TCB is spared.
-      expect "control: a BOUND thread's TCB priority moves with its reservation"
-        (tcb'.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "bound TCB not found after setPriority"
-  -- ...and the reader agrees with the writer on that arm too.
-  match st.getTcb? ⟨2⟩ with
-  | some tcb =>
-    expect "control: a BOUND thread reads its reservation's priority"
-      (getCurrentPriority st tcb == ⟨odDoneePriority⟩)
-  | none => throw <| IO.userError "bound TCB not found"
-
-/-- WS-OD: **the mirror crossing.**  `schedContextConfigure` propagates
-**both** thread-owned parameters — base priority and domain — into
-`sc.boundThread`'s TCB, and after a donation `boundThread` is the **donee**.  So
-a caller holding a capability on the *client's* reservation could rewrite the
-*server's* own base priority and migrate its scheduling domain, permanently:
-the donee keeps both fields after the donation returns.  Each propagation exists
-only to maintain a `.bound`-only invariant (`boundThreadPriorityConsistent`,
-`boundThreadDomainConsistent`), so both are gated on the bound thread **owning**
-this reservation (`schedContextConfigurePropagates`).  The reservation itself is
-still reconfigured — the caller does hold its capability — which is what
-distinguishes the gate from the operation failing, and its budget and period
-still reach the donee, which reads them. -/
-private def pm_od_07_configureOnDonatedReservationSparesTheDonee : IO Unit := do
-  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid)
-  }
-  let st := mkState [
-    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
-      (binding := .donated scId ⟨7⟩))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Reconfigure to priority 123 in domain 5 — both thread-owned parameters,
-  -- both different from the donee's own.
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
-  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-  | .ok ((), st') =>
-    match st'.objects[scObjId]? with
-    | some (.schedContext sc') =>
-      expect "the reservation IS reconfigured (the caller holds its capability)"
-        (sc'.priority == ⟨123⟩ && sc'.domain == ⟨5⟩)
-      expect "...including its reservation-owned parameters, which a donee does read"
-        (sc'.budget == ⟨100⟩ && sc'.period == ⟨200⟩)
-    | _ => throw <| IO.userError "SC not found after configure"
-    match st'.objects[doneeTid.toObjId]? with
-    | some (.tcb donee') =>
-      expect "THE FIX: the donee's own base priority is NOT rewritten"
-        (donee'.priority == ⟨odDoneePriority⟩)
-      expect "THE FIX: nor is its domain — a client cannot migrate a server's partition"
-        (donee'.domain == ⟨0⟩)
-    | _ => throw <| IO.userError "donee TCB not found after configure"
-
-/-- WS-OD: the control for `pm_od_07`.  On a `.bound` thread the
-propagation still fires, so the gate cannot be satisfied by the propagation
-having been removed.  (`pm_ak2b_02` asserts the same equality; this restates it
-beside the negative it controls, where a reader can see the pair.) -/
-private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
-  let boundTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid)
-  }
-  let st := mkState [
-    (boundTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
-      (binding := .bound scId))),
-    (scObjId, .schedContext sc)
-  ]
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
-  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
-  | .ok ((), st') =>
-    match st'.objects[boundTid.toObjId]? with
-    | some (.tcb tcb') =>
-      expect "control: a BOUND thread's priority IS propagated (50 -> 123)"
-        (tcb'.priority == ⟨123⟩)
-      expect "control: ...and so is its domain (0 -> 5), so neither half is dead"
-        (tcb'.domain == ⟨5⟩)
-    | _ => throw <| IO.userError "bound TCB not found after configure"
-
-/-- WS-RR (PR #897's review, `v0.35.136`): **a reservation reconfigured
-while on loan comes back disagreeing** — the refutation of
-`boundThreadPriorityConsistent` and `boundThreadDomainConsistent` as *invariants*.
-
-The review reported the priority half through `.tcbSetPriority` on the unbound
-donor.  Sweeping for the shape found a second route that breaks **both**
-predicates with one syscall and no TCB capability at all, and it is the one this
-witness drives, because every step of it is a live operation:
-
-1. the reservation is on loan (`.donated`), which is the state `applyCallDonation`
-   leaves on every passive-server call;
-2. `schedContextConfigure` rewrites `sc.priority` and `sc.domain` — and
-   propagates to nobody, since `schedContextConfigurePropagates` reads the
-   donee's `ownScId?`, which is `none` (WS-OD `v0.35.3`, and `pm_od_07` is that
-   assertion);
-3. `returnDonatedSchedContext`'s bottom arm rebinds the **origin** `.bound scId`,
-   writing neither `TCB.priority` nor `TCB.domain` nor either of the
-   reservation's.
-
-So the post-pop state has a `.bound` thread whose two priority homes and two
-domain homes both disagree.  Neither reconciliation is available: writing
-`tcb.priority := sc.priority` would undo a demotion by an IPC reply, and writing
-`sc.priority := tcb.priority` would silently retune a band the SchedContext
-capability's holder set (and is projection-visible besides).  The predicates are
-therefore facts about `schedContextBind`, `schedContextConfigureBoundPropagate`
-and `updatePrioritySource`, not invariants of the system.
-
-**No scheduling decision is affected**, which is what `v0.35.133` and `v0.35.136`
-bought: every band read is `tcb.priority` and every domain filter is
-`tcb.domain`, so the origin resumes demoted and in its own partition, as it
-should.  The assertions below read the *fields*, not a resolver, because the
-claim is about the pair rather than about what the scheduler does with it. -/
-private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do
-  let originTid : SeLe4n.ThreadId := ⟨7⟩
-  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid),
-    donationOrigin := some originTid
-  }
-  -- The origin has given up its binding and waits on its reply — the shape
-  -- `donateSchedContext` leaves and `donationRecipientAcceptable` requires.
-  -- Its own band and partition agree with the reservation's at this point.
-  let st := mkState [
-    (originTid.toObjId, .tcb (mkTcb 7 (prio := 50) (mcp := 200)
-      (binding := .unbound))),
-    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
-      (binding := .donated scId originTid))),
-    (scObjId, .schedContext sc)
-  ]
-  -- Step 2: the SchedContext capability's holder retunes the reservation while
-  -- it is on loan.  Priority 50 -> 123 and domain 0 -> 5, propagated to nobody.
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
-  | .error e => throw <| IO.userError s!"configure on the loaned reservation failed: {repr e}"
-  | .ok ((), stCfg) =>
-    expect "the loan's origin is untouched by the reconfiguration"
-      (match stCfg.objects[originTid.toObjId]? with
-       | some (.tcb t) => t.priority == ⟨50⟩ && t.domain == ⟨0⟩
-       | _ => false)
-    -- Step 3: the server replies, and the bottom arm hands the reservation back.
-    match returnDonatedSchedContext stCfg doneeTid scId originTid none with
-    | .error e => throw <| IO.userError s!"the donation pop failed: {repr e}"
-    | .ok stPop =>
-      match stPop.objects[originTid.toObjId]?, stPop.objects[scObjId]? with
-      | some (.tcb origin'), some (.schedContext sc') =>
-        expect "the pop rebinds the origin .bound"
-          (origin'.schedContextBinding == .bound scId)
-        expect "REFUTATION: its two priority homes disagree (50 vs 123)"
-          (origin'.priority == ⟨50⟩ && sc'.priority == ⟨123⟩)
-        expect "REFUTATION: its two domain homes disagree (0 vs 5)"
-          (origin'.domain == ⟨0⟩ && sc'.domain == ⟨5⟩)
-      | _, _ => throw <| IO.userError "origin TCB or SC not found after the pop"
-
-/-- WS-RR: the control for `pm_od_09`, and what makes it a statement
-about the **reconfiguration** rather than about the pop.
-
-The same fixture and the same pop, with step 2 omitted: the reservation is handed
-back exactly as it was lent, and both pairs agree.  So the pop is not what breaks
-the agreement — it is what *installs the binding under which the agreement is
-asserted*, which is precisely why no write available to it can repair one. -/
-private def pm_od_10_unreconfiguredLoanComesBackAgreeing : IO Unit := do
-  let originTid : SeLe4n.ThreadId := ⟨7⟩
-  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
-  let scObjId : SeLe4n.ObjId := ⟨100⟩
-  let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let sc : SeLe4n.Kernel.SchedContext := {
-    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid),
-    donationOrigin := some originTid
-  }
-  let st := mkState [
-    (originTid.toObjId, .tcb (mkTcb 7 (prio := 50) (mcp := 200)
-      (binding := .unbound))),
-    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
-      (binding := .donated scId originTid))),
-    (scObjId, .schedContext sc)
-  ]
-  match returnDonatedSchedContext st doneeTid scId originTid none with
-  | .error e => throw <| IO.userError s!"the donation pop failed: {repr e}"
-  | .ok stPop =>
-    match stPop.objects[originTid.toObjId]?, stPop.objects[scObjId]? with
-    | some (.tcb origin'), some (.schedContext sc') =>
-      expect "control: the pop rebinds the origin .bound here too"
-        (origin'.schedContextBinding == .bound scId)
-      expect "control: with no reconfiguration the priority homes agree"
-        (origin'.priority == sc'.priority)
-      expect "control: ...and so do the domain homes"
-        (origin'.domain == sc'.domain)
-    | _, _ => throw <| IO.userError "origin TCB or SC not found after the pop"
-
-/-- **`v0.35.99`: the frozen surface writes both homes too, and the differential
-is what says so.**  `v0.35.98` fixed the live writer and left `frozenSetPriority`
+/-- **`v0.35.99`: the frozen surface writes the same home as the live one, and
+the differential is what says so.**  `v0.35.98` fixed the live writer and left `frozenSetPriority`
 writing the reservation alone, so the *same* operation produced divergent states
 — reported on PR #897.  This drives the live and frozen demotes on corresponding
 fixtures and compares both fields, which is the only assertion that could have
@@ -1166,8 +718,7 @@ private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, budgetRemaining := ⟨100⟩,
       boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   let liveSt := mkState [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
@@ -1184,107 +735,13 @@ private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
     | .error e => throw <| IO.userError s!"frozen setPriority should succeed, got {repr e}"
     | .ok ((), frozenAfter) =>
       let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
-      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
       let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
-      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
-      expect "live demote writes both homes" (liveTcbPrio == some ⟨10⟩ && liveScPrio == some ⟨10⟩)
-      expect "frozen demote writes the reservation" (frozenScPrio == some ⟨10⟩)
-      expect "frozen demote writes the THREAD too — the half that diverged"
+      expect "live demote writes the thread" (liveTcbPrio == some ⟨10⟩)
+      expect "frozen demote writes the thread — the half that once diverged"
         (frozenTcbPrio == some ⟨10⟩)
-      expect "...so the two surfaces agree on the thread's base priority"
-        (frozenTcbPrio == liveTcbPrio)
-      expect "...and on the reservation's" (frozenScPrio == liveScPrio)
-
-/-- **`v0.35.99`: the MC-priority ceiling reaches the same question.**  Found by
-sweeping the sibling rather than by a report: the frozen capping compared against
-`targetTcb.priority` where the live one compared against `threadBasePriority` —
-the *reservation* for a `.bound` thread — and wrote the capped value to the TCB
-alone where the live path writes both homes.  Two mirror-image divergences on one
-operation.
-
-**WS-RR (`v0.35.133`) narrowed the question and this witness with it.**  With
-`TCB.priority` the base's one home, *both* surfaces now compare the ceiling
-against the thread's own field, so the divergence this test was written for has no
-state left to arise on — which is what a structural closure looks like from the
-test's side.  What survives, and is what it now pins, is the agreement itself, on
-**both** branches of the cap: it must fire identically where the thread's band
-exceeds the ceiling, and it must decline identically where it does not.  The
-second half carries the *drifted* state the retired reading depended on, because a
-surface still consulting the reservation would cap there and the other would not —
-so a revert of the collapse on either surface fails this witness. -/
-private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
-  let callerTid : SeLe4n.ThreadId := ⟨1⟩
-  let targetTid : SeLe4n.ThreadId := ⟨2⟩
-  let scId : SeLe4n.SchedContextId := ⟨50⟩
-  -- (a) THE CAP FIRES.  A state the kernel maintains: the thread runs at 80 and
-  -- its reservation is configured to 80, so `boundThreadPriorityConsistent`
-  -- holds and the ceiling of 20 is below the band on either reading.
-  let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
-  let objs : List (ObjId × KernelObject) := [
-    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc) ]
-  let liveSt := mkState objs
-  -- `FrozenKernelObject.tcb` carries the LIVE `TCB`, so the two stores are built
-  -- from the same records; only the wrapper differs, hence the second list.
-  let frozenSt := mkFrozenState [
-    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc) ]
-  match bootSetMCPriority liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
-  | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
-  | .ok liveAfter =>
-    match frozenSetMCPriority callerTid targetTid ⟨20⟩ frozenSt with
-    | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
-    | .ok ((), frozenAfter) =>
-      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
-      let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
-      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
-      let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
-      let frozenMcp := (frozenLookupTcb frozenAfter targetTid).map (·.maxControlledPriority)
-      expect "the ceiling lands on the frozen TCB" (frozenMcp == some ⟨20⟩)
-      expect "live: the ceiling caps the thread's own band to 20" (liveTcbPrio == some ⟨20⟩)
-      expect "live: ...and the configured band moves with it" (liveScPrio == some ⟨20⟩)
-      expect "frozen: the ceiling caps the thread's own band too"
-        (frozenTcbPrio == some ⟨20⟩)
-      expect "frozen: ...and the reservation too — it wrote the TCB alone before"
-        (frozenScPrio == some ⟨20⟩)
-      expect "...so the two surfaces agree on both homes"
-        (frozenScPrio == liveScPrio && frozenTcbPrio == liveTcbPrio)
-  -- (b) THE CAP DECLINES, IDENTICALLY, ON A DRIFTED STATE.  The thread runs at
-  -- 10 and its reservation still reads 80 — the shape `v0.35.98` produced.  Under
-  -- the retired two-homes reading the ceiling of 20 was compared against 80 and
-  -- fired; under one home it is compared against 10 and does not.  A surface that
-  -- still consults the reservation caps here while the other does not, so this is
-  -- the half that separates the two readings on both surfaces at once.
-  let driftedObjs : List (ObjId × KernelObject) := [
-    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc) ]
-  match bootSetMCPriority (mkState driftedObjs) ⟨callerTid, by decide⟩
-          ⟨targetTid, by decide⟩ ⟨20⟩ with
-  | .error e => throw <| IO.userError s!"live setMCPriority (drifted) should succeed, got {repr e}"
-  | .ok liveAfter =>
-    match frozenSetMCPriority callerTid targetTid ⟨20⟩ (mkFrozenState [
-            (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-            (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
-            (scId.toObjId, .schedContext sc) ]) with
-    | .error e =>
-      throw <| IO.userError s!"frozen setMCPriority (drifted) should succeed, got {repr e}"
-    | .ok ((), frozenAfter) =>
-      let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
-      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
-      let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
-      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
-      expect "live: the drifted thread keeps its band — no cap fired"
-        (liveTcbPrio == some ⟨10⟩ && liveScPrio == some ⟨80⟩)
-      expect "frozen: and so does the frozen one"
-        (frozenTcbPrio == some ⟨10⟩ && frozenScPrio == some ⟨80⟩)
-      expect "...so the two surfaces decline together"
-        (frozenTcbPrio == liveTcbPrio && frozenScPrio == liveScPrio)
+      expect "...and neither surface writes the context"
+        ((liveAfter.getSchedContext? scId) == some sc &&
+          (frozenAfter.getSchedContext? scId) == some sc)
 
 /-- **`v0.35.101`: and the write RE-BUCKETS, which neither witness above could
 see.**  Reported on PR #897.
@@ -1314,8 +771,7 @@ private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, budgetRemaining := ⟨100⟩,
       boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   -- The caller is priority 50 as well, so bucket 50 has a second member: a
   -- re-bucket that dropped the whole bucket rather than the one thread would
@@ -1368,8 +824,7 @@ private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
   -- The reservation carries the live band (80) and the TCB's own field agrees,
   -- so the thread is queued at 80 and the ceiling at 20 must move it.
   let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, budgetRemaining := ⟨100⟩,
       boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   let objs : List (ObjId × KernelObject) := [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
@@ -1401,69 +856,30 @@ private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
         (frozenBucket frozenAfter 20 == [targetTid] && frozenBucket frozenAfter 80 == [])
 
 -- ============================================================================
--- The bound thread's base priority has two homes (`v0.35.98`)
+-- A bound thread's base priority lives on the thread (`v0.35.98`, WS-SX SX6.4)
 -- ============================================================================
 
-/-- The reading `updatePrioritySource`'s `.bound` arm had until `v0.35.98`: the
-reservation alone.  It lives here, `private`, and nowhere else — a witness that
-cannot name what it replaced cannot show that the replacement changed anything,
-and every assertion below is *computed against both* so the suite is known to
-discriminate rather than merely to pass. -/
-private def reservationOnlyPriorityWrite (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (p : SeLe4n.Priority) : SystemState :=
-  st.updateSchedContext scId fun sc => { sc with priority := p }
-
-/-- Shared fixture: a thread **bound** to a reservation, the two homes of its
-base priority in sync at 50 (the state `schedContextBind` leaves), queued on the
-boot core at that band. -/
-private def boundInSyncState (callerTid targetTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) : SystemState :=
-  let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
-      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
-  mkState [
-    (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb targetTid.toNat (prio := 50)
-        (binding := .bound scId))),
-    (scId.toObjId, .schedContext sc) ] (runnable := [targetTid])
-
-/-- Both homes move.  `pm_od_06` already asserts the reservation half; this adds
-the thread half, which is the one that was missing — and which every run-queue
-insert in the kernel reads. -/
-private def pm_basePriorityWritesBothHomes : IO Unit := do
-  let callerTid : SeLe4n.ThreadId := ⟨1⟩
-  let targetTid : SeLe4n.ThreadId := ⟨2⟩
-  let scId : SeLe4n.SchedContextId := ⟨50⟩
-  let st := boundInSyncState callerTid targetTid scId
-  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
-          bootCoreId with
-  | .error e => throw <| IO.userError s!"setPriority should succeed, got {repr e}"
-  | .ok (st1, _) =>
-    expect "bound demote writes the reservation"
-      ((st1.getSchedContext? scId).map (·.priority) == some ⟨10⟩)
-    expect "bound demote writes the thread"
-      ((st1.getTcb? targetTid).map (·.priority) == some ⟨10⟩)
-    -- the retired reading, on the same state: the thread half never moved
-    let stOld := migrateRunQueueBucketOnCore
-      (reservationOnlyPriorityWrite st scId ⟨10⟩) targetTid ⟨10⟩ bootCoreId
-    expect "the retired reading left the thread at its old band"
-      ((stOld.getTcb? targetTid).map (·.priority) == some ⟨50⟩)
-
 /-- **The decisive one.**  A demotion must survive the thread's next block and
-wake: `enqueueRunnableOnCore` inserts at `TCB.boostedPriority`, so a reservation
-write alone put the thread back in the band the demotion had just removed —
-permanently, since every later wake reads the same field. -/
+wake: `enqueueRunnableOnCore` inserts at `TCB.boostedPriority`, so the demotion
+must land on the thread itself (seL4-MCS's `tcbPriority`; the context carries no
+priority). -/
 private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
-  let st := boundInSyncState callerTid targetTid scId
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, budgetRemaining := ⟨100⟩,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
+  let st := mkState [
+    (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb targetTid.toNat (prio := 50)
+        (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ] (runnable := [targetTid])
   let blockAndWake : SystemState → SystemState := fun s =>
     enqueueRunnableOnCore (s.runRemoveOnCore bootCoreId targetTid) bootCoreId targetTid
   let bucketOf : SystemState → Option SeLe4n.Priority := fun s =>
     (s.queuedPriorityOn bootCoreId targetTid)
-  expect "the fixture starts queued at its bound band" (bucketOf st == some ⟨50⟩)
+  expect "the fixture starts queued at its band" (bucketOf st == some ⟨50⟩)
   match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
           bootCoreId with
   | .error e => throw <| IO.userError s!"setPriority should succeed, got {repr e}"
@@ -1471,13 +887,6 @@ private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
     expect "the demotion re-buckets immediately" (bucketOf st1 == some ⟨10⟩)
     expect "the demotion SURVIVES a block and wake"
       (bucketOf (blockAndWake st1) == some ⟨10⟩)
-    -- the retired reading, driven through the same block and wake
-    let stOld := migrateRunQueueBucketOnCore
-      (reservationOnlyPriorityWrite st scId ⟨10⟩) targetTid ⟨10⟩ bootCoreId
-    expect "the retired reading also re-bucketed immediately"
-      (bucketOf stOld == some ⟨10⟩)
-    expect "...and the retired reading REVERTED the demotion on the wake"
-      (bucketOf (blockAndWake stOld) == some ⟨50⟩)
 
 -- ============================================================================
 -- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the priority arms' resolved
@@ -1502,7 +911,14 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
-  let st := boundInSyncState callerTid targetTid scId
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, budgetRemaining := ⟨100⟩,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
+  let st := mkState [
+    (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb targetTid.toNat (prio := 50)
+        (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ] (runnable := [targetTid])
   let fp := schedLockSet_priorityControlOnCore st targetTid core1
   expect "PM-FP-01 precondition: the target is homed on core 0 and the syscall runs on core 1"
     (determineTargetCore st targetTid == bootCoreId && core1 != bootCoreId)
@@ -1591,32 +1007,98 @@ private def pm_pip_01_setPriorityReboostsServer : IO Unit := do
     (decide ((LockKey.runQueue core2,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
 
-/-- PM-PIP-02: a configure that propagates a new priority to a reply-blocked
-bound thread re-walks its server's boost too, and its footprint names the
-server's home core. -/
-private def pm_pip_02_configureReboostsServer : IO Unit := do
+/-- PM-PIP-02 (WS-SX SX6.4): a configure of a reply-blocked waiter's bound
+context moves no priority, so its server's boost is left where it was
+(seL4-MCS's configure writes the context alone). -/
+private def pm_pip_02_configureLeavesServerBoost : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let serverTid : SeLe4n.ThreadId := ⟨2⟩
   let waiterTid : SeLe4n.ThreadId := ⟨3⟩
   let scObjId : SeLe4n.ObjId := ⟨100⟩
   let scId : SeLe4n.SchedContextId := ⟨100⟩
-  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
-    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some waiterTid)
   }
   let st := pipWaiterState callerTid serverTid waiterTid (.bound scId)
     [(scObjId, .schedContext sc)]
-  expect "PM-PIP-02 the configure footprint names the server's home core"
-    (decide ((LockKey.runQueue core2, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      schedLockSet_schedControlConfigure st core2 scObjId))
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 90 0 0 st with
+  expect "PM-PIP-02 precondition: the server holds the waiter's boost"
+    (serverBoost st serverTid == some ⟨50⟩)
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 0 7 1 st with
   | .error e => throw <| IO.userError s!"PM-PIP-02 configure should succeed, got {repr e}"
   | .ok ((), st1) =>
-    expect "PM-PIP-02 the propagated priority raises the server's boost (50 -> 90)"
-      (serverBoost st1 serverTid == some ⟨90⟩)
+    expect "PM-PIP-02 the configure leaves the server's boost at 50"
+      (serverBoost st1 serverTid == some ⟨50⟩)
 
+-- ============================================================================
+-- WS-SX SX6.4 (D11): the authority is extra capability 0
+-- ============================================================================
+
+/-- The caller's CSpace root: CNode 10, radix 3, behind a 61-bit guard so a
+64-bit CPtr names its slot by its low three bits. -/
+private def authRootCap : Capability :=
+  { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read, .write, .grant],
+    cnodeGuardSize := 61 }
+
+private def authTcb (tid : Nat) (mcp : Nat) (spaces : Bool := true) : TCB :=
+  { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩, maxControlledPriority := ⟨mcp⟩,
+    spaceCells := if spaces then #v[some authRootCap, none, none, none] else #v[none, none, none, none],
+    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+/-- CNode 10's slots: 1 the caller's own thread, 2 a second thread, 3 an
+endpoint; 4 empty. -/
+private def authCNode : CNode :=
+  CNode.ofList 3
+    [(SeLe4n.Slot.ofNat 1, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.write] }),
+     (SeLe4n.Slot.ofNat 2, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] }),
+     (SeLe4n.Slot.ofNat 3, { target := .object ⟨60⟩, rights := AccessRightSet.ofList [.read] })]
+
+private def authState (callerSpaces : Bool := true) : SystemState :=
+  let builder : SeLe4n.Testing.BootstrapBuilder := {
+    objects :=
+      [(⟨1⟩, .tcb (authTcb 1 200 callerSpaces)), (⟨2⟩, .tcb (authTcb 2 40)),
+       (⟨10⟩, .cnode authCNode), (⟨60⟩, .endpoint {})] }
+  builder.buildChecked
+
+private def authorityOf (st : SystemState) (cap? : Option Nat) :
+    Except KernelError SeLe4n.ThreadId :=
+  (resolvePriorityAuthority st ⟨1⟩ (cap?.map SeLe4n.CPtr.ofNat)).map (·.val)
+
+/-- PM-AUTH-01: the thread capability named as extra capability 0 is the
+authority, the caller's own or another thread's. -/
+private def pm_auth_01_threadCapabilityIsTheAuthority : IO Unit := do
+  expect "own thread capability is the authority"
+    (match authorityOf authState (some 1) with | .ok t => t == ⟨1⟩ | .error _ => false)
+  expect "another thread's capability is the authority"
+    (match authorityOf authState (some 2) with | .ok t => t == ⟨2⟩ | .error _ => false)
+
+/-- PM-AUTH-02: no extra capability is a truncated message; an empty slot or a
+capability that is not a thread capability is invalid capability 1; an
+unresolvable address is a lookup failure. -/
+private def pm_auth_02_refusals : IO Unit := do
+  expect "no extra capability is truncatedMessage"
+    (match authorityOf authState none with | .error .truncatedMessage => true | _ => false)
+  expect "an endpoint capability is invalidCapability 1"
+    (match authorityOf authState (some 3) with | .error (.invalidCapability 1) => true | _ => false)
+  expect "an empty slot is invalidCapability 1"
+    (match authorityOf authState (some 4) with | .error (.invalidCapability 1) => true | _ => false)
+  expect "an unresolvable address is a lookup failure"
+    (match authorityOf (authState false) (some 2) with
+     | .error (.failedLookup _ _) => true | _ => false)
+
+/-- PM-AUTH-03: the authority's ceiling bounds the new priority, not the
+caller's: thread 2's ceiling (40) refuses 100, which the caller's (200) admits. -/
+private def pm_auth_03_authorityCeilingBounds : IO Unit := do
+  let st := authState
+  let target : SeLe4n.ValidThreadId := ⟨⟨2⟩, by decide⟩
+  let viaCaller := match resolvePriorityAuthority st ⟨1⟩ (some (SeLe4n.CPtr.ofNat 1)) with
+    | .ok a => (setPriorityOnCore st a target ⟨100⟩ bootCoreId).toBool
+    | .error _ => false
+  let viaOther := match resolvePriorityAuthority st ⟨1⟩ (some (SeLe4n.CPtr.ofNat 2)) with
+    | .ok a => (setPriorityOnCore st a target ⟨100⟩ bootCoreId).toBool
+    | .error _ => true
+  expect "the caller's ceiling admits 100" viaCaller
+  expect "the other thread's ceiling refuses 100" (!viaOther)
 
 end SeLe4n.Testing.PriorityManagementSuite
 
@@ -1638,7 +1120,6 @@ def main : IO Unit := do
   pm009_setPriorityBoundThread
   pm010_setPriorityUnboundThread
   pm010b_setMCPriorityCapsSchedContextBound
-  pm010c_setMCPriorityReadsThreadNotReservation
   IO.println "--- D2-M5: MCP transitivity ---"
   pm011_mcpTransitivity
   IO.println "--- D2-M6: Self-priority ---"
@@ -1647,10 +1128,9 @@ def main : IO Unit := do
   pm013_frozenSetPriority
   pm014_frozenSetPriorityAboveMCP
   pm015_frozenSetMCPriority
-  IO.println "--- AK2-B: Option B priority propagation ---"
-  pm_ak2b_01_bindPropagatesPriority
-  pm_ak2b_02_configurePropagatesPriority
-  pm_ak2b_03_configureRebucketsBoundThread
+  IO.println "--- bind and configure write no thread priority or domain ---"
+  pm_bindKeepsThreadPriorityAndDomain
+  pm_configureWritesContextAlone
   IO.println "--- AK2-E: CBS admission ceiling-round ---"
   pm_ak2e_01_utilizationCeiling
   pm_ak2e_02_utilizationExact
@@ -1662,34 +1142,26 @@ def main : IO Unit := do
   pm_ak8d_01_hardwarePriorityCeilingRejects
   pm_ak8d_02_maxHardwarePriorityAccepts
   pm_ak8d_03_setMCPriorityHardwareCeilingRejects
-  IO.println "--- R5.G: schedContextConfigure domain propagation ---"
-  pm_r5g_01_configurePropagatesDomain
-  pm_r5g_02_configureDomainNoopWhenEqual
-  pm_r5g_03_configurePropagatesBothFields
-  pm_r5g_04_substantive_invariant_preservation
   IO.println "--- WS-OD (v0.35.3): a donee runs at its OWN priority ---"
   pm_od_01_prioritySourceClassifier
   pm_od_02_donatedReadsPreferTheTcb
   pm_od_03_setPriorityOnDoneeSparesTheDonor
   pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor
   pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor
-  pm_od_06_boundControlStillWritesTheReservation
-  pm_od_07_configureOnDonatedReservationSparesTheDonee
-  pm_od_08_configureBoundControlStillPropagates
   IO.println "--- `v0.35.136`: the two `bound*Consistent` pairs are writer facts ---"
-  pm_od_09_reconfiguredLoanComesBackDisagreeing
-  pm_od_10_unreconfiguredLoanComesBackAgreeing
   IO.println "--- `v0.35.98`: the bound thread's base priority has two homes ---"
-  pm_basePriorityWritesBothHomes
   pm_basePrioritySurvivesBlockAndWake
   IO.println "--- `v0.35.99`: the frozen mirror writes both homes too ---"
   pm_frozenBasePriorityAgreesWithTheLiveWrite
-  pm_frozenCeilingAgreesWithTheLiveWrite
   pm_frozenBasePriorityRebucketsLikeTheLiveWrite
   pm_frozenCeilingRebucketsLikeTheLiveWrite
   IO.println "--- `v0.35.167`: the priority arms' resolved scheduler footprint ---"
   pm_fp_01_priorityFootprintNamesHomeAndExecutingCores
   IO.println "--- A reply-blocked waiter's priority change re-walks its server's boost ---"
   pm_pip_01_setPriorityReboostsServer
-  pm_pip_02_configureReboostsServer
-  IO.println "=== All D2 priority management tests passed (47 tests) ==="
+  pm_pip_02_configureLeavesServerBoost
+  IO.println "--- WS-SX SX6.4: the priority authority is extra capability 0 ---"
+  pm_auth_01_threadCapabilityIsTheAuthority
+  pm_auth_02_refusals
+  pm_auth_03_authorityCeilingBounds
+  IO.println "=== All D2 priority management tests passed (50 tests) ==="

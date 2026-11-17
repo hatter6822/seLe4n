@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.31` (`lakefile.toml`) |
+| **Package version** | `0.37.32` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 639,815 across 639 Lean files |
-| **Test LoC** | 90,396 across 70 Lean test suites |
-| **Proved declarations** | 24,511 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 639,848 across 640 Lean files |
+| **Test LoC** | 90,281 across 70 Lean test suites |
+| **Proved declarations** | 24,533 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2712,16 +2712,16 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `boundSchedContextId : Option SchedContextId` arg.
      `setMCPriorityOp` calls `updatePrioritySource` in the
      priority-capping branch.
-   * **P1 — `lockSet_tcbSetIPCBuffer`**: gains
-     `targetVSpaceRootObjId : Option ObjId` arg.
-     `setIPCBufferOp` → `validateIpcBufferAddress` reads the
-     target's VSpaceRoot and traverses its mappings.
+   * **P1 — `lockSet_tcbSetIPCBuffer`**: gains an optional
+     object argument.  Since WS-SX SX6.6 it is the buffer's frame
+     (`bufferFrameObjId`, a `page` read lock), beside the
+     state-level write the buffer slot's delete and copy take.
    * **P2 — `lockSet_serviceRegister`**: gains a mandatory
      `endpointObjId : ObjId` arg.  `registerService` reads
      `st.objects[epId]?` to verify endpoint kind.
    * **`permittedKinds` extensions**: `.tcbSetPriority` /
      `.tcbSetMCPriority` add `.schedContext`;
-     `.tcbSetIPCBuffer` adds `.vspaceRoot`; `.serviceRegister`
+     `.tcbSetIPCBuffer` adds `.page` and `.objStore` (SX6.6); `.serviceRegister`
      adds `.endpoint`.  `.serviceRevoke` / `.serviceQuery`
      split out unchanged.
    * **Consistency proofs**: `_tcbSetPriority` /
@@ -3596,6 +3596,17 @@ instruction is precisely the livelock RR4 exists to remove.
   (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
   `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, 38 since
   it added `.untypedReset`, and 39 since it added `.tcbSetSpace`).
+  Since WS-SX SX6.5 the writer is seL4-MCS's own: `.tcbSetSpace` takes the
+  fault endpoint as extra capability 0 (the CSpace and VSpace roots are extra
+  capabilities 1 and 2, the two root data words MR0 and MR1) and copies it into
+  the thread's fourth space slot (`TCB.faultHandlerSlot`, seL4-MCS's
+  `tcbFaultHandler` CTE), whose spare record the carve builds so the copy
+  allocates nothing.  An empty slot leaves the thread without a handler; a
+  capability that names no endpoint, or lacks the rights fault delivery needs,
+  is `seL4_InvalidCapability` 1.  Fault delivery reads the slot and answers
+  `missingCapability 0` when it is empty (`faulthandler.c`).  Syscall 34,
+  `setThreadFaultHandlerOp` and its lock set, enforcement entry and Rust
+  wrapper are retired; the ABI holds 46 syscalls.
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -5120,29 +5131,32 @@ ARM64 hardware:
 - **Lean model**: IPC buffer alignment is enforced at 1024 bytes, the
   buffer's size (`ipcBufferAlignment = 1024`, defined in `Prelude.lean` and
   consumed by `Architecture/IpcBufferValidation.lean`), as seL4's 64-bit
-  `seL4_IPCBufferSizeBits = 10` requires.  `setIPCBufferOp` validates the
-  address via a 7-step pipeline: alignment, canonical address, VSpace root,
-  the mapping of the buffer's page, write permission, and the physical end
-  of the whole buffer (`[pa, pa + 1024)`) within the platform's physical
-  address width.
+  `seL4_IPCBufferSizeBits = 10` requires.
+- **Setting the buffer** (WS-SX SX6.6, seL4 MCS `decodeSetIPCBuffer`):
+  `setIPCBufferOp` takes the buffer's frame capability as the message's extra
+  capability 0 and resolves it as a slot through the caller's CSpace (no extra
+  capability is `truncatedMessage`; a failed lookup is `failedLookup`).  For a
+  nonzero address it derives the capability (`revocationRequired` for an
+  untyped with children) and runs seL4's `checkValidIPCBuffer`: a capability
+  that is not a frame, or a device frame, is `illegalState` (seL4's
+  `IllegalOperation`), and an address not aligned to 1024 bytes is
+  `alignmentError`.  The thread's buffer slot (slot 2, seL4's `tcbBuffer`) is
+  then deleted and the derived capability inserted with a copy edge from its
+  source (`threadSlotSet`, the slot write `copyThreadSpaces` makes), and the
+  thread's `ipcBuffer` is written.  A zero address empties the slot.  The
+  thread need not be suspended, and no VSpace is walked: every buffer read
+  goes through the slot's frame capability (`IpcBufferRead.lookupIPCBuffer`),
+  so the buffer is the frame the slot names wherever it is mapped.
 - **Rust ABI**: The `IpcBuffer` structure (`sele4n-abi/src/ipc_buffer.rs`) is
-  960 bytes (116 overflow words, the user-data word and three capability
-  words), `#[repr(C)]`, with 8-byte natural alignment.  It fits the
-  1024-byte buffer (`IpcBufferRead.ipcBufferWords_within_buffer`), and
-  `IPC_BUFFER_ALIGNMENT = 1024` refuses an unaligned address before the call.
+  1024 bytes, `#[repr(C)]`, with 8-byte natural alignment.
+  `sele4n_sys::tcb::tcb_set_ipc_buffer` writes the frame capability into
+  `caps_or_badges[0]` and counts it in the message info; the address is
+  decoded as given, and the kernel checks its alignment after the capability.
 - **Page safety**: The `ipcBuffer_within_page` theorem proves that a
   1024-byte-aligned buffer of 1024 bytes never crosses a 4 KiB page (the last
   aligned offset is 3072, and 3072 + 1024 = 4096), so the buffer lies in one
-  frame, as seL4 requires.  Every overflow slot of a validated buffer resolves
-  through slot 0's page (`IpcBufferRead.maxOverflowSlots_le_firstPageSlots`).
-  The overflow reads and writes do not assume it: each slot is translated at
-  its own page, checked for write permission when written and for the
-  physical range when performed (`IpcBufferRead.ipcBufferSlotPAddr?`), so a
-  buffer address no validator checked reads and writes only pages its own
-  VSpace maps.  Before `v0.37.4` the alignment was 512 bytes, which admitted a
-  buffer 512 bytes short of a page's end whose slots from 64 on lay on the
-  next page; those slots were translated and checked one by one, so no access
-  escaped the thread's mappings, but the buffer did not lie in one frame.
+  frame, as seL4 requires.  Before `v0.37.4` the alignment was 512 bytes,
+  which admitted a buffer 512 bytes short of a page's end.
 
 ### 8.6 Memory Zeroing on Creation (`v0.36.125`)
 Every object is made by the untyped carve (`.untypedRetype`, syscall 36,
@@ -5926,6 +5940,48 @@ still read the target first, are retired with it.  A `.retype` holder still
 learns whether a child id is occupied (`.childIdCollision`), the
 error-versus-success channel `docs/REGISTERED_DEBT.md` registers.
 
+### 8.6.2 The Retype Window (`v0.37.32`)
+
+seL4's `Untyped_Retype` creates `num_objects` objects of one kind in one call,
+up to the build-time option `CONFIG_RETYPE_FAN_OUT_LIMIT` (WS-SX SX6.3, D9).
+The model configures it at 26 and derives it from the lock ceiling: the carve
+takes six base locks and one write lock per child (`carvedChildLocks`), so
+`retypeFanOutLimit := maxLockSetSize - retypeBaseLocks` (32 − 6), and the two
+cannot drift.  Object `i` of a window takes id `childId + i` and the
+destination slot `offset + i` (`retypeChildId`, `retypeChildSlot`,
+`Lifecycle/Operations/RetypeWindow.lean`).
+
+Every word the retype reads is read as a word (`windowWordOf`, a `wordLtNat`
+test before any `Nat`): the offset, the count and the object id, so a word at
+or above `2^63` builds no heap number; an object id past the machine's
+physical address space is `AddressOutOfBounds` (the QEMU heap gate's
+`untyped-retype-wide-child-id`).  IRQControl_Get's line and PageTable_Map's
+address are read the same way, and SetIPCBuffer's address through
+`ipcBufferAddrOfWord`, which keeps the word's zero-ness and page offset, the
+only parts the kernel reads.  A line past the board's last is seL4's
+`Arch_checkIRQ` `RangeError(0, maxIRQ)` (`irqControlLineRefusal`), and a table
+address past the user top seL4's `InvalidArgument 0` (`pageTableMap`)
+(`irq-control-get-wide-line`, `page-table-map-wide-vaddr`,
+`tcb-set-ipc-buffer-wide-unaligned`).
+
+`untypedRetypeWindowRefusal` reads every refusal from the state the call is
+handed, in `decodeUntypedInvocation`'s order: the window's range (an offset
+past the CNode is `RangeError(0, slots − 1)`, a count of 0 or past the limit
+`RangeError(1, 26)`, a window past the CNode's end `RangeError(1, slots −
+offset)`), every slot empty (`DeleteFirst`), the reset, the region for all
+`n` objects and the device rule; then the model's checks of all `n` ids, the
+store's capacity for `n` more objects, `n` free ASIDs for VSpace roots
+(`freshAsidsFrom`) and the kernel heap for `n` objects with the tables'
+growth (`windowHeapBytes`).  Only then do the carves run
+(`untypedRetypeWindowWrites`).  On tables that hold `invExt`, an admitted
+window runs every carve (`untypedRetypeWindow_admitsEveryCarve`,
+`Lifecycle/Operations/RetypeWindowAdmission.lean`): no refusal follows a
+write.  The compiled loop (`untypedRetypeWindowCode`, `_eq`) allocates
+nothing of its own, so a window of `n` objects builds `n` times one object's
+cells (the QEMU heap gate's `untyped-retype-window-three` and
+`untyped-retype-window-full`, and `untyped-retype-window-over-limit` refused
+at 27).
+
 ### 8.7 TLB Flush Requirements for Production Paths
 All production VSpace operations must use TLB-flushing variants to ensure
 hardware TLB consistency:
@@ -6395,7 +6451,8 @@ Every kernel object has a decidable well-formedness predicate:
   per-core non-interference projection labels a line by its node
   (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.  The boot hands
   the root task the IRQControl capability (`CapTarget.irqControl`), which
-  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a device line of the
+  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a line past the board's
+  last is `RangeError(0, maxIRQ)`, as seL4's `Arch_checkIRQ`; a device line of the
   board no handler holds is put at `IRQSignal` and its handler capability is
   inserted as a derivation child of the control capability);
   `.irqHandlerSetNotification` (46) empties the node's slot by the finalising
@@ -7229,6 +7286,19 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **ABI**: MR2 is the address of a frame capability in the caller's CSpace
   (`VSpaceMapArgs.frame : CPtr`), resolved with `.read`
   (`resolveVSpaceMapFrame`); the page installed is the frame's own `base`.
+  Since WS-SX SX6.3 the call has seL4's `ARMPageMap` shape: the *invoked*
+  capability is the frame, the words are vaddr, rights (`CanWrite` bit 0,
+  `CanRead` bit 1) and VM attributes (`PageCacheable` bit 0, `ExecuteNever`
+  bit 2) (`decodePageMapArgs`, `pagePermissionsOfWords`), and the VSpace root
+  is extra capability 0, whose own ASID names the address space — there is no
+  ASID word.  `resolvePageMapOperands` follows seL4's order: a missing extra
+  capability is `.truncatedMessage`, a root slot that is empty or holds no
+  VSpace root is `.invalidCapability 1`, an unbound ASID `.asidNotBound`, a
+  root that is not the ASID's bound root `.invalidCapability 1`, an address
+  past the user window `.invalidArgument 0`; a W^X request is refused
+  `.policyDenied` (`vspaceMapArgsOfWords`).  A remap on a frame capability
+  whose mapping is live answers `.invalidCapability 1` for another address
+  space and `.invalidArgument 0` for another address (`vspaceRemapRefusal`).
 - **Rights**: a writable mapping needs `.write` on the frame capability
   (`.illegalAuthority`), a device frame maps neither executable nor
   cacheable, and a RAM frame maps cacheable or not at all (`.policyDenied`) —
@@ -7518,17 +7588,21 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   inserted with rights = the source's rights ∩ the root's rights
   (`TCB.cspaceRootRights`, `TCB.vspaceRootRights`) and no badge, with the
   derivation edge from the source slot (`.copy`).  Revoking the source, or any
-  ancestor of it, therefore empties the thread's slot.  MR0/MR1 are capability
-  addresses in the **caller's** CSpace, resolved to their slots by
-  `resolveSetSpace` over the shared `resolveCallerCapSlot`: the CSpace root
-  needs `.grant` and `.write` (a CSpace root hands the thread every capability
-  the CNode holds), the VSpace root `.write`; each source is re-checked against
-  the store for its kind (`cspaceRootSourceAdmitted`,
-  `vspaceRootSourceAdmitted`), and every check precedes every write.  Suspended
+  ancestor of it, therefore empties the thread's slot.  The roots are extra
+  capabilities 1 and 2, the fault endpoint extra capability 0, each resolved
+  to its slot in the **caller's** CSpace by `resolveSetSpace`.  No right is
+  asked of either root capability, as seL4's `decodeSetSpace` asks none (its
+  CNode and VSpace capabilities carry no rights): the installed copy keeps only
+  the source's rights, it is never invoked, and a CNode capability of any
+  rights already lets its holder reach every slot below it (the CSpace walk,
+  a CNode operation's source root and the receive path read no right of a
+  CNode capability).  Each source is re-checked against the store for its kind
+  (`cspaceRootSourceAdmitted`, `vspaceRootSourceAdmitted`), and every check
+  precedes every write.  Suspended
   means the stored flag is `.Inactive` **and** `inferThreadState` classifies
   the thread so — a stale flag cannot admit a running thread
   (`copyThreadSpaces_refuses_active`).  Payoffs: `copyThreadSpaces_ok_tcb`,
-  `resolveSetSpace_ok_authorised`, `copyThreadSpaces_preserves_ipcInvariantFull`,
+  `resolveSetSpaceAt_ok_sources`, `copyThreadSpaces_preserves_ipcInvariantFull`,
   `copyThreadSpaces_preserves_capabilityInvariantBundle` (completeness,
   acyclicity and `cdtLinksAgree`), `copyThreadSpaces_preserves_projection`;
   footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also revokes a
@@ -8004,8 +8078,9 @@ capability, so no word the caller writes can set a badge bit.  Before
 notification write capability forge any badge bits, another client's or an
 interrupt handler's.
 
-`.declassifySignal` takes its badge the same way
-(`dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
+`.declassifySignal` takes its badge the same way, from the notification
+capability it names as extra capability 0 (the invoked capability is the audit
+trail's; `dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
 as notification badge bits, and a declassifying signal whose two hops are
 ordinary is the ordinary signal, so a register-supplied badge was a second
 forging path.  What it declassifies is the delivery of the capability's badge
@@ -8235,25 +8310,27 @@ word's length (`routedLength`, `requireMessageLength`), never a decoded
 record, so the refusal allocates nothing.  The HAL's inline-argument prefilter
 is retired: every short message reaches the kernel.
 
-The minimum is the number of words the model's decode reads.  seL4's own
-figures differ because its ABI passes a capability argument as an extra
-capability plus an index-and-depth pair, where this ABI passes one word.
+The minimum is the number of words the model's decode reads.  A capability
+argument is an extra capability, as in seL4 (WS-SX SX6), so the figures are
+seL4's own except where the model reads a word seL4 does not (the retype's
+object id); a missing extra capability is `.truncatedMessage`, as seL4 refuses
+a null `excaprefs[0]`.
 
 | Syscall | Minimum | seL4 counterpart and its check |
 |---------|---------|--------------------------------|
-| `cspaceMint` | 4 | `decodeCNodeInvocation`, Mint `length < 6` |
-| `cspaceCopy`, `cspaceMove` | 4 | `decodeCNodeInvocation`, `length < 4` (the CNode operation word, below) |
+| `cspaceMint` | 6 | `decodeCNodeInvocation`, Mint `length < 6` |
+| `cspaceCopy` | 5 | `decodeCNodeInvocation`, Copy `length < 5` |
+| `cspaceMove` | 4 | `decodeCNodeInvocation`, Move `length < 4` |
 | `cspaceDelete`, `cspaceRevoke` | 1 | `decodeCNodeInvocation`, `length < 2` |
-| `untypedRetype` | 4 | `decodeUntypedInvocation`, `length < 6` |
-| `vspaceMap` | 4 | `decodeARMFrameInvocation`, Map `length < 3` |
+| `untypedRetype` | 7 | `decodeUntypedInvocation`, `length < 6`, then the model's object id word |
+| `vspaceMap` | 3 | `decodeARMFrameInvocation`, Map `length < 3` or no extra capability |
 | `vspaceUnmap`, `vspaceUnifyInstruction` | 2 | `decodeARMFrameInvocation`, Unify `length < 2` |
-| `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` |
+| `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` or no extra capability |
 | `tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity` | 1 | `decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`, `length < 1` |
-| `tcbSetSpace` | 2 | MCS `decodeSetSpace`, `length < 2` |
-| `tcbSetFaultHandler` | 1 | the fault endpoint word |
+| `tcbSetSpace` | 2 | MCS `decodeSetSpace`, `length < 2` or fewer than three extra capabilities |
 | `schedContextConfigure` | 5 | `decodeSchedControl_ConfigureFlags`, `length < 5` |
 | `irqControlGet` | 3 | `Arch_decodeIRQControlInvocation`, IssueIRQHandler `length < 3` |
-| `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 1 | none: seL4 checks only for the extra capability, which this ABI passes as a word |
+| `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 0 | none: seL4 checks only for the extra capability |
 | `serviceRegister` 5, `mintReplyCap` 2, `auditRead` 3, `auditDrain` 1 | | model calls with no seL4 counterpart |
 
 The IPC calls, the signal (`notificationSignal`) and the declassifications
@@ -8316,10 +8393,32 @@ Every syscall that invokes a capability runs one gate, `syscallInvokeTyped`
 (`API.lean`), in every dispatcher and in every compiled routed arm.  It checks,
 in order:
 
-1. **Lookup.**  The CPtr resolves to a slot holding a capability user space
-   may hold (`syscallResolveCap`).  A failure is the lookup's capability fault
-   or error.
-2. **Type.**  The capability is of the type the syscall invokes
+1. **Lookup.**  The CPtr resolves to a slot (seL4's `lookupCapAndSlot`).  An
+   address that does not resolve is the lookup's capability fault, raised at
+   that address in the send phase (`syscallResolveCap`, `syscallCapFaultOf`).
+2. **Extra capabilities.**  On every syscall that does not receive on its
+   capability, the addresses the message info's `extraCaps` names in the
+   caller's IPC buffer are looked up in the caller's CSpace, as seL4's
+   `handleInvocation` runs `lookupExtraCaps` before `decodeInvocation`
+   (`callerExtraCapsFault?`).  The first that does not resolve is a capability
+   fault at its own address in the send phase
+   (`dispatchSyscallChecked_extraCaps_before_type`).  A receive-phase syscall
+   looks none up (seL4's `handleRecv`).  The declassifying calls
+   (`declassify`, `declassifySignal`) are the one exception, by design rather
+   than by omission: declassification has no seL4 counterpart, and its refused
+   attempts belong in the refusal ledger a monitor reads, so a failed lookup of
+   their invoked capability or of their target (extra capability 0) is
+   returned as the lookup failure and recorded there, not raised as a fault
+   into a handler's mailbox (`capFaultReceivePhase?`,
+   `capFaultReceivePhase?_none_iff_records_or_capabilityFree`).
+3. **Null capability.**  A slot that holds no capability user space may hold
+   is no failure of the lookup in seL4: it is refused only now, after the extra
+   capabilities (`syscallResolveRefusal`,
+   `dispatchSyscallChecked_extraCaps_before_null`), with seL4's
+   `decodeInvocation` error `.invalidCapability`, which raises no fault.  A
+   receive-phase syscall raises the receive-phase capability fault for it
+   instead, as seL4's `handleRecv` does.
+4. **Type.**  The capability is of the type the syscall invokes
    (`syscallTargetAccepted`): its `CapTarget` constructor and, for an
    `.object` capability, the kind of the object it names, read in place with
    no allocation.  A capability of the wrong type answers
@@ -8331,9 +8430,15 @@ in order:
    because `capabilityInvariantBundle_objectCapsBacked` backs every `.object`
    capability a slot holds with a present object (and `capTargetKindBacked`
    types a kind-typed capability's target).
-3. **Right.**  The syscall's right (`syscallRequiredRight`), answered by
+5. **Right.**  The syscall's right (`syscallRequiredRight`), answered by
    `syscallMissingRightError` (`dispatchSyscallChecked_right_after_type`).
-4. **Length**, then the arguments, in the arm (§8.10.5a).
+6. **Length**, then the arguments, in the arm (§8.10.5a).
+
+A declared lock footprint covers every lookup in steps 1 and 2: the entry
+declares one only for a caller whose CSpace root consumes all 64 address bits,
+so each lookup reads the root CNode and nothing else
+(`lookupSlot_single_level_read`, `abiEntryGate_lookupSlot_root`), and the root
+is the CNode every footprint read-locks.
 
 Every check precedes every write.  The table gives, for each syscall, the
 seL4 function whose order it follows.  A right seL4 does not check is an
@@ -8343,7 +8448,6 @@ seLe4n extension: it sits after the type and before the length.
 |---------|---------------|-------|---------------|
 | `send`, `call` | `decodeInvocation`, endpoint case | lookup, type, CanSend | `.invalidCapability` (seL4 `InvalidCapability`, invalid capability number 0) |
 | `notificationSignal` | `decodeInvocation`, notification case | lookup, type, CanSend | `.invalidCapability`, as seL4 |
-| `declassifySignal` | no counterpart (signals a notification) | lookup, type, CanSend | `.invalidCapability`, as the signal |
 | `receive`, `notificationWait` | `handleRecv` | lookup, type, CanReceive | capability fault, receive phase, lookup failure `.invalidCapability` (seL4 `missing_capability`) |
 | `replyRecv` | MCS `handleSyscall` `SysReplyRecv`: `handleInvocation` on the reply, then `handleRecv` | lookup, type, CanReceive on the endpoint | capability fault, receive phase, as `receive` |
 | `reply` | no MCS counterpart (MCS replies through the reply object) | lookup, type, right (extension) | `.illegalAuthority` |
@@ -8356,11 +8460,19 @@ seLe4n extension: it sits after the type and before the length.
 | `schedContextConfigure` | `decodeSchedControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqControlGet` | `decodeIRQControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqHandlerAck`, `irqHandlerSetNotification`, `irqHandlerClear` | `decodeIRQHandlerInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
-| `serviceRegister`, `serviceRevoke`, `serviceQuery`, `declassify`, `auditRead`, `auditDrain` | no counterpart | lookup, type, right, length | `.illegalAuthority` |
+| `serviceRegister`, `serviceRevoke`, `serviceQuery` | no counterpart: invocations of the service-registry capability (`CapTarget.serviceRegistry`, WS-SX SX6.7); each takes its endpoint as extra capability 0, with the syscall's own right on it (`.write` to register or revoke, `.read` to query), an absent one refused `.truncatedMessage`, an unusable one or one naming no endpoint `.invalidCapability 1` (`resolveServiceEndpoint`) | lookup, type, right, length, then extra capability 0 | `.illegalAuthority` |
+| `declassify`, `declassifySignal`, `auditRead`, `auditDrain` | no counterpart: invocations of the audit-trail capability; `declassify` and `declassifySignal` take their target (any object; a notification with the write right for the signal) as extra capability 0, an absent one refused `.truncatedMessage`, an unusable one `.invalidCapability 1` | lookup, type, right, length, then extra capability 0 | `.illegalAuthority` |
 
 seL4's CNode, TCB, untyped, scheduling, page-table and IRQ capabilities carry
 no rights, so seL4 checks none of these rights; the model's are extensions.
 The yield invokes no capability and runs before any gate.
+
+A bind's notification, extra capability 0, is checked as seL4's
+`decodeBindNotification` checks it (`resolveBindNotificationCap`): a lookup
+that fails is its lookup fault; then the type (a slot that holds no
+notification capability) and then `CanReceive` (`.read`), each refused
+`IllegalOperation` (`.illegalState`); a notification already bound, or one a
+thread waits on, is refused the same (`bindNotification`).
 
 **Receive-phase capability faults.**  seL4's `handleRecv` raises a capability
 fault in the receive phase when the lookup fails, when the capability is not
@@ -9023,8 +9135,9 @@ re-arms it, so the parked thread waits for its manager — the WS-CB residual in
 [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C.
 
 #### 8.12.5 API Surface & Syscall Wiring
-3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
-`decodeSchedContextBindArgs_error_iff`, `decodeSchedContextUnbindArgs_error_iff`).
+2 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
+`decodeSchedContextUnbindArgs_error_iff`); the bind's thread is extra capability 0
+(`schedContextBindArgsOf`, WS-SX SX6.4), read from no message word.
 4 frozen SchedContext operations (`frozenSchedContextConfigure`,
 `frozenSchedContextBind`, `frozenSchedContextUnbind`, `frozenTimerTickBudget`).
 
@@ -11781,12 +11894,18 @@ see (`serviceRegistry_of_projectObjects`, `serviceObservable`), and
 `ObservableState` carries no second copy (its `serviceRegistry` component,
 `projectServiceRegistry`, `v0.36.146`–`v0.36.158`, is deleted; two low-equivalent
 states read one registry, `serviceRegistry_eq_of_projectObjects_eq`).  The three service arms are gated on
-the endpoint's label, never on a separate service label:
+the endpoint's label, never on a separate service label.  Since WS-SX SX6.7
+each is an invocation of the service-registry capability
+(`CapTarget.serviceRegistry`, `Capability.serviceRegistry`, which the boot hands
+the root task), and the endpoint is the call's extra capability 0, resolved
+with the syscall's own right (`resolveServiceEndpoint`), so no message label
+ever selects a registry operation on an endpoint, whose Send and Call are IPC:
+
 
 * **register** (`registerServiceChecked`): the caller's label must flow to the
   endpoint's (`registrationWriteAdmitted`), otherwise `flowDenied`;
 * **revoke** (`revokeServiceChecked`): the same write gate, and the arm removes
-  the registration the invoked endpoint records
+  the registration the named endpoint records
   (`revokeServiceByRecordedRegistration`); it reads no message register, so a
   capability to one endpoint cannot revoke another's registration
   (`dispatchWithCapChecked_serviceRevoke_removes_recorded_registration`,

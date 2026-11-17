@@ -777,8 +777,7 @@ private def donReply : SeLe4n.ReplyId := ⟨844⟩
 
 /-- The client's own SchedContext (priority 60, above the passive server's base). -/
 private def donClientSc : SchedContext :=
-  { scId := scClient, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨60⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donClient), isActive := true }
+  { scId := scClient, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donClient), isActive := true }
 
 /-- A bound-SC client (prio 60) and a passive `.unbound` server homed on core 1. -/
 private def stDonBase : SystemState :=
@@ -925,8 +924,7 @@ a migration moves the one entry, and every refill with it (WS-ZA ZA6.3). -/
 private def scBystander : SeLe4n.SchedContextId := SchedContextId.ofNat 845
 
 private def bystanderSchedContext : SchedContext :=
-  { scId := scBystander, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨10⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩ }
+  { scId := scBystander, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨100⟩ }
 
 /-- The donation round trip with the bystander's refill pending on core 1 and the
 client's context still runnable. -/
@@ -966,8 +964,7 @@ private def scCaller2 : SeLe4n.SchedContextId := SchedContextId.ofNat 847
 private def donCaller2 : SeLe4n.ThreadId := ⟨848⟩
 
 private def donCaller2Sc : SchedContext :=
-  { scId := scCaller2, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donCaller2), isActive := true }
+  { scId := scCaller2, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donCaller2), isActive := true }
 
 /-- The queued caller's own reply object -- the frame **WS-OD OD4.1**'s push
 mounts on its context's stack when the receive leg hands that context on.  A
@@ -2917,8 +2914,7 @@ private def loopCaller2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 862
 private def loopCaller2Reply : SeLe4n.ReplyId := ⟨863⟩
 
 private def loopCaller2SchedContext : SchedContext :=
-  { scId := loopCaller2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := loopCaller2Sc, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some loopCaller2), isActive := true }
 
 /-- `stDonBase` plus a second, ready client holding its own context and its own
@@ -3081,8 +3077,7 @@ queued caller's priority has. -/
 private def scHandoffServer : SeLe4n.SchedContextId := SchedContextId.ofNat 845
 
 private def handoffServerSc : SchedContext :=
-  { scId := scHandoffServer, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨20⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := scHandoffServer, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some donServer), isActive := true }
 
 /-- `stDonBase` with the server holding its own budget rather than passive. -/
@@ -4354,8 +4349,7 @@ private def fpClient2 : SeLe4n.ThreadId := ⟨871⟩
 private def fpClient2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 872
 
 private def fpClient2SchedContext : SchedContext :=
-  { scId := fpClient2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := fpClient2Sc, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some fpClient2), isActive := true }
 
 /-- The shape (c) needs: a second endpoint with its own passive server (home core
@@ -4367,8 +4361,7 @@ private def fpClientXSc : SeLe4n.SchedContextId := SchedContextId.ofNat 877
 private def fpReplyX : SeLe4n.ReplyId := ⟨878⟩
 
 private def fpClientXSchedContext : SchedContext :=
-  { scId := fpClientXSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨45⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+  { scId := fpClientXSc, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some fpClientX), isActive := true }
 
 /-- `stFpPassiveBase` before the first client's refill is queued: its context's

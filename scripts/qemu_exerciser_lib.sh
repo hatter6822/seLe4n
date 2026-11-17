@@ -242,8 +242,10 @@ for driver in drivers:
         # measured the same way.  The gate holds that each run's reading
         # happened once, after the round trip returned a frame or blocked as it
         # should, is a delta, and is zero, except a retype's: a retype that
-        # succeeded names the object it carved (`carved <kind>/<size bits>`),
-        # and its reading must be exactly that object's own cells.  Each
+        # succeeded names the object it carved and how many
+        # (`carved <kind>/<size bits> x<count>`, a retype window carving
+        # `count` objects of one kind), and its reading must be exactly that
+        # many of that object's own cells.  Each
         # reading also prints the bytes of the cells it counted, by size
         # (WS-UC UC1): the sizes must account for exactly the counted cells
         # and the bytes for exactly the sizes, and the bytes are pinned beside
@@ -253,7 +255,7 @@ for driver in drivers:
         for m in unparsed:
             failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
-        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
+        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) x(\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
         # their bytes: the object's record and the cells it is built of, its
@@ -265,9 +267,16 @@ for driver in drivers:
         # bytes: a kind whose object changes shape changes its pins, and a
         # kind the exerciser carves that has no pin fails.  The breakdown of
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
+        # sched-context/7's record is the 280-byte cell since WS-SX SX6.4 (was
+        # 288): the generated constructor is `lean_alloc_ctor(0, 32, 11)`,
+        # 8 + 32 * 8 + 11 = 275 bytes, where it was 34 boxed fields and 2 scalar
+        # bytes (282).  The context lost its priority, deadline and domain (three
+        # boxed fields) and gained seL4's badge (a UInt64 scalar), sporadic flag
+        # (a Bool scalar) and refill limit `refillMax` (a boxed Nat): the cell
+        # count is unchanged and the bytes move by that one size class.
         carve_cells = {
             "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (19, 2064), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
+            "tcb/0": (25, 2368), "sched-context/7": (8, 432), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }
@@ -322,7 +331,8 @@ for driver in drivers:
             "receive-reply-cap-guard-mismatch", "reply-recv-reply-cap-guard-mismatch",
             "configure-sched-context-guard-mismatch", "set-space-root-guard-mismatch",
             "bind-notification-guard-mismatch", "set-fault-handler-guard-mismatch",
-            "cnode-mint-guard", "cnode-mint-guardless",
+            "cnode-mint-guard", "cnode-mint-guardless", "cnode-copy-no-source-root",
+            "cnode-copy-six-words", "cnode-mint-five-words",
             "cnode-multi-level-copy", "cnode-multi-level-copy-delete",
             "lookup-stops-at-non-cnode", "cnode-mint-guardless-delete",
             "cnode-mint-guard-delete", "cnode-mint-badged-endpoint",
@@ -372,7 +382,8 @@ for driver in drivers:
             "orphan-top-set-space", "orphan-top-waits", "orphan-top-wakes-root",
             "page-table-delete-1", "page-table-delete-2", "page-table-delete-3",
             "page-table-map-1", "page-table-map-2", "page-table-map-3", "page-table-unmap-1",
-            "page-table-unmap-2", "page-table-unmap-3", "populated-cnode-delete",
+            "page-table-unmap-2", "page-table-unmap-3", "partner-ipc-buffer-clear",
+            "populated-cnode-delete",
             "postpone-bind-partner", "postpone-configure", "postpone-partner-yield",
             "postpone-resume-partner", "postpone-root-receives", "postpone-suspend",
             "postpone-unbind", "postpone-wake-root", "queue-endpoint-delete",
@@ -383,9 +394,9 @@ for driver in drivers:
             "receive-for-call", "receive-from-badged-sender", "receive-from-sender",
             "receive-on-carved", "receive-queued-fault", "receive-stashing-reply",
             "range-error-payload",
-            # Argument words at or above 2^63, each refused on the word, and
+            # Argument words at or above 2^63, each read as a word, and
             # the measured mint of a badge at 2^63.
-            "vspace-map-wide-asid", "vspace-map-wide-vaddr", "vspace-map-wide-perms",
+            "vspace-map-wide-rights", "vspace-map-wide-vaddr", "vspace-map-wide-attr",
             "vspace-unmap-wide-vaddr", "tcb-set-affinity-wide",
             "mint-wide-badged-notification",
             "receive-tainted", "receive-with-carved-reply", "refill-bind-root",
@@ -428,7 +439,8 @@ for driver in drivers:
             "suspend-wait-partner-waits", "suspend-wait-resume", "suspend-wait-root-receives",
             "suspend-wait-wake-root", "suspended-tcb-delete", "tcb-bind-notification",
             "tcb-resume", "tcb-resume-bound", "tcb-resume-postpone", "tcb-set-affinity",
-            "tcb-set-affinity-running", "tcb-set-fault-handler", "tcb-set-ipc-buffer",
+            "tcb-set-affinity-running", "set-space-fault-handler-cleared",
+            "set-space-fault-handler-not-endpoint", "tcb-set-ipc-buffer",
             "tcb-set-mc-priority", "tcb-set-priority", "tcb-set-space", "tcb-suspend",
             "tcb-suspend-bound", "tcb-suspend-receive-blocked", "tcb-suspend-release-queued",
             "tcb-suspend-reply-blocked", "tcb-suspend-reply-donated",
@@ -498,6 +510,10 @@ for driver in drivers:
             "tail-send-blocks-suspend", "tail-reply-recv-resume",
             "tail-reply-recv-call", "tail-reply-recv-takes", "tail-reply-recv-blocks",
             "tail-reply-recv-suspend",
+            "reply-recv-extra-cap-skips-reply-resume", "reply-recv-extra-cap-skips-reply",
+            "reply-recv-extra-cap-skips-reply-partner-sends",
+            "reply-recv-extra-cap-skips-reply-partner-receives",
+            "reply-recv-extra-cap-skips-reply-suspend",
             # Capability-carrying sends and calls that block.
             "caps-send-blocks-resume", "caps-send-blocks", "caps-send-blocks-suspend-root",
             "caps-send-blocks-resume-root", "caps-send-blocks-suspend",
@@ -786,7 +802,7 @@ for driver in drivers:
             "receive-configure-cap-fault-held", "reply-configure-cap-fault-held",
             "configure-refused-held", "configure-zero-budget-max-period",
             "configure-budget-over-wide-period", "configure-wide-budget-and-period",
-            "configure-wide-deadline", "configure-held-ipc-buffer",
+            "configure-wide-flags", "configure-held-ipc-buffer",
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",
@@ -829,7 +845,7 @@ for driver in drivers:
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
             # Every syscall with a message past its inline words, refused: only
-            # an IPC transfer and a five-word invocation read the overflow words.
+            # an IPC transfer, a five-word invocation and a retype read the overflow words.
             "overflowed-cspace-mint", "overflowed-cspace-copy",
             "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
             "overflowed-vspace-map", "overflowed-vspace-unmap",
@@ -839,7 +855,7 @@ for driver in drivers:
             "overflowed-sched-context-yield-to", "overflowed-tcb-suspend", "overflowed-tcb-resume",
             "overflowed-tcb-set-priority", "overflowed-tcb-set-ipc-buffer",
             "overflowed-tcb-set-affinity", "overflowed-tcb-bind-notification",
-            "overflowed-tcb-unbind-notification", "overflowed-tcb-set-fault-handler",
+            "overflowed-tcb-unbind-notification",
             "overflowed-tcb-set-space", "overflowed-mint-reply-cap", "overflowed-irq-handler-ack",
             "overflowed-irq-control-get", "overflowed-irq-handler-set-notification",
             "overflowed-irq-handler-clear", "overflowed-page-table-map",
@@ -850,20 +866,41 @@ for driver in drivers:
             # its arguments: refused TruncatedMessage before any argument read.
             "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
             "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
-            "untyped-retype-short", "vspace-map-short", "vspace-unmap-short",
+            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short", "vspace-unmap-short",
             "vspace-unify-instruction-short", "page-table-map-short",
             "sched-context-configure-short", "sched-context-bind-short",
             "tcb-bind-notification-short", "tcb-set-priority-short",
             "tcb-set-mc-priority-short", "tcb-set-ipc-buffer-short",
-            "tcb-set-affinity-short", "tcb-set-fault-handler-short", "tcb-set-space-short",
+            "tcb-set-affinity-short", "set-space-extra-caps-short", "tcb-set-space-short",
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
+            # Each IPC route's refusal: a send, call, reply and signal on the
+            # root CNode's capability, refused InvalidCapability in place.
+            "send-wrong-kind-refused", "call-wrong-kind-refused",
+            "reply-wrong-kind-refused", "signal-wrong-kind-refused",
             # WS-UC UC4: a capability copied into a carved CNode and out of
             # it, the CNode retired while the copy lives on.
             "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",
             "owned-cnode-slot-delete", "owned-cnode-delete", "owned-cnode-escaped-move",
             "owned-cnode-escaped-delete", "owned-cnode-untyped-reset",
-        }
+            # WS-SX SX6.5: retype windows -- one past the fan-out limit
+            # refused RangeError(1, 26), three endpoints in one retype read as
+            # three endpoints' cells, and a full window of 26; each carved
+            # slot's capability deleted and the untyped reset.
+            "untyped-retype-window-over-limit", "untyped-retype-window-three",
+            "window-three-delete-0", "window-three-delete-1", "window-three-delete-2",
+            "window-three-untyped-reset", "untyped-retype-window-full",
+            "window-full-untyped-reset",
+            # WS-SX SX6.3/SX6.6: argument words at or above 2^63 read on the
+            # word -- a retype's object id, an interrupt line, a page table's
+            # address and an IPC buffer's address -- each refused as seL4
+            # refuses it; the page table carved for the address, deleted and
+            # the untyped reset.
+            "untyped-retype-wide-child-id", "irq-control-get-wide-line",
+            "untyped-retype-wide-table", "page-table-map-wide-vaddr",
+            "wide-table-delete", "wide-table-untyped-reset",
+            "tcb-set-ipc-buffer-wide-unaligned",
+        } | {f"window-full-delete-{i}" for i in range(26)}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
             failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed ^ expected)} differ from the pinned set")
@@ -874,7 +911,7 @@ for driver in drivers:
             key = (m.group(1), m.group(2) is not None)
             if key in carved:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)}: named two carves in one run")
-            carved[key] = m.group(3)
+            carved[key] = (m.group(3), int(m.group(4)))
         for name in sorted(observed | expected):
             for first in (True, False):
                 which = "first call" if first else "steady state"
@@ -957,11 +994,16 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: the kernel-entry site {site} has no measured reading that entered it")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:5])
-            kind = carved.get((m.group(1), m.group(2) is not None))
+            kind, count = carved.get((m.group(1), m.group(2) is not None), (None, 0))
             if kind is not None and kind not in carve_cells:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
                 continue
-            pin, byte_pin = carve_cells[kind] if kind is not None else (0, 0)
+            if kind is not None and not 1 <= count <= 26:
+                failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {count} objects, not a window of 1 to 26: {m.group(0)!r}")
+                continue
+            # A window of `count` objects carves each with its own cells: the
+            # pin is the object's, times the count.
+            pin, byte_pin = (carve_cells[kind][0] * count, carve_cells[kind][1] * count) if kind is not None else (0, 0)
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
                 continue
@@ -977,9 +1019,9 @@ for driver in drivers:
             elif sum(size * count for size, count in groups) != int(m.group(6)):
                 failures.append(f"heap-allocations-per-syscall: the bytes are not the sizes' total: {m.group(0)!r}")
             elif delta != pin and kind is not None:
-                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {delta}, the object's own cells are {pin}: {m.group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} x{count} read {delta}, the objects' own cells are {pin}: {m.group(0)!r}")
             elif int(m.group(6)) != byte_pin and kind is not None:
-                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {m.group(6)} bytes, the object's own cells' bytes are {byte_pin}: {m.group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} x{count} read {m.group(6)} bytes, the objects' own cells' bytes are {byte_pin}: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
         # WS-UC UC1: every kind the retype's decode accepts has a carve
@@ -1007,7 +1049,7 @@ for driver in drivers:
                 kinds.append(re.sub(r"([A-Z])", lambda c: "-" + c.group(1).lower(), m.group(2)))
             if not kinds:
                 failures.append("heap-allocations-per-syscall: the retype's decode answered no object kind")
-        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
+        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ x\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
         delete_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: deleted (0x[0-9a-f]+/\d+)$")
         events = []
         for line in lines:
@@ -1053,7 +1095,8 @@ for driver in drivers:
         # from another object, moves the frees off it.
         owned_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: owned-cnode-retire: core 0( \(first call\))?: allocated (\d+) freed (\d+)$")
         owned = [m for m in (owned_re.fullmatch(line) for line in lines) if m]
-        owned_cnode = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]
+        owned_carves = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]
+        owned_cnode = [c[0] if c is not None and c[1] == 1 else None for c in owned_carves]
         if owned_cnode[0] is None or owned_cnode[0] != owned_cnode[1] or owned_cnode[0] not in carve_cells:
             failures.append(f"heap-allocations-per-syscall: owned-cnode-retire: the carve named {owned_cnode}, not one pinned CNode kind in both runs")
         elif not owned_cnode[0].startswith("cnode/"):

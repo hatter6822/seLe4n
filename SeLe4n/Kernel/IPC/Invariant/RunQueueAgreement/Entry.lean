@@ -462,11 +462,7 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
   split at h
   · cases h
   rename_i decoded hDec
-  dsimp only at h
-  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
-    decoded.overflowCount
-  rw [ht] at h
-  have hF := RunQueueStage.of_frame (st := st) (st' := { st with perCoreTlb := t }) rfl rfl rfl
+  have hF := RunQueueStage.of_frame (st := st) (st' := st) rfl rfl rfl
   exact (hF.entry.toOn (SystemState.currentObjOn st e)).trans
     (dispatchSyscallChecked_runQueueEntryStage ctx decoded tid e _ st'
       ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hCur (hNI tid hCur)) h)

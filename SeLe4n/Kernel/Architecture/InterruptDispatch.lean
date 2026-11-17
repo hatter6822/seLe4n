@@ -472,7 +472,7 @@ disposition:
 - **A-L8** `BumpAllocator` off-by-one analysis. Audit found no actual
   off-by-one; documented in `VSpaceARMv8.lean:BumpAllocator.allocate`.
 
-- **A-L9** `validateIpcBufferAddress` 4 KiB granule assumption. Documented
+- **A-L9** the IPC buffer's 4 KiB granule assumption. Documented
   in `IpcBufferValidation.lean` — the `ipcBuffer_within_page` theorem
   formalizes the 4 KiB / 512-byte relationship.
 

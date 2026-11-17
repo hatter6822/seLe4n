@@ -2077,17 +2077,17 @@ private def runPerCoreTlbFillChecks : IO Unit := do
     -- Before the walk, core0's view is empty (the live model only drained until SM7.F.1).
     assertBool "core0's view is empty before the translation-walk fill"
       ((tlbOnCore stMapped core0).entries.isEmpty)
-    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    let stSpilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
     -- The walk resolved the live mapping and cached it — perCoreTlb is now genuinely
     -- NON-empty on a real page-table-backed state (the SM7.F Comment-2 ask).
     assertBool "the translation-walk fill caches the mapped translation on core0 (SM7.F.1)"
-      ((tlbOnCore stFilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      ((tlbOnCore stSpilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
     -- Locality: a walk is a this-core event (the SMP asymmetry).
     assertBool "the fill is local — other cores' views stay empty"
-      ([core1, core2, core3].all fun c => (tlbOnCore stFilled c).entries.isEmpty)
+      ([core1, core2, core3].all fun c => (tlbOnCore stSpilled c).entries.isEmpty)
     -- Consistency-safety: the cached entry matches the page tables by construction.
     assertBool "the fill keeps the per-core consistency checker green (consistent by construction)"
-      (tlbInvalidationConsistentCheck_perCore stFilled)
+      (tlbInvalidationConsistentCheck_perCore stSpilled)
     -- An unmapped address caches nothing (the walk misses → no-op): core0's
     -- view stays empty, whereas the mapped walk above populated it.
     assertBool "a walk of an unmapped address caches nothing (no-op)"
@@ -2107,8 +2107,8 @@ private def runPerCoreTlbPendingAwareChecks : IO Unit := do
   | .ok ((), stMapped) => do
     -- Fill core0 with the (consistent) translation, then UNMAP the page from
     -- the page tables — core0's cached entry is now genuinely STALE.
-    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
-    match vspaceUnmapPageWithFlush asid5 vaddrPage stFilled with
+    let stSpilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    match vspaceUnmapPageWithFlush asid5 vaddrPage stSpilled with
     | .error _ => assertBool "the scenario unmaps the page" false
     | .ok ((), stStale) => do
       -- No shootdown pending ⇒ the stale entry is INADMISSIBLE (the honest
@@ -2138,14 +2138,14 @@ private def runPerCoreTlbInitiatorAtomicChecks : IO Unit := do
   | .error _ => assertBool "the scenario maps the page" false
   | .ok ((), stMapped) => do
     -- Fill the initiator (core0) AND a remote (core1) with the translation.
-    let stFilled := tlbFillOnCore (tlbFillOnCore stMapped core0 asid5 vaddrPage)
+    let stSpilled := tlbFillOnCore (tlbFillOnCore stMapped core0 asid5 vaddrPage)
       core1 asid5 vaddrPage
     assertBool "both the initiator and a remote core cache the translation pre-unmap"
-      ((tlbOnCore stFilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage) &&
-       (tlbOnCore stFilled core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      ((tlbOnCore stSpilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage) &&
+       (tlbOnCore stSpilled core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
     -- The initiator-atomic unmap: erase the page, post to remote targets, AND
     -- retire the initiator's own view — all in one committed transition.
-    match vspaceUnmapPageWithShootdownPerCore core0 asid5 vaddrPage stFilled with
+    match vspaceUnmapPageWithShootdownPerCore core0 asid5 vaddrPage stSpilled with
     | .error _ => assertBool "the initiator-atomic unmap succeeds" false
     | .ok ((), stAtomic) => do
       -- The initiator's own stale entry is GONE (retired atomically).
@@ -2162,7 +2162,7 @@ private def runPerCoreTlbInitiatorAtomicChecks : IO Unit := do
     -- Contrast: the plain unmap-with-shootdown leaves the initiator stale-and-uncovered
     -- (shootdownTargets EXCLUDES the initiator), so the checker is RED — the exact
     -- gap the PerCore wrapper closes.
-    match vspaceUnmapPageWithShootdown core0 asid5 vaddrPage stFilled with
+    match vspaceUnmapPageWithShootdown core0 asid5 vaddrPage stSpilled with
     | .error _ => assertBool "the plain unmap-with-shootdown succeeds" false
     | .ok ((), stPlain) => do
       assertBool "the plain unmap leaves the initiator's own view stale (no local retirement)"
@@ -2183,15 +2183,15 @@ private def runPerCoreTlbUseAfterRetypeChecks : IO Unit := do
       .readOnly (udState []) with
   | .error _ => assertBool "the scenario maps the page" false
   | .ok ((), stMapped) => do
-    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    let stSpilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
     -- While asid5 resolves, the cached entry is genuinely consistent (checker GREEN).
     assertBool "a walk-filled entry with a resolvable ASID passes the checker"
-      (tlbInvalidationConsistentCheck_perCore stFilled)
+      (tlbInvalidationConsistentCheck_perCore stSpilled)
     -- Model a retype: asid5 no longer resolves (the VSpaceRoot is gone / rebound),
     -- but the old translation is still cached on core0.  Carry the filled view onto
     -- the VSpaceRoot-free base state.
     let stRetyped : SeLe4n.Model.SystemState :=
-      { (udState []) with perCoreTlb := stFilled.perCoreTlb }
+      { (udState []) with perCoreTlb := stSpilled.perCoreTlb }
     -- The OLD implication form accepted this VACUOUSLY (unresolvable ASID ⇒ premise
     -- unsatisfiable ⇒ trivially consistent).  The conjunction form (SM7.F) flags it
     -- as the stale use-after-retype entry it is — checker RED, no pending cover.
@@ -2335,13 +2335,15 @@ private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
 --         13th bundle conjunct were vacuous for it — the common case on real
 --         hardware, and exactly the case a shootdown exists to handle.
 --
---         Here core1 maps, **core0 accesses** (the kernel's own IPC-buffer walk
---         while decoding a syscall's overflow message registers — the seam
---         `syscallEntryChecked` now runs), and core1 then unmaps cross-core.
+--         Here core1 maps, **core0 accesses** (a user access on core0, whose
+--         page-table walk fills core0's TLB, `tlbFillOnCore`), and core1 then
+--         unmaps cross-core.  The kernel's own reads of a thread's IPC buffer
+--         are made at physical addresses through the kernel's mapping of RAM,
+--         as seL4's are (`lookupIPCBuffer`), and cache no user translation.
 -- ----------------------------------------------------------------------------
 
 private def runPerCoreTlbAccessFillChecks : IO Unit := do
-  IO.println "-- §5.11 per-core TLB: access-time IPC-buffer fill (SM7.F.5)"
+  IO.println "-- §5.11 per-core TLB: access-time fill on a non-mapping core (SM7.F.5)"
   -- `udState`'s caller has its IPC buffer at `vaddrPage`, in the `asid5` root.
   -- core1 maps that page; only core1 caches it (the F.4 mapping-seam fill).
   match vspaceMapPageCheckedWithShootdownFromStatePerCore core1 asid5 vaddrPage
@@ -2350,33 +2352,25 @@ private def runPerCoreTlbAccessFillChecks : IO Unit := do
   | .ok ((), stMapB) => do
     assertBool "before any access, the non-mapping core has cached nothing"
       ((tlbOnCore stMapB core0).entries.isEmpty)
-    -- core0 decodes a syscall for that thread carrying ONE overflow message
-    -- register: the kernel walks the caller's IPC buffer, and that walk fills
-    -- core0's TLB — a core caching a translation it did NOT establish.
-    let stAccessed := tlbFillIpcBufferOnCore stMapB core0 udCaller 1
-    assertBool "the access-time walk caches the IPC-buffer page on the ACCESSING core (SM7.F.5)"
+    -- a thread running on core0 touches that page: the walk fills core0's
+    -- TLB -- a core caching a translation it did NOT establish.
+    let stAccessed := tlbFillOnCore stMapB core0 asid5 vaddrPage
+    assertBool "the access-time walk caches the page on the ACCESSING core"
       ((tlbOnCore stAccessed core0).entries.any
         (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
-    -- The load-bearing negative: a decode that read no overflow slot performs
-    -- no walk, so it caches nothing.  Without this, "the fill fires" could be
-    -- satisfied by a fill that always fires.
-    assertBool "a decode with no overflow registers performs no walk and caches nothing"
-      ((tlbOnCore (tlbFillIpcBufferOnCore stMapB core0 udCaller 0) core0).entries.isEmpty)
+    -- The load-bearing negative: a walk of a page the root does not map
+    -- resolves nothing, so it caches nothing.
+    assertBool "a walk of an unmapped page caches nothing"
+      ((tlbOnCore (tlbFillOnCore stMapB core0 asid5 (SeLe4n.VAddr.ofNat 0x7000)) core0).entries.isEmpty)
     assertBool "the access-time fill is core-local — no other core cached it"
       ([core2, core3].all fun c => (tlbOnCore stAccessed c).entries.isEmpty)
     assertBool "the access-time fill keeps the per-core checker green (consistent by construction)"
       (tlbInvalidationConsistentCheck_perCore stAccessed)
     assertBool "the access-time fill posts no shootdown — it is a pure TLB-model event"
       (decide (shootdownQuiescent stAccessed.tlbShootdown))
-    -- Correspondence: the entry cached is the translation the READ resolved.
-    -- The read goes tid → tcb.vspaceRoot → root; the fill goes asid →
-    -- resolveAsidRoot.  Two routes, and this pins that they agree.
-    match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr stAccessed udCaller 0 with
-    | .error _ => assertBool "the IPC-buffer read the fill models actually succeeds" false
-    | .ok _ =>
-      assertBool "the cached entry's physical page is the one the read resolves through"
-        ((tlbOnCore stAccessed core0).entries.any
-          (fun e => e.vaddr == vaddrPage && e.paddr == SeLe4n.PAddr.ofNat 0x2000))
+    assertBool "the cached entry's physical page is the one the mapping installed"
+      ((tlbOnCore stAccessed core0).entries.any
+        (fun e => e.vaddr == vaddrPage && e.paddr == SeLe4n.PAddr.ofNat 0x2000))
     -- Now the cross-core unmap: core1 tears the mapping down.  core0's cached
     -- entry — acquired purely by ACCESS — is exactly what the shootdown must
     -- reach.  Before SM7.F.5 there was no such entry to reach.
@@ -2489,7 +2483,7 @@ The three parts are defined in reverse call order (part 3, then 2, then the
 definition before its use; they are split at all per the thin-dispatcher
 convention, since one deep `do`-chain blows clang's bracket-nesting limit. -/
 private def runShootdownBackpressureChecks
-    (stFilled : SeLe4n.Model.SystemState) : IO Unit := do
+    (stSpilled : SeLe4n.Model.SystemState) : IO Unit := do
   -- (5) BACKPRESSURE.  The caller-facing (total, coalescing) posting the live
   -- wrappers use never fails and never breaches the bound: at capacity a
   -- target's queue collapses to one full flush that supersedes every dropped
@@ -2499,7 +2493,7 @@ private def runShootdownBackpressureChecks
       (fun s _ =>
         tlbShootdownBroadcastCoalescing s core0 (shootdownTargets core0)
           (stressOpOf core0))
-      stFilled
+      stSpilled
   let at16 := stormN maxPendingPerCore
   assertBool "sixteen un-drained rounds fill each remote queue exactly to capacity"
     ([core1, core2, core3].all fun c =>
@@ -2527,7 +2521,7 @@ private def runShootdownBackpressureChecks
   -- survive.  A blanket-flush regression in the handler fails right here.
   let mixed :=
     tlbShootdownBroadcastCoalescing
-      (tlbShootdownBroadcastCoalescing stFilled core0 (shootdownTargets core0)
+      (tlbShootdownBroadcastCoalescing stSpilled core0 (shootdownTargets core0)
         (stressOpOf core0))
       core1 (shootdownTargets core1) (encodeAsidInvalidation asid5)
   assertBool "a mixed storm queues the page operand and the ASID operand in order"
@@ -2548,7 +2542,7 @@ private def runShootdownBackpressureChecks
 that makes one deterministic model fold stand for every hardware interleaving;
 chains on to part 3 (`runShootdownBackpressureChecks`). -/
 private def runConcurrentUnmapDrainChecks
-    (stFilled stStorm : SeLe4n.Model.SystemState) : IO Unit := do
+    (stSpilled stStorm : SeLe4n.Model.SystemState) : IO Unit := do
   -- (3) the deferred catch-ups — exactly what `completeShootdownRounds` runs,
   -- one per round.  Round 0's catch-up drains every OTHER core's queue
   -- completely (each had already retired its own operand), while the
@@ -2595,22 +2589,22 @@ private def runConcurrentUnmapDrainChecks
   assertBool "a full 4-core drain ends quiescent with every view clean"
     (decide (shootdownQuiescent ascending.tlbShootdown) &&
       (allCores.all fun c => (tlbOnCore ascending c).entries.isEmpty))
-  runShootdownBackpressureChecks stFilled
+  runShootdownBackpressureChecks stSpilled
 
 private def runConcurrentUnmapStressChecks : IO Unit := do
   IO.println "-- §6 concurrent-unmap stress: 4 cores, 4 rounds in flight"
   match stressFilled? with
   | none =>
     assertBool "the storm scenario builds (4 maps + 16 walk fills)" false
-  | some stFilled => do
+  | some stSpilled => do
     -- (0) the pre-state is real: four page-table-backed mappings, cached on
     -- every core, quiescent and per-core consistent.
     assertBool "every core caches all four translations before the storm"
       (allCores.all fun c =>
-        stressAssignments.all fun a => viewCaches stFilled c a.2.1)
+        stressAssignments.all fun a => viewCaches stSpilled c a.2.1)
     assertBool "the pre-state is quiescent and per-core consistent"
-      (decide (shootdownQuiescent stFilled.tlbShootdown) &&
-        tlbInvalidationConsistentCheck_perCore stFilled)
+      (decide (shootdownQuiescent stSpilled.tlbShootdown) &&
+        tlbInvalidationConsistentCheck_perCore stSpilled)
     match stressStormed? with
     | none =>
       assertBool "all four concurrent unmaps commit" false
@@ -2643,7 +2637,7 @@ private def runConcurrentUnmapStressChecks : IO Unit := do
           | .ok _ => false)
       assertBool "mid-storm the pending-aware per-core invariant is GREEN"
         (tlbInvalidationConsistentCheck_perCore stStorm)
-      runConcurrentUnmapDrainChecks stFilled stStorm
+      runConcurrentUnmapDrainChecks stSpilled stStorm
 
 -- ----------------------------------------------------------------------------
 -- §8  SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
@@ -2696,9 +2690,9 @@ private def runRoundWindowChecks : IO Unit := do
   match stressFilled?, stressStormed? with
   | none, _ => assertBool "the storm scenario builds" false
   | _, none => assertBool "all four concurrent unmaps commit" false
-  | some stFilled, some stStorm => do
+  | some stSpilled, some stStorm => do
     assertBool "four concurrent commits allocated four distinct generations"
-      (stFilled.tlbShootdown.roundGeneration == 0 &&
+      (stSpilled.tlbShootdown.roundGeneration == 0 &&
         stStorm.tlbShootdown.roundGeneration == 4)
     assertBool "each queued descriptor carries its own initiator's generation"
       (allCores.all fun c =>
@@ -2756,12 +2750,12 @@ private def runRoundWindowChecks : IO Unit := do
   -- one-round commit changes.
   match stressFilled? with
   | none => assertBool "the storm scenario builds" false
-  | some stFilled => do
+  | some stSpilled => do
     match vspaceUnmapPageWithShootdownPerCore core0 asid5
-        (SeLe4n.VAddr.ofNat 0x1000) stFilled with
+        (SeLe4n.VAddr.ofNat 0x1000) stSpilled with
     | .error _ => assertBool "the single live unmap commits" false
     | .ok ((), stOne) => do
-      let w := windowOf stFilled stOne
+      let w := windowOf stSpilled stOne
       assertBool "a single-round commit's window is exactly one generation wide"
         (w.1 == 0 && w.2 == 1)
       -- `SystemState` has no `BEq`, so compare the fields the two catch-ups
@@ -2773,26 +2767,26 @@ private def runRoundWindowChecks : IO Unit := do
       -- (7) Diff-recovery precision: the operands the runtime broadcasts and
       -- publishes are exactly this commit's own window's.
       assertBool "the diff-recovered operand list is this commit's own round's"
-        (shootdownPostedOps stFilled stOne == [stressOpOf core0])
+        (shootdownPostedOps stSpilled stOne == [stressOpOf core0])
       assertBool "the recovered posted-target set is every remote core"
-        (shootdownPostedTargets stFilled stOne == shootdownTargets core0)
+        (shootdownPostedTargets stSpilled stOne == shootdownTargets core0)
   -- (8) Inertness: a commit that opened no round recovers an empty window and
   -- its catch-up is a no-op on every queue and view.
   match stressFilled? with
   | none => assertBool "the storm scenario builds" false
-  | some stFilled => do
-    let w := windowOf stFilled stFilled
+  | some stSpilled => do
+    let w := windowOf stSpilled stSpilled
     assertBool "a no-round commit recovers an empty window"
       (w.1 == w.2)
     assertBool "a no-round commit pokes no target"
-      (shootdownPostedTargets stFilled stFilled == [])
-    let inert := shootdownCatchUpPerCoreInWindow stFilled core0 [] w.1 w.2
+      (shootdownPostedTargets stSpilled stSpilled == [])
+    let inert := shootdownCatchUpPerCoreInWindow stSpilled core0 [] w.1 w.2
     assertBool "an empty-window catch-up drains nothing"
       (allCores.all fun c =>
-        inert.tlbShootdown.pendingOnCore c == stFilled.tlbShootdown.pendingOnCore c)
+        inert.tlbShootdown.pendingOnCore c == stSpilled.tlbShootdown.pendingOnCore c)
     assertBool "an empty-window catch-up retires nothing from any view"
       (allCores.all fun c =>
-        (tlbOnCore inert c).entries.length == (tlbOnCore stFilled c).entries.length)
+        (tlbOnCore inert c).entries.length == (tlbOnCore stSpilled c).entries.length)
 
 /-- §8, part 2 of 3: the 12th `proofLayerInvariantBundle` conjunct
 (`pendingBounded`) across the window catch-up.  Split out per the CLAUDE.md

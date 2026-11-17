@@ -119,7 +119,7 @@ theorem donateSchedContextInPlace_msg (r : SeLe4n.ThreadId)
         (TCB.withMessageSlots ρ μ π) := by
   unfold donateSchedContextInPlace
   simp only [SystemState.getSchedContext?_mapTcbInPlace, SystemState.getReply?_mapTcbInPlace,
-    lookupTcb_msg r ρ μ π st client hC, effectiveDeadline_msg, hasSufficientBudget_msg]
+    lookupTcb_msg r ρ μ π st client hC, hasSufficientBudget_msg]
   cases st.getSchedContext? scId with
   | none => rfl
   | some sc =>
@@ -142,7 +142,7 @@ theorem donateSchedContextInPlace_msg (r : SeLe4n.ThreadId)
               try (with_reducible rfl)
             all_goals
               try simp only [Option.map_some, TCB.withMessageSlots_boostedPriority,
-                TCB.withMessageSlots_domain, effectiveDeadline_withMessageSlots,
+                TCB.withMessageSlots_domain, deadline_withMessageSlots,
                 hasSufficientBudget_withMessageSlots]
               try dsimp only
               rw [updateSchedContext_msg r ρ μ π _ _ _ hNo,
@@ -161,7 +161,7 @@ theorem donateSchedContextInPlace_msg (r : SeLe4n.ThreadId)
               try (with_reducible rfl)
             all_goals
               try simp only [Option.map_some, TCB.withMessageSlots_boostedPriority,
-                TCB.withMessageSlots_domain, effectiveDeadline_withMessageSlots,
+                TCB.withMessageSlots_domain, deadline_withMessageSlots,
                 hasSufficientBudget_withMessageSlots]
               try dsimp only
               rw [updateSchedContext_msg r ρ μ π _ _ _ hNo,

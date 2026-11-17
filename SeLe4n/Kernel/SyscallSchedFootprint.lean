@@ -223,7 +223,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   -- WS-ZA ZA6.9: the Consumed invocation writes a context's consumed time and
@@ -279,7 +279,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .schedContextConsumed | .irqHandlerAck | .irqControlGet
@@ -526,7 +526,7 @@ open SeLe4n.Kernel.Concurrency (LockSet lockSetForSyscall)
 /-- **WS-RR RR8.12 Cut C4b: the scheduler-domain footprint the live ABI seam
 declares** — `declaredLockSetForAbiEntry`'s twin, clause for clause.
 
-`schedLockSetForSyscall` at the **decoded** syscall id, the caller the executing
+`schedLockSetForSyscall` at the syscall the decode runs (`abiEntryFootprintId`), the caller the executing
 core is running, and the operands that caller's capability names, every input
 derived from the entry's own resolution rather than supplied alongside it.  A
 caller cannot bracket one syscall's scheduler footprint around another's.
@@ -544,9 +544,9 @@ def declaredSchedulerLockSetForAbiEntry (ctx : LabelingContext) (executingCore :
     Option LockSet :=
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
-  | some (tid, decoded, stFilled) =>
-    (abiEntryLockOperands decoded tid stFilled).bind
-      (fun ops => schedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
+  | some (tid, decoded, stSpilled) =>
+    (abiEntryLockOperands decoded tid stSpilled).bind
+      (fun ops => schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled)
 
 /-- **Cut C4b**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction the object domain's resolver takes for the same reason,
@@ -570,20 +570,20 @@ a footprint nobody proved covers them. -/
 theorem declaredSchedulerLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
-    (stFilled : SystemState)
+    (stSpilled : SystemState)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = some (tid, decoded, stFilled))
-    (h : declaredSchedFootprintSyscall decoded.syscallId = false) :
+      = some (tid, decoded, stSpilled))
+    (h : declaredSchedFootprintSyscall (abiEntryFootprintId decoded tid stSpilled) = false) :
     declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredSchedulerLockSetForAbiEntry
   rw [hPlan]
   simp only
-  cases hOps : abiEntryLockOperands decoded tid stFilled with
+  cases hOps : abiEntryLockOperands decoded tid stSpilled with
   | none => rfl
   | some ops =>
       simp only [Option.bind_some]
-      exact schedLockSetForSyscall_undeclared_none decoded.syscallId ops executingCore stFilled h
+      exact schedLockSetForSyscall_undeclared_none (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled h
 
 /-- **Cut C4b**: the two domains resolve ONE decode.
 
@@ -595,14 +595,14 @@ footprint be acquired around the other domain's transition. -/
 theorem declaredSchedulerLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
-    (stFilled : SystemState) (ops : SyscallLockOperands)
+    (stSpilled : SystemState) (ops : SyscallLockOperands)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = some (tid, decoded, stFilled))
-    (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
+      = some (tid, decoded, stSpilled))
+    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
     declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-        = lockSetForSyscall decoded.syscallId ops stFilled ∧
+        = lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled ∧
     declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-        = schedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
+        = schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled := by
   refine ⟨?_, ?_⟩
   · unfold declaredLockSetForAbiEntry
     rw [hPlan]
@@ -829,9 +829,9 @@ def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : C
     Option LockSet :=
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
-  | some (tid, decoded, stFilled) =>
-    (abiEntryLockOperands decoded tid stFilled).bind
-      (fun ops => unifiedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
+  | some (tid, decoded, stSpilled) =>
+    (abiEntryLockOperands decoded tid stSpilled).bind
+      (fun ops => unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled)
 
 /-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction both single-domain resolvers already take. -/
@@ -859,16 +859,16 @@ theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
   unfold declaredUnifiedLockSetForAbiEntry
   unfold declaredSchedulerLockSetForAbiEntry at hSched
   rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
-    _ | ⟨tid, decoded, stFilled⟩
+    _ | ⟨tid, decoded, stSpilled⟩
   · rfl
   · rw [hPlan] at hSched
     simp only at hSched ⊢
-    rcases hOps : abiEntryLockOperands decoded tid stFilled with _ | ops
+    rcases hOps : abiEntryLockOperands decoded tid stSpilled with _ | ops
     · rfl
     · rw [hOps] at hSched
       simp only [Option.bind_some] at hSched ⊢
-      exact unifiedLockSetForSyscall_undeclared decoded.syscallId ops executingCore
-        stFilled hSched
+      exact unifiedLockSetForSyscall_undeclared (abiEntryFootprintId decoded tid stSpilled) ops executingCore
+        stSpilled hSched
 
 /-- **Cut C6h**: the seam's unified footprint is the union of what the two
 single-domain resolvers declare, at the decode all three share.
@@ -880,12 +880,12 @@ around the other domain's transition. -/
 theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
-    (stFilled : SystemState) (ops : Concurrency.SyscallLockOperands)
+    (stSpilled : SystemState) (ops : Concurrency.SyscallLockOperands)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = some (tid, decoded, stFilled))
-    (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
+      = some (tid, decoded, stSpilled))
+    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
     declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = unifiedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
+      = unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [hPlan]
   simp only

@@ -501,32 +501,29 @@ private def runRoundTripChecks : IO Unit := do
   assertBool "preempt-gate: a deadline-less candidate never displaces"
     (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkTcb 201 10 0))
       bootCoreId tidW)
-  -- PR #880 round 7 (the SchedContext-deadline divergence): two equal-priority
-  -- BOUND threads whose TCB deadline fields both sit at 0 while their
-  -- SchedContext deadlines are 20 (current) and 10 (candidate).  The selector
-  -- orders bound threads by the SC deadlines (`resolveEffectivePrioDeadline`),
-  -- and `schedContextBind` copies only the priority into the TCB — so a
-  -- TCB-field gate rejects exactly the preemption the selector would perform,
-  -- and the urgent bound candidate misses its deadline.  The gate now resolves
-  -- what selection resolves.
+  -- PR #880 round 7 asked that the gate resolve what selection resolves for
+  -- two equal-priority BOUND threads.  Since WS-SX SX6.4 a context carries no
+  -- deadline (seL4-MCS), so a bound thread's deadline is its own TCB's, as an
+  -- unbound thread's: the gate and the selector both read it there, binding
+  -- or none.
   let scIdCur : SeLe4n.SchedContextId := ⟨150⟩
   let scIdCand : SeLe4n.SchedContextId := ⟨151⟩
-  let mkBoundSc : SeLe4n.ThreadId → Nat → SchedContext := fun t dl =>
+  let mkBoundSc : SeLe4n.ThreadId → SchedContext := fun t =>
     { (default : SchedContext) with
-        priority := ⟨10⟩, deadline := ⟨dl⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some t),
+        boundThreadCode := SeLe4n.ThreadId.optCode (some t),
         budgetRemaining := ⟨5⟩ }
-  let mkBound : Nat → SeLe4n.SchedContextId → TCB := fun tidN scId =>
-    { mkTcb tidN 10 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
+  let mkBound : Nat → SeLe4n.SchedContextId → Nat → TCB := fun tidN scId dl =>
+    { mkDl tidN dl with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let mkScEdfState : Nat → Nat → SystemState := fun curDl candDl =>
     (((((BootstrapBuilder.empty.withObject tidU.toObjId
-          (.tcb (mkBound 200 scIdCur))).withObject
-          tidW.toObjId (.tcb (mkBound 201 scIdCand))).withObject
-          scIdCur.toObjId (.schedContext (mkBoundSc tidU curDl))).withObject
-          scIdCand.toObjId (.schedContext (mkBoundSc tidW candDl))).withCurrent
+          (.tcb (mkBound 200 scIdCur curDl))).withObject
+          tidW.toObjId (.tcb (mkBound 201 scIdCand candDl))).withObject
+          scIdCur.toObjId (.schedContext (mkBoundSc tidU))).withObject
+          scIdCand.toObjId (.schedContext (mkBoundSc tidW))).withCurrent
           (some tidU)).build
-  assertBool "preempt-gate: SC deadline 10 candidate displaces SC deadline 20 current — TCB deadlines both 0"
+  assertBool "preempt-gate: a bound deadline-10 candidate displaces a bound deadline-20 current"
     (candidateOutranksCurrentOnCore (mkScEdfState 20 10) bootCoreId tidW)
-  assertBool "preempt-gate: reversed SC deadlines (current 10, candidate 20) do NOT preempt"
+  assertBool "preempt-gate: reversed bound deadlines (current 10, candidate 20) do NOT preempt"
     (!candidateOutranksCurrentOnCore (mkScEdfState 10 20) bootCoreId tidW)
   -- End to end: with the earlier-deadline candidate queued, the receiver's
   -- handler switches to it (before round 6 the SGI was dropped and the urgent

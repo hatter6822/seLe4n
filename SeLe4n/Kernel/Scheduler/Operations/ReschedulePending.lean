@@ -127,27 +127,8 @@ theorem markKeyChangeFor_extract_frame {F : Type} (extract : SystemState → F)
   unfold markKeyChangeFor
   exact markReschedulePendingWhere_extract_frame extract h st _ allCores
 
-/-- WS-ZA ZA4.7: a thread's effective deadline, `effectiveSchedParams`'s middle
-component, read without building the triple. -/
-@[inline] def effectiveDeadline (st : SystemState) (tcb : TCB) : SeLe4n.Deadline :=
-  match tcb.schedContextBinding with
-  | .unbound => tcb.deadline
-  | .bound scId =>
-    match st.getSchedContext? scId with
-    | some sc => sc.deadline
-    | none => tcb.deadline
-  | .donated scId _ =>
-    match st.getSchedContext? scId with
-    | some sc => sc.deadline
-    | none => tcb.deadline
-
 theorem effectiveSchedParams_eq_parts (st : SystemState) (tcb : TCB) :
-    effectiveSchedParams st tcb = (tcb.boostedPriority, effectiveDeadline st tcb, tcb.domain) := by
-  unfold effectiveSchedParams effectiveDeadline
-  cases tcb.schedContextBinding with
-  | unbound => rfl
-  | bound scId => cases h : st.getSchedContext? scId <;> simp only [h]
-  | donated scId _ => cases h : st.getSchedContext? scId <;> simp only [h]
+    effectiveSchedParams st tcb = (tcb.boostedPriority, tcb.deadline, tcb.domain) := rfl
 
 /-- WS-ZA ZA4.7: the key hook's flag writes over `cores`, with the re-keyed
 thread's run-core code `rc` and its weakening already read: a core is flagged
@@ -168,7 +149,7 @@ def markKeyChangeParts (st : SystemState) (tid : SeLe4n.ThreadId) (p0 : SeLe4n.P
   match st.getTcb? tid with
   | some t =>
     let p := t.boostedPriority
-    let d := effectiveDeadline st t
+    let d := t.deadline
     if p0 == p && d0.val == d.val && dom0 == t.domain then st
     else
       markKeyFlagsOver st tid t.runCoreCode
@@ -216,7 +197,7 @@ theorem markKeyChangeFor_eq_parts (st : SystemState) (tid : SeLe4n.ThreadId)
     simp [SystemState.queuedOn, hT]
   | some t =>
     simp only [Option.map_some, effectiveSchedParams_eq_parts]
-    by_cases hK : (p0 == t.boostedPriority && d0.val == (effectiveDeadline st t).val &&
+    by_cases hK : (p0 == t.boostedPriority && d0.val == (t.deadline).val &&
         dom0 == t.domain) = true
     · rw [if_pos hK]
       apply markReschedulePendingWhere_of_false

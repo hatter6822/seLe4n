@@ -1579,10 +1579,15 @@ theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId)
 
 /-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
 theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e g : ObjId)
-    (f : KernelObjectType) :
-    (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize := by
-  unfold lockSet_untypedRetype maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+    (f : KernelObjectType) (n : Nat) :
+    (lockSet_untypedRetype a b c d e g f n).size ≤ maxLockSetSize := by
+  unfold lockSet_untypedRetype
+  refine Nat.le_trans (lockSetOfList_size_le _) ?_
+  rw [List.length_append, carvedChildLocks_length]
+  have h := Nat.min_le_right n retypeFanOutLimit
+  simp only [List.length_cons, List.length_nil, retypeFanOutLimit, retypeBaseLocks,
+    maxLockSetSize] at h ⊢
+  omega
 
 /-- WS-ZA ZA5.4: the reset's footprint fits. -/
 theorem lockSet_untypedReset_size_le (a : ThreadId) (b c d : ObjId) :
@@ -1722,15 +1727,15 @@ theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) (q :
   unfold lockSet_tcbResume maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-theorem lockSet_tcbSetPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_tcbSetPriority_size_le (a a' : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (q : Option QueueOwner) :
-    (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize := by
+    (lockSet_tcbSetPriority a a' b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetPriority maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
-theorem lockSet_tcbSetMCPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_tcbSetMCPriority_size_le (a a' : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (q : Option QueueOwner) :
-    (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize := by
+    (lockSet_tcbSetMCPriority a a' b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetMCPriority maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
@@ -1740,17 +1745,11 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
-theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d e : Option ObjId) (q : Option QueueOwner) :
-    (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize := by
-  unfold lockSet_tcbSetFaultHandler maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
-
 theorem lockSet_tcbSetSpace_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d e : Option ObjId) (q : Option QueueOwner) :
-    (lockSet_tcbSetSpace a b c d e q).size ≤ maxLockSetSize := by
+    (d e f : Option ObjId) (q : Option QueueOwner) :
+    (lockSet_tcbSetSpace a b c d e f q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetSpace maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 theorem lockSet_pageTableMap_size_le (a : ThreadId) (b c : ObjId) (d : Option ObjId) :
     (lockSet_pageTableMap a b c d).size ≤ maxLockSetSize := by
@@ -1815,7 +1814,8 @@ it had read "26" across two syscall additions.  WS-SM SM9.C.8's
 `notificationSignal` conjunct over its SM6.B bound-delivery optionals, which
 had been fixed at their `none` defaults and so left the five-member
 bound-delivery footprint unbounded.  PR #887's review round added the
-thirty-first, `tcbSetFaultHandler`.  **WS-RR RR7.18** added the four the
+thirty-first, `tcbSetFaultHandler`, which WS-SX SX6.5 removed with the
+syscall.  **WS-RR RR7.18** added the four the
 enumeration had missed — `mintReplyCap`, `tcbBindNotification`,
 `tcbUnbindNotification`, `tcbSetAffinity` — bringing it to thirty-five, and
 `lockSet_derivedFootprintsBounded` below is why the number is now checked
@@ -1850,7 +1850,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e g f, (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e g f n, (lockSet_untypedRetype a b c d e g f n).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_untypedReset a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
@@ -1869,11 +1869,10 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d y, (lockSet_schedContextYieldTo a b c d y).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_irqHandlerAck a b).size ≤ maxLockSetSize) ∧
     (∀ a b c q, (lockSet_tcbResume a b c q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d q, (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a a' b c d q, (lockSet_tcbSetPriority a a' b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a a' b c d q, (lockSet_tcbSetMCPriority a a' b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetIPCBuffer a b c d q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e q, (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e q, (lockSet_tcbSetSpace a b c d e q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f q, (lockSet_tcbSetSpace a b c d e f q).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_pageTableMap a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_pageTableUnmap a b c d).size ≤ maxLockSetSize) ∧
     -- WS-RR RR7.18: the four the enumeration had missed.
@@ -1903,7 +1902,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_irqHandlerAck_size_le,
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
-   lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le,
+   lockSet_tcbSetIPCBuffer_size_le,
    lockSet_tcbSetSpace_size_le,
    lockSet_pageTableMap_size_le, lockSet_pageTableUnmap_size_le,
    lockSet_mintReplyCap_size_le, lockSet_tcbBindNotification_size_le,

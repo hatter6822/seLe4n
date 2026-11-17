@@ -419,7 +419,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   -- its type before its right (spec §8.10.5b); the missing grant right is the
   -- lookup's refusal above.
   expectErr "chain9: grandchild cannot mint via syscall gate without grant"
-    (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } none (fun cap =>
       if cap.target ≠ .object grandSlot.cnode then fun _ => .error (.invalidCapability 0)
       else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) }
         (AccessRightSet.ofList [.read]) none) st2)
@@ -1820,8 +1820,9 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let rtcb ← match st2.getTcb? receiver with
     | some t => pure t
     | none => throw <| IO.userError "chain14: receiver TCB not found"
-  let badgeWordPa := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr? st2 rtcb
-    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) true
+  let badgeWordPa := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddrIn?
+    (SeLe4n.Kernel.Architecture.IpcBufferRead.lookupIPCBuffer true st2 rtcb)
+    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0)
   expect "chain14: the unwrapped badge is written to caps_or_badges[0]"
     (match badgeWordPa with
      | some pa => (SeLe4n.Testing.pendingWrites st2).contains (.storeUserWord pa unwrapBadge.word)
@@ -2427,12 +2428,20 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     (lifecycleTypes : List (SeLe4n.ObjId × SeLe4n.Model.KernelObjectType) := [])
     -- WS-BP BP7.1: further capabilities in the caller's CNode, beside the one at
     -- `capAddr` — an extra operand an arm resolves through the caller's CSpace
-    -- (a `.vspaceMap`'s frame capability, MR2) must be *held* there.
+    -- (a `.vspaceMap`'s VSpace root, its extra capability 0) must be *held* there.
     (extraSlots : List (Nat × Capability) := [])
     -- The words past the fourth, in the caller's IPC buffer's overflow slots
     -- (a mint's badge): when given, the buffer's page is mapped and the
     -- message length names them too.
     (overflowWords : List Nat := [])
+    -- The extra capabilities' addresses (seL4's `caps_or_badges` words of the
+    -- caller's IPC buffer, a CNode operation's source root): when given, the
+    -- buffer's page is mapped and the message info names them (`x1` bits 7..8).
+    (extraCapWords : List Nat := [])
+    -- The capability at `capAddr` when it is not an object capability to
+    -- `targetId` (WS-SX SX6.7: the service calls invoke the service-registry
+    -- capability, the endpoint their extra capability 0).
+    (invokedCap : Option Capability := none)
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2445,23 +2454,29 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
         (fun m (idx, _) => max m (idx - 1)) 0
     else 4 + overflowWords.length
   let bufferPA : Nat := 0x40000
+  let bufferWord (i : Nat) : Option Nat :=
+    let ob := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord
+    let cb := ob + SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0
+    if ob ≤ i ∧ i - ob < overflowWords.length then overflowWords[i - ob]?
+    else if cb ≤ i ∧ i - cb < extraCapWords.length then extraCapWords[i - cb]?
+    else none
   let overflowAt (a : SeLe4n.PAddr) : Option UInt8 :=
-    let off := a.toNat - bufferPA
-    let first := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord * 8
-    if a.toNat < bufferPA + first then none else
-      match overflowWords[(off - first) / 8]? with
-      | some w => some (UInt8.ofNat ((w >>> (8 * ((off - first) % 8))) % 256))
+    if a.toNat < bufferPA then none else
+      let off := a.toNat - bufferPA
+      match bufferWord (off / 8) with
+      | some w => some (UInt8.ofNat ((w >>> (8 * (off % 8))) % 256))
       | none => none
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
              else if r.val == 7 then syscallNum
              else match args.find? (fun (idx, _) => idx == r.val) with
                   | some (_, val) => val
-                  | none => if r.val == 1 then msgLen else 0
+                  | none => if r.val == 1 then msgLen + extraCapWords.length * 128 else 0
     SeLe4n.RegValue.ofNat v
+  let mapsBuffer := !overflowWords.isEmpty || !extraCapWords.isEmpty
   let bufferMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
       (SeLe4n.PAddr × SeLe4n.Model.PagePermissions) :=
-    if overflowWords.isEmpty then SeLe4n.Kernel.RobinHood.RHTable.ofList []
+    if !mapsBuffer then SeLe4n.Kernel.RobinHood.RHTable.ofList []
     else SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.VAddr.ofNat 4096,
       (SeLe4n.PAddr.ofNat bufferPA, { read := true, write := true }))]
   let mut builder := BootstrapBuilder.empty
@@ -2473,7 +2488,8 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode (CNode.ofList 4 (
-          (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights } : Capability))
+          (SeLe4n.Slot.ofNat capAddr,
+            invokedCap.getD ({ target := .object targetId, rights := capRights } : Capability))
           :: extraSlots.map (fun (n, c) => (SeLe4n.Slot.ofNat n, c)))))
     |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := bufferMappings })
     |>.withLifecycleObjectType tid.toObjId .tcb
@@ -2482,6 +2498,10 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
     |>.withRunnable []
     |>.withCurrent (some tid)
+  -- WS-SX SX6.6: the buffer is found through the frame capability in the
+  -- thread's buffer slot (seL4's `lookupIPCBuffer`).
+  if mapsBuffer then
+    builder := builder.withIpcBufferFrame tid ⟨503⟩ (SeLe4n.PAddr.ofNat bufferPA)
   -- Add remaining extra objects (skip first which was added as target)
   for (oid, obj) in extraObjects.tail do
     builder := builder.withObject oid obj
@@ -2489,7 +2509,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   for (oid, ty) in lifecycleTypes do
     builder := builder.withLifecycleObjectType oid ty
   let st := builder.buildChecked
-  if overflowWords.isEmpty then return st
+  if !mapsBuffer then return st
   let machine := { st.machine with
     memory := fun a => (overflowAt a).getD (st.machine.memory a) }
   return { st with machine := machine }
@@ -2503,15 +2523,16 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   let cnode : SeLe4n.Model.CNode := (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ]))
-  -- === cspaceMint (syscallId=4): x2=destIndex(1), x3=srcRoot (the caller's
-  -- address 0), x4=srcIndex(0), x5=both depths 4 and rights 3 (read|write),
-  -- and the badge (42) in the IPC buffer's overflow slot 0 ===
+  -- === cspaceMint (syscallId=4), seL4's words: x2=destIndex(1), x3=its
+  -- depth 4, x4=srcIndex(0), x5=its depth 4, then rights 3 (read|write) and
+  -- the badge (42) in the IPC buffer's overflow slots 0 and 1; the source root
+  -- is extra capability 0, the caller's address 0 ===
   let stMint := buildSyscallState 4 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])  -- cap to the target CNode
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 1), (3, 0), (4, 0), (5, 4 + 4 * 256 + 3 * 65536)]
+    [(2, 1), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
-    (overflowWords := [42])
+    (overflowWords := [3, 42]) (extraCapWords := [0])
   match syscallEntryOnBoot stMint with
   | .ok (_, stAfter) =>
     -- Verify slot 1 now has a minted cap
@@ -2542,14 +2563,16 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceDelete dispatch clears slot 0" ((cn.lookup (((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot))).isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after delete"
   | .error err => throw <| IO.userError s!"chain27: cspaceDelete syscall failed: {toString err}"
-  -- === cspaceCopy (syscallId=5): x2=destIndex(2), x3=srcRoot (the caller's
-  -- address 0, its capability to the target CNode), x4=srcIndex(0), x5=both
-  -- depths 4 (the CNode's 4-bit radix, no guard) ===
+  -- === cspaceCopy (syscallId=5), seL4's words: x2=destIndex(2), x3=its depth
+  -- 4 (the CNode's 4-bit radix, no guard), x4=srcIndex(0), x5=its depth 4, the
+  -- rights 7 in overflow slot 0; the source root is extra capability 0, the
+  -- caller's address 0, its capability to the target CNode ===
   let stCopy := buildSyscallState 5 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256)]
+    [(2, 2), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
+    (overflowWords := [7]) (extraCapWords := [0])
   match syscallEntryOnBoot stCopy with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
@@ -2557,13 +2580,14 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceCopy dispatch populates slot 2" ((cn.lookup (((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot))).isSome)
     | _ => throw <| IO.userError "chain27: CNode not found after copy"
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
-  -- === cspaceMove (syscallId=6): x2=destIndex(3), x3=srcRoot(0), x4=srcIndex(0),
-  -- x5=both depths 4 ===
+  -- === cspaceMove (syscallId=6), seL4's words: x2=destIndex(3), x3=its depth
+  -- 4, x4=srcIndex(0), x5=its depth 4; the source root is extra capability 0 ===
   let stMove := buildSyscallState 6 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 3), (3, 0), (4, 0), (5, 4 + 4 * 256)]
+    [(2, 3), (3, 4), (4, 0), (5, 4)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
+    (extraCapWords := [0])
   match syscallEntryOnBoot stMove with
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
@@ -2573,27 +2597,30 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     | _ => throw <| IO.userError "chain27: CNode not found after move"
   | .error err => throw <| IO.userError s!"chain27: cspaceMove syscall failed: {toString err}"
   -- === seL4's CNode-operation refusals, in seL4's order ===
-  let copyRefusal (label : String) (args : List (Nat × Nat)) (want : KernelError) : IO Unit := do
+  -- each a copy in seL4's words (destination index and depth, source index and
+  -- depth, the rights in overflow slot 0) whose source root is extra
+  -- capability 0 at `srcRoot`, or none
+  let copyRefusal (label : String) (dI dD sI sD : Nat) (srcRoot : List Nat)
+      (want : KernelError) : IO Unit := do
     let stBad := buildSyscallState 5 0 cnodeTarget
       (AccessRightSet.ofList [.read, .write, .grant])
-      [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] args
+      [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] [(2, dI), (3, dD), (4, sI), (5, sD)]
       [(cnodeTarget, .cnode), (epId, .endpoint)]
       [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
+      (overflowWords := [7]) (extraCapWords := srcRoot)
     match syscallEntryOnBoot stBad with
     | .error err => expect s!"chain27: {label} refused {toString want} (got {toString err})" (err == want)
     | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
-  copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] (.rangeError 1 64)
-  copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] (.rangeError 1 64)
-  copyRefusal "copy whose destination depth stops short of the radix"
-    [(2, 2), (3, 0), (4, 0), (5, 3 + 4 * 256)] (.failedLookup false (.depthMismatch 3 4))
-  copyRefusal "copy into an occupied destination"
-    [(2, 0), (3, 0), (4, 0), (5, 4 + 4 * 256)] .targetSlotOccupied
-  copyRefusal "copy whose source root names an endpoint"
-    [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] (.failedLookup true .invalidRoot)
-  copyRefusal "copy from an empty source slot"
-    [(2, 2), (3, 0), (4, 5), (5, 4 + 4 * 256)] (.failedLookup true (.missingCapability 4))
-  copyRefusal "copy whose operation word sets a bit past the rights"
-    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 2097152)] (.invalidArgument 3)
+  copyRefusal "copy at destination depth 0" 2 0 0 4 [0] (.rangeError 1 64)
+  copyRefusal "copy at source depth 65" 2 4 0 65 [0] (.rangeError 1 64)
+  copyRefusal "copy whose destination depth stops short of the radix" 2 3 0 4 [0]
+    (.failedLookup false (.depthMismatch 3 4))
+  copyRefusal "copy that names no source root" 2 4 0 4 [] .truncatedMessage
+  copyRefusal "copy into an occupied destination" 0 4 0 4 [0] .targetSlotOccupied
+  copyRefusal "copy whose source root names an endpoint" 2 4 0 4 [1]
+    (.failedLookup true .invalidRoot)
+  copyRefusal "copy from an empty source slot" 2 4 5 4 [0]
+    (.failedLookup true (.missingCapability 4))
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntryChecked.
 
@@ -2621,21 +2648,22 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
   let vsRoot : SeLe4n.Model.VSpaceRoot := fixtureMappableRoot chainAsid
-  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(user window + 0x2000, WS-BP BP7.2), x4=frame cap(slot 1), x5=perms(17=read|cacheable) ===
-  -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
-  -- the page mapped is that frame's own `base` (0x3000), not a register value.
-  -- A RAM frame must be mapped cacheable (`frameMappingAdmissible`, v0.36.32):
-  -- an uncached alias of RAM the kernel writes through its cacheable identity
-  -- map is refused `.policyDenied`, so the request is read (1) | cacheable (16).
+  -- === vspaceMap (syscallId=9), seL4's `ARMPageMap` shape: the invoked
+  -- capability (x0, slot 0) is the frame; x2 = vaddr (user window + 0x2000),
+  -- x3 = rights (2 = CanRead), x4 = VM attributes (5 = cacheable | execute-never);
+  -- the VSpace root is extra capability 0 (slot 1), whose own ASID names the
+  -- address space.  The page mapped is the frame's own `base` (0x3000).  A RAM
+  -- frame must be mapped cacheable (`frameMappingAdmissible`).
   let frameId : SeLe4n.ObjId := ⟨701⟩
-  let frameCap : Capability :=
-    { target := .object frameId, rights := AccessRightSet.ofList [.read] }
-  let stMap := buildSyscallState 9 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
-    [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 17)]
+  let rootCap : Capability :=
+    { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] }
+  let stMap := buildSyscallState 9 0 frameId
+    (AccessRightSet.ofList [.read])
+    [(frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 }), (vsId, .vspaceRoot vsRoot)]
+    [(2, (fixtureUserVAddr 0x2000).toNat), (3, 2), (4, 5)]
     [(vsId, .vspaceRoot), (frameId, .frame)]
-    [(1, frameCap)]
+    [(1, rootCap)]
+    (extraCapWords := [1])
   match syscallEntryOnBoot stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
@@ -2682,9 +2710,11 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
 
 /-- WS-ZA ZA5.4 part 14: a carve via `syscallEntryChecked` (syscall 36), and the retired
-number 8 refused at decode.  x2 = type word (notification, 2), x3 = child id,
-x4 = the destination CNode's capability address (slot 1, the caller's root,
-writable), x5 = destination slot. -/
+number 8 refused at decode.  seL4's words (WS-SX SX6.3, D9): x2 = the type
+(notification, 2), x3 = the size bits (0), x4 and x5 = the node index and depth
+(0: the destination is the root itself), then the window's offset (slot 2), its
+object count (1) and the model's object id word (801) in the IPC buffer's
+overflow slots; the root, extra capability 0, is the caller's root at slot 1. -/
 private def chain29SyscallCarve : IO Unit := do
   let utId : SeLe4n.ObjId := ⟨800⟩
   let child : SeLe4n.ObjId := ⟨801⟩
@@ -2693,9 +2723,11 @@ private def chain29SyscallCarve : IO Unit := do
   let st0 := buildSyscallState 36 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
-    [(2, 2), (3, 801), (4, 1), (5, 2)]
+    [(2, 2), (3, 0), (4, 0), (5, 0)]
     [(utId, .untyped)]
     [(1, rootCap)]
+    (overflowWords := [2, 1, 801])
+    (extraCapWords := [1])
   match syscallEntryOnBoot st0 with
   | .ok (_, stAfter) =>
     match stAfter.objects[child]? with
@@ -2714,47 +2746,66 @@ private def chain29SyscallCarve : IO Unit := do
   | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
   | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
 
-/-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery, serviceRevoke. -/
+/-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery and
+serviceRevoke through `syscallEntryChecked`, each invoked on the
+service-registry capability (slot 1) with the endpoint's capability (slot 2) as
+extra capability 0 (WS-SX SX6.7).  Strict: every leg must succeed and leave its
+effect — the register records the registration on the endpoint, the query
+stages its `ServiceId` as the caller's return word, the revoke clears the
+endpoint's record. -/
 private def chain30SyscallServiceOps : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨900⟩
-  -- === serviceRegister (syscallId=11): x2=ifaceId(1), x3=methodCount(3), x4=maxMsg(1024), x5=maxResp(512)
-  -- Note: serviceRegister needs 5 msgRegs (x2-x6), but regCount=32 provides plenty
-  let st0 := buildSyscallState 11 0 epId
-    (AccessRightSet.ofList [.read, .write])
-    [(epId, .endpoint {})]
-    [(2, 1), (3, 3), (4, 1024), (5, 512)]
-    [(epId, .endpoint)]
-  match syscallEntryOnBoot st0 with
-  | .ok (_, stAfter) =>
-    -- Verify service was registered
-    -- Verify dispatch reached the serviceRegister handler
-    -- The endpoint should record the registration (the service registry)
-    let svcFound := (stAfter.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
-    if svcFound then
-      IO.println "operation-chain check passed [chain30: serviceRegister dispatch modified state]"
-    else
-      IO.println "operation-chain check passed [chain30: serviceRegister dispatch reached]"
-    -- === serviceQuery (syscallId=13): dispatch on registered state
-    -- (Uses stAfter from serviceRegister, not a fresh state)
-    match syscallEntryOnBoot
-        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
-    | .ok _ =>
-      IO.println "operation-chain check passed [chain30: serviceQuery dispatch]"
+  let epCap : Capability :=
+    { target := .object epId, rights := AccessRightSet.ofList [.read, .write] }
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨1⟩, methodCount := 3, maxMessageSize := 64,
+      maxResponseSize := 32, requiresGrant := false }
+  -- The caller's state for one service call: the registry capability invoked,
+  -- the endpoint (`ep`, as the previous leg left it) extra capability 0, and
+  -- the interface registered.
+  let stateFor (syscallNum : Nat) (ep : SeLe4n.Model.KernelObject)
+      (args : List (Nat × Nat)) (overflow : List Nat) : IO SystemState := do
+    let st := buildSyscallState syscallNum 1 epId (AccessRightSet.ofList [.read, .write])
+      [(epId, ep)] args [(epId, .endpoint)]
+      (extraSlots := [(2, epCap)]) (overflowWords := overflow) (extraCapWords := [2])
+      (invokedCap := some Capability.serviceRegistry)
+    match SeLe4n.Kernel.registerInterface iface st with
+    | .ok ((), st') => pure st'
+    | .error e => throw <| IO.userError s!"chain30: interface registration failed ({toString e})"
+  let endpointOf (st : SystemState) : IO SeLe4n.Model.KernelObject :=
+    match st.getObject? epId with
+    | some ep@(.endpoint _) => pure ep
+    | _ => throw <| IO.userError "chain30: the endpoint is gone"
+  -- === serviceRegister (11): x2..x5 = interface 1, 3 methods, 64, 32; the
+  -- fifth word (no grant) is the IPC buffer's overflow word 0.
+  let stRegister ← stateFor 11 (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
+  let stAfter ← match syscallEntryOnBoot stRegister with
+    | .ok (_, st) => pure st
+    | .error e => throw <| IO.userError s!"chain30: serviceRegister failed ({toString e})"
+  let reg ← match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stAfter with
+    | .ok (reg, _) => pure reg
+    | .error e =>
+      throw <| IO.userError s!"chain30: serviceRegister left no registration on the endpoint ({toString e})"
+  IO.println "operation-chain check passed [chain30: serviceRegister recorded the registration]"
+  let registered ← endpointOf stAfter
+  -- === serviceQuery (13): no words; the registration's ServiceId is staged as x0.
+  let stQuery ← stateFor 13 registered [] []
+  match syscallEntryOnBoot stQuery with
+  | .ok (_, stQ) =>
+    let x0 := (SeLe4n.Kernel.Architecture.readReturnFrame stQ ⟨500⟩).x0
+    unless x0 == reg.sid.val.toUInt64 do
+      throw <| IO.userError s!"chain30: serviceQuery staged x0 = {x0}, expected the ServiceId {reg.sid.val}"
+    IO.println "operation-chain check passed [chain30: serviceQuery returned the ServiceId]"
+  | .error e => throw <| IO.userError s!"chain30: serviceQuery failed ({toString e})"
+  -- === serviceRevoke (12): no words; the endpoint's record is cleared.
+  let stRevoke ← stateFor 12 registered [] []
+  match syscallEntryOnBoot stRevoke with
+  | .ok (_, stR) =>
+    match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stR with
     | .error _ =>
-      -- Query may fail if state not perfectly set up — dispatch path still exercised
-      IO.println "operation-chain check passed [chain30: serviceQuery dispatch reached]"
-    -- === serviceRevoke (syscallId=12): dispatch on registered state
-    -- (Uses stAfter from serviceRegister, not a fresh state)
-    match syscallEntryOnBoot
-        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
-    | .ok (_, stFinal) =>
-      IO.println "operation-chain check passed [chain30: serviceRevoke dispatch]"
-      let _ := stFinal
-    | .error _ =>
-      IO.println "operation-chain check passed [chain30: serviceRevoke dispatch reached]"
-  | .error err =>
-    -- Even if registration fails, the dispatch path was exercised
-    IO.println s!"operation-chain check passed [chain30: serviceRegister dispatch reached ({toString err})]"
+      IO.println "operation-chain check passed [chain30: serviceRevoke cleared the registration]"
+    | .ok _ => throw <| IO.userError "chain30: the registration survived serviceRevoke"
+  | .error e => throw <| IO.userError s!"chain30: serviceRevoke failed ({toString e})"
 
 /-- T7-C: IPC reply via syscallEntryChecked (syscallId=3).
 Requires a blocked caller to reply to. -/

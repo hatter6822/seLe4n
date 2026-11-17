@@ -820,6 +820,41 @@ theorem storeObject_root_slot_eq_inSlot {st1 : SystemState} {rootId : SeLe4n.Obj
   exact SystemState.storeObject_vspaceRoot_eq_storeVSpaceRootWith
     (st := Architecture.recordPhysicalWrites st1 _) hR1 f hf
 
+/-- **A table install refused past the user top**, read on the objects in
+place: the table and the root are found, the table is installed nowhere, and
+the address is not canonical, so `pageTableMap` answers seL4's
+`InvalidArgument 0` (`pageTableMap_of_pastUserTopAt`; a root that owns no
+table page answers the same) and the arm answers it with no error built by
+the general form (WS-SX SX6.3). -/
+def pageTableMapPastUserTopAt (st : SystemState) (tableId rootId : SeLe4n.ObjId)
+    (vaddr : SeLe4n.VAddr) : Bool :=
+  !vaddr.isCanonical &&
+  (match st.getPageTable? tableId with
+   | some _ => true
+   | none => false) &&
+  (match st.getVSpaceRoot? rootId with
+   | some _ => true
+   | none => false) &&
+  !Architecture.pageTableInstallLive st tableId
+
+/-- An install the past-the-top check reads is refused `InvalidArgument 0`. -/
+theorem pageTableMap_of_pastUserTopAt {tableId rootId : SeLe4n.ObjId}
+    {vaddr : SeLe4n.VAddr} {st : SystemState}
+    (h : pageTableMapPastUserTopAt st tableId rootId vaddr = true) :
+    Architecture.pageTableMap tableId rootId vaddr st = .error (.invalidArgument 0) := by
+  unfold pageTableMapPastUserTopAt at h
+  unfold Architecture.pageTableMap
+  cases hT : st.getPageTable? tableId with
+  | none => simp [hT] at h
+  | some table =>
+  cases hR : st.getVSpaceRoot? rootId with
+  | none => simp [hT, hR] at h
+  | some root =>
+  simp only [hT, hR, Bool.and_true, Bool.and_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨hC, hLive⟩ := h
+  dsimp only
+  cases hB : root.tableBase <;> simp [hLive, hC, hB]
+
 open SeLe4n.Kernel.RobinHood in
 /-- **WS-ZA ZA5.4: an admitted table install is its writes.** -/
 theorem pageTableMap_of_admitted (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
@@ -864,7 +899,8 @@ theorem pageTableMap_of_admitted (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n
   unfold Architecture.pageTableMap
   rw [hGT, hGR]
   dsimp only
-  simp only [hLive, hTB', hAddr, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hM]
+  simp only [hLive, hTB', Architecture.pageTableAddressable_isCanonical hAddr, hAddr,
+    Bool.not_true, Bool.false_eq_true, ↓reduceIte, hM]
   rw [hS1]
   dsimp only
   rw [hS2]

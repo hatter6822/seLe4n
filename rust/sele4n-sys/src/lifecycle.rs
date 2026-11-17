@@ -7,18 +7,39 @@
 //! every object is carved from an untyped.
 
 use sele4n_abi::args::{TypeTag, UntypedRetypeArgs};
-use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
-use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{CPtr, KernelResult, ObjId, SyscallId};
 
-/// Carve a new object out of an untyped the caller holds — seL4's
+/// Where a retype puts the capabilities it hands back — seL4's destination
+/// operands (WS-SX SX6.3, D9): `root` is a CNode capability in the caller's
+/// CSpace, passed as the message's extra capability 0; `node_index` and
+/// `node_depth` name the destination CNode under it (depth 0: `root` itself);
+/// `node_offset` is the first slot of the window in that CNode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetypeDestination {
+    pub root: CPtr,
+    pub node_index: CPtr,
+    pub node_depth: u64,
+    pub node_offset: u64,
+}
+
+/// Carve new objects out of an untyped the caller holds — seL4's
 /// `seL4_Untyped_Retype`.
 ///
 /// Lean: the `.untypedRetype` arm (API.lean, `untypedRetypeFromCap`), WS-BP
-/// BP7.1.  Requires the `Retype` right on `untyped_cap`.  The kernel places the
-/// new object at the untyped's watermark, stores it as object `child_id` —
-/// which must hold no object yet — and installs a capability to it at
-/// `dst_slot` of the CNode `dst_cnode` names in the caller's CSpace; that
-/// capability must carry `Write` and the slot must be empty and addressable.
+/// BP7.1.  Requires the `Retype` right on `untyped_cap`.  The kernel carves
+/// `num_objects` objects of one kind, one after another from the untyped's
+/// watermark, stores object `i` as object `child_id + i` — each of which must
+/// hold no object yet — and installs a capability to object `i` in slot
+/// `dst.node_offset + i` of the window `dst` names (WS-SX SX6.3, D9): every
+/// slot empty (`TargetSlotOccupied` otherwise, before anything is written),
+/// the count in `1..=`[`RETYPE_FAN_OUT_LIMIT`] and the window inside the CNode
+/// (seL4's `RangeError` otherwise).  Every check precedes every write, so a
+/// refused retype creates nothing.  No right is required of `dst.root`.  As in seL4
+/// the message is the six words `type`, `size_bits`, `node_index`,
+/// `node_depth`, `node_offset`, `num_objects`, then the model's `child_id`;
+/// words 4 to 6 go in the IPC buffer's message registers 4 to 6 and `dst.root`
+/// in `caps_or_badges[0]`.
 ///
 /// Every kind is carved (WS-ZA ZA5.4 part 14), with seL4's sizes; the
 /// accepted `size_bits` per kind are on [`UntypedRetypeArgs`].
@@ -28,7 +49,8 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 /// of `2^size_bits` bytes, `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
 /// `MAX_UNTYPED_SIZE_BITS`], handed back with read, write and retype.
 /// [`TypeTag::VSpaceRoot`]: an address space on one zeroed RAM page under an
-/// ASID the kernel picks (`ResourceExhausted` when every ASID is taken).
+/// ASID the kernel picks, the least free one for each root in turn
+/// (`ResourceExhausted` when fewer ASIDs are free than roots requested).
 /// [`TypeTag::PageTable`]: one zeroed table page.  The other kernel objects —
 /// [`TypeTag::Tcb`], [`TypeTag::Endpoint`], [`TypeTag::Notification`],
 /// [`TypeTag::CNode`], [`TypeTag::Reply`] and [`TypeTag::SchedContext`] — are
@@ -38,6 +60,7 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 /// combination is `InvalidArgument`.
 ///
 /// [`UntypedRetypeArgs`]: sele4n_abi::args::UntypedRetypeArgs
+/// [`RETYPE_FAN_OUT_LIMIT`]: sele4n_abi::args::RETYPE_FAN_OUT_LIMIT
 /// [`MIN_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MIN_UNTYPED_SIZE_BITS
 /// [`MAX_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MAX_UNTYPED_SIZE_BITS
 #[inline]
@@ -45,21 +68,29 @@ pub fn untyped_retype(
     untyped_cap: CPtr,
     type_tag: TypeTag,
     size_bits: u64,
+    dst: RetypeDestination,
+    num_objects: u64,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     let args = UntypedRetypeArgs {
         new_type: type_tag,
         size_bits,
+        node_index: dst.node_index,
+        node_depth: dst.node_depth,
+        node_offset: dst.node_offset,
+        num_objects,
         child_id,
-        dst_cnode,
-        dst_slot,
     };
+    let encoded = args.encode();
+    buf.set_mr(4, encoded[4])?;
+    buf.set_mr(5, encoded[5])?;
+    buf.set_mr(6, encoded[6])?;
+    buf.caps_or_badges[0] = dst.root.raw();
     invoke_syscall(SyscallRequest {
         cap_addr: untyped_cap,
-        msg_info: MessageInfo::new_const(4, 0, 0),
-        msg_regs: args.encode(),
+        msg_info: MessageInfo::new_const(7, 1, 0),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::UntypedRetype,
     })
 }
@@ -68,36 +99,10 @@ pub fn untyped_retype(
 pub fn untyped_retype_frame(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::Frame,
-        0,
-        child_id,
-        dst_cnode,
-        dst_slot,
-    )
-}
-
-/// Convenience: carve a child untyped of `2^size_bits` bytes out of
-/// `untyped_cap` (WS-BP BP7.1 slice 4).
-pub fn untyped_retype_untyped(
-    untyped_cap: CPtr,
-    size_bits: u64,
-    child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
-) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::Untyped,
-        size_bits,
-        child_id,
-        dst_cnode,
-        dst_slot,
-    )
+    untyped_retype(untyped_cap, TypeTag::Frame, 0, dst, 1, child_id, buf)
 }
 
 /// Convenience: carve an address space — a VSpace root on its own zeroed table
@@ -105,17 +110,10 @@ pub fn untyped_retype_untyped(
 pub fn untyped_retype_vspace_root(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::VSpaceRoot,
-        0,
-        child_id,
-        dst_cnode,
-        dst_slot,
-    )
+    untyped_retype(untyped_cap, TypeTag::VSpaceRoot, 0, dst, 1, child_id, buf)
 }
 
 /// Convenience: carve an intermediate page table — one zeroed page — out of
@@ -124,17 +122,10 @@ pub fn untyped_retype_vspace_root(
 pub fn untyped_retype_page_table(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::PageTable,
-        0,
-        child_id,
-        dst_cnode,
-        dst_slot,
-    )
+    untyped_retype(untyped_cap, TypeTag::PageTable, 0, dst, 1, child_id, buf)
 }
 
 /// Convenience: carve a thread out of `untyped_cap` (WS-ZA ZA5.4 part 14) —
@@ -143,43 +134,59 @@ pub fn untyped_retype_page_table(
 pub fn untyped_retype_tcb(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(untyped_cap, TypeTag::Tcb, 0, child_id, dst_cnode, dst_slot)
+    untyped_retype(untyped_cap, TypeTag::Tcb, 0, dst, 1, child_id, buf)
 }
 
 /// Convenience: carve an endpoint, both queues empty, out of `untyped_cap`.
 pub fn untyped_retype_endpoint(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::Endpoint,
-        0,
-        child_id,
-        dst_cnode,
-        dst_slot,
-    )
+    untyped_retype(untyped_cap, TypeTag::Endpoint, 0, dst, 1, child_id, buf)
 }
 
 /// Convenience: carve an idle notification out of `untyped_cap`.
 pub fn untyped_retype_notification(
     untyped_cap: CPtr,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(untyped_cap, TypeTag::Notification, 0, dst, 1, child_id, buf)
+}
+
+/// Convenience: carve a reply object, with no caller, out of `untyped_cap`.
+pub fn untyped_retype_reply(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(untyped_cap, TypeTag::Reply, 0, dst, 1, child_id, buf)
+}
+
+/// Convenience: carve a child untyped of `2^size_bits` bytes out of
+/// `untyped_cap` (WS-BP BP7.1 slice 4).
+pub fn untyped_retype_untyped(
+    untyped_cap: CPtr,
+    size_bits: u64,
+    child_id: ObjId,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     untyped_retype(
         untyped_cap,
-        TypeTag::Notification,
-        0,
+        TypeTag::Untyped,
+        size_bits,
+        dst,
+        1,
         child_id,
-        dst_cnode,
-        dst_slot,
+        buf,
     )
 }
 
@@ -192,33 +199,17 @@ pub fn untyped_retype_cnode(
     untyped_cap: CPtr,
     radix_bits: u64,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     untyped_retype(
         untyped_cap,
         TypeTag::CNode,
         radix_bits,
+        dst,
+        1,
         child_id,
-        dst_cnode,
-        dst_slot,
-    )
-}
-
-/// Convenience: carve a reply object, with no caller, out of `untyped_cap`.
-pub fn untyped_retype_reply(
-    untyped_cap: CPtr,
-    child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
-) -> KernelResult<SyscallResponse> {
-    untyped_retype(
-        untyped_cap,
-        TypeTag::Reply,
-        0,
-        child_id,
-        dst_cnode,
-        dst_slot,
+        buf,
     )
 }
 
@@ -231,16 +222,17 @@ pub fn untyped_retype_sched_context(
     untyped_cap: CPtr,
     size_bits: u64,
     child_id: ObjId,
-    dst_cnode: CPtr,
-    dst_slot: Slot,
+    dst: RetypeDestination,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     untyped_retype(
         untyped_cap,
         TypeTag::SchedContext,
         size_bits,
+        dst,
+        1,
         child_id,
-        dst_cnode,
-        dst_slot,
+        buf,
     )
 }
 

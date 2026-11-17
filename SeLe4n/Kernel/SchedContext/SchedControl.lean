@@ -65,23 +65,23 @@ configure and the move is read (see the module docstring); the configure then
 runs on the moved state.  A context with no thread to move is configured where
 it is. -/
 def schedControlConfigure (core : Concurrency.CoreId) (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat) : Kernel Unit :=
+    (budget period : Nat) (extraRefills badge flags : UInt64) : Kernel Unit :=
   fun st =>
     match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
-    | none => schedContextConfigure vScId budget period priority deadline domain st
+    | none => schedContextConfigure vScId budget period extraRefills badge flags st
     | some sc =>
       match schedControlMovedThread? st core sc with
-      | none => schedContextConfigure vScId budget period priority deadline domain st
+      | none => schedContextConfigure vScId budget period extraRefills badge flags st
       | some t =>
-        match validateSchedContextParams budget period priority deadline domain with
+        match validateSchedContextParams budget period with
         | .error e => .error e
         | .ok () =>
-          if checkAdmission st (configuredSchedContext budget period priority deadline domain
+          if checkAdmission st (configuredSchedContext budget period extraRefills badge flags
               st.machine.timer (configureKeepsHead st sc budget period) sc) (some vScId.val) then
             match setThreadCpuAffinityWithMigration st t (some core) core with
             | .error e => .error e
             | .ok (stMoved, _) =>
-              schedContextConfigure vScId budget period priority deadline domain stMoved
+              schedContextConfigure vScId budget period extraRefills badge flags stMoved
           else .error .resourceExhausted
 
 /-- **A successful configure through a control is a configure where the context
@@ -89,16 +89,16 @@ is, or the move of its thread to the control's core and then a configure
 there.**  Every proof about the arm composes the configure's and the affinity
 change's along this. -/
 theorem schedControlConfigure_ok_cases {core : Concurrency.CoreId} {vScId : ValidObjId}
-    {budget period priority deadline domain : Nat} {st st' : SystemState}
-    (h : schedControlConfigure core vScId budget period priority deadline domain st =
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (h : schedControlConfigure core vScId budget period extraRefills badge flags st =
       .ok ((), st')) :
-    schedContextConfigure vScId budget period priority deadline domain st = .ok ((), st') ∨
+    schedContextConfigure vScId budget period extraRefills badge flags st = .ok ((), st') ∨
       ∃ (sc : SchedContext) (t : SeLe4n.ThreadId) (stMoved : SystemState)
         (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)),
         st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
         sc.boundThread = some t ∧ determineTargetCore st t ≠ core ∧
         setThreadCpuAffinityWithMigration st t (some core) core = .ok (stMoved, sgi) ∧
-        schedContextConfigure vScId budget period priority deadline domain stMoved =
+        schedContextConfigure vScId budget period extraRefills badge flags stMoved =
           .ok ((), st') := by
   unfold schedControlConfigure at h
   cases hS : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
@@ -446,11 +446,11 @@ theorem storeLeavesIndexAndTypes_eq (id : SeLe4n.ObjId) (ty : KernelObjectType) 
 
 /-- **The configure's checks answer alike across the frame.** -/
 theorem schedContextConfigureAdmitted_eq (vScId : ValidObjId)
-    (budget period priority deadline domain : Nat) :
-    schedContextConfigureAdmitted st' vScId budget period priority deadline domain =
-      schedContextConfigureAdmitted st vScId budget period priority deadline domain := by
+    (budget period : Nat) (extraRefills badge flags : UInt64) :
+    schedContextConfigureAdmitted st' vScId budget period extraRefills badge flags =
+      schedContextConfigureAdmitted st vScId budget period extraRefills badge flags := by
   unfold schedContextConfigureAdmitted
-  cases validateSchedContextParams budget period priority deadline domain with
+  cases validateSchedContextParams budget period with
   | error _ => rfl
   | ok _ =>
     have hp := h.getSchedContext?_params (SchedContextId.ofObjId vScId.val)
@@ -606,8 +606,8 @@ theorem setThreadCpuAffinityWithMigration_of_admitted (st : SystemState)
 the configure's (`schedContextConfigureAdmitted`) and, when the context's thread
 moves, the move's (`setAffinityAdmitted`), all read off the state handed in. -/
 @[inline] def schedControlConfigureAdmitted (st : SystemState) (core : Concurrency.CoreId)
-    (vScId : ValidObjId) (budget period priority deadline domain : Nat) : Bool :=
-  schedContextConfigureAdmitted st vScId budget period priority deadline domain &&
+    (vScId : ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64) : Bool :=
+  schedContextConfigureAdmitted st vScId budget period extraRefills badge flags &&
     match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
     | some sc =>
       match schedControlMovedThread? st core sc with
@@ -618,23 +618,23 @@ moves, the move's (`setAffinityAdmitted`), all read off the state handed in. -/
 /-- **...and its writes**: the move, when the thread moves, and then the
 configure's writes on the moved state. -/
 @[inline] def schedControlConfigurePerform (st : SystemState) (core : Concurrency.CoreId)
-    (vScId : ValidObjId) (budget period priority deadline domain : Nat) : SystemState :=
+    (vScId : ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64) : SystemState :=
   match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | some sc =>
     match schedControlMovedThread? st core sc with
     | some t => schedContextConfigurePerform (setAffinityPerform st t (some core)) vScId budget
-        period priority deadline domain
-    | none => schedContextConfigurePerform st vScId budget period priority deadline domain
+        period extraRefills badge flags
+    | none => schedContextConfigurePerform st vScId budget period extraRefills badge flags
   | none => st
 
 /-- **An admitted configure through a control succeeds, and its state is the
 perform's.** -/
 theorem schedControlConfigure_of_admitted (st : SystemState) (core : Concurrency.CoreId)
-    (vScId : ValidObjId) (budget period priority deadline domain : Nat)
-    (h : schedControlConfigureAdmitted st core vScId budget period priority deadline domain = true) :
-    schedControlConfigure core vScId budget period priority deadline domain st =
-      .ok ((), schedControlConfigurePerform st core vScId budget period priority deadline
-        domain) := by
+    (vScId : ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
+    (h : schedControlConfigureAdmitted st core vScId budget period extraRefills badge flags = true) :
+    schedControlConfigure core vScId budget period extraRefills badge flags st =
+      .ok ((), schedControlConfigurePerform st core vScId budget period extraRefills badge flags
+        ) := by
   unfold schedControlConfigureAdmitted at h
   rw [Bool.and_eq_true] at h
   obtain ⟨hC, hM⟩ := h
@@ -657,17 +657,17 @@ theorem schedControlConfigure_of_admitted (st : SystemState) (core : Concurrency
       dsimp only at hM ⊢
       have hC' := hC
       unfold schedContextConfigureAdmitted at hC'
-      cases hV : validateSchedContextParams budget period priority deadline domain with
+      cases hV : validateSchedContextParams budget period with
       | error e => simp [hV] at hC'
       | ok u =>
         cases u
         simp only [hV, hS, Bool.and_eq_true, decide_eq_true_eq] at hC'
         have hCheck : checkAdmission st
-            (configuredSchedContext budget period priority deadline domain st.machine.timer
+            (configuredSchedContext budget period extraRefills badge flags st.machine.timer
               (configureKeepsHead st sc budget period) sc)
             (some vScId.val) = true := by
           rw [checkAdmission_eq_impl]
-          have hb := configuredSchedContext_budget_period budget period priority deadline domain
+          have hb := configuredSchedContext_budget_period budget period extraRefills badge flags
             st.machine.timer (configureKeepsHead st sc budget period) sc
           simp only [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
             SchedContext.bandwidth, hb.1, hb.2, decide_eq_true_eq]

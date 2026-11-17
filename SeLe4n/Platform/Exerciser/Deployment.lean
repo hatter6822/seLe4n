@@ -259,6 +259,12 @@ def schedControlSlotBase : Nat := 16
     scheduling controls — seL4's boot info `seL4_CapIRQControl`. -/
 def irqControlSlot : Nat := 20
 
+/-- **WS-SX SX6.7**: the root task's service-registry slot, past the root
+    server's frame and tables (`rootServerFrameSlot` and the three after it),
+    which no scenario fills.  `rust/sele4n-hal/src/smp_exercisers.rs` names it
+    `SERVICE_REGISTRY_SLOT`. -/
+def serviceRegistrySlot : Nat := 36
+
 /-- The root CNode slot holding the boot audit capability: the exerciser's copy
     slot, which no scenario fills before the audit scenarios end, and whose
     next use is a copy rather than a carve. -/
@@ -288,7 +294,8 @@ def rootIpcBufferVAddr : Nat := 2 <<< 39
     the partner thread, endpoint and reply object, and in slot 0 the scheduling
     context (slot 9 is left free for the reply capability the exerciser mints
     from slot 8, and slots 10 to 15 for what it copies and carves), the
-    interrupt control, each core's scheduling control, the audit trail's
+    interrupt control, the service registry (`serviceRegistrySlot`), each
+    core's scheduling control, the audit trail's
     capability with read and write (`Capability.auditTrailManage`), and one
     per further extension's untyped (`extraUntypeds`, `count` of them).  The
     boot adds the root server's four (`rootServerFrameSlot`). -/
@@ -303,7 +310,8 @@ def rootTaskCNodeSlots (count : Nat) : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 7, rpi5InitialCap endpointId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 8, rpi5InitialCap replyId [.read, .write, .grant])
   , (SeLe4n.Slot.ofNat 0, rpi5InitialCap schedContextId [.read, .write])
-  , (SeLe4n.Slot.ofNat irqControlSlot, Capability.irqControl) ] ++
+  , (SeLe4n.Slot.ofNat irqControlSlot, Capability.irqControl)
+  , (SeLe4n.Slot.ofNat serviceRegistrySlot, Capability.serviceRegistry) ] ++
   schedControlBootSlots schedControlSlotBase ++
   [ (auditSlot, Capability.auditTrailManage) ] ++
   (List.range count).map fun i =>

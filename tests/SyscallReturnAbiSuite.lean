@@ -266,6 +266,15 @@ private def declassCapPtr : Nat := 11
 private def badgeOneCapPtr : Nat := 12
 private def unbadgedCapPtr : Nat := 13
 
+/-- The audit-trail capability the declassifying signal invokes (WS-SX SX6.7:
+the notification it signals is its extra capability 0, `declassCapPtr`). -/
+private def declassAuditCapPtr : Nat := 14
+
+/-- The service-registry capability the service query invokes (WS-SX SX6.7:
+the endpoint it reads is its extra capability 0, `epCapPtr`).  Not slot 15:
+`withReceiveSlot` installs the receive path's CNode capability there. -/
+private def registryCapPtr : Nat := 4
+
 private def ntfnCapWith (badgeWord : Nat) (badged : Bool) : Capability :=
   { target := .object ntfnId,
     rights := AccessRightSet.ofList [.read, .write],
@@ -288,7 +297,11 @@ private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
        (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability),
        (SeLe4n.Slot.ofNat declassCapPtr, ntfnCapWith 0x5C true),
        (SeLe4n.Slot.ofNat badgeOneCapPtr, ntfnCapWith 0x1 true),
-       (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false)]))
+       (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false),
+       (SeLe4n.Slot.ofNat declassAuditCapPtr,
+        { target := .auditTrail CapTarget.authorityCode,
+          rights := AccessRightSet.ofList [.read, .write] }),
+       (SeLe4n.Slot.ofNat registryCapPtr, Capability.serviceRegistry)]))
 
 private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
@@ -627,7 +640,8 @@ private def replyRecvCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
 
 /-- 9f: `.serviceQuery` — the `.word` shape end to end (the one value
 shape the blocked orderings do not exercise): a service registered on the
-endpoint, resolved through the endpoint capability, its `ServiceId` staged
+endpoint, invoked on the service-registry capability with the endpoint
+capability as extra capability 0 (WS-SX SX6.7), its `ServiceId` staged
 as the caller's return word and carried in the outcome frame — the answer
 the pre-WS-RA arm computed and discarded. -/
 -- A service's identity is its endpoint's (`ServiceRegistration.sid`).
@@ -641,8 +655,27 @@ private def serviceQueryScenario :
   let ((), st1) ← Kernel.registerInterface iface twoThreadState
   let ((), st2) ← Kernel.registerService
     { iface := iface, endpointCap := epCap } st1
+  let st2 := SeLe4n.Testing.withSenderCapAddrs st2 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.serviceQuery.toNat 0 epCapPtr.toUInt64 0 0 0 st2
+    SyscallId.serviceQuery.toNat
+    (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    registryCapPtr.toUInt64 0 0 0 st2
+
+/-- 9f': `.serviceRegister` end to end (WS-SX SX6.7): invoked on the
+service-registry capability, the endpoint it registers on extra capability 0,
+the interface's four words in x2-x5 and the fifth (no grant) the IPC buffer's
+overflow word, which reads zero.  Returns the dispatch's outcome and state. -/
+private def serviceRegisterScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+      maxResponseSize := 64, requiresGrant := false }
+  let ((), st1) ← Kernel.registerInterface iface twoThreadState
+  let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
+  SeLe4n.Testing.dispatchFromAbi trustedLabeling SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.serviceRegister.toNat.toUInt32 registryCapPtr.toUInt64
+    (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    910 1 64 64 0 0 0 0 0 st1
 
 /-- 9g: a **self**-`.tcbSuspend` — §3.5's parenthetical, witnessed: the
 caller deschedules itself but does not IPC-block (`ipcState` stays
@@ -1028,6 +1061,32 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
           | .returns f =>
               rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
           | .blocks | .faulted => false)
+  -- 9f' — the register on the registry capability, endpoint extra cap 0
+  match serviceRegisterScenario with
+  | .error e => assertBool s!"9f' dispatches (got .error {reprStr e})" false
+  | .ok (out, st') => do
+      assertBool s!"9f': the register returns the unit frame (got {reprStr out})"
+        (out == .returns .zero)
+      assertBool "9f': the endpoint now holds the registration"
+        (st'.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
+  -- 9f'' — the same register through the cross-core step the hardware runs
+  match (do
+      let ((), st1) ← Kernel.registerInterface
+        { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+          maxResponseSize := 64, requiresGrant := false } twoThreadState
+      pure st1 : Except KernelError SystemState) with
+  | .error e => assertBool s!"9f'' interface registers (got .error {reprStr e})" false
+  | .ok st1 => do
+      let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
+      let (r, stC) := SeLe4n.Testing.dispatchCrossCoreStep trustedLabeling
+        SeLe4n.Kernel.Concurrency.bootCoreId SyscallId.serviceRegister.toNat.toUInt32
+        registryCapPtr.toUInt64
+        (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+        910 1 64 64 0 0 0 0 0 st1
+      assertBool s!"9f'': the cross-core register returns the unit frame (got {reprStr r.1})"
+        (r.1 == .returns .zero)
+      assertBool "9f'': the endpoint now holds the registration"
+        (stC.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
   -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
   match selfSuspendScenario with
   | .error e => assertBool s!"9g dispatches (got .error {reprStr e})" false
@@ -1299,19 +1358,30 @@ private def abiRegisterLines : List String :=
     ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
     ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
 
-/-- Which field of a copy's CNode operation word owns bit `j`, decided by
-decoding `2^j` alone through the copy's decode (`cnodeCopyArgsOfWords`, a
-mint's decode too): a depth, the rights mask, or `reserved` where the decode
-refuses the bit. -/
-private def cnodeCopyBitOwner (j : Nat) : String :=
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeCopyArgsOfWords
-      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
+/-- **The CNode operations' words, measured**: a mint's six words (a copy's
+are its first five, a move's its first four) decoded with word `i` holding
+`i + 1`, and word `i` owned by the field that comes back holding it.  seL4's
+order (`decodeCNodeInvocation`): the destination index and depth, the source
+index and depth, the rights word and the badge; the source root is extra
+capability 0, no word. -/
+private def cnodeMintWordLines : List String :=
+  let stub : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 6, extraCaps := 1, label := 0 },
+      syscallId := .cspaceMint, msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩, ⟨6⟩] }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs stub with
+  | .error _ => ["cnodeMintWord refused"]
   | .ok a =>
-    if a.destDepth != 0 && a.srcDepth == 0 && a.rights.bits == 0 then "destDepth"
-    else if a.srcDepth != 0 && a.destDepth == 0 && a.rights.bits == 0 then "srcDepth"
-    else if a.rights.bits != 0 && a.destDepth == 0 && a.srcDepth == 0 then "rights"
-    else "inconsistent"
-  | .error _ => "reserved"
+    (List.range 6).map fun i =>
+      let v := i + 1
+      let owner :=
+        if a.destIndex.toNat == v then "destIndex"
+        else if a.destDepth == v then "destDepth"
+        else if a.srcIndex.toNat == v then "srcIndex"
+        else if a.srcDepth == v then "srcDepth"
+        else if a.rights.bits == v then "rights"
+        else if a.badge.toNat == v then "badge"
+        else "unread"
+      s!"cnodeMintWord {i} {owner}"
 
 /-- **WS-SX SX1.2: the error payload's message-register layout, measured.**
 Each payload shape is built with distinct sentinels in its numeric fields
@@ -1357,18 +1427,6 @@ private def errorPayloadLayoutLines : List String :=
       (fun ws a b c => .failedLookup ws (.guardMismatch a.toUInt8 b c.toUInt8))
   , errorPayloadLayoutLine "illegalState" [] (fun _ _ _ _ => .illegalState) ]
 
-/-- Which field of a move's CNode operation word owns bit `j`, decided by
-decoding `2^j` alone through the move's decode (`cnodeOpArgsOfWords`): a depth,
-or `reserved` where the decode refuses the bit (a move takes no rights). -/
-private def cnodeMoveBitOwner (j : Nat) : String :=
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeOpArgsOfWords
-      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
-  | .ok a =>
-    if a.destDepth != 0 && a.srcDepth == 0 then "destDepth"
-    else if a.srcDepth != 0 && a.destDepth == 0 then "srcDepth"
-    else "inconsistent"
-  | .error _ => "reserved"
-
 private def abiLayoutTableLines : List String :=
   "# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)"
     :: (List.range 64).map (fun j => s!"bit {j} {abiLayoutBitOwner j}")
@@ -1379,8 +1437,8 @@ private def abiLayoutTableLines : List String :=
          s!"maxLabel {MessageInfo.maxLabel}",
          s!"errorLabelBase {Kernel.Architecture.errorLabelBase}",
          s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
-    ++ (List.range 64).map (fun j => s!"cnodeCopyBit {j} {cnodeCopyBitOwner j}")
-    ++ (List.range 64).map (fun j => s!"cnodeMoveBit {j} {cnodeMoveBitOwner j}")
+    ++ [ s!"ipcBufferCapsOrBadgesBase {Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord + Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0}" ]
+    ++ cnodeMintWordLines
     ++ errorPayloadLayoutLines
 
 private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"
@@ -1458,8 +1516,12 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
       List DeclassificationEvent × Option Kernel.Architecture.SyscallReturnFrame :=
   let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
-  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
-    declassCapPtr.toUInt64 forgedBadge.toUInt64 st1
+  -- The audit-trail capability invoked, the notification named as extra
+  -- capability 0 (message info: one word, one extra capability).
+  let st1 := SeLe4n.Testing.withSenderCapAddrs st1 peerTid #[SeLe4n.CPtr.ofNat declassCapPtr]
+  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat
+    (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    declassAuditCapPtr.toUInt64 forgedBadge.toUInt64 st1
   let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
   -- The step reports the cores whose reschedule flag it raised as one word;
   -- these are the SGIs it fires (`fireRaisedReschedules_eq`).
@@ -1547,8 +1609,24 @@ private def mappedBuffersState (rxWrite : Bool) : SystemState :=
         [(SeLe4n.VAddr.ofNat 4096, (SeLe4n.PAddr.ofNat rxBufferPA, { read := true, write := rxWrite })),
          (SeLe4n.VAddr.ofNat 8192, (SeLe4n.PAddr.ofNat txBufferPA, { read := true, write := true }))] }
   let st := twoThreadState
+  -- WS-SX SX6.6: each thread's buffer is in a frame of its own, found through
+  -- the frame capability in its buffer slot (seL4's `lookupIPCBuffer`); the
+  -- receiver's capability lets the kernel write only when `rxWrite`.
+  let rxFrame : SeLe4n.ObjId := ⟨0x7FF1⟩
+  let txFrame : SeLe4n.ObjId := ⟨0x7FF2⟩
+  let bufCap (fr : SeLe4n.ObjId) (w : Bool) : Capability :=
+    { target := .object fr,
+      rights := SeLe4n.Model.AccessRightSet.ofList (if w then [.read, .write] else [.read]) }
+  let withCap (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+      (t : SeLe4n.ThreadId) (c : Capability) :=
+    match objs.get? t.toObjId with
+    | some (.tcb tcb) => objs.insert t.toObjId (.tcb { tcb with spaceCells := tcb.spaceCells.set 2 (some c) })
+    | _ => objs
+  let objs := withCap (withCap st.objects callerTid (bufCap rxFrame rxWrite)) peerTid (bufCap txFrame true)
   { st with
-      objects := st.objects.insert callerVsp (.vspaceRoot root),
+      objects := ((objs.insert callerVsp (.vspaceRoot root)).insert rxFrame
+        (.frame { base := SeLe4n.PAddr.ofNat rxBufferPA })).insert txFrame
+        (.frame { base := SeLe4n.PAddr.ofNat txBufferPA }),
       machine := { st.machine with
         memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x10_0000, size := 0x10_0000, kind := .ram }] } }
 

@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX11.1 and SX11.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -126,14 +126,14 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
 (SX2), receive-side capability faults (SX3), the Restart state (SX4), the root
-task's IPC buffer built by the boot (SX5), seL4-MCS's syscall set, invocation
-labels and the reply register (SX6), capability arguments as extra
-capabilities (SX7), timeout faults with SetTimeoutEndpoint and SetSchedParams
+task's IPC buffer built by the boot (SX5), capability arguments as extra
+capabilities (SX6), seL4-MCS's syscall set, invocation labels and the reply
+register (SX7), timeout faults with SetTimeoutEndpoint and SetSchedParams
 (SX8), the full CNode invocation set (SX9), seL4's error codes in the label
 (SX10) and closure (SX11). Rows and decisions D1–D17 (each default taken, owner
 card open) are in
@@ -159,9 +159,12 @@ word. **Standing constraints for new code:** a decode reads a register as its
 word (`RegValue.word`, `readRegWord`) and tests a bound on the word
 (`wordLtNat`, a `UInt64` comparison) before any `.toNat`; a typed identifier
 that keeps a `Nat` is built only after that test; `.val` on a register is for
-specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
-raw-slot and model-only decodes that SX6.1, SX7.2, SX7.5 and SX9.1 re-decode
-still convert, under the narrowed `docs/REGISTERED_DEBT.md` row.
+specifications, joined to the word form by `@[csimp]` or an `_eq` proof. SX6.3 and
+SX6.6 (`v0.37.32`) read the retype's object id, IRQControl_Get's line and
+PageTable_Map's and SetIPCBuffer's addresses on the word (`windowWordOf`,
+`ipcBufferAddrOfWord`); the raw-slot and model-only decodes that SX7.1 and
+SX9.1 re-decode still convert, under the narrowed `docs/REGISTERED_DEBT.md`
+row.
 
 SX2 (`v0.37.23`) moved the guard into the capability and made the lookup seL4's
 `resolveAddressBits` (guard before depth, a stop at a non-CNode slot); a
@@ -202,8 +205,9 @@ page tables, the mapping and the frame capability in the root CNode and in the
 TCB's buffer slot (`TCB.ipcBufferSlot`, seL4's `tcbBuffer`), and every boot
 entry performs the eight writes the boot owes and installs the drained state
 (D15). The exerciser's IPC-buffer untyped and its boot-time invocations are
-deleted. **Standing constraints for new code:** a TCB has three space slots;
-a slot walk, invariant or teardown covers all three. A boot stage that owes
+deleted. **Standing constraints for new code:** a TCB has four space slots
+since SX6.5 (CSpace root, VSpace root, IPC buffer, fault handler); a slot
+walk, invariant or teardown covers all four. A boot stage that owes
 physical writes records them on the intermediate state
 (`recordBootPhysicalWrites`); every hardware entry passes the HAL's performer
 to the boot wrapper, which performs them and installs the drained state, and a
@@ -211,6 +215,25 @@ host or simulation entry passes none and so refuses a boot that owes any. No
 boot stage writes memory any other way. The
 root task's memory is the binding's reservation, never an untyped the root task
 retypes at boot.
+
+SX6 (`v0.37.32`) made capability arguments extra capabilities, as seL4's
+`lookupExtraCaps` reads them: the dispatch prologue looks a message's extra
+capabilities up after the invoked capability and before the decode (a failed
+lookup is `CapFault` at the failing address; the declassifying calls return
+it, so the refusal ledger records it), and CNode Copy/Mint/Move, Untyped_Retype
+(a window of up to 26 objects), IRQControl_Get, PageTable_Map, Page_Map (on the
+frame capability), SetPriority/SetMCPriority, BindNotification,
+SchedContext_Bind, SchedControl_ConfigureFlags, IRQHandler_SetNotification,
+SetSpace (fault endpoint, CSpace and VSpace roots, the handler in a fourth TCB
+slot), SetIPCBuffer, declassify (on the audit-trail capability) and the
+service calls (on a service-registry capability) take theirs from it.
+**Standing constraints for new code:** an invocation's capability argument is
+an extra capability (`callerExtraCapAddr?`, `callerExtraCapAddrK` in compiled
+arms), never a capability address in a message register; a missing one is
+`TruncatedMessage`; an argument's right is asked only where seL4 asks it;
+a retype window's refusals are all read before its first carve, and its
+`count` is bounded by `retypeFanOutLimit`, derived from `maxLockSetSize`, so a
+change to the carve's base locks moves the limit with it.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

@@ -1,3 +1,172 @@
+## v0.37.32 — capability arguments are extra capabilities, as seL4's
+
+WS-SX SX6 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D6–D12). Every
+invocation that takes a capability argument now names it as seL4 does: as
+an extra capability in the caller's IPC buffer (`caps_or_badges`), looked
+up in the dispatch prologue before the invocation decodes. Before, the
+arms read a capability address from a message register and resolved it
+themselves, each in its own order and with its own answers.
+
+- **The prologue (SX6.1).** seL4's `lookupExtraCaps` (`handleInvocation`):
+  after the invoked capability resolves and before its decode, every
+  invocation but a receive-phase one looks up the message's extra
+  capabilities (`lookupExtraCaps`, allocation-free entry form
+  `extraCapsLookupK`). A failed lookup raises `CapFault(that address,
+  false)` at the failing address. In SysReplyRecv a failed lookup skips the
+  reply half with no fault and the receive still runs, as seL4-MCS's
+  `handleInvocation` with `isBlocking = false`. An empty invoked slot is
+  seL4's `InvalidCapability` error after the extra capabilities, not a
+  lookup failure. The routed entry reads the extra-capability count off the
+  route's message info.
+- **CNode Copy, Mint and Move (SX6.2).** The source root is extra
+  capability 0; the words follow `decodeCNodeInvocation` (destIndex,
+  destDepth, srcIndex, srcDepth, then rights and badge). Copy takes five
+  words and Mint six; the rights word's high bits are ignored, never
+  refused. `CNodeOpWord` and its `abi_layout` block retire. CNode
+  operations allocate nothing.
+- **Retype, IRQControl_Get and the maps (SX6.3).**
+  - Untyped_Retype reads seL4's six words (type, size bits, node index,
+    node depth, node offset, object count) and the model's object id word,
+    with the destination root as extra capability 0 (D9). It carves a
+    **window of up to 26 objects of one kind**: object `i` takes id
+    `childId + i` and slot `offset + i`. `untypedRetypeWindowRefusal` reads
+    every refusal first, in seL4's order (range, every slot empty, the
+    reset, the region for all `n` objects, the device rule), then the
+    model's checks of all `n` ids, the store's capacity, `n` free ASIDs for
+    VSpace roots and the kernel heap for `n` objects with the tables'
+    growth. Then the carves run. `untypedRetypeWindow_admitsEveryCarve`
+    proves that on tables holding `invExt`, an admitted window runs every
+    carve, so no refusal follows a write.
+  - The limit is seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`, a build-time
+    configuration value. Here it is set to 26 and derived from the lock
+    ceiling: the carve takes six base locks and one write lock per child,
+    so `retypeFanOutLimit := maxLockSetSize - retypeBaseLocks = 32 - 6`.
+    The two cannot drift. `lockSet_untypedRetype` names every child
+    (`carvedChildLocks`). A count of 0 or 27 is refused
+    `RangeError(1, 26)`.
+  - IRQControl_Get names its destination root as extra capability 0, by
+    index and depth (D10).
+  - PageTable_Map reads `{vaddr, attr}` with its VSpace root as extra
+    capability 0.
+  - Page_Map is invoked on the frame capability with the VSpace root as
+    extra capability 0, the ARM `vaddr`, rights and attributes words (D6).
+    The ASID word is gone.
+- **Authority and bind arguments (SX6.4).**
+  - SetPriority and SetMCPriority bound the value by the maximum controlled
+    priority of the authority thread named as extra capability 0, not the
+    caller's own (D11).
+  - BindNotification, SchedContext_Bind and IRQHandler_SetNotification take
+    their argument as extra capability 0.
+  - **BindNotification** follows `decodeBindNotification`. It checks the
+    type before the right. It asks `CanReceive` (`.read`) of the
+    notification capability where the model asked `.write`, the signal
+    right. It answers `IllegalOperation` for a non-notification, for a
+    capability without the right, and for a notification already bound or
+    waited on, which the model bound before.
+  - **SchedControl_ConfigureFlags** is seL4-exact. The context is extra
+    capability 0, and the words are budget, period, `extra_refills`, badge
+    and flags. The context resolver asks no right, only the capability's
+    type. `extra_refills` sets the refill limit as seL4 uses it
+    (`SchedContext.refillMax`, clamped to `[MIN_REFILLS, capacity]`), and a
+    value over the refill array's headroom is a `RangeError`. The badge and
+    the sporadic flag are stored. The context no longer carries a priority,
+    deadline or domain, so the bind copies none into the thread. Their
+    propagation proofs and the two bound-thread consistency invariants
+    retire.
+- **SetSpace in the MCS shape (SX6.5).**
+  - The fault endpoint, CSpace root and VSpace root are extra capabilities
+    0–2, and `cRootData` / `vRootData` are in MR0 / MR1.
+  - The fault handler is a capability in a fourth TCB slot (D8). The
+    endpoint is copied into it with its badge kept.
+  - Fault delivery reads the slot and answers `missingCapability 0` when it
+    holds no endpoint (`faulthandler.c`).
+  - The separate fault-handler syscall (34) retires with its fields, lock
+    sets, information-flow entries and proofs, leaving 46 syscalls.
+  - A null extra capability is `TruncatedMessage`. A root of the wrong kind
+    is `IllegalOperation`.
+  - **SetSpace asks no right of its roots**, as `decodeSetSpace` does not.
+    The model's CNode grant/write and VSpace write checks go. No authority
+    is gained: the installed copy keeps only the source's rights, the root
+    slot is never invoked, and a CNode capability of any rights already
+    reaches every slot below it.
+- **SetIPCBuffer (SX6.6).** The buffer's frame capability is extra
+  capability 0, derived into the thread's buffer slot (D7). Every buffer
+  read goes through `lookupIPCBuffer`, and the syscall entry fills no TLB
+  entry for the buffer; `ipcBufferWordPAddr?` and `tlbFillIpcBufferOnCore`
+  retire. The buffer slot keeps a spare record, and a receiver with no
+  buffer gets the 4-word fault again.
+- **Wide words read as words (SX6.3, SX6.6).** The retype's object id,
+  IRQControl_Get's line, PageTable_Map's address and SetIPCBuffer's address
+  made a `Nat` of the full user word, so a word at or above `2^63` built a
+  heap number. Each is now tested on the word with `wordLtNat` first.
+  - The object id, the line and the table address go through
+    `windowWordOf`, which reads a word at or past `2^62` as `2^62`. Every
+    consumer refuses that value as it refuses the word.
+  - The buffer address goes through `ipcBufferAddrOfWord`, which reads a
+    wide word as `2^62` plus its page offset. The kernel reads a buffer
+    address only for zero-ness and page offset, as seL4's `lookupIPCBuffer`
+    does, and the read keeps both (`ipcBufferAddrOfWord_eq_zero_iff`,
+    `ipcBufferAddrOfWord_mod_page`).
+  - A line past the board's last is now seL4's `Arch_checkIRQ`
+    `RangeError(0, maxIRQ)` (`irqControlMaxLine`), not `InvalidIRQ`.
+  - A table address past the user top is now seL4's `InvalidArgument 0`,
+    not `AddressOutOfBounds`. The arm reads this refusal in place
+    (`pageTableMapPastUserTopAt`, `pageTableMap_of_pastUserTopAt`): through
+    the general dispatch it built the error, 3 cells on both lanes.
+  - The `SetIPCBufferArgs` docstring gave the 32-bit alignment; it now
+    gives 1024 bytes, seL4's `seL4_IPCBufferSizeBits = 10` on AArch64.
+  - New QEMU scenarios, each read at 0: `untyped-retype-wide-child-id`
+    (`AddressOutOfBounds`), `irq-control-get-wide-line`
+    (`RangeError(0, maxIRQ)`), `page-table-map-wide-vaddr` (on a page
+    table carved for it, `InvalidArgument 0`) and
+    `tcb-set-ipc-buffer-wide-unaligned` (`AlignmentError`).
+  - The `v0.37.21` debt row loses families (3)–(6), and (8), closed at
+    `v0.37.23`. (1), (2) and (7) stay open for SX9.1 and SX7.1.
+- **Targets of their own for the model-only calls (SX6.7).**
+  - `declassify` and `declassifySignal` are invoked on the audit-trail
+    capability, with the object or notification as extra capability 0.
+  - **The declassify ledger decision:** declassification has no seL4
+    counterpart, and its refused attempts belong in the refusal ledger a
+    monitor reads. So a failed lookup of the invoked capability, or of
+    extra capability 0, is returned as an error and recorded, not raised as
+    a capability fault (`capFaultReceivePhase?`).
+  - A service-registry capability (`CapTarget.serviceRegistry`, tag 7) is
+    the target of `serviceRegister`, `serviceRevoke` and `serviceQuery`,
+    with the endpoint as extra capability 0.
+- **Heap pins.** Each carve pin moves only with its cause read from the
+  generated C. Every non-carve reading stays 0 on both lanes.
+  - `sched-context/7` → 8 cells / 432 bytes (was 440). Its record is
+    `lean_alloc_ctor(0, 32, 11)`, a 275-byte record in the 280-byte class:
+    the context lost three boxed fields (priority, deadline, domain) and
+    gained the badge, the sporadic flag and `refillMax`.
+  - `tcb/0` → 25 cells / 2368 bytes (was 19 / 2064). One spare record each
+    for the buffer slot (SX6.6) and the fault-handler slot (SX6.5); the
+    link array grows 216 → 280 bytes for the fourth slot, the space-cell
+    array by one word and the spare array by two. The record is
+    `lean_alloc_ctor(0, 43, 199)`, 552 bytes, without the retired
+    fault-handler scalars.
+  - A retype window of `n` objects reads `n` × the object's pin. The
+    compiled `untypedRetypeWindowCode` is a tail loop with no allocation of
+    its own; each iteration's one allocating call is the single carve's
+    `untypedRetypePerformCode`. The exerciser carves windows of 3 endpoints
+    (18 cells / 744 bytes) and 26 endpoints (156 cells / 6448 bytes), and a
+    window of 27 is refused `RangeError(1, 26)` and reads 0. Each core's
+    heap size record holds the latest 256 allocations (was 128), so the
+    full window's sizes are recorded whole, as the record's contract asks of
+    every gated reading.
+- **Every invocation arm is routed.** Each of the 29 routed invocations has
+  a refusal-carrying arm. The others are routed earlier: through the IPC,
+  signal, wait and yield entries, the one-overflow-word route (configure,
+  register, mint, copy, retype) or the audited route (declassify and the
+  audit calls). The send, call, reply and signal on a capability of the
+  wrong kind are measured refusals that read 0.
+- **Rust.** `sele4n-abi` and `sele4n-sys` encode every re-shaped
+  invocation with its capability arguments in `caps_or_badges`.
+  `RETYPE_FAN_OUT_LIMIT = 26`. The HAL exercisers name each argument from
+  the IPC buffer current at their site.
+- **WS-CV folded in.** WS-CV's open rows (CV1.2 and CV5.2's closure) move
+  into WS-SX as SX11.1 and SX11.2.
+
 ## v0.37.31 — the boot builds the root task's IPC buffer
 
 WS-SX SX5 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D13–D15). The boot now
@@ -499,7 +668,7 @@ never an error frame.
   its lookup failure type, and the partner restarts from its own context.
 - **Left to later rows:** a reply object that is not free (SX4,
   `cancelIPC`), a reply-receive with no caller, and a receive on the other
-  object kind (SX6.2).
+  object kind (SX7.2).
 
 ## v0.37.23 — the guard in the capability, and seL4's `resolveAddressBits`
 
@@ -880,8 +1049,8 @@ decodes later SX phases re-decode, which keep a narrowed row.
   raw-slot and model-only decodes (CNode delete and revoke, the reply-cap
   mint, retype's child and slot, the interrupt-control slot, the page-table
   map's address, the IPC-buffer address, the service interface id and the
-  audit index and chunk) still make a `Nat` of a word; SX9.1, SX7.2, SX7.5
-  and SX6.1 re-decode them.
+  audit index and chunk) still make a `Nat` of a word; SX9.1, SX6.3, SX6.6
+  and SX7.1 re-decode them.
 
 ## v0.37.20 — error payloads and the `LookupFault` type
 
@@ -1080,9 +1249,9 @@ scope: the root task's boot IPC buffer and the guard in the capability with
   5. SX5: the boot builds the root task's IPC buffer, with the boot shape and
      its invariant base case extended. The exerciser's boot-time invocations
      are then deleted.
-  6. SX6: seL4-MCS's eleven syscalls, invocation labels and the x6 reply register.
-  7. SX7: capability arguments as extra capabilities, looked up at decode.
+  6. SX6: capability arguments as extra capabilities, looked up at decode.
      SetIPCBuffer's frame capability becomes the buffer the kernel reads.
+  7. SX7: seL4-MCS's eleven syscalls, invocation labels and the x6 reply register.
   8. SX8: timeout faults, SetTimeoutEndpoint and SetSchedParams, replacing the
      timeout unblocking of blocked IPC.
   9. SX9: Mutate, Rotate, CancelBadgedSends, and index-and-depth Delete and Revoke.
@@ -1092,7 +1261,7 @@ scope: the root task's boot IPC buffer and the guard in the capability with
   code, so that a receive's fault tag is never read as an error. In seL4 a
   receive never returns an error. Its failures are capability faults, a
   cancelled IPC restarts, and a budget overrun is a timeout fault. Once SX3,
-  SX4, SX6 and SX8 bring that here, seL4's codes 1–10 can sit in the label
+  SX4, SX7 and SX8 bring that here, seL4's codes 1–10 can sit in the label
   (SX10). One overlap remains, and it is seL4's own: a Call on an endpoint
   can return an error or a server reply with the same label.
 - **Decisions D1–D17** are each default taken, with the owner card open. D7 (the

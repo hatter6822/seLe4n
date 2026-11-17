@@ -358,7 +358,8 @@ theorem checkedMapWrappers_reject_unaligned
     `vspaceMapPage` function's `readOnly` default is never invoked without
     an explicit caller-supplied permission — all production dispatch paths
     (`dispatchWithCapChecked`) decode permissions from
-    the syscall's register file via `SyscallArgDecode.decodeVSpaceMapArgs`.
+    the syscall's register file via `SyscallArgDecode.decodePageMapArgs` and
+    `SyscallArgDecode.pagePermissionsOfWords`.
 
     This theorem documents that the default is `readOnly` (least privilege)
     and is W^X compliant. -/

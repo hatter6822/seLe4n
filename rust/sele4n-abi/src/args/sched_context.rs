@@ -5,123 +5,58 @@
 //! Three capability-controlled operations for scheduling context management
 //! added in WS-Z Phase Z5.
 
-use sele4n_types::{CPtr, KernelError, KernelResult};
+use sele4n_types::{KernelError, KernelResult};
 
-/// Maximum configurable priority value (8-bit, matching Lean scheduler).
-pub const MAX_PRIORITY: u64 = 255;
-
-/// Maximum configurable domain value (zero-indexed).
-/// Matches Lean `numDomainsVal = 16`, so valid domains are 0..=15.
-pub const MAX_DOMAIN: u64 = 15;
-
-/// Bit position of the domain in the configure's parameter word: the priority
-/// is bits 0–7, the domain bits 8–11, and any higher bit is refused.
-pub const SCHED_PARAMS_DOMAIN_SHIFT: u32 = 8;
-
-/// The first parameter word the kernel refuses: `16 << 8`, the first word whose
-/// domain is out of range or which sets a bit above the domain's.
-pub const SCHED_PARAMS_LIMIT: u64 = (MAX_DOMAIN + 1) << SCHED_PARAMS_DOMAIN_SHIFT;
-
-/// Arguments for `schedContextConfigure` (syscall 17).
+/// Arguments for `schedContextConfigure` (syscall 17) — seL4-MCS's
+/// `seL4_SchedControl_ConfigureFlags`.
 ///
 /// WS-ZA ZA6.4: the configure is invoked on a core's **scheduling-control**
 /// capability (seL4-MCS's `SchedControl`, the only authority to set a context's
-/// budget and period), and the context to configure is a capability the caller
-/// holds, named by its address, as seL4-MCS's `seL4_SchedControl_ConfigureFlags`
-/// takes the context as an extra capability.  A scheduling-context capability
-/// configures nothing.
+/// budget and period).  WS-SX SX6.4: the context to configure is the message's
+/// extra capability 0 (`caps_or_badges[0]` of the caller's IPC buffer), as
+/// seL4-MCS's `decodeSchedControl_ConfigureFlags` reads `excaprefs[0]`; no
+/// message word names it.  A scheduling-context capability configures nothing.
 ///
-/// Register mapping: regs[0]=sched_context (the context capability's address),
-/// regs[1]=budget, regs[2]=period, regs[3]=priority | domain << 8,
-/// regs[4]=deadline.  Priority and domain share one word so the call keeps five
-/// words.
+/// Register mapping (seL4-MCS's, one-word times): regs[0]=budget,
+/// regs[1]=period, regs[2]=extra_refills, regs[3]=badge, regs[4]=flags (bit 0
+/// is `seL4_SchedContext_Sporadic`).  A context carries no priority, deadline
+/// or domain: those are the thread's.
 ///
 /// Lean: `SchedContextConfigureArgs` (`SyscallArgDecode.lean`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchedContextConfigureArgs {
-    pub sched_context: CPtr,
     pub budget: u64,
     pub period: u64,
-    pub priority: u64,
-    pub deadline: u64,
-    pub domain: u64,
+    pub extra_refills: u64,
+    pub badge: u64,
+    pub flags: u64,
 }
 
 impl SchedContextConfigureArgs {
-    /// Encode into message registers.  The parameter word carries the priority
-    /// in bits 0–7 and the domain in bits 8–11.
-    ///
-    /// A priority above [`MAX_PRIORITY`] or a domain above [`MAX_DOMAIN`] is
-    /// refused with `InvalidSyscallArgument` — the error [`Self::decode`] and the
-    /// kernel return for the same out-of-range word — rather than masked: a mask
-    /// would silently turn priority 256 into 0, or domain 16 into 0, which is a
-    /// different, valid configuration.
-    pub const fn encode(&self) -> KernelResult<[u64; 5]> {
-        if self.priority > MAX_PRIORITY || self.domain > MAX_DOMAIN {
-            return Err(KernelError::InvalidSyscallArgument);
-        }
-        Ok([
-            self.sched_context.raw(),
+    /// Encode into message registers.  Every word is carried verbatim: the
+    /// kernel range-checks the budget, period and extra refills and stores the
+    /// badge and flags as given.
+    pub const fn encode(&self) -> [u64; 5] {
+        [
             self.budget,
             self.period,
-            self.priority | (self.domain << SCHED_PARAMS_DOMAIN_SHIFT),
-            self.deadline,
-        ])
+            self.extra_refills,
+            self.badge,
+            self.flags,
+        ]
     }
 
     /// Decode from message registers. Requires 5 registers.
-    ///
-    /// Validates the parameter word (priority ≤ 255 and domain ≤ 15, no higher
-    /// bit) at the decode boundary.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 5 {
             return Err(KernelError::InvalidMessageInfo);
         }
-        if regs[3] >= SCHED_PARAMS_LIMIT {
-            return Err(KernelError::InvalidSyscallArgument);
-        }
         Ok(Self {
-            sched_context: CPtr::from(regs[0]),
-            budget: regs[1],
-            period: regs[2],
-            priority: regs[3] & MAX_PRIORITY,
-            deadline: regs[4],
-            domain: regs[3] >> SCHED_PARAMS_DOMAIN_SHIFT,
-        })
-    }
-}
-
-/// Arguments for `schedContextBind` (syscall 18).
-/// Register mapping: regs[0]=tcbCPtr — the **capability address**, in the
-/// caller's own CSpace, of the TCB to bind to the invoked SchedContext.
-///
-/// `v0.35.204`: this was `thread_id: ThreadId`, a raw thread id the kernel
-/// bound directly under the SchedContext capability alone — so a holder of one
-/// could bind it to any thread it could name and, through the bind's priority
-/// propagation, rewrite that thread's base priority.  seL4-MCS's
-/// `seL4_SchedContext_Bind` takes the TCB as a capability; the kernel's
-/// `resolveSchedContextBindThread` now resolves MR0 through the caller's CSpace
-/// requiring `.write`, exactly as `tcbBindNotification` resolves its
-/// notification.  Typed `CPtr` so the wrapper cannot be handed a thread id.
-///
-/// Lean: `SchedContextBindArgs` (`SyscallArgDecode.lean`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SchedContextBindArgs {
-    pub tcb_cap: CPtr,
-}
-
-impl SchedContextBindArgs {
-    pub const fn encode(&self) -> [u64; 1] {
-        [self.tcb_cap.raw()]
-    }
-
-    /// Decode from message registers. Requires 1 register.
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        Ok(Self {
-            tcb_cap: CPtr::from(regs[0]),
+            budget: regs[0],
+            period: regs[1],
+            extra_refills: regs[2],
+            badge: regs[3],
+            flags: regs[4],
         })
     }
 }
@@ -151,126 +86,32 @@ mod tests {
     #[test]
     fn configure_roundtrip() {
         let args = SchedContextConfigureArgs {
-            sched_context: CPtr::from(7u64),
             budget: 1000,
             period: 5000,
-            priority: 128,
-            deadline: 10000,
-            domain: 3,
+            extra_refills: 2,
+            badge: 0xFEED_FACE_CAFE_BEEF,
+            flags: 1,
         };
+        assert_eq!(args.encode(), [1000, 5000, 2, 0xFEED_FACE_CAFE_BEEF, 1]);
         assert_eq!(
-            SchedContextConfigureArgs::decode(&args.encode().unwrap()).unwrap(),
+            SchedContextConfigureArgs::decode(&args.encode()).unwrap(),
             args
         );
     }
 
     #[test]
-    fn configure_packs_priority_and_domain() {
-        let args = SchedContextConfigureArgs {
-            sched_context: CPtr::from(7u64),
-            budget: 1,
-            period: 2,
-            priority: 0x2a,
-            deadline: 3,
-            domain: 5,
-        };
-        assert_eq!(args.encode(), Ok([7, 1, 2, 0x52a, 3]));
-    }
-
-    #[test]
-    fn configure_encode_refuses_priority_256() {
-        // A mask would encode priority 256 as priority 0 — a different, valid
-        // configuration.  The encoder refuses it instead.
-        let args = SchedContextConfigureArgs {
-            sched_context: CPtr::from(7u64),
-            budget: 1000,
-            period: 5000,
-            priority: MAX_PRIORITY + 1,
-            deadline: 10000,
-            domain: 3,
-        };
-        assert_eq!(args.encode(), Err(KernelError::InvalidSyscallArgument));
-    }
-
-    #[test]
-    fn configure_encode_refuses_domain_16() {
-        // A mask would encode domain 16 as domain 0.
-        let args = SchedContextConfigureArgs {
-            sched_context: CPtr::from(7u64),
-            budget: 1000,
-            period: 5000,
-            priority: 128,
-            deadline: 10000,
-            domain: MAX_DOMAIN + 1,
-        };
-        assert_eq!(args.encode(), Err(KernelError::InvalidSyscallArgument));
-        // Far out of range too: no bit of the domain reaches another field.
-        let wide = SchedContextConfigureArgs {
-            domain: u64::MAX,
-            ..args
-        };
-        assert_eq!(wide.encode(), Err(KernelError::InvalidSyscallArgument));
-    }
-
-    #[test]
-    fn configure_encode_accepts_maxima() {
-        let args = SchedContextConfigureArgs {
-            sched_context: CPtr::from(7u64),
-            budget: 1,
-            period: 2,
-            priority: MAX_PRIORITY,
-            deadline: 3,
-            domain: MAX_DOMAIN,
-        };
-        let encoded = args.encode().unwrap();
-        assert_eq!(encoded[3], 255 | (15 << 8));
-        assert!(encoded[3] < SCHED_PARAMS_LIMIT);
-        assert_eq!(SchedContextConfigureArgs::decode(&encoded).unwrap(), args);
+    fn configure_carries_every_word_verbatim() {
+        // No bit of the badge or flags is masked or refused: seL4-MCS stores
+        // the badge word and reads bit 0 of the flags.
+        let regs = [1, 1, u64::MAX, u64::MAX, u64::MAX];
+        let args = SchedContextConfigureArgs::decode(&regs).unwrap();
+        assert_eq!(args.encode(), regs);
     }
 
     #[test]
     fn configure_insufficient_regs() {
         assert_eq!(
             SchedContextConfigureArgs::decode(&[1, 2, 3, 4]),
-            Err(KernelError::InvalidMessageInfo)
-        );
-    }
-
-    #[test]
-    fn configure_domain_out_of_range() {
-        // Domain 16 is the first invalid value (numDomainsVal = 16, zero-indexed 0..=15)
-        assert_eq!(
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 16 << 8, 10000]),
-            Err(KernelError::InvalidSyscallArgument)
-        );
-        // A bit above the domain's is refused too
-        assert_eq!(
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 1 << 40, 10000]),
-            Err(KernelError::InvalidSyscallArgument)
-        );
-    }
-
-    #[test]
-    fn configure_max_valid_priority_and_domain() {
-        // Priority max = 255, domain max = 15 (Lean numDomainsVal = 16)
-        let args =
-            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 255 | (15 << 8), 10000]).unwrap();
-        assert_eq!(args.priority, 255);
-        assert_eq!(args.domain, 15);
-    }
-
-    #[test]
-    fn bind_roundtrip() {
-        let args = SchedContextBindArgs {
-            tcb_cap: CPtr::from(42u64),
-        };
-        assert_eq!(SchedContextBindArgs::decode(&args.encode()).unwrap(), args);
-    }
-
-    #[test]
-    fn bind_insufficient_regs() {
-        assert_eq!(
-            SchedContextBindArgs::decode(&[]),
             Err(KernelError::InvalidMessageInfo)
         );
     }

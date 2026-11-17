@@ -149,17 +149,6 @@ theorem teardownWellFormed_storeFreshRoot {st st' : SystemState} {k : SeLe4n.Obj
     · exact hWF
     · exact c8 o q h0
 
-/-- The scrub writes memory, not the machine's address width. -/
-theorem CarveRequest.scrub_physicalAddressWidth (st : SystemState) (ut : UntypedObject) (idx : Nat)
-    (req : CarveRequest) :
-    (req.scrub st ut idx).machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
-
-/-- The scrub writes no ASID. -/
-theorem CarveRequest.scrub_asidTable (st : SystemState) (ut : UntypedObject) (idx : Nat)
-    (req : CarveRequest) : (req.scrub st ut idx).asidTable = st.asidTable := by
-  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
-
 namespace RecordsStage
 
 /-- **An object stored at an id no object held**: a thread unlinked and
@@ -265,13 +254,14 @@ theorem untypedRetypeObject {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
-    {srcAddr : SeLe4n.CPtr}
+    {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
     {st st' : SystemState}
-    (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
-    RecordsStage st st' := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
-  exact untypedRetypeObject hCarve
+    (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    RecordsStage st st' :=
+  (untypedRetypeFromCap_chain h).rel (P := fun _ => True) RecordsStage.refl
+    (fun h1 h2 => h1.trans h2) (fun _ _ => trivial)
+    (fun _ hC => untypedRetypeObject hC) trivial
 
 end RecordsStage
 

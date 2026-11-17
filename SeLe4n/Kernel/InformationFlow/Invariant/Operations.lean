@@ -3192,46 +3192,6 @@ theorem endpointReplyWithReversion_preserves_lowEquivalent
   unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
 
 -- ============================================================================
--- AK6-F.2b: setIPCBufferOp preservation
--- ============================================================================
-
-/-- AK6-F.2b (NI-H02): `setIPCBufferOp` preserves projection when the target
-    TCB is non-observable. The op delegates to `storeObject` after validation;
-    validation failures return the state unchanged.
-
-    Hypotheses:
-    - `hTcbHigh`: target TCB is non-observable.
-    - `hObjInv`: object store invariant.
-    - `hStep`: operation succeeded. -/
-theorem setIPCBufferOp_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (vtid : SeLe4n.ValidThreadId) (addr : SeLe4n.VAddr)
-    (st st' : SystemState)
-    (hTcbHigh : objectObservable ctx observer vtid.val.toObjId = false)
-    (hObjInv : st.objects.invExt)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st := by
-  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`.
-  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st vtid.val addr with
-  | error e => rw [hVal] at hStep; simp at hStep
-  | ok _ =>
-    rw [hVal] at hStep
-    cases hLook : st.getTcb? vtid.val with
-    | none => rw [hLook] at hStep; simp at hStep
-    | some tcb =>
-      rw [hLook] at hStep
-      simp only at hStep
-      cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
-      | error e => rw [hStore] at hStep; simp at hStep
-      | ok pair =>
-        rw [hStore] at hStep
-        simp only [Except.ok.injEq] at hStep
-        subst hStep
-        exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
-          hTcbHigh hObjInv hStore
-
--- ============================================================================
 -- AK6-F Step A: Universal direct-insert frame lemma
 -- ============================================================================
 
@@ -3549,63 +3509,28 @@ end EndpointQueueRemoveProjection
 -- AK6-F.2c: updatePrioritySource + setPriorityOp preservation
 -- ============================================================================
 
-/-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects` via
-    direct insert, at either the target TCB (no priority source) or the
-    SchedContext the binding's priority source names. When the written object is
-    non-observable, projection is preserved by
-    `objects_insert_preserves_projection_high`.
-
-    **WS-OD (v0.35.3)**: `hScHigh` is stated over
-    `SchedContextBinding.ownScId?`, so it ranges over `.bound` alone.
-    A `.donated` thread's priority write lands in its own TCB, which `hTcbHigh`
-    already covers, and demanding the *donor's* reservation be non-observable
-    would refuse a state where a low donee is retuned by a low principal while
-    the client is high — a case the operation no longer touches. -/
+/-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects`, at
+    the target TCB (WS-SX SX6.4: a scheduling context carries no priority, so no
+    reservation is written at any binding). When the TCB is non-observable,
+    projection is preserved by `objects_insert_preserves_projection_high`. -/
 theorem updatePrioritySource_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPriority : SeLe4n.Priority)
     (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
-    (hScHigh : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
-                        objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) =
     projectState ctx observer st := by
-  -- `v0.35.98`: the `.bound` arm writes **both** homes of the base priority, so
-  -- it is two applications of one frame, each at its own non-observability
-  -- hypothesis -- and `hTcbHigh`, which that arm did not consume before, is
-  -- what discharges the second.  The thread half is shared, since both arms
-  -- perform it (the `.bound` arm over the reservation-written state).
-  have hTcbStep : ∀ (s : SystemState), s.objects.invExt →
-      projectState ctx observer
-        (s.updateTcb tid fun t => { t with priority := newPriority })
-        = projectState ctx observer s := by
-    intro s hs
-    cases hT : s.getTcb? tid with
-    | some t =>
-        rw [SystemState.updateTcb_eq_of_some hT]
-        exact objects_insert_preserves_projection_high ctx observer s tid.toObjId _
-          hTcbHigh hs
-    | none =>
-        rw [SystemState.updateTcb_eq_self_of_none hT]
+  -- WS-SX SX6.4: the write is the target's own TCB at every binding.
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  split
-  · -- the priority source resolves (`.bound scId`): the reservation, then the thread
-    rename_i scId hSrc
-    rw [hTcbStep _
-      (SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv)]
-    cases hSc : st.getSchedContext? scId with
-    | some sc =>
-        -- present: the typed rewrite is the insert, and the frame lemma applies
-        rw [SystemState.updateSchedContext_eq_of_some hSc]
-        exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-          (hScHigh scId hSrc) hObjInv
-    | none =>
-        -- absent: the typed rewrite is the identity
-        rw [SystemState.updateSchedContext_eq_self_of_none hSc]
-  · -- no priority source (`.unbound` / `.donated`): the target's own TCB
-    exact hTcbStep st hObjInv
+  cases hT : st.getTcb? tid with
+  | some t =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+        hTcbHigh hObjInv
+  | none =>
+      rw [SystemState.updateTcb_eq_self_of_none hT]
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4592,7 +4517,7 @@ theorem setThreadCpuAffinityOnCore_preserves_projection
 -- ============================================================================
 
 /-- AK6-F Step 3: `setPriorityOp` preserves projection when the target TCB
-    and any bound/donated SchedContext are non-observable, under a
+    is non-observable, under a
     "schedule-branch preserves projection" witness supplied by the caller.
 
     The caller supplies `hSchedProj` for the post-preemption path — if the
@@ -4605,10 +4530,6 @@ theorem setPriorityOp_preserves_projection
     (newPriority : SeLe4n.Priority)
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHigh : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
-                = some (.tcb targetTcb) →
-                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
                     projectState ctx observer stMid = projectState ctx observer st →
@@ -4624,18 +4545,12 @@ theorem setPriorityOp_preserves_projection
     · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
-        -- AN10-B: post-migration `setPriorityOp` reads via `getTcb?`;
-        -- bridge from the typed-helper hypothesis to the raw lookup
-        -- expected by `hScHigh`.
-        have hTargetRaw :
-            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
-          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         have hProj1 :
             projectState ctx observer
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority) =
             projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTargetRaw) hObjInv
+            newPriority hTargetObjHigh hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucket
@@ -4729,9 +4644,6 @@ theorem setPriorityOnCore_preserves_projection
     (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hCoherent : ∀ t : SeLe4n.ThreadId,
         threadObservable ctx observer t = false →
         objectObservable ctx observer t.toObjId = false)
@@ -4758,7 +4670,7 @@ theorem setPriorityOnCore_preserves_projection
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val
                 targetTcb newPriority) = projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+            newPriority hTargetObjHigh hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
@@ -4795,11 +4707,6 @@ theorem setMCPriorityOp_preserves_projection
     (newMCP : SeLe4n.Priority)
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHighForUpdated : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
-                = some (.tcb targetTcb) →
-                ∀ scId,
-                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
                     projectState ctx observer stMid = projectState ctx observer st →
@@ -4815,12 +4722,6 @@ theorem setMCPriorityOp_preserves_projection
     · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget _
-        -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
-        -- bridge from the typed-helper hypothesis to the raw lookup
-        -- expected by `hScHighForUpdated`.
-        have hTargetRaw :
-            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
-          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         -- The post-MCP-update state (after F2):
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
@@ -4839,8 +4740,7 @@ theorem setMCPriorityOp_preserves_projection
                   stAfterMCP vTargetTid.val targetTcb' newMCP) =
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
-                 targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTargetRaw scId hB) hObjInvMCP]
+                 targetTcb' newMCP hTargetObjHigh hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer
@@ -4881,10 +4781,6 @@ theorem setMCPriorityOnCore_preserves_projection
     (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hScHighForUpdated : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId,
-                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
-                objectObservable ctx observer scId.toObjId = false)
     (hCoherent : ∀ t : SeLe4n.ThreadId,
         threadObservable ctx observer t = false →
         objectObservable ctx observer t.toObjId = false)
@@ -4922,8 +4818,7 @@ theorem setMCPriorityOnCore_preserves_projection
                   stAfterMCP vTargetTid.val targetTcb' newMCP) =
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
-                 targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+                 targetTcb' newMCP hTargetObjHigh hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer
@@ -5320,15 +5215,15 @@ theorem serviceQueryStaged_answer_lowEquivalent
     discharge: ≈40 LOC given the 6-phase body of `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
           SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-            vScId budget period priority deadline domain st = .ok ((), stFinal) →
+            vScId budget period extraRefills badge flags st = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
     (hStep : SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-                vScId budget period priority deadline domain st = .ok ((), st')) :
+                vScId budget period extraRefills badge flags st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
@@ -5589,36 +5484,6 @@ theorem resumeThread_preserves_projection
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
--- ============================================================================
--- PR #887 review: information-flow non-interference for `tcbSetFaultHandler`
--- ============================================================================
-
-/-- The fault-handler configuration writes one field of one TCB, so for a
-non-observable target the projection is unchanged — the discharge for the
-`.tcbSetFaultHandler` capability-only arm, the same shape as every sibling
-TCB-configuration op. (For an observable target the write *is* visible, as
-`faultHandler` is part of the thread's projected configuration.) -/
-theorem setThreadFaultHandlerOp_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
-    (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st := by
-  cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler SystemState.rewriteObject
-          exact objects_insert_preserves_projection_high ctx observer st
-            vTargetTid.val.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
-            hTargetObjHigh hObjInv
-
 /-- **A thread space slot's copy is invisible to an observer the thread is
 hidden from**: the slot's delete is the slot delete at that thread
 (`cspaceDeleteSlot_preserves_projection`), the fill writes only the thread, and
@@ -5727,77 +5592,126 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
       rw [if_neg h0]
       exact (hNamed h0).2.1 _ ((recorderWord_spec st _ _ _ hObjInv).1 hr)
 
-/-- **Setting a hidden thread's space is invisible when what it retires is
-hidden**: each of its two slot sets is (`threadSlotSet_preserves_projection`),
-given that the objects the thread's CSpace and VSpace slots name, and every untyped
-recording one, are hidden.  The VSpace slot's set reads the state after the
-CSpace slot's, which holds the same VSpace slot and records no new child. -/
-theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+/-- **WS-SX SX6.6: a hidden thread's buffer change is invisible when what it
+retires is hidden** — AK6-F.2b (NI-H02) restated over the frame capability: the
+buffer slot's set is (`threadSlotSet_preserves_projection`), given that the
+object the slot's old capability names, and every untyped recording it, are
+hidden; and the address write rewrites the hidden thread alone. -/
+theorem setIPCBufferOp_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     {ec : Concurrency.CoreId} {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
+    {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr} {addr : SeLe4n.VAddr}
     (hHigh : objectObservable ctx observer vtid.val.toObjId = false)
     (hObjInv : st.objects.invExt)
-    (hHid : ∀ s : SeLe4n.Slot, s.toNat < 2 → ∀ c o,
-      st.slotCapAt ⟨vtid.val.toObjId, s⟩ = some c → c.namedObject = some o →
+    (hHid : ∀ c o, st.slotCapAt ⟨vtid.val.toObjId, TCB.ipcBufferSlot⟩ = some c →
+      c.namedObject = some o →
         objectObservable ctx observer o = false ∧
           (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
           ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights cnData
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1', hF1⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
-    (by decide) TCB.cspaceRootRights cnData (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
-  have hUt := threadSlotCopied_getUntyped? hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights cnData
-  generalize hS1 : threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights cnData = st1
-  have hS1' := hS1
-  unfold threadSlotSet at hS1'
-  dsimp only at hS1'
-  have hI2 : st1.objects.invExt := by
-    rw [← hS1']; exact (retireFinalObject_frame _ _ _ _ hI1).1
-  have hT2 : st1.getTcb? vtid.val = some t1 := by
-    rw [← hS1']; exact retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF1
-  have hHid2 : ∀ c o, st1.slotCapAt ⟨vtid.val.toObjId, TCB.vspaceRootSlot⟩ = some c →
-      c.namedObject = some o → objectObservable ctx observer o = false ∧
-        (∀ w, untypedRecordsChild st1 w o = true → objectObservable ctx observer w = false) ∧
-        ∀ y, untypedRecordsChild st1 o y = true → objectObservable ctx observer y = false := by
-    intro c o hc hn
-    rw [← hS1', retireFinalObject_slotCapAt _ _ _ _ hI1,
-      threadSlotCopied_slotCapAt hObjInv hT (by decide), if_neg (fun h => absurd h.2
-        (show TCB.vspaceRootSlot ≠ TCB.cspaceRootSlot by decide))] at hc
-    obtain ⟨hob, hw, hy⟩ := hHid TCB.vspaceRootSlot (by decide) c o hc hn
-    have hRec : ∀ a b, untypedRecordsChild
-        (threadSlotCopied st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-          TCB.cspaceRootRights cnData) a b = untypedRecordsChild st a b := by
-      intro a b; unfold untypedRecordsChild; rw [hUt]
-    -- A record the retire made is a splice through the CSpace slot's old
-    -- target, which that slot names, so its recorder and children are hidden.
-    have hSplice : ∀ a b, untypedRecordsChild st1 a b = true →
-        untypedRecordsChild st a b = true ∨
-          (objectObservable ctx observer a = false ∧ objectObservable ctx observer b = false) := by
-      intro a b hr
-      rw [← hS1'] at hr
-      by_cases h0 : slotRetireTarget st vtid.val.toObjId TCB.cspaceRootSlot = 0
-      · rw [h0, retireFinalObject_zero, hRec] at hr; exact .inl hr
-      rcases retireFinalObject_untypedRecordsChild _ _ _ _ hI1 hr with hr' | ⟨ha, hb⟩
-      · rw [hRec] at hr'; exact .inl hr'
-      · rw [hRec] at ha hb
-        obtain ⟨c1, hc1, hn1, -⟩ := slotRetireTarget_names h0
-        obtain ⟨-, hw1, hy1⟩ := hHid TCB.cspaceRootSlot (by decide) c1 _ hc1 hn1
-        exact .inr ⟨hw1 a ha, hy1 b hb⟩
-    refine ⟨hob, fun w hr => ?_, fun y hr => ?_⟩
-    · rcases hSplice w o hr with h | h
-      · exact hw w h
-      · exact h.1
-    · rcases hSplice o y hr with h | h
-      · exact hy y h
-      · exact h.2
-  unfold copyThreadSpacesPerform
-  rw [hS1]
-  exact (threadSlotSet_preserves_projection ctx observer ec hHigh hI2 hT2 _ hHid2 _ _ _ _).trans
-    (hS1 ▸ threadSlotSet_preserves_projection ctx observer ec hHigh hObjInv hT _
-      (hHid TCB.cspaceRootSlot (by decide)) _ _ _ _)
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  generalize hS1 : threadSlotSet ec st vtid.val TCB.ipcBufferSlot
+    (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0 = st1
+  have hP1 := threadSlotSet_preserves_projection ctx observer ec hHigh hObjInv hT
+    TCB.ipcBufferSlot hHid (Architecture.IpcBufferValidation.ipcBufferSourceCNode vtid.val c addr)
+    (Architecture.IpcBufferValidation.ipcBufferSourceSlot s addr)
+    Architecture.IpcBufferValidation.ipcBufferSlotRights 0
+  rw [hS1] at hP1
+  rw [← hP1]
+  cases hT1 : st1.getTcb? vtid.val with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT1]
+  | some t1 =>
+    rw [SystemState.updateTcb_eq_of_some hT1]
+    have hI1 : st1.objects.invExt := by
+      rw [← hS1]; unfold threadSlotSet
+      exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT _ _ _ _ _).2).1
+    exact objects_insert_preserves_projection_high ctx observer st1 _ _ hHigh hI1
+
+/-- **What a thread's slot names is hidden in `st`**: the object the slot's
+capability names, every untyped recording it, and every child it records. -/
+def threadSlotHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) : Prop :=
+  ∀ c o, st.slotCapAt ⟨tid.toObjId, slot⟩ = some c → c.namedObject = some o →
+    objectObservable ctx observer o = false ∧
+      (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
+      ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false
+
+/-- **A thread slot's set keeps another of its slots hidden** when what the set
+slot names is hidden: the set writes no other slot of the thread, and a record
+the retire after it makes is a splice through the set slot's old target, which
+that slot names, so its recorder and children are hidden. -/
+theorem threadSlotSet_keepsHidden (ctx : LabelingContext) (observer : IfObserver)
+    (ec : Concurrency.CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot b : SeLe4n.Slot}
+    (hs : slot.toNat < 4) (hne : b ≠ slot)
+    (hHidA : threadSlotHidden ctx observer st tid slot)
+    (hHidB : threadSlotHidden ctx observer st tid b)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    threadSlotHidden ctx observer (threadSlotSet ec st tid slot srcCNode srcSlot rights data) tid b := by
+  have hI1 := (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights data).2
+  have hUt := threadSlotCopied_getUntyped? hObjInv hT slot srcCNode srcSlot rights data
+  intro c o hc hn
+  unfold threadSlotSet at hc ⊢
+  dsimp only at hc ⊢
+  rw [retireFinalObject_slotCapAt _ _ _ _ hI1, threadSlotCopied_slotCapAt hObjInv hT hs,
+    if_neg (fun h => absurd h.2 hne)] at hc
+  obtain ⟨hob, hw, hy⟩ := hHidB c o hc hn
+  have hRec : ∀ a b, untypedRecordsChild
+      (threadSlotCopied st tid slot srcCNode srcSlot rights data) a b = untypedRecordsChild st a b := by
+    intro a b; unfold untypedRecordsChild; rw [hUt]
+  have hSplice : ∀ a b, untypedRecordsChild (retireFinalObject ec
+      (slotRetireTarget st tid.toObjId slot)
+      (recorderFor st (slotRetireTarget st tid.toObjId slot) tid.toObjId slot)
+      (threadSlotCopied st tid slot srcCNode srcSlot rights data)) a b = true →
+      untypedRecordsChild st a b = true ∨
+        (objectObservable ctx observer a = false ∧ objectObservable ctx observer b = false) := by
+    intro a b hr
+    by_cases h0 : slotRetireTarget st tid.toObjId slot = 0
+    · rw [h0, retireFinalObject_zero, hRec] at hr; exact .inl hr
+    rcases retireFinalObject_untypedRecordsChild _ _ _ _ hI1 hr with hr' | ⟨ha, hb⟩
+    · rw [hRec] at hr'; exact .inl hr'
+    · rw [hRec] at ha hb
+      obtain ⟨c1, hc1, hn1, -⟩ := slotRetireTarget_names h0
+      obtain ⟨-, hw1, hy1⟩ := hHidA c1 _ hc1 hn1
+      exact .inr ⟨hw1 a ha, hy1 b hb⟩
+  refine ⟨hob, fun w hr => ?_, fun y hr => ?_⟩
+  · rcases hSplice w o hr with h | h
+    · exact hw w h
+    · exact h.1
+  · rcases hSplice o y hr with h | h
+    · exact hy y h
+    · exact h.2
+
+/-- **Setting a hidden thread's space is invisible when what it retires is
+hidden**: each of its three slot sets is (`threadSlotSet_preserves_projection`),
+given that the objects the thread's CSpace root, VSpace root and fault-handler
+slots name, and every untyped recording one, are hidden.  Each set after the
+first reads the state the ones before it leave, which holds the same later
+slots and records no new child but through a hidden object
+(`threadSlotSet_keepsHidden`). -/
+theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {ec : Concurrency.CoreId} {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr}
+    (hHigh : objectObservable ctx observer vtid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hHid : ∀ s ∈ [TCB.cspaceRootSlot, TCB.vspaceRootSlot, TCB.faultHandlerSlot],
+      threadSlotHidden ctx observer st vtid.val s)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hObjInv hStep
+  have hC := hHid TCB.cspaceRootSlot (by decide)
+  have hV := hHid TCB.vspaceRootSlot (by decide)
+  have hF := hHid TCB.faultHandlerSlot (by decide)
+  have hV1 := threadSlotSet_keepsHidden ctx observer ec hObjInv hT (by decide) (by decide) hC hV
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
+  have hF1 := threadSlotSet_keepsHidden ctx observer ec hObjInv hT (by decide) (by decide) hC hF
+    cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
+  have hF2 := threadSlotSet_keepsHidden ctx observer ec hI1 hT1 (by decide) (by decide) hV1 hF1
+    vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
+  exact (threadSlotSet_preserves_projection ctx observer ec hHigh hI2 hT2 _ hF2 _ _ _ _).trans
+    ((threadSlotSet_preserves_projection ctx observer ec hHigh hI1 hT1 _ hV1 _ _ _ _).trans
+      (threadSlotSet_preserves_projection ctx observer ec hHigh hObjInv hT _ hC _ _ _ _))

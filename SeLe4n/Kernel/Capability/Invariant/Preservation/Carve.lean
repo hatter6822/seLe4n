@@ -553,7 +553,8 @@ theorem CarveRequest.object_slotCap (untypedId childId : SeLe4n.ObjId) (ut : Unt
     simp only [CarveRequest.object, KernelObject.slotCap, TCB.spaceSlotCap, carvedTcb]
     split
     · next h =>
-      rcases (by omega : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2) with e | e | e <;> simp [e]
+      rcases (by omega : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 ∨ s.toNat = 3) with e | e | e | e <;>
+        simp [e]
     · rfl
   all_goals
     simp [CarveRequest.object, KernelObject.slotCap, carvedCNode,

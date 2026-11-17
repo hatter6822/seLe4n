@@ -660,19 +660,19 @@ writes** — the configure through core `core`'s control, with the move of a
 thread homed elsewhere to that core (`schedControlConfigure_confinedToCores`,
 `schedControlConfigure_replenishQueueOnCore_ne`). -/
 theorem schedLockSet_schedControlConfigure_coversWrites (st st' : SystemState) (core : CoreId)
-    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
+    (vScId : SeLe4n.ValidObjId) (budget period : Nat) (extraRefills badge flags : UInt64)
     (S : LockSet) (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
-      domain st = .ok ((), st'))
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
+       st = .ok ((), st'))
     (hS : LockSet.ofList? (schedLockSet_schedControlConfigure st core vScId.val) = some S) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S (schedControlConfigureWriteSet st core vScId.val)
     (schedControlConfigureReplenishCores st core vScId.val) st st'
     (LockSet.ofList?_pairs hS)
-    (schedControlConfigure_confinedToCores core vScId budget period priority deadline domain
+    (schedControlConfigure_confinedToCores core vScId budget period extraRefills badge flags
       st st' hObjInv hStep)
     (fun d hd => schedControlConfigure_replenishQueueOnCore_ne st st' core vScId budget period
-      priority deadline domain d hObjInv hd hStep)
+      extraRefills badge flags d hObjInv hd hStep)
 
 /-- **Cut C6b**: `.schedContextUnbind`'s footprint covers its writes.
 
@@ -922,9 +922,9 @@ theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites (ec : CoreId) (addr : C
 delete its steps are finalising deletes, finalisations and the slot copies, and
 the footprint names every scheduler-domain lock. -/
 theorem schedLockSet_copyThreadSpacesZombie_coversWrites (ec : CoreId)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (st st' : SystemState) (S : LockSet)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr) (st st' : SystemState) (S : LockSet)
     (hS : LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores) = some S)
-    (_h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (_h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     footprintCoversWrites S st st' :=
   schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
 

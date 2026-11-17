@@ -947,7 +947,6 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       (WS-ZA ZA4.6) — thread ids, the reply-waiter links and queue head.
     * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
-      `faultHandler` (a CPtr into the thread's own CSpace, not an id),
       `maxControlledPriority`, `pipBoost`, `timedOut`,
       `cpuAffinity` (a core), `pendingFault` (addresses, syndromes and a
       register window), `pendingMessage` (registers, a badge and a label:
@@ -963,7 +962,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, _pendingMessage, _registerContext,
-     _faultHandlerSet, _faultHandlerWord, boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
+     boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -1075,12 +1074,12 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 /-- PR #889 review round 8: a boot **SchedContext**'s own id (`scId`, which
     `replenishScOnCore` keys the replenishment queue by), its bound thread and
     — since WS-OD OD2.1 — its reply-stack head (`scReply`, a Reply object id).
-    Budgets, periods, priorities, replenishment entries and the consumed time hold no id.
+    Budgets, periods, the badge, replenishment entries and the consumed time hold no id.
     The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`),
     so the id check covers it. -/
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+  | ⟨scId, _budget, _period, _badge, _sporadic, _refillMax, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -2314,7 +2313,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     Unconstrained, and why: the scheduling parameters (`priority`, `domain`,
     `timeSlice`, `deadline`, `maxControlledPriority`, `cpuAffinity`) and the
     address-space fields (`cspaceRoot`, `vspaceRoot`, `ipcBuffer`,
-    `boundNotification`, `faultHandler`) are the deployment's to choose;
+    `boundNotification`) are the deployment's to choose;
     `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
     `timedOut` and `registerContext` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
@@ -2342,7 +2341,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
+     _registerContext, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -2461,7 +2460,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 
 /-- A boot **SchedContext** has a well-formed CBS budget, no bound thread and
     (WS-OD OD2.1) an empty reply stack.  `scId` is pinned to the slot by
-    `PlatformConfig.wellFormed`; `priority`, `deadline`, `domain`, `periodStart`
+    `PlatformConfig.wellFormed`; `badge`, `sporadic`, `periodStart`
     and `isActive` are the deployment's.
 
     `scReply` is refused for the same reason `bootSafeReplyCheck` refuses a
@@ -2471,7 +2470,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
     `donationChainWellFormed` violation before the first instruction runs. -/
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
-  | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+  | ⟨_scId, _budget, _period, _badge, _sporadic, _refillMax, _budgetRemaining, _periodStart,
      _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
      _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
@@ -2497,10 +2496,10 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     -- place that does not exist.
     sc.releaseCoreCode == 0 &&
     -- **WS-ZA ZA6.4**: and its refills conserved: the head and the pending
-    -- refills hold the budget exactly once, within the refill storage
+    -- refills hold the budget exactly once, within the context's refill limit
     -- (`refillsConserved`), the invariant the sliding-window bound rests on.
     decide (sc.refillTotal = sc.budget.val) &&
-    decide (sc.refillSize ≤ maxReplenishments) &&
+    decide (sc.refillSize ≤ sc.refillLimit) &&
     -- **WS-ZA ZA6.5**: and no consumed time.  A boot state has charged no
     -- context (seL4-MCS's boot contexts start with `scConsumed` 0), so a
     -- config-supplied count could only report time no thread ran.
@@ -2522,7 +2521,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.donationOrigin.isNone &&
        sc.releaseCoreCode == 0 &&
        decide (sc.refillTotal = sc.budget.val) &&
-       decide (sc.refillSize ≤ maxReplenishments) &&
+       decide (sc.refillSize ≤ sc.refillLimit) &&
        sc.consumed == 0 &&
        sc.yieldFromCode == 0) := rfl
 
@@ -4272,7 +4271,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
+     _registerContext, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -6478,7 +6477,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     rw [hTlb]; exact Architecture.tlbConsistent_empty _
   -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants at boot)
   have hExtBundle : schedulerInvariantBundleExtended ist.state := by
-    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- budgetPositive: every boot TCB is `.unbound`, whose budget arm is `True`.
       intro tid _
       cases hGet : ist.state.getTcb? tid with
@@ -6502,19 +6501,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2.1
         rw [hNone] at hBound; cases hBound
     · exact hEffective
-    · -- boundThreadDomainConsistent: all TCBs have .unbound at boot
-      intro tid scId
-      show match ist.state.objects[tid.toObjId]? with
-        | some (.tcb tcb) => tcb.schedContextBinding = .bound scId → _ | _ => True
-      cases hLookup : ist.state.objects[tid.toObjId]? with
-      | none => trivial
-      | some obj =>
-        cases obj with
-        | tcb tcb =>
-          intro hBound
-          have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
-          rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
-        | _ => trivial
   -- AG7-D, WS-ZA ZA4.4: notificationWaiterConsistent — boot notifications
   -- have empty queues, no boot TCB is blocked on anything, and no boot TCB
   -- holds a notification-queue link.
@@ -8244,9 +8230,9 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
     subst h
     rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with hB | ⟨c, _, rfl⟩
     · exact bootFromPlatformChecked_ok_capObject_of_config config base hChecked oid obj hB s hs
-    · have hc : (readyIdleThread c).spaceCells = Vector.replicate 3 none := rfl
-      have hn : ∀ (i : Nat) (hi : i < 3),
-          (Vector.replicate 3 none : Vector (Option Capability) 3)[i] = none :=
+    · have hc : (readyIdleThread c).spaceCells = Vector.replicate 4 none := rfl
+      have hn : ∀ (i : Nat) (hi : i < 4),
+          (Vector.replicate 4 none : Vector (Option Capability) 4)[i] = none :=
         fun i hi => Vector.getElem_replicate hi
       exact absurd (by
         simp only [KernelObject.slotCap, TCB.spaceSlotCap]

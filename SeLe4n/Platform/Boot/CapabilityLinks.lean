@@ -278,7 +278,8 @@ def bootCapabilitySlots (objs : List ObjectEntry) (extra : List SlotRef := []) :
     | .cnode cn => cn.occupiedSlots.map fun p => ⟨e.id, p.1⟩
     | _ => []) ++ extra ++
   objs.flatMap (fun e => match e.obj with
-    | .tcb _ => [⟨e.id, SeLe4n.Slot.ofNat 0⟩, ⟨e.id, SeLe4n.Slot.ofNat 1⟩, ⟨e.id, SeLe4n.Slot.ofNat 2⟩]
+    | .tcb _ => [⟨e.id, SeLe4n.Slot.ofNat 0⟩, ⟨e.id, SeLe4n.Slot.ofNat 1⟩, ⟨e.id, SeLe4n.Slot.ofNat 2⟩,
+      ⟨e.id, SeLe4n.Slot.ofNat 3⟩]
     | _ => [])
 
 /-- **WS-SX SX5.3: the slots the root-server stage fills** (`installRootServer`):
@@ -336,18 +337,21 @@ theorem mem_bootCapabilitySlots {objs : List ObjectEntry} {e : ObjectEntry} (he 
       rw [ho]; exact List.mem_map.mpr ⟨(s, c), CNode.mem_occupiedSlots_of_lookup hc, rfl⟩⟩
   | tcb t =>
     rw [ho] at hs
-    have hl : s.toNat < 3 := by
+    have hl : s.toNat < 4 := by
       simp only [KernelObject.slotCap, TCB.spaceSlotCap] at hs
       split at hs
       · assumption
       · exact absurd rfl hs
     refine .inr ⟨e, he, ?_⟩
     rw [ho]
-    rcases (by omega : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2) with h | h | h
+    rcases (by omega : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 ∨ s.toNat = 3) with h | h | h | h
     · rw [← SeLe4n.Slot.ofNat_toNat s, h]; exact List.mem_cons_self ..
     · rw [← SeLe4n.Slot.ofNat_toNat s, h]; exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
     · rw [← SeLe4n.Slot.ofNat_toNat s, h]
       exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+    · rw [← SeLe4n.Slot.ofNat_toNat s, h]
+      exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _
+        (List.mem_cons_of_mem _ (List.mem_cons_self ..)))
   | _ => rw [ho] at hs; exact absurd rfl hs
 
 /-- Linking a slot keeps every linked slot linked, and links the slot when it

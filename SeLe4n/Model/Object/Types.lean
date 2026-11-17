@@ -398,6 +398,16 @@ inductive CapTarget where
       names no object.  The notification the line signals is the capability in
       the line's IRQ node slot (`SystemState.irqNodeAddr`), seL4's `irq_node`. -/
   | irqHandler (irq : Nat)
+  /-- WS-SX SX6.7: the service registry, the target of `serviceRegister`,
+      `serviceRevoke` and `serviceQuery`.  The registry has no seL4
+      counterpart; giving it a capability type of its own means no message
+      label ever selects a registry operation on an endpoint, whose Send and
+      Call are IPC in seL4 whatever the label.  It names nothing — the
+      registry is a `SystemState` component, and the endpoint an operation
+      names is its extra capability 0 — so its one word is the reserved code
+      (`CapTarget.authorityCode`), as the audit trail's is.  Rights are the
+      second gate: `.write` to register and revoke, `.read` to query. -/
+  | serviceRegistry (code : Nat)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -966,6 +976,18 @@ def irqControl : Capability :=
 theorem irqControl_not_null : Capability.irqControl.isNull = false := by
   rfl
 
+/-- WS-SX SX6.7: **the service-registry capability**, as the boot hands it to
+the root task: `.read` to query (`syscallRequiredRight .serviceQuery`) and
+`.write` to register and revoke.  A holder can mint a read-only copy that
+queries and provably cannot register or revoke. -/
+def serviceRegistry : Capability :=
+  { target := .serviceRegistry CapTarget.authorityCode,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- WS-SX SX6.7: the service-registry capability is non-null. -/
+theorem serviceRegistry_not_null : Capability.serviceRegistry.isNull = false := by
+  rfl
+
 /-- WS-ZA ZA6.32: **interrupt line `irq`'s handler capability**, as
 `seL4_IRQControl_Get` issues it: the `.write` right the handler invocations
 require (`syscallRequiredRight .irqHandlerAck`) and nothing else. -/
@@ -1456,12 +1478,16 @@ line. -/
 of line. -/
 @[noinline] def CapTarget.ofIrqControl (code : Nat) : CapTarget := .irqControl code
 
+/-- WS-SX SX6.7: the service-registry target of word `code`, built fresh, out
+of line. -/
+@[noinline] def CapTarget.ofServiceRegistry (code : Nat) : CapTarget := .serviceRegistry code
+
 /-- WS-UC UC4: the target naming slot `word`'s pair, built fresh, out of line. -/
 @[noinline] def CapTarget.ofCnodeSlotWord (word : Nat) : CapTarget := .cnodeSlotWord word
 
 /-- WS-UC UC4: **a target's constructor, as a number** (`0` object, `1` CNode
 slot, `2` reply, `3` audit trail, `4` scheduling control, `5` IRQ control, `6`
-IRQ handler). -/
+IRQ handler, `7` service registry). -/
 def CapTarget.tag : CapTarget → Nat
   | .object _ => 0
   | .cnodeSlotWord _ => 1
@@ -1470,6 +1496,7 @@ def CapTarget.tag : CapTarget → Nat
   | .schedControl _ => 4
   | .irqControl _ => 5
   | .irqHandler _ => 6
+  | .serviceRegistry _ => 7
 
 /-- WS-UC UC4: `CapTarget.tag`, out of line: `CapTarget.over` branches on it
 without the compiler seeing which constructor each branch holds. -/
@@ -1486,6 +1513,7 @@ def CapTarget.word : CapTarget → Nat
   | .schedControl core => core
   | .irqControl code => code
   | .irqHandler line => line
+  | .serviceRegistry code => code
 
 /-- WS-UC UC4: **the target of constructor `k` carrying word `w`**, the inverse
 of `tag` and `word` (`ofTagWord_tag_word`); a `k` past the last constructor
@@ -1498,6 +1526,7 @@ names an IRQ handler. -/
   | 3 => .auditTrail w
   | 4 => .schedControl w
   | 5 => .irqControl w
+  | 7 => .serviceRegistry w
   | _ => .irqHandler w
 
 @[simp] theorem CapTarget.ofTagWord_tag_word (t : CapTarget) :
@@ -1521,41 +1550,47 @@ and builds the new target in its cell, allocating nothing.  Equal to
     match t, h0 with
     | .object _, _ => CapTarget.ofTagWord k w
     | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h1 : t.tagOf = 1 then
     match t, h1 with
     | .cnodeSlotWord _, _ => CapTarget.ofTagWord k w
     | .object _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h2 : t.tagOf = 2 then
     match t, h2 with
     | .replyCap _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h3 : t.tagOf = 3 then
     match t, h3 with
     | .auditTrail _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h4 : t.tagOf = 4 then
     match t, h4 with
     | .schedControl _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h5 : t.tagOf = 5 then
     match t, h5 with
     | .irqControl _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
-    | .schedControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .schedControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
+  else if h6 : t.tagOf = 6 then
+    match t, h6 with
+    | .irqHandler _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
+    | .schedControl _, h | .irqControl _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else
-    match t, h0, h1, h2, h3, h4, h5 with
-    | .irqHandler _, _, _, _, _, _, _ => CapTarget.ofTagWord k w
-    | .object _, h, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .cnodeSlotWord _, _, h, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .replyCap _, _, _, h, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .auditTrail _, _, _, _, h, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .schedControl _, _, _, _, _, h, _ => absurd (by simp [CapTarget.tag]) h
-    | .irqControl _, _, _, _, _, _, h => absurd (by simp [CapTarget.tag]) h
+    match t, h0, h1, h2, h3, h4, h5, h6 with
+    | .serviceRegistry _, _, _, _, _, _, _, _ => CapTarget.ofTagWord k w
+    | .object _, h, _, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .cnodeSlotWord _, _, h, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .replyCap _, _, _, h, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .auditTrail _, _, _, _, h, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .schedControl _, _, _, _, _, h, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .irqControl _, _, _, _, _, _, h, _ => absurd (by simp [CapTarget.tag]) h
+    | .irqHandler _, _, _, _, _, _, _, h => absurd (by simp [CapTarget.tag]) h
 
 theorem CapTarget.over_eq (t : CapTarget) (k w : Nat) :
     t.over k w = CapTarget.ofTagWord k w := by
@@ -1613,32 +1648,35 @@ so the capability built from it has no join point before it. -/
 @[noinline] def AccessRightSet.keepOr (rr rights : AccessRightSet) : AccessRightSet :=
   if rr = rights then rr else rights
 
-/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` and nothing
-else, written over the record `r` (a slot's spare), its target cell written over
-too when it already names an object (`CapTarget.objectOver`): the record is
-matched apart and rebuilt with no join point between, so it is written in place,
-and its target, then owned alone, is too.  Equal to that capability
-(`overwriteObject_eq`). -/
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights`, the badge
+`badgeWord` (carried when `badged`) and nothing else, written over the record
+`r` (a slot's spare), its target cell written over too when it already names
+an object (`CapTarget.objectOver`): the record is matched apart and rebuilt with
+no join point between, so it is written in place, and its target, then owned
+alone, is too.  Equal to that capability (`overwriteObject_eq`). -/
 @[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) : Capability :=
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (guard : UInt64)
+    (guardSize : UInt8) : Capability :=
   match r with
   | ⟨t, rr, _, _, _, _, _, _, _, _, _⟩ =>
-    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0,
+    ⟨t.objectOver id, rr.keepOr rights, badgeWord, badged, default, default, 0, false, 0,
       guard, guardSize⟩
 
-/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
-fresh out of line, so its target is built only on the path that builds it. -/
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` and the badge
+alone, built fresh out of line, so its target is built only on the path that
+builds it. -/
 @[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet)
-    (guard : UInt64) (guardSize : UInt8) : Capability :=
-  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (guard : UInt64) (guardSize : UInt8) : Capability :=
+  ⟨.object id, rights, badgeWord, badged, default, default, 0, false, 0, guard, guardSize⟩
 
 theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
   unfold keepOr; split <;> simp_all
 
 theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) (guard : UInt64) (guardSize : UInt8) :
-    r.overwriteObject id rights guard guardSize =
-      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, guard, guardSize⟩ := by
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (guard : UInt64)
+    (guardSize : UInt8) :
+    r.overwriteObject id rights badgeWord badged guard guardSize =
+      ⟨.object id, rights, badgeWord, badged, default, default, 0, false, 0, guard, guardSize⟩ := by
   obtain ⟨t, rr, _, _, _, _, _, _, _, _, _⟩ := r
   unfold overwriteObject
   dsimp only
@@ -1671,7 +1709,7 @@ theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
 
 /-- WS-UC UC4: **the target `t`, in a cell of its own**: each constructor
 rebuilt out of line (`ofObject`, `ofReplyCap`, `ofSchedControl`, `ofIrqHandler`,
-`ofAuditTrail`, `ofIrqControl`, `ofCnodeSlotWord`), so the record that holds the
+`ofAuditTrail`, `ofIrqControl`, `ofServiceRegistry`, `ofCnodeSlotWord`), so the record that holds the
 result shares no cell with whatever holds `t` (a source slot's record, a reply
 object's own target).  Equal to `t` (`fresh_eq`). -/
 @[noinline] def CapTarget.fresh (t : CapTarget) : CapTarget :=
@@ -1682,6 +1720,7 @@ object's own target).  Equal to `t` (`fresh_eq`). -/
   | .irqHandler line => CapTarget.ofIrqHandler line
   | .auditTrail code => CapTarget.ofAuditTrail code
   | .irqControl code => CapTarget.ofIrqControl code
+  | .serviceRegistry code => CapTarget.ofServiceRegistry code
   | .cnodeSlotWord word => CapTarget.ofCnodeSlotWord word
 
 theorem CapTarget.fresh_eq (t : CapTarget) : t.fresh = t := by
@@ -1753,27 +1792,44 @@ def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
 
 end SpareCells
 
+/-- **A record of its own for each of a thread's four space slots** (seL4-MCS's
+TCB CTEs, `tcbCTable`, `tcbVTable`, `tcbBuffer` and `tcbFaultHandler`, which
+exist from the thread's creation), so the thread's first space or buffer set
+writes over its slot's record rather than allocating one.  Each record targets
+an object named by its slot number, so the compiler cannot share one record
+between the slots; a carved or boot thread gets its own copies
+(`KernelObject.unshareFresh`).  The array is built at exactly four entries
+(`Array.ofFn` pushes onto an array it owns, allocated at capacity four): a
+literal is built by pushes onto a shared array, which over-expands it, and the
+carve copies the array at its capacity. -/
+def carvedTcbSpareCells : Array (Option Capability) :=
+  Array.ofFn (n := 4) fun i =>
+    some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
   domain : SeLe4n.DomainId
-  /-- The thread's three capability slots, seL4's `tcbCTable`, `tcbVTable` and
-      `tcbBuffer`: slot 0 holds the capability to its CSpace root, slot 1 the
-      capability to its VSpace root (`TCB.cspaceRootSlot`, `TCB.vspaceRootSlot`),
-      read through `TCB.cspaceRoot` and `TCB.vspaceRoot`, and slot 2 the
-      capability to the frame of its IPC buffer (`TCB.ipcBufferSlot`), which
-      only the boot fills, for the root task.  The same cell type as a CNode's
-      slot array (`CNode.cells`); an empty root slot reads as the sentinel root.
+  /-- The thread's four capability slots, seL4's `tcbCTable`, `tcbVTable`,
+      `tcbBuffer` and MCS's `tcbFaultHandler`: slot 0 holds the capability to
+      its CSpace root, slot 1 the capability to its VSpace root
+      (`TCB.cspaceRootSlot`, `TCB.vspaceRootSlot`), read through
+      `TCB.cspaceRoot` and `TCB.vspaceRoot`, slot 2 the capability to the
+      frame of its IPC buffer (`TCB.ipcBufferSlot`), and slot 3 the capability
+      to the endpoint its faults are sent to (`TCB.faultHandlerSlot`), which
+      `TCB_SetSpace` copies in, and which fault delivery reads.  The same
+      cell type as a CNode's slot array (`CNode.cells`); an empty root slot
+      reads as the sentinel root, an empty fault-handler slot as no handler.
       A fixed-size vector, so a write replaces one entry in place.  The empty
-      default is built at exactly three entries (`Vector.replicate`, compiled to
+      default is built at exactly four entries (`Vector.replicate`, compiled to
       `lean_mk_array`): a literal is built by pushes onto a shared array, which
       over-expands it, and the carve copies the array at its capacity. -/
-  spaceCells : Vector (Option Capability) 3 := Vector.replicate 3 none
-  /-- The derivation links of the three slots, `slotLinkWords` words per slot in
+  spaceCells : Vector (Option Capability) 4 := Vector.replicate 4 none
+  /-- The derivation links of the four slots, `slotLinkWords` words per slot in
       the layout of a CNode's `links` (parent, first child, next and previous
       sibling, each an object word and a slot word, a word of 0 meaning no
       link). -/
-  spaceLinks : Vector Nat (slotLinkWords * 3) := Vector.replicate _ 0
+  spaceLinks : Vector Nat (slotLinkWords * 4) := Vector.replicate _ 0
   ipcBuffer : SeLe4n.VAddr
   /-- WS-ZA ZA4.7: the object word of the thread's IPC state, read with
       `ipcStateCode` through `TCB.ipcState` and written with it through
@@ -1815,17 +1871,6 @@ structure TCB where
       the incoming thread's context from here. Zero-initialized by default.
       See `contextMatchesCurrent` in `Scheduler/Invariant.lean`. -/
   registerContext : SeLe4n.RegisterFile := default
-  /-- R7-D/L-06: Capability pointer to the fault handler endpoint.
-      In seL4, when a thread faults (e.g., VM fault, cap fault), the kernel
-      sends a fault IPC message to the endpoint identified by this capability.
-      `none` = no fault handler configured (faults are silently dropped).
-      WS-ZA ZA5.2: stored as a flag and the address's word, read through the
-      view `TCB.faultHandler`, so setting a handler writes no `some` cell and
-      boxes no word. -/
-  faultHandlerSet : Bool := false
-  /-- WS-ZA ZA5.2: the fault handler's capability address, meaningful when
-      `faultHandlerSet` holds (see `TCB.faultHandler`). -/
-  faultHandlerWord : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
   /-- R7-D/L-06: Object ID of the bound notification object.
       In seL4, a thread may bind one notification object. Signals on the bound
       notification can wake the thread when it is waiting on an endpoint.
@@ -2083,15 +2128,15 @@ structure TCB where
       `0`, so an id reused after a thread is destroyed is the origin of no
       context, whatever a context still records.  -/
   originScCode : Nat := 0
-  /-- WS-ZA ZA5.4 part 26: **the records the CSpace and VSpace root slots
-      keep while empty**, as a CNode's slots keep theirs (`CNode.spare`):
-      entry `i` is the capability cell slot `i` last held, or the one the
-      carve made with the thread (seL4's TCB CTEs, which exist from the
-      retype), so the next capability written there overwrites it in place.
-      The IPC-buffer slot (`TCB.ipcBufferSlot`) has no entry: only the boot
-      writes it, building the root task's buffer capability.  Logically one
-      value (`SpareCells`), so no theorem reads it. -/
-  spaceSpare : SpareCells := Squash.mk #[none, none]
+  /-- WS-ZA ZA5.4 part 26, WS-SX SX6.6 and SX6.5: **the records the four space
+      slots keep while empty** (the CSpace root, the VSpace root, the
+      IPC-buffer slot and the fault handler's), as a CNode's slots keep theirs (`CNode.spare`): entry `i` is the
+      capability cell slot `i` last held, or the one made with the thread
+      (seL4's TCB CTEs, which exist from the retype; `carvedTcbSpareCells`),
+      so the next capability written there, by a space set or a buffer set,
+      overwrites it in place.  Logically one value (`SpareCells`), so no
+      theorem reads it. -/
+  spaceSpare : SpareCells := Squash.mk carvedTcbSpareCells
   /-- WS-ZA ZA5.11: **the thread's declassification provenance**, as plain
       words: eight tag words, the count of those in use and the saturated bit,
       read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
@@ -2240,13 +2285,14 @@ macro "yield_code_kept" : tactic =>
     | (simp_all; done)
     | (intro _; simp_all; done))
 
-/-! ### A thread's space slots (seL4's `tcbCTable`, `tcbVTable` and `tcbBuffer`)
+/-! ### A thread's slots (seL4's `tcbCTable`, `tcbVTable`, `tcbBuffer` and `tcbFaultHandler`)
 
 A thread holds its CSpace and VSpace roots as capabilities in two slots of its
-own (`TCB.spaceCells`), slot 0 the CSpace root and slot 1 the VSpace root, and
-in slot 2 the capability to its IPC buffer's frame.  The roots are reads of
-those slots: the object the capability names, or the sentinel when the slot is
-empty (an unconfigured thread). -/
+own (`TCB.spaceCells`), slot 0 the CSpace root and slot 1 the VSpace root, in
+slot 2 the capability to its IPC buffer's frame, and in slot 3 the capability
+to its fault-handler endpoint (seL4-MCS's `tcbFaultHandler`).  The roots are
+reads of those slots: the object the capability names, or the sentinel when the
+slot is empty (an unconfigured thread). -/
 
 /-- The slot index of a thread's CSpace root capability. -/
 @[inline] def TCB.cspaceRootSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
@@ -2259,16 +2305,29 @@ empty (an unconfigured thread). -/
 builds (`create_ipcbuf_frame_cap`, `create_initial_thread`). -/
 @[inline] def TCB.ipcBufferSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
 
+/-- The slot index of the capability to a thread's fault-handler endpoint,
+seL4-MCS's `tcbFaultHandler`: `TCB_SetSpace` copies the endpoint capability
+in (`invokeTCB_ThreadControlCaps`), and fault delivery sends to the endpoint it
+names (`handleFault`, `sendFaultIPC`).  Empty on a thread with no handler. -/
+@[inline] def TCB.faultHandlerSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 3
+
+/-- The rights of the slot a fault-handler capability is copied into: every
+right, so the copy keeps the rights of the capability it is derived from, as
+seL4's `deriveCap` of an endpoint capability does. -/
+def TCB.faultHandlerRights : AccessRightSet :=
+  AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
+
 /-- The rights of the capability a CSpace root slot holds when written from a
-root's id: read, write and grant, the rights `resolveSetSpace` asks of the
-capability it installs (`.grant` and `.write`) together with reading the
-CNode's slots.  Not inlined: a constant, built once, so a write of the slot
+root's id: read, write and grant.  A copy from a source capability takes the
+intersection with these (`spaceCopyOf`), so it keeps the source's rights and
+never gains one.  Not inlined: a constant, built once, so a write of the slot
 builds no rights list. -/
 def TCB.cspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
 
 /-- The rights of the capability a VSpace root slot holds when written from a
-root's id: read and write, `resolveSetSpace` asking `.write` of it.  A constant,
-as `cspaceRootRights` is. -/
+root's id: read and write.  A copy from a source capability keeps the
+source's rights within these, as for `cspaceRootRights`.  A constant, as
+`cspaceRootRights` is. -/
 def TCB.vspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
 
 /-- The object a space slot's capability names; the sentinel when the slot is
@@ -2315,18 +2374,18 @@ is a zero guard of `64 - radix` bits, so a one-level root resolves a whole
     | mk v => simp only [SeLe4n.ObjId.isReserved, decide_eq_true_eq] at h; subst h; rfl
   · simp only [h, Bool.false_eq_true, if_false]
 
-/-- The three space slots of a thread whose CSpace root is CNode `c`, named with
+/-- The four slots of a thread whose CSpace root is CNode `c`, named with
 the root guard `guard` of `guardSize` bits (`cspaceCellOf`), and whose VSpace
-root is `v`, its buffer slot empty. -/
+root is `v`, its buffer and fault-handler slots empty. -/
 @[inline] def TCB.spaceCellsOfRoot (c : SeLe4n.ObjId) (guard : UInt64) (guardSize : UInt8)
-    (v : SeLe4n.ObjId) : Vector (Option Capability) 3 :=
-  #v[TCB.cspaceCellOf c guard guardSize, TCB.spaceCellOf v TCB.vspaceRootRights, none]
+    (v : SeLe4n.ObjId) : Vector (Option Capability) 4 :=
+  #v[TCB.cspaceCellOf c guard guardSize, TCB.spaceCellOf v TCB.vspaceRootRights, none, none]
 
-/-- The three space slots of a thread whose CSpace root is `c` and VSpace root
+/-- The four slots of a thread whose CSpace root is `c` and VSpace root
 `v`, each root slot the capability the root implies (`spaceCellOf`), its buffer
-slot empty. -/
-@[inline] def TCB.spaceCellsOf (c v : SeLe4n.ObjId) : Vector (Option Capability) 3 :=
-  #v[TCB.spaceCellOf c TCB.cspaceRootRights, TCB.spaceCellOf v TCB.vspaceRootRights, none]
+and fault-handler slots empty. -/
+@[inline] def TCB.spaceCellsOf (c v : SeLe4n.ObjId) : Vector (Option Capability) 4 :=
+  #v[TCB.spaceCellOf c TCB.cspaceRootRights, TCB.spaceCellOf v TCB.vspaceRootRights, none, none]
 
 /-- **The thread's CSpace root**: the object its CSpace root slot names. -/
 @[reducible, inline] def TCB.cspaceRoot (t : TCB) : SeLe4n.ObjId :=
@@ -2405,10 +2464,11 @@ code alone reads the old value by `rfl`.  Written as
 @[reducible, inline] def TCB.replyObject (t : TCB) : Option SeLe4n.ReplyId :=
   SeLe4n.ReplyId.ofOptCode t.replyObjectCode
 
-/-- WS-ZA ZA5.2: the fault handler's capability address, `none` when none is
-configured: the view of the flag and word the TCB stores. -/
-@[reducible, inline] def TCB.faultHandler (t : TCB) : Option SeLe4n.CPtr :=
-  if t.faultHandlerSet then some t.faultHandlerWord else none
+/-- **The thread's fault-handler capability**, the one its fault-handler slot
+holds (`TCB.faultHandlerSlot`, seL4-MCS's `tcbFaultHandler`), `none` when the
+slot is empty. -/
+@[reducible, inline] def TCB.faultHandlerCap (t : TCB) : Option Capability :=
+  t.spaceCells[3]
 
 /-- WS-ZA ZA5.2: the bound notification, read from its code.  Reducible, so a
 record update that leaves the code alone reads the old value by `rfl`.  Written
@@ -2503,8 +2563,8 @@ every other field is the record's. -/
 @[simp] theorem TCB.setIpcState_registerContext (t : TCB) (s : ThreadIpcState) :
     (t.setIpcState s).registerContext = t.registerContext := rfl
 
-@[simp] theorem TCB.setIpcState_faultHandler (t : TCB) (s : ThreadIpcState) :
-    (t.setIpcState s).faultHandler = t.faultHandler := rfl
+@[simp] theorem TCB.setIpcState_faultHandlerCap (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).faultHandlerCap = t.faultHandlerCap := rfl
 
 @[simp] theorem TCB.setIpcState_boundNotification (t : TCB) (s : ThreadIpcState) :
     (t.setIpcState s).boundNotification = t.boundNotification := rfl
@@ -2579,26 +2639,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).schedContextBinding =
-      SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).schedContextBinding =
+      SeLe4n.Kernel.SchedContextBinding.ofCodes f17 f18 := rfl
 
 /-- The roots of a constructed TCB are the objects its first two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).ipcState = ThreadIpcState.ofCodes f7 f58 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ipcState = ThreadIpcState.ofCodes f7 f56 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -2643,14 +2703,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -2660,11 +2720,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).ntfnPrev = SeLe4n.ThreadId.ofOptCode f46 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnPrev = SeLe4n.ThreadId.ofOptCode f44 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76 f77).ntfnNext = SeLe4n.ThreadId.ofOptCode f47 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnNext = SeLe4n.ThreadId.ofOptCode f45 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -2979,7 +3039,6 @@ instance : BEq TCB where
     a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
     a.registerContext == b.registerContext &&
-    a.faultHandlerSet == b.faultHandlerSet && a.faultHandlerWord == b.faultHandlerWord &&
     a.boundNotification == b.boundNotification &&
     a.schedContextBinding == b.schedContextBinding &&
     a.timeoutBudget == b.timeoutBudget &&
@@ -3302,7 +3361,6 @@ theorem TCB.ext {a b : TCB}
     (hQPrev : a.queuePrev = b.queuePrev) (hQPPrev : a.queuePPrev = b.queuePPrev)
     (hQNext : a.queueNext = b.queueNext) (hPend : a.pendingMessage = b.pendingMessage)
     (hRC : a.registerContext = b.registerContext)
-    (hFhS : a.faultHandlerSet = b.faultHandlerSet) (hFhW : a.faultHandlerWord = b.faultHandlerWord)
     (hBn : a.boundNotification = b.boundNotification)
     (hScC : a.scBindingScCode = b.scBindingScCode)
     (hScO : a.scBindingOwnerCode = b.scBindingOwnerCode)
@@ -3382,7 +3440,7 @@ theorem TCB.ext {a b : TCB}
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCells, hLinks, hBuf, hIpcO, hTs, hSlice, hDeadline,
-         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
+         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hF0, hF1, hF2, hF3, hF4, hF5, hF6, hF7, hF8, hF9,
          hF10, hF11, hF12, hF13, hF14, hF15, hF16, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
@@ -4884,8 +4942,6 @@ inductive SyscallId where
   | auditDrain             -- WS-SM SM9.A.6: drain a prefix of the declassification audit trail
   | declassifySignal       -- WS-SM SM9.C.8: a notification signal whose badge crosses a
                            -- label boundary the base policy denies, audited per hop
-  | tcbSetFaultHandler     -- Review round (PR #887): install a thread's fault-handler CPtr
-                           -- (seL4_TCB_SetSpace's fault_ep), validated at set time
   | cspaceRevoke           -- WS-RR RR8.16 (`v0.35.190`): revoke a capability's derivations
                            -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdtFinalising`
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
@@ -4962,7 +5018,6 @@ namespace SyscallId
   | .auditRead             => 31
   | .auditDrain            => 32
   | .declassifySignal      => 33
-  | .tcbSetFaultHandler    => 34
   | .cspaceRevoke          => 35
   | .untypedRetype         => 36
   | .untypedReset          => 37
@@ -4978,15 +5033,17 @@ namespace SyscallId
   | .irqHandlerClear       => 47
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 47
+def count : Nat := 46
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
 def encodingBound : Nat := 48
 
 /-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
-    lifecycle retype (WS-ZA ZA5.4 part 14). -/
-def retiredNumbers : List Nat := [8]
+    lifecycle retype (WS-ZA ZA5.4 part 14), and `34`, the fault-handler
+    configuration that `tcbSetSpace` now carries as its extra capability 0
+    (WS-SX SX6.5). -/
+def retiredNumbers : List Nat := [8, 34]
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -5024,7 +5081,6 @@ def retiredNumbers : List Nat := [8]
   | 31 => some .auditRead
   | 32 => some .auditDrain
   | 33 => some .declassifySignal
-  | 34 => some .tcbSetFaultHandler
   | 35 => some .cspaceRevoke
   | 36 => some .untypedRetype
   | 37 => some .untypedReset
@@ -5075,7 +5131,6 @@ instance : ToString SyscallId where
     | .auditRead             => "auditRead"
     | .auditDrain            => "auditDrain"
     | .declassifySignal      => "declassifySignal"
-    | .tcbSetFaultHandler    => "tcbSetFaultHandler"
     | .cspaceRevoke          => "cspaceRevoke"
     | .untypedRetype         => "untypedRetype"
     | .untypedReset          => "untypedReset"
@@ -5105,7 +5160,7 @@ def all : List SyscallId :=
   , .tcbSetIPCBuffer, .tcbSetAffinity
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
-  , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
+  , .auditRead, .auditDrain, .declassifySignal
   , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
   , .schedContextYieldTo, .irqHandlerAck, .irqControlGet

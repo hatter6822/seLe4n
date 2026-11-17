@@ -1,80 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! CSpace syscall argument structures.
 //!
-//! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 76–171.
+//! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`.
 
 use sele4n_types::{AccessRights, Badge, CPtr, KernelError, KernelResult, Slot};
 
-/// The CNode operation word: the fourth argument of `cspaceCopy`,
-/// `cspaceMove` and `cspaceMint`, packing the two depths (and, for a copy or
-/// a mint, the rights mask).
-///
-/// Lean: `CNodeOpWord` (SyscallArgDecode.lean).  Both sides render their
-/// layout by decoding each bit alone, against
-/// `tests/fixtures/abi_layout.expected` (`tests/conformance.rs`).
-pub mod cnode_op_word {
-    /// Bits `[0, 8)`: the destination depth.
-    pub const DEST_DEPTH_SHIFT: u32 = 0;
-    /// Bits `[8, 16)`: the source depth.
-    pub const SRC_DEPTH_SHIFT: u32 = 8;
-    /// Each depth's width.
-    pub const DEPTH_WIDTH: u32 = 8;
-    /// Bits `[16, 21)`: a copy's or a mint's rights mask.
-    pub const RIGHTS_SHIFT: u32 = 16;
-    /// The rights' width.
-    pub const RIGHTS_WIDTH: u32 = 5;
+/// The low five bits of a rights word name the rights; seL4's
+/// `rightsFromWord` reads them and ignores the rest.
+const RIGHTS_MASK: u64 = 0x1F;
 
-    const DEPTH_MASK: u64 = (1 << DEPTH_WIDTH) - 1;
-    const RIGHTS_MASK: u64 = (1 << RIGHTS_WIDTH) - 1;
-
-    /// The word naming the two depths and the rights.
-    pub const fn pack(dest_depth: u8, src_depth: u8, rights: u8) -> u64 {
-        ((dest_depth as u64) << DEST_DEPTH_SHIFT)
-            | ((src_depth as u64) << SRC_DEPTH_SHIFT)
-            | (((rights as u64) & RIGHTS_MASK) << RIGHTS_SHIFT)
-    }
-
-    /// The destination depth a word names.
-    pub const fn dest_depth(word: u64) -> u8 {
-        ((word >> DEST_DEPTH_SHIFT) & DEPTH_MASK) as u8
-    }
-
-    /// The source depth a word names.
-    pub const fn src_depth(word: u64) -> u8 {
-        ((word >> SRC_DEPTH_SHIFT) & DEPTH_MASK) as u8
-    }
-
-    /// The rights mask a copy's or a mint's word names.
-    pub const fn rights(word: u64) -> u8 {
-        ((word >> RIGHTS_SHIFT) & RIGHTS_MASK) as u8
-    }
-
-    /// A move's word sets no bit past the two depths.
-    pub const fn addressing_fits(word: u64) -> bool {
-        word >> RIGHTS_SHIFT == 0
-    }
-
-    /// A copy's or a mint's word sets no bit past the depths and the rights.
-    pub const fn rights_fits(word: u64) -> bool {
-        word >> (RIGHTS_SHIFT + RIGHTS_WIDTH) == 0
+/// The rights a rights word names (its high bits ignored, as in seL4).
+fn rights_of_word(word: u64) -> AccessRights {
+    match AccessRights::try_from((word & RIGHTS_MASK) as u8) {
+        Ok(r) => r,
+        Err(_) => AccessRights::EMPTY,
     }
 }
 
-/// The two slots of a CNode Copy or Move, as seL4 names them: the destination
-/// by an index and a depth in the invoked CNode, the source by an index and a
-/// depth in the source root, a CNode capability's address in the caller's
-/// CSpace.
-/// Register mapping: x2=destIndex, x3=srcRoot, x4=srcIndex, x5=the depths
-/// ([`cnode_op_word`]).
+/// The two slots of a CNode Copy, Mint or Move, in seL4's
+/// `decodeCNodeInvocation` word order: the destination by an index and a
+/// depth in the invoked CNode, the source by an index and a depth in the
+/// source root.  The source root is not a word: it is the message's extra
+/// capability 0, named in the IPC buffer's `caps_or_badges[0]`.
+/// Message registers: 0=destIndex, 1=destDepth, 2=srcIndex, 3=srcDepth.
+/// A depth outside `1..=64` is the kernel's `RangeError`, refused at lookup.
 ///
 /// Lean: `CNodeOpArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CNodeOpArgs {
     pub dest_index: CPtr,
-    pub src_root: CPtr,
+    pub dest_depth: u64,
     pub src_index: CPtr,
-    pub dest_depth: u8,
-    pub src_depth: u8,
+    pub src_depth: u64,
 }
 
 impl CNodeOpArgs {
@@ -82,36 +39,31 @@ impl CNodeOpArgs {
     pub const fn encode(&self) -> [u64; 4] {
         [
             self.dest_index.raw(),
-            self.src_root.raw(),
+            self.dest_depth,
             self.src_index.raw(),
-            cnode_op_word::pack(self.dest_depth, self.src_depth, 0),
+            self.src_depth,
         ]
     }
 
-    /// Decode from message registers. Requires 4 registers; a depth word with
-    /// a bit set past the two depths is `InvalidArgument`.
+    /// Decode from message registers. Requires 4 registers (seL4's
+    /// `TruncatedMessage` below that).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 {
             return Err(KernelError::InvalidMessageInfo);
         }
-        if !cnode_op_word::addressing_fits(regs[3]) {
-            return Err(KernelError::InvalidArgument);
-        }
         Ok(Self {
             dest_index: CPtr::from(regs[0]),
-            src_root: CPtr::from(regs[1]),
+            dest_depth: regs[1],
             src_index: CPtr::from(regs[2]),
-            dest_depth: cnode_op_word::dest_depth(regs[3]),
-            src_depth: cnode_op_word::src_depth(regs[3]),
+            src_depth: regs[3],
         })
     }
 }
 
 /// Arguments for `cspaceCopy` (syscall 5): the two slots and the rights mask
-/// the copy's rights are masked with (seL4's `seL4_CNode_Copy`, whose rights
-/// operand masks the copied capability; it never refuses one).
-/// Register mapping: x2=destIndex, x3=srcRoot, x4=srcIndex, x5=the depths and
-/// the rights ([`cnode_op_word`]).
+/// the copied capability's rights are masked with (seL4's
+/// `seL4_CNode_Copy`; it never refuses a mask).
+/// Message registers: 0..3 as [`CNodeOpArgs`], 4=rights.
 ///
 /// Lean: `CSpaceCopyArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,39 +73,21 @@ pub struct CSpaceCopyArgs {
 }
 
 impl CSpaceCopyArgs {
-    /// Encode into message registers.
-    pub const fn encode(&self) -> [u64; 4] {
-        [
-            self.slots.dest_index.raw(),
-            self.slots.src_root.raw(),
-            self.slots.src_index.raw(),
-            cnode_op_word::pack(
-                self.slots.dest_depth,
-                self.slots.src_depth,
-                self.rights.raw(),
-            ),
-        ]
+    /// Encode into message registers (the fifth goes to the IPC buffer).
+    pub const fn encode(&self) -> [u64; 5] {
+        let s = self.slots.encode();
+        [s[0], s[1], s[2], s[3], self.rights.raw() as u64]
     }
 
-    /// Decode from message registers. Requires 4 registers; a word with a bit
-    /// set past the depths and the rights is `InvalidArgument`.
+    /// Decode from message registers. Requires 5 registers; the rights
+    /// word's bits past the five rights are ignored, as in seL4.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 4 {
+        if regs.len() < 5 {
             return Err(KernelError::InvalidMessageInfo);
         }
-        if !cnode_op_word::rights_fits(regs[3]) {
-            return Err(KernelError::InvalidArgument);
-        }
         Ok(Self {
-            slots: CNodeOpArgs {
-                dest_index: CPtr::from(regs[0]),
-                src_root: CPtr::from(regs[1]),
-                src_index: CPtr::from(regs[2]),
-                dest_depth: cnode_op_word::dest_depth(regs[3]),
-                src_depth: cnode_op_word::src_depth(regs[3]),
-            },
-            rights: AccessRights::try_from(cnode_op_word::rights(regs[3]))
-                .map_err(|_| KernelError::InvalidArgument)?,
+            slots: CNodeOpArgs::decode(regs)?,
+            rights: rights_of_word(regs[4]),
         })
     }
 }
@@ -165,8 +99,8 @@ pub type CSpaceMoveArgs = CNodeOpArgs;
 /// Arguments for `cspaceMint` (syscall 4): a copy's two slots and rights
 /// mask, and the badge.  The kernel masks the new capability's rights with
 /// the requested ones (seL4's `maskCapRights`); it never refuses them.
-/// Register mapping: x2..x5 as [`CSpaceCopyArgs`], the badge in the IPC
-/// buffer's overflow slot 0 (message register 4).
+/// Message registers: 0..4 as [`CSpaceCopyArgs`], 5=badge (seL4's
+/// `seL4_CNode_Mint` order).
 ///
 /// Lean: `CSpaceMintArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,20 +110,21 @@ pub struct CSpaceMintArgs {
 }
 
 impl CSpaceMintArgs {
-    /// Encode into message registers (the fifth goes to the IPC buffer).
-    pub const fn encode(&self) -> [u64; 5] {
+    /// Encode into message registers (the fifth and sixth go to the IPC
+    /// buffer).
+    pub const fn encode(&self) -> [u64; 6] {
         let c = self.copy.encode();
-        [c[0], c[1], c[2], c[3], self.badge.raw()]
+        [c[0], c[1], c[2], c[3], c[4], self.badge.raw()]
     }
 
-    /// Decode from message registers. Requires 5 registers.
+    /// Decode from message registers. Requires 6 registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 5 {
+        if regs.len() < 6 {
             return Err(KernelError::InvalidMessageInfo);
         }
         Ok(Self {
             copy: CSpaceCopyArgs::decode(regs)?,
-            badge: Badge::from(regs[4]),
+            badge: Badge::from(regs[5]),
         })
     }
 }
@@ -243,7 +178,6 @@ impl CSpaceDeleteArgs {
         })
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,9 +185,8 @@ mod tests {
     fn slots() -> CNodeOpArgs {
         CNodeOpArgs {
             dest_index: CPtr::from(10u64),
-            src_root: CPtr::from(3u64),
-            src_index: CPtr::from(20u64),
             dest_depth: 64,
+            src_index: CPtr::from(20u64),
             src_depth: 5,
         }
     }
@@ -283,29 +216,49 @@ mod tests {
     fn move_roundtrip() {
         let args = CSpaceMoveArgs {
             dest_index: CPtr::from(3u64),
-            src_root: CPtr::from(1u64),
-            src_index: CPtr::from(7u64),
             dest_depth: 1,
-            src_depth: 255,
+            src_index: CPtr::from(7u64),
+            src_depth: 64,
         };
         assert_eq!(CSpaceMoveArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
-    fn cnode_op_word_refuses_stray_bits() {
-        // A move's word carries no rights.
+    fn sel4_word_order() {
+        let a = CSpaceMintArgs::decode(&[1, 2, 3, 4, 5, 6]).unwrap();
+        assert_eq!(a.copy.slots.dest_index, CPtr::from(1u64));
+        assert_eq!(a.copy.slots.dest_depth, 2);
+        assert_eq!(a.copy.slots.src_index, CPtr::from(3u64));
+        assert_eq!(a.copy.slots.src_depth, 4);
+        assert_eq!(a.copy.rights.raw(), 5);
+        assert_eq!(a.badge, Badge::from(6u64));
+    }
+
+    #[test]
+    fn rights_word_high_bits_ignored() {
+        // seL4's `rightsFromWord` reads the low bits only; no word is refused.
+        let a = CSpaceCopyArgs::decode(&[1, 2, 3, 4, u64::MAX]).unwrap();
+        assert_eq!(a.rights, AccessRights::ALL);
+        let a = CSpaceCopyArgs::decode(&[1, 2, 3, 4, 1 << 21]).unwrap();
+        assert_eq!(a.rights, AccessRights::EMPTY);
+        for r in 0u64..=0x1F {
+            let m = CSpaceMintArgs::decode(&[1, 2, 3, 4, r, 42]).unwrap();
+            assert_eq!(u64::from(m.copy.rights.raw()), r);
+        }
+    }
+
+    #[test]
+    fn short_messages_truncated() {
         assert_eq!(
-            CSpaceMoveArgs::decode(&[1, 2, 3, 1 << 16]),
-            Err(KernelError::InvalidArgument)
+            CSpaceMoveArgs::decode(&[1, 2, 3]),
+            Err(KernelError::InvalidMessageInfo)
         );
-        // A copy's carries them in [16, 21), and nothing past.
-        assert!(CSpaceCopyArgs::decode(&[1, 2, 3, 0x1F << 16]).is_ok());
         assert_eq!(
-            CSpaceCopyArgs::decode(&[1, 2, 3, 1 << 21]),
-            Err(KernelError::InvalidArgument)
+            CSpaceCopyArgs::decode(&[1, 2, 3, 4]),
+            Err(KernelError::InvalidMessageInfo)
         );
         assert_eq!(
-            CSpaceCopyArgs::decode(&[1, 2, 3]),
+            CSpaceMintArgs::decode(&[1, 2, 3, 4, 5]),
             Err(KernelError::InvalidMessageInfo)
         );
     }
@@ -328,39 +281,10 @@ mod tests {
     }
 
     #[test]
-    fn mint_insufficient_regs() {
-        assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 3, 0]),
-            Err(KernelError::InvalidMessageInfo)
-        );
-    }
-
-    #[test]
     fn delete_empty_regs() {
         assert_eq!(
             CSpaceDeleteArgs::decode(&[]),
             Err(KernelError::InvalidMessageInfo)
-        );
-    }
-
-    #[test]
-    fn mint_rights_every_mask_decodes() {
-        for r in 0u64..=0x1F {
-            let args = CSpaceMintArgs::decode(&[1, 2, 3, r << 16, 42]).unwrap();
-            assert_eq!(u64::from(args.copy.rights.raw()), r);
-        }
-    }
-
-    #[test]
-    fn mint_word_past_rights_rejected() {
-        // A bit past the rights field is `InvalidArgument`, not a short message.
-        assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 3, 1 << 21, 42]),
-            Err(KernelError::InvalidArgument)
-        );
-        assert_eq!(
-            CSpaceMintArgs::decode(&[1, 2, 3, u64::MAX, 42]),
-            Err(KernelError::InvalidArgument)
         );
     }
 }

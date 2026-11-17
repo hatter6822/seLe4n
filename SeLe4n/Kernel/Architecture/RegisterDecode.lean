@@ -221,13 +221,13 @@ refused or clamped by the buffer.  No wildcard: a new syscall states its
 answer. -/
 def syscallReadsOverflow : SyscallId → Bool
   | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister
-  | .cspaceMint => true
+  | .cspaceMint | .cspaceCopy | .untypedRetype => true
   | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
-  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
+  | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck
   | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
@@ -792,8 +792,8 @@ theorem decodeSyscallArgsFromState_syscallId_eq
 
 /-- AK4-A.5 (NI): The decode wrapper's read scope on `SystemState` is
     exclusively what `ipcBufferReadMr` consults for each `tid`. If two
-    states agree on the caller's TCB (via `tid.toObjId`), the caller's
-    VSpaceRoot object, the full memory function and the synced words, the decode result
+    states agree on the caller's TCB (via `tid.toObjId`), the frame its
+    buffer slot names, the full memory function and the synced words, the decode result
     is identical.
 
     This is the top-level NI witness for Phase AK4 — it lifts the
@@ -805,11 +805,12 @@ theorem decodeSyscallArgsFromState_reads_only_caller
     (st st' : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
     (hTcb  : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?)
-    (hVs   : ∀ vs : SeLe4n.ObjId,
+    (hFrame : ∀ fr : SeLe4n.ObjId,
               (st.objects[tid.toObjId]?).bind
-                 (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
-                 = some vs →
-              st'.objects[vs]? = st.objects[vs]?)
+                 (fun o => match o with
+                   | .tcb t => some (TCB.spaceCellObject t.spaceCells[2]) | _ => none)
+                 = some fr →
+              st'.objects[fr]? = st.objects[fr]?)
     (hMem  : st'.machine.memory = st.machine.memory)
     (hBytes : st'.machine.entryWordBytes = st.machine.entryWordBytes)
     (hCount : st'.machine.entryWordCount = st.machine.entryWordCount) :
@@ -824,7 +825,7 @@ theorem decodeSyscallArgsFromState_reads_only_caller
         = SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid i := by
     intro i
     exact SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb
-            st st' tid i hTcb hVs hMem hBytes hCount
+            st st' tid i hTcb hFrame hMem hBytes hCount
   have hWord : readOverflowWord st' tid = readOverflowWord st tid := by
     funext i; simp only [readOverflowWord, hRead]
   unfold decodeSyscallArgsFromState
@@ -989,20 +990,20 @@ inductive RegisterRoutedSyscall where
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
 `invoke`: every invocation whose arguments fit the layout's message registers,
 whose taint step is the identity and whose rights are checked in the classic
-order.  The scheduling-context configure, the service register and the CNode
-mint carry one argument word more and are routed as `overflowOne`
-(`routedOverflowOne`); the
+order.  The scheduling-context configure, the service register, the CNode copy
+and mint and the untyped retype carry argument words past the registers and are
+routed as `overflowOne` or `overflowed` (`routedOverflowOne`); the
 declassification and audit calls, whose taint steps are not the identity or
 whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
-  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .mintReplyCap | .untypedRetype | .untypedReset
+  | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .mintReplyCap | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
+  | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
   | _ => false
 
 /-- The routed invocation syscall number `n` names, if any. -/
@@ -1025,11 +1026,13 @@ theorem routedInvocationSid?_some {n : Nat} {sid : SyscallId}
   · cases h
 
 /-- WS-ZA ZA5.2, ZA5.5: the capability invocations the register file routes as
-`overflowOne`: those whose arguments are the layout's message registers and one
-overflow word, whose taint step is the identity and whose rights are checked in
-the classic order. -/
+`overflowOne`: those whose arguments are the layout's message registers and
+overflow words (one for the configure, the service register and the CNode copy,
+two for the CNode mint and three for the untyped retype, WS-SX SX6.3), whose
+taint step is the identity and whose rights are checked in the classic order. -/
 def routedOverflowOne : SyscallId → Bool
-  | .schedContextConfigure | .serviceRegister | .cspaceMint => true
+  | .schedContextConfigure | .serviceRegister | .cspaceMint | .cspaceCopy
+  | .untypedRetype => true
   | _ => false
 
 /-- The one-overflow-word invocation syscall number `n` names, if any. -/

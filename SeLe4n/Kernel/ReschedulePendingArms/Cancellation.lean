@@ -33,14 +33,14 @@ def tcbKeyCore (t : TCB) :
       SeLe4n.DomainId) × Nat :=
   (tcbKeyFields t, t.runCoreCode)
 
-/-- **Equal key fields at every TCB and equal deadlines and budget signs at
-every scheduling context are equal key inputs.**  Every object slot is some
+/-- **Equal key fields at every TCB and equal budget signs at every scheduling
+context are equal key inputs.**  Every object slot is some
 thread's and some context's slot, so the two typed readings decide what the
 slot contributes. -/
 theorem keyInputsEq_of_lookups {pre post : SystemState}
     (hT : ∀ t, (post.getTcb? t).map tcbKeyCore = (pre.getTcb? t).map tcbKeyCore)
-    (hS : ∀ s, (post.getSchedContext? s).map (fun x => (x.deadline, x.budgetRemaining.isPositive)) =
-      (pre.getSchedContext? s).map (fun x => (x.deadline, x.budgetRemaining.isPositive))) :
+    (hS : ∀ s, (post.getSchedContext? s).map (fun x => x.budgetRemaining.isPositive) =
+      (pre.getSchedContext? s).map (fun x => x.budgetRemaining.isPositive)) :
     keyInputsEq pre post := by
   intro oid
   have hT' := hT (SeLe4n.ThreadId.ofNat oid.toNat)
@@ -169,7 +169,7 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
     {owner server : SeLe4n.ThreadId} {ct ct' stcb stcb' : TCB}
     (hInv : st.objects.invExt)
     (hObj : st.objects[scId.toObjId]? = some (.schedContext sc))
-    (hDl : sc'.deadline = sc.deadline) (hBg : sc'.budgetRemaining = sc.budgetRemaining)
+    (hBg : sc'.budgetRemaining = sc.budgetRemaining)
     (hS1 : storeObject scId.toObjId (.schedContext sc') st = .ok ((), s1))
     (hS2 : storeDonationHeadPop scId head? s1 = .ok s2)
     (hL1 : lookupTcb s2 owner = some ct)
@@ -185,7 +185,7 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
   have hInv3 := storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3
   have k1 : keyInputsEq st s1 :=
-    keyInputsEq_storeObject hInv hS1 (by rw [hObj]; simp only [keyInputsOf, hDl, hBg])
+    keyInputsEq_storeObject hInv hS1 (by rw [hObj]; simp only [keyInputsOf, hBg])
   have k2 := keyInputsEq_trans k1 (storeDonationHeadPop_keyInputsEq hInv1 hS2)
   have k3 := keyInputsEqExcept_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3
   have k4 := keyInputsEqExcept_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4
@@ -272,7 +272,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                         (head?.bind (fun p => p.2.prev)) newOwner?)
                       (ct' := { clientTcb with
                         scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
-                      (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl rfl
+                      (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl
                       (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4]) rfl rfl
                     exact ⟨stepCovers_markKeyChangeFrom_pair
                       (fun t ho hs => hK t ho hs) hS hR hTk
@@ -291,7 +291,7 @@ theorem returnDonatedSchedContextResolved_stepCovers (e : CoreId) {st st' : Syst
     (fun _ _ hPop => returnDonatedSchedContext_stepCovers e hInv hPop)
 
 /-- **Slot refinement up to the key fields is equal key inputs**: every TCB
-survives with its key fields and every scheduling context with its deadline, and
+survives with its key fields and every scheduling context with its budget, and
 neither kind appears where it was not. -/
 theorem keyInputsEq_of_slots {pre post : SystemState}
     (hTf : ∀ (a : SeLe4n.ObjId) (t : TCB), pre.objects[a]? = some (.tcb t) →
@@ -299,7 +299,7 @@ theorem keyInputsEq_of_slots {pre post : SystemState}
     (hTb : ∀ (a : SeLe4n.ObjId) (t' : TCB), post.objects[a]? = some (.tcb t') →
       ∃ t, pre.objects[a]? = some (.tcb t))
     (hSf : ∀ (a : SeLe4n.ObjId) (sc : SchedContext), pre.objects[a]? = some (.schedContext sc) →
-      ∃ sc', post.objects[a]? = some (.schedContext sc') ∧ sc'.deadline = sc.deadline ∧
+      ∃ sc', post.objects[a]? = some (.schedContext sc') ∧
         sc'.budgetRemaining = sc.budgetRemaining)
     (hSb : ∀ (a : SeLe4n.ObjId) (sc' : SchedContext), post.objects[a]? = some (.schedContext sc') →
       ∃ sc, pre.objects[a]? = some (.schedContext sc)) :
@@ -324,8 +324,8 @@ theorem keyInputsEq_of_slots {pre post : SystemState}
       obtain ⟨t', hq, hk⟩ := hTf oid t hp
       rw [hq]; simp only [tcbKeyCore, tcbKeyFields, Prod.mk.injEq] at hk; simp only [keyInputsOf, hk]
     | schedContext sc =>
-      obtain ⟨sc', hq, hd, hb⟩ := hSf oid sc hp
-      rw [hq]; simp only [keyInputsOf, hd, hb]
+      obtain ⟨sc', hq, hb⟩ := hSf oid sc hp
+      rw [hq]; simp only [keyInputsOf, hb]
     | _ => exact hPost (fun _ h => by rw [hp] at h; cases h) (fun _ h => by rw [hp] at h; cases h)
 
 /-! ### The teardown's object-only steps -/
@@ -348,7 +348,7 @@ theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
       tcbKeyCore { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } =
         tcbKeyCore t := fun _ _ _ _ => rfl
   refine keyInputsEq_of_slots (fun a t ha => ?_) (fun a t' ha => ?_)
-    (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_forward _ _ _ _ _ hInv h a sc ha, rfl, rfl⟩)
+    (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_forward _ _ _ _ _ hInv h a sc ha, rfl⟩)
     (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv h a sc ha⟩)
   · rw [RHTable_getElem?_eq_get?] at ha
     obtain ⟨t', h', hk⟩ := endpointQueueRemove_getTcb_upToField tcbKeyCore hLF _ _ _ _ _ hInv h a t ha
@@ -537,10 +537,9 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
   · exact markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ (hFl c h)
   · simp only [markKeyChangeFrom_currentOnCore]; exact hCur c
 
-/-- A context write that keeps the deadline moves no key input. -/
+/-- A context write that keeps the budget sign moves no key input. -/
 theorem updateSchedContext_keyInputsEq (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext) (hInv : st.objects.invExt)
-    (hF : ∀ sc, (f sc).deadline = sc.deadline)
     (hB : ∀ sc, (f sc).budgetRemaining.isPositive = sc.budgetRemaining.isPositive := by
       intro _; rfl) :
     keyInputsEq st (st.updateSchedContext scId f) :=
@@ -549,7 +548,7 @@ theorem updateSchedContext_keyInputsEq (st : SystemState) (scId : SeLe4n.SchedCo
       by_cases h : scId.toObjId = s.toObjId
       · obtain rfl := SeLe4n.SchedContextId.toObjId_injective _ _ h
         rw [SystemState.updateSchedContext_getSchedContext?_self st scId f hInv]
-        cases st.getSchedContext? scId <;> simp [hF, hB]
+        cases st.getSchedContext? scId <;> simp [hB]
       · rw [SystemState.updateSchedContext_getSchedContext?_ne st scId f hInv s h])
 
 /-- A TCB update keeps every other thread's key. -/
@@ -571,7 +570,7 @@ theorem budgetEligibleView_updateTcb_ne (s : SystemState) (tid : SeLe4n.ThreadId
     exact budgetEligibleView_eq_of_keyInputsEqExcept
       (keyInputsEqExcept_updateTcb hInv (by rw [hT]; rfl)) ht
 
-/-- **The bound unbind covers**: the context write keeps its deadline, the purge
+/-- **The bound unbind covers**: the context write keeps its budget, the purge
 writes a replenish queue, and the victim's rebind ends in its hook. -/
 theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
@@ -586,7 +585,6 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     have k1 := updateSchedContext_keyInputsEq st scId
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
-      (fun _ => rfl)
     have hS1 := SystemState.updateSchedContext_scheduler st scId
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     have hInvP := SchedContextOps.purgeReplenishment_objects_invExt _ scId hInv1
