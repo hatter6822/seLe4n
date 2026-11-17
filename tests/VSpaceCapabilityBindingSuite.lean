@@ -892,11 +892,56 @@ private def decodeCopyAt (radix src dst : Nat) : SyscallDecodeResult :=
 uses. -/
 private def decodeCopy (src dst : Nat) : SyscallDecodeResult := decodeCopyAt 4 src dst
 
+/-- `.tcbSetSpace` on the TCB capability at `tcbSlot`, in seL4-MCS's shape:
+MR0 the CSpace root data word (`0`: the root keeps its source capability's
+guard), MR1 the VSpace root data word, and three extra capabilities — the
+fault endpoint, the new CSpace root, the new VSpace root (`setSpaceAs` stages
+them). -/
+private def setSpaceDecoded (tcbSlot : Nat) (rootData : Nat := 0) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
+  , msgInfo   := { length := 2, extraCaps := 3, label := 0 }
+  , syscallId := .tcbSetSpace
+  , msgRegs   := #[SeLe4n.RegValue.ofNat rootData, SeLe4n.RegValue.ofNat 0] }
+
+/-- A slot of the owner's CSpace root no SetSpace scenario fills before it
+runs: naming it as the fault endpoint leaves the thread without a handler. -/
+private def slotNoFaultHandler : Nat := 15
+
+/-- The owner's `.tcbSetSpace` on the TCB capability at `tcbSlot`, the
+capabilities at `cnSlot` and `vrSlot` staged as the new roots (extra
+capabilities 1 and 2) and `slotNoFaultHandler` as the fault endpoint (extra
+capability 0); the IPC buffer names `slotOwnCnGrant` again after, as
+`ownerStaged`. -/
+private def setSpaceAs (tcbSlot cnSlot vrSlot : Nat) (rootData : Nat := 0) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match dispatchSyscallAsCurrent (setSpaceDecoded tcbSlot rootData) carveOwner Concurrency.bootCoreId
+      (SeLe4n.Testing.withSenderCapAddrs st carveOwner
+        #[SeLe4n.CPtr.ofNat slotNoFaultHandler, SeLe4n.CPtr.ofNat cnSlot, SeLe4n.CPtr.ofNat vrSlot]) with
+  | .error e => .error e
+  | .ok ((), st') =>
+    .ok ((), SeLe4n.Testing.withSenderCapAddrs st' carveOwner #[SeLe4n.CPtr.ofNat slotOwnCnGrant])
+
+/-- One step of `runAll`: an invocation run as decoded, or a SetSpace whose
+roots `setSpaceAs` stages as extra capabilities. -/
+private inductive OwnerStep where
+  | call (d : SyscallDecodeResult)
+  | setSpace (tcbSlot cnSlot vrSlot : Nat)
+
+instance : Coe SyscallDecodeResult OwnerStep := ⟨OwnerStep.call⟩
+
+/-- The SetSpace step on the TCB capability at `tcbSlot`. -/
+private def decodeSetSpace (tcbSlot cnSlot vrSlot : Nat) : OwnerStep :=
+  .setSpace tcbSlot cnSlot vrSlot
+
 /-- Run a list of dispatches in order, stopping at the first refusal. -/
 private def runAll (st : SystemState) :
-    List SyscallDecodeResult → Except KernelError SystemState
+    List OwnerStep → Except KernelError SystemState
   | [] => .ok st
-  | d :: ds =>
+  | .setSpace t cn vr :: ds =>
+    match setSpaceAs t cn vr 0 st with
+    | .error e => .error e
+    | .ok ((), st') => runAll st' ds
+  | .call d :: ds =>
     -- WS-SX SX6.3 (D6): a map names the owner's address space as extra
     -- capability 0.
     let r := match d.syscallId with
@@ -1597,17 +1642,6 @@ private def spaceScenario : SystemState :=
     | .ok ((), s) => s
     | .error _ => st1
 
-/-- `.tcbSetSpace` on the TCB capability at `tcbSlot`: MR0 the new CSpace root's
-capability address, MR1 the new VSpace root's, MR2 the CSpace root data word
-(`0`: the root keeps its source capability's guard). -/
-private def decodeSetSpace (tcbSlot cnSlot vrSlot : Nat) (rootData : Nat := 0) :
-    SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
-  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
-  , syscallId := .tcbSetSpace
-  , msgRegs   := #[SeLe4n.RegValue.ofNat cnSlot, SeLe4n.RegValue.ofNat vrSlot,
-                   SeLe4n.RegValue.ofNat rootData] }
-
 /-- The retired reading of "suspended": the stored flag alone.  Spelled here and
 nowhere else, so the witness can show the live check discriminates. -/
 private def flagOnlySuspended (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
@@ -1636,25 +1670,32 @@ private def runSetSpaceChecks : IO Unit := do
   | .ok ((), st1) => do
     -- The refusals, each on the state the success runs on.
     assertBool "a CSpace-root capability without .grant is refused (illegalAuthority)"
-      (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st1))
+      (isErr .illegalAuthority (setSpaceAs slotWorkerTcb slotOwnCnRW 12 0 st1))
     assertBool "a read-only CSpace-root capability is refused (illegalAuthority)"
-      (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnRO 12) carveOwner Concurrency.bootCoreId st1))
+      (isErr .illegalAuthority (setSpaceAs slotWorkerTcb slotOwnCnRO 12 0 st1))
     assertBool "a CNode capability named as the VSpace root is refused (illegalState, seL4's IllegalOperation)"
       (isErr .illegalState
-        (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnCnRW) carveOwner Concurrency.bootCoreId st1))
+        (setSpaceAs slotWorkerTcb slotOwnCnGrant slotOwnCnRW 0 st1))
     assertBool "an untyped capability named as the VSpace root is refused (illegalState, seL4's IllegalOperation)"
       (isErr .illegalState
-        (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotUtRetype) carveOwner Concurrency.bootCoreId st1))
+        (setSpaceAs slotWorkerTcb slotOwnCnGrant slotUtRetype 0 st1))
     assertBool "one message register is refused"
-      ((dispatchSyscallAsCurrent { decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 with
-          msgInfo := { length := 1, extraCaps := 0, label := 0 },
-          msgRegs := #[SeLe4n.RegValue.ofNat slotOwnCnGrant] } carveOwner Concurrency.bootCoreId st1).toOption.isNone)
+      (isErr .truncatedMessage (dispatchSyscallAsCurrent { setSpaceDecoded slotWorkerTcb with
+          msgInfo := { length := 1, extraCaps := 3, label := 0 },
+          msgRegs := #[SeLe4n.RegValue.ofNat 0] } carveOwner Concurrency.bootCoreId
+          (SeLe4n.Testing.withSenderCapAddrs st1 carveOwner
+            #[SeLe4n.CPtr.ofNat slotNoFaultHandler, SeLe4n.CPtr.ofNat slotOwnCnGrant, SeLe4n.CPtr.ofNat 12])))
+    assertBool "two extra capabilities are refused (truncatedMessage)"
+      (isErr .truncatedMessage (dispatchSyscallAsCurrent { setSpaceDecoded slotWorkerTcb with
+          msgInfo := { length := 2, extraCaps := 2, label := 0 } } carveOwner Concurrency.bootCoreId
+          (SeLe4n.Testing.withSenderCapAddrs st1 carveOwner
+            #[SeLe4n.CPtr.ofNat slotNoFaultHandler, SeLe4n.CPtr.ofNat slotOwnCnGrant])))
     -- The decisive case: the running owner's stored flag is the default
     -- `.Inactive`, so the retired flag-only reading would admit it.
     assertBool "CONTROL: the running owner's stored flag reads .Inactive (the retired reading admits it)"
       (flagOnlySuspended st1 carveOwner)
     assertBool "a thread the scheduler runs is refused (illegalState), whatever its flag says"
-      (isErr .illegalState (dispatchSyscallAsCurrent (decodeSetSpace slotOwnerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId st1))
+      (isErr .illegalState (setSpaceAs slotOwnerTcb slotOwnCnGrant 12 0 st1))
     -- seL4's `cspace_root_data` (MR2): a nonzero word sets the new root's guard
     -- through `updateCapData`; a guard size that does not fit beside the
     -- CNode's radix is refused `.illegalState` before anything is written.
@@ -1664,17 +1705,14 @@ private def runSetSpaceChecks : IO Unit := do
     assertBool "CONTROL: the CSpace root's CNode has a radix of at least 2"
       (2 ≤ radix)
     assertBool "a root data guard size that overflows the word beside the radix is refused (illegalState)"
-      (isErr .illegalState (dispatchSyscallAsCurrent
-        (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 ((5 <<< 6) ||| 63)) carveOwner
-        Concurrency.bootCoreId st1))
-    match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 fitData) carveOwner
-        Concurrency.bootCoreId st1 with
+      (isErr .illegalState (setSpaceAs slotWorkerTcb slotOwnCnGrant 12 ((5 <<< 6) ||| 63) st1))
+    match setSpaceAs slotWorkerTcb slotOwnCnGrant 12 fitData st1 with
     | .error e => assertBool s!"a fitting root data word is admitted (got {repr e})" false
     | .ok ((), stG) =>
       assertBool "the new CSpace root carries the data word's guard and guard size"
         (((stG.getTcb? spaceWorker).bind (·.spaceSlotCap TCB.cspaceRootSlot)).map
           (fun c => (c.cnodeGuard.toNat, c.cnodeGuardSize.toNat)) == some (5, fitSize))
-    match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId st1 with
+    match setSpaceAs slotWorkerTcb slotOwnCnGrant 12 0 st1 with
     | .error e => assertBool s!"setting the suspended worker's space succeeds (got {repr e})" false
     | .ok ((), st2) => do
       assertBool "the worker now names the carved root and the CSpace root"
@@ -1707,7 +1745,7 @@ private def runSetSpaceChecks : IO Unit := do
           (match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
            | .ok ((), s) => (s.objects[root]?).isNone
            | .error _ => false)
-        match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp) carveOwner Concurrency.bootCoreId stRev with
+        match setSpaceAs slotWorkerTcb slotOwnCnGrant slotOwnVsp 0 stRev with
         | .error e => assertBool s!"moving the worker back to the boot root succeeds (got {repr e})" false
         | .ok ((), stBack) =>
           assertBool "the worker names the boot root again"
@@ -2162,7 +2200,7 @@ private def runPhysicalWriteChecks : IO Unit := do
        | .error _ => false)
     assertBool "a thread id that resolves to no thread runs under the kernel's translation (0, 0)"
       (Architecture.threadTranslationOperands sp1 ⟨99999⟩ == (0, 0))
-    match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner Concurrency.bootCoreId sp1 with
+    match setSpaceAs slotWorkerTcb slotOwnCnGrant 12 0 sp1 with
     | .error e => assertBool s!"moving the worker into the carved root succeeds (got {repr e})" false
     | .ok ((), sp2) =>
       assertBool "moved into the carved root, it installs that root's page under ASID 1"
@@ -2642,7 +2680,7 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- the notification wait, each block is staged through the kernel's own IPC on
   -- the carved threads, three waiting in carve order: the middle one's delete
   -- comes first, then the head's, then the tail's.
-  let threeThreads :=
+  let threeThreads : List OwnerStep :=
     [decodeCarve slotUtRetype tcbTag 960 12,
      decodeCarve slotUtRetype tcbTag 961 13,
      decodeCarve slotUtRetype tcbTag 962 14]
@@ -2656,7 +2694,7 @@ private def runThreadFinaliseChecks : IO Unit := do
      ("calling", .BlockedCall, false, .blockedOnCall epId,
        fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false) st))]
   for (name, ts, isRecv, blocked, block) in blocks do
-    match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype endpointTag 963 15]) with
+    match runAll carveScenario (threeThreads ++ [OwnerStep.call <| decodeCarve slotUtRetype endpointTag 963 15]) with
     | .error e => assertBool s!"carving three threads and an endpoint succeeds (got {repr e})" false
     | .ok st0 =>
       let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid ts) st0
@@ -2714,7 +2752,7 @@ private def runThreadFinaliseChecks : IO Unit := do
   -- A thread waiting on a notification behind another is cancelled off the
   -- queue just as its head is, wherever it waits: the middle waiter's delete,
   -- then the tail's.
-  match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype notificationTag 963 15]) with
+  match runAll carveScenario (threeThreads ++ [OwnerStep.call <| decodeCarve slotUtRetype notificationTag 963 15]) with
   | .error e => assertBool s!"carving three threads and a notification succeeds (got {repr e})" false
   | .ok st0 =>
     let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid .BlockedNotif) st0

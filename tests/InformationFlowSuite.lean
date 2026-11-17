@@ -1417,8 +1417,8 @@ def runInformationFlowChecks : IO Unit := do
     (coCount = 37)
   expect "enforcement boundary has 2 read-only"
     (roCount = 2)
-  expect "enforcement boundary total is 55"
-    (boundary.length = 55)
+  expect "enforcement boundary total is 54"
+    (boundary.length = 54)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1521,8 +1521,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 53 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 55)
+  expect "enforcementBoundaryExtended has 54 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 54)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

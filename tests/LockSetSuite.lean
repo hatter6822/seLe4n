@@ -1759,8 +1759,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 111"
-    (decide (lockSetTheorems.length = 111))
+  assertBool "lockSetTheorems.length = 109"
+    (decide (lockSetTheorems.length = 109))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so
