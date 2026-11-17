@@ -144,16 +144,17 @@ def CarveRequest.windowAdmissible (st : SystemState) (count : Nat) : CarveReques
 -- ============================================================================
 
 /-- **The heap the resizes of a Robin Hood table take over `inserts` new keys**,
-over-approximated from its size `size` and capacity `capacity`: a carve's
-writes resize the table at most once, when the load after its new key reaches
-the insert's 75% check, and a resize doubles the table
-(`rhInsertResizeHeapBytes`). -/
-def rhWindowResizeHeapBytes : Nat → Nat → Nat → Nat
-  | _, _, 0 => 0
-  | size, capacity, inserts + 1 =>
-      if (size + 1) * 4 ≥ capacity * 3 then
-        capacity * 2 * rhSlotHeapBytes + rhWindowResizeHeapBytes (size + 1) (capacity * 2) inserts
-      else rhWindowResizeHeapBytes (size + 1) capacity inserts
+over-approximated from its size `size` and capacity `capacity`: none while the
+load after the last new key stays below the insert's 75% check; otherwise, for
+each of the `size + inserts` keys, eight slots.  An insert resizes a table only
+at that load and a resize doubles it (`rhInsertResizeHeapBytes`), so the last
+table a window builds has under `8/3` slots per key and the tables it builds
+total at most twice the last — under `16/3` slots per key.  The bound reads
+only the window's own counts, so it is at least what any one carve's insert
+resizes (`rhInsertResizeHeapBytes_le_window`), whatever the table's capacity
+has grown to. -/
+def rhWindowResizeHeapBytes (size capacity inserts : Nat) : Nat :=
+  if (size + inserts) * 4 ≥ capacity * 3 then (size + inserts) * 8 * rhSlotHeapBytes else 0
 
 /-- **What a window of `count` objects needs of the kernel heap**,
 over-approximated once for all of them: the reserve, `count` carved objects,
@@ -457,7 +458,11 @@ admission and writes the single carve's compiled forms
 (`untypedRetypeAdmittedCode`, `untypedRetypePerformCode`), and a root's ASID
 the least free one at the state it is carved in (`CarveRequest.asidAtW`).  It
 builds no request, slot reference or list: each carve allocates only what its
-own object and capability take (`untypedRetypeWindowCode_eq`). -/
+own object and capability take (`untypedRetypeWindowCode_eq`).  The carve's
+admission it reads is never false behind an admitted window on a store whose
+tables are well formed (`untypedRetypeWindow_admitsEveryCarve`); it is read so
+that this form is the window's writes on every state, which is what lets the
+dispatch use it without a proof of those invariants in hand. -/
 def untypedRetypeWindowCode (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (dstCnode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (childId : SeLe4n.ObjId)
     (k n : Nat) (dom : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)

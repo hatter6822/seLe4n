@@ -149,17 +149,6 @@ theorem teardownWellFormed_storeFreshRoot {st st' : SystemState} {k : SeLe4n.Obj
     · exact hWF
     · exact c8 o q h0
 
-/-- The scrub writes memory, not the machine's address width. -/
-theorem CarveRequest.scrub_physicalAddressWidth (st : SystemState) (ut : UntypedObject) (idx : Nat)
-    (req : CarveRequest) :
-    (req.scrub st ut idx).machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
-
-/-- The scrub writes no ASID. -/
-theorem CarveRequest.scrub_asidTable (st : SystemState) (ut : UntypedObject) (idx : Nat)
-    (req : CarveRequest) : (req.scrub st ut idx).asidTable = st.asidTable := by
-  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
-
 namespace RecordsStage
 
 /-- **An object stored at an id no object held**: a thread unlinked and

@@ -4083,11 +4083,13 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) =>\n            match retypeChildIdsRefusal vChild\.val 1 \(args\.numObjects - 1\) with\n            \| some e => \.error e\n            \| none => untypedRetypeWindow src vChild\.val dst req args\.numObjects st' SeLe4n/Kernel/API.lean
 # A window's refusals all precede its writes, in seL4's order (every slot
 # empty, then the region for every object), and every write is a successful
-# single carve (`untypedRetypeWindowWrites_chain`).
+# single carve (`untypedRetypeWindowWrites_chain`); an admitted window admits
+# every carve (`untypedRetypeWindow_admitsEveryCarve`).
 run_check "INVARIANT" rg -n -U 'def untypedRetypeWindow \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    match untypedRetypeWindowRefusal st src dst childId req count with\n    \| some e => \.error e\n    \| none => \.ok \(\(\), untypedRetypeWindowWrites src dst childId req 0 count st\)$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeWindowRefusalWith[^\n]*(\n([ \t][^\n]*)?)*        match retypeWindowSlotsRefusal st dst\.cnode dst\.slot 0 count with(\n([ \t][^\n]*)?)*          if !retypeResetAdmitted st src ut then some \.revocationRequired\n          else if !ut\.canAllocate \(alignedCarveIndex ty size ut \(retypeFreeIndex st src utCap\)\)\n              \(count \* size\) then' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowWrites_chain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeWindow_admitsEveryCarve($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 # WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
 # 0, the CNode the root itself at depth 0 or the slot its index and depth name,
