@@ -5434,7 +5434,7 @@ run_check "INVARIANT" rg -n -U '"deleting a bound notification.s last capability
 run_negative_check "INVARIANT" rg -n 'a notification bound to a thread outlives its last capability' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the replace retires the root, releases its ASID and unrecords it' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ThreadSpaceCopy$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem resolveSetSpaceAt_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveSetSpaceAt_ok_sources($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # seL4-MCS's decodeSetSpace: the fault endpoint, the CSpace root and the
@@ -5443,9 +5443,9 @@ run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match callerExtraCapAddr\? st callerTid xc 0, callerExtraCapAddr\? st callerTid xc 1,\n      callerExtraCapAddr\? st callerTid xc 2 with\n  \| some fhAddr, some cnAddr, some vrAddr => resolveSetSpaceAt callerTid cnAddr vrAddr fhAddr args st\n  \| _, _, _ => \.error \.truncatedMessage' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid decoded\.msgInfo\.extraCaps args st with(\n([ \t][^\n]*)?)*                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args\.cspaceRootData\n                    fhSrc with' SeLe4n/Kernel/API.lean
 # seL4's decodeSetSpace: a nonzero CSpace root data word whose guard size does not fit beside
-# the CNode's radix is refused before the VSpace root is resolved, and the root copy takes its
-# guard from the word.
-run_check "INVARIANT" rg -n -U '      if !cspaceRootSourceAdmitted st cnSrc args\.cspaceRootData then \.error \.illegalState\n      else if !cspaceRootSourceAuthorised st cnSrc then \.error \.illegalAuthority\n      else\n        match lookupSlot callerTcb vrAddr st with' SeLe4n/Kernel/API.lean
+# the CNode's radix is refused before the VSpace root is resolved (no right is asked of the
+# root capability, as seL4 asks none), and the root copy takes its guard from the word.
+run_check "INVARIANT" rg -n -U '      if !cspaceRootSourceAdmitted st cnSrc args\.cspaceRootData then \.error \.illegalState\n      else\n        match lookupSlot callerTcb vrAddr st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRootSourceAdmitted_dataFits($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_check "INVARIANT" rg -n -U '@\[inline\] def spaceCopyGuard \(cap : Capability\) \(data : UInt64\) : UInt64 :=\n  if data = 0 then cap\.cnodeGuard else capDataGuard data' SeLe4n/Model/ObjectSlots.lean
 # The guard is a machine word in the capability: the record holds the guard and its size unboxed,

@@ -2282,15 +2282,16 @@ def TCB.faultHandlerRights : AccessRightSet :=
   AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
 
 /-- The rights of the capability a CSpace root slot holds when written from a
-root's id: read, write and grant, the rights `resolveSetSpace` asks of the
-capability it installs (`.grant` and `.write`) together with reading the
-CNode's slots.  Not inlined: a constant, built once, so a write of the slot
+root's id: read, write and grant.  A copy from a source capability takes the
+intersection with these (`spaceCopyOf`), so it keeps the source's rights and
+never gains one.  Not inlined: a constant, built once, so a write of the slot
 builds no rights list. -/
 def TCB.cspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
 
 /-- The rights of the capability a VSpace root slot holds when written from a
-root's id: read and write, `resolveSetSpace` asking `.write` of it.  A constant,
-as `cspaceRootRights` is. -/
+root's id: read and write.  A copy from a source capability keeps the
+source's rights within these, as for `cspaceRootRights`.  A constant, as
+`cspaceRootRights` is. -/
 def TCB.vspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
 
 /-- The object a space slot's capability names; the sentinel when the slot is

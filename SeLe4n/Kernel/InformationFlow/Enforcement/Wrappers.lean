@@ -259,9 +259,10 @@ def enforcementBoundary : List EnforcementClass :=
   -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace`'s roots.  Capability-only:
   -- the authority is the TCB capability's write right plus the caller's own
   -- capabilities to the two roots and the fault endpoint, extra capabilities
-  -- 1, 2 and 0 (`resolveSetSpace`: `.grant`+`.write` on the CNode, `.write` on
-  -- the VSpace root, a null or send-and-grant endpoint capability for the fault
-  -- slot), and the write touches one suspended TCB's CSpace, VSpace and
+  -- 1, 2 and 0 (`resolveSetSpace`: a CNode capability and a VSpace-root
+  -- capability, no right asked of either as seL4 asks none, the installed copy
+  -- keeping only the source's rights; a null or send-and-grant endpoint
+  -- capability for the fault slot), and the write touches one suspended TCB's CSpace, VSpace and
   -- fault-handler slots and the derivation links of those slots, their sources
   -- and neighbours — no data crosses a label boundary until the thread faults,
   -- and that delivery is policy-gated by `faultDeliverOnCoreChecked`.  WS-ZA ZA5.4

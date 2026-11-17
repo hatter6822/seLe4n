@@ -2762,23 +2762,6 @@ theorem resolveCallerCapObject_ok (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.C
       resolveCallerCapSlot_ok callerTid addr right st ref cap' oid' hS
     exact ⟨callerTcb, ref, hT, hRes, hL, hR, hTg⟩
 
-/-- **The rights the model asks of a `.tcbSetSpace` CSpace root source**: `.grant`
-and `.write` on the capability its slot holds (making a CNode a thread's CSpace
-root hands that thread every capability the CNode holds and the ability to
-write its slots).  Read only once the slot is known to hold a CNode capability
-(`cspaceRootSourceAdmitted`). -/
-@[inline] def cspaceRootSourceAuthorised (st : SystemState) (src : CSpaceAddr) : Bool :=
-  match SystemState.lookupSlotCap st src with
-  | some cap => cap.hasRight .grant && cap.hasRight .write
-  | none => false
-
-/-- **The right the model asks of a `.tcbSetSpace` VSpace root source**: `.write`,
-the right `.vspaceMap` gates a change to an address space on. -/
-@[inline] def vspaceRootSourceAuthorised (st : SystemState) (src : CSpaceAddr) : Bool :=
-  match SystemState.lookupSlotCap st src with
-  | some cap => cap.hasRight .write
-  | none => false
-
 /-- **WS-BP BP7.1 (`v0.36.11`), WS-SX SX6.5: the three slots a `.tcbSetSpace`
 copies from, resolved through the caller's own CSpace** — seL4-MCS's
 `TCB_SetSpace` operands, at the addresses the message's extra capabilities give:
@@ -2794,9 +2777,11 @@ root's slot must hold a capability to a VSpace root (`isValidVTableRoot`,
 `.illegalState`); then the fault endpoint must be a valid handler
 (`validFaultHandler`: an empty slot, or an endpoint capability with send and a
 grant right, `faultHandlerSourceAdmitted`; anything else `invalidCapability
-1`).  The model also asks `.grant` and `.write` of the CSpace root capability
-and `.write` of the VSpace root capability (`.illegalAuthority`), after each
-root's kind.  The operation checks every source again against the store, so a
+1`).  No right is asked of either root capability, as seL4 asks none
+(its CNode and VSpace capabilities carry no rights): the copy installed in the
+thread's slot keeps only the rights the source holds (`spaceCopyOf`), and the
+installed capability is never invoked, so it reaches nothing the caller could
+not already reach through the capability it named.  The operation checks every source again against the store, so a
 resolver and an operation that disagreed would refuse rather than install.
 The slots are returned, not the objects: the operation copies each slot's
 capability into the thread's slot, derived from it. -/
@@ -2810,13 +2795,11 @@ def resolveSetSpaceAt (callerTid : SeLe4n.ThreadId) (cnAddr vrAddr fhAddr : SeLe
     | .error f => .error (.failedLookup false f)
     | .ok cnSrc =>
       if !cspaceRootSourceAdmitted st cnSrc args.cspaceRootData then .error .illegalState
-      else if !cspaceRootSourceAuthorised st cnSrc then .error .illegalAuthority
       else
         match lookupSlot callerTcb vrAddr st with
         | .error f => .error (.failedLookup false f)
         | .ok vrSrc =>
           if !vspaceRootSourceAdmitted st vrSrc then .error .illegalState
-          else if !vspaceRootSourceAuthorised st vrSrc then .error .illegalAuthority
           else
             match lookupSlot callerTcb fhAddr st with
             | .error f => .error (.failedLookup false f)
@@ -2988,14 +2971,10 @@ the three source slots handed on as words (`resolveSetSpaceAtK_eq`). -/
       (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c))) (fun cnC cnS =>
       if !cspaceRootSourceAdmitted st { cnode := cnC, slot := cnS } args.cspaceRootData then
         onErr .illegalState
-      else if !cspaceRootSourceAuthorised st { cnode := cnC, slot := cnS } then
-        onErr .illegalAuthority
       else
         lookupSlotK callerTcb vrAddr st
           (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c))) (fun vrC vrS =>
           if !vspaceRootSourceAdmitted st { cnode := vrC, slot := vrS } then onErr .illegalState
-          else if !vspaceRootSourceAuthorised st { cnode := vrC, slot := vrS } then
-            onErr .illegalAuthority
           else
             lookupSlotK callerTcb fhAddr st
               (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
@@ -3027,28 +3006,22 @@ theorem resolveSetSpaceAtK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
       simp only []
       by_cases hC : cspaceRootSourceAdmitted st cnSrc args.cspaceRootData = true
       · simp only [hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-        by_cases hCA : cspaceRootSourceAuthorised st cnSrc = true
-        · simp only [hCA, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-          rw [lookupSlotK_eq]
-          cases lookupSlot callerTcb vrAddr st with
-          | error f => simp only [LookupFault.ofWords_word]
-          | ok vrSrc =>
-            simp only []
-            by_cases hV : vspaceRootSourceAdmitted st vrSrc = true
-            · simp only [hV, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-              by_cases hVA : vspaceRootSourceAuthorised st vrSrc = true
-              · simp only [hVA, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-                rw [lookupSlotK_eq]
-                cases lookupSlot callerTcb fhAddr st with
-                | error f => simp only [LookupFault.ofWords_word]
-                | ok fhSrc =>
-                  simp only []
-                  by_cases hF : faultHandlerSourceAdmitted st fhSrc = true
-                  · simp only [hF, ↓reduceIte]
-                  · simp only [hF, Bool.false_eq_true, ↓reduceIte]
-              · simp only [hVA, Bool.not_false, ↓reduceIte]
-            · simp only [hV, Bool.not_false, ↓reduceIte]
-        · simp only [hCA, Bool.not_false, ↓reduceIte]
+        rw [lookupSlotK_eq]
+        cases lookupSlot callerTcb vrAddr st with
+        | error f => simp only [LookupFault.ofWords_word]
+        | ok vrSrc =>
+          simp only []
+          by_cases hV : vspaceRootSourceAdmitted st vrSrc = true
+          · simp only [hV, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+            rw [lookupSlotK_eq]
+            cases lookupSlot callerTcb fhAddr st with
+            | error f => simp only [LookupFault.ofWords_word]
+            | ok fhSrc =>
+              simp only []
+              by_cases hF : faultHandlerSourceAdmitted st fhSrc = true
+              · simp only [hF, ↓reduceIte]
+              · simp only [hF, Bool.false_eq_true, ↓reduceIte]
+          · simp only [hV, Bool.not_false, ↓reduceIte]
       · simp only [hC, Bool.not_false, ↓reduceIte]
 
 /-- WS-ZA ZA5.4: `resolveVSpaceMapFrame` in continuation form: the frame
@@ -3116,12 +3089,13 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
             | _ => rfl
           · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte, KernelError.forArgumentCap]
 
-/-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root's
-source is a slot of the caller's CSpace holding a capability with `.grant` and
-`.write` to a CNode, the VSpace root's a slot holding a capability with
-`.write` to a VSpace root, and the fault endpoint's a slot that is empty or
-holds a valid fault-handler capability. -/
-theorem resolveSetSpaceAt_ok_authorised (callerTid : SeLe4n.ThreadId)
+/-- **The source facts the `.tcbSetSpace` arm rests on**: the CSpace root's
+source is a slot of the caller's CSpace holding a capability to a CNode that
+admits the root data word, the VSpace root's a slot holding a capability to a
+VSpace root, and the fault endpoint's a slot that is empty or holds a valid
+fault-handler capability.  No right is asked of either root (seL4's
+`decodeSetSpace` asks none). -/
+theorem resolveSetSpaceAt_ok_sources (callerTid : SeLe4n.ThreadId)
     (cnAddr vrAddr fhAddr : SeLe4n.CPtr)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
     (cnSrc vrSrc fhSrc : CSpaceAddr)
@@ -3130,8 +3104,7 @@ theorem resolveSetSpaceAt_ok_authorised (callerTid : SeLe4n.ThreadId)
       lookupSlot callerTcb cnAddr st = .ok cnSrc ∧ lookupSlot callerTcb vrAddr st = .ok vrSrc ∧
       lookupSlot callerTcb fhAddr st = .ok fhSrc ∧
       cspaceRootSourceAdmitted st cnSrc args.cspaceRootData = true ∧
-      cspaceRootSourceAuthorised st cnSrc = true ∧
-      vspaceRootSourceAdmitted st vrSrc = true ∧ vspaceRootSourceAuthorised st vrSrc = true ∧
+      vspaceRootSourceAdmitted st vrSrc = true ∧
       faultHandlerSourceAdmitted st fhSrc = true := by
   unfold resolveSetSpaceAt at h
   cases hT : st.getTcb? callerTid with
@@ -3145,31 +3118,25 @@ theorem resolveSetSpaceAt_ok_authorised (callerTid : SeLe4n.ThreadId)
       rw [hLc] at h
       simp only at h
       by_cases hC : cspaceRootSourceAdmitted st c args.cspaceRootData = true
-      · by_cases hCA : cspaceRootSourceAuthorised st c = true
-        · simp only [hC, hCA, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-          cases hLv : lookupSlot callerTcb vrAddr st with
-          | error f => rw [hLv] at h; cases h
-          | ok v =>
-            rw [hLv] at h
-            simp only at h
-            by_cases hV : vspaceRootSourceAdmitted st v = true
-            · by_cases hVA : vspaceRootSourceAuthorised st v = true
-              · simp only [hV, hVA, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-                cases hLf : lookupSlot callerTcb fhAddr st with
-                | error f => rw [hLf] at h; cases h
-                | ok fh =>
-                  rw [hLf] at h
-                  simp only at h
-                  by_cases hF : faultHandlerSourceAdmitted st fh = true
-                  · simp only [hF, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
-                    exact ⟨callerTcb, rfl, hLc, hLv, hLf, hC, hCA, hV, hVA, hF⟩
-                  · simp only [hF, Bool.false_eq_true, ↓reduceIte] at h; cases h
-              · simp only [hV, hVA, Bool.not_true, Bool.not_false, Bool.false_eq_true,
-                  ↓reduceIte] at h; cases h
-            · simp only [hV, Bool.not_false, ↓reduceIte] at h; cases h
-        · simp only [hC, hCA, Bool.not_true, Bool.not_false, Bool.false_eq_true, ↓reduceIte] at h
-          cases h
+      · simp only [hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+        cases hLv : lookupSlot callerTcb vrAddr st with
+        | error f => rw [hLv] at h; cases h
+        | ok v =>
+          rw [hLv] at h
+          simp only at h
+          by_cases hV : vspaceRootSourceAdmitted st v = true
+          · simp only [hV, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+            cases hLf : lookupSlot callerTcb fhAddr st with
+            | error f => rw [hLf] at h; cases h
+            | ok fh =>
+              rw [hLf] at h
+              simp only at h
+              by_cases hF : faultHandlerSourceAdmitted st fh = true
+              · simp only [hF, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl, rfl⟩ := h
+                exact ⟨callerTcb, rfl, hLc, hLv, hLf, hC, hV, hF⟩
+              · simp only [hF, Bool.false_eq_true, ↓reduceIte] at h; cases h
+          · simp only [hV, Bool.not_false, ↓reduceIte] at h; cases h
       · simp only [hC, Bool.not_false, ↓reduceIte] at h; cases h
 
 /-- **WS-SX SX6.3 (D10): the two slots of a handler issue** (seL4's

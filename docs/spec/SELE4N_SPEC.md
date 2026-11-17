@@ -7545,17 +7545,21 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   inserted with rights = the source's rights ∩ the root's rights
   (`TCB.cspaceRootRights`, `TCB.vspaceRootRights`) and no badge, with the
   derivation edge from the source slot (`.copy`).  Revoking the source, or any
-  ancestor of it, therefore empties the thread's slot.  MR0/MR1 are capability
-  addresses in the **caller's** CSpace, resolved to their slots by
-  `resolveSetSpace` over the shared `resolveCallerCapSlot`: the CSpace root
-  needs `.grant` and `.write` (a CSpace root hands the thread every capability
-  the CNode holds), the VSpace root `.write`; each source is re-checked against
-  the store for its kind (`cspaceRootSourceAdmitted`,
-  `vspaceRootSourceAdmitted`), and every check precedes every write.  Suspended
+  ancestor of it, therefore empties the thread's slot.  The roots are extra
+  capabilities 1 and 2, the fault endpoint extra capability 0, each resolved
+  to its slot in the **caller's** CSpace by `resolveSetSpace`.  No right is
+  asked of either root capability, as seL4's `decodeSetSpace` asks none (its
+  CNode and VSpace capabilities carry no rights): the installed copy keeps only
+  the source's rights, it is never invoked, and a CNode capability of any
+  rights already lets its holder reach every slot below it (the CSpace walk,
+  a CNode operation's source root and the receive path read no right of a
+  CNode capability).  Each source is re-checked against the store for its kind
+  (`cspaceRootSourceAdmitted`, `vspaceRootSourceAdmitted`), and every check
+  precedes every write.  Suspended
   means the stored flag is `.Inactive` **and** `inferThreadState` classifies
   the thread so — a stale flag cannot admit a running thread
   (`copyThreadSpaces_refuses_active`).  Payoffs: `copyThreadSpaces_ok_tcb`,
-  `resolveSetSpace_ok_authorised`, `copyThreadSpaces_preserves_ipcInvariantFull`,
+  `resolveSetSpaceAt_ok_sources`, `copyThreadSpaces_preserves_ipcInvariantFull`,
   `copyThreadSpaces_preserves_capabilityInvariantBundle` (completeness,
   acyclicity and `cdtLinksAgree`), `copyThreadSpaces_preserves_projection`;
   footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also revokes a

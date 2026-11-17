@@ -1669,10 +1669,27 @@ private def runSetSpaceChecks : IO Unit := do
   | .error e => assertBool s!"carving a root succeeds (got {repr e})" false
   | .ok ((), st1) => do
     -- The refusals, each on the state the success runs on.
-    assertBool "a CSpace-root capability without .grant is refused (illegalAuthority)"
-      (isErr .illegalAuthority (setSpaceAs slotWorkerTcb slotOwnCnRW 12 0 st1))
-    assertBool "a read-only CSpace-root capability is refused (illegalAuthority)"
-      (isErr .illegalAuthority (setSpaceAs slotWorkerTcb slotOwnCnRO 12 0 st1))
+    -- seL4's `decodeSetSpace` asks no right of either root (its CNode and
+    -- VSpace capabilities carry none): a read-only CSpace root and a VSpace
+    -- root without `.write` are admitted, and each installed copy keeps only
+    -- the rights its source holds.
+    let slotRights (st' : SystemState) (slot : SeLe4n.Slot) : Option (List AccessRight) :=
+      ((st'.getTcb? spaceWorker).bind (·.spaceSlotCap slot)).map
+        (fun c => [AccessRight.read, .write, .grant, .grantReply, .retype].filter c.hasRight)
+    match setSpaceAs slotWorkerTcb slotOwnCnRW 12 0 st1 with
+    | .error e => assertBool s!"a CSpace-root capability without .grant is admitted (got {repr e})" false
+    | .ok ((), stW) =>
+      assertBool "a CSpace-root capability without .grant is admitted; the copy holds read and write only"
+        (slotRights stW TCB.cspaceRootSlot == some [.read, .write])
+    match setSpaceAs slotWorkerTcb slotOwnCnRO slotVspRetype 0 st1 with
+    | .error e => assertBool s!"a read-only CSpace root and a VSpace root without .write are admitted (got {repr e})" false
+    | .ok ((), stR) => do
+      assertBool "the read-only CSpace root's copy holds read only"
+        (slotRights stR TCB.cspaceRootSlot == some [.read])
+      assertBool "the VSpace root's copy holds read only (its source's .retype is outside the root's rights)"
+        (slotRights stR TCB.vspaceRootSlot == some [.read])
+      assertBool "and the worker names that CSpace root and VSpace root"
+        (rootsOf stR spaceWorker == some (carveCn, carveVsp))
     assertBool "a CNode capability named as the VSpace root is refused (illegalState, seL4's IllegalOperation)"
       (isErr .illegalState
         (setSpaceAs slotWorkerTcb slotOwnCnGrant slotOwnCnRW 0 st1))
