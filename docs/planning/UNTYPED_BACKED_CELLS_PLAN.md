@@ -622,8 +622,11 @@ attributed by disassembling the traced image.
   array holds 32 words (216 → 280 B) and its space-cell array four entries
   (48 → 56 B), while the TCB record loses the retired `faultHandlerSet` and
   `faultHandlerWord` scalars (the generated C's `lean_alloc_ctor(0, 43, 199)`,
-  9 scalar bytes fewer, 560 → 552 B).  The cell count is unchanged and the pin
-  is 22 / 2248.
+  9 scalar bytes fewer, 560 → 552 B), and the slot gets its own spare record
+  (seL4-MCS's `tcbFaultHandler` CTE, so SetSpace's fault-endpoint copy writes
+  over it in place: a `some` cell, a capability record and its target,
+  16 + 80 + 16 B) in a spare array of four entries (48 → 56 B).  The pin is
+  25 / 2368.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
   (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).  Gone since
