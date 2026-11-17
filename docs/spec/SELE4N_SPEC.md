@@ -8360,7 +8360,14 @@ in order:
    (`callerExtraCapsFault?`).  The first that does not resolve is a capability
    fault at its own address in the send phase
    (`dispatchSyscallChecked_extraCaps_before_type`).  A receive-phase syscall
-   looks none up (seL4's `handleRecv`).
+   looks none up (seL4's `handleRecv`).  The declassifying calls
+   (`declassify`, `declassifySignal`) are the one exception, by design rather
+   than by omission: declassification has no seL4 counterpart, and its refused
+   attempts belong in the refusal ledger a monitor reads, so a failed lookup of
+   their invoked capability or of their target (extra capability 0) is
+   returned as the lookup failure and recorded there, not raised as a fault
+   into a handler's mailbox (`capFaultReceivePhase?`,
+   `capFaultReceivePhase?_none_iff_records_or_capabilityFree`).
 3. **Null capability.**  A slot that holds no capability user space may hold
    is no failure of the lookup in seL4: it is refused only now, after the extra
    capabilities (`syscallResolveRefusal`,
