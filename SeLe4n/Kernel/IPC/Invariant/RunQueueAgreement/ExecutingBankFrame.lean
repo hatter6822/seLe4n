@@ -403,8 +403,8 @@ theorem contextMatchesCurrentOnCore_stageReturns {e : CoreId} {c0 : SeLe4n.Threa
     · trivial
 
 /-- **Every outcome's staging keeps a match**: a returning frame is staged into
-both holders or into a thread not current, and a blocked or faulted outcome
-stages nothing. -/
+both holders or into a thread not current, and a blocked, faulted or resumed
+outcome stages nothing. -/
 theorem contextMatchesCurrentOnCore_stageCallerReturnFor {e : CoreId} {post : SystemState}
     (caller? : Option SeLe4n.ThreadId) (o : Architecture.SyscallOutcome)
     (hInv : post.objects.invExt) (h : contextMatchesCurrentOnCore post e) :
@@ -417,6 +417,7 @@ theorem contextMatchesCurrentOnCore_stageCallerReturnFor {e : CoreId} {post : Sy
       exact contextMatchesCurrentOnCore_stageReturns f hInv (bankAgree_of_match (c0 := c0) h)
     | blocks => exact h
     | faulted => exact h
+    | resumes => exact h
 
 /-- **The commit's staging turns the agreement into the match**, when an
 outcome that stages nothing leaves the caller current no longer. -/
@@ -430,6 +431,8 @@ theorem contextMatchesCurrentOnCore_stageCallerReturnFor_of_bankAgree {e : CoreI
   | blocks =>
     exact contextMatchesCurrentOnCore_of_bankAgree hA (hNR fun _ h => by cases h)
   | faulted =>
+    exact contextMatchesCurrentOnCore_of_bankAgree hA (hNR fun _ h => by cases h)
+  | resumes =>
     exact contextMatchesCurrentOnCore_of_bankAgree hA (hNR fun _ h => by cases h)
 
 /-- WS-ZA ZA6.28: **a scheduling arm keeps the agreement**: its prefix writes no

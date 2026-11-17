@@ -106,34 +106,44 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
       at h hMR cW iR
     split at h
     · rename_i fault _
-      cases h
-      refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
-      have hF := writeFaultRegistersToTcb_keyFrame _ tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) iR
-      have hO := stepCovers_trans (stepCovers_trans (e := otherCore e) cW
-        hF.stepCovers) (faultDeliverOnCoreChecked_stepCovers (otherCore e) (lctx := ctx)
-          (tid := tid) (f := fault) (c := e) (ctx := Architecture.faultContextOfThread
-            (writeFaultRegistersToTcb stR tid (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3
-              x4 x5 ipcBufferAddr spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
-      unfold Platform.FFI.deliverSyscallCapFault
-      dsimp only
-      generalize hX : (faultDeliverOnCoreChecked _ _ _ _ _ _).1 = X at hO ⊢
-      have hV : X.scheduler.currentOnCore e = none := by
-        cases hP : X.scheduler.currentOnCore e with
-        | none => rfl
-        | some t =>
-          have hT := hO.currentKept e (ne_otherCore e) t hP
-          rw [hCur] at hT; cases hT
-          subst hX
-          exact absurd hP (faultDeliverOnCoreChecked_leaves_thread_not_runnable _ _ tid _ _ e).2
-      unfold contextMatchesCurrentOnCore; rw [hV]; trivial
-    · cases h
-      refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
-      exact (contextMatchesCurrentOnCore_frame
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine])
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))).mpr hMR
+      split at h
+      · cases h
+        exact contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv hMR
+      · cases h
+        refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
+        have hF := writeFaultRegistersToTcb_keyFrame _ tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) iR
+        have hO := stepCovers_trans (stepCovers_trans (e := otherCore e) cW
+          hF.stepCovers) (faultDeliverOnCoreChecked_stepCovers (otherCore e) (lctx := ctx)
+            (tid := tid) (f := fault) (c := e) (ctx := Architecture.faultContextOfThread
+              (writeFaultRegistersToTcb stR tid (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3
+                x4 x5 ipcBufferAddr spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
+        unfold Platform.FFI.deliverSyscallCapFault
+        dsimp only
+        generalize hX : (faultDeliverOnCoreChecked _ _ _ _ _ _).1 = X at hO ⊢
+        have hV : X.scheduler.currentOnCore e = none := by
+          cases hP : X.scheduler.currentOnCore e with
+          | none => rfl
+          | some t =>
+            have hT := hO.currentKept e (ne_otherCore e) t hP
+            rw [hCur] at hT; cases hT
+            subst hX
+            exact absurd hP (faultDeliverOnCoreChecked_leaves_thread_not_runnable _ _ tid _ _ e).2
+        unfold contextMatchesCurrentOnCore; rw [hV]; trivial
+    · split at h
+      · cases h
+        refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
+        exact (contextMatchesCurrentOnCore_frame
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine])
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))).mpr hMR
+      · cases h
+        refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
+        exact (contextMatchesCurrentOnCore_frame
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq])
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)).mpr hMR
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB

@@ -8714,7 +8714,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
      | .ok (outcome, committed) =>
          (match outcome with
           | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied false)
-          | .blocks | .faulted => false) &&
+          | .blocks | .faulted | .resumes => false) &&
          (match committed.declassificationRefusals.recent.get
              niState.declassificationRefusals.nextSlot with
           | some r => decide (r.reason = KernelError.policyDenied) &&
@@ -9000,7 +9000,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
          | some recorded =>
              (match outcome with
               | .returns f => decide (f = Architecture.errorFrame recorded.reason false)
-              | .blocks | .faulted => false) &&
+              | .blocks | .faulted | .resumes => false) &&
              decide (recorded.reason = KernelError.policyDenied) &&
              decide (recorded.syscall = SyscallId.declassify) &&
              decide (recorded.subject = highCurrent) &&

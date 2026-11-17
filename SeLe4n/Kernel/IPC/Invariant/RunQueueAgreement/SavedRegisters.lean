@@ -176,6 +176,7 @@ theorem stageCallerReturnFor_savedRegsKeptOffCore {e : CoreId} {base post : Syst
   cases o with
   | blocks => exact savedRegsKeptOffCore_refl e post
   | faulted => exact savedRegsKeptOffCore_refl e post
+  | resumes => exact savedRegsKeptOffCore_refl e post
   | returns f =>
     simp only [Architecture.stageCallerReturnFor]
     split

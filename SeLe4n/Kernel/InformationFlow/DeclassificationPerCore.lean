@@ -3425,7 +3425,10 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
         (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         (cancelReceiveBusyReply ctx executingCore
           (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
-        tid ke = none) :
+        tid ke = none)
+    -- only `Call` is answered with an error frame (seL4's `if (isCall)
+    -- replyFromKernel_error`); every other refused syscall resumes untouched
+    (hCall : syscallId = Syscall.call.number.toUInt32) :
     -- (1) the ledger has no capacity refusal, where the trail does
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
       recordDeclassificationChecked trail e = none) ∧
@@ -3452,7 +3455,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
   refine ⟨recordRefusal_never_refuses L r trail e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
       syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI
-      hSyscall hNoCapFault
+      hSyscall hNoCapFault hCall
   · obtain ⟨L', hEq⟩ :=
       SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st
     rw [hEq]

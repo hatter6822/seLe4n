@@ -828,27 +828,35 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
       at h w1 iR hHR
     split at h
-    · cases h
-      refine savedRegsWrittenFree.census (base := st) ?_ hC.currentKept hC.residentKept
-      unfold Platform.FFI.deliverSyscallCapFault
-      dsimp only
-      have hW2 : savedRegsKeptExcept (· = tid) stR (writeFaultRegistersToTcb stR tid
-            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
-        unfold writeFaultRegistersToTcb; exact .updateTcb_written _ _ _ iR rfl
-      have iW2 : (writeFaultRegistersToTcb stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-          ).objects.invExt := by
-        unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ iR
-      refine (w1.trans (.of_kept hW2 fun _ e => e ▸ hFr)).trans
-        (faultDeliverOnCoreChecked_savedRegsWrittenFree iW2 fun ep t ht => ?_)
-      unfold writeFaultRegistersToTcb at ht
-      rw [updateTcb_getEndpoint? iR] at ht
-      exact hHR _ _ ht
-    · cases h
-      exact savedRegsWrittenFree.census (base := st) (w1.trans (.of_kept (W := fun _ => False)
-          (.of_objects_eq ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _)))
-          fun _ h => h.elim)) hC.currentKept hC.residentKept
+    · split at h
+      · cases h
+        exact savedRegsWrittenFree.census (base := st) w1 hC.currentKept hC.residentKept
+      · cases h
+        refine savedRegsWrittenFree.census (base := st) ?_ hC.currentKept hC.residentKept
+        unfold Platform.FFI.deliverSyscallCapFault
+        dsimp only
+        have hW2 : savedRegsKeptExcept (· = tid) stR (writeFaultRegistersToTcb stR tid
+              (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
+          unfold writeFaultRegistersToTcb; exact .updateTcb_written _ _ _ iR rfl
+        have iW2 : (writeFaultRegistersToTcb stR tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+            ).objects.invExt := by
+          unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ iR
+        refine (w1.trans (.of_kept hW2 fun _ e => e ▸ hFr)).trans
+          (faultDeliverOnCoreChecked_savedRegsWrittenFree iW2 fun ep t ht => ?_)
+        unfold writeFaultRegistersToTcb at ht
+        rw [updateTcb_getEndpoint? iR] at ht
+        exact hHR _ _ ht
+    · split at h
+      · cases h
+        exact savedRegsWrittenFree.census (base := st) (w1.trans (.of_kept (W := fun _ => False)
+            (.of_objects_eq ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _)))
+            fun _ h => h.elim)) hC.currentKept hC.residentKept
+      · cases h
+        exact savedRegsWrittenFree.census (base := st) (w1.trans (.of_kept (W := fun _ => False)
+            (.of_objects_eq (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _))
+            fun _ h => h.elim)) hC.currentKept hC.residentKept
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB

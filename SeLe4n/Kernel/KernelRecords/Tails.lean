@@ -74,6 +74,7 @@ theorem stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (st : SystemStat
   cases o with
   | blocks => exact refl hInv
   | faulted => exact refl hInv
+  | resumes => exact refl hInv
   | returns f =>
     cases caller? with
     | none => exact refl hInv

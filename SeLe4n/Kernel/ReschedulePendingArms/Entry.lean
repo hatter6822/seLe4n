@@ -234,21 +234,32 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
     obtain ⟨hC, hCInv⟩ := cancelReceiveBusyReply_stepCovers e ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) hW.2.2
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      have hF := writeFaultRegistersToTcb_keyFrame _ tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hCInv
-      exact stepCoversInv_trans
-        (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
-        (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
-    · cases h
-      refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
-        (capabilityKeyFrame.stepCoversInv ?_)
-      exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_scheduler _ _ _))
+    · split at h
+      · -- an NBSend lookup fault is dropped: the refusal's state, nothing more
+        cases h
+        exact ⟨stepCovers_trans hW.stepCovers hC, hCInv⟩
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        have hF := writeFaultRegistersToTcb_keyFrame _ tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hCInv
+        exact stepCoversInv_trans
+          (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
+          (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
+    · split at h
+      · cases h
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_scheduler _ _ _))
+      · cases h
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _)
   · rename_i hE
     cases h
     have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB

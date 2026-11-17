@@ -193,17 +193,28 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
     generalize cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR at h hS hQR hCR
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
-    · cases h
-      exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        (by
-          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
-          split <;> (try split) <;> (try split) <;> rfl)
-        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine]))
+    · split at h
+      · cases h
+        exact hW.trans hS
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
+    · split at h
+      · cases h
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          (by
+            unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+            split <;> (try split) <;> (try split) <;> rfl)
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine]))
+      · cases h
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (by
+            unfold Platform.FFI.recordSyscallRefusal
+            split <;> (try split) <;> rfl)
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq]))
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_recordsStage P1 hR1 hE)

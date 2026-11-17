@@ -1507,7 +1507,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
   | .error e => assertBool s!"seam capFault pipeline: {e}" false
   | .ok s =>
       assertBool "a Call whose endpoint CPtr resolves to nothing FAULTS the caller — no error frame"
-        (match s.outcome with | .faulted => true | .blocks => false | .returns _ => false)
+        (match s.outcome with | .faulted => true | .blocks | .resumes => false | .returns _ => false)
       assertBool "the faulted outcome's tag is 2 — distinct from a frame (0) and a block (1), so the trap layer halts instead of resuming"
         (s.outcome.tagWord == 2 && SyscallOutcome.tagWord .blocks == 1 &&
           SyscallOutcome.tagWord (.returns .zero) == 0)
