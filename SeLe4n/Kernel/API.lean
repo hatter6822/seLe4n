@@ -1355,10 +1355,10 @@ slot holds with a present object. -/
 /-- **The kind of object each syscall invokes through an `.object`
 capability**, or `none` where it invokes none: the `none` syscalls invoke a
 capability of another target (WS-SX SX6.7: the declassifications invoke the
-audit-trail capability, their object an extra capability).  No wildcard: a new syscall states its kind. -/
+audit-trail capability, their object an extra capability; the service calls
+invoke the service-registry capability, their endpoint an extra capability).  No wildcard: a new syscall states its kind. -/
 def syscallObjectKind? : SyscallId → Option KernelObjectType
-  | .send | .receive | .call | .replyRecv | .serviceRegister | .serviceRevoke
-  | .serviceQuery => some .endpoint
+  | .send | .receive | .call | .replyRecv => some .endpoint
   | .notificationSignal | .notificationWait => some .notification
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap => some .cnode
@@ -1372,7 +1372,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .tcbUnbindNotification => some .tcb
   | .pageTableMap | .pageTableUnmap => some .pageTable
   | .declassify | .declassifySignal | .reply | .auditRead | .auditDrain | .schedContextConfigure
-  | .irqControlGet | .irqHandlerAck | .irqHandlerSetNotification | .irqHandlerClear
+  | .serviceRegister | .serviceRevoke | .serviceQuery | .irqControlGet | .irqHandlerAck | .irqHandlerSetNotification | .irqHandlerClear
   | .yield => none
 
 /-- **The target type each syscall invokes**, seL4's `decodeInvocation`
@@ -1381,8 +1381,8 @@ constructor and, for an `.object` capability, the kind of the object it names,
 read in place (`objectKindIs`).  The gate checks it after the lookup and before
 any right (`syscallInvokeTyped`), so a capability of the wrong type answers
 `.invalidCapability` whatever rights it carries.  The declassifications are
-invocations of the audit-trail capability (WS-SX SX6.7), so no `.object`
-capability selects them; the yield invokes no capability and accepts none.  Out of line, with the state and the capability
+invocations of the audit-trail capability (WS-SX SX6.7), and the service calls
+of the service-registry capability, so no `.object` capability selects them; the yield invokes no capability and accepts none.  Out of line, with the state and the capability
 borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
 @[noinline] def syscallTargetAccepted (sid : SyscallId) (st : @& SystemState)
     (cap : @& Capability) : Bool :=
@@ -1396,6 +1396,8 @@ borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
       sid == .auditRead || sid == .auditDrain || sid == .declassify || sid == .declassifySignal
   | .schedControl _ => sid == .schedContextConfigure
   | .irqControl _ => sid == .irqControlGet
+  | .serviceRegistry _ =>
+      sid == .serviceRegister || sid == .serviceRevoke || sid == .serviceQuery
   | .irqHandler _ =>
       sid == .irqHandlerAck || sid == .irqHandlerSetNotification || sid == .irqHandlerClear
   | .cnodeSlotWord word => false
@@ -3009,6 +3011,120 @@ theorem resolveDeclassifySignalTargetK_eq {α : Type} (tid : SeLe4n.ThreadId) (x
     obtain ⟨cap, oid⟩ := r
     simp only []
     split <;> rfl
+
+/-- WS-SX SX6.7: the argument capability number a service-registry
+invocation's endpoint answers to — extra capability 0, numbered `1` as seL4
+numbers an extra capability's `invalidCapNumber`. -/
+def serviceEndpointCapNumber : UInt64 := 1
+
+/-- **WS-SX SX6.7: the endpoint a service-registry invocation names, extra
+capability 0.**  `serviceRegister`, `serviceRevoke` and `serviceQuery` are
+invocations of the service-registry capability, so no label selects an
+operation on an endpoint (whose Send and Call are IPC in seL4 whatever the
+label); the endpoint is the caller's extra capability 0, resolved through the
+caller's own CSpace with the syscall's own right (`syscallRequiredRight`:
+`.write` to register or revoke, `.read` to query), so the endpoint's authority
+is checked as it was when the endpoint was the invoked capability.  A message
+naming no extra capability is `.truncatedMessage`; an empty slot, a capability
+to a kernel-reserved object, one naming no object or naming an object that is
+not an endpoint is `invalidCapability 1`, a capability without the right
+`.illegalAuthority`. -/
+def resolveServiceEndpoint (sid : SyscallId) (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) : Except KernelError (Capability × SeLe4n.ObjId) :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => .error .truncatedMessage
+  | some addr =>
+    match resolveCallerCapObject tid addr (syscallRequiredRight sid) st with
+    | .error e => .error (e.forArgumentCap serviceEndpointCapNumber)
+    | .ok (cap, epId) =>
+      if objectKindIs st epId .endpoint then .ok (cap, epId)
+      else .error (.invalidCapability serviceEndpointCapNumber)
+
+/-- What `resolveServiceEndpoint` answers is extra capability 0's capability,
+as the taint planner reads it (`syscallOperandCap?`), naming the endpoint
+returned and carrying the syscall's right. -/
+theorem resolveServiceEndpoint_ok (sid : SyscallId) (tid : SeLe4n.ThreadId) (xc : Nat)
+    (st : SystemState) (cap : Capability) (epId : SeLe4n.ObjId)
+    (h : resolveServiceEndpoint sid tid xc st = .ok (cap, epId)) :
+    ∃ addr, callerExtraCapAddr? st tid xc 0 = some addr ∧
+      syscallOperandCap? st tid addr = some cap ∧ cap.target = .object epId ∧
+      cap.hasRight (syscallRequiredRight sid) = true ∧
+      objectKindIs st epId .endpoint = true := by
+  unfold resolveServiceEndpoint at h
+  cases hA : callerExtraCapAddr? st tid xc 0 with
+  | none => rw [hA] at h; cases h
+  | some addr =>
+    rw [hA] at h
+    simp only at h
+    cases hR : resolveCallerCapObject tid addr (syscallRequiredRight sid) st with
+    | error e => rw [hR] at h; cases h
+    | ok r =>
+      obtain ⟨c, oid⟩ := r
+      rw [hR] at h
+      simp only at h
+      by_cases hK : objectKindIs st oid .endpoint = true
+      · rw [if_pos hK] at h
+        cases h
+        obtain ⟨callerTcb, ref, hT, hL, hC, hRt, hTg⟩ :=
+          resolveCallerCapObject_ok tid addr (syscallRequiredRight sid) st cap epId hR
+        exact ⟨addr, rfl, by simp only [syscallOperandCap?, hT, hL, hC], hTg, hRt, hK⟩
+      · rw [if_neg hK] at h; cases h
+
+/-- `resolveServiceEndpoint` in continuation form, through
+`resolveCallerCapObjectK`: no capability pair or result cell is built
+(`resolveServiceEndpointK_eq`). -/
+@[inline] def resolveServiceEndpointK {α : Type} (sid : SyscallId) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (st : SystemState) (onErr : KernelError → α)
+    (onOk : Capability → SeLe4n.ObjId → α) : α :=
+  match callerExtraCapAddr? st tid xc 0 with
+  | none => onErr .truncatedMessage
+  | some addr =>
+    resolveCallerCapObjectK tid addr (syscallRequiredRight sid) st
+      (KernelError.argumentCapRefusal serviceEndpointCapNumber onErr) fun cap epId =>
+        if objectKindIs st epId .endpoint then onOk cap epId
+        else onErr (.invalidCapability serviceEndpointCapNumber)
+
+theorem resolveServiceEndpointK_eq {α : Type} (sid : SyscallId) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (st : SystemState) (onErr : KernelError → α)
+    (onOk : Capability → SeLe4n.ObjId → α) :
+    resolveServiceEndpointK sid tid xc st onErr onOk =
+      match resolveServiceEndpoint sid tid xc st with
+      | .error e => onErr e
+      | .ok (cap, epId) => onOk cap epId := by
+  unfold resolveServiceEndpointK resolveServiceEndpoint
+  cases callerExtraCapAddr? st tid xc 0 with
+  | none => rfl
+  | some addr =>
+    simp only []
+    rw [resolveCallerCapObjectK_eq]
+    cases resolveCallerCapObject tid addr (syscallRequiredRight sid) st with
+    | error e => rfl
+    | ok r =>
+      obtain ⟨cap, epId⟩ := r
+      simp only []
+      split <;> rfl
+
+/-- **WS-SX SX6.7: a service-registry arm on its endpoint**: the endpoint
+resolved (`resolveServiceEndpoint`), then `k` on its capability and id; a
+refused resolution is the arm's refusal. -/
+@[inline] def serviceEndpointArm (sid : SyscallId) (tid : SeLe4n.ThreadId) (xc : Nat)
+    (k : Capability → SeLe4n.ObjId → Kernel Unit) : Kernel Unit :=
+  fun st =>
+    match resolveServiceEndpoint sid tid xc st with
+    | .error e => .error e
+    | .ok (cap, epId) => k cap epId st
+
+/-- A success of a service arm is a success of its continuation on the endpoint
+extra capability 0 resolved to. -/
+theorem serviceEndpointArm_ok {sid : SyscallId} {tid : SeLe4n.ThreadId} {xc : Nat}
+    {k : Capability → SeLe4n.ObjId → Kernel Unit} {st : SystemState} {r : Unit × SystemState}
+    (h : serviceEndpointArm sid tid xc k st = .ok r) :
+    ∃ epCap epId, resolveServiceEndpoint sid tid xc st = .ok (epCap, epId) ∧
+      k epCap epId st = .ok r := by
+  unfold serviceEndpointArm at h
+  cases hR : resolveServiceEndpoint sid tid xc st with
+  | error e => rw [hR] at h; cases h
+  | ok p => obtain ⟨c, e⟩ := p; rw [hR] at h; exact ⟨c, e, rfl, h⟩
 
 /-- WS-ZA ZA6.4: `resolveSchedControlConfigureTarget` in continuation form,
 through `resolveCallerCapObjectK`: no gate, slot reference, capability pair or
@@ -4729,16 +4845,20 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st
     | _ => fun _ => .error (.invalidCapability 0)
   | .serviceRevoke =>
-    -- The revoke removes the registration the invoked endpoint records: the
-    -- capability to the endpoint is the authority, and no service id is read
-    -- from the caller's registers (`revokeServiceByRecordedRegistration`).
+    -- The revoke removes the registration the endpoint records: the
+    -- service-registry capability and the capability to the endpoint, extra
+    -- capability 0 (WS-SX SX6.7, `resolveServiceEndpoint`), are the
+    -- authority, and no service id is read from the caller's registers
+    -- (`revokeServiceByRecordedRegistration`).
     some <| match cap.target with
-    | .object epId => fun st => revokeServiceByRecordedRegistration epId st
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceRevoke tid decoded.msgInfo.extraCaps fun _ epId st =>
+        revokeServiceByRecordedRegistration epId st
     | _ => fun _ => .error (.invalidCapability 0)
   | .serviceQuery =>
     some <| match cap.target with
-    | .object epId =>
-      fun st =>
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceQuery tid decoded.msgInfo.extraCaps fun _ epId st =>
         match lookupServiceByRecordedRegistration epId st with
         | .ok (reg, st') =>
             -- WS-RA RA.B.7: the query answers — the resolved registration's
@@ -5347,24 +5467,25 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object oid =>
-      try dsimp only [] at hStep
-      obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
+    case serviceRegistry _ =>
+      obtain ⟨_, oid, -, hK⟩ := serviceEndpointArm_ok hStep
+      obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hK
       exact revokeService_preserves_ipcInvariantFull st st' _ hObjInv hInv hRev
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object epId =>
-      try dsimp only [] at hStep
+    case serviceRegistry _ =>
+      obtain ⟨_, epId, -, hK⟩ := serviceEndpointArm_ok hStep
+      clear hStep
       cases hLkS : lookupServiceByRecordedRegistration epId st with
-      | error e => simp only [hLkS] at hStep; cases hStep
+      | error e => simp only [hLkS] at hK; cases hK
       | ok pair =>
           obtain ⟨reg, st1⟩ := pair
-          simp only [hLkS] at hStep
+          simp only [hLkS] at hK
           have hStEq : st1 = st := lookupServiceByRecordedRegistration_preserves_state epId st reg st1 hLkS
           subst hStEq
-          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-          subst hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hK
+          subst hK
           exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv hInv
     all_goals try cases hStep
   case schedContextConfigure =>
@@ -5728,7 +5849,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
 
 /-- **The flow gates of the two capability-only service arms.**  The service
 query reads the registration its endpoint records, and the revoke removes it,
-so each is a read or a write of the endpoint the invoked capability names; a
+so each is a read or a write of the endpoint its extra capability 0 names
+(WS-SX SX6.7, `resolveServiceEndpoint`); a
 capability alone does not admit a flow its holder's label does not.  The query
 runs only when the endpoint's label flows to the caller's
 (`serviceEndpointReadAdmitted`), the revoke only when the caller's flows to the
@@ -5741,16 +5863,18 @@ a refusal reveals nothing about the registry.  Every other arm, and a
 capability naming no object (which each arm refuses itself), runs the
 capability-only arm `k` as it is; `dispatchCapabilityOnlyChecked_ok` is the bridge
 back to `k` for a success. -/
-def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (tid : SeLe4n.ThreadId)
-    (cap : Capability) (k : Kernel Unit) : Kernel Unit :=
+def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc : Nat)
+    (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit) : Kernel Unit :=
   match sid with
   | .serviceQuery =>
     match cap.target with
-    | .object epId => serviceQueryStaged ctx tid epId
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceQuery tid xc fun _ epId => serviceQueryStaged ctx tid epId
     | _ => k
   | .serviceRevoke =>
     match cap.target with
-    | .object epId => revokeServiceChecked ctx tid epId
+    | .serviceRegistry _ =>
+      serviceEndpointArm .serviceRevoke tid xc fun _ epId => revokeServiceChecked ctx tid epId
     | _ => k
   | _ => k
 
@@ -5761,7 +5885,8 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
     {tid : SeLe4n.ThreadId} {e : Concurrency.CoreId} {cap : Capability} {k : Kernel Unit}
     {st : SystemState} {r : Unit × SystemState}
     (hC : dispatchCapabilityOnly decoded cap tid e = some k)
-    (h : dispatchCapabilityOnlyChecked ctx decoded.syscallId tid cap k st = .ok r) : k st = .ok r := by
+    (h : dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
+      = .ok r) : k st = .ok r := by
   unfold dispatchCapabilityOnlyChecked at h
   cases hS : decoded.syscallId <;> rw [hS] at h <;> try exact h
   all_goals
@@ -5769,20 +5894,30 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
     rw [hS] at hC
     cases hT : cap.target <;> rw [hT] at h hC <;> simp only [Option.some.injEq] at hC <;>
       subst hC <;> try exact h
-  · rename_i epId
-    by_cases hA : serviceEndpointWriteAdmitted ctx tid epId = true
-    · simpa [revokeServiceChecked, hA] using h
-    · simp [revokeServiceChecked, hA] at h
-  · rename_i epId
-    by_cases hA : serviceEndpointReadAdmitted ctx tid epId = true
-    · simpa [serviceQueryStaged, lookupServiceChecked, hA] using h
-    · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
+  · simp only [serviceEndpointArm] at h ⊢
+    cases hR : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st with
+    | error e => simp only [hR] at h; cases h
+    | ok p =>
+      obtain ⟨_, epId⟩ := p
+      simp only [hR] at h ⊢
+      by_cases hA : serviceEndpointWriteAdmitted ctx tid epId = true
+      · simpa [revokeServiceChecked, hA] using h
+      · simp [revokeServiceChecked, hA] at h
+  · simp only [serviceEndpointArm] at h ⊢
+    cases hR : resolveServiceEndpoint .serviceQuery tid decoded.msgInfo.extraCaps st with
+    | error e => simp only [hR] at h; cases h
+    | ok p =>
+      obtain ⟨_, epId⟩ := p
+      simp only [hR] at h ⊢
+      by_cases hA : serviceEndpointReadAdmitted ctx tid epId = true
+      · simpa [serviceQueryStaged, lookupServiceChecked, hA] using h
+      · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
 
 /-- Every arm but the two service arms is ungated. -/
 @[simp] theorem dispatchCapabilityOnlyChecked_of_not_service (ctx : LabelingContext) {sid : SyscallId}
-    (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
+    (xc : Nat) (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
     (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) :
-    dispatchCapabilityOnlyChecked ctx sid tid cap k = k := by
+    dispatchCapabilityOnlyChecked ctx sid xc tid cap k = k := by
   unfold dispatchCapabilityOnlyChecked
   split
   · exact absurd rfl hQ
@@ -5883,7 +6018,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid executingCore with
-  | some k => dispatchCapabilityOnlyChecked ctx decoded.syscallId tid cap k
+  | some k => dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k
   | none =>
   match decoded.syscallId with
   -- T6-I: IPC send — checked for sender→endpoint flow
@@ -6084,24 +6219,27 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
   -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
+  -- WS-SX SX6.7: invoked on the service-registry capability; the endpoint the
+  -- service is registered on is extra capability 0 (`resolveServiceEndpoint`).
   | .serviceRegister =>
     match cap.target with
-    | .object epId =>
+    | .serviceRegistry _ =>
       fun st => match decodeServiceRegisterArgs decoded with
       | .error e => .error e
       | .ok args =>
-          let iface : InterfaceSpec := {
-            ifaceId         := args.interfaceId
-            methodCount     := args.methodCount
-            maxMessageSize  := args.maxMessageSize
-            maxResponseSize := args.maxResponseSize
-            requiresGrant   := args.requiresGrant
-          }
-          let reg : ServiceRegistration := {
-            iface := iface
-            endpointCap := cap
-          }
-          registerServiceChecked ctx tid reg st
+          serviceEndpointArm .serviceRegister tid decoded.msgInfo.extraCaps (fun epCap _ st =>
+            let iface : InterfaceSpec := {
+              ifaceId         := args.interfaceId
+              methodCount     := args.methodCount
+              maxMessageSize  := args.maxMessageSize
+              maxResponseSize := args.maxResponseSize
+              requiresGrant   := args.requiresGrant
+            }
+            let reg : ServiceRegistration := {
+              iface := iface
+              endpointCap := epCap
+            }
+            registerServiceChecked ctx tid reg st) st
     | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A/T6-I: Notification signal — checked for signaler→notification flow
   | .notificationSignal =>
@@ -6685,28 +6823,38 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- ============================================================================
 
 /-- The checked `.serviceRevoke` arm is the unchecked one behind the write gate:
-the policy-checked revoke `revokeServiceChecked` at the endpoint the capability
-names. -/
+the policy-checked revoke `revokeServiceChecked` at the endpoint extra
+capability 0 names (WS-SX SX6.7, `serviceEndpointArm`). -/
 theorem dispatchWithCapChecked_serviceRevoke_eq
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId) :
+    (gate : SyscallGate) (cap : Capability) (code : Nat)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .serviceRegistry code) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    revokeServiceChecked ctx tid epId := by
+    serviceEndpointArm .serviceRevoke tid decoded.msgInfo.extraCaps
+      (fun _ epId => revokeServiceChecked ctx tid epId) := by
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     dispatchCapabilityOnlyChecked]
 
 /-- The checked `.serviceQuery` arm is the unchecked one behind the read gate:
 `serviceQueryStaged`, the arm's staging over the policy-checked lookup
-`lookupServiceChecked`. -/
+`lookupServiceChecked`, at the endpoint extra capability 0 names. -/
 theorem dispatchWithCapChecked_serviceQuery_eq
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .object epId) :
+    (gate : SyscallGate) (cap : Capability) (code : Nat)
+    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .serviceRegistry code) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-      serviceQueryStaged ctx tid epId := by
+      serviceEndpointArm .serviceQuery tid decoded.msgInfo.extraCaps
+        (fun _ epId => serviceQueryStaged ctx tid epId) := by
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     dispatchCapabilityOnlyChecked]
+
+/-- A service arm on an endpoint that resolves is its continuation on it. -/
+theorem serviceEndpointArm_of_resolved {sid : SyscallId} {tid : SeLe4n.ThreadId} {xc : Nat}
+    {st : SystemState} {epCap : Capability} {epId : SeLe4n.ObjId}
+    (k : Capability → SeLe4n.ObjId → Kernel Unit)
+    (hRes : resolveServiceEndpoint sid tid xc st = .ok (epCap, epId)) :
+    serviceEndpointArm sid tid xc k st = k epCap epId st := by
+  simp [serviceEndpointArm, hRes]
 
 /-- **The query refuses an endpoint the caller may not read**, before any lookup:
 whatever the endpoint records, and whether it records anything, the checked
@@ -6715,57 +6863,65 @@ to the caller's.  The refusal reads labels only, so it says nothing about the
 registry or the endpoint. -/
 theorem dispatchWithCapChecked_serviceQuery_refuses_unreadable_endpoint
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .object epId)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (epCap : Capability)
+    (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .serviceRegistry code)
+    (hRes : resolveServiceEndpoint .serviceQuery tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hAdm : serviceEndpointReadAdmitted ctx tid epId = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
-  rw [dispatchWithCapChecked_serviceQuery_eq ctx decoded tid executingCore gate cap epId
-    hSyscall hTarget]
+  rw [dispatchWithCapChecked_serviceQuery_eq ctx decoded tid executingCore gate cap code
+    hSyscall hTarget, serviceEndpointArm_of_resolved _ hRes]
   simp [serviceQueryStaged, lookupServiceChecked, hAdm]
 
 /-- **The revoke refuses an endpoint the caller may not write**, before reading
 what it records. -/
 theorem dispatchWithCapChecked_serviceRevoke_refuses_unwritable_endpoint
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (epCap : Capability)
+    (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .serviceRegistry code)
+    (hRes : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
-  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
-    hSyscall hTarget]
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap code
+    hSyscall hTarget, serviceEndpointArm_of_resolved _ hRes]
   simp [revokeServiceChecked, hAdm]
 
-/-- **The revoke removes the registration the invoked endpoint records, and no
+/-- **The revoke removes the registration the named endpoint records, and no
 other.**  The service is the one the endpoint records (`serviceRegistered`,
 under the endpoint's own id), never named by a caller-supplied word: the arm
 reads no message register. -/
 theorem dispatchWithCapChecked_serviceRevoke_removes_recorded_registration
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (epCap : Capability)
+    (epId : SeLe4n.ObjId) (st : SystemState)
     (ep : Endpoint)
-    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .serviceRegistry code)
+    (hRes : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
     (hEp : st.objects[epId]? = some (.endpoint ep)) (hCode : ep.serviceRegistered = true) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       revokeService (ServiceId.ofNat epId.toNat) st := by
-  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
-    hSyscall hTarget]
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap code
+    hSyscall hTarget, serviceEndpointArm_of_resolved _ hRes]
   simp [revokeServiceChecked, hAdm, revokeServiceByRecordedRegistration, SystemState.getObject?, hEp,
     hCode]
 
-/-- **A revoke through a capability to an object that records no service fails
-with `objectNotFound` and removes nothing**: a non-endpoint, a missing object,
-or an endpoint whose registration was already revoked.  A capability to an
-unrelated object therefore cannot reach another endpoint's registration. -/
+/-- **A revoke on an endpoint that records no service fails with
+`objectNotFound` and removes nothing**: a missing object, or an endpoint whose
+registration was already revoked.  An endpoint capability therefore cannot
+reach another endpoint's registration. -/
 theorem dispatchWithCapChecked_serviceRevoke_objectNotFound_of_unrecorded
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (epCap : Capability)
+    (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .serviceRegistry code)
+    (hRes : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
     (hNone : ∀ ep, st.objects[epId]? = some (.endpoint ep) → ep.serviceRegistered = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .objectNotFound := by
-  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
-    hSyscall hTarget]
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap code
+    hSyscall hTarget, serviceEndpointArm_of_resolved _ hRes]
   simp only [revokeServiceChecked, hAdm, if_true]
   unfold revokeServiceByRecordedRegistration SystemState.getObject?
   split
@@ -6778,14 +6934,17 @@ the endpoint's own label (`objectLabelOf`), so a caller cannot record a
 service on an endpoint above it whatever service id it would be given. -/
 theorem dispatchWithCapChecked_serviceRegister_refuses_unwritable_endpoint
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (code : Nat) (epCap : Capability)
+    (epId : SeLe4n.ObjId) (st : SystemState)
     (args : Architecture.SyscallArgDecode.ServiceRegisterArgs)
-    (hSyscall : decoded.syscallId = .serviceRegister) (hTarget : cap.target = .object epId)
+    (hSyscall : decoded.syscallId = .serviceRegister) (hTarget : cap.target = .serviceRegistry code)
     (hArgs : Architecture.SyscallArgDecode.decodeServiceRegisterArgs decoded = .ok args)
+    (hRes : resolveServiceEndpoint .serviceRegister tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
+  obtain ⟨_, _, _, hTg, _, _⟩ := resolveServiceEndpoint_ok _ _ _ _ _ _ hRes
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hArgs,
-    registerServiceChecked, registrationWriteAdmitted, hAdm]
+    serviceEndpointArm, hRes, registerServiceChecked, registrationWriteAdmitted, hTg, hAdm]
 
 -- ============================================================================
 -- AJ1-D (M-01): Reply/ReplyRecv conditional equivalence theorems
@@ -7418,10 +7577,11 @@ consumed `hLookup` — the decorative-hypothesis defect class SM8.D's
 review history records). -/
 theorem dispatchArm_serviceQuery_matches_returnShape
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (epId : SeLe4n.ObjId) (st st' : SystemState)
-    (reg : ServiceRegistration) (tcb : TCB)
+    (cap : Capability) (code : Nat) (epCap : Capability) (epId : SeLe4n.ObjId)
+    (st st' : SystemState) (reg : ServiceRegistration) (tcb : TCB)
     (hSyscall : decoded.syscallId = .serviceQuery)
-    (hTarget : cap.target = .object epId)
+    (hTarget : cap.target = .serviceRegistry code)
+    (hRes : resolveServiceEndpoint .serviceQuery tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hLookup : lookupServiceChecked ctx tid epId st = .ok (reg, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
@@ -7434,7 +7594,7 @@ theorem dispatchArm_serviceQuery_matches_returnShape
       (Architecture.returnFrameOfWord reg.sid.val.toUInt64),
     ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked,
-      serviceQueryStaged, hSyscall, hTarget, hLookup]
+      serviceEndpointArm, hRes, serviceQueryStaged, hSyscall, hTarget, hLookup]
   · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
 
 /-- RA.B.8 / WS-SM SM9.A.10, `.auditRead` (`.word`): the arm stages **the

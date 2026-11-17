@@ -8417,7 +8417,7 @@ seLe4n extension: it sits after the type and before the length.
 | `schedContextConfigure` | `decodeSchedControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqControlGet` | `decodeIRQControlInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `irqHandlerAck`, `irqHandlerSetNotification`, `irqHandlerClear` | `decodeIRQHandlerInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
-| `serviceRegister`, `serviceRevoke`, `serviceQuery` | no counterpart | lookup, type, right, length | `.illegalAuthority` |
+| `serviceRegister`, `serviceRevoke`, `serviceQuery` | no counterpart: invocations of the service-registry capability (`CapTarget.serviceRegistry`, WS-SX SX6.7); each takes its endpoint as extra capability 0, with the syscall's own right on it (`.write` to register or revoke, `.read` to query), an absent one refused `.truncatedMessage`, an unusable one or one naming no endpoint `.invalidCapability 1` (`resolveServiceEndpoint`) | lookup, type, right, length, then extra capability 0 | `.illegalAuthority` |
 | `declassify`, `declassifySignal`, `auditRead`, `auditDrain` | no counterpart: invocations of the audit-trail capability; `declassify` and `declassifySignal` take their target (any object; a notification with the write right for the signal) as extra capability 0, an absent one refused `.truncatedMessage`, an unusable one `.invalidCapability 1` | lookup, type, right, length, then extra capability 0 | `.illegalAuthority` |
 
 seL4's CNode, TCB, untyped, scheduling, page-table and IRQ capabilities carry
@@ -11851,12 +11851,18 @@ see (`serviceRegistry_of_projectObjects`, `serviceObservable`), and
 `ObservableState` carries no second copy (its `serviceRegistry` component,
 `projectServiceRegistry`, `v0.36.146`–`v0.36.158`, is deleted; two low-equivalent
 states read one registry, `serviceRegistry_eq_of_projectObjects_eq`).  The three service arms are gated on
-the endpoint's label, never on a separate service label:
+the endpoint's label, never on a separate service label.  Since WS-SX SX6.7
+each is an invocation of the service-registry capability
+(`CapTarget.serviceRegistry`, `Capability.serviceRegistry`, which the boot hands
+the root task), and the endpoint is the call's extra capability 0, resolved
+with the syscall's own right (`resolveServiceEndpoint`), so no message label
+ever selects a registry operation on an endpoint, whose Send and Call are IPC:
+
 
 * **register** (`registerServiceChecked`): the caller's label must flow to the
   endpoint's (`registrationWriteAdmitted`), otherwise `flowDenied`;
 * **revoke** (`revokeServiceChecked`): the same write gate, and the arm removes
-  the registration the invoked endpoint records
+  the registration the named endpoint records
   (`revokeServiceByRecordedRegistration`); it reads no message register, so a
   capability to one endpoint cannot revoke another's registration
   (`dispatchWithCapChecked_serviceRevoke_removes_recorded_registration`,

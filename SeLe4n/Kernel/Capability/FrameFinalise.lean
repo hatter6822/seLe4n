@@ -981,6 +981,10 @@ theorem cspaceDeleteTeardownAt_eq_frame :
       refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
       · simp [slotPageTables, hL, capabilityPageTable, hT]
       · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
+    | serviceRegistry _ =>
+      refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
+      · simp [slotPageTables, hL, capabilityPageTable, hT]
+      · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
     | irqHandler _ =>
       refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
       · simp [slotPageTables, hL, capabilityPageTable, hT]
@@ -1380,6 +1384,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
     | auditTrail _ => rfl
     | schedControl _ => rfl
     | irqControl _ => rfl
+    | serviceRegistry _ => rfl
     | irqHandler _ => rfl
     | object tableId =>
       dsimp only

@@ -470,6 +470,7 @@ the capability is final (`SystemState.capIsFinal`). -/
     | .auditTrail _ => 0
     | .schedControl _ => 0
     | .irqControl _ => 0
+    | .serviceRegistry _ => 0
     | .irqHandler l =>
       if retirableKind st (irqNodeId l) && st.capIsFinal cnode slot then (irqNodeId l).val + 1
       else 0
@@ -499,6 +500,7 @@ nothing**: the check a delete's fast path asks of the capability it read
   | .auditTrail _ => true
   | .schedControl _ => true
   | .irqControl _ => true
+  | .serviceRegistry _ => true
   | .irqHandler l => !(retirableKind st (irqNodeId l) && st.capIsFinal cnode slot)
 
 theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
@@ -514,6 +516,7 @@ theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
   | auditTrail _ => simp
   | schedControl _ => simp
   | irqControl _ => simp
+  | serviceRegistry _ => simp
   | irqHandler l =>
     cases retirableKind st (irqNodeId l) <;> cases st.capIsFinal cnode slot <;> simp
 

@@ -466,6 +466,7 @@ theorem slotRetireTarget_of_final {st : SystemState} {cnode : SeLe4n.ObjId}
   | auditTrail _ => rw [ht] at ho; cases ho
   | schedControl _ => rw [ht] at ho; cases ho
   | irqControl _ => rw [ht] at ho; cases ho
+  | serviceRegistry _ => rw [ht] at ho; cases ho
   | irqHandler _ => rw [ht] at ho; cases ho; simp [hK, hF]
 
 /-- An object holding a capability is of a retirable kind. -/

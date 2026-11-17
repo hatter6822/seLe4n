@@ -398,6 +398,16 @@ inductive CapTarget where
       names no object.  The notification the line signals is the capability in
       the line's IRQ node slot (`SystemState.irqNodeAddr`), seL4's `irq_node`. -/
   | irqHandler (irq : Nat)
+  /-- WS-SX SX6.7: the service registry, the target of `serviceRegister`,
+      `serviceRevoke` and `serviceQuery`.  The registry has no seL4
+      counterpart; giving it a capability type of its own means no message
+      label ever selects a registry operation on an endpoint, whose Send and
+      Call are IPC in seL4 whatever the label.  It names nothing — the
+      registry is a `SystemState` component, and the endpoint an operation
+      names is its extra capability 0 — so its one word is the reserved code
+      (`CapTarget.authorityCode`), as the audit trail's is.  Rights are the
+      second gate: `.write` to register and revoke, `.read` to query. -/
+  | serviceRegistry (code : Nat)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -966,6 +976,18 @@ def irqControl : Capability :=
 theorem irqControl_not_null : Capability.irqControl.isNull = false := by
   rfl
 
+/-- WS-SX SX6.7: **the service-registry capability**, as the boot hands it to
+the root task: `.read` to query (`syscallRequiredRight .serviceQuery`) and
+`.write` to register and revoke.  A holder can mint a read-only copy that
+queries and provably cannot register or revoke. -/
+def serviceRegistry : Capability :=
+  { target := .serviceRegistry CapTarget.authorityCode,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- WS-SX SX6.7: the service-registry capability is non-null. -/
+theorem serviceRegistry_not_null : Capability.serviceRegistry.isNull = false := by
+  rfl
+
 /-- WS-ZA ZA6.32: **interrupt line `irq`'s handler capability**, as
 `seL4_IRQControl_Get` issues it: the `.write` right the handler invocations
 require (`syscallRequiredRight .irqHandlerAck`) and nothing else. -/
@@ -1456,12 +1478,16 @@ line. -/
 of line. -/
 @[noinline] def CapTarget.ofIrqControl (code : Nat) : CapTarget := .irqControl code
 
+/-- WS-SX SX6.7: the service-registry target of word `code`, built fresh, out
+of line. -/
+@[noinline] def CapTarget.ofServiceRegistry (code : Nat) : CapTarget := .serviceRegistry code
+
 /-- WS-UC UC4: the target naming slot `word`'s pair, built fresh, out of line. -/
 @[noinline] def CapTarget.ofCnodeSlotWord (word : Nat) : CapTarget := .cnodeSlotWord word
 
 /-- WS-UC UC4: **a target's constructor, as a number** (`0` object, `1` CNode
 slot, `2` reply, `3` audit trail, `4` scheduling control, `5` IRQ control, `6`
-IRQ handler). -/
+IRQ handler, `7` service registry). -/
 def CapTarget.tag : CapTarget → Nat
   | .object _ => 0
   | .cnodeSlotWord _ => 1
@@ -1470,6 +1496,7 @@ def CapTarget.tag : CapTarget → Nat
   | .schedControl _ => 4
   | .irqControl _ => 5
   | .irqHandler _ => 6
+  | .serviceRegistry _ => 7
 
 /-- WS-UC UC4: `CapTarget.tag`, out of line: `CapTarget.over` branches on it
 without the compiler seeing which constructor each branch holds. -/
@@ -1486,6 +1513,7 @@ def CapTarget.word : CapTarget → Nat
   | .schedControl core => core
   | .irqControl code => code
   | .irqHandler line => line
+  | .serviceRegistry code => code
 
 /-- WS-UC UC4: **the target of constructor `k` carrying word `w`**, the inverse
 of `tag` and `word` (`ofTagWord_tag_word`); a `k` past the last constructor
@@ -1498,6 +1526,7 @@ names an IRQ handler. -/
   | 3 => .auditTrail w
   | 4 => .schedControl w
   | 5 => .irqControl w
+  | 7 => .serviceRegistry w
   | _ => .irqHandler w
 
 @[simp] theorem CapTarget.ofTagWord_tag_word (t : CapTarget) :
@@ -1521,41 +1550,47 @@ and builds the new target in its cell, allocating nothing.  Equal to
     match t, h0 with
     | .object _, _ => CapTarget.ofTagWord k w
     | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h1 : t.tagOf = 1 then
     match t, h1 with
     | .cnodeSlotWord _, _ => CapTarget.ofTagWord k w
     | .object _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h2 : t.tagOf = 2 then
     match t, h2 with
     | .replyCap _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .auditTrail _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h3 : t.tagOf = 3 then
     match t, h3 with
     | .auditTrail _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .schedControl _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h4 : t.tagOf = 4 then
     match t, h4 with
     | .schedControl _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
-    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .irqControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else if h5 : t.tagOf = 5 then
     match t, h5 with
     | .irqControl _, _ => CapTarget.ofTagWord k w
     | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
-    | .schedControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+    | .schedControl _, h | .irqHandler _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
+  else if h6 : t.tagOf = 6 then
+    match t, h6 with
+    | .irqHandler _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
+    | .schedControl _, h | .irqControl _, h | .serviceRegistry _, h => absurd h (by simp [CapTarget.tag])
   else
-    match t, h0, h1, h2, h3, h4, h5 with
-    | .irqHandler _, _, _, _, _, _, _ => CapTarget.ofTagWord k w
-    | .object _, h, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .cnodeSlotWord _, _, h, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .replyCap _, _, _, h, _, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .auditTrail _, _, _, _, h, _, _ => absurd (by simp [CapTarget.tag]) h
-    | .schedControl _, _, _, _, _, h, _ => absurd (by simp [CapTarget.tag]) h
-    | .irqControl _, _, _, _, _, _, h => absurd (by simp [CapTarget.tag]) h
+    match t, h0, h1, h2, h3, h4, h5, h6 with
+    | .serviceRegistry _, _, _, _, _, _, _, _ => CapTarget.ofTagWord k w
+    | .object _, h, _, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .cnodeSlotWord _, _, h, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .replyCap _, _, _, h, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .auditTrail _, _, _, _, h, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .schedControl _, _, _, _, _, h, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .irqControl _, _, _, _, _, _, h, _ => absurd (by simp [CapTarget.tag]) h
+    | .irqHandler _, _, _, _, _, _, _, h => absurd (by simp [CapTarget.tag]) h
 
 theorem CapTarget.over_eq (t : CapTarget) (k w : Nat) :
     t.over k w = CapTarget.ofTagWord k w := by
@@ -1674,7 +1709,7 @@ theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
 
 /-- WS-UC UC4: **the target `t`, in a cell of its own**: each constructor
 rebuilt out of line (`ofObject`, `ofReplyCap`, `ofSchedControl`, `ofIrqHandler`,
-`ofAuditTrail`, `ofIrqControl`, `ofCnodeSlotWord`), so the record that holds the
+`ofAuditTrail`, `ofIrqControl`, `ofServiceRegistry`, `ofCnodeSlotWord`), so the record that holds the
 result shares no cell with whatever holds `t` (a source slot's record, a reply
 object's own target).  Equal to `t` (`fresh_eq`). -/
 @[noinline] def CapTarget.fresh (t : CapTarget) : CapTarget :=
@@ -1685,6 +1720,7 @@ object's own target).  Equal to `t` (`fresh_eq`). -/
   | .irqHandler line => CapTarget.ofIrqHandler line
   | .auditTrail code => CapTarget.ofAuditTrail code
   | .irqControl code => CapTarget.ofIrqControl code
+  | .serviceRegistry code => CapTarget.ofServiceRegistry code
   | .cnodeSlotWord word => CapTarget.ofCnodeSlotWord word
 
 theorem CapTarget.fresh_eq (t : CapTarget) : t.fresh = t := by
