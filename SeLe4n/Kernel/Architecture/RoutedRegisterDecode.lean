@@ -1232,4 +1232,98 @@ theorem decodeSyscallArgsFromState_blockedSender
   obtain ⟨s, hs, hsO⟩ := blockedSenderCode_names layout regs
   exact ⟨s, decodeSyscallArgsFromState_code_swap h hs (by rw [hsO, hO])⟩
 
+/-- **A route pins the operation it was routed under**: the IPC routes
+(`send`, `call`, `reply`, `replyRecv`, their long forms and `transferring`)
+are each reached only through the router's equality with that operation's
+code, so a route names the code it was routed under. -/
+private theorem registerRoutedSyscall_code
+    {opCode : Nat} {layout : SyscallRegisterLayout} {regs : RegisterFile} {regCount : Nat}
+    {r : RegisterRoutedSyscall} (h : registerRoutedSyscall opCode layout regs regCount = r) :
+    (∀ a m, r = .send a m → opCode = SyscallId.send.toNat) ∧
+    (∀ a m, r = .sendLong a m → opCode = SyscallId.send.toNat) ∧
+    (∀ a m, r = .call a m → opCode = SyscallId.call.toNat) ∧
+    (∀ a m, r = .callLong a m → opCode = SyscallId.call.toNat) ∧
+    (∀ a m, r = .reply a m → opCode = SyscallId.reply.toNat) ∧
+    (∀ a m, r = .replyLong a m → opCode = SyscallId.reply.toNat) ∧
+    (∀ a m, r = .replyRecv a m → opCode = SyscallId.replyRecv.toNat) ∧
+    (∀ a m, r = .replyRecvLong a m → opCode = SyscallId.replyRecv.toNat) ∧
+    (∀ s a m, r = .transferring s a m → opCode = s.toNat) := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · unfold registerRoutedSyscallOf at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h
+      subst h
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intros <;> contradiction
+    simp only [hM] at h
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow opCode = false
+    all_goals (first | rw [if_pos hLen] at h | rw [if_neg hLen] at h)
+    all_goals (repeat' split at h)
+    all_goals first
+      | (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> subst h' <;>
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intros <;> contradiction)
+      | (subst h
+         refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intros <;>
+           first | contradiction | (rename_i hx; cases hx; assumption))
+  · subst h
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intros <;> contradiction
+
+/-- A routed send, short, long or carrying capabilities, was routed under the
+send's code. -/
+theorem registerRoutedSyscall_code_of_send {opCode : Nat} {layout : SyscallRegisterLayout}
+    {regs : RegisterFile} {regCount : Nat} {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall opCode layout regs regCount = .send capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .sendLong capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .transferring .send capAddr msgInfo) :
+    opCode = SyscallId.send.toNat := by
+  rcases h with h | h | h
+  · exact (registerRoutedSyscall_code h).1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.2.2.2.2.2.2.2 _ _ _ rfl
+
+/-- A routed call, short, long or carrying capabilities, was routed under the
+call's code. -/
+theorem registerRoutedSyscall_code_of_call {opCode : Nat} {layout : SyscallRegisterLayout}
+    {regs : RegisterFile} {regCount : Nat} {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall opCode layout regs regCount = .call capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .callLong capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .transferring .call capAddr msgInfo) :
+    opCode = SyscallId.call.toNat := by
+  rcases h with h | h | h
+  · exact (registerRoutedSyscall_code h).2.2.1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.2.2.1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.2.2.2.2.2.2.2 _ _ _ rfl
+
+/-- A routed capability-carrying send or call was routed under its own code. -/
+theorem registerRoutedSyscall_code_of_transferring {opCode : Nat}
+    {layout : SyscallRegisterLayout} {regs : RegisterFile} {regCount : Nat} {sid : SyscallId}
+    {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall opCode layout regs regCount = .transferring sid capAddr msgInfo) :
+    opCode = sid.toNat :=
+  (registerRoutedSyscall_code h).2.2.2.2.2.2.2.2 _ _ _ rfl
+
+/-- **A routed reply was routed under the reply's code**, short or long: the
+replier's own frame names the reply whatever a blocked sender's word would. -/
+theorem registerRoutedSyscall_code_of_reply {opCode : Nat} {layout : SyscallRegisterLayout}
+    {regs : RegisterFile} {regCount : Nat} {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall opCode layout regs regCount = .reply capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .replyLong capAddr msgInfo) :
+    opCode = SyscallId.reply.toNat := by
+  rcases h with h | h
+  · exact (registerRoutedSyscall_code h).2.2.2.2.1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.2.2.2.2.1 _ _ rfl
+
+/-- **A routed reply-receive was routed under the reply-receive's code**, short
+or long. -/
+theorem registerRoutedSyscall_code_of_replyRecv {opCode : Nat} {layout : SyscallRegisterLayout}
+    {regs : RegisterFile} {regCount : Nat} {capAddr : CPtr} {msgInfo : MessageInfo}
+    (h : registerRoutedSyscall opCode layout regs regCount = .replyRecv capAddr msgInfo ∨
+      registerRoutedSyscall opCode layout regs regCount = .replyRecvLong capAddr msgInfo) :
+    opCode = SyscallId.replyRecv.toNat := by
+  rcases h with h | h
+  · exact (registerRoutedSyscall_code h).2.2.2.2.2.2.1 _ _ rfl
+  · exact (registerRoutedSyscall_code h).2.2.2.2.2.2.2.1 _ _ rfl
+
 end SeLe4n.Kernel.Architecture.RegisterDecode

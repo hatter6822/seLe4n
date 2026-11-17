@@ -317,4 +317,18 @@ theorem blockedSenderCode_of_selected {st : SystemState} {tcb : TCB}
            injection hO with hO; subst hO
            exact absurd hop (by rintro (h | h) <;> simp_all))
 
+/-- **A thread's selected send or call is the blocked-sender code of its
+frame** (`blockedSenderCode_of_selected`, read off the thread's TCB): a thread
+the store holds no TCB for selects nothing, never a send or a call. -/
+theorem blockedSenderCode_of_threadOperationCode {st : SystemState} {tid : SeLe4n.ThreadId}
+    {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
+    (h : threadOperationCode st tid layout regs = SyscallId.send.toNat ∨
+      threadOperationCode st tid layout regs = SyscallId.call.toNat) :
+    SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode layout regs =
+      threadOperationCode st tid layout regs := by
+  unfold threadOperationCode at h ⊢
+  cases hT : st.getTcb? tid with
+  | none => simp only [hT] at h; rcases h with h | h <;> exact absurd h (by decide)
+  | some tcb => simp only [hT] at h ⊢; exact blockedSenderCode_of_selected h
+
 end SeLe4n.Model
