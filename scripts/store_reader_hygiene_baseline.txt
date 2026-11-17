@@ -17,18 +17,18 @@ raw_match_cnode          = 0
 raw_match_vspaceroot     = 13
 raw_match_total          = 30
 raw_match_unclassified   = 4
-store_read_spec          = 8521 (diagnostic)
+store_read_spec          = 8557 (diagnostic)
 store_write_spec         = 431 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 4627
+gettcb_adoption          = 4629
 getschedctx_adoption     = 1213
 getendpoint_adoption     = 360
 getnotification_adoption = 178
-getuntyped_adoption      = 165
-getcnode_adoption        = 199
-getvspaceroot_adoption   = 105
+getuntyped_adoption      = 161
+getcnode_adoption        = 203
+getvspaceroot_adoption   = 107
 
 ## Writer-side wrapper adoption (should-grow)
 
@@ -36,7 +36,7 @@ storeobjectchecked_adoption = 16
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
-sentinel_check_dispatch  = 69
+sentinel_check_dispatch  = 70
 
 ## Regression test counts (should-grow)
 
@@ -2495,6 +2495,19 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|spliceOutMidQueueNode_victim_tcb|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|unlinkNtfnNeighbours_objects_off|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean|untypedRetypePerformAt_eq_words|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|RetypeWindowFrame|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|agreeAt_cnode|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|agreeAt_eq_of_noSlots|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|agreeAt_none|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|lookupSlotCap_some|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|retypeWindowIdsRefusal_none|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|setSlotLinkWords_tablesGrow|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|storeCNodeWith_objects_at|3
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|storedState_asidTable_fresh|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|storedState_asidTable_of_nonRoot|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|storedState_objects|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|storedState_tablesGrow_present|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean|untypedRetypePerformAt_frame|17
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean|retypeFromUntyped_capacity_gated|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean|retypeFromUntyped_childId_fresh|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean|retypeFromUntyped_childId_notIrqNode|1
@@ -2577,12 +2590,14 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Capability.lean|storeOb
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Capability.lean|storeObject_tcbKeyKeeping_keyFrame|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Capability.lean|tagFrameMapping_keyFrame|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Capability.lean|untypedRetypeObject_keyFrameOffChild|5
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|boundSchedContextsPresent|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|budgetEligibleView_eq_of_slotUnread|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|finaliseFinalObject_stepCovers|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|queuedOn_of_keyInputsOf|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|retireFinalObject_getSchedContext?_named|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|schedKeyView_eq_of_slotUnread|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|stepCovers_of_freshSlot|3
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean|untypedRetypeObject_preserves_boundSchedContextsPresent|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean|endpointQueueEnqueue_keyFrame|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean|endpointQueuePopHead_keyFrame|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean|endpointQueueRemoveDual_keyFrame|1
@@ -3675,18 +3690,18 @@ RAW_MATCH_VSPACEROOT=13
 RAW_MATCH_TOTAL=30
 RAW_MATCH_UNCLASSIFIED=4
 STORE_READ_CODE=0
-STORE_READ_SPEC=8521
+STORE_READ_SPEC=8557
 STORE_WRITE_CODE=0
 STORE_WRITE_SPEC=431
-GETTCB_ADOPTION=4627
+GETTCB_ADOPTION=4629
 GETSCHEDCTX_ADOPTION=1213
 GETENDPOINT_ADOPTION=360
 GETNOTIFICATION_ADOPTION=178
-GETUNTYPED_ADOPTION=165
-GETCNODE_ADOPTION=199
-GETVSPACEROOT_ADOPTION=105
+GETUNTYPED_ADOPTION=161
+GETCNODE_ADOPTION=203
+GETVSPACEROOT_ADOPTION=107
 STOREOBJECTCHECKED_ADOPTION=16
-SENTINEL_CHECK_DISPATCH=69
+SENTINEL_CHECK_DISPATCH=70
 READER_HYGIENE_SUITE_TESTS=42
 KERRORMATRIX_ROWS=47
 SORRY_COUNT=0
