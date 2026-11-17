@@ -1207,7 +1207,8 @@ set_option maxRecDepth 8192
 -- WS-RR RR7.38: the domain is closed, so the `¬` that stated the gap
 -- (`queueOwnership_violated_by_tcbSetPriority`, with its
 -- `lockSet_tcbSetPriority_omits_endpointLock` witness) is deleted and these
--- eleven positives stand in its place.
+-- ten positives stand in its place (the fault-handler set's left with
+-- the retired syscall, WS-SX SX6.5).
 #check @queueOwnershipRespectedBy
 #check @SeLe4n.Kernel.Concurrency.QueueOwner.lock_kind
 #check @SeLe4n.Kernel.Concurrency.queueOwnerOf?
@@ -1216,7 +1217,6 @@ set_option maxRecDepth 8192
 #check @queueOwnership_respected_by_tcbSetMCPriority
 #check @queueOwnership_respected_by_tcbSetIPCBuffer
 #check @queueOwnership_respected_by_tcbSetAffinity
-#check @queueOwnership_respected_by_tcbSetFaultHandler
 #check @queueOwnership_respected_by_tcbResume
 #check @queueOwnership_respected_by_tcbBindNotification
 #check @queueOwnership_respected_by_tcbUnbindNotification
@@ -7988,15 +7988,14 @@ private def runDeclaredFootprintChecks : IO Unit := do
      true)
   -- WS-RR RR7.38: the negative this replaces asserted that `tcbSetPriority`
   -- writes a queued neighbour with no endpoint lock — the gap.  It is closed by
-  -- the eleven footprints declaring the queue owner's write lock, so the `¬` is
+  -- the ten footprints declaring the queue owner's write lock, so the `¬` is
   -- deleted and the positives take its place.  A Tier-3 *negative* pins that the
   -- violation theorem cannot come back.
-  assertBool "the eleven queued-TCB writers respect the queue-ownership protocol"
+  assertBool "the ten queued-TCB writers respect the queue-ownership protocol"
     (have _p := @queueOwnership_respected_by_tcbSetPriority
      have _m := @queueOwnership_respected_by_tcbSetMCPriority
      have _i := @queueOwnership_respected_by_tcbSetIPCBuffer
      have _a := @queueOwnership_respected_by_tcbSetAffinity
-     have _f := @queueOwnership_respected_by_tcbSetFaultHandler
      have _r := @queueOwnership_respected_by_tcbResume
      have _b := @queueOwnership_respected_by_tcbBindNotification
      have _u := @queueOwnership_respected_by_tcbUnbindNotification

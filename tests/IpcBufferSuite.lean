@@ -48,7 +48,7 @@ private def mkTcb (tid : Nat) (state : ThreadState := .Ready)
     (bufferSlot : Option Capability := none) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩,
     spaceCells := #v[some rootCap,
-      TCB.spaceCellOf ⟨100⟩ TCB.vspaceRootRights, bufferSlot],
+      TCB.spaceCellOf ⟨100⟩ TCB.vspaceRootRights, bufferSlot, none],
     ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := state }
 
 /-- CNode 10's slots: 3 a frame, 4 a device frame, 5 an endpoint, 6 empty. -/
@@ -142,7 +142,7 @@ private def ib005_noExtraCap : IO Unit :=
 /-- IB-006: an extra capability the caller's CSpace cannot resolve is a lookup
 failure. -/
 private def ib006_lookupFails : IO Unit := do
-  let st := mkState [(⟨1⟩, .tcb { mkTcb 1 with spaceCells := #v[none, none, none] }),
+  let st := mkState [(⟨1⟩, .tcb { mkTcb 1 with spaceCells := #v[none, none, none, none] }),
     (⟨2⟩, .tcb (mkTcb 2))]
   expectErr "unresolvable extra capability" (setBuffer st (some 3) 1024)
     (fun e => match e with | .failedLookup _ _ => true | _ => false)

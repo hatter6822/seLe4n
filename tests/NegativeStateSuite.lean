@@ -2621,8 +2621,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (34 = tcbSetFaultHandler)"
+  -- WS-SX SX6.5: 34, the retired tcbSetFaultHandler, names no syscall.
+  expectErr "J1 decodeSyscallId retired (34)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
+    .invalidSyscallNumber
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (35 = cspaceRevoke)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (36 = untypedRetype)"
@@ -4608,7 +4610,8 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
     unless SeLe4n.Kernel.zombieSlotClass stS tId SeLe4n.Model.TCB.cspaceRootSlot tId
         SeLe4n.Model.TCB.cspaceRootSlot != 0 do
       throw <| IO.userError "the thread's old CSpace root must name a CNode holding a capability"
-    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 with
+    let fhSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rootId, slot := SeLe4n.Slot.ofNat 7 }
+    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc 0 fhSrc with
     | .error e => throw <| IO.userError s!"the space change must succeed, got {repr e}"
     | .ok stS' =>
       match stS'.getTcb? ⟨6⟩ with

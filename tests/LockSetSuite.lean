@@ -110,7 +110,6 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_tcbSetMCPriority
 #check @lockSet_tcbSetIPCBuffer
 #check @lockSet_tcbSetAffinity
-#check @lockSet_tcbSetFaultHandler
 
 /-! ## SM3.B.3 audit-pass-5 — PIP-chain-walk start markers -/
 
@@ -149,7 +148,6 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_consistent_tcbSetMCPriority
 #check @lockSet_consistent_tcbSetIPCBuffer
 #check @lockSet_consistent_tcbSetAffinity
-#check @lockSet_consistent_tcbSetFaultHandler
 
 /-! ## SM3.B Inventory -/
 
@@ -751,12 +749,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 111 := by decide
+example : lockSetTheorems.length = 109 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 45 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 45 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by

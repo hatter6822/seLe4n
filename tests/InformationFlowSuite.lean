@@ -205,10 +205,6 @@ def test_schedContext_configure_budget_held_once : IO Bool := do
 #check @SeLe4n.Kernel.projectKernelObject_tcb_cpuAffinity_irrelevant
 #check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
 #check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
--- PR #887 review: the per-op NI witness for the `tcbSetFaultHandler`
--- capability-only arm — a `faultHandler` field write on a non-observable
--- target, discharged by the universal direct-insert frame lemma.
-#check @SeLe4n.Kernel.setThreadFaultHandlerOp_preserves_projection
 
 -- WS-SM SM8.C: the two enforcement families, completed.  Both were documented
 -- as covering "all policy-gated operations" while covering seven of twelve —
@@ -838,9 +834,8 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 44 classified ops: 43 prior + setThreadFaultHandlerOp (PR #887 review round —
-  -- fault-handler configuration, capability-only: the TCB capability's write
-  -- right, validated through the target's CSpace at set time), on top of
+  -- WS-SX SX6.5: setThreadFaultHandlerOp (PR #887's review round) left with
+  -- the retired syscall; SetSpace installs the fault endpoint.  On top of
   -- notificationSignalDeclassifiedCrossCoreDispatch
   -- (WS-SM SM9.C — the data-carrying declassification, policy-gated), on top of
   -- auditReadFromCore and auditDrainVisiblePrefix
@@ -865,8 +860,8 @@ def runInformationFlowChecks : IO Unit := do
   -- the interrupt acknowledge, issue, bind and unbind, capability-only.
   -- v0.36.198: the read-only `lookupObject` entry left with the deleted
   -- definition it named.
-  expect "enforcement boundary: total 55 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 55)
+  expect "enforcement boundary: total 54 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 54)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) publicEndpointState
@@ -1417,8 +1412,9 @@ def runInformationFlowChecks : IO Unit := do
   -- 34 → 35 with `irqHandlerAck`, and 35 → 38 with `irqControlGetFromCap`,
   -- `irqHandlerSetNotificationFromCap` and `irqHandlerClear`.  Read-only
   -- 3 → 2 at v0.36.198: `lookupObject` was deleted (nothing called it).
-  expect "enforcement boundary has 38 capability-only"
-    (coCount = 38)
+  -- WS-SX SX6.5: 38 → 37, `setThreadFaultHandlerOp` left with its syscall.
+  expect "enforcement boundary has 37 capability-only"
+    (coCount = 37)
   expect "enforcement boundary has 2 read-only"
     (roCount = 2)
   expect "enforcement boundary total is 55"

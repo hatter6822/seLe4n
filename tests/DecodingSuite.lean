@@ -70,10 +70,10 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-SM SM5.H.4: tcbSetAffinity=25
   let r25 := decodeSyscallId ⟨25⟩
   expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
-  -- PR #887 review: tcbSetFaultHandler=34 (the fault-handler configuration
-  -- syscall, the first writer of `TCB.faultHandler`)
+  -- WS-SX SX6.5: 34 (the retired tcbSetFaultHandler) decodes to nothing —
+  -- seL4-MCS's `TCB_SetSpace` installs the fault endpoint
   let r34 := decodeSyscallId ⟨34⟩
-  expect "tcbSetFaultHandler=34" (isOkEq r34 .tcbSetFaultHandler)
+  expect "retired=34" (isErrEq r34 .invalidSyscallNumber)
   -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
   let r35 := decodeSyscallId ⟨35⟩
   expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
@@ -110,7 +110,7 @@ private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38, untypedReset at 37
   -- and untypedRetype at 36, on top of
   -- WS-RR RR8.16's cspaceRevoke at 35, the
-  -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's
+  -- PR #887 review round's tcbSetFaultHandler at 34 (retired by WS-SX SX6.5), WS-SM SM9.C's
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)

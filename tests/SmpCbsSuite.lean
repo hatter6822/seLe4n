@@ -1315,11 +1315,11 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
   -- (iv) The undeclared arms, on a state and operands that would satisfy a
   -- declared one — so the `none` is the inventory's answer rather than a
   -- missing operand's.
-  assertBool "NEGATIVE: eighteen arms declare nothing on fully-supplied operands"
+  assertBool "NEGATIVE: seventeen arms declare nothing on fully-supplied operands"
     ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .mintReplyCap,
       .vspaceMap, .vspaceUnmap, .vspaceUnifyInstruction,
       .serviceRegister, .serviceRevoke, .serviceQuery,
-      .tcbSetIPCBuffer, .tcbSetFaultHandler,
+      .tcbSetIPCBuffer,
       .tcbBindNotification, .tcbUnbindNotification,
       .declassify, .declassifySignal, .auditRead, .auditDrain].all fun sid =>
         decide (declaredSchedFootprintSyscall sid = false) &&

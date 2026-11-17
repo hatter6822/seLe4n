@@ -1994,10 +1994,12 @@ private def sd061_every_kind_is_carved : IO Unit := do
      | .error .illegalAuthority => true
      | _ => false)
     "an untyped capability without .retype must be refused with illegalAuthority"
-  -- The retired number decodes to no syscall.
+  -- The retired numbers decode to no syscall (34 since WS-SX SX6.5, whose
+  -- SetSpace installs the fault endpoint).
   expect "sd061_retired_number_decodes_to_none"
-    (SyscallId.ofNat? 8 == none && SyscallId.retiredNumbers == [8])
-    "syscall number 8 must stay reserved"
+    (SyscallId.ofNat? 8 == none && SyscallId.ofNat? 34 == none &&
+      SyscallId.retiredNumbers == [8, 34])
+    "syscall numbers 8 and 34 must stay reserved"
 
 /-- SD-062 (WS-ZA ZA5.4 part 14): **the carve asks authority before it reads the
 child id.**
@@ -2567,20 +2569,36 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
        kNum (resolveSchedControlConfigureTargetK caller 0 (cptr w) st some (fun _ => none))
          == some 1)
       "a configure's context argument is refused invalidCapability 1 on the spec and K forms"
-    -- `.tcbSetSpace`: an empty root is its argument's number.
+    -- `.tcbSetSpace`: an empty root is seL4's `IllegalOperation` (seL4-MCS
+    -- `decodeSetSpace`: the root is not a CNode, not a valid VTable root),
+    -- the fault endpoint, CSpace root and VSpace root extra capabilities 0, 1
+    -- and 2 in the caller's buffer.
     if what == "empty" then
+      let ss (fh cn vr : Nat) :=
+        SeLe4n.Testing.withSenderCapAddrs st caller #[cptr fh, cptr cn, cptr vr]
+      let isIllegal {α : Type} (r : Except KernelError α) : Bool :=
+        match r with
+        | .error .illegalState => true
+        | _ => false
+      let kIllegal (r : Option KernelError) : Bool :=
+        match r with
+        | some .illegalState => true
+        | _ => false
       expect "argcap_setSpace_cspace_root_empty"
-        (capNum (resolveSetSpace caller { cspaceRoot := cptr w, vspaceRoot := cptr 3 } st)
-           == some 1 &&
-         kNum (resolveSetSpaceK caller { cspaceRoot := cptr w, vspaceRoot := cptr 3 } st some
-           (fun _ _ _ _ => none)) == some 1)
-        "an empty CSpace root is refused invalidCapability 1"
+        (isIllegal (resolveSetSpace caller 3 {} (ss 0 w 3)) &&
+         kIllegal (resolveSetSpaceK (ss 0 w 3) caller 3 {} some
+           (fun _ _ _ _ _ _ => none)))
+        "an empty CSpace root is refused illegalState"
       expect "argcap_setSpace_vspace_root_empty"
-        (capNum (resolveSetSpace caller { cspaceRoot := cptr 3, vspaceRoot := cptr w } st)
-           == some 2 &&
-         kNum (resolveSetSpaceK caller { cspaceRoot := cptr 3, vspaceRoot := cptr w } st some
-           (fun _ _ _ _ => none)) == some 2)
-        "an empty VSpace root is refused invalidCapability 2"
+        (isIllegal (resolveSetSpace caller 3 {} (ss 0 3 w)) &&
+         kIllegal (resolveSetSpaceK (ss 0 3 w) caller 3 {} some
+           (fun _ _ _ _ _ _ => none)))
+        "an empty VSpace root is refused illegalState"
+      expect "argcap_setSpace_extra_caps_short"
+        (match resolveSetSpace caller 2 {} (ss 0 3 3) with
+         | .error .truncatedMessage => true
+         | _ => false)
+        "two extra capabilities of three is truncatedMessage"
       -- An IRQ handler's notification (extra capability 0).
       expect "argcap_irqHandler_notification_empty"
         (capNum (irqHandlerSetNotificationFromCap caller bootCoreId 0

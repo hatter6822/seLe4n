@@ -1631,7 +1631,7 @@ private def authRootCap : Capability :=
 
 private def authTcb (tid : Nat) (mcp : Nat) (spaces : Bool := true) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩, maxControlledPriority := ⟨mcp⟩,
-    spaceCells := if spaces then #v[some authRootCap, none, none] else #v[none, none, none],
+    spaceCells := if spaces then #v[some authRootCap, none, none, none] else #v[none, none, none, none],
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- CNode 10's slots: 1 the caller's own thread, 2 a second thread, 3 an
