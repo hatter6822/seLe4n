@@ -301,7 +301,7 @@ private def runAffinityChecks : IO Unit := do
   assertBool "migration: the queued thread now lives on core 2"
     (post.queuedOn core2 srv)
 
-/-- The lent scheduling context of §2.7, deadline 9. -/
+/-- The lent scheduling context of §2.7. -/
 private def scLent : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 300
 /-- The server holding the lent context, running on core 0. -/
 private def lendSrv : SeLe4n.ThreadId := ThreadId.ofNat 230
@@ -319,20 +319,22 @@ private def stLent : SystemState :=
   let q := enqueueAllOnCore base core1 [(lendOrigin, ⟨6⟩)]
   { q with scheduler := q.scheduler.setCurrentOnCore core0 (some lendSrv) }
 
-/-- §2.7 the scheduling-context return (`returnDonatedSchedContext`): the
-recipient's effective deadline moves to the context's, and the recipient is
-queued on another core, so that core is flagged. -/
+/-- §2.7 the scheduling-context return (`returnDonatedSchedContext`) to a
+recipient queued on another core.  A context carries no deadline or priority
+since WS-SX SX6.4 (seL4-MCS), so the return moves no scheduling key of the
+recipient: the flags raised are exactly the diff's (`checkDiff`), and that is
+no core. -/
 private def runDonationReturnChecks : IO Unit := do
   IO.println "--- §2.7 returnDonatedSchedContext ---"
   match returnDonatedSchedContext stLent lendSrv scLent lendOrigin none with
   | .ok post =>
     checkDiff "return to a recipient queued on a remote core" stLent post core0 true
-    expectRaised "return to a recipient queued on a remote core" stLent post core0 [core1]
+    expectRaised "return to a recipient queued on a remote core" stLent post core0 []
   | .error e =>
     IO.println s!"  FAIL: returnDonatedSchedContext returned {repr e}"
     throw (IO.userError "returnDonatedSchedContext failed")
 
-/-- The bound scheduling context of §2.8, deadline 9. -/
+/-- The bound scheduling context of §2.8. -/
 private def scBound : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 301
 /-- The thread bound to it, queued on core 1. -/
 private def boundTid : SeLe4n.ThreadId := ThreadId.ofNat 240

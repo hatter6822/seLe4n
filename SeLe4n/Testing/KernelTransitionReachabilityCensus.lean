@@ -1365,14 +1365,24 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored
-  -- WS-ZA ZA6.35: the carve's writes over a built `CarveRequest` (the
-  -- statement, its untyped-record step, its words form and its scrub), proven
-  -- equal to the code form the dispatch runs off the request's words
-  -- (`untypedRetypePerformCode_eq`, `CarveRequest.scrubAtW_eq`).
-  , `SeLe4n.Kernel.untypedRetypePerformAt
+  -- WS-ZA ZA6.35: the carve's words form and its scrub, proven equal to the
+  -- code form the dispatch runs off the request's words
+  -- (`untypedRetypePerformCode_eq`, `CarveRequest.scrubAtW_eq`).  The
+  -- statement over a built request (`untypedRetypePerformAt`) and its
+  -- untyped-record step (`retypeFromUntypedWrites`) are reached since
+  -- WS-SX SX6.3: the retype window runs them carve by carve.
   , `SeLe4n.Kernel.untypedRetypePerformWords
-  , `SeLe4n.Kernel.retypeFromUntypedWrites
   , `SeLe4n.Kernel.CarveRequest.scrubAt
+  -- WS-SX SX6.3: the single carve, checks and writes together
+  -- (`untypedRetypeObject`, its carve `retypeFromUntyped`), is the statement
+  -- the window's carve chain is stated over (`RetypeCarveChain`,
+  -- `untypedRetypeWindow_ok`); the window runs its refusal once
+  -- (`untypedRetypeWindowRefusal`) and then each carve's writes.  The
+  -- unguarded loop `untypedRetypeWindowCarves` is the admission theorem's
+  -- right-hand side (`untypedRetypeWindow_admitsEveryCarve`).
+  , `SeLe4n.Kernel.untypedRetypeObject
+  , `SeLe4n.Kernel.retypeFromUntyped
+  , `SeLe4n.Kernel.untypedRetypeWindowCarves
   , `SeLe4n.Kernel.switchDomain
   -- WS-ZA ZA6.2: the rotation's `Except` statement, proven equal to the form the
   -- domain accounting runs (`switchDomainOnCore_eq_state`).

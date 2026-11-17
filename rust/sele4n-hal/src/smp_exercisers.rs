@@ -3225,9 +3225,12 @@ const WINDOW_THREE_CHILD_ID: u64 = 40;
 #[cfg(feature = "hw_target")]
 const WINDOW_FULL_CHILD_ID: u64 = 44;
 
-/// seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`: the most objects one retype carves.
-#[cfg(feature = "hw_target")]
-const RETYPE_FAN_OUT_LIMIT: u64 = sele4n_abi::args::RETYPE_FAN_OUT_LIMIT;
+/// seL4's `CONFIG_RETYPE_FAN_OUT_LIMIT`: the most objects one retype carves
+/// (the model's `retypeFanOutLimit`).  The HAL has no runtime dependency, so
+/// this mirrors `sele4n_abi::args::RETYPE_FAN_OUT_LIMIT`, pinned by
+/// `retype_fan_out_limit_is_the_abi_limit`.
+#[cfg(any(feature = "hw_target", test))]
+const RETYPE_FAN_OUT_LIMIT: u64 = 26;
 
 /// **A three-object retype window** (WS-SX SX6.5): a window one object past
 /// [`RETYPE_FAN_OUT_LIMIT`] refused `RangeError(1, limit)` (seL4's
@@ -16473,6 +16476,12 @@ mod tests {
         round_lock_held_by_in, round_lock_release_in, round_lock_try_acquire_in, ROUND_LOCK_FREE,
     };
     use core::cell::Cell;
+
+    /// The exercisers' fan-out limit is the ABI's.
+    #[test]
+    fn retype_fan_out_limit_is_the_abi_limit() {
+        assert_eq!(RETYPE_FAN_OUT_LIMIT, sele4n_abi::args::RETYPE_FAN_OUT_LIMIT);
+    }
 
     /// The harness's `caps_or_badges` word is the ABI's `IpcBuffer` field,
     /// and the receive path's three words follow its three.

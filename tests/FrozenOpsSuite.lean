@@ -2777,11 +2777,13 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     expect "FO-050 (3): the frozen bind leaves it in NO bucket"
       (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
 
-/-- FO-047c: the three refusals the frozen bind did not carry.
+/-- FO-047c: the refusals the frozen bind did not carry, and the domain the
+binds do not check.
 
-Each half drives a state the live bind refuses and asserts the frozen mirror
+Each refusal drives a state the live bind refuses and asserts the frozen mirror
 refuses it **with the same error code**, beside a control establishing that the
-live side really refuses rather than both sides sharing a success. -/
+live side really refuses rather than both sides sharing a success.  A thread in
+another domain is admitted by both, as seL4-MCS's bind checks no domain. -/
 private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let errOf {α : Type} : Except KernelError α → Option KernelError
     | .ok _ => none
@@ -2808,7 +2810,9 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   expect "FO-047c: ...and the frozen bind refuses it identically"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading))
       == some KernelError.illegalState)
-  -- (2) the thread's domain differs from the reservation's.
+  -- (2) a thread in another domain than the binder's: seL4-MCS's
+  -- `decodeSchedContext_Bind` checks no domain and a context carries none
+  -- (WS-SX SX6.4), so both binds admit it.
   let otherDomainTcb : TCB := { diffTcb 62 with domain := ⟨1⟩ }
   let scDomainZero : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
@@ -2816,11 +2820,10 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let istDomain := diffAddSchedContext
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) otherDomainTcb) (diffTcb 63))
     diffScId scDomainZero
-  expect "FO-047c control: the live bind refuses a cross-domain bind"
-    (liveErr istDomain.state == some (KernelError.invalidArgument 0))
-  expect "FO-047c: ...and the frozen bind refuses it identically"
-    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain))
-      == some (KernelError.invalidArgument 0))
+  expect "FO-047c: the live bind admits a thread in another domain"
+    (liveErr istDomain.state == none)
+  expect "FO-047c: ...and so does the frozen bind"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain)) == none)
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
   -- pop that reaches it will write this thread's binding.
   let ownRid : SeLe4n.ReplyId := ⟨71⟩

@@ -554,16 +554,15 @@ private def odDoneePriority : Nat := 30
 /-- The donor's band, carried by the reservation. -/
 private def odDonorPriority : Nat := 70
 
-/-- The donor's domain, carried by the reservation and deliberately **not** the
-donee's (`mkTcb` builds every thread in domain `0`), so every assertion about
-which domain a donee is reported in discriminates rather than passing by
-coincidence. -/
-private def odDonorDomain : Nat := 3
+/-- The domain the donee is given in the reading test, deliberately **not** the
+default (`mkTcb` builds every thread in domain `0`), so the domain component
+discriminates rather than passing by coincidence. -/
+private def odDoneeDomain : Nat := 3
 
-/-- The donated reservation: the donor's priority, deadline and domain, held by
-the donee (`boundThread`), exactly as `donateSchedContext` leaves it — a
-donation crosses domains freely, unlike `schedContextBind`, which refuses a
-cross-domain bind. -/
+/-- The donated reservation: the donor's budget, held by the donee
+(`boundThread`), exactly as `donateSchedContext` leaves it.  A context carries
+no priority, deadline or domain (WS-SX SX6.4, seL4-MCS), so a donation lends
+only the budget. -/
 private def odDonatedSc (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     : SeLe4n.Kernel.SchedContext :=
   { scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
@@ -603,10 +602,11 @@ private def pm_od_01_prioritySourceClassifier : IO Unit := do
      | some s => (SchedContextBinding.bound scId).scId? == some s
      | none   => false)
 
-/-- WS-OD: every priority READER prefers the donee's own band, while the
-deadline and domain still come from the donated reservation.  A check on the
-priority alone would be satisfied by a kernel that had dropped the reservation
-entirely, so the deadline and domain are asserted in the same breath. -/
+/-- WS-OD: every priority READER reads the donee's own band, and since WS-SX
+SX6.4 its deadline and domain too: the donated reservation lends a budget and
+carries no scheduling parameter (seL4-MCS).  The donee is given a deadline and
+a domain of its own, distinct from every default, so each component of the
+reading discriminates. -/
 private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := odDonationState scId
@@ -619,15 +619,11 @@ private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
       (match getCurrentPriorityChecked st donee with
        | .ok p => p == ⟨odDoneePriority⟩
        | .error _ => false)
-    expect "resolveEffectivePrioDeadline: the donee's 30 on the donor's deadline 500"
+    let donee := { donee with deadline := ⟨500⟩, domain := ⟨odDoneeDomain⟩ }
+    expect "resolveEffectivePrioDeadline: the donee's own 30 and its own deadline 500"
       (decide (resolveEffectivePrioDeadline st donee = (⟨odDoneePriority⟩, ⟨500⟩)))
-    -- The donor's DEADLINE (reservation-owned) with the donee's own priority
-    -- and domain (thread-owned).  The reservation sits in domain 3 and the
-    -- donee in 0, so the third component discriminates.
-    expect "effectiveSchedParams: the donee's own 30 and domain 0, the donor's deadline 500"
-      (decide (effectiveSchedParams st donee = (⟨odDoneePriority⟩, ⟨500⟩, ⟨0⟩)))
-    expect "NEGATIVE (the defect): the donee is not reported in the donor's domain 3"
-      (!((effectiveSchedParams st donee).2.2 == ⟨odDonorDomain⟩))
+    expect "effectiveSchedParams: the donee's own 30, deadline 500 and domain 3"
+      (decide (effectiveSchedParams st donee = (⟨odDoneePriority⟩, ⟨500⟩, ⟨odDoneeDomain⟩)))
     expect "effectiveBucketPriority is the TCB-only reading the run queue records"
       (effectiveBucketPriority st donee == donee.boostedPriority)
     -- NEGATIVE (the defect): none of the readings is the donor's band.
