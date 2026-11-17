@@ -4518,7 +4518,7 @@ run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvDonat
 # donated that caller's context in place, every check read on the pre-state and
 # carried across the reply leg and the pop; any other shape falls through to the
 # unheld arm.
-run_check "INVARIANT" rg -n -U '    if replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st then\n(      [^\n]*\n){9}              \.ok \(\(\), performReplyRecvDonatedCallTakeDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st then\n(      [^\n]*\n){10}              \.ok \(\(\), performReplyRecvDonatedCallTakeDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else replyRecvUnheldArmR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvDonatedCallTakeArmR_of_not_admits' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvDonatedCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem popDonationSettled_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
@@ -6008,7 +6008,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' 
 # The default layout never routes a register file to the decode
 # (`registerRoutedSyscall_viaDecode`), so the routed entry's `.viaDecode` arm
 # is that theorem's absurdity: no decoded arm is compiled.
-run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              \(threadOperationCode st tid SeLe4n\.arm64DefaultLayout tcb\.registerContext\)\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U '^      \| \.viaDecode =>\n        absurd hRt \(SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall_viaDecode _\)$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_negative_check "INVARIANT" rg -n 'decodedRoutedArm' SeLe4n/Kernel
 run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv => \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
@@ -12227,12 +12227,13 @@ run_check "INVARIANT" rg -n 'syscallDispatchHigh' SeLe4n/Kernel/InformationFlow/
 # WS-J1-E: RegisterDecode module definitions and round-trip lemmas.
 run_check "INVARIANT" rg -n 'def decodeCapPtr($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n 'def decodeMsgInfo($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n 'def decodeSyscallId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def decodeSyscallCode($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n 'def validateRegBound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n 'def decodeSyscallArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCapPtr_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallId_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallId_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallCode_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallCode_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem selectedOperationCode_eq_k($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallSelect.lean
 run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCapPtr_readReg($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem validateRegBound_ok_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
@@ -23752,7 +23753,7 @@ run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId 
 run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^  if syscallReadsOverflow base\.syscallId then\n    let inlineSize := base\.msgRegs\.size\n    let overflowNeeded := base\.msgInfo\.length - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def clampToInline \(base : SyscallDecodeResult\) : SyscallDecodeResult :=\n  \{ base with\n      msgInfo       := \{ base\.msgInfo with length := base\.msgRegs\.size \},\n      inlineCount   := base\.msgRegs\.size,\n      overflowCount := 0 \}$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^    if msgInfo\.length ≤ layout\.msgRegs\.size ∨\n        syscallNumberReadsOverflow \(readReg regs layout\.syscallNumReg\)\.val = false then$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^    if msgInfo\.length ≤ layout\.msgRegs\.size ∨\n        syscallNumberReadsOverflow opCode = false then$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def syscallNumberReadsOverflow \(n : Nat\) : Bool :=\n  match SyscallId\.ofNat\? n with\n  \| some sid => syscallReadsOverflow sid$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallArgsFromState_of_no_overflow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_true_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
