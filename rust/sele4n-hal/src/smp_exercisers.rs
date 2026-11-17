@@ -15145,10 +15145,17 @@ const SPIN_CODE_WORD: u64 = 0x1400_0000_1400_0000;
 /// returns in `x2` once the thread's receive switches core 0 back to it.
 #[cfg(feature = "hw_target")]
 const MOVE_MARKER: u64 = 0x6d6f_7665;
-/// The thread's setup, once the code page is mapped: the context carved,
-/// configured and bound to the carved thread, whose space is the root task's.
+/// The moved thread's priority: below the root task's, so the root task keeps
+/// core 0 whenever both are ready there.  The thread's own (seL4's
+/// `tcbPriority`), set by `seL4_TCB_SetPriority`: a scheduling context
+/// carries no priority, so neither the configure nor the bind gives one.
 #[cfg(feature = "hw_target")]
-const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
+const MOVE_PRIORITY: u64 = 100;
+/// The thread's setup, once the code page is mapped: the context carved,
+/// configured and bound to the carved thread, whose space is the root task's
+/// and whose priority is `MOVE_PRIORITY`.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_THREAD: [RoundTrip; 6] = [
     retype(
         "move-retype-sched-context",
         UNTYPED_CAP,
@@ -15173,6 +15180,13 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
         CHAIN_TCB_CAP,
         [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
         0,
+        ROOT_IPC_BUFFER,
+    ),
+    set_priority(
+        "move-tcb-set-priority",
+        TCB_SET_PRIORITY,
+        CHAIN_TCB_CAP,
+        MOVE_PRIORITY,
         ROOT_IPC_BUFFER,
     ),
     cap_argument(

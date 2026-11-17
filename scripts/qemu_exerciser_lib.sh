@@ -265,9 +265,16 @@ for driver in drivers:
         # bytes: a kind whose object changes shape changes its pins, and a
         # kind the exerciser carves that has no pin fails.  The breakdown of
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
+        # sched-context/7's record is the 280-byte cell since WS-SX SX6.4 (was
+        # 288): the generated constructor is `lean_alloc_ctor(0, 32, 11)`,
+        # 8 + 32 * 8 + 11 = 275 bytes, where it was 34 boxed fields and 2 scalar
+        # bytes (282).  The context lost its priority, deadline and domain (three
+        # boxed fields) and gained seL4's badge (a UInt64 scalar), sporadic flag
+        # (a Bool scalar) and refill limit `refillMax` (a boxed Nat): the cell
+        # count is unchanged and the bytes move by that one size class.
         carve_cells = {
             "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (25, 2368), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
+            "tcb/0": (25, 2368), "sched-context/7": (8, 432), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }
@@ -793,7 +800,7 @@ for driver in drivers:
             "receive-configure-cap-fault-held", "reply-configure-cap-fault-held",
             "configure-refused-held", "configure-zero-budget-max-period",
             "configure-budget-over-wide-period", "configure-wide-budget-and-period",
-            "configure-wide-deadline", "configure-held-ipc-buffer",
+            "configure-wide-flags", "configure-held-ipc-buffer",
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",
