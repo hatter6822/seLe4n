@@ -122,8 +122,11 @@ themselves, each in its own order and with its own answers.
     compiled `untypedRetypeWindowCode` is a tail loop with no allocation of
     its own; each iteration's one allocating call is the single carve's
     `untypedRetypePerformCode`. The exerciser carves windows of 3 endpoints
-    (18 cells / 744 bytes) and 26 endpoints, and a window of 27 is refused
-    `RangeError(1, 26)` and reads 0.
+    (18 cells / 744 bytes) and 26 endpoints (156 cells / 6448 bytes), and a
+    window of 27 is refused `RangeError(1, 26)` and reads 0. Each core's
+    heap size record holds the latest 256 allocations (was 128), so the
+    full window's sizes are recorded whole, as the record's contract asks of
+    every gated reading.
 - **Every invocation arm is routed.** Each of the 29 routed invocations has
   a refusal-carrying arm. The others are routed earlier: through the IPC,
   signal, wait and yield entries, the one-overflow-word route (configure,
