@@ -1905,8 +1905,10 @@ private def runPageTableChecks : IO Unit := do
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
        | .ok ((), s) => isErr .translationFault (mapVia slotOwnVsp va 14 permsRWUC s)
        | .error _ => false)
-    assertBool "an address outside the 48-bit space has no walk (addressOutOfBounds)"
-      (isErr .addressOutOfBounds (tableMap 15 12 (2 ^ 48) st1))
+    -- seL4's `decodeARMPageTableInvocation`: past the user top is
+    -- `InvalidArgument 0`, before the model's user-window check.
+    assertBool "an address past the 48-bit space is refused (invalidArgument 0)"
+      (isErr (.invalidArgument 0) (tableMap 15 12 (2 ^ 48) st1))
     assertBool "a root capability without .write is refused"
       ((tableMap 15 slotOwnCnRO va st1).toOption.isNone)
     match (tableMapSt 15 12 va st1).bind (tableMapSt 16 12 va) with
