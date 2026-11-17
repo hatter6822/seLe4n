@@ -872,6 +872,10 @@ for driver in drivers:
             "tcb-set-affinity-short", "set-space-extra-caps-short", "tcb-set-space-short",
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
+            # Each IPC route's refusal: a send, call, reply and signal on the
+            # root CNode's capability, refused InvalidCapability in place.
+            "send-wrong-kind-refused", "call-wrong-kind-refused",
+            "reply-wrong-kind-refused", "signal-wrong-kind-refused",
             # WS-UC UC4: a capability copied into a carved CNode and out of
             # it, the CNode retired while the copy lives on.
             "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",

@@ -2925,6 +2925,25 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
     }
 }
 
+/// An IPC syscall on a capability of no IPC kind (the root CNode's), refused
+/// `InvalidCapability` in the state it was handed: each IPC route's refusal,
+/// measured.
+#[cfg(feature = "hw_target")]
+const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr: CNODE_CAP,
+        msg_len: 1,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns: refused(INVALID_CAPABILITY),
+    }
+}
+
 /// A message length past the most message registers a message has (120),
 /// which the message-info decode refuses.
 #[cfg(feature = "hw_target")]
@@ -4141,6 +4160,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         },
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
+        wrong_ipc_kind("send-wrong-kind-refused", SEND),
+        wrong_ipc_kind("call-wrong-kind-refused", CALL),
+        wrong_ipc_kind("reply-wrong-kind-refused", REPLY),
+        wrong_ipc_kind("signal-wrong-kind-refused", SIGNAL),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
         truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
         truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),

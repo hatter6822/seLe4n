@@ -1141,7 +1141,17 @@ resolved after an installing transfer (`receiveInstallCNodeAfterReply?`) beside
 the pre-state resolution, which stands for a transfer that installs nothing.
 The widest `.replyRecv` footprint grows by one; the admissible section is
 `1000 / (32 · 3)`, which still floors to 10 µs, and the uniform 60 µs envelope
-moves 5580 → 5760 µs. -/
+moves 5580 → 5760 µs.
+
+**The extra-capability lookups leave it at thirty-two** (WS-SX SX6): the gate
+looks every extra capability up before the arm, as seL4's `handleInvocation`
+runs `lookupExtraCaps` before `decodeInvocation`, and each lookup walks the
+caller's CSpace root and nothing below it (WS-RR RR7.41), which every footprint
+that resolves a capability already names.  The arms that read an extra
+capability's object (`tcbSetSpace`'s six members, the service, audit and
+declassify footprints) stay far below the reply-receive's, so the widest
+footprint is still `.replyRecv` at thirty-two and the 60 µs envelope stays at
+5760 µs. -/
 def maxLockSetSize : Nat := 32
 
 end SeLe4n.Kernel.Concurrency
