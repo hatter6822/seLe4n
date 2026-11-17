@@ -4036,8 +4036,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // Argument words at or above `2^63`, each read as a word: a
         // `Page_Map` rights or attributes word (WS-SX SX6.3, D6: seL4's
         // `rightsFromWord` and `vmAttributesFromWord` are total, so the wide
-        // word is read, not refused, and the map is refused later for a RAM
-        // frame asked to be uncached, `PolicyDenied`), a map address past the
+        // word is read, not refused: its low bits ask for a writable and
+        // executable page, refused `PolicyDenied` by the W^X check before
+        // the frame's own mapping is looked at), a map address past the
         // canonical bound (seL4's `vtop > USER_TOP`, `InvalidArgument 0`), an
         // unmap address past it (`AddressOutOfBounds`), and an affinity past
         // the cores and the unbind marker (`InvalidArgument 0`).
@@ -4047,7 +4048,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 "vspace-map-wide-rights",
                 FRAME_CAP,
                 VSPACE_CAP,
-                [FRAME_VADDR, WIDE_WORD, 0],
+                [FRAME_VADDR, WIDE_WORD | 1, 0],
                 ROOT_IPC_BUFFER,
             )
         },
