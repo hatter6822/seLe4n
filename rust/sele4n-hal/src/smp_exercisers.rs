@@ -3024,11 +3024,17 @@ const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
 
 /// The service register (WS-SX SX6.7): invoked on the service-registry
 /// capability, the endpoint `endpoint` extra capability 0, named in the root
-/// task's IPC buffer; five message words, the fifth (whether invoking the
+/// task's IPC buffer at `buffer` (the buffer its thread has set when the
+/// round trip runs); five message words, the fifth (whether invoking the
 /// interface needs the grant right) read from that buffer, which the kernel's
 /// model of memory holds as zero, so no grant.
 #[cfg(feature = "hw_target")]
-const fn service_register(name: &'static str, endpoint: u64, msg: [u64; 4]) -> RoundTrip {
+const fn service_register(
+    name: &'static str,
+    endpoint: u64,
+    msg: [u64; 4],
+    buffer: u64,
+) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SERVICE_REGISTER,
@@ -3037,7 +3043,7 @@ const fn service_register(name: &'static str, endpoint: u64, msg: [u64; 4]) -> R
         msg,
         primed: None,
         blocks: false,
-        caps_or_badges: Some((ROOT_IPC_BUFFER, [endpoint, 0, 0], None)),
+        caps_or_badges: Some((buffer, [endpoint, 0, 0], None)),
         overflow: None,
         returns: None,
     }
@@ -3906,20 +3912,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 PARTNER_PRIORITY,
             ],
         ),
-        service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
+        // The root task's buffer is the window's page since
+        // `root-set-ipc-buffer`, so the endpoint, extra capability 0, is named
+        // there.
+        service_register(
+            "service-register",
+            ENDPOINT_CAP,
+            SERVICE_INTERFACE,
+            FRAME_VADDR,
+        ),
         cap_argument(
             "service-query",
             SERVICE_QUERY,
             SERVICE_REGISTRY_CAP,
             ENDPOINT_CAP,
-            ROOT_IPC_BUFFER,
+            FRAME_VADDR,
         ),
         cap_argument(
             "service-revoke",
             SERVICE_REVOKE,
             SERVICE_REGISTRY_CAP,
             ENDPOINT_CAP,
-            ROOT_IPC_BUFFER,
+            FRAME_VADDR,
         ),
         // A carved endpoint registered as the service, then its only
         // capability deleted: the final delete drops the registration
@@ -3931,7 +3945,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MINT_SLOT],
             FRAME_VADDR,
         ),
-        service_register("registered-endpoint-register", MINT_CAP, SERVICE_INTERFACE),
+        service_register(
+            "registered-endpoint-register",
+            MINT_CAP,
+            SERVICE_INTERFACE,
+            FRAME_VADDR,
+        ),
         invocation(
             "registered-endpoint-delete",
             CSPACE_DELETE,

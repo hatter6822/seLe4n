@@ -661,6 +661,22 @@ private def serviceQueryScenario :
     (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     registryCapPtr.toUInt64 0 0 0 st2
 
+/-- 9f': `.serviceRegister` end to end (WS-SX SX6.7): invoked on the
+service-registry capability, the endpoint it registers on extra capability 0,
+the interface's four words in x2-x5 and the fifth (no grant) the IPC buffer's
+overflow word, which reads zero.  Returns the dispatch's outcome and state. -/
+private def serviceRegisterScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+      maxResponseSize := 64, requiresGrant := false }
+  let ((), st1) ← Kernel.registerInterface iface twoThreadState
+  let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
+  SeLe4n.Testing.dispatchFromAbi trustedLabeling SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.serviceRegister.toNat.toUInt32 registryCapPtr.toUInt64
+    (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    910 1 64 64 0 0 0 0 0 st1
+
 /-- 9g: a **self**-`.tcbSuspend` — §3.5's parenthetical, witnessed: the
 caller deschedules itself but does not IPC-block (`ipcState` stays
 `.ready`), so the outcome is `returns` with the **constructed** unit
@@ -1045,6 +1061,32 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
           | .returns f =>
               rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
           | .blocks | .faulted => false)
+  -- 9f' — the register on the registry capability, endpoint extra cap 0
+  match serviceRegisterScenario with
+  | .error e => assertBool s!"9f' dispatches (got .error {reprStr e})" false
+  | .ok (out, st') => do
+      assertBool s!"9f': the register returns the unit frame (got {reprStr out})"
+        (out == .returns .zero)
+      assertBool "9f': the endpoint now holds the registration"
+        (st'.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
+  -- 9f'' — the same register through the cross-core step the hardware runs
+  match (do
+      let ((), st1) ← Kernel.registerInterface
+        { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+          maxResponseSize := 64, requiresGrant := false } twoThreadState
+      pure st1 : Except KernelError SystemState) with
+  | .error e => assertBool s!"9f'' interface registers (got .error {reprStr e})" false
+  | .ok st1 => do
+      let st1 := SeLe4n.Testing.withSenderCapAddrs st1 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
+      let (r, stC) := SeLe4n.Testing.dispatchCrossCoreStep trustedLabeling
+        SeLe4n.Kernel.Concurrency.bootCoreId SyscallId.serviceRegister.toNat.toUInt32
+        registryCapPtr.toUInt64
+        (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+        910 1 64 64 0 0 0 0 0 st1
+      assertBool s!"9f'': the cross-core register returns the unit frame (got {reprStr r.1})"
+        (r.1 == .returns .zero)
+      assertBool "9f'': the endpoint now holds the registration"
+        (stC.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
   -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
   match selfSuspendScenario with
   | .error e => assertBool s!"9g dispatches (got .error {reprStr e})" false
