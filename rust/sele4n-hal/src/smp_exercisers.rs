@@ -4504,12 +4504,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             5,
             REVOCATION_REQUIRED,
         ),
+        // A declassify invokes the audit-trail capability (its target is
+        // extra capability 0), so on an endpoint the type gate refuses it.
         overflowed(
             "overflowed-declassify",
             DECLASSIFY,
             ENDPOINT_CAP,
             5,
-            FLOW_DENIED,
+            INVALID_CAPABILITY,
         ),
         // A declassified signal reads no word past its inline registers
         // (seL4's `seL4_Signal` reads no message), so a long one takes the
@@ -10921,7 +10923,7 @@ const DECLASSIFICATION_DENIED_AT_RECEIVER: u64 = 56;
 const REFUSAL_RING_SIZE: u64 = 32;
 /// The bound scenario's setup, unmeasured.
 #[cfg(feature = "hw_target")]
-const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
+const BOUND_SIGNAL_SETUP: [RoundTrip; 11] = [
     retype(
         "untyped-retype-low-thread",
         UNTYPED_CAP,
@@ -10984,6 +10986,17 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         MOVE_CAP,
         ROOT_IPC_BUFFER,
     ),
+    // The low thread names its declassified signal's notification as extra
+    // capability 0, so it is given a buffer on the root task's buffer frame,
+    // where every word the driver writes to the root task's buffer is mirrored
+    // ([`PARTNER_IPC_BUFFER`]).
+    set_ipc_buffer(
+        "low-thread-ipc-buffer",
+        LOW_THREAD_CAP,
+        PARTNER_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    ),
     invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
 ];
 /// The root task's receive on the boot endpoint, which blocks and runs the
@@ -10999,14 +11012,18 @@ const BOUND_ROOT_RECEIVES: RoundTrip = partner_step(
 );
 /// The low thread's declassified signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = partner_step(
-    "declassified-signal-bound",
-    DECLASSIFY_SIGNAL,
-    MOVE_CAP,
-    0,
-    [0, 0],
-    false,
-);
+const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = RoundTrip {
+    msg_len: ONE_EXTRA_CAP,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
+    ..partner_step(
+        "declassified-signal-bound",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        0,
+        [0, 0],
+        false,
+    )
+};
 /// The low thread's plain signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
 const SIGNAL_BOUND: RoundTrip = partner_step("signal-bound", SIGNAL, MOVE_CAP, 1, [6, 0], false);
@@ -11039,14 +11056,18 @@ const BIND_UPPER_TO_LOW_THREAD: RoundTrip = cap_argument(
 /// The root task's declassified signal on the upper notification, both hops
 /// downgrades.
 #[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = partner_step(
-    "declassified-signal-two-hop",
-    DECLASSIFY_SIGNAL,
-    FRAME_CAP,
-    0,
-    [0, 0],
-    false,
-);
+const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = RoundTrip {
+    msg_len: ONE_EXTRA_CAP,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [FRAME_CAP, 0, 0], None)),
+    ..partner_step(
+        "declassified-signal-two-hop",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        0,
+        [0, 0],
+        false,
+    )
+};
 /// The root task's yield, which runs the woken low thread, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_ROOT_YIELDS: RoundTrip = kernel_step("bound-root-yields", YIELD);
@@ -11079,12 +11100,12 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
 const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
     syscall: DECLASSIFY_SIGNAL,
-    cptr: MOVE_CAP,
-    msg_len: 0,
+    cptr: AUDIT_CAP,
+    msg_len: ONE_EXTRA_CAP,
     msg: [0, 0, 0, 0],
     primed: None,
     blocks: false,
-    caps_or_badges: None,
+    caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
     overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
