@@ -266,6 +266,10 @@ private def declassCapPtr : Nat := 11
 private def badgeOneCapPtr : Nat := 12
 private def unbadgedCapPtr : Nat := 13
 
+/-- The audit-trail capability the declassifying signal invokes (WS-SX SX6.7:
+the notification it signals is its extra capability 0, `declassCapPtr`). -/
+private def declassAuditCapPtr : Nat := 14
+
 private def ntfnCapWith (badgeWord : Nat) (badged : Bool) : Capability :=
   { target := .object ntfnId,
     rights := AccessRightSet.ofList [.read, .write],
@@ -288,7 +292,10 @@ private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
        (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability),
        (SeLe4n.Slot.ofNat declassCapPtr, ntfnCapWith 0x5C true),
        (SeLe4n.Slot.ofNat badgeOneCapPtr, ntfnCapWith 0x1 true),
-       (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false)]))
+       (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false),
+       (SeLe4n.Slot.ofNat declassAuditCapPtr,
+        { target := .auditTrail CapTarget.authorityCode,
+          rights := AccessRightSet.ofList [.read, .write] })]))
 
 private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
@@ -1457,8 +1464,12 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
       List DeclassificationEvent × Option Kernel.Architecture.SyscallReturnFrame :=
   let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
-  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
-    declassCapPtr.toUInt64 forgedBadge.toUInt64 st1
+  -- The audit-trail capability invoked, the notification named as extra
+  -- capability 0 (message info: one word, one extra capability).
+  let st1 := SeLe4n.Testing.withSenderCapAddrs st1 peerTid #[SeLe4n.CPtr.ofNat declassCapPtr]
+  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat
+    (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
+    declassAuditCapPtr.toUInt64 forgedBadge.toUInt64 st1
   let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
   -- The step reports the cores whose reschedule flag it raised as one word;
   -- these are the SGIs it fires (`fireRaisedReschedules_eq`).

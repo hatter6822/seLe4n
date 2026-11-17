@@ -10167,20 +10167,31 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
 
 /-- §11.7 fixtures — a CSpace through which the seam can re-resolve the refused
 receiver.  Slot 2 of a single-level CNode (depth 4 = radixWidth, the §7.9
-shape) carries a write capability to `highNotification`, and `highCurrent`'s
-TCB is re-rooted at it; nothing the plan or the delivery reads changes. -/
+shape) carries the audit-trail capability the declassifying signal invokes, and
+slot 5 a write capability to `highNotification`, the signal's extra capability
+0 (WS-SX SX6.7): `highCurrent`'s saved message info names one extra capability
+and its IPC buffer's first capability word holds 5.  `highCurrent`'s TCB is
+re-rooted at the CNode; nothing the plan or the delivery reads changes. -/
 private def declassCapCNode : SeLe4n.ObjId := ⟨1032⟩
-private def declassNotifSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
+private def declassAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
+private def declassAuditCap : Capability :=
+  { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [.write] }
+private def declassNotifSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
 private def declassNotifCap : Capability :=
   { target := .object highNotification, rights := AccessRightSet.ofList [.write] }
 private def declassCapCNodeValue : CNode :=
-  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)]))
+  (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF
+    [(declassAuditSlot, declassAuditCap), (declassNotifSlot, declassNotifCap)]))
 private def declassSeamState : SystemState :=
-  { declassSignalState with
-      objects := (declassSignalState.objects.insert declassCapCNode
-                    (.cnode declassCapCNodeValue)).insert
-                  highCurrent.toObjId
-                    (.tcb (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) declassCapCNode 60)) }
+  SeLe4n.Testing.withSenderCapAddrs
+    { declassSignalState with
+        objects := (declassSignalState.objects.insert declassCapCNode
+                      (.cnode declassCapCNodeValue)).insert
+                    highCurrent.toObjId
+                      (.tcb (SeLe4n.Testing.tcbWithSenderFrame
+                        (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) declassCapCNode 60)
+                        { registers := #[⟨0x5C⟩] } 1)) }
+    highCurrent #[SeLe4n.CPtr.ofNat 5]
 
 /-- The seam run on a hop-2 refusal: syscall 33, reason 56, `x0 = 2` (the slot
 the capability sits in). -/
@@ -10193,8 +10204,8 @@ names the resolved receiver, end to end — transition resolution, seam
 re-resolution, the recorded field, and the monitor's read of it. -/
 private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
   IO.println "--- §11.7 SM9.C.1 a refused second hop names the resolved receiver ---"
-  -- The premise chain is real on this fixture: the capability at x0 = 2
-  -- resolves to the notification, and the plan under the first-hop-only policy
+  -- The premise chain is real on this fixture: the capability at x0 = 2 is
+  -- the audit trail's, its extra capability 0 resolves to the notification, and the plan under the first-hop-only policy
   -- refuses with the receiver's own discriminant.
   assertBool "the seam's re-resolution names exactly the receiver the gate refused"
     (decide (Platform.FFI.refusedSignalReceiver? declassSeamState highCurrent
@@ -11517,23 +11528,28 @@ private def seamBoundaryState : SystemState :=
   | _ => declassSeamState
 
 /-- §13.2 fixture — the denied `.declassifySignal`, through the boundary the
-hardware calls: msgInfo 1 (one message register, the badge), x0 = 2 (the slot
-holding the notification's write capability).  The plan authorizes hop 1 and
+hardware calls: msgInfo 129 (one message register, one extra capability), x0 = 2
+(the slot holding the audit-trail capability; the notification's write
+capability is extra capability 0, slot 5).  The plan authorizes hop 1 and
 refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Testing.dispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 2 1 0x5C 0 0 0 0 0 0 0 0
+    (SyscallId.declassifySignal.toNat.toUInt32) 2
+    (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
 /-- §13.2 fixture — the denied `.declassify` at the SAME state: the deny-all
-control deployment refuses every downgrade, and the capability at slot 3
-resolves to the public notification, so the refusal is the policy gate's own
-`.declassificationDenied` rather than a resolution failure. -/
+control deployment refuses every downgrade, and the audit-trail capability at
+slot 2 is invoked with extra capability 0 at slot 3, which resolves to the public
+notification, so the refusal is the policy gate's own `.declassificationDenied`
+rather than a resolution failure. -/
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Testing.dispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 3 0 0 0 0 0 0 0 0 0 0 seamBoundaryState
+    (SyscallId.declassify.toNat.toUInt32) 2
+    (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0 0 0 0 0 0 0 0 0
+    (SeLe4n.Testing.withSenderCapAddrs seamBoundaryState highCurrent #[SeLe4n.CPtr.ofNat 3])
 
 /-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
 the boundary the hardware calls.
