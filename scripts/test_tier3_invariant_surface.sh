@@ -4108,6 +4108,9 @@ run_check "INVARIANT" rg -n '^theorem ipcBufferAddrOfWord_eq_zero_iff($|[ ({:\[\
 # InvalidArgument 0, each before the model's own checks.
 run_check "INVARIANT" rg -n -U 'def irqControlLineRefusal[^\n]*\n  if irqControlMaxLine st < line then some \(\.rangeError 0 \(irqControlMaxLine st\)\.toUInt64\)\n  else if !Architecture\.deviceInterruptLine st line then some \.invalidIrq$' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n -U '      else if root\.tableBase\.isNone then \.error \(\.invalidArgument 0\)\n([ \t]*(--[^\n]*)?\n)*      else if !vaddr\.isCanonical then \.error \(\.invalidArgument 0\)\n      else if !pageTableAddressable vaddr then \.error \.addressOutOfBounds$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+# The arm answers that refusal in place, before the general form is reached.
+run_check "INVARIANT" rg -n -U '          \(fun _ rootId =>\n([ \t]*(--[^\n]*)?\n)*            if pageTableMapPastUserTopAt st objId rootId args\.vaddr then\n              \.error \(\.invalidArgument 0, st\)\n            else\n            RefusalCarrying\.ofChecked \(pageTableMapAdmittedAt st objId rootId args\.vaddr\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_of_pastUserTopAt($|[ ({:\[\]])' SeLe4n/Kernel/VSpacePerform.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 # WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
 # 0, the CNode the root itself at depth 0 or the slot its index and depth name,

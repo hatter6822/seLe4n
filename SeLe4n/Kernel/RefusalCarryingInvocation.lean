@@ -1025,6 +1025,11 @@ refusal is read where it is, never rebuilt. -/
         resolveCallerCapObjectK tid rootCPtr .write st
           (KernelError.argumentCapRefusal Architecture.pageTableMapRootCapNumber (fun e => .error (e, st)))
           (fun _ rootId =>
+            -- seL4's `vaddr > USER_TOP` refusal, read in place
+            -- (`pageTableMapPastUserTopAt`), so the wide address builds no error.
+            if pageTableMapPastUserTopAt st objId rootId args.vaddr then
+              .error (.invalidArgument 0, st)
+            else
             RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
               (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
               (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st)
@@ -1728,10 +1733,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | ok pr =>
           obtain ⟨_, rootId⟩ := pr
           dsimp only
-          apply RefusalCarrying.ofChecked_eq
-          intro hA
-          simp only [dispatchInvocationBy, hD, hX, hRs,
-            pageTableMap_of_admitted objId rootId args.vaddr st hA]
+          split
+          · next hP =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hX, hRs,
+              pageTableMap_of_pastUserTopAt hP]
+          · apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hX, hRs,
+              pageTableMap_of_admitted objId rootId args.vaddr st hA]
     all_goals rfl
   case pageTableUnmap =>
     cases target
