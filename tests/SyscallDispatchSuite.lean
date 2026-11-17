@@ -435,15 +435,6 @@ private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
     (e : KernelError) : Bool :=
   outcome == .returns (Kernel.Architecture.errorFrame e false)
 
-/-- Does this outcome carry *some* error on its x1 label? -/
-private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
-  match outcome with
-  | .blocks | .faulted | .resumes => false
-  | .returns f =>
-      match MessageInfo.decode f.x1.toNat with
-      | some mi => (Kernel.Architecture.ofErrorLabel? mi.label).isSome
-      | none => false
-
 /-- SD-030: dispatch with no current thread yields the `.illegalState`
     error frame (WS-RA: the offset label on x1, not a bit-63 word). -/
 private def sd030_dispatch_noCurrent : IO Unit := do
@@ -479,8 +470,11 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
         s!"x0 must be spilled into TCB (got {tcb.registerContext.gpr ⟨0⟩})"
   | _ => failLine "sd031_tcb_missing" "TCB missing after dispatch"
 
-/-- SD-032: an unmodeled syscall id surfaces as an error frame — some
-    error rides the x1 label; nothing decodes as success. -/
+/-- SD-032: a number that names none of seL4's eleven syscalls is no `Call`,
+    so the seam answers no error frame: the caller resumes with its registers
+    as it trapped (`.resumes`).  On hardware the HAL never hands the seam such
+    a number — it delivers seL4's `UnknownSyscall` fault instead
+    (`lean_handle_unknown_syscall`). -/
 private def sd032_dispatch_invalidSyscall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨8⟩
   let st := mkState [(⟨8⟩, .tcb (mkTcb 8 .Ready))] (some tid)
@@ -488,9 +482,9 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
   let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0
-  expect "sd032_invalid_syscall_error_frame"
-    (isSomeErrorFrame outcome)
-    "unmodeled syscall ID must surface as an error frame"
+  expect "sd032_unknown_syscall_resumes"
+    (outcome == .resumes)
+    "a number naming no syscall is no Call: no error frame, the caller resumes"
 
 /-- SD-033: `syscallDispatchFromAbi_total` — the pure function never
     returns `Except.error`.  Witnessed by direct call: the result is
@@ -547,11 +541,13 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
       | .ok _ => false)
     "an entry with no published context must answer the .faulted tag (2)"
   let rf : SeLe4n.RegisterFile :=
-    { SeLe4n.RegisterFile.ofWords (fun i => 0x2000 + i.toUInt64) with pstate := 0 }
+    { SeLe4n.RegisterFile.ofWords
+        (fun i => if i = 7 then Syscall.send.word else 0x2000 + i.toUInt64) with pstate := 0 }
   let c : Kernel.Architecture.InFlightContext := .ofRegisterFile rf
   expect "sd036b_some_is_the_context_itself"
     (match syscallEntryContextOrFaulted (some c) with
-      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022 && c'.syscallId == 0x2007
+      | .ok c' => c' == c && c'.x7 == Syscall.send.word && c'.tpidr == 0x2022 &&
+          c'.syscallId == Syscall.send.number.toUInt32
       | .error _ => false)
     "an entry with a context must dispatch on exactly that context"
   expect "sd036d_el1_frame_is_the_faulted_tag"

@@ -5666,7 +5666,7 @@ run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLiv
 run_negative_check "INVARIANT" test -e SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean
 # ...and every trap arm returns through the frame the kernel installed before
 # it falls back to a return frame, the poison or a halt.
-run_check "INVARIANT" rg -n -U 'Err\(_\) => Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\),\n\s+\};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;\n\s+\}\n\s+match dispatched \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U 'let dispatched = crate::svc_dispatch::dispatch_svc\(frame\.x7\(\)\);\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;\n\s+\}\n(\s+//[^\n]*\n)*\s+match dispatched \{' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_fault"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_unknown_syscall"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^fn is_restored_frame_return\(statement: &str\) -> bool \{$' rust/sele4n-hal/build.rs
@@ -5944,7 +5944,7 @@ run_check "INVARIANT" rg -n 'let hw = blank_extern_blocks\(hw_body\);' rust/sele
 # delivery the abort entry uses, from a context built on the trap frame's
 # window with the SVC as the restart PC; the four words that build it cross
 # the ABI.
-run_check "INVARIANT" rg -n 'let dispatched = match u32::try_from\(frame\.x7\(\)\) \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^\s+let dispatched = crate::svc_dispatch::dispatch_svc\(frame\.x7\(\)\);$' rust/sele4n-hal/src/trap.rs
 run_negative_check "INVARIANT" rg -n 'frame\.x7\(\) as u32' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^fn readiness_guard_dominates\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build.rs
@@ -7145,7 +7145,6 @@ run_check "INVARIANT" rg -n '^theorem lockSet_consistent_vspaceUnifyInstruction(
 run_check "INVARIANT" rg -n 'vspaceUnifyInstructionPage' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnifyInstruction_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn vspace_unify_instruction_roundtrip' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '^pub fn unify_instruction_page_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
@@ -8221,7 +8220,6 @@ run_check "INVARIANT" rg -n '^theorem lockSet_declassify_size_le($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n 'policyGated "declassifyObjectFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '\| declassifyDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'Declassify = 30' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'Declassify = 30' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'AuditLogCapacityExceeded = 54' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify' rust/sele4n-sys/src/declassify.rs
 # SM8.C.3 (**enforcement, not convention**): a production or live module must
@@ -10347,7 +10345,6 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'def count : Nat := 45' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
 run_check "INVARIANT" rg -n 'assert_names\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
