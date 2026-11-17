@@ -465,14 +465,15 @@ capability to a CNode holding capabilities, whose zombie loop may wake waiters
 on their own cores (`copyThreadSpacesZombie_confinedToCores`). -/
 theorem copyThreadSpacesZombie_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (st st' : SystemState)
-    (c : CoreId) (hInv : st.objects.invExt)
-    (hStep : copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc cnData = .ok st')
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr)
+    (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc cnData fhSrc = .ok st')
     (hne : c ∉ copyThreadSpacesZombieCores st vtid)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc cnData hInv hStep) hShared
+    (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc cnData fhSrc hInv
+      hStep) hShared
 
 /-- WS-SX SX6.6 (**the live `.tcbSetIPCBuffer` arm, cross-core**): invisible
 on every core — the buffer slot's set and the address write touch the object

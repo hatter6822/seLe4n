@@ -668,7 +668,7 @@ the guard does not read them; the retire erases the record with them. -/
 slots (`threadLinksQuiescent`), and its three space slots empty. -/
 @[inline] def threadQuiescent (t : TCB) : Bool :=
   threadLinksQuiescent t && t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
-    t.spaceCells[2].isNone
+    t.spaceCells[2].isNone && t.spaceCells[3].isNone
 
 /-- **Whether a final delete retires the thread at `x`**: the thread stored
 under its own id, no core's idle thread, quiescent on its own links
@@ -2083,22 +2083,24 @@ theorem schedulingObjectRetirable_schedContext {st : SystemState} {x : SeLe4n.Ob
     unfold threadRetirable SystemState.getObject?; rw [hS]
   rw [this, Bool.false_or] at h; exact h
 
-/-- **A quiescent thread holds no capability**: all three space slots are empty. -/
+/-- **A quiescent thread holds no capability**: all four slots are empty. -/
 theorem threadQuiescent.slotCap {t : TCB} (h : threadQuiescent t = true) (s : SeLe4n.Slot) :
     (KernelObject.tcb t).slotCap s = none := by
   unfold threadQuiescent threadLinksQuiescent at h
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
-  have h0 := h.1.1
-  have h1 : t.spaceCells[1] = none ∧ t.spaceCells[2] = none := ⟨h.1.2, h.2⟩
+  have h0 : t.spaceCells[0] = none := h.1.1.1.2
+  have h1 : t.spaceCells[1] = none ∧ t.spaceCells[2] = none ∧ t.spaceCells[3] = none :=
+    ⟨h.1.1.2, h.1.2, h.2⟩
   show t.spaceSlotCap s = none
   unfold TCB.spaceSlotCap
   split
   · next hs =>
-    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 := by omega
-    rcases this with e | e | e
-    · simp only [e]; exact h0.2
+    have : s.toNat = 0 ∨ s.toNat = 1 ∨ s.toNat = 2 ∨ s.toNat = 3 := by omega
+    rcases this with e | e | e | e
+    · simp only [e]; exact h0
     · simp only [e]; exact h1.1
-    · simp only [e]; exact h1.2
+    · simp only [e]; exact h1.2.1
+    · simp only [e]; exact h1.2.2
   · rfl
 
 /-- **An admitted retire erases an object that holds no capability.** -/
@@ -2149,7 +2151,7 @@ theorem threadQuiescent_codes {t : TCB} (h : threadQuiescent t = true) :
     t.replyWaitersHeadCode = 0 ∧ t.scBindingScCode = 0 ∧ t.scBindingOwnerCode = 0 ∧
     t.boundNotificationCode = 0 ∧ t.replyObjectCode = 0 ∧ t.pendingReceiveReplyCode = 0 ∧
     t.timeoutBudget = none ∧ t.yieldToCode = 0 ∧ t.spaceCells[0] = none ∧
-    t.spaceCells[1] = none ∧ t.spaceCells[2] = none := by
+    t.spaceCells[1] = none ∧ t.spaceCells[2] = none ∧ t.spaceCells[3] = none := by
   unfold threadQuiescent threadLinksQuiescent at h
   simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none, and_assoc] at h
   exact h

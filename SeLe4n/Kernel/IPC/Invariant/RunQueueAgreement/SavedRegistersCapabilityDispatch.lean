@@ -484,21 +484,6 @@ theorem unbindNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} {s
               (fun x hx => by cases hx))
         · cases h; exact k1
 
-/-- The fault-handler install rewrites the thread with its handler alone. -/
-theorem setThreadFaultHandlerOp_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
-    (hInv : st.objects.invExt) (h : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    savedRegsKeptExcept W st st' := by
-  unfold setThreadFaultHandlerOp at h
-  split at h
-  · cases h
-  · rename_i tcb hT _
-    split at h
-    · cases h
-    · cases h
-      unfold installFaultHandler
-      exact .rewriteObject_tcb _ hInv ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) rfl
-
 /-- The affinity change rewrites the moved thread's affinity and run-queue
 links, and no other thread's TCB but its links. -/
 theorem setThreadCpuAffinityWithMigration_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
@@ -1573,40 +1558,38 @@ theorem setIPCBufferOp_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemStat
 core holds after it**: each slot set writes only a thread its retire removes,
 and neither moves the scheduler or the machine. -/
 theorem copyThreadSpaces_savedRegs {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (hInv : st.objects.invExt)
-    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') (u : SeLe4n.ThreadId) :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
+    (h : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') (u : SeLe4n.ThreadId) :
     st'.savedRegs u = st.savedRegs u ∨ offCoreFree e st' u := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hInv h
   obtain ⟨hs1, hm1⟩ := threadSlotSet_scheduler_machine ec st vtid.val TCB.cspaceRootSlot
     cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
   obtain ⟨hs2, hm2⟩ := threadSlotSet_scheduler_machine ec
     (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData)
     vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
-  unfold copyThreadSpacesPerform
-  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
-      vrSrc.slot TCB.vspaceRootRights 0 u with r2 | r2
-  · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.cspaceRootSlot cnSrc.cnode
-        cnSrc.slot TCB.cspaceRootRights cnData u with r1 | r1
-    · exact .inl (r2.trans r1)
-    · right; unfold offCoreFree at r1 ⊢; rw [hs2, hm2, hs1, hm1]; exact r1
-  · right; unfold offCoreFree at r2 ⊢; rw [hs2, hm2]; exact r2
+  obtain ⟨hs3, hm3⟩ := threadSlotSet_scheduler_machine ec
+    (threadSlotSet ec (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights cnData) vtid.val TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
+      TCB.vspaceRootRights 0)
+    vtid.val TCB.faultHandlerSlot fhSrc.cnode fhSrc.slot TCB.faultHandlerRights 0
+  rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI2 hT2 TCB.faultHandlerSlot fhSrc.cnode
+      fhSrc.slot TCB.faultHandlerRights 0 u with r3 | r3
+  · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hI1 hT1 TCB.vspaceRootSlot vrSrc.cnode
+        vrSrc.slot TCB.vspaceRootRights 0 u with r2 | r2
+    · rcases threadSlotSet_savedRegs (e := e) (ec := ec) hInv hT TCB.cspaceRootSlot cnSrc.cnode
+          cnSrc.slot TCB.cspaceRootRights cnData u with r1 | r1
+      · exact .inl (r3.trans (r2.trans r1))
+      · right; unfold offCoreFree at r1 ⊢; rw [hs3, hm3, hs2, hm2, hs1, hm1]; exact r1
+    · right; unfold offCoreFree at r2 ⊢; rw [hs3, hm3, hs2, hm2]; exact r2
+  · right; unfold offCoreFree at r3 ⊢; rw [hs3, hm3]; exact r3
 
 /-- WS-ZA ZA6.25: **the space change through the zombie delete writes the saved
 registers of no thread another core holds**: the zombie passes are a delete
 chain (`finaliseCensusChain`), and the plain space change writes only threads no
 core holds after it (`copyThreadSpaces_savedRegs`). -/
 theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (B : FinaliseCensusBase st)
-    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (B : FinaliseCensusBase st)
+    (hB : finalisingDeleteBundle st) (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     savedRegsKeptOffCore e st st' := by
   rcases copyThreadSpacesZombie_cases h with h1 | ⟨n, s, hR, rfl | h2⟩
   · intro d hd t ht
@@ -1620,7 +1603,8 @@ theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : Sy
       (fun d _ hQ => hQ.finalise B d) (.start hB)).2.2
   · have Q := hR.chain.closed (finaliseCensusChain e st) (fun _ _ _ hQ hD => hQ.delete B hD)
       (fun d _ hQ => hQ.finalise B d) (.start hB)
-    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData Q.1.2.1.2.1 Q.1.2.1.1 Q.1.2.2 h2).1
+    have C := (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData fhSrc Q.1.2.1.2.1
+      Q.1.2.1.1 Q.1.2.2 h2).1
     exact savedRegsKeptOffCore_extend Q.2.2 C (stepCovers_trans Q.1.1 C)
       (fun t => (copyThreadSpaces_savedRegs (e := e) Q.1.2.1.2.1 h2 t).imp_right .inr)
 
@@ -1759,5 +1743,4 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
         | exact hW (setMCPriorityOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hX (setThreadCpuAffinityWithMigration_savedRegsKeptExcept hInv hS)
         | exact setIPCBufferOp_savedRegsKeptOffCore hInv hS
-        | exact hX (setThreadFaultHandlerOp_savedRegsKeptExcept hInv hS)
         | exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS)

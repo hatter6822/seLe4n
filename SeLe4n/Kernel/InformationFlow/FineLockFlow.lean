@@ -2711,20 +2711,12 @@ theorem queueOwnership_respected_by_tcbSetAffinity (callerTid : SeLe4n.ThreadId)
       (SeLe4n.Kernel.Concurrency.lockSet_tcbSetAffinity callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
-theorem queueOwnership_respected_by_tcbSetFaultHandler (callerTid : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
-    (targetCnodeRootObjId handlerEndpointObjId : Option SeLe4n.ObjId)
-    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
-    queueOwnershipRespectedBy
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetFaultHandler callerTid cnodeRootObjId neighbourTid targetCnodeRootObjId handlerEndpointObjId (some o)) neighbourTid o :=
-  fun _ => queueOwner_mem_write_of_extendOpt _ o
-
 theorem queueOwnership_respected_by_tcbSetSpace (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
-    (newCnodeObjId newVSpaceRootObjId : Option SeLe4n.ObjId)
+    (newCnodeObjId newVSpaceRootObjId handlerEndpointObjId : Option SeLe4n.ObjId)
     (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
     queueOwnershipRespectedBy
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetSpace callerTid cnodeRootObjId neighbourTid newCnodeObjId newVSpaceRootObjId (some o)) neighbourTid o :=
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetSpace callerTid cnodeRootObjId neighbourTid newCnodeObjId newVSpaceRootObjId handlerEndpointObjId (some o)) neighbourTid o :=
   fun _ => queueOwner_mem_write_of_extendOpt _ o
 
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**

@@ -2440,7 +2440,6 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
   | .tcbSetIPCBuffer => false        -- WS-SX SX6.6: deletes the buffer slot and inserts the derived frame cap with a CDT copy edge; the frozen phase models no CDT write
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
-  | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
   | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
   | .pageTableMap => false           -- WS-BP BP7.1 (`v0.36.12`): translation-table install; the frozen phase models no page-table objects' installs
   | .pageTableUnmap => false         -- WS-BP BP7.1 (`v0.36.12`): ditto

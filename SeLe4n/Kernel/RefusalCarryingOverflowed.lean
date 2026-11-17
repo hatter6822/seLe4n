@@ -84,7 +84,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
       decodeIrqControlGetArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
-      decodeSetIPCBufferArgs, decodeSetAffinityArgs, decodeSetFaultHandlerArgs,
+      decodeSetIPCBufferArgs, decodeSetAffinityArgs,
       decodeSetSpaceArgs, decodePageTableMapArgs, truncationMinimum, hL _ hT, bind,
       Except.bind, dispatchCapabilityOnlyChecked, untypedRetypeFromCap_truncated]
   all_goals first | rfl | skip

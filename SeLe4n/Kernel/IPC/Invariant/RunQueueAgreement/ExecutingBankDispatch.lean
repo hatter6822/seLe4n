@@ -311,11 +311,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
             (setThreadCpuAffinityWithMigration_stepCovers _ _ _ _ e' _ _ hInv hS)
         | exact hO (setIPCBufferOp_stepCovers _ _ hB.1.2.1 hB.1.1 hB.2 hS).1
             (setIPCBufferOp_savedRegsKeptOffCore hB.1.2.1 hS)
-        | exact hX (setThreadFaultHandlerOp_savedRegsKeptExcept hInv hS)
-            ((setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hS).stepCoversInv (e := e')
-              (hRes := by rw [setThreadFaultHandlerOp_machine_eq hS])
-              (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hS])))
-        | exact hO (copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ hB hS).1
+        | exact hO (copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ _ hB hS).1
             (copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS))
 
 /-- WS-ZA ZA6.28: **every arm `dispatchWithCapChecked` routes keeps the executing

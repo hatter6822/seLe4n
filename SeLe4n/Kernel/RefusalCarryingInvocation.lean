@@ -115,6 +115,34 @@ theorem resolveCallerCNodeOpSlotsK_eq {α : Type} (st : SystemState) (tid : SeLe
   rw [callerExtraCapAddrK_eq]
   cases callerExtraCapAddr? st tid xc 0 <;> rfl
 
+/-- `resolveSetSpace` in continuation form: the fault endpoint, CSpace root and
+VSpace root addresses are extra capabilities 0, 1 and 2, read in continuation
+form (`callerExtraCapAddrK`), a missing one `.truncatedMessage`; then
+`resolveSetSpaceAtK`, so no `Option` or address record is built
+(`resolveSetSpaceK_eq`). -/
+@[inline] def resolveSetSpaceK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId) (xc : Nat)
+    (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId →
+      SeLe4n.Slot → α) : α :=
+  callerExtraCapAddrK st tid xc 0 (fun _ => onErr .truncatedMessage) fun fhAddr =>
+    callerExtraCapAddrK st tid xc 1 (fun _ => onErr .truncatedMessage) fun cnAddr =>
+      callerExtraCapAddrK st tid xc 2 (fun _ => onErr .truncatedMessage) fun vrAddr =>
+        resolveSetSpaceAtK tid cnAddr vrAddr fhAddr args st onErr onOk
+
+theorem resolveSetSpaceK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId) (xc : Nat)
+    (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId →
+      SeLe4n.Slot → α) :
+    resolveSetSpaceK st tid xc args onErr onOk =
+      match resolveSetSpace tid xc args st with
+      | .error e => onErr e
+      | .ok (cnSrc, vrSrc, fhSrc) =>
+        onOk cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot fhSrc.cnode fhSrc.slot := by
+  unfold resolveSetSpaceK resolveSetSpace
+  simp only [callerExtraCapAddrK_eq]
+  cases callerExtraCapAddr? st tid xc 0 <;> cases callerExtraCapAddr? st tid xc 1 <;>
+    cases callerExtraCapAddr? st tid xc 2 <;> simp only [resolveSetSpaceAtK_eq] <;> rfl
+
 /-- `dispatchWithCapChecked`'s arm for a routed invocation, its arguments read
 from the register file `regs` through `layout` and its operand address given
 (`dispatchWithCapChecked_eq_invocationBy`).  Each decode reads the file at its
@@ -394,19 +422,6 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
     | _ => .error (.invalidCapability 0)
-  | .tcbSetFaultHandler =>
-    match cap.target with
-    | .object objId =>
-      match decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error e
-      | .ok args =>
-        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-        | .error e => .error e
-        | .ok vtid =>
-            match setThreadFaultHandlerOp st vtid args.handlerCPtr with
-            | .ok st' => .ok ((), st')
-            | .error e => .error e
-    | _ => .error (.invalidCapability 0)
   | .tcbSetSpace =>
     match cap.target with
     | .object objId =>
@@ -416,10 +431,10 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match resolveSetSpace tid args st with
+            match resolveSetSpace tid xc args st with
             | .error e => .error e
-            | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
+            | .ok (cnSrc, vrSrc, fhSrc) =>
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData fhSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => .error (.invalidCapability 0)
@@ -487,7 +502,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hMcp := decodeSetMCPriorityArgs_eq_by layout regs decoded hRegs
   have hIpcBuf := decodeSetIPCBufferArgs_eq_by layout regs decoded hRegs
   have hAff := decodeSetAffinityArgs_eq_by layout regs decoded hRegs
-  have hFault := decodeSetFaultHandlerArgs_eq_by layout regs decoded hRegs
   have hSpace := decodeSetSpaceArgs_eq_by layout regs decoded hRegs
   have hPt := decodePageTableMapArgs_eq_by layout regs decoded hRegs
   have hIrqGet := decodeIrqControlGetArgs_eq_by layout regs decoded hRegs
@@ -499,7 +513,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
       hMove, hReply, hDelete, hMap, hUnmap,
-      hPrio, hMcp, hIpcBuf, hAff, hFault,
+      hPrio, hMcp, hIpcBuf, hAff,
       hSpace, hPt, hIrqGet, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
   all_goals first | rfl | (split <;> rfl)
@@ -681,18 +695,6 @@ refusal is read where it is, never rebuilt. -/
           (fun st => Lifecycle.Suspend.restartThreadOnCore st vtid executingCore)
           (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability 0, st)
-  | .tcbSetFaultHandler =>
-    match cap.target with
-    | .object objId =>
-      match decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error (e, st)
-      | .ok args =>
-        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-        | .error e => .error (e, st)
-        | .ok vtid =>
-          setThreadFaultHandlerOpK st vtid args.handlerCPtr (fun e => .error (e, st))
-            (fun st' => .ok ((), st'))
-    | _ => .error (.invalidCapability 0, st)
   | .tcbSetSpace =>
     match cap.target with
     | .object objId =>
@@ -702,12 +704,12 @@ refusal is read where it is, never rebuilt. -/
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnC cnS vrC vrS =>
+          resolveSetSpaceK st tid xc args (fun e => .error (e, st)) (fun cnC cnS vrC vrS fhC fhS =>
             RefusalCarrying.ofChecked
               (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS }
-                args.cspaceRootData)
+                args.cspaceRootData { cnode := fhC, slot := fhS })
               (fun st => copyThreadSpacesZombiePerform executingCore st vtid cnC cnS vrC vrS
-                args.cspaceRootData)
+                args.cspaceRootData fhC fhS)
               (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability 0, st)
   | .schedContextBind =>
@@ -1264,21 +1266,6 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           Lifecycle.Suspend.restartThreadOnCore_of_resumeAdmitted (executingCore := executingCore) hA,
           hS]
     all_goals rfl
-  case tcbSetFaultHandler =>
-    cases target
-    case object objId =>
-      dsimp only
-      cases hD : decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) with
-      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
-      | ok args =>
-        cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
-        | ok vT =>
-          dsimp only
-          rw [setThreadFaultHandlerOpK_eq]
-          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
-          cases setThreadFaultHandlerOp st vT args.handlerCPtr <;> rfl
-    all_goals rfl
   case tcbSetSpace =>
     cases target
     case object objId =>
@@ -1291,10 +1278,10 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | ok vT =>
           dsimp only
           rw [resolveSetSpaceK_eq]
-          cases hR : resolveSetSpace tid args st with
+          cases hR : resolveSetSpace tid xc args st with
           | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hR]
           | ok ids =>
-            obtain ⟨cnSrc, vrSrc⟩ := ids
+            obtain ⟨cnSrc, vrSrc, fhSrc⟩ := ids
             try dsimp only
             apply RefusalCarrying.ofChecked_eq
             intro hA

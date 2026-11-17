@@ -118,20 +118,6 @@ theorem setIPCBufferOp_machine_eq {ec : CoreId} {st st' : SystemState}
   rw [SystemState.updateTcb_machine, (retireFinalObject_fields ec _ _ _).2.2,
     threadSlotCopied_machine]
 
-theorem setThreadFaultHandlerOp_machine_eq {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cptr : SeLe4n.CPtr} (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    st'.machine = st.machine := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          rfl
-
 theorem setConsumed_machine (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
     (setConsumed st s t).machine = st.machine := by
   unfold setConsumed
@@ -379,9 +365,6 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (threadSlotCopied_machine _ _ _ _ _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (setThreadFaultHandlerOp_machine_eq (by assumption)).trans ?_;
-   machine_chain))
-macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (setIPCBufferOp_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -609,25 +592,22 @@ theorem threadSlotSet_stepCovers (e ec : CoreId) {st : SystemState} {tid : SeLe4
       ((SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights data).preserves hL))
 
 theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hObjInv : st.objects.invExt)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
     (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData hCL)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights cnData).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).2).1
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hObjInv hStep
+  have I1 := (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData).1
+  have L1 := threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData
+  have I2 := (threadSlotSet_preserves_ipcInvariantFull ec hI1 I1 L1.budgets hT1
+    TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0).1
+  have L2 := threadSlotSet_preserves_schedContextLinkInvariant ec hI1 L1 hT1
+    TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot TCB.vspaceRootRights 0
   exact stepCoversInv_trans (threadSlotSet_stepCovers e ec hObjInv hI hL hT _ _ _ _ _).1
-    (threadSlotSet_stepCovers e ec hI1
-      (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT _ _ _ _ _).1
-      (threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT _ _ _ _ _) hT1' _ _ _ _ _)
+    (stepCoversInv_trans (threadSlotSet_stepCovers e ec hI1 I1 L1 hT1 _ _ _ _ _).1
+      (threadSlotSet_stepCovers e ec hI2 I2 L2 hT2 _ _ _ _ _))
 
 /-- WS-SX SX6.6: **a buffer change covers**: the buffer slot's set covers
 (`threadSlotSet_stepCovers`), and the address write moves no key input. -/
@@ -1103,18 +1083,20 @@ theorem cspaceDeleteSlotZombie_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
 one finalising delete or finalisation at a time, then the plain space change
 (`copyThreadSpaces_stepCovers`). -/
 theorem copyThreadSpacesZombie_stepCovers (e ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (hB : finalisingDeleteBundle st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64) (fhSrc : CSpaceAddr) (hB : finalisingDeleteBundle st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
-  · exact copyThreadSpaces_stepCovers e ec st st' vtid cnSrc vrSrc cnData hB.1.2.1 hB.1.1 hB.2 h1
+  · exact copyThreadSpaces_stepCovers e ec st st' vtid cnSrc vrSrc cnData fhSrc hB.1.2.1 hB.1.1 hB.2
+      h1
   · have h := hR.chain.closed (coversWithDeleteBundle e st)
       (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
     exact ⟨h.1, h.2.1.2.1⟩
   · have h := hR.chain.closed (coversWithDeleteBundle e st)
       (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
     exact stepCoversInv_trans h.1
-      (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData h.2.1.2.1 h.2.1.1 h.2.2 h2)
+      (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc cnData fhSrc h.2.1.2.1 h.2.1.1 h.2.2
+        h2)
 
 /-- WS-ZA ZA6.9: **the Consumed invocation covers**: `setConsumed` moves no key
 input and no scheduler field. -/
@@ -1439,9 +1421,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact setIPCBufferOp_stepCovers _ _ hB.1.2.1 hB.1.1 hB.2 hU
-        | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hU]))
-        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ hB hU)
+        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ _ hB hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ _ h
     exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU

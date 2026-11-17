@@ -439,22 +439,6 @@ theorem updateTcb_ipcBuffer_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   ⟨keyInputsEq_updateTcb hObjInv (fun _ => rfl), SystemState.updateTcb_scheduler _ _ _,
    SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv⟩
 
-theorem setThreadFaultHandlerOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cptr : SeLe4n.CPtr) (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') : capabilityKeyFrame st st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler SystemState.rewriteObject
-          exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
-            ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
-
 theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :

@@ -47,7 +47,7 @@ minimum 0, as seL4 checks no length for an IPC or a signal. -/
   (.irqControlGet, decodeIrqControlGetArgs),
   (.tcbSetPriority, decodeSetPriorityArgs), (.tcbSetMCPriority, decodeSetMCPriorityArgs),
   (.tcbSetIPCBuffer, decodeSetIPCBufferArgs), (.tcbSetAffinity, decodeSetAffinityArgs),
-  (.tcbSetFaultHandler, decodeSetFaultHandlerArgs), (.tcbSetSpace, decodeSetSpaceArgs),
+  (.tcbSetSpace, decodeSetSpaceArgs),
   (.pageTableMap, decodePageTableMapArgs), (.auditRead, decodeAuditReadArgs),
   (.auditDrain, decodeAuditDrainArgs)]
 

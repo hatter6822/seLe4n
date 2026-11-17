@@ -75,25 +75,25 @@ theorem threadSlotSet_kernelRecordsSound (ec : Concurrency.CoreId) {st : SystemS
     ((RecordsFrame.threadSlotCopied (KernelRecords.objects_invExt h) hT slot srcCNode srcSlot
       rights data).preserves h) hR'.2.2.2.2.2.2
 
-/-- **The space change carries the records**: each slot set does. -/
+/-- **The space change carries the records**: each of its three slot sets does. -/
 theorem copyThreadSpaces_kernelRecordsSound (ec : Concurrency.CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : st.kernelRecordsSound)
-    (hR : ipcReachable st) (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (h : st.kernelRecordsSound)
+    (hR : ipcReachable st) (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     st'.kernelRecordsSound := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hR.objects_invExt hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
-  exact threadSlotSet_kernelRecordsSound ec (threadSlotSet_kernelRecordsSound ec h hR hT _ _ _ _ _)
-    (threadSlotSet_preserves_ipcReachable ec hR hT _ _ _ _ _) hT1' _ _ _ _ _
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, -, hT2, -, rfl⟩ :=
+    copyThreadSpaces_ok_steps hR.objects_invExt hStep
+  have hR1 := threadSlotSet_preserves_ipcReachable ec hR hT TCB.cspaceRootSlot cnSrc.cnode
+    cnSrc.slot TCB.cspaceRootRights cnData
+  exact threadSlotSet_kernelRecordsSound ec (threadSlotSet_kernelRecordsSound ec
+      (threadSlotSet_kernelRecordsSound ec h hR hT _ _ _ _ _) hR1 hT1 _ _ _ _ _)
+    (threadSlotSet_preserves_ipcReachable ec hR1 hT1 _ _ _ _ _) hT2 _ _ _ _ _
 
 /-- **The space change through the zombie delete carries the records**: the
 loop's passes carry them with the bundle the deletes read, and the space change
 after them. -/
 theorem copyThreadSpacesZombie_kernelRecordsSound (ec : Concurrency.CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : deleteRecordsCarried st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : st'.kernelRecordsSound := by
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (h : deleteRecordsCarried st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') : st'.kernelRecordsSound := by
   have hChain : ∀ n s, ZombieRun ec n st s → deleteRecordsCarried s := fun _ _ hR =>
     hR.chain.closed deleteRecordsCarried
       (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_deleteRecordsCarried hQ hD)

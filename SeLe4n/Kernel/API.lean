@@ -1311,7 +1311,6 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
-  | .tcbSetFaultHandler    => .write
   -- **WS-BP BP7.1 (`v0.36.11`)**: setting a thread's roots is configuring the
   -- thread — the write right on its TCB, like every thread-configuration arm.
   | .tcbSetSpace           => .write
@@ -1372,7 +1371,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
-  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+  | .tcbSetAffinity | .tcbSetSpace | .tcbBindNotification
   | .tcbUnbindNotification => some .tcb
   | .pageTableMap | .pageTableUnmap => some .pageTable
   | .declassify | .reply | .auditRead | .auditDrain | .schedContextConfigure
@@ -1421,7 +1420,7 @@ def syscallMissingRightError : SyscallId → KernelError
   | .declassify | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
   | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
-  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
+  | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .yield | .schedContextConsumed | .schedContextYieldTo
   | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .mintReplyCap => .illegalAuthority
@@ -1480,7 +1479,7 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
+  | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
   | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
@@ -1770,7 +1769,7 @@ def syscallNamesReply : SyscallId → Bool
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
   | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
-  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .yield | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
   | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
@@ -2279,8 +2278,8 @@ seL4 numbers the capability a refusal names (`invalidCapNumber`): `0` for the
 invoked capability and `i + 1` for argument capability `i`.  Each operation's
 argument capabilities, in the current word layout's order, are numbered here,
 once (an operation below this module numbers its own: `pageTableMapRootCapNumber`,
-`irqHandlerNotificationCapNumber`, `faultHandlerCapNumber`, the `.tcbSetSpace`
-roots' `setSpaceCSpaceRootCapNumber` and `setSpaceVSpaceRootCapNumber`); the
+`irqHandlerNotificationCapNumber`, the `.tcbSetSpace` fault endpoint's
+`setSpaceFaultHandlerCapNumber`); the
 specification's resolver and its compiled continuation form both read the
 number, so the two cannot answer a refusal with different numbers.  A
 resolution failure of the argument (an empty or reserved slot; a lookup fault
@@ -2763,42 +2762,80 @@ theorem resolveCallerCapObject_ok (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.C
       resolveCallerCapSlot_ok callerTid addr right st ref cap' oid' hS
     exact ⟨callerTcb, ref, hT, hRes, hL, hR, hTg⟩
 
-/-- **WS-BP BP7.1 (`v0.36.11`): the two slots a `.tcbSetSpace` copies from,
-resolved through the caller's own CSpace** — seL4's `TCB_SetSpace` operands.
+/-- **The rights the model asks of a `.tcbSetSpace` CSpace root source**: `.grant`
+and `.write` on the capability its slot holds (making a CNode a thread's CSpace
+root hands that thread every capability the CNode holds and the ability to
+write its slots).  Read only once the slot is known to hold a CNode capability
+(`cspaceRootSourceAdmitted`). -/
+@[inline] def cspaceRootSourceAuthorised (st : SystemState) (src : CSpaceAddr) : Bool :=
+  match SystemState.lookupSlotCap st src with
+  | some cap => cap.hasRight .grant && cap.hasRight .write
+  | none => false
 
-MR0 addresses a capability to the new **CSpace root**, and the caller must hold
-it with `.grant` **and** `.write`: making a CNode a thread's CSpace root hands
-that thread every capability the CNode holds and the ability to write the CNode's
-slots, so it is authority to pass capabilities on — the right `.cspaceMint` and
-`.cspaceCopy` gate on — and to change what the CNode holds.  MR1 addresses a
-capability to the new **VSpace root**, held with `.write`, the right
-`.vspaceMap` gates a change to an address space on.  Each must name an object of
-its kind, or the call is refused `.illegalState` (seL4's `decodeSetSpace` answers
-a CNode or VSpace capability of the wrong kind `seL4_IllegalOperation`); the
-operation checks the kinds again against the store, so a resolver and an
-operation that disagreed about them would refuse rather than install.
-MR2 is seL4's `cspace_root_data`: a nonzero word sets the CSpace root copy's
-guard through `updateCapData`, and a guard size that does not fit beside the
-CNode's radix is refused `.illegalState` (`cspaceRootDataRefused`; seL4's null
-capability, then `seL4_IllegalOperation`), before the VSpace root is resolved,
-as `decodeSetSpace` orders it.
+/-- **The right the model asks of a `.tcbSetSpace` VSpace root source**: `.write`,
+the right `.vspaceMap` gates a change to an address space on. -/
+@[inline] def vspaceRootSourceAuthorised (st : SystemState) (src : CSpaceAddr) : Bool :=
+  match SystemState.lookupSlotCap st src with
+  | some cap => cap.hasRight .write
+  | none => false
+
+/-- **WS-BP BP7.1 (`v0.36.11`), WS-SX SX6.5: the three slots a `.tcbSetSpace`
+copies from, resolved through the caller's own CSpace** — seL4-MCS's
+`TCB_SetSpace` operands, at the addresses the message's extra capabilities give:
+the CSpace root at `cnAddr` (extra capability 1), the VSpace root at `vrAddr`
+(extra capability 2), the fault endpoint at `fhAddr` (extra capability 0).
+
+In `decodeSetSpace`'s order: the CSpace root's slot must hold a capability to a
+CNode whose root data word (`cspace_root_data`) fits it
+(`cspaceRootSourceAdmitted`), or the call is refused `.illegalState` (seL4's
+`updateCapData` null capability or wrong type, then `seL4_IllegalOperation`; an
+empty slot is seL4's null capability, refused the same way); then the VSpace
+root's slot must hold a capability to a VSpace root (`isValidVTableRoot`,
+`.illegalState`); then the fault endpoint must be a valid handler
+(`validFaultHandler`: an empty slot, or an endpoint capability with send and a
+grant right, `faultHandlerSourceAdmitted`; anything else `invalidCapability
+1`).  The model also asks `.grant` and `.write` of the CSpace root capability
+and `.write` of the VSpace root capability (`.illegalAuthority`), after each
+root's kind.  The operation checks every source again against the store, so a
+resolver and an operation that disagreed would refuse rather than install.
 The slots are returned, not the objects: the operation copies each slot's
 capability into the thread's slot, derived from it. -/
-def resolveSetSpace (callerTid : SeLe4n.ThreadId)
+def resolveSetSpaceAt (callerTid : SeLe4n.ThreadId) (cnAddr vrAddr fhAddr : SeLe4n.CPtr)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState) :
-    Except KernelError (CSpaceAddr × CSpaceAddr) :=
-  match resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
-  | .error e => .error (e.forArgumentCap setSpaceCSpaceRootCapNumber)
-  | .ok (cnSrc, cnCap, cnId) =>
-    if !cnCap.hasRight .write then .error .illegalAuthority
-    else if (st.getCNode? cnId).isNone then .error .illegalState
-    else if cspaceRootDataRefused st cnId args.cspaceRootData then .error .illegalState
-    else
-      match resolveCallerCapSlot callerTid args.vspaceRoot .write st with
-      | .error e => .error (e.forArgumentCap setSpaceVSpaceRootCapNumber)
-      | .ok (vrSrc, _, vrId) =>
-        if (st.getVSpaceRoot? vrId).isNone then .error .illegalState
-        else .ok (cnSrc, vrSrc)
+    Except KernelError (CSpaceAddr × CSpaceAddr × CSpaceAddr) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match lookupSlot callerTcb cnAddr st with
+    | .error f => .error (.failedLookup false f)
+    | .ok cnSrc =>
+      if !cspaceRootSourceAdmitted st cnSrc args.cspaceRootData then .error .illegalState
+      else if !cspaceRootSourceAuthorised st cnSrc then .error .illegalAuthority
+      else
+        match lookupSlot callerTcb vrAddr st with
+        | .error f => .error (.failedLookup false f)
+        | .ok vrSrc =>
+          if !vspaceRootSourceAdmitted st vrSrc then .error .illegalState
+          else if !vspaceRootSourceAuthorised st vrSrc then .error .illegalAuthority
+          else
+            match lookupSlot callerTcb fhAddr st with
+            | .error f => .error (.failedLookup false f)
+            | .ok fhSrc =>
+              if faultHandlerSourceAdmitted st fhSrc then .ok (cnSrc, vrSrc, fhSrc)
+              else .error (.invalidCapability setSpaceFaultHandlerCapNumber)
+
+/-- **The `.tcbSetSpace` operands from the message**: the fault endpoint, CSpace
+root and VSpace root are extra capabilities 0, 1 and 2 (seL4-MCS's
+`decodeSetSpace` reads `current_extra_caps.excaprefs[0..2]`), and a message
+naming fewer is `.truncatedMessage`, as seL4 refuses a null `excaprefs[i]` in
+its length check; then `resolveSetSpaceAt`. -/
+def resolveSetSpace (callerTid : SeLe4n.ThreadId) (xc : Nat)
+    (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState) :
+    Except KernelError (CSpaceAddr × CSpaceAddr × CSpaceAddr) :=
+  match callerExtraCapAddr? st callerTid xc 0, callerExtraCapAddr? st callerTid xc 1,
+      callerExtraCapAddr? st callerTid xc 2 with
+  | some fhAddr, some cnAddr, some vrAddr => resolveSetSpaceAt callerTid cnAddr vrAddr fhAddr args st
+  | _, _, _ => .error .truncatedMessage
 
 /-- `resolveCallerCapSlot` in continuation form: the slot is resolved through
 `lookupSlotK` and handed on as its CNode's and slot's words, so no gate, slot
@@ -2936,57 +2973,83 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
             | _ => rfl
           · simp [hR]
 
-/-- WS-ZA ZA5.2: `resolveSetSpace` in continuation form, through
-`resolveCallerCapSlotK`, the two source slots handed on as words
-(`resolveSetSpaceK_eq`). -/
-@[inline] def resolveSetSpaceK {α : Type} (callerTid : SeLe4n.ThreadId)
+/-- WS-ZA ZA5.2: `resolveSetSpaceAt` in continuation form, through `lookupSlotK`,
+the three source slots handed on as words (`resolveSetSpaceAtK_eq`). -/
+@[inline] def resolveSetSpaceAtK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (cnAddr vrAddr fhAddr : SeLe4n.CPtr)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
     (onErr : KernelError → α)
-    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
-  resolveCallerCapSlotK callerTid args.cspaceRoot .grant st
-    (KernelError.argumentCapRefusal setSpaceCSpaceRootCapNumber onErr) (fun cnC cnS cnCap cnId =>
-    if !cnCap.hasRight .write then onErr .illegalAuthority
-    else if (st.getCNode? cnId).isNone then onErr .illegalState
-    else if cspaceRootDataRefused st cnId args.cspaceRootData then onErr .illegalState
-    else
-      resolveCallerCapSlotK callerTid args.vspaceRoot .write st
-        (KernelError.argumentCapRefusal setSpaceVSpaceRootCapNumber onErr) (fun vrC vrS _ vrId =>
-        if (st.getVSpaceRoot? vrId).isNone then onErr .illegalState
-        else onOk cnC cnS vrC vrS))
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId →
+      SeLe4n.Slot → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    lookupSlotK callerTcb cnAddr st
+      (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c))) (fun cnC cnS =>
+      if !cspaceRootSourceAdmitted st { cnode := cnC, slot := cnS } args.cspaceRootData then
+        onErr .illegalState
+      else if !cspaceRootSourceAuthorised st { cnode := cnC, slot := cnS } then
+        onErr .illegalAuthority
+      else
+        lookupSlotK callerTcb vrAddr st
+          (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c))) (fun vrC vrS =>
+          if !vspaceRootSourceAdmitted st { cnode := vrC, slot := vrS } then onErr .illegalState
+          else if !vspaceRootSourceAuthorised st { cnode := vrC, slot := vrS } then
+            onErr .illegalAuthority
+          else
+            lookupSlotK callerTcb fhAddr st
+              (fun t a b c => onErr (.failedLookup false (LookupFault.ofWords t a b c)))
+              (fun fhC fhS =>
+                if faultHandlerSourceAdmitted st { cnode := fhC, slot := fhS } then
+                  onOk cnC cnS vrC vrS fhC fhS
+                else onErr (.invalidCapability setSpaceFaultHandlerCapNumber))))
 
-theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+theorem resolveSetSpaceAtK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (cnAddr vrAddr fhAddr : SeLe4n.CPtr)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
     (onErr : KernelError → α)
-    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
-    resolveSetSpaceK callerTid args st onErr onOk =
-      match resolveSetSpace callerTid args st with
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId →
+      SeLe4n.Slot → α) :
+    resolveSetSpaceAtK callerTid cnAddr vrAddr fhAddr args st onErr onOk =
+      match resolveSetSpaceAt callerTid cnAddr vrAddr fhAddr args st with
       | .error e => onErr e
-      | .ok (cnSrc, vrSrc) => onOk cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot := by
-  unfold resolveSetSpaceK resolveSetSpace
-  rw [resolveCallerCapSlotK_eq]
-  cases resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
-  | error e => rfl
-  | ok p =>
-    obtain ⟨cnSrc, cnCap, cnId⟩ := p
+      | .ok (cnSrc, vrSrc, fhSrc) =>
+        onOk cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot fhSrc.cnode fhSrc.slot := by
+  unfold resolveSetSpaceAtK resolveSetSpaceAt
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
     simp only []
-    by_cases hW : cnCap.hasRight .write = true
-    · simp only [hW, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-      by_cases hC : (st.getCNode? cnId).isNone = true
-      · simp only [hC, ↓reduceIte]
-      · simp only [hC, Bool.false_eq_true, ↓reduceIte]
-        by_cases hD : cspaceRootDataRefused st cnId args.cspaceRootData = true
-        · simp only [hD, ↓reduceIte]
-        simp only [hD, Bool.false_eq_true, ↓reduceIte]
-        rw [resolveCallerCapSlotK_eq]
-        cases resolveCallerCapSlot callerTid args.vspaceRoot .write st with
-        | error e => rfl
-        | ok q =>
-          obtain ⟨vrSrc, _, vrId⟩ := q
-          simp only []
-          by_cases hV : (st.getVSpaceRoot? vrId).isNone = true
-          · simp only [hV, ↓reduceIte]
-          · simp only [hV, Bool.false_eq_true, ↓reduceIte]
-    · simp only [hW, Bool.not_false, ↓reduceIte]
+    rw [lookupSlotK_eq]
+    cases lookupSlot callerTcb cnAddr st with
+    | error f => simp only [LookupFault.ofWords_word]
+    | ok cnSrc =>
+      simp only []
+      by_cases hC : cspaceRootSourceAdmitted st cnSrc args.cspaceRootData = true
+      · simp only [hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+        by_cases hCA : cspaceRootSourceAuthorised st cnSrc = true
+        · simp only [hCA, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          rw [lookupSlotK_eq]
+          cases lookupSlot callerTcb vrAddr st with
+          | error f => simp only [LookupFault.ofWords_word]
+          | ok vrSrc =>
+            simp only []
+            by_cases hV : vspaceRootSourceAdmitted st vrSrc = true
+            · simp only [hV, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+              by_cases hVA : vspaceRootSourceAuthorised st vrSrc = true
+              · simp only [hVA, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+                rw [lookupSlotK_eq]
+                cases lookupSlot callerTcb fhAddr st with
+                | error f => simp only [LookupFault.ofWords_word]
+                | ok fhSrc =>
+                  simp only []
+                  by_cases hF : faultHandlerSourceAdmitted st fhSrc = true
+                  · simp only [hF, ↓reduceIte]
+                  · simp only [hF, Bool.false_eq_true, ↓reduceIte]
+              · simp only [hVA, Bool.not_false, ↓reduceIte]
+            · simp only [hV, Bool.not_false, ↓reduceIte]
+        · simp only [hCA, Bool.not_false, ↓reduceIte]
+      · simp only [hC, Bool.not_false, ↓reduceIte]
 
 /-- WS-ZA ZA5.4: `resolveVSpaceMapFrame` in continuation form: the frame
 capability's slot is resolved once, through `lookupSlotK`, and
@@ -3055,52 +3118,59 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
 
 /-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root's
 source is a slot of the caller's CSpace holding a capability with `.grant` and
-`.write` to a CNode, and the VSpace root's a slot holding a capability with
-`.write` to a VSpace root. -/
-theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
+`.write` to a CNode, the VSpace root's a slot holding a capability with
+`.write` to a VSpace root, and the fault endpoint's a slot that is empty or
+holds a valid fault-handler capability. -/
+theorem resolveSetSpaceAt_ok_authorised (callerTid : SeLe4n.ThreadId)
+    (cnAddr vrAddr fhAddr : SeLe4n.CPtr)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
-    (cnSrc vrSrc : CSpaceAddr) (h : resolveSetSpace callerTid args st = .ok (cnSrc, vrSrc)) :
-    (∃ cnCap cnId, resolveCallerCapSlot callerTid args.cspaceRoot .grant st = .ok (cnSrc, cnCap, cnId) ∧
-        SystemState.lookupSlotCap st cnSrc = some cnCap ∧ cnCap.target = .object cnId ∧
-        cnCap.hasRight .grant = true ∧ cnCap.hasRight .write = true ∧ (st.getCNode? cnId).isSome) ∧
-      (∃ vrCap vrId, resolveCallerCapSlot callerTid args.vspaceRoot .write st = .ok (vrSrc, vrCap, vrId) ∧
-        SystemState.lookupSlotCap st vrSrc = some vrCap ∧ vrCap.target = .object vrId ∧
-        vrCap.hasRight .write = true ∧ (st.getVSpaceRoot? vrId).isSome) := by
-  unfold resolveSetSpace at h
-  cases hC : resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
-  | error e => rw [hC] at h; cases h
-  | ok p =>
-    obtain ⟨cn, cnCap, cnId⟩ := p
-    rw [hC] at h
+    (cnSrc vrSrc fhSrc : CSpaceAddr)
+    (h : resolveSetSpaceAt callerTid cnAddr vrAddr fhAddr args st = .ok (cnSrc, vrSrc, fhSrc)) :
+    ∃ callerTcb, st.getTcb? callerTid = some callerTcb ∧
+      lookupSlot callerTcb cnAddr st = .ok cnSrc ∧ lookupSlot callerTcb vrAddr st = .ok vrSrc ∧
+      lookupSlot callerTcb fhAddr st = .ok fhSrc ∧
+      cspaceRootSourceAdmitted st cnSrc args.cspaceRootData = true ∧
+      cspaceRootSourceAuthorised st cnSrc = true ∧
+      vspaceRootSourceAdmitted st vrSrc = true ∧ vspaceRootSourceAuthorised st vrSrc = true ∧
+      faultHandlerSourceAdmitted st fhSrc = true := by
+  unfold resolveSetSpaceAt at h
+  cases hT : st.getTcb? callerTid with
+  | none => rw [hT] at h; cases h
+  | some callerTcb =>
+    rw [hT] at h
     simp only at h
-    by_cases hW : cnCap.hasRight .write = true
-    · have hB : (!cnCap.hasRight .write) = false := by simp [hW]
-      rw [hB] at h
-      cases hCn : st.getCNode? cnId with
-      | none => simp [hCn] at h
-      | some _ =>
-        simp only [hCn, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at h
-        by_cases hD : cspaceRootDataRefused st cnId args.cspaceRootData = true
-        · simp [hD] at h
-        simp only [hD, Bool.false_eq_true, ↓reduceIte] at h
-        cases hV : resolveCallerCapSlot callerTid args.vspaceRoot .write st with
-        | error e => rw [hV] at h; cases h
-        | ok q =>
-          obtain ⟨vr, vrCap, vrId⟩ := q
-          rw [hV] at h
-          simp only at h
-          cases hVr : st.getVSpaceRoot? vrId with
-          | none => simp [hVr] at h
-          | some _ =>
-            simp only [hVr, Option.isNone_some, Bool.false_eq_true, ↓reduceIte,
-              Except.ok.injEq, Prod.mk.injEq] at h
-            obtain ⟨rfl, rfl⟩ := h
-            obtain ⟨_, _, _, hLc, hG, hTc⟩ := resolveCallerCapSlot_ok callerTid _ _ st _ _ _ hC
-            obtain ⟨_, _, _, hLv, hVW, hTv⟩ := resolveCallerCapSlot_ok callerTid _ _ st _ _ _ hV
-            exact ⟨⟨cnCap, cnId, rfl, hLc, hTc, hG, hW, by simp [hCn]⟩,
-              ⟨vrCap, vrId, rfl, hLv, hTv, hVW, by simp [hVr]⟩⟩
-    · have hB : (!cnCap.hasRight .write) = true := by simpa using hW
-      rw [hB] at h; cases h
+    cases hLc : lookupSlot callerTcb cnAddr st with
+    | error f => rw [hLc] at h; cases h
+    | ok c =>
+      rw [hLc] at h
+      simp only at h
+      by_cases hC : cspaceRootSourceAdmitted st c args.cspaceRootData = true
+      · by_cases hCA : cspaceRootSourceAuthorised st c = true
+        · simp only [hC, hCA, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+          cases hLv : lookupSlot callerTcb vrAddr st with
+          | error f => rw [hLv] at h; cases h
+          | ok v =>
+            rw [hLv] at h
+            simp only at h
+            by_cases hV : vspaceRootSourceAdmitted st v = true
+            · by_cases hVA : vspaceRootSourceAuthorised st v = true
+              · simp only [hV, hVA, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+                cases hLf : lookupSlot callerTcb fhAddr st with
+                | error f => rw [hLf] at h; cases h
+                | ok fh =>
+                  rw [hLf] at h
+                  simp only at h
+                  by_cases hF : faultHandlerSourceAdmitted st fh = true
+                  · simp only [hF, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at h
+                    obtain ⟨rfl, rfl, rfl⟩ := h
+                    exact ⟨callerTcb, rfl, hLc, hLv, hLf, hC, hCA, hV, hVA, hF⟩
+                  · simp only [hF, Bool.false_eq_true, ↓reduceIte] at h; cases h
+              · simp only [hV, hVA, Bool.not_true, Bool.not_false, Bool.false_eq_true,
+                  ↓reduceIte] at h; cases h
+            · simp only [hV, Bool.not_false, ↓reduceIte] at h; cases h
+        · simp only [hC, hCA, Bool.not_true, Bool.not_false, Bool.false_eq_true, ↓reduceIte] at h
+          cases h
+      · simp only [hC, Bool.not_false, ↓reduceIte] at h; cases h
 
 /-- **WS-SX SX6.3 (D10): the two slots of a handler issue** (seL4's
 `decodeIRQControlInvocation`).  The *source* is the slot the invoked capability
@@ -4954,29 +5024,12 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
-  -- Review round (PR #887): `seL4_TCB_SetSpace`'s fault endpoint.  The CPtr
-  -- is interpreted in the *target* thread's CSpace and validated at set time
-  -- by the same resolution the fault path runs (`resolveFaultHandlerCPtr`),
-  -- so a handler that could never be delivered to is refused here rather than
-  -- discovered as a suspended thread later.  Authority: the write right on the
-  -- target TCB capability, like every other thread-configuration arm.
-  | .tcbSetFaultHandler =>
-    some <| match cap.target with
-    | .object objId =>
-      fun st => match Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-        | .error e => .error e
-        | .ok vtid =>
-            match setThreadFaultHandlerOp st vtid args.handlerCPtr with
-            | .ok st' => .ok ((), st')
-            | .error e => .error e
-    | _ => fun _ => .error (.invalidCapability 0)
-  -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace` — the target from the
-  -- invoked TCB capability (with the write right), the two roots from MR0/MR1
-  -- resolved through the *caller's* CSpace (`resolveSetSpace`).  The target must
-  -- be suspended: the operation refuses a thread whose spaces are in use.
+  -- **WS-BP BP7.1 (`v0.36.11`), WS-SX SX6.5**: seL4-MCS's `TCB_SetSpace` — the
+  -- target from the invoked TCB capability (with the write right); the fault
+  -- endpoint, CSpace root and VSpace root are extra capabilities 0 to 2,
+  -- resolved through the *caller's* CSpace (`resolveSetSpace`), and the two
+  -- words are the roots' data words.  The target must be suspended: the
+  -- operation refuses a thread whose spaces are in use.
   | .tcbSetSpace =>
     some <| match cap.target with
     | .object objId =>
@@ -4986,10 +5039,11 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match resolveSetSpace tid args st with
+            match resolveSetSpace tid decoded.msgInfo.extraCaps args st with
             | .error e => .error e
-            | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
+            | .ok (cnSrc, vrSrc, fhSrc) =>
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData
+                    fhSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -5535,26 +5589,6 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
                         vtid affinity _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
-  case tcbSetFaultHandler =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object objId =>
-      try dsimp only [] at hStep
-      cases hDec : Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vtid =>
-              simp only [hVal] at hStep
-              cases hSet : setThreadFaultHandlerOp st vtid args.handlerCPtr with
-              | error e => simp only [hSet] at hStep; cases hStep
-              | ok stU =>
-                  simp only [hSet] at hStep
-                  cases hStep
-                  exact setThreadFaultHandlerOp_preserves_ipcInvariantFull st st' vtid _
-                    hObjInv hInv hSet
-    all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object objId =>
@@ -5567,19 +5601,19 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hR : resolveSetSpace tid args st with
+              cases hR : resolveSetSpace tid decoded.msgInfo.extraCaps args st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
-                  obtain ⟨cn, vr⟩ := p
+                  obtain ⟨cn, vr, fh⟩ := p
                   simp only [hR] at hStep
                   cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr
-                      args.cspaceRootData with
+                      args.cspaceRootData fh with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
                       exact copyThreadSpacesZombie_preserves_ipcInvariantFull executingCore st st'
-                        vtid cn vr _ hObjInv hInv hPack.lentContextsHeadedByLender
+                        vtid cn vr _ fh hObjInv hInv hPack.lentContextsHeadedByLender
                         hPack.schedContextLinks hSet
     all_goals try cases hStep
   case pageTableMap =>
@@ -6747,7 +6781,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain, .tcbSetFaultHandler,
+            .auditRead, .auditDrain,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
             .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
@@ -7785,7 +7819,6 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSetAffinity` | **`setThreadCpuAffinityOnCore_preserves_projection`** (Operations.lean — WS-SM SM8.B, review round 42) at non-observable target — the **live** wrapper, which round 37 rerouted this arm to; the boot-core `setThreadCpuAffinityOp_preserves_projection` (SM5.H.4) is its `bootCoreId` instance, reachable through `setThreadCpuAffinityOp_eq_onCore_state` but not needed here.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's write, at the executing core rather than a pinned boot core, preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is invisible when the target's bound context is non-observable (`migrateSchedContextReplenishment_preserves_projection`; the projection keeps each context's release core, WS-ZA ZA6.30). |
     | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target; the review-round retire prefix is `applyFaultRestart`, a register + `pendingFault` write on the same target |
-    | `.tcbSetFaultHandler` | `objects_insert_preserves_projection_high` at non-observable TCB target (a `faultHandler` field write) |
 
     **New AK6-F building blocks in v0.29.10:**
     - `objects_insert_preserves_projection_high` — universal direct-insert
@@ -8607,14 +8640,14 @@ theorem dispatchWithCapChecked_tcbSetSpace_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
-    (cnSrc vrSrc : CSpaceAddr) (st : SystemState)
+    (cnSrc vrSrc fhSrc : CSpaceAddr) (st : SystemState)
     (hSyscall : decoded.syscallId = .tcbSetSpace)
     (hTarget : cap.target = .object objId)
     (hDecode : Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid)
-    (hResolve : resolveSetSpace tid args st = .ok (cnSrc, vrSrc)) :
+    (hResolve : resolveSetSpace tid decoded.msgInfo.extraCaps args st = .ok (cnSrc, vrSrc, fhSrc)) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
+      (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData fhSrc with
        | .ok st' => .ok ((), st')
        | .error e => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hValid, hResolve]
@@ -9075,14 +9108,14 @@ def syscallDelegates : SyscallId → Prop
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
         (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
-        (cnSrc vrSrc : CSpaceAddr) (st : SystemState),
+        (cnSrc vrSrc fhSrc : CSpaceAddr) (st : SystemState),
         decoded.syscallId = .tcbSetSpace →
         cap.target = .object objId →
         Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
-        resolveSetSpace tid args st = .ok (cnSrc, vrSrc) →
+        resolveSetSpace tid decoded.msgInfo.extraCaps args st = .ok (cnSrc, vrSrc, fhSrc) →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData with
+          (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc args.cspaceRootData fhSrc with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
   -- WS-SX SX6.6: the buffer change, which replaces the thread's buffer slot
@@ -9300,10 +9333,10 @@ theorem syscallDelegates_cspaceRevoke : syscallDelegates .cspaceRevoke := by
 /-- WS-ZA ZA5.4 part 22: the `.tcbSetSpace` obligation, discharged — the space
 change's cross-core inventory entry rests on it. -/
 theorem syscallDelegates_tcbSetSpace : syscallDelegates .tcbSetSpace := by
-  intro ctx decoded tid executingCore gate cap objId args vtid cnSrc vrSrc st hSyscall hTarget hDecode
+  intro ctx decoded tid executingCore gate cap objId args vtid cnSrc vrSrc fhSrc st hSyscall hTarget hDecode
     hValid hResolve
   exact dispatchWithCapChecked_tcbSetSpace_delegates ctx decoded tid executingCore gate cap objId args vtid
-    cnSrc vrSrc st hSyscall hTarget hDecode hValid hResolve
+    cnSrc vrSrc fhSrc st hSyscall hTarget hDecode hValid hResolve
 
 /-- WS-SX SX6.6: the `.tcbSetIPCBuffer` obligation, discharged — the buffer
 change's cross-core inventory entry rests on it. -/

@@ -25,19 +25,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (MappingStage)
 
-theorem setThreadFaultHandlerOp_mappingStage {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cptr : SeLe4n.CPtr}
-    (h : setThreadFaultHandlerOp st vtid cptr = .ok st') : MappingStage st st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at h
-  | some tcb =>
-    cases hR : resolveFaultHandlerCPtr st tcb cptr with
-    | error e => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at h
-    | ok tgt =>
-      rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at h
-      cases h
-      exact MappingStage.rewriteObject_tcb hT _
-
 theorem bindNotification_mappingStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :
     MappingStage st st' := by

@@ -227,7 +227,7 @@ def syscallReadsOverflow : SyscallId → Bool
   | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck
   | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
@@ -1003,7 +1003,7 @@ def routedInvocation : SyscallId → Bool
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
+  | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
   | _ => false
 
 /-- The routed invocation syscall number `n` names, if any. -/

@@ -1467,8 +1467,9 @@ slot kept one. -/
   if h : slot.toNat < node.cells.size then
     Quot.lift (fun a => node.insertCellWith slot
         ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0, 0, 0⟩
-        (fun r => r.overwriteObject id rights 0 0) (fun r => Capability.overwriteObject_eq r id rights 0 0)
-        (fun _ => Capability.ofObject id rights 0 0) rfl h a)
+        (fun r => r.overwriteObject id rights SeLe4n.Badge.zero false 0 0)
+        (fun r => Capability.overwriteObject_eq r id rights SeLe4n.Badge.zero false 0 0)
+        (fun _ => Capability.ofObject id rights SeLe4n.Badge.zero false 0 0) rfl h a)
       (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
   else node.unchanged
 

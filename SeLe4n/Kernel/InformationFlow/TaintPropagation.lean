@@ -198,7 +198,6 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .tcbSetMCPriority => .inert
   | .tcbSetIPCBuffer => .inert
   | .tcbSetAffinity => .inert
-  | .tcbSetFaultHandler => .inert
   | .tcbSetSpace => .inert
   | .pageTableMap => .inert
   | .pageTableUnmap => .inert
@@ -281,7 +280,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
   | .untypedRetype | .untypedReset => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
   | .schedContextBind | .schedContextUnbind | .schedContextConfigure | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => false
@@ -791,7 +790,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -973,7 +972,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
   | .auditRead | .auditDrain => []
 
@@ -1010,7 +1009,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1084,7 +1083,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 

@@ -223,7 +223,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   -- WS-ZA ZA6.9: the Consumed invocation writes a context's consumed time and
@@ -279,7 +279,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .schedContextConsumed | .irqHandlerAck | .irqControlGet

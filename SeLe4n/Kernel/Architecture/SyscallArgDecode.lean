@@ -97,8 +97,10 @@ counterparts, and their checks:
   one refused `.truncatedMessage` in the same check);
 * `tcbSetPriority` `tcbSetMCPriority` `tcbSetIPCBuffer` `tcbSetAffinity`
   1 (`decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`,
-  `length < 1`), `tcbSetSpace` 3 (`decodeSetSpace`, `length < 3`),
-  `tcbSetFaultHandler` 1 (the fault endpoint word);
+  `length < 1`), `tcbSetSpace` 2 (seL4-MCS's `decodeSetSpace`, `length < 2`:
+  the two root data words; the fault endpoint, CSpace root and VSpace root
+  are extra capabilities 0 to 2, a missing one refused `.truncatedMessage`
+  in the same check);
 * `schedContextConfigure` 5 (`decodeSchedControl_ConfigureFlags`,
   `length < 5`);
 * `irqControlGet` 3 (`Arch_decodeIRQControlInvocation`, IssueIRQHandler
@@ -122,12 +124,12 @@ which seL4 checks no length (`notificationSignal` included). -/
 def truncationMinimum : SyscallId → Nat
   | .untypedRetype => 7
   | .cspaceMove => 4
-  | .vspaceMap | .irqControlGet | .auditRead | .tcbSetSpace => 3
+  | .vspaceMap | .irqControlGet | .auditRead => 3
   | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
-  | .pageTableMap => 2
+  | .pageTableMap | .tcbSetSpace => 2
   | .cspaceDelete | .cspaceRevoke
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .auditDrain => 1
+  | .auditDrain => 1
   | .schedContextConfigure | .serviceRegister | .cspaceCopy => 5
   | .cspaceMint => 6
   | _ => 0
@@ -1857,38 +1859,6 @@ theorem decodeSetAffinityArgs_roundtrip (args : SetAffinityArgs) :
         Except.bind, Pure.pure, Except.pure]
 
 -- ============================================================================
--- Review round (PR #887): fault-handler configuration decode (`tcbSetFaultHandler`)
--- ============================================================================
-
-/-- Per-syscall argument structure for `tcbSetFaultHandler`.
-    Register mapping: x2 = the fault-handler CPtr, interpreted in the **target
-    thread's** CSpace (seL4's `fault_ep`).  The target thread comes from the
-    capability target; the CPtr is validated downstream by
-    `setThreadFaultHandlerOp` (it must resolve to an endpoint capability
-    carrying send and grant-or-grant-reply). -/
-structure SetFaultHandlerArgs where
-  handlerCPtr : SeLe4n.CPtr
-  deriving Repr, DecidableEq
-
-/-- Decode `tcbSetFaultHandler` arguments from message registers.  Requires 1
-    message register (the CPtr word). -/
-def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
-    : Except KernelError SetFaultHandlerArgs := do
-  requireMessageLength decoded (truncationMinimum .tcbSetFaultHandler)
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { handlerCPtr := SeLe4n.CPtr.ofNat r0.val }
-
-/-- Encode `tcbSetFaultHandler` arguments into message registers. -/
-@[inline] def encodeSetFaultHandlerArgs (args : SetFaultHandlerArgs) : Array RegValue :=
-  #[⟨args.handlerCPtr.word⟩]
-
-/-- SetFaultHandlerArgs decode round-trip. -/
-theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
-    decodeSetFaultHandlerArgs (stubDecoded (encodeSetFaultHandlerArgs args)) = .ok args := by
-  simp [requireMessageLength, truncationMinimum, decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
-
--- ============================================================================
 -- WS-SM SM9.A.10: audit-trail read and drain arguments
 -- ============================================================================
 
@@ -1962,38 +1932,37 @@ theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs)
 -- WS-BP BP7.1 (`v0.36.11`): thread-space configuration decode (`tcbSetSpace`)
 -- ============================================================================
 
-/-- WS-BP BP7.1 (`v0.36.11`): per-syscall argument structure for `tcbSetSpace`
-    — seL4's `TCB_SetSpace`.  Register mapping: x2 = the address, in the
-    caller's CSpace, of a capability to the new **CSpace root** (a CNode); x3 =
-    the address of a capability to the new **VSpace root**; x4 = seL4's
-    `cspace_root_data`, the word the CSpace root copy's guard is taken from
-    through `updateCapData` when it is nonzero.  The target thread comes from
-    the invoked capability. -/
+/-- WS-BP BP7.1 (`v0.36.11`), WS-SX SX6.5: per-syscall argument structure for
+    `tcbSetSpace` — seL4-MCS's `TCB_SetSpace` words: x2 = `cspace_root_data`,
+    the word the CSpace root copy's guard is taken from through `updateCapData`
+    when it is nonzero; x3 = `vspace_root_data`, which `updateCapData` reads for
+    a VSpace root capability and AArch64's `Arch_updateCapData` leaves the
+    capability unchanged by.  The fault endpoint, the CSpace root and the VSpace
+    root are extra capabilities 0, 1 and 2; the target thread comes from the
+    invoked capability. -/
 structure SetSpaceArgs where
-  cspaceRoot : SeLe4n.CPtr
-  vspaceRoot : SeLe4n.CPtr
   cspaceRootData : UInt64 := 0
+  vspaceRootData : UInt64 := 0
   deriving Repr, DecidableEq
 
-/-- WS-BP BP7.1: decode `tcbSetSpace` arguments.  Requires 3 message registers. -/
+/-- WS-SX SX6.5: decode `tcbSetSpace` arguments.  Requires 2 message registers
+    (`decodeSetSpace`, `length < 2`). -/
 def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetSpaceArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetSpace)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  let r2 ← requireMsgReg decoded.msgRegs 2
-  pure { cspaceRoot := SeLe4n.CPtr.ofNat r0.val, vspaceRoot := SeLe4n.CPtr.ofNat r1.val,
-         cspaceRootData := UInt64.ofNat r2.val }
+  pure { cspaceRootData := UInt64.ofNat r0.val, vspaceRootData := UInt64.ofNat r1.val }
 
 /-- WS-BP BP7.1: encode `tcbSetSpace` arguments into message registers. -/
 @[inline] def encodeSetSpaceArgs (args : SetSpaceArgs) : Array RegValue :=
-  #[⟨args.cspaceRoot.word⟩, ⟨args.vspaceRoot.word⟩, ⟨args.cspaceRootData⟩]
+  #[⟨args.cspaceRootData⟩, ⟨args.vspaceRootData⟩]
 
 /-- WS-BP BP7.1: SetSpaceArgs decode round-trip. -/
 theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
     decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
   simp [requireMessageLength, truncationMinimum, decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat, UInt64.ofNat_toNat]
+        Except.bind, Pure.pure, Except.pure, UInt64.ofNat_toNat]
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.12`): page-table install decode (`pageTableMap`)
@@ -2631,33 +2600,11 @@ theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
 
-@[inline] def decodeSetFaultHandlerArgsBy (get : MsgRegReader)
-    : Except KernelError SetFaultHandlerArgs := do
-  let r0 ← get 0
-  pure { handlerCPtr := SeLe4n.CPtr.ofWord r0 }
-
-theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .tcbSetFaultHandler ≤ decoded.msgInfo.length) :
-    decodeSetFaultHandlerArgs decoded = decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeSetFaultHandlerArgs decodeSetFaultHandlerArgsBy
-  rw [requireMessageLength_of_le hLen]
-  unfold MsgRegsAgreeBelow at h
-  simp (disch := decide) only [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
 @[inline] def decodeSetSpaceArgsBy (get : MsgRegReader)
     : Except KernelError SetSpaceArgs := do
   let r0 ← get 0
   let r1 ← get 1
-  let r2 ← get 2
-  pure { cspaceRoot := SeLe4n.CPtr.ofWord r0, vspaceRoot := SeLe4n.CPtr.ofWord r1,
-         cspaceRootData := r2 }
+  pure { cspaceRootData := r0, vspaceRootData := r1 }
 
 theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

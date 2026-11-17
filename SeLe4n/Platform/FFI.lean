@@ -3153,7 +3153,6 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .auditRead              => some false
   | .auditDrain             => some false
   | .declassifySignal       => none
-  | .tcbSetFaultHandler     => some false
   | .tcbSetSpace            => some false
   | .pageTableMap           => some false
   | .pageTableUnmap         => some false

@@ -762,8 +762,8 @@ theorem cspaceRevokeCdtFinalising_readyKeptStage {S : SeLe4n.ThreadId → Prop} 
     (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h).2
 
 theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
-    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64}
-    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') : readyKeptStage S st st' :=
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') : readyKeptStage S st st' :=
   (copyThreadSpacesZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
       readyKeptStage S st s)
     (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
@@ -1217,26 +1217,6 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
                       cases hStep
                       exact setThreadCpuAffinityWithMigration_readyKeptStage hSet
     all_goals try cases hStep
-  case tcbSetFaultHandler =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object objId =>
-      try dsimp only [] at hStep
-      cases hDec : Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
-          | error e => simp only [hVal] at hStep; cases hStep
-          | ok vtid =>
-              simp only [hVal] at hStep
-              cases hSet : setThreadFaultHandlerOp st vtid args.handlerCPtr with
-              | error e => simp only [hSet] at hStep; cases hStep
-              | ok stU =>
-                  simp only [hSet] at hStep
-                  cases hStep
-                  refine readyKeptStage.of_stage ?_
-                  exact setThreadFaultHandlerOp_runQueueStage hSet
-    all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object objId =>
@@ -1249,12 +1229,12 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vtid =>
               simp only [hVal] at hStep
-              cases hR : resolveSetSpace tid args st with
+              cases hR : resolveSetSpace tid decoded.msgInfo.extraCaps args st with
               | error e => simp only [hR] at hStep; cases hStep
               | ok p =>
-                  obtain ⟨cn, vr⟩ := p
+                  obtain ⟨cn, vr, fh⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr args.cspaceRootData fh with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep

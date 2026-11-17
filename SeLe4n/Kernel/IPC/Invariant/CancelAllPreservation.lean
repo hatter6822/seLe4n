@@ -228,7 +228,7 @@ theorem cancelledEndpointWaiter_closes (f : TCB → TCB) (s1 : SystemState) (t :
     rw [SystemState.updateTcb_eq_of_some hRcG]
     exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sRc t rc _ hIRc hFullRc
       hRcAt hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
-      (fun sl _ _ h _ => (hSl sl) ▸ h) hBnc
+      (fun sl _ _ h _ => .inl ((hSl sl) ▸ h)) hBnc
   have hAgree : objectStoreAgrees (sRc.updateTcb t fun _ => f x)
       (s1.updateTcb t f) := by
     intro k
@@ -1321,9 +1321,9 @@ the delete carries, and the plain space change after them preserves it
 (`copyThreadSpaces_preserves_ipcInvariantFull`). -/
 theorem copyThreadSpacesZombie_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (cnData : UInt64)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (fhSrc : CSpaceAddr) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hW : lentContextHeadsLenderFrame st) (hL : schedContextLinkInvariant st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     ipcInvariantFull st' := by
   have hChain : ∀ n s, ZombieRun ec n st s → finalisingDeleteBundle s := fun _ _ hR =>
     hR.chain.closed finalisingDeleteBundle
@@ -1331,11 +1331,11 @@ theorem copyThreadSpacesZombie_preserves_ipcInvariantFull (ec : Concurrency.Core
       (fun d s hQ => finaliseFinalObject_preserves_finalisingDeleteBundle d s hQ)
       ⟨⟨hInv, hObjInv, hW⟩, hL⟩
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
-  · exact copyThreadSpaces_preserves_ipcInvariantFull ec st st' vtid cnSrc vrSrc cnData hObjInv hInv
+  · exact copyThreadSpaces_preserves_ipcInvariantFull ec st st' vtid cnSrc vrSrc cnData fhSrc hObjInv hInv
       hL.budgets h1
   · exact (hChain n _ hR).1.1
   · obtain ⟨⟨hI, hO, -⟩, hL'⟩ := hChain n s hR
-    exact copyThreadSpaces_preserves_ipcInvariantFull ec s st' vtid cnSrc vrSrc cnData hO hI
+    exact copyThreadSpaces_preserves_ipcInvariantFull ec s st' vtid cnSrc vrSrc cnData fhSrc hO hI
       hL'.budgets h2
 
 /-- `.cspaceDelete`: the zombie delete keeps the bundle the delete carries — a

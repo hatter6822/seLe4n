@@ -406,28 +406,25 @@ theorem threadSlotSet_preserves_ipcReachable (ec : CoreId) {st : SystemState}
 
 /-- **A space change keeps the reachable state** — each slot set does. -/
 theorem copyThreadSpaces_preserves_ipcReachable (ec : CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : ipcReachable st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData = .ok st') : ipcReachable st' := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec h.objects_invExt hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights cnData hCL)
-  exact threadSlotSet_preserves_ipcReachable ec
-    (threadSlotSet_preserves_ipcReachable ec h hT _ _ _ _ _) hT1' _ _ _ _ _
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (h : ipcReachable st)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') : ipcReachable st' := by
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, -, hT2, -, rfl⟩ :=
+    copyThreadSpaces_ok_steps h.objects_invExt hStep
+  exact threadSlotSet_preserves_ipcReachable ec (threadSlotSet_preserves_ipcReachable ec
+    (threadSlotSet_preserves_ipcReachable ec h hT _ _ _ _ _) hT1 _ _ _ _ _) hT2 _ _ _ _ _
 
 /-- `.tcbSetSpace` through the zombie delete: **the loop's passes keep the
 reachable state and the bundle, and the space change after them keeps the
 reachable state and the scheduling links.** -/
 theorem copyThreadSpacesZombie_preserves_ipcReachable (ec : CoreId) {st st' : SystemState}
-    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} (h : reachableDeleteBundle st)
-    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData = .ok st') :
+    {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (h : reachableDeleteBundle st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
     ipcReachable st' ∧ schedContextLinkInvariant st' := by
   have hChain : ∀ n s, ZombieRun ec n st s → reachableDeleteBundle s := fun _ _ hR =>
     hR.chain.closed reachableDeleteBundle
       (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle ec c s s' hQ hD)
       (fun d s hQ => finaliseFinalObject_preserves_reachableDeleteBundle d s hQ) h
-  have step : ∀ s, reachableDeleteBundle s → copyThreadSpaces ec s vtid cnSrc vrSrc cnData = .ok st' →
+  have step : ∀ s, reachableDeleteBundle s → copyThreadSpaces ec s vtid cnSrc vrSrc cnData fhSrc = .ok st' →
       ipcReachable st' ∧ schedContextLinkInvariant st' := fun s hs hC =>
     ⟨copyThreadSpaces_preserves_ipcReachable ec hs.1 hC,
       copyThreadSpaces_preserves_schedContextLinkInvariant ec hs.1.objects_invExt hs.2.2 hC⟩

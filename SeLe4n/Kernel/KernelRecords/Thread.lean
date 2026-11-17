@@ -31,23 +31,6 @@ theorem storeObject_tcbView {st st' : SystemState} {k : SeLe4n.ObjId} {x y : TCB
     RecordsFrame st st' :=
   storeObject hInv h (by rw [hOld]; simp [hv]) (fun _ h => by cases h)
 
-theorem setThreadFaultHandlerOp {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cptr : SeLe4n.CPtr} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    RecordsFrame st st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none =>
-    simp [_root_.SeLe4n.Kernel.setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at h
-  | some tcb =>
-    cases hR : resolveFaultHandlerCPtr st tcb cptr with
-    | error e =>
-      simp [_root_.SeLe4n.Kernel.setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT,
-        hR] at h
-    | ok tgt =>
-      rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at h
-      cases h
-      exact rewriteObject _ hInv (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT]; rfl)
-
 theorem bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {tcbId : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.bindNotification nid tcbId st = .ok ((), st')) :

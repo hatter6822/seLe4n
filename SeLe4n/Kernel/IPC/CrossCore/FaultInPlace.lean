@@ -154,34 +154,28 @@ theorem ipcStateCarried_migrateSchedContextReplenishment (s : SystemState)
 -- §1  The handler lookup, in continuation form
 -- ============================================================================
 
-/-- **`resolveFaultHandler` in continuation form**: the thread's configured
-handler address resolved through its own CSpace root capability (`lookupSlotK`),
-the refusal to `onErr`, the handler's endpoint and capability to `onOk`, so a
-caller that matches the result at once builds no target and no `Except`
-(`resolveFaultHandlerK_eq`).  Every gate is the specification's: a configured
-handler, a CSpace root, a resolved slot holding a capability with send and a
-grant right, naming an endpoint. -/
+/-- **`resolveFaultHandler` in continuation form**: the capability in the
+thread's fault-handler slot, the refusal to `onErr`, the handler's endpoint and
+capability to `onOk`, so a caller that matches the result at once builds no
+target and no `Except` (`resolveFaultHandlerK_eq`).  Every gate is the
+specification's: a filled fault-handler slot holding a capability with send and
+a grant right, naming an endpoint. -/
 @[inline] def resolveFaultHandlerK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (onErr : Unit → α) (onOk : SeLe4n.ObjId → Capability → α) : α :=
   match st.getTcb? tid with
   | none => onErr ()
   | some tcb =>
-    if tcb.faultHandlerSet then
-        lookupSlotK tcb tcb.faultHandlerWord st
-          (fun _ _ _ _ => onErr ())
-          (fun cnode slot =>
-            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-            | none => onErr ()
-            | some cap =>
-              if faultHandlerCapAuthorized cap then
-                match cap.target with
-                | .object epId =>
-                  match st.getEndpoint? epId with
-                  | some _ => onOk epId cap
-                  | none => onErr ()
-                | _ => onErr ()
-              else onErr ())
-    else onErr ()
+    match tcb.faultHandlerCap with
+    | none => onErr ()
+    | some cap =>
+      if faultHandlerCapAuthorized cap then
+        match cap.target with
+        | .object epId =>
+          match st.getEndpoint? epId with
+          | some _ => onOk epId cap
+          | none => onErr ()
+        | _ => onErr ()
+      else onErr ()
 
 theorem resolveFaultHandlerK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (onErr : Unit → α) (onOk : SeLe4n.ObjId → Capability → α) :
@@ -193,29 +187,18 @@ theorem resolveFaultHandlerK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thr
   cases st.getTcb? tid with
   | none => rfl
   | some tcb =>
-    simp only [TCB.faultHandler]
-    cases tcb.faultHandlerSet with
-    | false => rfl
-    | true =>
-      simp only [↓reduceIte]
-      unfold resolveFaultHandlerCPtr
-      rw [lookupSlotK_eq]
-      cases lookupSlot tcb tcb.faultHandlerWord st with
-        | error e => rfl
-        | ok ref =>
-          obtain ⟨cnode, slot⟩ := ref
-          simp only []
-          cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
-          | none => rfl
-          | some cap =>
-            simp only []
-            cases faultHandlerCapAuthorized cap
-            · rfl
-            · simp only [↓reduceIte]
-              cases cap.target with
-              | object epId =>
-                rcases hE : st.getEndpoint? epId with _ | _ <;> simp only [hE]
-              | _ => rfl
+    simp only []
+    cases tcb.faultHandlerCap with
+    | none => rfl
+    | some cap =>
+      simp only []
+      cases faultHandlerCapAuthorized cap
+      · rfl
+      · simp only [↓reduceIte]
+        cases cap.target with
+        | object epId =>
+          rcases hE : st.getEndpoint? epId with _ | _ <;> simp only [hE]
+        | _ => rfl
 
 -- ============================================================================
 -- §2  The fault recorded and the delivery, handed words

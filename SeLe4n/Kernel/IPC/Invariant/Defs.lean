@@ -1033,35 +1033,60 @@ theorem capabilityBadgesWellFormed_of_slotCap_back {st st' : SystemState}
   obtain ⟨o, ho, he⟩ := hBack oid o' hO
   exact h oid o slot cap badge ho (he ▸ hL) hB
 
-/-- **Every badged capability of a post-state slot was in that slot before**:
-the part of the slot contents the badge clause reads.  A step that installs
-only unbadged capabilities (a thread's space-slot caps) satisfies it. -/
+/-- **The badge `b` is held by some slot capability of `st`** — a CNode's slot or
+a thread's space slot (`KernelObject.slotCap`). -/
+def badgeHeldIn (st : SystemState) (b : SeLe4n.Badge) : Prop :=
+  ∃ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability),
+    st.objects[oid]? = some o ∧ o.slotCap slot = some cap ∧ cap.badge = some b
+
+/-- **Every badge of a post-state slot capability was held before**: the part
+of the slot contents the badge clause reads.  A step that installs only
+unbadged capabilities, or copies of capabilities it read out of a slot (a
+thread's slot set, which keeps the source's badge), satisfies it. -/
 def badgedSlotsBack (st st' : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (o' : KernelObject) (slot : SeLe4n.Slot) (cap : Capability)
     (badge : SeLe4n.Badge),
     st'.objects[oid]? = some o' → o'.slotCap slot = some cap → cap.badge = some badge →
-    ∃ o, st.objects[oid]? = some o ∧ o.slotCap slot = some cap
+    badgeHeldIn st badge
 
 theorem badgedSlotsBack.of_slotCap_back {st st' : SystemState}
     (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
       ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap) :
-    badgedSlotsBack st st' := fun oid o' slot cap _ hO hL _ =>
-  (hBack oid o' hO).elim fun o ⟨ho, he⟩ => ⟨o, ho, he ▸ hL⟩
+    badgedSlotsBack st st' := fun oid o' slot cap _ hO hL hB =>
+  (hBack oid o' hO).elim fun o ⟨ho, he⟩ => ⟨oid, o, slot, cap, ho, he ▸ hL, hB⟩
 
 theorem badgedSlotsBack.refl (st : SystemState) : badgedSlotsBack st st :=
-  fun _ o _ _ _ hO hL _ => ⟨o, hO, hL⟩
+  fun oid o slot cap _ hO hL hB => ⟨oid, o, slot, cap, hO, hL, hB⟩
 
 theorem badgedSlotsBack.trans {st st' st'' : SystemState}
     (h1 : badgedSlotsBack st st') (h2 : badgedSlotsBack st' st'') :
     badgedSlotsBack st st'' := fun oid o'' slot cap badge hO hL hB =>
-  (h2 oid o'' slot cap badge hO hL hB).elim fun o' ⟨ho', hL'⟩ =>
-    h1 oid o' slot cap badge ho' hL' hB
+  (h2 oid o'' slot cap badge hO hL hB).elim fun oid' ⟨o', slot', cap', ho', hL', hB'⟩ =>
+    h1 oid' o' slot' cap' badge ho' hL' hB'
 
 theorem capabilityBadgesWellFormed_of_badgedSlotsBack {st st' : SystemState}
     (h : capabilityBadgesWellFormed st) (hBack : badgedSlotsBack st st') :
     capabilityBadgesWellFormed st' := fun oid o' slot cap badge hO hL hB =>
-  (hBack oid o' slot cap badge hO hL hB).elim fun o ⟨ho, hL0⟩ =>
-    h oid o slot cap badge ho hL0 hB
+  (hBack oid o' slot cap badge hO hL hB).elim fun oid₀ ⟨o, slot₀, cap₀, ho, hL0, hB0⟩ =>
+    h oid₀ o slot₀ cap₀ badge ho hL0 hB0
+
+/-- A capability read out of a CNode slot holds its badge in that state. -/
+theorem badgeHeldIn_of_lookupSlotCap {st : SystemState} {addr : CSpaceAddr} {cap : Capability}
+    {b : SeLe4n.Badge} (hLk : SystemState.lookupSlotCap st addr = some cap)
+    (hB : cap.badge = some b) : badgeHeldIn st b := by
+  unfold SystemState.lookupSlotCap at hLk
+  cases hCn : SystemState.lookupCNode st addr.cnode with
+  | none => rw [hCn] at hLk; cases hLk
+  | some cn =>
+      rw [hCn] at hLk
+      have hObj : st.objects[addr.cnode]? = some (.cnode cn) := by
+        unfold SystemState.lookupCNode at hCn
+        cases hO : st.objects[addr.cnode]? with
+        | none => rw [hO] at hCn; cases hCn
+        | some obj =>
+          cases obj <;> rw [hO] at hCn <;> cases hCn
+          rfl
+      exact ⟨addr.cnode, .cnode cn, addr.slot, cap, hObj, hLk, hB⟩
 
 /-- A capability read out of a CNode slot carries a valid badge, by the badge
 clause of the pre-state. -/

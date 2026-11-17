@@ -169,11 +169,10 @@ classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 69 entries — the live canonical 55 (39
+/-- SM8.B.6: the per-core boundary has 68 entries — the live canonical 54 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
-the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`,
-plus WS-BP
+WS-BP
 BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetFromCap`, and the
 two finalising destroyers `cspaceDeleteSlotFinalising` /
 `cspaceRevokeCdtFinalising`, its space change `copyThreadSpaces`, and the two
@@ -192,7 +191,9 @@ routing gate found `.tcbSetAffinity`, at SM9.A.11, at SM9.C.8, at the
 PR #887 review round, at WS-RR RR8.16, at WS-BP BP7.1 (five times), at
 WS-ZA ZA4.3, at WS-ZA ZA5.3 part 8, which removed WS-RR RR8.16's
 `cspaceRevokeCdt` with the general revocation it named, and at WS-ZA ZA5.4
-part 14, which removed the in-place retype.
+part 14, which removed the in-place retype, and at WS-SX SX6.5, which retired
+the PR #887 fault-handler configuration `setThreadFaultHandlerOp` into the
+space change's fault slot.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -200,7 +201,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 69 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 68 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fourteen live cross-core

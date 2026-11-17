@@ -286,8 +286,9 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hAt : st'.objects[tid.toObjId]? = some (.tcb tcb') :=
@@ -637,8 +638,9 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
   have hAt := insertObjects_getElem_self st tid.toObjId (.tcb tcb') hObjInv
@@ -966,7 +968,7 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st st'
       (SeLe4n.ThreadId.ofObjId addr.cnode) t (t.removeSpaceCap addr.slot) hObjInv hInv hPre hS
       rfl rfl rfl rfl rfl rfl rfl rfl rfl
-      (fun _ _ _ h _ => TCB.spaceSlotCap_removeSpaceCap_back h)
+      (fun _ _ _ h _ => .inl (TCB.spaceSlotCap_removeSpaceCap_back h))
   have hAt := storeObject_objects_eq st st' _ _ hObjInv hS
   have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' _ oid _ h hObjInv hS
@@ -1874,8 +1876,9 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       (tcb'.schedContextBinding = .unbound ∧
         sc.boundThread = some tid ∧ sc'.boundThread = none))
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
-      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h)
+      tcb'.spaceSlotCap sl = some c → c.badge = some b →
+        tcb.spaceSlotCap sl = some c ∨ badgeHeldIn st b :=
+      by intro _ _ _ h _; exact .inl h)
     (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hNeIds : tid.toObjId ≠ scId.toObjId := by
@@ -1986,11 +1989,13 @@ theorem ipcInvariantFull_of_schedBindingRewrite
     · intro oid o' sl c b hO hL hB
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT] at hO; cases hO
-        exact ⟨.tcb tcb, by rw [hT]; exact hPreT, hSlots sl c b hL hB⟩
+        rcases hSlots sl c b hL hB with h | h
+        · exact ⟨oid, .tcb tcb, sl, c, by rw [hT]; exact hPreT, h, hB⟩
+        · exact h
       · by_cases hS : oid = scId.toObjId
         · rw [hS, hAtS] at hO; cases hO
-          exact ⟨.schedContext sc, by rw [hS]; exact hPreS, hL⟩
-        · exact ⟨o', by rw [← hFrame oid hT hS]; exact hO, hL⟩
+          exact ⟨oid, .schedContext sc, sl, c, by rw [hS]; exact hPreS, hL, hB⟩
+        · exact ⟨oid, o', sl, c, by rw [← hFrame oid hT hS]; exact hO, hL, hB⟩
     · intro oid
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT, hPreT]
@@ -2539,11 +2544,11 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩
       · exact ⟨x, by rw [hNe oid h]; exact hx⟩
-    · intro oid o' _ _ _ hO hL _
+    · intro oid o' sl c _ hO hL hB
       by_cases h : oid = scObj
       · rw [h, hAt] at hO; cases hO
-        exact ⟨.schedContext sc, by rw [h]; exact hPre, hL⟩
-      · exact ⟨o', by rw [← hNe oid h]; exact hO, hL⟩
+        exact ⟨oid, .schedContext sc, sl, c, by rw [h]; exact hPre, hL, hB⟩
+      · exact ⟨oid, o', sl, c, by rw [← hNe oid h]; exact hO, hL, hB⟩
     · intro oid
       by_cases h : oid = scObj
       · rw [h, hAt, hPre]; rfl
@@ -5060,28 +5065,6 @@ theorem threadIpcFieldsQuiescent_retirePendingFaultForResume
               | exact hQ.noPPrev tcb hT | exact hQ.noStash tcb hT
               | exact hQ.noPendingMsg tcb hT | exact hQ.noBudget tcb hT
 
-/-- Review round (PR #887): **configuring a fault handler preserves the
-bundle** — a one-TCB rewrite of `faultHandler`, a field no conjunct reads. -/
-theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    ipcInvariantFull st' := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler SystemState.rewriteObject
-          exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-            { tcb with faultHandlerSet := true, faultHandlerWord := cptr } hObjInv hInv
-            ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-            rfl rfl rfl rfl rfl rfl rfl rfl rfl
-
 /-- **WS-BP BP7.2**: recording physical writes touches only the ledger, which
 no conjunct of the bundle reads. -/
 theorem ipcInvariantFull_recordPhysicalWrites {st : SystemState}
@@ -5172,8 +5155,8 @@ theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
 
 /-- **A thread slot's copy preserves the IPC bundle**: the delete touches no IPC
 state (`cspaceDeleteSlot_preserves_ipcInvariantFull`), the insert rewrites one
-thread's space slot with an unbadged capability, which no conjunct reads, and
-the edge writes links alone. -/
+thread's slot with a copy of the source slot's capability, whose badge that
+slot holds (`badgeHeldIn_of_lookupSlotCap`), and the edge writes links alone. -/
 theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
@@ -5182,7 +5165,7 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
   have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
     (copyIntoThreadSlot_delete hT slot)
   obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
-  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, hCap, e⟩
   · rw [e]; exact hD
   · rw [e]
     refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
@@ -5191,14 +5174,15 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
       ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl rfl rfl rfl rfl rfl rfl rfl rfl
       (fun _ c _ h hB => by
         rcases TCB.spaceSlotCap_insertSpaceCap_back h with rfl | h'
-        · simp at hB
-        · exact h')
+        · rw [TCB.spaceCopyOf_badge] at hB
+          exact .inr (badgeHeldIn_of_lookupSlotCap hCap hB)
+        · exact .inl h')
 
 /-- A slot set from a filled source keeps the thread stored: its slot then
 holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 3)
+    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 4)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) {cap : Capability}
     (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
     ((threadSlotSet ec st tid slot srcCNode srcSlot rights data).getTcb? tid).isSome := by
@@ -5207,24 +5191,6 @@ theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
   unfold threadSlotSet
   dsimp only
   rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl
-
-/-- Review round (PR #887): and the object-store invariant. -/
-theorem setThreadFaultHandlerOp_preserves_objects_invExt
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
-    (hObjInv : st.objects.invExt)
-    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
-    st'.objects.invExt := by
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
-  | some tcb =>
-      cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e =>
-          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
-      | ok tgt =>
-          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
-          cases hStep
-          unfold installFaultHandler
-          exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv
 
 /-- Cancelling IPC blocking on a `.ready` victim is the identity — there is
 nothing to cancel. -/
@@ -5675,7 +5641,7 @@ theorem updateTcb_yieldWrite_preserves_ipcInvariantFull (st : SystemState)
     exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t _ hObjInv hInv
       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
       (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
-      (by intro sl c b h _; rw [e] at h; exact h) (by rw [e] <;> rfl)
+      (by intro sl c b h _; rw [e] at h; exact .inl h) (by rw [e] <;> rfl)
 
 /-- A context rewritten keeping its bound thread keeps the bundle. -/
 theorem updateSchedContext_boundKept_preserves_ipcInvariantFull (st : SystemState)

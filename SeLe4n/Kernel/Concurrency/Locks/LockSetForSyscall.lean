@@ -360,7 +360,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify
   -- WS-SM SM9.C.8: `.declassifySignal` is undeclared here for the same reason,
@@ -1297,7 +1297,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false

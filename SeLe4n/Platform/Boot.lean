@@ -947,7 +947,6 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       (WS-ZA ZA4.6) — thread ids, the reply-waiter links and queue head.
     * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
-      `faultHandler` (a CPtr into the thread's own CSpace, not an id),
       `maxControlledPriority`, `pipBoost`, `timedOut`,
       `cpuAffinity` (a core), `pendingFault` (addresses, syndromes and a
       register window), `pendingMessage` (registers, a badge and a label:
@@ -963,7 +962,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, _pendingMessage, _registerContext,
-     _faultHandlerSet, _faultHandlerWord, boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
+     boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -2314,7 +2313,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     Unconstrained, and why: the scheduling parameters (`priority`, `domain`,
     `timeSlice`, `deadline`, `maxControlledPriority`, `cpuAffinity`) and the
     address-space fields (`cspaceRoot`, `vspaceRoot`, `ipcBuffer`,
-    `boundNotification`, `faultHandler`) are the deployment's to choose;
+    `boundNotification`) are the deployment's to choose;
     `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
     `timedOut` and `registerContext` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
@@ -2342,7 +2341,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
+     _registerContext, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -4272,7 +4271,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
+     _registerContext, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _faultKind, _faultFlag, _faultWord0, _faultWord1, _faultLookup,
      _faultIp, _faultSp, _faultLr, _faultSpsr, _faultX0, _faultX1, _faultX2, _faultX3,
@@ -8244,9 +8243,9 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
     subst h
     rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with hB | ⟨c, _, rfl⟩
     · exact bootFromPlatformChecked_ok_capObject_of_config config base hChecked oid obj hB s hs
-    · have hc : (readyIdleThread c).spaceCells = Vector.replicate 3 none := rfl
-      have hn : ∀ (i : Nat) (hi : i < 3),
-          (Vector.replicate 3 none : Vector (Option Capability) 3)[i] = none :=
+    · have hc : (readyIdleThread c).spaceCells = Vector.replicate 4 none := rfl
+      have hn : ∀ (i : Nat) (hi : i < 4),
+          (Vector.replicate 4 none : Vector (Option Capability) 4)[i] = none :=
         fun i hi => Vector.getElem_replicate hi
       exact absurd (by
         simp only [KernelObject.slotCap, TCB.spaceSlotCap]
