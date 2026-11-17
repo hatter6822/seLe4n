@@ -67,28 +67,33 @@ inductive CapType where
   | .serviceRegistry _ => .serviceRegistry
   | .cnodeSlotWord _ => .cnodeSlot
 
-/-- The object kind each labelled operation invokes, by capability type: the
-operation a label names is selected only on a capability of the type it takes
-(seL4's per-object `decode*Invocation`). -/
-def labelledOperationTakes (sid : SyscallId) : CapType → Bool
-  | .object (some .cnode) => sid == .cspaceMint || sid == .cspaceCopy || sid == .cspaceMove ||
+/-- The operations a label selects on an object of kind `k` (seL4's per-object
+`decode*Invocation`). -/
+def kindTakesLabel (sid : SyscallId) : KernelObjectType → Bool
+  | .cnode => sid == .cspaceMint || sid == .cspaceCopy || sid == .cspaceMove ||
       sid == .cspaceDelete || sid == .cspaceRevoke || sid == .mintReplyCap
-  | .object (some .untyped) => sid == .untypedRetype
-  | .object (some .vspaceRoot) => sid == .vspaceUnmap || sid == .vspaceUnifyInstruction
-  | .object (some .schedContext) => sid == .schedContextBind || sid == .schedContextUnbind ||
+  | .untyped => sid == .untypedRetype
+  | .vspaceRoot => sid == .vspaceUnmap || sid == .vspaceUnifyInstruction
+  | .schedContext => sid == .schedContextBind || sid == .schedContextUnbind ||
       sid == .schedContextConsumed || sid == .schedContextYieldTo
-  | .object (some .tcb) => sid == .tcbSuspend || sid == .tcbResume || sid == .tcbSetPriority ||
+  | .tcb => sid == .tcbSuspend || sid == .tcbResume || sid == .tcbSetPriority ||
       sid == .tcbSetMCPriority || sid == .tcbSetIPCBuffer || sid == .tcbSetAffinity ||
       sid == .tcbSetSpace || sid == .tcbBindNotification || sid == .tcbUnbindNotification
-  | .object (some .pageTable) => sid == .pageTableMap || sid == .pageTableUnmap
+  | .pageTable => sid == .pageTableMap || sid == .pageTableUnmap
   -- seL4's `seL4_ARM_Page_Map` is invoked on the frame capability (WS-SX SX6.3).
-  | .object (some .frame) => sid == .vspaceMap
-  | .object (some .reply) => false
+  | .frame => sid == .vspaceMap
+  | .reply => false
   -- seL4: Send or Call on an endpoint is IPC and Send on a notification
   -- signals, whatever the label; the label is the receiver's data.  No label
   -- selects an operation on either (`invocationOperation_endpoint`,
   -- `invocationOperation_notification`).
-  | .object (some .endpoint) | .object (some .notification) => false
+  | .endpoint | .notification => false
+
+/-- The object kind each labelled operation invokes, by capability type: the
+operation a label names is selected only on a capability of the type it takes
+(seL4's per-object `decode*Invocation`). -/
+def labelledOperationTakes (sid : SyscallId) : CapType → Bool
+  | .object (some k) => kindTakesLabel sid k
   | .object none => true
   | .replyCap => false
   -- The declassifications are invoked on the audit-trail capability, their
@@ -232,6 +237,149 @@ theorem ofNat?_selectedOperationCode (st : SystemState) (tcb : TCB)
   cases selectedOperation st tcb layout regs with
   | some op => exact SyscallId.ofNat_toNat op
   | none => rfl
+
+/-! ## The selection as compiled
+
+`selectedOperationCode` builds an `Option CapType` around the invoked
+capability's type and an `Option SyscallId` around the operation, and its
+lookup returns an `Except`; a kernel entry allocates nothing, so the compiled
+entry runs `selectedOperationCodeK` instead (`@[csimp]`
+`selectedOperationCode_eq_k`).  It answers the code itself: the lookup in
+continuation form (`lookupSlotK`), the capability's type read in place, and
+the selection written over codes, an object's kind passed as the kind
+(`selectionCodeOfKind`) so no `CapType.object` is built. -/
+
+/-- **The code `Syscall.selectOperation` answers**: the selected operation's
+code, `SyscallId.encodingBound` when it selects none. -/
+def selectionCode (sys : Syscall) (ty : Option CapType) (label : Nat) : Nat :=
+  match sys.selectOperation ty label with
+  | some op => op.toNat
+  | none => SyscallId.encodingBound
+
+/-- The code a label selects on a capability of type `t`. -/
+def labelCode (t : CapType) (label : Nat) : Nat :=
+  match SyscallId.ofLabel? label with
+  | some op => if labelledOperationTakes op t then op.toNat else SyscallId.encodingBound
+  | none => SyscallId.encodingBound
+
+/-- `invocationOperation`'s code. -/
+def invocationCode (base : SyscallId) (ty : Option CapType) (label : Nat) : Nat :=
+  match ty with
+  | none | some .cnodeSlot => base.toNat
+  | some .replyCap => SyscallId.reply.toNat
+  | some (.object (some .endpoint)) => base.toNat
+  | some (.object (some .notification)) => SyscallId.notificationSignal.toNat
+  | some t => labelCode t label
+
+/-- **`selectionCode` written over codes**, so no `Option` is built. -/
+def selectionCodeImpl (sys : Syscall) (ty : Option CapType) (label : Nat) : Nat :=
+  match sys with
+  | .yield => SyscallId.yield.toNat
+  | .call => invocationCode .call ty label
+  | .send | .nbSend => invocationCode .send ty label
+  | .recv | .nbRecv | .wait | .nbWait | .nbSendRecv | .nbSendWait =>
+      (receiveOperation ty).toNat
+  | .replyRecv =>
+      match receiveOperation ty with
+      | .receive => SyscallId.replyRecv.toNat
+      | op => op.toNat
+
+theorem selectionCodeImpl_eq (sys : Syscall) (ty : Option CapType) (label : Nat) :
+    selectionCodeImpl sys ty label = selectionCode sys ty label := by
+  have hInv : ∀ base, invocationCode base ty label =
+      match invocationOperation base ty label with
+      | some op => op.toNat
+      | none => SyscallId.encodingBound := by
+    intro base
+    unfold invocationCode invocationOperation labelCode
+    split <;> try rfl
+    split <;> try rfl
+    split <;> rfl
+  unfold selectionCode selectionCodeImpl Syscall.selectOperation
+  cases sys <;> simp only [hInv]
+  split <;> rfl
+
+/-- The code a label selects on an object of kind `k`. -/
+def labelCodeOfKind (k : KernelObjectType) (label : Nat) : Nat :=
+  match SyscallId.ofLabel? label with
+  | some op => if kindTakesLabel op k then op.toNat else SyscallId.encodingBound
+  | none => SyscallId.encodingBound
+
+/-- `invocationCode` on an object of kind `k`, the kind passed alone. -/
+def invocationCodeOfKind (base : SyscallId) (k : KernelObjectType) (label : Nat) : Nat :=
+  match k with
+  | .endpoint => base.toNat
+  | .notification => SyscallId.notificationSignal.toNat
+  | k => labelCodeOfKind k label
+
+/-- **`selectionCode` on an object of kind `k`**, the kind passed alone so no
+`CapType.object` is built (`selectionCodeOfKind_eq`). -/
+def selectionCodeOfKind (sys : Syscall) (k : KernelObjectType) (label : Nat) : Nat :=
+  match sys with
+  | .yield => SyscallId.yield.toNat
+  | .call => invocationCodeOfKind .call k label
+  | .send | .nbSend => invocationCodeOfKind .send k label
+  | .recv | .nbRecv | .wait | .nbWait | .nbSendRecv | .nbSendWait =>
+      match k with
+      | .notification => SyscallId.notificationWait.toNat
+      | _ => SyscallId.receive.toNat
+  | .replyRecv =>
+      match k with
+      | .notification => SyscallId.notificationWait.toNat
+      | _ => SyscallId.replyRecv.toNat
+
+theorem selectionCodeOfKind_eq (sys : Syscall) (k : KernelObjectType) (label : Nat) :
+    selectionCodeOfKind sys k label = selectionCode sys (some (.object (some k))) label := by
+  rw [← selectionCodeImpl_eq]
+  cases sys <;> cases k <;> rfl
+
+/-- **`selectedOperationCode` as compiled**: no `Option`, no `Except`, no
+`CapType` is built (`selectedOperationCode_eq_k`). -/
+def selectedOperationCodeK (st : SystemState) (tcb : TCB)
+    (layout : SeLe4n.SyscallRegisterLayout) (regs : SeLe4n.RegisterFile) : Nat :=
+  match Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
+  | none => SyscallId.encodingBound
+  | some sys =>
+    let label := msgInfoWordLabel (SeLe4n.readRegWord regs layout.msgInfoReg)
+    lookupSlotK tcb (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord regs layout.capPtrReg)) st
+      (fun _ _ _ _ => selectionCodeImpl sys none label)
+      (fun cnode slot =>
+        match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+        | none => selectionCodeImpl sys none label
+        | some cap =>
+          match cap.target with
+          | .object id =>
+            match st.getObject? id with
+            | some o => selectionCodeOfKind sys o.objectType label
+            | none => selectionCodeImpl sys (some (.object none)) label
+          | .replyCap _ => selectionCodeImpl sys (some .replyCap) label
+          | .auditTrail _ => selectionCodeImpl sys (some .auditTrail) label
+          | .schedControl _ => selectionCodeImpl sys (some .schedControl) label
+          | .irqControl _ => selectionCodeImpl sys (some .irqControl) label
+          | .irqHandler _ => selectionCodeImpl sys (some .irqHandler) label
+          | .serviceRegistry _ => selectionCodeImpl sys (some .serviceRegistry) label
+          | .cnodeSlotWord _ => selectionCodeImpl sys (some .cnodeSlot) label)
+
+@[csimp] theorem selectedOperationCode_eq_k : @selectedOperationCode = @selectedOperationCodeK := by
+  funext st tcb layout regs
+  unfold selectedOperationCode selectedOperation selectedOperationCodeK
+  cases Syscall.ofWord? (SeLe4n.readRegWord regs layout.syscallNumReg) with
+  | none => rfl
+  | some sys =>
+    simp only [lookupSlotK_eq, selectionCodeImpl_eq, selectionCodeOfKind_eq]
+    unfold invokedCapType
+    cases lookupSlot tcb (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord regs layout.capPtrReg)) st with
+    | error f => rfl
+    | ok ref =>
+      rcases ref with ⟨cn, sl⟩
+      simp only
+      cases SystemState.lookupSlotCap st ⟨cn, sl⟩ with
+      | none => rfl
+      | some cap =>
+        simp only [Option.map, CapType.ofCap]
+        cases cap.target with
+        | object id => simp only; cases st.getObject? id <;> rfl
+        | _ => rfl
 
 /-- **The operation the thread `tid`'s trapped registers `regs` select**
 (`selectedOperationCode`), read off its TCB in `st`; a thread the store holds no
