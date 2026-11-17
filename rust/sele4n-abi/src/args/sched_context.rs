@@ -93,7 +93,10 @@ mod tests {
             flags: 1,
         };
         assert_eq!(args.encode(), [1000, 5000, 2, 0xFEED_FACE_CAFE_BEEF, 1]);
-        assert_eq!(SchedContextConfigureArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(
+            SchedContextConfigureArgs::decode(&args.encode()).unwrap(),
+            args
+        );
     }
 
     #[test]

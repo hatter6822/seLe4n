@@ -13170,7 +13170,7 @@ fn overflow_cap_faults(which: &str) -> bool {
     // Each configure names the context in the window's page, the root task's
     // buffer once `root_buffer_restored` has set it back; with the buffer
     // slot empty the kernel reads no extra capability at all.
-    let refused = |name| {
+    let over_period = |name| {
         configure(
             name,
             FRAME_VADDR,
@@ -13203,11 +13203,11 @@ fn overflow_cap_faults(which: &str) -> bool {
     );
     let refused_fills = RoundTrip {
         returns: budget_over_period,
-        ..refused("configure-refused-fills")
+        ..over_period("configure-refused-fills")
     };
     let refused_held = RoundTrip {
         returns: budget_over_period,
-        ..refused("configure-refused-held")
+        ..over_period("configure-refused-held")
     };
     // seL4-MCS's bounds (`decodeSchedControl_ConfigureFlags`): a budget or
     // period below `MIN_BUDGET` or above `MAX_PERIOD` answers `MIN_BUDGET` and
