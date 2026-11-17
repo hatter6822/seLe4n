@@ -271,8 +271,9 @@ the notification it signals is its extra capability 0, `declassCapPtr`). -/
 private def declassAuditCapPtr : Nat := 14
 
 /-- The service-registry capability the service query invokes (WS-SX SX6.7:
-the endpoint it reads is its extra capability 0, `epCapPtr`). -/
-private def registryCapPtr : Nat := 15
+the endpoint it reads is its extra capability 0, `epCapPtr`).  Not slot 15:
+`withReceiveSlot` installs the receive path's CNode capability there. -/
+private def registryCapPtr : Nat := 4
 
 private def ntfnCapWith (badgeWord : Nat) (badged : Bool) : Capability :=
   { target := .object ntfnId,
