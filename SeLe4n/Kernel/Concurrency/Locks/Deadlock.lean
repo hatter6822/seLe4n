@@ -1579,10 +1579,15 @@ theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId)
 
 /-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
 theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e g : ObjId)
-    (f : KernelObjectType) :
-    (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize := by
-  unfold lockSet_untypedRetype maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+    (f : KernelObjectType) (n : Nat) :
+    (lockSet_untypedRetype a b c d e g f n).size ≤ maxLockSetSize := by
+  unfold lockSet_untypedRetype
+  refine Nat.le_trans (lockSetOfList_size_le _) ?_
+  rw [List.length_append, carvedChildLocks_length]
+  have h := Nat.min_le_right n retypeFanOutLimit
+  simp only [List.length_cons, List.length_nil, retypeFanOutLimit, retypeBaseLocks,
+    maxLockSetSize] at h ⊢
+  omega
 
 /-- WS-ZA ZA5.4: the reset's footprint fits. -/
 theorem lockSet_untypedReset_size_le (a : ThreadId) (b c d : ObjId) :
@@ -1845,7 +1850,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e g f, (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e g f n, (lockSet_untypedRetype a b c d e g f n).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_untypedReset a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧

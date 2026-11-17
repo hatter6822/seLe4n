@@ -632,10 +632,10 @@ example :
 
 example :
     ∀ p ∈ (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext).pairs,
+              (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext 1).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-    (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext
+    (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext 1
 
 example :
     ∀ p ∈ (lockSet_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)).pairs,
@@ -858,7 +858,7 @@ private def runPermittedKindsChecks : IO Unit := do
       (.schedContext, .schedContext), (.untyped, .untyped), (.vspaceRoot, .vspaceRoot),
       (.frame, .page), (.pageTable, .page)].all fun (ty, k) =>
       (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-          (ObjId.ofNat 30) (ObjId.ofNat 10) ty).pairs.any (fun p =>
+          (ObjId.ofNat 30) (ObjId.ofNat 10) ty 1).pairs.any (fun p =>
         decide (p.fst.kind = k ∧ p.snd = AccessMode.write)))
   -- WS-RR RR7.23 (register finding 5): every registry writer declares the
   -- state-level lock — the trio in write/write/read.
@@ -966,7 +966,7 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "untypedRetype writes the authority capability's CNode"
     (decide ((cnodeLock (ObjId.ofNat 11), AccessMode.write)
         ∈ (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
-            (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).pairs))
+            (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 1).pairs))
   -- …and the member is present in all four, which the size alone would not say.
   assertBool "every capability operation declares the state-level CDT write"
     (decide ((stateLevelLock, AccessMode.write)
@@ -1022,7 +1022,26 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- state-level CDT write), on distinct CNodes.
   assertBool "untypedRetype size = 7"
     (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
-              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).size = 7))
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 1).size = 7))
+  -- A carve of n objects names each child id: the base six plus n, so the
+  -- fan-out limit fills the ceiling exactly and a larger count is clamped.
+  assertBool "untypedRetype of 3 objects names children 40, 41 and 42"
+    (decide ([40, 41, 42].all fun c =>
+      (endpointLock (ObjId.ofNat c), AccessMode.write) ∈
+        (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+          (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 3).pairs))
+  assertBool "untypedRetype of 3 objects does not name child 43"
+    (decide ((endpointLock (ObjId.ofNat 43), AccessMode.write) ∉
+        (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+          (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 3).pairs))
+  assertBool "untypedRetype at the fan-out limit fills maxLockSetSize"
+    (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint retypeFanOutLimit).size
+              = maxLockSetSize))
+  assertBool "untypedRetype past the fan-out limit is clamped to the ceiling"
+    (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint 100).size = maxLockSetSize))
+  assertBool "retypeFanOutLimit is 26" (decide (retypeFanOutLimit = 26))
   -- **WS-OD (`v0.35.4`)**: the suspend's optional members, at the two footprints
   -- that own them since the parametric `lockSet_tcbSuspend` was retired.
   -- Teardown with both blocked objects: victim + endpoint + notification.
@@ -1503,7 +1522,7 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     allOk_mint
   -- The carve, at a kernel-object child.
   let carve := lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
-                  (ObjId.ofNat 30) (ObjId.ofNat 10) .tcb
+                  (ObjId.ofNat 30) (ObjId.ofNat 10) .tcb 1
   let allOk_carve := carve.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .untypedRetype))
   assertBool "lockSet_untypedRetype: all kinds in permittedKinds .untypedRetype"

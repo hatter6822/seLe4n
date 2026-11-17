@@ -402,6 +402,28 @@ page table keep the `page` lock their own operations take. -/
   | .schedContext => schedContextLock (SchedContextId.ofObjId oid)
   | .frame | .pageTable => pageLock oid
 
+/-- The write locks a carve of `count` objects takes on its children: child `i`
+is `childObjId + i`, under the kind it will hold (`carvedObjectLock`), for each
+`i` below the count clamped to seL4's fan-out limit (`retypeFanOutLimit`). -/
+def carvedChildLocks (childKind : KernelObjectType) (childObjId : ObjId) (count : Nat) :
+    List (LockKey × AccessMode) :=
+  (List.range (min count retypeFanOutLimit)).map fun i =>
+    (carvedObjectLock childKind (ObjId.ofNat (childObjId.toNat + i)), .write)
+
+theorem carvedChildLocks_length (childKind : KernelObjectType) (childObjId : ObjId)
+    (count : Nat) :
+    (carvedChildLocks childKind childObjId count).length = min count retypeFanOutLimit := by
+  simp [carvedChildLocks]
+
+theorem mem_carvedChildLocks {childKind : KernelObjectType} {childObjId : ObjId}
+    {count : Nat} {p : LockKey × AccessMode}
+    (h : p ∈ carvedChildLocks childKind childObjId count) :
+    ∃ i, i < min count retypeFanOutLimit ∧
+      p = (carvedObjectLock childKind (ObjId.ofNat (childObjId.toNat + i)), .write) := by
+  simp only [carvedChildLocks, List.mem_map, List.mem_range] at h
+  obtain ⟨i, hi, rfl⟩ := h
+  exact ⟨i, hi, rfl⟩
+
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
 
@@ -1462,18 +1484,25 @@ serialises two carves racing for one child id), under the kind it will hold
 `stateLevelLock` (write) for the CDT edge and the object index the carve
 extends, unconditional because a successful carve always writes both.  Every
 member is named by the operands, so unlike the in-place retype there is no
-state-resolved optional member. -/
+state-resolved optional member.
+
+**A carve of `count` objects** (seL4's fan-out, up to `retypeFanOutLimit`)
+names each child's key: child `i` is `childObjId + i`, as the carve numbers
+them (`carvedChildLocks`).  The count is clamped to the limit, so the footprint
+is at most `retypeBaseLocks + retypeFanOutLimit = maxLockSetSize` members
+whatever the operand; the window check refuses a larger count before anything
+is locked. -/
 def lockSet_untypedRetype (callerTid : ThreadId)
     (cnodeRootObjId authCnodeObjId untypedObjId childObjId dstCnodeObjId : ObjId)
-    (childKind : KernelObjectType) : LockSet :=
+    (childKind : KernelObjectType) (count : Nat) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (cnodeLock authCnodeObjId, .write),
-     (untypedLock untypedObjId, .write),
-     (carvedObjectLock childKind childObjId, .write),
-     (cnodeLock dstCnodeObjId, .write),
-     (stateLevelLock, .write)]
+    ([(tcbLock callerTid, .read),
+      (cnodeLock cnodeRootObjId, .read),
+      (cnodeLock authCnodeObjId, .write),
+      (untypedLock untypedObjId, .write),
+      (cnodeLock dstCnodeObjId, .write),
+      (stateLevelLock, .write)] ++
+     carvedChildLocks childKind childObjId count)
 
 /-- **WS-ZA ZA5.4**: `lockSet` for `untypedReset` — seL4's reset, which writes
 `0` to the invoked untyped capability's free index.
@@ -6667,29 +6696,31 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
-    (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
+    (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType)
+    (count : Nat) :
     ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot authCn untypedId childId dstCn
-      childKind).pairs,
+      childKind count).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; cases childKind <;>
+        rcases List.mem_append.mp hMem with hMem | hMem
+        · rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp [stateLevelLock]; decide
+          exact absurd hMem (by intro h; cases h)
+        · obtain ⟨i, _, rfl⟩ := mem_carvedChildLocks hMem
+          cases childKind <;>
             simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock, tcbLock,
-              endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [stateLevelLock]; decide
-        exact absurd hMem (by intro h; cases h))
+              endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide)
 
 /-- **WS-ZA ZA5.4** — WS-SM SM3.B.4 for `.untypedReset`. -/
 theorem lockSet_consistent_untypedReset (callerTid : ThreadId)

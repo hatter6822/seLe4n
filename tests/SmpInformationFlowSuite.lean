@@ -11195,7 +11195,7 @@ private def runTaintFootprintChecks : IO Unit := do
   assertBool "the carve DOES declare the coarse table lock, for the CDT and the object index"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
       ∈ (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype highCurrent probeCNode probeCNode
-           declassTargetA declassTargetB probeCNode .notification).pairs))
+           declassTargetA declassTargetB probeCNode .notification 1).pairs))
   -- WS-RR RR7.7: and the caps-carrying send does declare it, for the CDT maps.
   assertBool "a caps-carrying send DOES declare the coarse table lock, for the CDT maps"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)

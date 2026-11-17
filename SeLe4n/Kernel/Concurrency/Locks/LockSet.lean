@@ -1154,4 +1154,21 @@ footprint is still `.replyRecv` at thirty-two and the 60 µs envelope stays at
 5760 µs. -/
 def maxLockSetSize : Nat := 32
 
+/-- **The members of a carve's footprint that are not its children**
+(`lockSet_untypedRetype`): the caller's TCB and CSpace root (read), the CNode
+holding the authority capability, the untyped, the destination CNode and
+`stateLevelLock` (write).  Every one is named by the operands, whatever the
+count. -/
+def retypeBaseLocks : Nat := 6
+
+/-- **seL4's fan-out limit** (`CONFIG_RETYPE_FAN_OUT_LIMIT`, a build-time
+configuration option): the most objects one `seL4_Untyped_Retype` creates.  A
+carve names one write lock per child (`carvedObjectLock`, which serialises two
+carves racing for a child id and a carve against an operation naming the id), so
+its footprint is `retypeBaseLocks` plus the count, and the configuration is the
+largest count that keeps it within `maxLockSetSize`: `32 - 6 = 26`.  Derived
+rather than stated, so raising the base footprint lowers the limit instead of
+silently overflowing the ceiling. -/
+def retypeFanOutLimit : Nat := maxLockSetSize - retypeBaseLocks
+
 end SeLe4n.Kernel.Concurrency

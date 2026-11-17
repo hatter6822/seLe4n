@@ -4137,7 +4137,9 @@ run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/sy
 run_check "INVARIANT" rg -n '^  \| \.vspaceMap \| \.irqControlGet \| \.auditRead => 3$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n -U '^  \| \.mintReplyCap \| \.vspaceUnmap \| \.vspaceUnifyInstruction\n  \| \.pageTableMap \| \.tcbSetSpace => 2$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
-run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     carvedChildLocks childKind childObjId count\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def carvedChildLocks[^\n]*\n[^\n]*\n  \(List\.range \(min count retypeFanOutLimit\)\)\.map fun i =>\n    \(carvedObjectLock childKind \(ObjId\.ofNat \(childObjId\.toNat \+ i\)\), \.write\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '^def retypeFanOutLimit : Nat := maxLockSetSize - retypeBaseLocks$' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
 run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
@@ -5424,7 +5426,7 @@ run_check "INVARIANT" rg -n -U 'def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n '^  ipcUntypedGrantFollowsDerivationRule$' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceCopy[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceMint [^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*      \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The derivation rule allocates nothing: the children check is inlined, so a
 # caller naming the slot by its words builds no slot reference, and a boot
 # CNode's slot records are its own, so the first carve writes the invoked
