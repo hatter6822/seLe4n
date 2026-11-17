@@ -95,6 +95,31 @@ themselves, each in its own order and with its own answers.
   entry for the buffer; `ipcBufferWordPAddr?` and `tlbFillIpcBufferOnCore`
   retire. The buffer slot keeps a spare record, and a receiver with no
   buffer gets the 4-word fault again.
+- **Wide words read as words (SX6.3, SX6.6).** The retype's object id,
+  IRQControl_Get's line, PageTable_Map's address and SetIPCBuffer's address
+  made a `Nat` of the full user word, so a word at or above `2^63` built a
+  heap number. Each is now tested on the word with `wordLtNat` first.
+  - The object id, the line and the table address go through
+    `windowWordOf`, which reads a word at or past `2^62` as `2^62`. Every
+    consumer refuses that value as it refuses the word.
+  - The buffer address goes through `ipcBufferAddrOfWord`, which reads a
+    wide word as `2^62` plus its page offset. The kernel reads a buffer
+    address only for zero-ness and page offset, as seL4's `lookupIPCBuffer`
+    does, and the read keeps both (`ipcBufferAddrOfWord_eq_zero_iff`,
+    `ipcBufferAddrOfWord_mod_page`).
+  - A line past the board's last is now seL4's `Arch_checkIRQ`
+    `RangeError(0, maxIRQ)` (`irqControlMaxLine`), not `InvalidIRQ`.
+  - A table address past the user top is now seL4's `InvalidArgument 0`,
+    not `AddressOutOfBounds`.
+  - The `SetIPCBufferArgs` docstring gave the 32-bit alignment; it now
+    gives 1024 bytes, seL4's `seL4_IPCBufferSizeBits = 10` on AArch64.
+  - New QEMU scenarios, each read at 0: `untyped-retype-wide-child-id`
+    (`AddressOutOfBounds`), `irq-control-get-wide-line`
+    (`RangeError(0, maxIRQ)`), `page-table-map-wide-vaddr` (on a page
+    table carved for it, `InvalidArgument 0`) and
+    `tcb-set-ipc-buffer-wide-unaligned` (`AlignmentError`).
+  - The `v0.37.21` debt row loses families (3)–(6), and (8), closed at
+    `v0.37.23`. (1), (2) and (7) stay open for SX9.1 and SX7.1.
 - **Targets of their own for the model-only calls (SX6.7).**
   - `declassify` and `declassifySignal` are invoked on the audit-trail
     capability, with the object or notification as extra capability 0.

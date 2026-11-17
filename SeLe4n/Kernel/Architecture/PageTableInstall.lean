@@ -269,6 +269,9 @@ def pageTableMap (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr) : Kernel
     | some table, some root =>
       if pageTableInstallLive st tableId then .error (.invalidCapability 0)
       else if root.tableBase.isNone then .error (.invalidArgument 0)
+      -- seL4's `decodeARMPageTableInvocation`: an address past the user top
+      -- (`vaddr > USER_TOP`) is `seL4_InvalidArgument` naming argument 0.
+      else if !vaddr.isCanonical then .error (.invalidArgument 0)
       else if !pageTableAddressable vaddr then .error .addressOutOfBounds
       else
         match root.missingLevel? vaddr with
@@ -350,6 +353,10 @@ theorem pageTableMap_ok (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
         | none => rw [hB] at h; simp at h
         | some _ =>
           rw [hB] at h
+          cases hC : vaddr.isCanonical with
+          | false => rw [hC] at h; simp at h
+          | true =>
+          rw [hC] at h
           cases hA : pageTableAddressable vaddr with
           | false => rw [hA] at h; simp at h
           | true =>

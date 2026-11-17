@@ -891,6 +891,15 @@ for driver in drivers:
             "window-three-delete-0", "window-three-delete-1", "window-three-delete-2",
             "window-three-untyped-reset", "untyped-retype-window-full",
             "window-full-untyped-reset",
+            # WS-SX SX6.3/SX6.6: argument words at or above 2^63 read on the
+            # word -- a retype's object id, an interrupt line, a page table's
+            # address and an IPC buffer's address -- each refused as seL4
+            # refuses it; the page table carved for the address, deleted and
+            # the untyped reset.
+            "untyped-retype-wide-child-id", "irq-control-get-wide-line",
+            "untyped-retype-wide-table", "page-table-map-wide-vaddr",
+            "wide-table-delete", "wide-table-untyped-reset",
+            "tcb-set-ipc-buffer-wide-unaligned",
         } | {f"window-full-delete-{i}" for i in range(26)}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

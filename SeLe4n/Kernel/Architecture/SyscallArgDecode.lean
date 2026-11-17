@@ -297,18 +297,24 @@ theorem bitCountOfWord_of_le {w : UInt64} (h : w.toNat ≤ 64) : bitCountOfWord 
 (`windowWordOf`): past every CNode's slot count and every fan-out limit. -/
 def windowWordBound : Nat := 2 ^ 62
 
-/-- A destination offset or object count read from a word: the word below
-`windowWordBound` and `windowWordBound` at or past it, which the window checks
-refuse as they refuse the word (no CNode has `2 ^ 62` slots), so a full-width
-word builds no heap number. -/
+/-- An argument word its consumer bounds far below `2 ^ 62`, read without a
+heap number: the word below `windowWordBound` and `windowWordBound` at or past
+it, which the consumer refuses as it refuses the word, so a full-width word
+builds no heap number (a `Nat` at or above `2 ^ 63` is a heap cell).  The
+window's destination offset and object count (no CNode has `2 ^ 62` slots),
+the retype's object id (`objectIdInAddressSpace` holds every id below
+`2 ^ 52 / 4096`), IRQControl_Get's line (`irqControlLineRefusal`, seL4's
+`Arch_checkIRQ` range check) and PageTable_Map's address (`pageTableMap`'s
+`VAddr.isCanonical` check, seL4's `vaddr > USER_TOP`) are read through it
+(WS-SX SX6.3). -/
 @[noinline] def windowWordOf (w : UInt64) : Nat :=
-  if w < 0x4000000000000000 then w.toNat else windowWordBound
+  if wordLtNat w windowWordBound then w.toNat else windowWordBound
 
 /-- A window word below the bound is its word. -/
 theorem windowWordOf_of_lt {w : UInt64} (h : w.toNat < windowWordBound) :
     windowWordOf w = w.toNat := by
   unfold windowWordOf
-  rw [if_pos (UInt64.lt_iff_toNat_lt.mpr (by simpa [windowWordBound] using h))]
+  rw [if_pos ((wordLtNat_iff w windowWordBound).mpr h)]
 
 /-- **The operands of a `.vspaceMap`**: the address space's ASID, the address,
     the frame capability's address and the permissions — what the map arm
@@ -500,7 +506,7 @@ def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
            nodeDepth  := cnodeDepthOfWord r3.word
            nodeOffset := windowWordOf r4.word
            numObjects := windowWordOf r5.word
-           childId    := ObjId.ofNat r6.val }
+           childId    := ObjId.ofNat (windowWordOf r6.word) }
   | none => .error .invalidTypeTag
 
 /-- **WS-SX SX6.3 (D6): decode `seL4_ARM_Page_Map`'s three words** — the
@@ -958,11 +964,11 @@ theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs)
 /-- **WS-BP BP7.1; WS-SX SX6.3**: round-trip for UntypedRetypeArgs — the type
 tag's `ofNat?` and `toNat` are inverses per variant, and every other word reads
 back whole below the bound its decode holds it at (a size and a depth up to 64,
-an offset and a count below `windowWordBound`, the child below `2 ^ 64`). -/
+an offset, a count and the child below `windowWordBound`). -/
 theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
     (hSize : args.sizeBits ≤ 64) (hDepth : args.nodeDepth ≤ 64)
     (hOff : args.nodeOffset < windowWordBound) (hNum : args.numObjects < windowWordBound)
-    (hChild : args.childId.toNat < 2 ^ 64) :
+    (hChild : args.childId.toNat < windowWordBound) :
     decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args := by
   rcases args with ⟨t, b, ni, nd, no, nn, c⟩
   simp only at hSize hDepth hOff hNum hChild
@@ -981,7 +987,7 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
           .ok { newType := objType, sizeBits := bitCountOfWord a1.word,
                 nodeIndex := CPtr.ofWord a2.word, nodeDepth := cnodeDepthOfWord a3.word,
                 nodeOffset := windowWordOf a4.word, numObjects := windowWordOf a5.word,
-                childId := ObjId.ofNat a6.val }
+                childId := ObjId.ofNat (windowWordOf a6.word) }
         | none => .error .invalidTypeTag := fun _ _ _ _ _ _ _ => rfl
   rw [show encodeUntypedRetypeArgs ⟨t, b, ni, nd, no, nn, c⟩ = #[RegValue.ofNat t.toNat,
     RegValue.ofNat b, ⟨ni.word⟩, RegValue.ofNat nd, RegValue.ofNat no, RegValue.ofNat nn,
@@ -993,7 +999,9 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs)
       rw [hWord _ (by omega)]; exact hOff), hWord _ (show no < 2 ^ 64 by omega),
     windowWordOf_of_lt (show (RegValue.ofNat nn).word.toNat < windowWordBound by
       rw [hWord _ (by omega)]; exact hNum), hWord _ (show nn < 2 ^ 64 by omega),
-    RegValue.val_ofNat_of_lt hChild, ObjId.ofNat_toNat]
+    windowWordOf_of_lt (show (RegValue.ofNat c.toNat).word.toNat < windowWordBound by
+      rw [hWord _ (by omega)]; exact hChild), hWord _ (show c.toNat < 2 ^ 64 by omega),
+    ObjId.ofNat_toNat]
   rfl
 
 /-- `decodePageMapArgs` reads back the words `encodePageMapArgs` wrote: the
@@ -1443,7 +1451,7 @@ def decodeIrqControlGetArgs (decoded : SyscallDecodeResult)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
-  pure { line := r0.val, dstIndex := CPtr.ofWord r1.word, dstDepth := cnodeDepthOfWord r2.word }
+  pure { line := windowWordOf r0.word, dstIndex := CPtr.ofWord r1.word, dstDepth := cnodeDepthOfWord r2.word }
 
 /-- WS-ZA ZA6.32: arguments for `irqHandlerSetNotification` (seL4's
     `seL4_IRQHandler_SetNotification`): the capability address of the
@@ -1524,7 +1532,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args : UntypedRetypeArgs, args.sizeBits ≤ 64 → args.nodeDepth ≤ 64 →
       args.nodeOffset < windowWordBound → args.numObjects < windowWordBound →
-      args.childId.toNat < 2 ^ 64 →
+      args.childId.toNat < windowWordBound →
       decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
     (∀ args, decodePageMapArgs (stubDecoded (encodePageMapArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
@@ -1763,10 +1771,49 @@ theorem decodeSetMCPriorityArgs_roundtrip (args : SetMCPriorityArgs) (h : args.n
 -- D3-B: IPC buffer configuration decode
 -- ============================================================================
 
+/-- **A buffer address read from a word without a heap number** (WS-SX
+SX6.6): the word below `windowWordBound`, and at or past it `windowWordBound`
+plus the word's page offset.  The kernel reads a thread's buffer address only
+as seL4's `lookupIPCBuffer` reads it — whether it is zero, and its offset in
+the buffer's frame (`VAddr.pageOffset`, seL4's `bufferPtr & mask(pageBits)`),
+which also decides its alignment (`setIPCBufferFrom`, seL4's
+`checkValidIPCBuffer`) — and `windowWordBound` is a nonzero multiple of a
+page, so the value keeps all three of the word's, and a full-width word builds
+no heap number (a `Nat` at or above `2 ^ 63` is a heap cell). -/
+@[noinline] def ipcBufferAddrOfWord (w : UInt64) : Nat :=
+  if wordLtNat w windowWordBound then w.toNat else windowWordBound + (w % 4096).toNat
+
+/-- A buffer word below the bound is its word. -/
+theorem ipcBufferAddrOfWord_of_lt {w : UInt64} (h : w.toNat < windowWordBound) :
+    ipcBufferAddrOfWord w = w.toNat := by
+  unfold ipcBufferAddrOfWord
+  rw [if_pos ((wordLtNat_iff w windowWordBound).mpr h)]
+
+/-- The read keeps the word's page offset. -/
+theorem ipcBufferAddrOfWord_mod_page (w : UInt64) :
+    ipcBufferAddrOfWord w % 4096 = w.toNat % 4096 := by
+  unfold ipcBufferAddrOfWord
+  split
+  · rfl
+  · simp only [UInt64.toNat_mod, windowWordBound, show (4096 : UInt64).toNat = 4096 from rfl]
+    omega
+
+/-- The read is zero exactly when the word is. -/
+theorem ipcBufferAddrOfWord_eq_zero_iff (w : UInt64) :
+    ipcBufferAddrOfWord w = 0 ↔ w.toNat = 0 := by
+  unfold ipcBufferAddrOfWord
+  split
+  · exact Iff.rfl
+  · rename_i h
+    have : ¬ w.toNat < 2 ^ 62 := fun h' => h ((wordLtNat_iff w windowWordBound).mpr h')
+    simp only [windowWordBound]
+    constructor <;> intro hz <;> omega
+
 /-- D3-B: Per-syscall argument structure for `tcbSetIPCBuffer`.
     Register mapping: x2=bufferAddr. The target thread comes from the
-    capability target. The buffer address must be 512-byte aligned
-    (matching seL4's `seL4_IPCBufferSizeBits = 9`). -/
+    capability target. A nonzero buffer address must be aligned to
+    `ipcBufferAlignment` (1024 bytes, seL4's `seL4_IPCBufferSizeBits = 10` on
+    AArch64), checked by `setIPCBufferFrom`. -/
 structure SetIPCBufferArgs where
   bufferAddr : SeLe4n.VAddr
   deriving Repr, DecidableEq
@@ -1780,7 +1827,7 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetIPCBufferArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetIPCBuffer)
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { bufferAddr := SeLe4n.VAddr.ofNat r0.val }
+  pure { bufferAddr := SeLe4n.VAddr.ofNat (ipcBufferAddrOfWord r0.word) }
 
 /-- D3-B: Encode setIPCBuffer arguments into message registers. -/
 @[inline] def encodeSetIPCBufferArgs (args : SetIPCBufferArgs) : Array RegValue :=
@@ -1792,12 +1839,16 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
 
 /-- D3-B: SetIPCBufferArgs decode round-trip. -/
 theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
-    (hWord : args.bufferAddr.toNat < 2 ^ 64) :
+    (hWord : args.bufferAddr.toNat < windowWordBound) :
     decodeSetIPCBufferArgs (stubDecoded (encodeSetIPCBufferArgs args)) = .ok args := by
-  simp only [requireMessageLength, truncationMinimum, decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure,
-        SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
-  simp [RegValue.val_ofNat, Nat.mod_eq_of_lt hWord]
+  rcases args with ⟨⟨v⟩⟩
+  have hv : v < 2 ^ 64 := Nat.lt_trans hWord (by decide)
+  have hw : (RegValue.ofNat v).word.toNat = v := by
+    simpa [RegValue.val] using RegValue.val_ofNat_of_lt hv
+  have hLt : (RegValue.ofNat v).word.toNat < windowWordBound := by rw [hw]; exact hWord
+  simp [requireMessageLength, truncationMinimum, decodeSetIPCBufferArgs, encodeSetIPCBufferArgs,
+    stubDecoded, requireMsgReg, Bind.bind, Except.bind, Pure.pure, Except.pure,
+    SeLe4n.VAddr.toNat, ipcBufferAddrOfWord_of_lt hLt, hw, SeLe4n.VAddr.ofNat]
 
 -- ============================================================================
 -- WS-SM SM5.H.4: CPU-affinity configuration decode (`tcbSetAffinity`)
@@ -1960,7 +2011,7 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
   requireMessageLength decoded (truncationMinimum .pageTableMap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  pure { vaddr := SeLe4n.VAddr.ofNat r0.val, attr := r1.word }
+  pure { vaddr := SeLe4n.VAddr.ofNat (windowWordOf r0.word), attr := r1.word }
 
 /-- WS-BP BP7.1: encode `pageTableMap` arguments into message registers. -/
 @[inline] def encodePageTableMapArgs (args : PageTableMapArgs) : Array RegValue :=
@@ -1968,12 +2019,16 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
 
 /-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
 theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs)
-    (hWord : args.vaddr.toNat < 2 ^ 64) :
+    (hWord : args.vaddr.toNat < windowWordBound) :
     decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
-  have hWord' : args.vaddr.val < 2 ^ 64 := hWord
-  simp [RegValue.val_ofNat, Nat.mod_eq_of_lt hWord', requireMessageLength, truncationMinimum, decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
-        SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
+  rcases args with ⟨⟨v⟩, a⟩
+  have hv : v < 2 ^ 64 := Nat.lt_trans hWord (by decide)
+  have hw : (RegValue.ofNat v).word.toNat = v := by
+    simpa [RegValue.val] using RegValue.val_ofNat_of_lt hv
+  have hLt : (RegValue.ofNat v).word.toNat < windowWordBound := by rw [hw]; exact hWord
+  simp [requireMessageLength, truncationMinimum, decodePageTableMapArgs, encodePageTableMapArgs,
+    stubDecoded, requireMsgReg, Bind.bind, Except.bind, Pure.pure, Except.pure,
+    SeLe4n.VAddr.toNat, windowWordOf_of_lt hLt, hw, SeLe4n.VAddr.ofNat]
 
 -- ============================================================================
 -- WS-ZA ZA5.1: the decoders over the caller's register file
@@ -2400,7 +2455,7 @@ words and the object id word, the last three the caller's overflow slots 0–2
            nodeDepth  := cnodeDepthOfWord r3
            nodeOffset := windowWordOf r4
            numObjects := windowWordOf r5
-           childId    := ObjId.ofNat r6.toNat }
+           childId    := ObjId.ofNat (windowWordOf r6) }
   | none => .error .invalidTypeTag
 
 theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout)
@@ -2462,7 +2517,7 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
   let r0 ← get 0
   let r1 ← get 1
   let r2 ← get 2
-  pure { line := r0.toNat, dstIndex := CPtr.ofWord r1, dstDepth := cnodeDepthOfWord r2 }
+  pure { line := windowWordOf r0, dstIndex := CPtr.ofWord r1, dstDepth := cnodeDepthOfWord r2 }
 
 theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2526,7 +2581,7 @@ theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 @[inline] def decodeSetIPCBufferArgsBy (get : MsgRegReader)
     : Except KernelError SetIPCBufferArgs := do
   let r0 ← get 0
-  pure { bufferAddr := SeLe4n.VAddr.ofNat r0.toNat }
+  pure { bufferAddr := SeLe4n.VAddr.ofNat (ipcBufferAddrOfWord r0) }
 
 theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2588,7 +2643,7 @@ theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regist
     : Except KernelError PageTableMapArgs := do
   let r0 ← get 0
   let r1 ← get 1
-  pure { vaddr := SeLe4n.VAddr.ofNat r0.toNat, attr := r1 }
+  pure { vaddr := SeLe4n.VAddr.ofNat (windowWordOf r0), attr := r1 }
 
 theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)

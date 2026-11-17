@@ -3901,7 +3901,8 @@ theorem untypedRetypeFromCap_truncated (tid : SeLe4n.ThreadId)
 `seL4_IRQControl_Get`.  The decode, then the destination root, the caller's
 extra capability 0 (`root?`; none is `seL4_TruncatedMessage`, checked with the
 length as seL4's `decodeIRQControlInvocation` checks it — WS-SX SX6.3, D10),
-then the line checks (`irqControlLineRefusal`: a device line of the board with
+then the line checks (`irqControlLineRefusal`: a line no greater than the
+board's last, `seL4_RangeError` otherwise, then a device line of the board with
 its node, held by no handler — seL4's `Arch_checkIRQ` and `isIRQActive`, read
 before the slots as seL4 reads them), then the two slots
 (`resolveIssuingSlotsAt`: the invoked interrupt-control capability's own slot

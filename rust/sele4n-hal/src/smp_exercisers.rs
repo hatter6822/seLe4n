@@ -3373,6 +3373,89 @@ const fn window_full_scenario() -> [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 2
     steps
 }
 
+/// The page table [`WIDE_WORD_SCENARIO`] carves into the first window slot
+/// and offers a wide address to, above every other carve's id.
+#[cfg(feature = "hw_target")]
+const WIDE_TABLE_CHILD_ID: u64 = 70;
+
+/// **Argument words at or above `2 ^ 63`, each read on the word** (WS-SX
+/// SX6.3, SX6.6): no word is made a heap number, and each call is refused as
+/// seL4 refuses it, changing nothing.
+/// - A retype whose object id word is wide: an id past the machine's physical
+///   address space (`objectIdInAddressSpace`), `AddressOutOfBounds`.
+/// - An interrupt line past the board's last: seL4's `Arch_checkIRQ`,
+///   `RangeError(0, maxIRQ)`, `maxIRQ` the board's last line
+///   ([`crate::gic::MAX_INTID`] less one).
+/// - A page table, carved into the first window slot and installed nowhere,
+///   offered an address past the user top: seL4's
+///   `decodeARMPageTableInvocation`, `InvalidArgument 0`; its capability is
+///   then deleted, which retires it, and the untyped reset.
+/// - The suspended partner's IPC buffer set at a wide address 8 bytes past a
+///   1 KiB boundary: seL4's `checkValidIPCBuffer`, `AlignmentError`.
+#[cfg(feature = "hw_target")]
+const WIDE_WORD_SCENARIO: [RoundTrip; 7] = [
+    RoundTrip {
+        returns: refused(ADDRESS_OUT_OF_BOUNDS),
+        ..retype(
+            "untyped-retype-wide-child-id",
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, WIDE_WORD, CNODE_CAP, WINDOW_FIRST_SLOT],
+            ROOT_IPC_BUFFER,
+        )
+    },
+    RoundTrip {
+        returns: refused_with(
+            RANGE_ERROR,
+            2,
+            [Some(0), Some(crate::gic::MAX_INTID as u64 - 1), None, None],
+        ),
+        ..irq_control_get("irq-control-get-wide-line", WIDE_WORD, WINDOW_FIRST_SLOT)
+    },
+    retype(
+        "untyped-retype-wide-table",
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            WIDE_TABLE_CHILD_ID,
+            CNODE_CAP,
+            WINDOW_FIRST_SLOT,
+        ],
+        ROOT_IPC_BUFFER,
+    ),
+    RoundTrip {
+        msg: [WIDE_WORD, 0, 0, 0],
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+        ..page_table_map(
+            "page-table-map-wide-vaddr",
+            cap_address(WINDOW_FIRST_SLOT),
+            VSPACE_CAP,
+            ROOT_IPC_BUFFER,
+        )
+    },
+    invocation(
+        "wide-table-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [WINDOW_FIRST_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "wide-table-untyped-reset",
+        UNTYPED_RESET,
+        UNTYPED_CAP,
+        [0; 4],
+    ),
+    RoundTrip {
+        returns: refused(ALIGNMENT_ERROR),
+        ..set_ipc_buffer(
+            "tcb-set-ipc-buffer-wide-unaligned",
+            PARTNER_TCB_CAP,
+            WIDE_WORD | 8,
+            ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        )
+    },
+];
+
 /// The capability invocations outside IPC (WS-ZA ZA5.1), each sequence issued
 /// by the root task with the partner suspended, and each leaving the state it
 /// found, so its second run is its steady state:
@@ -3409,9 +3492,11 @@ const fn window_full_scenario() -> [RoundTrip; RETYPE_FAN_OUT_LIMIT as usize + 2
 /// - a retype window one past the fan-out limit refused, three endpoints
 ///   carved in one retype and each deleted ([`WINDOW_THREE_SCENARIO`]), and
 ///   a full window of the limit's endpoints carved and each deleted
-///   ([`WINDOW_FULL_SCENARIO`]), each group ending in the untyped's reset.
+///   ([`WINDOW_FULL_SCENARIO`]), each group ending in the untyped's reset;
+/// - argument words at or above `2 ^ 63`, each refused as seL4 refuses it
+///   ([`WIDE_WORD_SCENARIO`]).
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 11] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
     &[
         root_copy("cspace-copy", NOTIFICATION_SLOT, COPY_SLOT, ROOT_IPC_BUFFER),
         root_move("cspace-move", COPY_SLOT, MOVE_SLOT, ROOT_IPC_BUFFER),
@@ -9596,6 +9681,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 11] = [
     &LIFECYCLE_SCENARIO,
     &WINDOW_THREE_SCENARIO,
     &WINDOW_FULL_SCENARIO,
+    &WIDE_WORD_SCENARIO,
 ];
 
 /// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A

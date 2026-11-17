@@ -4090,6 +4090,24 @@ run_check "INVARIANT" rg -n -U 'def untypedRetypeWindowRefusalWith[^\n]*(\n([ \t
 run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowWrites_chain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeWindowCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindow.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeWindow_admitsEveryCarve($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWindowAdmission.lean
+# WS-SX SX6.3/SX6.6: a retype's object id, an interrupt line, a page table's
+# address and an IPC buffer's address are read on the word (`wordLtNat`), so a
+# word at or above 2^63 builds no heap number; each consumer refuses the read
+# as seL4 refuses the word.
+run_check "INVARIANT" rg -n -U '@\[noinline\] def windowWordOf \(w : UInt64\) : Nat :=\n  if wordLtNat w windowWordBound then w\.toNat else windowWordBound$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n -U '@\[noinline\] def ipcBufferAddrOfWord \(w : UInt64\) : Nat :=\n  if wordLtNat w windowWordBound then w\.toNat else windowWordBound \+ \(w % 4096\)\.toNat$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^           childId    := ObjId\.ofNat \(windowWordOf r6\.word\) \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ line := windowWordOf r0\.word, dstIndex := CPtr\.ofWord r1\.word, dstDepth := cnodeDepthOfWord r2\.word \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ vaddr := SeLe4n\.VAddr\.ofNat \(windowWordOf r0\.word\), attr := r1\.word \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  pure \{ bufferAddr := SeLe4n\.VAddr\.ofNat \(ipcBufferAddrOfWord r0\.word\) \}$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_negative_check "INVARIANT" rg -n 'childId *:= ObjId\.ofNat (r6|a6)\.val|line := r0\.val|vaddr := SeLe4n\.VAddr\.ofNat r0\.val|bufferAddr := SeLe4n\.VAddr\.ofNat r0\.val' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferAddrOfWord_mod_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferAddrOfWord_eq_zero_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+# seL4's `Arch_checkIRQ`: a line past the board's last is RangeError(0, maxIRQ),
+# and `decodeARMPageTableInvocation`: an address past the user top is
+# InvalidArgument 0, each before the model's own checks.
+run_check "INVARIANT" rg -n -U 'def irqControlLineRefusal[^\n]*\n  if irqControlMaxLine st < line then some \(\.rangeError 0 \(irqControlMaxLine st\)\.toUInt64\)\n  else if !Architecture\.deviceInterruptLine st line then some \.invalidIrq$' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n -U '      else if root\.tableBase\.isNone then \.error \(\.invalidArgument 0\)\n([ \t]*(--[^\n]*)?\n)*      else if !vaddr\.isCanonical then \.error \(\.invalidArgument 0\)\n      else if !pageTableAddressable vaddr then \.error \.addressOutOfBounds$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 # WS-SX SX6.3 (D9): the destination is seL4's — the root is extra capability
 # 0, the CNode the root itself at depth 0 or the slot its index and depth name,

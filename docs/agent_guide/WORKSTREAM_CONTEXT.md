@@ -159,9 +159,12 @@ word. **Standing constraints for new code:** a decode reads a register as its
 word (`RegValue.word`, `readRegWord`) and tests a bound on the word
 (`wordLtNat`, a `UInt64` comparison) before any `.toNat`; a typed identifier
 that keeps a `Nat` is built only after that test; `.val` on a register is for
-specifications, joined to the word form by `@[csimp]` or an `_eq` proof. The
-raw-slot and model-only decodes that SX7.1, SX6.3, SX6.6 and SX9.1 re-decode
-still convert, under the narrowed `docs/REGISTERED_DEBT.md` row.
+specifications, joined to the word form by `@[csimp]` or an `_eq` proof. SX6.3 and
+SX6.6 (`v0.37.32`) read the retype's object id, IRQControl_Get's line and
+PageTable_Map's and SetIPCBuffer's addresses on the word (`windowWordOf`,
+`ipcBufferAddrOfWord`); the raw-slot and model-only decodes that SX7.1 and
+SX9.1 re-decode still convert, under the narrowed `docs/REGISTERED_DEBT.md`
+row.
 
 SX2 (`v0.37.23`) moved the guard into the capability and made the lookup seL4's
 `resolveAddressBits` (guard before depth, a stop at a non-CNode slot); a

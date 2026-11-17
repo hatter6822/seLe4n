@@ -5951,6 +5951,19 @@ cannot drift.  Object `i` of a window takes id `childId + i` and the
 destination slot `offset + i` (`retypeChildId`, `retypeChildSlot`,
 `Lifecycle/Operations/RetypeWindow.lean`).
 
+Every word the retype reads is read as a word (`windowWordOf`, a `wordLtNat`
+test before any `Nat`): the offset, the count and the object id, so a word at
+or above `2^63` builds no heap number; an object id past the machine's
+physical address space is `AddressOutOfBounds` (the QEMU heap gate's
+`untyped-retype-wide-child-id`).  IRQControl_Get's line and PageTable_Map's
+address are read the same way, and SetIPCBuffer's address through
+`ipcBufferAddrOfWord`, which keeps the word's zero-ness and page offset, the
+only parts the kernel reads.  A line past the board's last is seL4's
+`Arch_checkIRQ` `RangeError(0, maxIRQ)` (`irqControlLineRefusal`), and a table
+address past the user top seL4's `InvalidArgument 0` (`pageTableMap`)
+(`irq-control-get-wide-line`, `page-table-map-wide-vaddr`,
+`tcb-set-ipc-buffer-wide-unaligned`).
+
 `untypedRetypeWindowRefusal` reads every refusal from the state the call is
 handed, in `decodeUntypedInvocation`'s order: the window's range (an offset
 past the CNode is `RangeError(0, slots − 1)`, a count of 0 or past the limit
@@ -6438,7 +6451,8 @@ Every kernel object has a decidable well-formedness predicate:
   per-core non-interference projection labels a line by its node
   (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.  The boot hands
   the root task the IRQControl capability (`CapTarget.irqControl`), which
-  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a device line of the
+  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a line past the board's
+  last is `RangeError(0, maxIRQ)`, as seL4's `Arch_checkIRQ`; a device line of the
   board no handler holds is put at `IRQSignal` and its handler capability is
   inserted as a derivation child of the control capability);
   `.irqHandlerSetNotification` (46) empties the node's slot by the finalising
