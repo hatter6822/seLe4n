@@ -14283,15 +14283,16 @@ fn cancelled_ipc_restarts(
 /// faults with no handler and is suspended, the partner, current in its
 /// place, sets the root task's space and resumes it, and the root task
 /// suspends the partner and sets the partner's.  The partner has no IPC buffer
-/// here, so it is given the window's frame for its extra capabilities and
-/// left without one again after.
+/// here, so it is given [`PARTNER_IPC_BUFFER`] on the root task's buffer frame
+/// for its extra capabilities (every word written to the root task's buffer is
+/// mirrored there) and left without one again after.
 #[cfg(feature = "hw_target")]
 fn install_fault_handlers() -> bool {
     let partner_buffer = set_ipc_buffer(
         "handler-install-partner-buffer",
         PARTNER_TCB_CAP,
-        FRAME_VADDR,
-        FRAME_CAP,
+        PARTNER_IPC_BUFFER,
+        ROOT_IPC_BUFFER_FRAME_CAP,
         ROOT_IPC_BUFFER,
     );
     let partner_buffer_emptied = set_ipc_buffer(
@@ -14306,7 +14307,7 @@ fn install_fault_handlers() -> bool {
         ROOT_TCB_CAP,
         [FAULT_HANDLER_CAP, CNODE_CAP, VSPACE_CAP],
         0,
-        FRAME_VADDR,
+        ROOT_IPC_BUFFER,
     );
     let partner_space = set_space(
         "set-partner-fault-handler",

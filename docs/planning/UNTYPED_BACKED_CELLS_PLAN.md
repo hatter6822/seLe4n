@@ -616,8 +616,14 @@ attributed by disassembling the traced image.
   cells and its three spare space records (the IPC-buffer slot's since WS-SX
   SX6.6, which `TCB_SetIPCBuffer` writes over: a `some` cell, a capability
   record and its target, 16 + 80 + 16 B), each array built at exact capacity
-  (48 B and 48 B), so the carve's copies keep it.  The pin is 22 / 2184; it
-  was 19 / 2064 at `v0.37.31`, with two spare records.
+  (48 B and 48 B), so the carve's copies keep it.  The pin was 22 / 2184; it
+  was 19 / 2064 at `v0.37.31`, with two spare records.  Since WS-SX SX6.5 the
+  thread has a fourth space slot, the fault handler's: its derivation-link
+  array holds 32 words (216 → 280 B) and its space-cell array four entries
+  (48 → 56 B), while the TCB record loses the retired `faultHandlerSet` and
+  `faultHandlerWord` scalars (the generated C's `lean_alloc_ctor(0, 43, 199)`,
+  9 scalar bytes fewer, 560 → 552 B).  The cell count is unchanged and the pin
+  is 22 / 2248.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
   (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).  Gone since
