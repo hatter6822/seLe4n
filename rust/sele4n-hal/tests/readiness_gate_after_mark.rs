@@ -79,7 +79,6 @@ fn short_messages_reach_the_kernel() {
         SyscallId::TcbSetMCPriority,
         SyscallId::TcbSetIPCBuffer,
         SyscallId::TcbSetAffinity,
-        SyscallId::TcbSetFaultHandler,
         SyscallId::SchedContextConfigure,
     ] {
         assert_eq!(

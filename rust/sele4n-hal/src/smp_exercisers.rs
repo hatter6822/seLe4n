@@ -1621,8 +1621,6 @@ const TCB_UNBIND_NOTIFICATION: u64 = 27;
 #[cfg(feature = "hw_target")]
 const VSPACE_UNIFY_INSTRUCTION: u64 = 29;
 #[cfg(feature = "hw_target")]
-const TCB_SET_FAULT_HANDLER: u64 = 34;
-#[cfg(feature = "hw_target")]
 const CSPACE_REVOKE: u64 = 35;
 #[cfg(feature = "hw_target")]
 const UNTYPED_RETYPE: u64 = 36;
@@ -1916,6 +1914,28 @@ const fn cap_argument(
         msg_len: ONE_EXTRA_CAP,
         caps_or_badges: Some((buffer, [argument, 0, 0], None)),
         ..invocation(name, syscall, cptr, [0; 4])
+    }
+}
+
+/// **The thread-space set** (seL4-MCS's `seL4_TCB_SetSpace`) on the thread
+/// capability `tcb`: `cspace_root_data` in MR0 and `vspace_root_data` (0) in
+/// MR1, and the fault endpoint, the CSpace root and the VSpace root named as
+/// extra capabilities 0, 1 and 2 (`caps`), which the kernel reads from the
+/// caller's IPC buffer at `buffer`.  The fault endpoint is copied into the
+/// thread's fault-handler slot; [`NO_FAULT_HANDLER`] names an empty slot,
+/// which clears it.  The thread must be suspended.
+#[cfg(feature = "hw_target")]
+const fn set_space(
+    name: &'static str,
+    tcb: u64,
+    caps: [u64; 3],
+    cspace_root_data: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: THREE_EXTRA_CAPS | 2,
+        caps_or_badges: Some((buffer, caps, None)),
+        ..invocation(name, TCB_SET_SPACE, tcb, [cspace_root_data, 0, 0, 0])
     }
 }
 
@@ -2838,6 +2858,12 @@ const fn guard_mismatch_refusal(trip: RoundTrip) -> RoundTrip {
 #[cfg(feature = "hw_target")]
 const EMPTY_SOURCE_SLOT: u64 = 48;
 
+/// The address of a root slot no scenario fills, named as a thread-space
+/// set's fault endpoint ([`set_space`]) to leave the thread with no fault
+/// handler.
+#[cfg(feature = "hw_target")]
+const NO_FAULT_HANDLER: u64 = cap_address(EMPTY_SOURCE_SLOT);
+
 /// A root slot no scenario fills: the destination of the empty-source Copy.
 /// seL4's `decodeCNodeInvocation` refuses an occupied destination before it
 /// looks the source up, and the copy slot still holds the boot audit
@@ -3102,6 +3128,9 @@ const TAIL_MESSAGE_LENGTH: u64 = 120;
 /// A message-info word's one extra capability (seL4's `extraCaps`, bits 7..8).
 #[cfg(feature = "hw_target")]
 const ONE_EXTRA_CAP: u64 = 1 << 7;
+/// Two extra capabilities.
+#[cfg(feature = "hw_target")]
+const TWO_EXTRA_CAPS: u64 = 2 << 7;
 /// Three capabilities, the most a message carries (`seL4_MsgMaxExtraCaps`).
 #[cfg(feature = "hw_target")]
 const THREE_EXTRA_CAPS: u64 = 3 << 7;
@@ -3351,12 +3380,28 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0, 0, 0, 0],
         ),
-        invocation(
-            "tcb-set-fault-handler",
-            TCB_SET_FAULT_HANDLER,
+        // seL4-MCS's `TCB_SetSpace` installs the fault endpoint, extra
+        // capability 0, beside the two roots: an empty slot clears the
+        // handler, and a capability that is not an endpoint is refused
+        // `InvalidCapability` naming capability 1 (`decodeSetSpace`'s
+        // `validFaultHandler`) before anything changes.
+        set_space(
+            "set-space-fault-handler-cleared",
             PARTNER_TCB_CAP,
-            [ENDPOINT_CAP, 0, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
+        RoundTrip {
+            returns: refused_with(INVALID_CAPABILITY, 1, [Some(1), None, None, None]),
+            ..set_space(
+                "set-space-fault-handler-not-endpoint",
+                PARTNER_TCB_CAP,
+                [NOTIFICATION_CAP, CNODE_CAP, VSPACE_CAP],
+                0,
+                ROOT_IPC_BUFFER,
+            )
+        },
         cap_argument(
             "tcb-bind-notification",
             TCB_BIND_NOTIFICATION,
@@ -3370,30 +3415,33 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        set_space(
             "tcb-set-space",
-            TCB_SET_SPACE,
             PARTNER_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
         // The CSpace root's guard taken from `cspace_root_data` (seL4's
         // `updateCapData` in `decodeSetSpace`): the root's own 58-bit guard,
         // so the partner's addresses resolve as before; then a guard size
         // that does not fit beside the radix, refused.
-        invocation(
+        set_space(
             "set-space-root-data",
-            TCB_SET_SPACE,
             PARTNER_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, ROOT_CNODE_DATA, 0],
+            [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+            ROOT_CNODE_DATA,
+            ROOT_IPC_BUFFER,
         ),
         RoundTrip {
             returns: refused(ILLEGAL_STATE),
-            ..invocation(
-                "set-space-root-data-refused",
-                TCB_SET_SPACE,
-                PARTNER_TCB_CAP,
-                [CNODE_CAP, VSPACE_CAP, 59, 0],
-            )
+            ..set_space(
+    "set-space-root-data-refused",
+    PARTNER_TCB_CAP,
+    [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+    59,
+    ROOT_IPC_BUFFER,
+)
         },
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
@@ -4000,13 +4048,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         // A second capability whose address misses the root CNode's guard,
         // one per arm that resolves one (seL4's `lookupCap` of an argument,
         // `seL4_FailedLookup` with the guard-mismatch words): the configure's
-        // scheduling context (the `.overflowOne` route), and the SetSpace
-        // CSpace root an invocation resolves.  Each is refused before
+        // scheduling context (the `.overflowOne` route), refused before
         // anything changes, its fifth word in the buffer as above.  A bound
-        // notification is extra capability 0, so its failed lookup is the
-        // invocation's capability fault (seL4's `handleInvocation` after
-        // `lookupExtraCaps`), which `bind_notification_guard_mismatch`
-        // reaches in the fault lane.  A receive's reply capability is not here: its
+        // notification and SetSpace's fault endpoint and CSpace root are
+        // extra capabilities, so their failed lookups are the invocation's
+        // capability fault (seL4's `handleInvocation` after
+        // `lookupExtraCaps`), which `extra_cap_guard_mismatch` reaches in the
+        // fault lane.  A receive's reply capability is not here: its
         // failed lookup is the receive's capability fault (seL4-MCS
         // `lookupReply`), which `receive_side_faults` reaches.
         guard_mismatch_refusal(configure(
@@ -4017,21 +4065,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
                 SCHED_CONTEXT_PERIOD,
                 PARTNER_PRIORITY,
             ],
-        )),
-        guard_mismatch_refusal(invocation(
-            "set-space-root-guard-mismatch",
-            TCB_SET_SPACE,
-            PARTNER_TCB_CAP,
-            [CNODE_SLOT, VSPACE_CAP, 0, 0],
-        )),
-        // The fault handler a fault-handler set names
-        // (`setThreadFaultHandlerOpK`): resolved, like the bound
-        // notification, as an argument capability, and refused in place.
-        guard_mismatch_refusal(invocation(
-            "set-fault-handler-guard-mismatch",
-            TCB_SET_FAULT_HANDLER,
-            PARTNER_TCB_CAP,
-            [ENDPOINT_SLOT, 0, 0, 0],
         )),
         // Argument words at or above `2^63`, each read as a word: a
         // `Page_Map` rights or attributes word (WS-SX SX6.3, D6: seL4's
@@ -4153,13 +4186,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             PARTNER_TCB_CAP,
             0,
         ),
-        truncated(
-            "tcb-set-fault-handler-short",
-            TCB_SET_FAULT_HANDLER,
-            PARTNER_TCB_CAP,
-            0,
-        ),
-        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 2),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
+        // Both words, but two extra capabilities of the three
+        // (`decodeSetSpace`'s `excaprefs[2] == NULL`): `TruncatedMessage`
+        // once the two are looked up.
+        RoundTrip {
+            msg_len: TWO_EXTRA_CAPS | 2,
+            returns: refused(TRUNCATED_MESSAGE),
+            ..set_space(
+                "set-space-extra-caps-short",
+                PARTNER_TCB_CAP,
+                [ENDPOINT_CAP, CNODE_CAP, 0],
+                0,
+                FRAME_VADDR,
+            )
+        },
         RoundTrip {
             msg_len: 6,
             ..configure(
@@ -4375,13 +4416,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         overflowed(
             "overflowed-tcb-unbind-notification",
             TCB_UNBIND_NOTIFICATION,
-            NOTIFICATION_CAP,
-            5,
-            INVALID_CAPABILITY,
-        ),
-        overflowed(
-            "overflowed-tcb-set-fault-handler",
-            TCB_SET_FAULT_HANDLER,
             NOTIFICATION_CAP,
             5,
             INVALID_CAPABILITY,
@@ -6678,11 +6712,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "chain-tcb-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "chain-tcb-set-priority",
@@ -6969,11 +7004,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "third-tcb-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "third-tcb-set-priority",
@@ -7138,11 +7174,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "unheld-caps-server-set-priority",
@@ -7295,11 +7332,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "orphan-recv-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "orphan-recv-server-set-priority",
@@ -7433,11 +7471,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-recv-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "unheld-recv-caps-server-set-priority",
@@ -7598,11 +7637,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-long-recv-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "unheld-long-recv-server-set-priority",
@@ -7727,11 +7767,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "unheld-long-recv-caps-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "unheld-long-recv-caps-server-set-priority",
@@ -7908,11 +7949,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "queued-sender-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "queued-sender-set-priority",
@@ -8108,11 +8150,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "busy-reply-sender-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "busy-reply-sender-set-priority",
@@ -8223,11 +8266,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "queued-caller-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "queued-caller-set-priority",
@@ -8478,11 +8522,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "stack-server-set-space",
-            TCB_SET_SPACE,
             CHAIN_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "stack-server-set-priority",
@@ -8502,11 +8547,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             ],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "stack-top-set-space",
-            TCB_SET_SPACE,
             STACK_TOP_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "stack-top-set-priority",
@@ -8998,11 +9044,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             ],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "orphan-top-set-space",
-            TCB_SET_SPACE,
             STACK_TOP_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "orphan-top-set-priority",
@@ -9263,11 +9310,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
             ROOT_IPC_BUFFER,
         ),
-        invocation(
+        set_space(
             "set-carved-tcb-space",
-            TCB_SET_SPACE,
             FRAME_CAP,
-            [MOVE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "space-cnode-cap-delete",
@@ -9652,11 +9700,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "space-root-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, MOVE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, MOVE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "space-root-cap-delete",
@@ -9664,11 +9713,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "space-root-replaced",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     retype(
         "untyped-retype-replaced-cnode",
@@ -9676,11 +9726,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "replaced-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "replaced-cnode-cap-delete",
@@ -9688,11 +9739,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "replaced-cnode-retired",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     retype(
         "untyped-retype-zombie-cnode",
@@ -9706,11 +9758,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "zombie-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "zombie-cnode-cap-delete",
@@ -9718,11 +9771,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         CNODE_CAP,
         [MOVE_SLOT, 0, 0, 0],
     ),
-    invocation(
+    set_space(
         "zombie-cnode-replaced",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     retype(
         "untyped-retype-nested-cnode",
@@ -9736,11 +9790,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "nested-cnode-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [MOVE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, MOVE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "nested-cnode-cap-delete",
@@ -9766,11 +9821,12 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "thread-root-set-space",
-        TCB_SET_SPACE,
         FRAME_CAP,
-        [CNODE_CAP, MOVE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, MOVE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     invocation(
         "thread-root-cap-delete",
@@ -10904,11 +10960,12 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
         [TCB_TYPE, LOW_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "low-thread-set-space",
-        TCB_SET_SPACE,
         LOW_THREAD_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     set_priority(
         "low-thread-set-priority",
@@ -11168,19 +11225,14 @@ fn bound_declassified_signals(which: &str) -> bool {
         enter: irq_bound_line_entry,
     };
     // A capability fault to a handler waiting with no reply object: the low
-    // thread names the boot endpoint as its fault handler, the root task's
+    // thread's fault endpoint is the boot endpoint (installed by its SetSpace
+    // in the setup, seL4-MCS's `TCB_SetSpace` extra capability 0), the root task's
     // receive on it (no reply object, message length 0) blocks it, and the
     // low thread's fault finds the handler holding no reply to link it to, so
     // it is suspended with the fault recorded (seL4's `sendFaultIPC` failing
     // into `handleDoubleFault`), the handler left waiting.  The bound line's
     // interrupt wakes the root task through its bound notification, and the
     // low thread is resumed.
-    let set_low_handler = invocation(
-        "low-thread-set-fault-handler",
-        TCB_SET_FAULT_HANDLER,
-        LOW_THREAD_CAP,
-        [ENDPOINT_CAP, 0, 0, 0],
-    );
     let irq_wakes_handler = KernelEntry {
         name: "irq-wakes-handler-without-reply",
         enter: irq_bound_line_entry,
@@ -11192,10 +11244,6 @@ fn bound_declassified_signals(which: &str) -> bool {
         [0; 4],
     );
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
-        || !unmeasured(
-            &set_low_handler,
-            "the low thread's fault handler was not set",
-        )
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
@@ -13754,39 +13802,76 @@ const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) ->
     }
 }
 
-/// **A bound notification whose address misses the root CNode's guard**,
-/// measured: the partner's `seL4_TCB_BindNotification` naming it as extra
-/// capability 0 (in the shared buffer at `FRAME_VADDR`).  seL4 looks the extra
-/// capabilities up before the invocation decodes (`handleInvocation`'s
-/// `lookupExtraCaps`), so the failed lookup is the bind's capability fault, not
-/// a decode error: delivered to the handler with the guard-mismatch words,
-/// answered, and the bind restarted at its `SVC`.
+/// An invocation by the partner on its own thread capability whose extra
+/// capability at some index misses the root CNode's guard: the syscall, the
+/// message info and the three `caps_or_badges` words, the reading's name and
+/// its handler reply's.
 #[cfg(feature = "hw_target")]
-fn bind_notification_guard_mismatch(
+struct ExtraCapGuardMismatch {
+    name: &'static str,
+    reply: &'static str,
+    x7: u64,
+    x1: u64,
+    caps: [u64; 3],
+}
+
+/// The extra capabilities whose addresses miss the root CNode's guard,
+/// measured: a bound notification (`seL4_TCB_BindNotification`'s extra
+/// capability 0), a SetSpace fault endpoint (`seL4_TCB_SetSpace`'s extra
+/// capability 0) and a SetSpace CSpace root (its extra capability 1, the
+/// fault endpoint before it found).
+#[cfg(feature = "hw_target")]
+const EXTRA_CAP_GUARD_MISMATCHES: [ExtraCapGuardMismatch; 3] = [
+    ExtraCapGuardMismatch {
+        name: "bind-notification-guard-mismatch",
+        reply: "bind-notification-guard-mismatch-reply",
+        x7: TCB_BIND_NOTIFICATION,
+        x1: ONE_EXTRA_CAP,
+        caps: [NOTIFICATION_SLOT, 0, 0],
+    },
+    ExtraCapGuardMismatch {
+        name: "set-fault-handler-guard-mismatch",
+        reply: "set-fault-handler-guard-mismatch-reply",
+        x7: TCB_SET_SPACE,
+        x1: THREE_EXTRA_CAPS | 2,
+        caps: [ENDPOINT_SLOT, CNODE_CAP, VSPACE_CAP],
+    },
+    ExtraCapGuardMismatch {
+        name: "set-space-root-guard-mismatch",
+        reply: "set-space-root-guard-mismatch-reply",
+        x7: TCB_SET_SPACE,
+        x1: THREE_EXTRA_CAPS | 2,
+        caps: [ENDPOINT_CAP, CNODE_SLOT, VSPACE_CAP],
+    },
+];
+
+/// **An extra capability whose address misses the root CNode's guard**,
+/// measured: the partner's invocation `trip` naming it in the shared buffer at
+/// `FRAME_VADDR`.  seL4 looks the extra capabilities up before the invocation
+/// decodes (`handleInvocation`'s `lookupExtraCaps`), so the failed lookup is
+/// the invocation's capability fault, not a decode error: delivered to the
+/// handler with the guard-mismatch words, answered, and the invocation
+/// restarted at its `SVC`.
+#[cfg(feature = "hw_target")]
+fn extra_cap_guard_mismatch(
+    trip: &ExtraCapGuardMismatch,
     handler_waits: &RoundTrip,
     handler_waits_again: &RoundTrip,
     wake_handler: &RoundTrip,
     which: &str,
 ) -> bool {
-    let name = "bind-notification-guard-mismatch";
-    let bind = TrapTrip {
+    let name = trip.name;
+    let invoke = TrapTrip {
         x0: PARTNER_TCB_CAP,
-        x1: ONE_EXTRA_CAP,
-        x7: TCB_BIND_NOTIFICATION,
+        x1: trip.x1,
+        x7: trip.x7,
         ..cap_fault(name)
     };
-    let reply = partner_step(
-        "bind-notification-guard-mismatch-reply",
-        REPLY,
-        REPLY_CAP,
-        1,
-        [FAULT_REPLY_WORD, 0],
-        false,
-    );
+    let reply = partner_step(trip.reply, REPLY, REPLY_CAP, 1, [FAULT_REPLY_WORD, 0], false);
     if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
         || !unmeasured(handler_waits, "the handler did not wait on the endpoint")
-        || !write_caps_or_badges(FRAME_VADDR, [NOTIFICATION_SLOT, 0, 0])
-        || heap_allocations_trap(&bind, which) != Some(true)
+        || !write_caps_or_badges(FRAME_VADDR, trip.caps)
+        || heap_allocations_trap(&invoke, which) != Some(true)
     {
         return false;
     }
@@ -13813,11 +13898,12 @@ fn bind_notification_guard_mismatch(
         );
         return false;
     }
-    // The fault restarts the bind at its `SVC`, its registers as it trapped.
+    // The fault restarts the invocation at its `SVC`, its registers as it
+    // trapped.
     let restart = FaultRestart {
         pc: FAULT_PC,
         x0: PARTNER_TCB_CAP,
-        x1: ONE_EXTRA_CAP,
+        x1: trip.x1,
     };
     restarted_as(name, &resumed, restart)
         && unmeasured(wake_handler, "the waiting handler was not woken")
@@ -14482,11 +14568,12 @@ fn fault_entries() -> Option<bool> {
             [TCB_TYPE, RESTORER_CHILD_ID, CNODE_CAP, RESTORER_TCB_SLOT],
             FRAME_VADDR,
         ),
-        invocation(
+        set_space(
             "fault-long-restorer-set-space",
-            TCB_SET_SPACE,
             RESTORER_TCB_CAP,
-            [CNODE_CAP, VSPACE_CAP, 0, 0],
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
         ),
         set_priority(
             "fault-long-restorer-set-priority",
@@ -14629,13 +14716,16 @@ fn fault_entries() -> Option<bool> {
         {
             return Some(false);
         }
-        if !bind_notification_guard_mismatch(
-            &handler_waits,
-            &handler_waits_again,
-            &wake_handler,
-            which,
-        ) {
-            return Some(false);
+        for trip in EXTRA_CAP_GUARD_MISMATCHES.iter() {
+            if !extra_cap_guard_mismatch(
+                trip,
+                &handler_waits,
+                &handler_waits_again,
+                &wake_handler,
+                which,
+            ) {
+                return Some(false);
+            }
         }
     }
     if !receive_side_faults(&handler_waits, &handler_waits_again, &wake_handler) {
@@ -14972,11 +15062,12 @@ const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
         [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
         ROOT_IPC_BUFFER,
     ),
-    invocation(
+    set_space(
         "move-tcb-set-space",
-        TCB_SET_SPACE,
         CHAIN_TCB_CAP,
-        [CNODE_CAP, VSPACE_CAP, 0, 0],
+        [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
     ),
     cap_argument(
         "move-bind",

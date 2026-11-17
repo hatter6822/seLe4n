@@ -138,9 +138,8 @@ pub enum SyscallId {
     /// notification, and the notification onward into the resolved receiver —
     /// with the real delivery performed in between.
     DeclassifySignal = 33,
-    /// PR #887 review: install a thread's fault-handler CPtr (seL4's
-    /// `TCB_SetSpace` fault endpoint), validated kernel-side at set time.
-    TcbSetFaultHandler = 34,
+    // 34: retired (`tcbSetFaultHandler`; seL4-MCS's `TCB_SetSpace` installs
+    // the fault endpoint as its extra cap 0).
     /// WS-RR RR8.16 (`v0.35.190`): revoke every capability derived from the one
     /// in the named slot (seL4's `seL4_CNode_Revoke`).  The source slot itself
     /// survives — revocation destroys derivations, not the capability.
@@ -191,14 +190,15 @@ pub enum SyscallId {
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 47;
+    pub const COUNT: u32 = 46;
 
     /// One past the largest syscall number (must match `sele4n-types`).
     pub const ENCODING_BOUND: u32 = 48;
 
     /// Retired syscall numbers, reserved and never reassigned (must match
-    /// `sele4n-types`): `8`, the in-place lifecycle retype.
-    pub const RETIRED: [u32; 1] = [8];
+    /// `sele4n-types`): `8`, the in-place lifecycle retype, and `34`, the
+    /// standalone fault-handler install `TCB_SetSpace` now performs.
+    pub const RETIRED: [u32; 2] = [8, 34];
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// at or past `ENCODING_BOUND` and the retired numbers with `None`.
@@ -237,7 +237,6 @@ impl SyscallId {
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
-            34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
@@ -967,7 +966,7 @@ mod tests {
 
     #[test]
     fn syscall_id_from_u32_names_the_late_ids() {
-        assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
+        assert_eq!(SyscallId::from_u32(34), None);
         assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
         assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
         assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));

@@ -568,7 +568,7 @@ fn message_info_exhaustive_bounds() {
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
 /// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
 /// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain;
-/// PR #887 review: +TcbSetFaultHandler).
+/// PR #887 review: +TcbSetFaultHandler, retired at 34 by WS-SX SX6.5).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in live_syscall_numbers() {
@@ -1213,10 +1213,11 @@ fn kernel_error_variant_count() {
 /// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42; WS-ZA
 /// ZA6.29 added SchedContextYieldTo at 43; WS-ZA ZA6.32 added IrqHandlerAck at
 /// 44 and IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to
-/// 47, leaving 47 variants under an encoding bound of 48).
+/// 47; WS-SX SX6.5 retired TcbSetFaultHandler at 34, leaving 46 variants
+/// under an encoding bound of 48).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 47;
+    const SYSCALL_COUNT: u64 = 46;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     assert_eq!(SyscallId::ENCODING_BOUND, 48);
     for i in live_syscall_numbers() {
@@ -1372,13 +1373,14 @@ fn sched_context_boundary() {
 /// WS-BP BP7.1's UntypedRetype,
 /// UntypedReset, TcbSetSpace, PageTableMap and PageTableUnmap, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
-/// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
+/// PR #887's review round's TcbSetFaultHandler (retired by WS-SX SX6.5, whose
+/// SetSpace installs the fault endpoint), WS-SM SM9.C.8's
 /// DeclassifySignal, WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's
 /// Declassify, WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 47);
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1664,12 +1666,12 @@ fn tcb_set_affinity_roundtrip() {
     assert_eq!(sid.to_u64(), 25);
 }
 
-/// PR #887 review: TcbSetFaultHandler roundtrip (discriminant 34).
+/// WS-SX SX6.5: discriminant 34 (the retired TcbSetFaultHandler) decodes to
+/// nothing — seL4-MCS's TCB_SetSpace installs the fault endpoint.
 #[test]
-fn tcb_set_fault_handler_roundtrip() {
-    let sid = SyscallId::from_u64(34).expect("TcbSetFaultHandler must exist");
-    assert_eq!(sid, SyscallId::TcbSetFaultHandler);
-    assert_eq!(sid.to_u64(), 34);
+fn retired_tcb_set_fault_handler_number_decodes_to_nothing() {
+    assert!(SyscallId::RETIRED.contains(&34));
+    assert!(SyscallId::from_u64(34).is_none());
 }
 
 /// WS-RR RR8.16: CspaceRevoke roundtrip (discriminant 35).
@@ -1800,7 +1802,8 @@ fn syscall_boundary() {
     assert!(SyscallId::from_u64(47).is_some()); // Last valid
     assert!(SyscallId::from_u64(48).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
-    assert_eq!(SyscallId::COUNT, 47);
+    assert!(SyscallId::from_u64(34).is_none()); // Retired (WS-SX SX6.5)
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -1916,10 +1919,6 @@ fn tcb_ops_require_write() {
     );
     assert_eq!(
         SyscallId::TcbSetAffinity.required_right(),
-        AccessRight::Write
-    );
-    assert_eq!(
-        SyscallId::TcbSetFaultHandler.required_right(),
         AccessRight::Write
     );
     assert_eq!(
@@ -2207,7 +2206,6 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::TcbSetMCPriority
         | SyscallId::TcbSetIPCBuffer
         | SyscallId::TcbSetAffinity
-        | SyscallId::TcbSetFaultHandler
         | SyscallId::TcbBindNotification
         | SyscallId::TcbUnbindNotification
         | SyscallId::MintReplyCap
@@ -2806,7 +2804,7 @@ fn wrappers_name_their_syscalls() {
     );
     let _ = sele4n_sys::lifecycle::untyped_reset(cap);
     assert_names("untyped_reset", SyscallId::UntypedReset);
-    let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, 0);
+    let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap, cap, 0, 0, &mut buf);
     assert_names("tcb_set_space", SyscallId::TcbSetSpace);
     let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64), &mut buf);
     assert_names("page_table_map", SyscallId::PageTableMap);
@@ -2889,8 +2887,6 @@ fn wrappers_name_their_syscalls() {
     assert_names("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
     assert_names("tcb_set_affinity", SyscallId::TcbSetAffinity);
-    let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
-    assert_names("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
     let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap, &mut buf);
     assert_names("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);
