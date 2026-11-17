@@ -14583,9 +14583,13 @@ fn fault_entries() -> Option<bool> {
     // passive handler waiting with a reply object: the fault's call lends the
     // faulting thread's context to the handler (seL4-MCS `sendFaultIPC`, the
     // call's `schedContext_donate`), each write in its slot.  The handler's
-    // reply hands the context back and restarts the faulting thread, which is
-    // then suspended and the context unbound from it.  The timer is
-    // masked across the sequence, so no tick switches the threads between steps.
+    // reply hands the context back and restarts the faulting thread.  Handing
+    // the context back takes the handler off its core (seL4-MCS
+    // `schedContext_donate`'s `tcbSchedDequeue` of the thread it leaves), so
+    // the faulting thread, running on the context, restarts the root task
+    // before suspending itself, and the root task unbinds the context.  The
+    // timer is masked across the sequence, so no tick switches the threads
+    // between steps.
     let donating_setup = [
         configure(
             "fault-donating-configure",
@@ -14612,6 +14616,18 @@ fn fault_entries() -> Option<bool> {
         false,
     );
     let donating_teardown = [
+        invocation(
+            "fault-donating-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "fault-donating-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
         invocation(
             "fault-donating-suspend",
             TCB_SUSPEND,

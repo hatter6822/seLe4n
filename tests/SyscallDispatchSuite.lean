@@ -1939,7 +1939,7 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
            && st'.queuedOn bootCoreId tgtTid
      | .error _ => false)
     "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
-  -- The order: the length, the extra capability's lookup, its kind, then the
+  -- The order: the extra capability's lookup, the length, its kind, then the
   -- words' ranges (seL4-MCS's `decodeSchedControl_ConfigureFlags` checks the
   -- kind before any word).
   let decodedRaw (len budget : Nat) : SyscallDecodeResult :=
@@ -1965,6 +1965,30 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
      | .error (.failedLookup _ _) => true
      | _ => false)
     "an extra capability whose lookup fails is refused before the words' ranges are read"
+  -- seL4's `handleInvocation` runs `lookupExtraCaps` before `decodeInvocation`,
+  -- so an extra capability that does not look up is the refusal (the
+  -- capability fault the entry raises) even on a message too short for the
+  -- invocation's words.
+  expect "sd063_lookup_checked_before_the_length"
+    (match dispatchSyscallAsCurrent (decodedRaw 4 100) caller bootCoreId
+        (cfgSt (0xFFFF_FFFF_FFFF_FFF0)) with
+     | .error (.failedLookup _ _) => true
+     | _ => false)
+    "a four-word configure whose extra capability does not look up is refused by the lookup, not TruncatedMessage"
+  -- The same order on every invocation that looks extra capabilities up: a
+  -- message of no words naming one extra capability that does not look up is
+  -- refused by the lookup, whatever the invocation and its capability.
+  for sid in SyscallId.all do
+    if syscallReceivesOnCap sid || sid == .yield then continue
+    let short : SyscallDecodeResult :=
+      { capAddr := SeLe4n.CPtr.ofNat 3,
+        msgInfo := { length := 0, extraCaps := 1, label := 0 },
+        syscallId := sid, msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+    expect s!"sd063_extra_cap_lookup_before_the_length_{sid.toNat}"
+      (match dispatchSyscallAsCurrent short caller bootCoreId (cfgSt (0xFFFF_FFFF_FFFF_FFF0)) with
+       | .error (.failedLookup false _) => true
+       | _ => false)
+      s!"syscall {sid.toNat}: an extra capability that does not look up is refused before the message length is read"
   expect "sd063_extra_cap_without_rights_configures"
     (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (cfgSt 5) with
      | .ok ((), st') => configured st' scId

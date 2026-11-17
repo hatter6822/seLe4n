@@ -2502,14 +2502,17 @@ context as extra capability 0 (WS-SX SX6.4), the address `scCPtr` the arm reads
 from the caller's IPC buffer, looked up in the caller's own CSpace as
 `lookupExtraCaps` looks it up: the slot, with **no right asked of its
 capability** — seL4 checks only that the capability names a scheduling context
-(`cap_get_capType(targetCap) != cap_sched_context_cap`).  The checks: the
-message length `len` (`decodeSchedControl_ConfigureFlags`'s `TruncatedMessage`
-below `truncationMinimum .schedContextConfigure` words, seL4's
-`TIME_ARG_SIZE * 2 + 3`; every short invocation is refused before its
-arguments are resolved, `dispatchWithCapChecked_eq_truncated`); then the
-lookup (a failed lookup is the lookup's own refusal, which the entry delivers as
-a capability fault, as seL4's `lookupExtraCaps` failure is); then the
-capability's kind: an empty slot, a
+(`cap_get_capType(targetCap) != cap_sched_context_cap`).  The dispatch's gate
+(`syscallInvokeTyped`, seL4's `handleInvocation`) has looked every extra
+capability up before this arm runs, so an extra capability that does not look
+up is refused there, as the capability fault the entry raises, before the
+message length is read.  The checks here: the message length `len`
+(`decodeSchedControl_ConfigureFlags`'s `TruncatedMessage` below
+`truncationMinimum .schedContextConfigure` words, seL4's
+`TIME_ARG_SIZE * 2 + 3`; the arm refuses a short invocation before reading its
+arguments, `dispatchWithCapChecked_eq_truncated`); then the lookup, which the
+gate has made succeed on every dispatched state and which is repeated here for
+the resolver's second asker; then the capability's kind: an empty slot, a
 capability naming a kernel-reserved object (`syscallResolveCap`'s chokepoint)
 or one naming anything but a scheduling context the store holds is
 `.invalidCapability configureContextCapNumber`.  The words' range checks,
