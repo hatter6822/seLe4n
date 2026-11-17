@@ -3596,6 +3596,17 @@ instruction is precisely the livelock RR4 exists to remove.
   (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
   `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, 38 since
   it added `.untypedReset`, and 39 since it added `.tcbSetSpace`).
+  Since WS-SX SX6.5 the writer is seL4-MCS's own: `.tcbSetSpace` takes the
+  fault endpoint as extra capability 0 (the CSpace and VSpace roots are extra
+  capabilities 1 and 2, the two root data words MR0 and MR1) and copies it into
+  the thread's fourth space slot (`TCB.faultHandlerSlot`, seL4-MCS's
+  `tcbFaultHandler` CTE), whose spare record the carve builds so the copy
+  allocates nothing.  An empty slot leaves the thread without a handler; a
+  capability that names no endpoint, or lacks the rights fault delivery needs,
+  is `seL4_InvalidCapability` 1.  Fault delivery reads the slot and answers
+  `missingCapability 0` when it is empty (`faulthandler.c`).  Syscall 34,
+  `setThreadFaultHandlerOp` and its lock set, enforcement entry and Rust
+  wrapper are retired; the ABI holds 46 syscalls.
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -8268,8 +8279,7 @@ a null `excaprefs[0]`.
 | `vspaceUnmap`, `vspaceUnifyInstruction` | 2 | `decodeARMFrameInvocation`, Unify `length < 2` |
 | `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` or no extra capability |
 | `tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity` | 1 | `decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`, `length < 1` |
-| `tcbSetSpace` | 3 | MCS `decodeSetSpace`, `length < 3` |
-| `tcbSetFaultHandler` | 1 | the fault endpoint word |
+| `tcbSetSpace` | 2 | MCS `decodeSetSpace`, `length < 2` or fewer than three extra capabilities |
 | `schedContextConfigure` | 5 | `decodeSchedControl_ConfigureFlags`, `length < 5` |
 | `irqControlGet` | 3 | `Arch_decodeIRQControlInvocation`, IssueIRQHandler `length < 3` |
 | `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 0 | none: seL4 checks only for the extra capability |

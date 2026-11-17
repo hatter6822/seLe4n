@@ -32,7 +32,7 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 36-variant enum (0–35), including cspaceRevoke (`seL4_CNode_Revoke`, WS-RR RR8.16 — the arm the revocation family had never had; it dispatches `cspaceRevokeCdtFinalising`, seL4's `cteRevoke` loop, takes the delete's one-register ABI and leaves the source slot standing), tcbSetFaultHandler (the fault-handler configuration syscall, PR #887 review round), notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4), tcbBindNotification/Unbind (SM6.B), mintReplyCap (SM6.C), vspaceUnifyInstruction (SM7.D), and the SM9 declassification family — declassify (30), auditRead (31), auditDrain (32), declassifySignal (33)
+- **`SyscallId`**: 46-variant enum over the numbers 0–47 (8 and 34 are retired and decode to nothing; 34 was tcbSetFaultHandler until WS-SX SX6.5 moved the fault endpoint into `tcb_set_space`), including cspaceRevoke (`seL4_CNode_Revoke`, WS-RR RR8.16 — the arm the revocation family had never had; it dispatches `cspaceRevokeCdtFinalising`, seL4's `cteRevoke` loop, takes the delete's one-register ABI and leaves the source slot standing), notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4), tcbBindNotification/Unbind (SM6.B), mintReplyCap (SM6.C), vspaceUnifyInstruction (SM7.D), and the SM9 declassification family — declassify (30), auditRead (31), auditDrain (32), declassifySignal (33)
 
 ### sele4n-abi
 
@@ -83,7 +83,7 @@ Safe high-level wrappers across the syscall surface:
 | VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction`, `page_table_map` / `page_table_unmap` (install and remove an intermediate page table; a carved address space maps a frame only where its walk is complete, BP7.1 v0.36.12) |
 | Service | `service_register`, `service_revoke(endpoint_cap)` (removes the registration the endpoint records, no message registers, since v0.36.146), `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
-| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_set_fault_handler`, `tcb_set_space` (put a suspended thread in a CSpace and a VSpace root the caller holds, BP7.1 v0.36.11), `tcb_bind_notification`, `tcb_unbind_notification` |
+| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_set_space` (seL4-MCS `TCB_SetSpace`: put a suspended thread in a CSpace and a VSpace root the caller holds and install its fault endpoint, the three as extra capabilities, BP7.1 v0.36.11, WS-SX SX6.5), `tcb_bind_notification`, `tcb_unbind_notification` |
 | Information flow | `declassify`, `declassify_signal` (data-carrying, SM9.C) |
 | Audit trail | `audit_read`, `audit_fold_chunks`, `audit_drain`, `audit_drain_all`, `audit_read_raw` (SM9.A/B reader + drain behind the monitor gate) |
 
