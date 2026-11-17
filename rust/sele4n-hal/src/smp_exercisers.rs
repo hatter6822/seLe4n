@@ -3436,12 +3436,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         RoundTrip {
             returns: refused(ILLEGAL_STATE),
             ..set_space(
-    "set-space-root-data-refused",
-    PARTNER_TCB_CAP,
-    [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
-    59,
-    ROOT_IPC_BUFFER,
-)
+                "set-space-root-data-refused",
+                PARTNER_TCB_CAP,
+                [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
+                59,
+                ROOT_IPC_BUFFER,
+            )
         },
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
@@ -13729,6 +13729,31 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     Some(true)
 }
 
+/// Enter `trip` unmeasured, as [`heap_allocations_trap`] enters it, with no
+/// reading: a setup step whose effect a later reading depends on.
+#[cfg(feature = "hw_target")]
+fn unmeasured_trap(trip: &TrapTrip) {
+    let mut frame = crate::trap::TrapFrame {
+        gprs: [0; 31],
+        sp_el0: 0,
+        elr_el1: trip.elr,
+        spsr_el1: ROUND_TRIP_SPSR,
+        esr_el1: trip.esr,
+        far_el1: trip.far,
+        tpidr_el0: 0,
+        reserved: 0,
+    };
+    frame.gprs[0] = trip.x0;
+    frame.gprs[1] = trip.x1;
+    frame.gprs[2] = trip.x2;
+    frame.gprs[7] = trip.x7;
+    let saved_daif = crate::interrupts::disable_interrupts();
+    crate::trap::handle_synchronous_exception(&mut frame);
+    crate::interrupts::restore_interrupts(saved_daif);
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+}
+
 /// `x1` and `x3`–`x5` of the context the last [`heap_allocations_trap`]'s
 /// entry restored: a delivered fault's message info and its second to fourth
 /// message words (a capability fault's `Addr`, `InRecvPhase` and
@@ -13867,7 +13892,14 @@ fn extra_cap_guard_mismatch(
         x7: trip.x7,
         ..cap_fault(name)
     };
-    let reply = partner_step(trip.reply, REPLY, REPLY_CAP, 1, [FAULT_REPLY_WORD, 0], false);
+    let reply = partner_step(
+        trip.reply,
+        REPLY,
+        REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
     if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
         || !unmeasured(handler_waits, "the handler did not wait on the endpoint")
         || !write_caps_or_badges(FRAME_VADDR, trip.caps)
@@ -14246,6 +14278,60 @@ fn cancelled_ipc_restarts(
     true
 }
 
+/// Both threads' fault endpoint set to [`FAULT_HANDLER_CAP`], unmeasured, by
+/// seL4-MCS's `TCB_SetSpace`, which needs its target suspended: the root task
+/// faults with no handler and is suspended, the partner, current in its
+/// place, sets the root task's space and resumes it, and the root task
+/// suspends the partner and sets the partner's.  The partner has no IPC buffer
+/// here, so it is given the window's frame for its extra capabilities and
+/// left without one again after.
+#[cfg(feature = "hw_target")]
+fn install_fault_handlers() -> bool {
+    let partner_buffer = set_ipc_buffer(
+        "handler-install-partner-buffer",
+        PARTNER_TCB_CAP,
+        FRAME_VADDR,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let partner_buffer_emptied = set_ipc_buffer(
+        "handler-install-partner-buffer-emptied",
+        PARTNER_TCB_CAP,
+        0,
+        ROOT_IPC_BUFFER_FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    );
+    let root_space = set_space(
+        "set-root-fault-handler",
+        ROOT_TCB_CAP,
+        [FAULT_HANDLER_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        FRAME_VADDR,
+    );
+    let partner_space = set_space(
+        "set-partner-fault-handler",
+        PARTNER_TCB_CAP,
+        [FAULT_HANDLER_CAP, CNODE_CAP, VSPACE_CAP],
+        0,
+        ROOT_IPC_BUFFER,
+    );
+    let resume_root = invocation("resume-root-handled", TCB_RESUME, ROOT_TCB_CAP, [0; 4]);
+    if !unmeasured(&partner_buffer, "the partner's IPC buffer was not set")
+        || !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+    {
+        return false;
+    }
+    unmeasured_trap(&fault_trip(0, "suspend-root-unhandled"));
+    unmeasured(&root_space, "the root task's fault handler was not set")
+        && unmeasured(&resume_root, "the root task was not resumed")
+        && suspend_partner()
+        && unmeasured(&partner_space, "the partner's fault handler was not set")
+        && unmeasured(
+            &partner_buffer_emptied,
+            "the partner's IPC buffer was not emptied",
+        )
+}
+
 /// **The fault entries** (seL4's `handleFault` from each of its producers:
 /// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
 /// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
@@ -14267,14 +14353,6 @@ fn cancelled_ipc_restarts(
 ///   wakes the root task, which takes the core and releases the partner's.
 #[cfg(feature = "hw_target")]
 fn fault_entries() -> Option<bool> {
-    let set_handler = |name, tcb| {
-        invocation(
-            name,
-            TCB_SET_FAULT_HANDLER,
-            tcb,
-            [FAULT_HANDLER_CAP, 0, 0, 0],
-        )
-    };
     let copy_handler = root_copy(
         "copy-fault-handler",
         ENDPOINT_SLOT,
@@ -14287,18 +14365,18 @@ fn fault_entries() -> Option<bool> {
         CNODE_CAP,
         [FAULT_HANDLER_SLOT, 0, 0, 0],
     );
+    // Neither thread has a fault handler yet: the boot leaves the root task's
+    // fault-handler slot empty (seL4's root task has no `fault_ep`), and the
+    // partner's is cleared here.
     if !unmeasured(
-        &copy_handler,
-        "the fault handler's capability was not copied",
-    ) || !unmeasured(
-        &set_handler("set-root-fault-handler", ROOT_TCB_CAP),
-        "the root task's fault handler was not set",
-    ) || !unmeasured(
-        &set_handler("set-partner-fault-handler", PARTNER_TCB_CAP),
-        "the partner's fault handler was not set",
-    ) || !unmeasured(
-        &delete_handler,
-        "the fault handler's capability was not deleted",
+        &set_space(
+            "clear-partner-fault-handler",
+            PARTNER_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
+        ),
+        "the partner's fault handler was not cleared",
     ) {
         return Some(false);
     }
@@ -14318,7 +14396,8 @@ fn fault_entries() -> Option<bool> {
     if !unmeasured(
         &copy_handler,
         "the fault handler's capability was not copied",
-    ) {
+    ) || !install_fault_handlers()
+    {
         return Some(false);
     }
     let receive_fault = RoundTrip {
