@@ -7758,9 +7758,10 @@ theorem dispatchArm_receive_matches_returnShape
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.capInfo
+        = (Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
-              ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length := by
+              ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length).deliveredOver
+            tcb.registerContext := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion stDon
@@ -7800,8 +7801,9 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.capInfo
-            (Architecture.messageOverflowWrites stB tcb msg).length := by
+        = (Architecture.returnFrameOfMessage msg summary.capInfo
+            (Architecture.messageOverflowWrites stB tcb msg).length).deliveredOver
+            tcb.registerContext := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hXc, hResolve,
       hReplyFlow, hBody]
@@ -7852,8 +7854,9 @@ theorem dispatchArm_call_frame_delivered_by_reply
     Architecture.syscallReturnShape .call = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost callerTid
-        = Architecture.returnFrameOfMessage msg summary.capInfo
-            (Architecture.messageOverflowWrites stX tcb msg).length := by
+        = (Architecture.returnFrameOfMessage msg summary.capInfo
+            (Architecture.messageOverflowWrites stX tcb msg).length).deliveredOver
+            tcb.registerContext := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stX callerTid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
       replyAnsweredCaller?, hReply, hCaller, hFlow, replyTransferOnCoreChecked, hNoFault, hDispatch, hX]

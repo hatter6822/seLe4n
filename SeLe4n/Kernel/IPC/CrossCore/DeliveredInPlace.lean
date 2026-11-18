@@ -50,14 +50,14 @@ theorem messageOverflowWrites_of_size_le (st : SystemState) (tcb : TCB) (msg : I
   rw [List.drop_eq_nil_of_le (by simpa using h)]
   rfl
 
-/-- The delivered frame's six words written into a thread's saved registers,
-the held message dropped: `TCB.withDeliveredFrame` with the frame's words as
-arguments, so the write captures six machine words and no frame record. -/
+/-- The delivered frame's six words written into a thread's saved registers as
+seL4's transfer writes them (`RegisterFile.stageDeliveredWords`: the message
+registers only below the delivered length), the held message dropped:
+`TCB.withDeliveredFrame` with the frame's words as arguments, so the write
+captures six machine words and no frame record. -/
 @[inline] def withFrameWords (w0 w1 w2 w3 w4 w5 : UInt64) (t : TCB) : TCB :=
-  let rf := t.registerContext
-  let rf' : SeLe4n.RegisterFile :=
-    { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
-  { t with registerContext := rf', pendingMessage := none }
+  { t with registerContext := t.registerContext.stageDeliveredWords w0 w1 w2 w3 w4 w5,
+           pendingMessage := none }
 
 /-- **The delivered frame, written into a ready thread's saved registers**; a
 thread that is not ready is handed to `otherwise`, and a key holding no thread

@@ -501,11 +501,52 @@ them keeps downstream `simp` sets one identifier long. -/
     (tcb.withReturnFrame f).registerContext
       = tcb.registerContext.stageReturnFrame f := rfl
 
+/-- **The message registers a delivery writes** (seL4's `copyMRs`): the
+message-info word's length field (bits 0-6) counts the message words transferred,
+and the first four of them travel in `x2`-`x5`.  A delivery writes the badge
+(`x0`), the message info (`x1`) and `x(2+i)` for each `i` below that length; a
+message register past the length keeps the value it holds, as seL4 leaves it.
+The count is read off the word the receiver itself decodes, so the registers
+written and the length reported have one owner. -/
+@[inline] def deliveredWordCount (w1 : UInt64) : UInt64 := w1 &&& 0x7F
+
+/-- A delivered frame's words staged into a register file: `x0` and `x1`
+always, `x2`-`x5` only below the delivered length (`deliveredWordCount`).
+Closure-free and shared by the specification's `TCB.withDeliveredFrame` and the
+compiled writers.  A call, so the file arrives as an owned argument and an
+exclusive one is written in place: inlined, its tests put the enclosing TCB's
+update in a join point, and the compiled writer rebuilt the whole TCB. -/
+@[noinline] def _root_.SeLe4n.RegisterFile.stageDeliveredWords (rf : SeLe4n.RegisterFile)
+    (w0 w1 w2 w3 w4 w5 : UInt64) : SeLe4n.RegisterFile :=
+  let n := deliveredWordCount w1
+  { rf with x0 := w0, x1 := w1,
+            x2 := if 0 < n then w2 else rf.x2,
+            x3 := if 1 < n then w3 else rf.x3,
+            x4 := if 2 < n then w4 else rf.x4,
+            x5 := if 3 < n then w5 else rf.x5 }
+
+/-- A delivery of at least four words stages the whole frame. -/
+theorem _root_.SeLe4n.RegisterFile.stageDeliveredWords_of_four (rf : SeLe4n.RegisterFile)
+    (f : SyscallReturnFrame) (h : 3 < deliveredWordCount f.x1) :
+    rf.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 = rf.stageReturnFrame f := by
+  have h0 : (0 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  have h1 : (1 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  have h2 : (2 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  simp only [SeLe4n.RegisterFile.stageDeliveredWords, SeLe4n.RegisterFile.stageReturnFrame,
+    if_pos h0, if_pos h1, if_pos h2, if_pos h]
+
 /-- **WS-ZA ZA4.7**: stage a delivered message's frame and drop the message —
 seL4 keeps a delivered message only in the receiver's registers and IPC buffer,
-never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
+never in a ready TCB.  The frame is staged as seL4's transfer writes it
+(`RegisterFile.stageDeliveredWords`: `x2`-`x5` only below the delivered
+length), then `pendingMessage := none`. -/
 @[inline] def _root_.SeLe4n.Model.TCB.withDeliveredFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
-  { tcb with registerContext := tcb.registerContext.stageReturnFrame f, pendingMessage := none }
+  { tcb with
+      registerContext := tcb.registerContext.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5,
+      pendingMessage := none }
 
 @[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_ipcState
     (tcb : TCB) (f : SyscallReturnFrame) :
@@ -518,7 +559,7 @@ never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
 @[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_registerContext
     (tcb : TCB) (f : SyscallReturnFrame) :
     (tcb.withDeliveredFrame f).registerContext
-      = tcb.registerContext.stageReturnFrame f := rfl
+      = tcb.registerContext.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := rfl
 
 -- ============================================================================
 -- §4c  Staging into and reading out of a SystemState (RA.B.1, RA.B.2)
@@ -695,24 +736,38 @@ theorem writeReturnFrameToTcb_readReturnFrame_getTcb?
       congr 1
   · exact SystemState.updateTcb_getTcb?_ne _ _ _ hObjInv t hk
 
-/-- **WS-ZA ZA4.7**: the delivery write reads back the same frame. -/
+/-- **The frame a delivery leaves in a register file `rf`**: the badge and the
+message info, and each message register `x2`-`x5` the frame's word below the
+delivered length (`deliveredWordCount`) and `rf`'s own past it — what the
+boundary reads back after seL4's transfer. -/
+@[inline] def SyscallReturnFrame.deliveredOver (f : SyscallReturnFrame)
+    (rf : SeLe4n.RegisterFile) : SyscallReturnFrame :=
+  let n := deliveredWordCount f.x1
+  { x0 := f.x0, x1 := f.x1,
+    x2 := if 0 < n then f.x2 else (rf.gpr ⟨2⟩).word,
+    x3 := if 1 < n then f.x3 else (rf.gpr ⟨3⟩).word,
+    x4 := if 2 < n then f.x4 else (rf.gpr ⟨4⟩).word,
+    x5 := if 3 < n then f.x5 else (rf.gpr ⟨5⟩).word }
+
+/-- **WS-ZA ZA4.7**: the delivery write reads back the frame it delivered over
+the thread's registers (`SyscallReturnFrame.deliveredOver`). -/
 theorem readReturnFrame_writeDeliveredFrame
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hObjInv : st.objects.invExt) :
-    readReturnFrame (writeDeliveredFrameToTcb st tid frame) tid = frame := by
+    readReturnFrame (writeDeliveredFrameToTcb st tid frame) tid
+      = frame.deliveredOver tcb.registerContext := by
   have hRead : (writeDeliveredFrameToTcb st tid frame).getTcb? tid
       = some (tcb.withDeliveredFrame frame) := by
     unfold writeDeliveredFrameToTcb
     rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
     rfl
-  unfold readReturnFrame
+  unfold readReturnFrame SyscallReturnFrame.deliveredOver
   rw [hRead]
-  simp only
-  have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
-  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
-  simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext, h0, h1, h2, h3, h4, h5]
+  simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext,
+    SeLe4n.RegisterFile.stageDeliveredWords]
+  split <;> split <;> split <;> split <;> rfl
 
 /-- **WS-ZA ZA4.7**: and leaves the thread holding no message. -/
 theorem writeDeliveredFrameToTcb_getTcb?_self
@@ -1207,10 +1262,13 @@ theorem stageWokenSendCompletion_machine_eq (st : SystemState)
 leaves the woken waiter's frame staged: whenever a wake delivered `msg`
 into a counterparty (post-state `.ready` with `pendingMessage = some msg`
 — the `storeTcbIpcStateAndMessage`/`storeTcbReceiveComplete` shape every
-wake in the tree produces), the staging step writes exactly
-`returnFrameOfMessage msg` into its saved register context — its length
-counting the overflow words written into the waiter's IPC buffer (WS-BP BP7.8)
-— and the boundary read recovers it bit for bit.  Delivery is the context restore
+wake in the tree produces), the staging step writes
+`returnFrameOfMessage msg` into its saved register context as seL4's transfer
+writes it — its length counting the overflow words written into the waiter's
+IPC buffer (WS-BP BP7.8), and only the message registers below that length
+written — and the boundary read recovers the badge, the message info and the
+delivered words bit for bit, every other message register as it was
+(`SyscallReturnFrame.deliveredOver`).  Delivery is the context restore
 (WS-BP BP7.6)'s; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
@@ -1220,9 +1278,11 @@ theorem blockedReturn_staged_in_waiter_frame
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (stageWokenDelivery st (some w) capInfo) w
-      = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length := by
+      = (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length).deliveredOver
+          tcb.registerContext := by
   show readReturnFrame (stageDeliveredMessage st w capInfo) w
-    = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length
+    = (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length).deliveredOver
+        tcb.registerContext
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]

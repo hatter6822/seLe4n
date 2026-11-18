@@ -646,6 +646,19 @@ private def replyDeliveryScenario :
     | none => false
   pure (ready, stagedFrame st1 callerTid)
 
+/-- 9d': the reply delivery writes only the message registers the reply's
+length covers (seL4's `copyMRs`).  The caller trapped holding `0x44` in `x4` and
+`0x55` in `x5`; the peer replies `[21, 22]` (length 2); the caller's staged
+frame is the reply's badge, message info and two words, and `x4`/`x5` are still
+the caller's own.  Returns the caller's staged frame. -/
+private def replyKeepsUnwrittenScenario :
+    Except KernelError Kernel.Architecture.SyscallReturnFrame := do
+  let st0 := replyPendingState.updateTcb callerTid fun t =>
+    { t with registerContext := { t.registerContext with x4 := 0x44, x5 := 0x55 } }
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.reply 2 replyCapPtr.toUInt64 21 22 0 st0
+  pure (stagedFrame st1 callerTid)
+
 /-- 9i: a reply transfers capabilities as seL4's `doReplyTransfer`.  The peer
 replies `[21, 22]` with ONE extra capability (`payloadCapPtr`, named in its IPC
 buffer's `caps_or_badges[0]`) through the reply cap in `cn`; the caller's
@@ -1102,6 +1115,14 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x0 == replyBadgeVal.toUInt64)
       assertBool "9d: the staged payload is the reply body (x2 = 21, x3 = 22)"
         (frame.x2 == 21 && frame.x3 == 22)
+  -- 9d' — a short reply leaves the message registers past its length alone
+  match replyKeepsUnwrittenScenario with
+  | .error e => assertBool s!"9d' dispatches (got .error {reprStr e})" false
+  | .ok frame => do
+      assertBool "9d': the reply's two words land in x2 and x3"
+        (frame.x0 == replyBadgeVal.toUInt64 && frame.x2 == 21 && frame.x3 == 22)
+      assertBool s!"9d': x4 and x5 past the reply's length keep the caller's words (got {reprStr frame})"
+        (frame.x4 == 0x44 && frame.x5 == 0x55)
   -- 9e — replyRecv's own staging composition
   match replyRecvDeliveryScenario with
   | .error e => assertBool s!"9e dispatches (got .error {reprStr e})" false
