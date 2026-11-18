@@ -555,6 +555,34 @@ theorem senderTaintEdges_content_only (st : SystemState) (tid : SeLe4n.ThreadId)
       | some receiver => [{ sink := receiver.toObjId, source := tid.toObjId }]
       | none => [] := rfl
 
+/-- The notification a receive's bound-signal edge names, as a code: `k + 1`
+for the notification `⟨k⟩` bound to the receiver while it holds a word, `0`
+when there is none (`boundSignalTaintEdges`).  One reading for the plan and
+for the compiled taint step, which captures that notification's words. -/
+@[inline] def boundSignalTaintCode (st : SystemState) (tid : SeLe4n.ThreadId) : Nat :=
+  match st.getTcb? tid with
+  | some t =>
+      match t.boundNotificationCode with
+      | 0 => 0
+      | k + 1 =>
+          match st.getNotification? ⟨k⟩ with
+          | some ntfn => if ntfn.hasPendingBadge then k + 1 else 0
+          | none => 0
+  | none => 0
+
+/-- seL4-MCS `receiveIPC`: **the edge of a receive's bound notification** -- a
+receive that finds the notification bound to its receiver active completes it
+(`completeSignalArm`), moving the notification's word into the receiver.  The
+edge is declared whenever that notification holds a word, whether or not its
+flow to the receiver admits the completion: the plan is read without the
+labelling, and a declared edge the arm does not take only adds provenance, the
+direction this module may err in.  The notification is not cleared for the same
+reason (a clear the arm did not earn would drop provenance). -/
+def boundSignalTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) : List TaintFlowEdge :=
+  match boundSignalTaintCode st tid with
+  | 0 => []
+  | k + 1 => [{ sink := tid.toObjId, source := ⟨k⟩ }]
+
 /-- WS-SM SM9.D.8: **a receiver's edges** — `.receive` and `.replyRecv`.
 
 Content reaches the receiver directly from the blocked sender at `sendQ.head` —
@@ -589,6 +617,7 @@ has to delete `senderTaintEdges_content_only`, and it would restore the sinks on
 **both** orderings at once, which is now possible because both orderings transfer. -/
 def receiverTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
     List TaintFlowEdge :=
+  boundSignalTaintEdges st tid ++
   match (st.getEndpoint? epId).bind (·.sendQ.head) with
   | some sender => [{ sink := tid.toObjId, source := sender.toObjId }]
   | none => []

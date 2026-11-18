@@ -2563,6 +2563,75 @@ private def runAffinityRehomeResidencyChecks : IO Unit := do
           stRun.machine.residentOnCore c3 == some faulter &&
           savedPcOf stRun faulter == some 0x9104)
 
+/-- A notification bound to the faulter, holding the word `0x55`. -/
+private def ntfnBound : SeLe4n.ObjId := ⟨1113⟩
+
+/-- Core 0 running the faulter, whose bound notification `ntfnBound` is active
+(holds a word) while no sender waits on the endpoint `epHandler`. -/
+private def stBoundSignal : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject cnRoot (.cnode rootCnode)
+      |>.withObject epHandler (.endpoint {})
+      |>.withObject vsRoot (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withObject ntfnBound (.notification
+          { state := .active, hasPendingBadge := true, pendingWord := SeLe4n.Badge.ofNat 0x55,
+            boundTCBCode := SeLe4n.ThreadId.optCode (some faulter) })
+      |>.withObject faulter.toObjId (.tcb { mkTcb 1121 40 none none with
+          boundNotificationCode := SeLe4n.ObjId.optCode (some ntfnBound) })
+      |>.build)
+  let s := enqueueAllOnCore base c0 [(faulter, ⟨40⟩)]
+  { s with scheduler := s.scheduler.setCurrentOnCore c0 (some faulter) }
+
+/-- A `Wait` from the faulter on slot 1 (the endpoint, read right): seL4's
+`handleRecv` with `canReply` false, so the receive names no reply object (a
+`Recv` would look one up in `x6` and fault on an empty slot). -/
+private def boundSignalWait (ctx : LabelingContext) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi ctx c0 Syscall.wait.number.toUInt32 1 0 0 0 0 0 0
+    svcElr svcSpsr svcSpEl0 svcX30 stBoundSignal
+
+/-- The labelling under which the bound notification is above the faulter, so
+its word may not flow to it. -/
+private def boundSignalDeniedCtx : LabelingContext :=
+  { SeLe4n.Kernel.harnessLabelingContext with
+    objectLabelOf := fun o =>
+      if o = ntfnBound then SecurityLabel.kernelTrusted
+      else SeLe4n.Kernel.harnessLabelingContext.objectLabelOf o }
+
+/-- seL4-MCS `receiveIPC`: a receive whose thread's bound notification is
+active completes the notification (`completeSignal`) instead of receiving on the
+endpoint: the word is returned in the badge register, the notification goes
+idle, and the endpoint is not touched.  A notification whose word may not flow
+to the receiver is not completed: the receive runs on the endpoint as if the
+notification were idle, so the receiver learns nothing of it. -/
+private def runBoundSignalReceiveChecks : IO Unit := do
+  IO.println "--- a receive completes its active bound notification ---"
+  match boundSignalWait SeLe4n.Kernel.harnessLabelingContext with
+  | .ok (.returns f, st) =>
+      assertBool "a Wait on the endpoint returns the bound notification's word in x0"
+        (f.x0 == 0x55)
+      assertBool "the notification goes idle, its word consumed"
+        ((st.getNotification? ntfnBound).map (fun n => (n.pendingBadge.isNone, n.state == .idle))
+          == some (true, true))
+      assertBool "the endpoint is not touched: no thread queued on it"
+        ((st.getEndpoint? epHandler).map (fun e => (e.receiveQ.head, e.sendQ.head))
+          == some (none, none))
+      assertBool "the receiver stays ready"
+        (ipcStateOf st faulter == some .ready)
+  | .ok (o, st) =>
+      assertBool s!"the Wait must return at once (got {repr o}, fault {repr (pendingFaultOf st faulter)})" false
+  | .error e => assertBool s!"the Wait must succeed (got {repr e})" false
+  match boundSignalWait boundSignalDeniedCtx with
+  | .ok (.blocks, st) =>
+      assertBool "a denied notification flow is not completed: the word stays pending"
+        ((st.getNotification? ntfnBound).map (·.pendingBadge.isSome) == some true)
+      assertBool "…and the receive blocks on the endpoint"
+        ((st.getEndpoint? epHandler).map (·.receiveQ.head) == some (some faulter))
+  | .ok (o, st) =>
+      assertBool s!"the denied Wait must block on the endpoint (got {repr o}, fault {repr (pendingFaultOf st faulter)})" false
+  | .error e => assertBool s!"the denied Wait must succeed (got {repr e})" false
+
 /-- An abandon deschedules the faulted thread where it is placed.  `orphan` is
 queued on core 2; its affinity is then pointed at core 3 without moving it, so
 its home core (`determineTargetCore`) and its placement disagree.  The abandon
@@ -2660,6 +2729,7 @@ def runFaultHandlingChecks : IO Unit := do
   runAffinityRehomeResidencyChecks
   runConfigureAndResumeChecks
   runSyscallCapFaultChecks
+  runBoundSignalReceiveChecks
   runResumeChecks
   runRestartChecks
   runAbandonPlacementChecks

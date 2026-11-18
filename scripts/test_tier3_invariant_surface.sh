@@ -5977,6 +5977,22 @@ run_check "INVARIANT" rg -n -U '^        if waitFindsNothing ctx \(Syscall\.word
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem nbRecvFailedTransfer_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'an NBSend to an endpoint no receiver waits on drops the message' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n 'an NBWait on an endpoint no sender waits on returns at once, x0 = 0' tests/FaultHandlingSuite.lean
+# seL4-MCS `receiveIPC`: a receive whose bound notification is active
+# completes it (`completeSignal`) before the endpoint is consulted, gated on the
+# notification -> receiver flow; the compiled arm takes the wait's consumption,
+# and a denied flow decides nothing the receiver can observe.
+run_check "INVARIANT" rg -n -U '^      securityFlowsTo \(ctx\.objectLabelOf ⟨t\.boundNotificationCode - 1⟩\) \(ctx\.threadLabelOf tid\)\n  \| none => false$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^        if receiveCompletesSignal ctx st tid then\n          completeSignalArm ctx tid \(receiverBoundNotification st tid\) executingCore st\n        else\n([ \t]*(--[^\n]*)?\n)*        if receiveFindsNothing ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^    if receiveCompletesSignal ctx st tid then\n      notificationWaitGatedR ctx tid \(receiverBoundNotification st tid\) executingCore st\n    else\n([ \t]*(--[^\n]*)?\n)*    if receiveFindsNothing ' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitGatedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDispatch.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_consumes($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem receiveCompletesSignal_false_of_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem receiveCompletesSignal_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  boundSignalTaintEdges st tid \+\+$' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem receiveTaintStep_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_boundNotification($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n 'a Wait on the endpoint returns the bound notification.s word in x0' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'a denied notification flow is not completed: the word stays pending' tests/FaultHandlingSuite.lean
 # WS-ZA ZA6.31: the fault paths allocate nothing.  (1) A syscall's failed
 # operand resolution is delivered from the words the entry's own lookup
 # produced: the operand dispatch hands an empty slot and the resolution's

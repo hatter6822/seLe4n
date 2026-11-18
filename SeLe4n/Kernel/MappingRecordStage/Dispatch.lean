@@ -589,6 +589,44 @@ theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.T
   · exact MappingStage.refl st
   · exact cancelReplyHolder_mappingStage _ _ _
 
+/-- **A receive that completes its bound notification keeps the mapping
+records**: the checked wait's consumption and the badge register. -/
+theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {nid : SeLe4n.ObjId} {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : completeSignalArm ctx tid nid c st = .ok ((), st')) : MappingStage st st' := by
+  unfold completeSignalArm at h
+  split at h
+  · rename_i hW
+    cases h
+    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (writeReturnFrameToTcb_mappingStage _ _ _)
+  · rename_i hW
+    cases h
+    exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
+  · cases h
+
+/-- **The receive past its gate and busy-reply cancel keeps the mapping
+records**: the bound notification completed, `NBRecv`'s failure, or the
+per-core receive with its hand-off and delivery. -/
+theorem receiveResolvedArm_mappingStage {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {gate : SyscallGate} {tid : SeLe4n.ThreadId} {epId : SeLe4n.ObjId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : receiveResolvedArm ctx decoded gate tid epId c st = .ok ((), st')) :
+    MappingStage st st' := by
+  unfold receiveResolvedArm at h
+  split at h
+  · cases h
+  split at h
+  · exact completeSignalArm_mappingStage h
+  repeat' split at h
+  all_goals first | (cases h; done) | skip
+  · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
+  rename_i summ _ hRecv _ stDon hHand
+  cases h
+  exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
+    ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
+      (stageDeliveredMessage_mappingStage _ _ _))
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain
 and the declassification included. -/
@@ -640,16 +678,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
-    unfold receiveResolvedArm at h
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-      ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-        (stageDeliveredMessage_mappingStage _ _ _))
+    exact (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans
+      (receiveResolvedArm_mappingStage h)
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -718,20 +748,12 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.replyRecv.object epId =>
     -- the reply skipped (an extra capability fails, or the reply answers no
     -- caller): the receive runs on the busy reply's cancel
-    have hRecvLeg : ∀ {st'}, receiveResolvedArm decoded gate tid epId executingCore
+    have hRecvLeg : ∀ {st'}, receiveResolvedArm ctx decoded gate tid epId executingCore
         (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st') →
         MappingStage st st' := by
       intro st' h
-      refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
-      unfold receiveResolvedArm at h
-      repeat' split at h
-      all_goals first | (cases h; done) | skip
-      · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
-      rename_i summ _ hRecv _ stDon hHand
-      cases h
-      exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-        ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-          (stageDeliveredMessage_mappingStage _ _ _))
+      exact (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans
+        (receiveResolvedArm_mappingStage h)
     split at h
     · cases h
     split at h

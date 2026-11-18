@@ -1618,12 +1618,27 @@ dual-queue receive, the rendezvous hand-off and the two stagings.  The
 theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {gate : SyscallGate}
     {epId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : receiveResolvedArm decoded gate tid epId e
+    (h : receiveResolvedArm ctx decoded gate tid epId e
       (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold receiveResolvedArm at h
   obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
   generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it -- the wait's consumption, then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
+    subst hPost
+    obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
+      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
+    exact stepCoversInv_trans (stepCovers_trans hC hS)
+      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+  simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC
       epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1631,13 +1646,14 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
     | error _ => rw [hRes] at h; cases h
     | ok r =>
     rw [hRes] at h
-    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
     subst h
     exact stepCoversInv_trans hC (writeReturnFrameToTcb_keyFrame _ _ _ hCInv).stepCoversInv
   simp only [Bool.not_eq_true] at hNb
-  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · rename_i st1 dequeued summ sgi hRecv
     split at h

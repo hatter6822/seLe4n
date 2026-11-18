@@ -226,12 +226,55 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hOps : receiveLockOperands gate decoded tid epId st = some ops)
     (hSched : schedLockSetForSyscall .receive ops e st = some S)
-    (hDisp : receiveResolvedArm decoded gate tid epId e
+    (hDisp : receiveResolvedArm ctx decoded gate tid epId e
       (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
     footprintCoversWrites S st st' := by
   unfold receiveLockOperands at hOps
   unfold receiveResolvedArm at hDisp
   generalize hC : cancelRecvBusyReply ctx tid gate decoded e st = stC at hDisp
+  have hCancel : footprintCoversWrites S st stC := by
+      unfold cancelRecvBusyReply at hC
+      cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
+      | zero =>
+        rw [hCode] at hC
+        simp only at hC
+        subst hC
+        exact footprintCoversWrites_refl S st
+      | succ k =>
+        rw [hCode] at hC
+        simp only at hC
+        subst hC
+        have hB := recvBusyReplyHolderCode_succ hCode
+        split at hOps
+        · obtain ⟨rid, hRid⟩ : ∃ rid, recvReplyLookup? gate decoded st = some rid := by
+            cases hL : recvReplyLookup? gate decoded st with
+            | none => rw [hL] at hB; exact absurd hB (by simp [busyReplyHolder?])
+            | some rid => exact ⟨rid, rfl⟩
+          simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hOps
+          subst hOps
+          rw [hRid] at hB
+          simp only [schedLockSetForSyscall, Option.bind_some,
+            schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
+          exact footprintCoversWrites_of_allCores S _ st _ (LockSet.ofList?_pairs hSched)
+            (fun d _ => cancelReplyHolder_replenishQueueOnCore st ⟨k⟩ e d)
+        · rename_i hR0
+          exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
+            (by rw [hCode]; simp)
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it: the wait's consumption, which moves no scheduler state,
+    -- then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at hDisp; exact absurd hDisp (by simp)
+    | ok r =>
+    rw [hRes] at hDisp
+    simp only [hSig, ↓reduceIte] at hDisp
+    obtain ⟨st1, badge, _, hSch, hPost⟩ := completeSignalArm_consumes hSig hDisp
+    subst hPost
+    exact footprintCoversWrites_trans S (st₂ := stC) hCancel
+      (footprintCoversWrites_of_scheduler_eq S hTable
+        (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
+  simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting: the holder's cancel, then
     -- the badge register written, which moves no scheduler state.
@@ -239,43 +282,16 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
     | error _ => rw [hRes] at hDisp; exact absurd hDisp (by simp)
     | ok r =>
     rw [hRes] at hDisp
-    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
     subst hDisp
-    refine footprintCoversWrites_trans S (st₂ := stC) ?_
+    exact footprintCoversWrites_trans S (st₂ := stC) hCancel
       (footprintCoversWrites_of_scheduler_eq S hTable
         (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _))
-    unfold cancelRecvBusyReply at hC
-    cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
-    | zero =>
-      rw [hCode] at hC
-      simp only at hC
-      subst hC
-      exact footprintCoversWrites_refl S st
-    | succ k =>
-      rw [hCode] at hC
-      simp only at hC
-      subst hC
-      have hB := recvBusyReplyHolderCode_succ hCode
-      split at hOps
-      · obtain ⟨rid, hRid⟩ : ∃ rid, recvReplyLookup? gate decoded st = some rid := by
-          cases hL : recvReplyLookup? gate decoded st with
-          | none => rw [hL] at hB; exact absurd hB (by simp [busyReplyHolder?])
-          | some rid => exact ⟨rid, rfl⟩
-        simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hOps
-        subst hOps
-        rw [hRid] at hB
-        simp only [schedLockSetForSyscall, Option.bind_some,
-          schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
-        exact footprintCoversWrites_of_allCores S _ st _ (LockSet.ofList?_pairs hSched)
-          (fun d _ => cancelReplyHolder_replenishQueueOnCore st ⟨k⟩ e d)
-      · rename_i hR0
-        exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
-          (by rw [hCode]; simp)
   simp only [Bool.not_eq_true] at hNb
-  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
   split at hDisp
   · exact absurd hDisp (by simp)
   rename_i replyId? hR
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
   split at hDisp
   · rename_i st₁ dequeued summary sgi hLeg
     split at hDisp

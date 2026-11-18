@@ -222,6 +222,10 @@ def SyscallLockOperands.ofReplyTarget (caller : ThreadId) (reply : ReplyId)
     (endpoint : Option ObjId := none) : SyscallLockOperands :=
   { caller := caller, targetObject := endpoint, targetReply := some reply }
 
+/-- **The notification bound to `receiver`**, if any (`TCB.boundNotification`). -/
+def receiverBoundNotification? (st : SystemState) (receiver : ThreadId) : Option ObjId :=
+  (st.getTcb? receiver).bind (·.boundNotification)
+
 /-- **A receive's footprint with its busy reply's holder cancelled** (seL4-MCS
 `receiveIPC`'s `cancelIPC(replyTCB)`): the receive's own footprint and, when the
 reply it names is busy with another thread (`busyReplyHolder?`), the footprint of
@@ -229,11 +233,15 @@ that thread's IPC cancel (`lockSet_cancelIpcBlockingOnCore`, the suspend's
 cancellation root), each resolved from the state the receive is handed. -/
 def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) : LockSet :=
-  match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
-  | none => lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId
-  | some holder =>
-      (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).union
-        (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder)
+  lockSetExtendOpt
+    (match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
+     | none => lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId
+     | some holder =>
+        (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).union
+          (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder))
+    -- seL4-MCS `receiveIPC`: the receiver's bound notification, which a receive
+    -- that finds it active completes (`completeSignalArm`), writing it.
+    ((receiverBoundNotification? st receiver).map fun n => (notificationLock n, .write))
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
@@ -831,6 +839,7 @@ theorem mem_write_lockSet_receiveCancellingHolder (st : SystemState) (endpointId
     (l, AccessMode.write) ∈
       (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_receiveCancellingHolder
+  apply mem_write_lockSetExtendOpt
   split
   · exact h
   · exact LockSet.mem_union_write_of_mem_write _ _ _ h
@@ -850,6 +859,22 @@ theorem lockSetForSyscall_receive_covers_writes
            (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_caller_tcb_write_mem ..)),
          mem_write_lockSet_receiveCancellingHolder _ _ _ _ _ _
            (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_endpoint_write_mem ..))⟩
+
+/-- seL4-MCS `receiveIPC`: and the receiver's bound notification, which a receive
+that finds it active completes, writing it (`completeSignalArm`). -/
+theorem lockSetForSyscall_receive_covers_boundNotification
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (n : ObjId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hBound : receiverBoundNotification? st ops.caller = some n)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (notificationLock n, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  unfold lockSet_receiveCancellingHolder
+  rw [hBound]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 

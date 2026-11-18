@@ -1328,7 +1328,7 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
-    (h : receiveResolvedArm decoded gate tid epId executingCore
+    (h : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     readyKeptStage (· = tid) st st' := by
   unfold receiveResolvedArm at h
@@ -1356,19 +1356,38 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
   have hDC := hS.2 P.objInv P.refined hRC P.dequeued
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
     at h hS hK hHC hCurC hActC hIC hRC hDC
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it -- the wait's consumption, then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
+    subst hPost
+    have hI := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+    exact readyKeptStage.trans hS.1 hK
+      ((runQueueStage_of_pair_eq
+        (notificationWaitOnCore_readyKeptStage _ tid executingCore stC hCurC P.notIdle) hI).trans
+        (runQueueStage_of_pair_eq
+          (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle) hI).1
+        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+  simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
     cases hRes : resolveRecvReplyId gate decoded stC with
     | error _ => rw [hRes] at h; cases h
     | ok r =>
     rw [hRes] at h
-    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
     subst h
     exact readyKeptStage.trans hS.1 hK (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _))
   simp only [Bool.not_eq_true] at hNb
-  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · rename_i st1 dequeued summ sgi hRecv
     split at h

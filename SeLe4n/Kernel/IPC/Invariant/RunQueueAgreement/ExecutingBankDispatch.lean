@@ -344,7 +344,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       hC.1.currentKept hC.1.residentKept)).bankAgree hA
   -- the receive arm on its busy-reply-cancelled state: `.receive`, and the
   -- `.replyRecv` whose reply is skipped
-  have hRecvArm : ∀ epId, receiveResolvedArm decoded gate tid epId ec
+  have hRecvArm : ∀ epId, receiveResolvedArm ctx decoded gate tid epId ec
       (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st') →
       bankAgree ec tid st' := by
     intro epId h
@@ -366,6 +366,25 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
             P.toEntryPremises.queueHeadCancelFacts h⟩
     obtain ⟨c0, w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
+    by_cases hSig : receiveCompletesSignal ctx stC tid = true
+    · -- seL4-MCS `receiveIPC`: the bound notification is active, so the
+      -- receive completes it -- the wait writes no saved register, then the
+      -- caller's badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hSig, ↓reduceIte] at h
+      obtain ⟨st1, badge, hWt, _, hPost⟩ := completeSignalArm_consumes hSig h
+      subst hPost
+      obtain ⟨hS, -⟩ := stepCovers_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hIC) hWt
+      have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
+        (receiverBoundNotification stC tid) tid ec hIC
+      rw [hWt] at h1
+      exact ((hW (stepCovers_trans c0 hS) (w0.trans h1.writtenFree)).trans
+        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
+    simp only [Bool.not_eq_true] at hSig
     by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
     · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
       -- badge register.
@@ -373,13 +392,14 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       | error _ => rw [hRes] at h; cases h
       | ok r =>
       rw [hRes] at h
-      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at h
       subst h
       exact ((hW c0 w0).trans (bankFrame.writeReturnFrameToTcb_caller _ hIC)).bankAgree hA
     simp only [Bool.not_eq_true] at hNb
-    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
+    simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rename_i st1 dequeued summ sgi hRecv
       split at h

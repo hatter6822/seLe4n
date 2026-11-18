@@ -4407,9 +4407,15 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
 code: the blocking receive written in place when it may be
 (`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
 Inlined, so its result is matched by the caller rather than built. -/
-@[inline] def endpointReceiveResolvedR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
-    (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+@[inline] def endpointReceiveResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
   fun st =>
+    -- seL4-MCS `receiveIPC`: an active bound notification is completed, as a
+    -- `Wait` on it consumes it (`notificationWaitGatedR`).
+    if receiveCompletesSignal ctx st tid then
+      notificationWaitGatedR ctx tid (receiverBoundNotification st tid) executingCore st
+    else
     if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
       .ok ((), Architecture.nbRecvFailedTransfer st tid)
     else
@@ -4423,25 +4429,29 @@ cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
 `root?` read before the cancel, the blocking receive written in place when it
 may be, the rendezvous otherwise, every refusal carrying the state it was
 handed (`endpointReceiveReplyResolvedR_eq`). -/
-@[inline] def endpointReceiveReplyResolvedR (tid : SeLe4n.ThreadId) (canReply : Bool)
+@[inline] def endpointReceiveReplyResolvedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
     (root? : Option Capability) : RefusalCarrying Unit :=
   fun st =>
-    let resolved := fun replyCode => endpointReceiveResolvedR epId tid replyCode executingCore st
+    let resolved := fun replyCode => endpointReceiveResolvedR ctx epId tid replyCode executingCore st
     resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
 
-theorem endpointReceiveReplyResolvedR_eq (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
-    endpointReceiveReplyResolvedR tid canReply replyAddr executingCore epId root? st =
-      RefusalCarrying.ofKernel (receiveResolvedArm decoded gate tid epId executingCore) st := by
+    endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root? st =
+      RefusalCarrying.ofKernel (receiveResolvedArm ctx decoded gate tid epId executingCore) st := by
   simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
   rw [resolveRecvReplyRootK_eq st tid, hRid]
   cases resolveRecvReplyId gate decoded st with
   | error e => rfl
   | ok rid =>
   simp only [endpointReceiveResolvedR]
+  by_cases hSig : receiveCompletesSignal ctx st tid = true
+  · simp only [hSig, ↓reduceIte, notificationWaitGatedR_eq, RefusalCarrying.ofKernel]
+  simp only [Bool.not_eq_true] at hSig
+  simp only [hSig, Bool.false_eq_true, ↓reduceIte]
   by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
       epId = true
   · simp only [hN, ↓reduceIte]
@@ -4609,7 +4619,7 @@ after it reports the cancelled state (`receiveArmReport`). -/
         .error (.flowDenied, st)
       else
       let root? := callerCspaceRoot st tid
-      endpointReceiveReplyResolvedR tid canReply replyAddr executingCore epId root?
+      endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root?
         (cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore root? st)
     | _ => .error (.invalidCapability 0, st)
 
@@ -4628,7 +4638,7 @@ theorem endpointReceiveCheckedArmR_eq_resolved (ctx : LabelingContext)
     (hTgt : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st =
-      match receiveResolvedArm decoded gate tid epId executingCore
+      match receiveResolvedArm ctx decoded gate tid epId executingCore
           (cancelRecvBusyReply ctx tid gate decoded executingCore st) with
       | .ok r => .ok r
       | .error e => .error (e, cancelRecvBusyReply ctx tid gate decoded executingCore st) := by
@@ -4640,12 +4650,12 @@ theorem endpointReceiveCheckedArmR_eq_resolved (ctx : LabelingContext)
   simp only [endpointReceiveCheckedArmR, hTgt, hFlow, Bool.not_true, Bool.false_eq_true,
     ↓reduceIte]
   rw [hCancel]
-  have hR := endpointReceiveReplyResolvedR_eq decoded tid executingCore gate epId
+  have hR := endpointReceiveReplyResolvedR_eq ctx decoded tid executingCore gate epId
     (cancelRecvBusyReply ctx tid gate decoded executingCore st) (callerCspaceRoot st tid) canReply
     replyAddr (resolveRecvReplyIdRootR_eq _ tid _ gate decoded canReply replyAddr hCaller hRoot hNames)
   rw [hR]
   simp only [RefusalCarrying.ofKernel]
-  cases receiveResolvedArm decoded gate tid epId executingCore
+  cases receiveResolvedArm ctx decoded gate tid epId executingCore
     (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
 
 theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
@@ -4677,7 +4687,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
       simp only [RefusalCarrying.ofKernelReporting, receiveArmReport, dispatchWithCapChecked,
         dispatchCapabilityOnly, hRecv, hTgt, hFlow, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
         hCancel]
-      cases receiveResolvedArm decoded gate tid epId executingCore
+      cases receiveResolvedArm ctx decoded gate tid epId executingCore
         (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
     · simp only [endpointReceiveCheckedArmR, RefusalCarrying.ofKernelReporting, receiveArmReport,
         dispatchWithCapChecked, dispatchCapabilityOnly, hRecv, hTgt, hFlow, Bool.not_false,
@@ -4703,25 +4713,46 @@ the arm: the head of the send queue of the endpoint its capability names
 @[inline] def threadObjOfCode (code : Nat) : SeLe4n.ObjId :=
   (⟨code - 1⟩ : SeLe4n.ThreadId).toObjId
 
-/-- The receive's taint step, without the plan: the sender's words `wS`,
-captured before the arm at `threadObjOfCode sourceCode`, join the receiver's
-taint words (`receiveTaintStep_eq`). -/
-@[inline] def receiveTaintStep (sourceCode : Nat) (tid : SeLe4n.ThreadId)
-    (wS : TaintWords) (post : SystemState) : SystemState :=
+/-- The object of the notification a bound-signal code names
+(`boundSignalTaintCode`'s `k + 1` for the notification `⟨k⟩`); for the code `0`,
+naming none, the object `⟨0⟩`, which a step taking that code never reads. -/
+@[inline] def notifObjOfCode (code : Nat) : SeLe4n.ObjId := ⟨code - 1⟩
+
+/-- The bound notification whose words a receive through `cap` takes, as its
+code: `boundSignalTaintCode` when the capability names an object, whose plan
+lists the edge (`receiverTaintEdges`), `0` otherwise. -/
+@[inline] def receiveTaintSignalCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cap : Capability) : Nat :=
+  match cap.target with
+  | .object _ => boundSignalTaintCode st tid
+  | _ => 0
+
+/-- The receive's taint step, without the plan: the bound notification's words
+`wN`, captured before the arm at `notifObjOfCode signalCode`, then the sender's
+words `wS`, captured at `threadObjOfCode sourceCode`, join the receiver's taint
+words in the order the plan lists their edges (`receiveTaintStep_eq`). -/
+@[inline] def receiveTaintStep (signalCode sourceCode : Nat) (tid : SeLe4n.ThreadId)
+    (wN wS : TaintWords) (post : SystemState) : SystemState :=
+  let p := match signalCode with
+    | _ + 1 => joinTaintAt post tid.toObjId wN
+    | 0 => post
   match sourceCode with
-  | _ + 1 => joinTaintAt post tid.toObjId wS
-  | 0 => post
+  | _ + 1 => joinTaintAt p tid.toObjId wS
+  | 0 => p
 
 theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (hRecv : decoded.syscallId = .receive)
-    (preEpoch : Nat) (preLength : Nat) (wS : Capability → TaintWords)
+    (preEpoch : Nat) (preLength : Nat) (wN wS : Capability → TaintWords)
+    (hN : ∀ cap, (wN cap).decode =
+      st.declassificationTaint (notifObjOfCode (receiveTaintSignalCode st tid cap)))
     (hS : ∀ cap, (wS cap).decode =
       st.declassificationTaint (threadObjOfCode (receiveTaintSourceCode st cap)))
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength
         st.declassificationTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
-        | some cap => receiveTaintStep (receiveTaintSourceCode st cap) tid (wS cap) post
+        | some cap => receiveTaintStep (receiveTaintSignalCode st tid cap)
+            (receiveTaintSourceCode st cap) tid (wN cap) (wS cap) post
         | none => post) := by
   simp only [syscallTaintPlan, contentFlowClass, hRecv, contentFlowEdges, contentFlowClears,
     contentFlowBypassed]
@@ -4729,25 +4760,31 @@ theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
       applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · have h := hS cap
+    have hN := hN cap
     rcases cap with ⟨target, _, _⟩
     cases target with
     | object epId =>
-      simp only [receiveTaintSourceCode, receiverTaintEdges] at h ⊢
-      revert h
+      simp only [receiveTaintSourceCode, receiveTaintSignalCode, receiverTaintEdges,
+        boundSignalTaintEdges] at h hN ⊢
+      revert h hN
+      generalize boundSignalTaintCode st tid = sc
       cases st.getEndpoint? epId with
       | none =>
-        intro _
-        simp [receiveTaintStep, applySyscallTaintAfter, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
+        cases sc <;> intro _ hn <;>
+          simp only [notifObjOfCode, Nat.add_sub_cancel] at hn <;>
+          simp [receiveTaintStep, applySyscallTaintAfter, syscallRecordsDeclassification,
+            applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep,
+            joinTaintAt_toWords_of_decode _ _ hn]
       | some ep =>
         simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
-        cases ep.sendHeadCode <;> intro h <;>
-          simp only [threadObjOfCode, Nat.add_sub_cancel] at h <;>
+        cases sc <;> cases ep.sendHeadCode <;> intro h hn <;>
+          simp only [threadObjOfCode, notifObjOfCode, Nat.add_sub_cancel] at h hn <;>
           simp [receiveTaintStep, SeLe4n.ThreadId.ofOptCode, applySyscallTaintAfter,
             syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow,
-            applyTaintStep, joinTaintAt_toWords_of_decode _ _ h]
+            applyTaintStep, joinTaintAt_toWords_of_decode _ _ h,
+            joinTaintAt_toWords_of_decode _ _ hn]
     | _ =>
-      simp [receiveTaintSourceCode, receiveTaintStep, applySyscallTaintAfter,
+      simp [receiveTaintSourceCode, receiveTaintSignalCode, receiveTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- The receive's slot check, gate, arm and taint step on the capability its
@@ -4763,11 +4800,14 @@ operand resolved to, every refusal carrying the state it was handed
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
         else if !syscallTargetAccepted .receive st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
+          let signalCode := receiveTaintSignalCode st tid cap
           let sourceCode := receiveTaintSourceCode st cap
+          withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           match endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st with
           | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+          | .ok ((), stPost) => .ok ((), receiveTaintStep signalCode sourceCode tid
+              ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (syscallMissingRightError .receive, st)
 
 /-- **The state a refusal of `receiveOperandArmThenTaintR` reports**: its arm's
@@ -4807,7 +4847,9 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernelReporting,
     hRecv, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef]
   simp only [receiveTaintStep_eq st tid decoded hRecv
+    (wN := fun cap => st.taintWordsAt (notifObjOfCode (receiveTaintSignalCode st tid cap)))
     (wS := fun cap => st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap)))
+    (hN := fun _ => decode_taintWordsAt st _)
     (hS := fun _ => decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap

@@ -719,13 +719,42 @@ theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
   .of_frameK fun hI => RecordsFrame.writeCallReturnWord x t w hI
 
+/-- **A receive that completes its bound notification keeps the records**: the
+checked wait's consumption, read with no reachability premise -- the reply-waiter
+consistency it needs is the one the records themselves carry -- and the badge
+register written. -/
+theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {nid : SeLe4n.ObjId} {c : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hC : CallerReady st tid)
+    (h : completeSignalArm ctx tid nid c st = .ok ((), st')) :
+    RecordsStage st st' := by
+  have hW : RecordsStage st (notificationWaitCrossCoreDispatchChecked ctx nid tid c st).1 :=
+    RecordsStage.of_step (RecordsStep.notificationWaitCrossCoreDispatchChecked hInv
+      hC.notParked) fun hRW => by
+      unfold notificationWaitCrossCoreDispatchChecked
+      split
+      · split
+        · exact hRW
+        · exact notificationWaitOnCore_preserves_replyWaitersConsistent nid tid c st
+            hInv hRW hC.serverFree
+      · exact hRW
+  unfold completeSignalArm at h
+  split at h
+  · rename_i hR
+    cases h
+    exact (RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)
+  · rename_i hR
+    cases h
+    exact RecordsStage.of_fst_eq hW hR
+  · cases h
+
 /-- A receive run on its busy-reply-cancelled state keeps the records: the
 `.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
 theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState) (P : RecordsArmPremises st) (hCaller : CallerReady st tid)
-    (h : receiveResolvedArm decoded gate tid epId executingCore
+    (h : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     RecordsStage st st' := by
   unfold receiveResolvedArm at h
@@ -745,17 +774,27 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
         hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
   obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is completed.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    exact hS.trans (completeSignalArm_recordsStage hIC hCC h)
+  simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
     cases hRes : resolveRecvReplyId gate decoded stC with
     | error _ => rw [hRes] at h; cases h
     | ok r =>
     rw [hRes] at h
-    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
     subst h
     exact hS.trans (writeReturnFrameToTcb_recordsStage _ _ _)
   simp only [Bool.not_eq_true] at hNb
-  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
   split at h

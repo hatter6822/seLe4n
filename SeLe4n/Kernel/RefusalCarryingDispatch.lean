@@ -521,21 +521,16 @@ def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     | (st', .ok none) => .ok ((), st')
     | (st', .error e) => .error (e, st')
 
-/-- The checked wait arm (`dispatchWithCapChecked`'s `.notificationWait` case),
-refusing in the state it was handed (`notificationWaitCheckedArmR_eq`).  A wait
-that consumes a pending badge in place (`waitConsumesInPlace`) writes the
+/-- **The checked wait past its non-blocking test** (`completeSignalArm`), refusing
+in the state it was handed (`notificationWaitGatedR_eq`): a `Wait` on the
+notification, and a receive that completes its bound notification, both run it.
+A wait that consumes a pending badge in place (`waitConsumesInPlace`) writes the
 notification, the waiter's state and its return registers each in its slot and
 builds no result; a wait that blocks in place (`waitBlocksInPlace`) makes its
 writes the same way; every other wait takes the specification's form. -/
-@[inline] def notificationWaitCheckedArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+@[inline] def notificationWaitGatedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    match cap.target with
-    | .object notifId =>
-        if waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
-            notifId then
-          .ok ((), Architecture.nbRecvFailedTransfer st tid)
-        else
         if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) then
           if notificationBoundElsewhere st notifId tid then .error (.invalidCapability 0, st) else
           match st.getNotification? notifId with
@@ -557,6 +552,19 @@ writes the same way; every other wait takes the specification's form. -/
                   | none => notificationWaitArmGeneralR notifId tid executingCore st
           | none => notificationWaitArmGeneralR notifId tid executingCore st
         else .error (.flowDenied, st)
+
+/-- The checked wait arm (`dispatchWithCapChecked`'s `.notificationWait` case),
+refusing in the state it was handed (`notificationWaitCheckedArmR_eq`): `NBWait`'s
+failure, else the gated wait (`notificationWaitGatedR`). -/
+@[inline] def notificationWaitCheckedArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object notifId =>
+        if waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+            notifId then
+          .ok ((), Architecture.nbRecvFailedTransfer st tid)
+        else notificationWaitGatedR ctx tid notifId executingCore st
     | _ => .error (.invalidCapability 0, st)
 
 theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -579,6 +587,45 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
   · rfl
   · rfl
 
+theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) :
+    notificationWaitGatedR ctx tid notifId executingCore =
+      RefusalCarrying.ofKernel (completeSignalArm ctx tid notifId executingCore) := by
+  funext st
+  simp only [notificationWaitGatedR, RefusalCarrying.ofKernel, completeSignalArm,
+    notificationWaitCrossCoreDispatchChecked]
+  by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
+  · simp only [hFlow, ↓reduceIte]
+    by_cases hBound : notificationBoundElsewhere st notifId tid = true
+    · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
+    simp only [hBound, Bool.false_eq_true, ↓reduceIte]
+    have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
+    simp only [RefusalCarrying.ofKernel] at hGen ⊢
+    split
+    · next ntfn hN =>
+      split
+      · next badge hB =>
+        split
+        · next hG =>
+          rw [notificationWaitOnCore_eq_impl]
+          simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
+            stageBadgeReturn_eq]
+        · exact hGen
+      · next hB =>
+        split
+        · next tcb hLk =>
+          split
+          · exact hGen
+          · next hNotW =>
+            split
+            · next hG =>
+              rw [notificationWaitOnCore_eq_impl]
+              simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte]
+            · exact hGen
+        · exact hGen
+    · exact hGen
+  · simp only [hFlow, Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
+
 theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
@@ -594,39 +641,8 @@ theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
     · simp only [hN, ↓reduceIte, RefusalCarrying.ofKernel]
     simp only [Bool.not_eq_true] at hN
     dsimp only
-    simp only [RefusalCarrying.ofKernel, hN, Bool.false_eq_true, ↓reduceIte]
-    simp only [notificationWaitCrossCoreDispatchChecked]
-    by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
-    · simp only [hFlow, ↓reduceIte]
-      by_cases hBound : notificationBoundElsewhere st notifId tid = true
-      · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
-      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
-      have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
-      simp only [RefusalCarrying.ofKernel] at hGen ⊢
-      split
-      · next ntfn hN =>
-        split
-        · next badge hB =>
-          split
-          · next hG =>
-            rw [notificationWaitOnCore_eq_impl]
-            simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
-              stageBadgeReturn_eq]
-          · exact hGen
-        · next hB =>
-          split
-          · next tcb hLk =>
-            split
-            · exact hGen
-            · next hNotW =>
-              split
-              · next hG =>
-                rw [notificationWaitOnCore_eq_impl]
-                simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte]
-              · exact hGen
-          · exact hGen
-      · exact hGen
-    · simp only [hFlow, Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
+    simp only [hN, Bool.false_eq_true, ↓reduceIte, notificationWaitGatedR_eq]
+    simp only [RefusalCarrying.ofKernel, hN, Bool.false_eq_true, ↓reduceIte, completeSignalArm]
   | _ => rfl
 
 /-- The wait's taint step from the capability its operand resolved to: the

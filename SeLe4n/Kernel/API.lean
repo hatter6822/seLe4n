@@ -5990,11 +5990,279 @@ theorem waitFindsNothing_of_consumed {ctx : LabelingContext} {notifId : SeLe4n.O
       repeat' split at h
       all_goals simp_all
 
+/-! ### A receive that completes its bound notification (seL4 `receiveIPC`)
+
+seL4's `receiveIPC` (`endpoint.c`) asks one question before it looks at the
+endpoint: is the receiver's bound notification active?  If it is, the receive
+is `completeSignal(ntfnPtr, thread)` — the notification's word in the badge
+register, the notification idle — and the endpoint is not touched; the thread
+does not block.  The model asks it once the endpoint's flow gate has admitted
+the receive and its reply object is resolved, as seL4's `handleRecv` looks the
+reply capability up before `receiveIPC` runs, and it gates the completion on
+the notification → receiver flow — the gate a `Wait` on that notification
+passes (`notificationWaitCrossCoreDispatchChecked`).  A receive denied that
+flow does not complete the signal: it receives on the endpoint as if the
+notification were idle, so the receiver learns nothing of the notification
+(`receiveCompletesSignal_lowEquivalent`).  seL4-MCS's
+`maybeDonateSchedContext` / `maybeReturnSchedContext` move a context bound to
+the notification; a notification holds no scheduling context in the model, so
+both are the identity here. -/
+
+/-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
+its code names; `⟨0⟩` for a thread with none, which a receive never reads
+(`receiveCompletesSignal` is `false` there). -/
+@[inline] def receiverBoundNotification (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ObjId :=
+  match st.getTcb? tid with
+  | some t => ⟨t.boundNotificationCode - 1⟩
+  | none => ⟨0⟩
+
+/-- **seL4-MCS `receiveIPC`'s first test**: the receiver has a bound
+notification, it is active (holds a pending word, seL4's `NtfnState_Active`),
+and the notification's label flows to the receiver's. -/
+@[inline] def receiveCompletesSignal (ctx : LabelingContext) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t =>
+      t.boundNotificationCode != 0 &&
+      (match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+       | some ntfn => ntfn.pendingBadge.isSome
+       | none => false) &&
+      securityFlowsTo (ctx.objectLabelOf ⟨t.boundNotificationCode - 1⟩) (ctx.threadLabelOf tid)
+  | none => false
+
+/-- **seL4's `completeSignal` on the receiver**: the bound notification's word
+consumed and written to the badge register (`x0`), every other register as it
+was.  The consumption is the one a `Wait` on an active notification performs
+(`notificationWaitCrossCoreDispatchChecked`), so a receive and a wait that
+take a notification's word ask one transition. -/
+@[inline] def completeSignalArm (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
+    | (st', .ok (some badge)) =>
+        .ok ((), Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge))
+    | (st', .ok none) => .ok ((), st')
+    | (_, .error e) => .error e
+
+/-- A wait that consumed a badge moved no scheduler state: the consumption is a
+notification store and the waiter's IPC state, nothing on any core. -/
+theorem notificationWaitOnCore_consumed_scheduler_eq {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge}
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
+    st1.scheduler = st.scheduler := by
+  unfold notificationWaitOnCore at h
+  cases hN : st.getNotification? notifId with
+  | none =>
+    rw [hN] at h
+    by_cases hO : (st.getObject? notifId).isSome = true
+    · simp only [hO, ↓reduceIte] at h; cases h
+    · simp only [hO, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  | some ntfn =>
+    rw [hN] at h
+    cases hB : ntfn.pendingBadge with
+    | some b =>
+      simp only [hB] at h
+      generalize hS : storeObject notifId _ st = rS at h
+      cases rS with
+      | error e => cases h
+      | ok v =>
+        obtain ⟨⟨⟩, stA⟩ := v
+        dsimp only at h
+        cases hT : storeTcbIpcState stA tid .ready with
+        | error e => rw [hT] at h; cases h
+        | ok stB =>
+          rw [hT] at h
+          cases h
+          rw [storeTcbIpcState_scheduler_eq _ _ _ _ hT, storeObject_scheduler_eq _ _ _ _ hS]
+    | none =>
+      simp only [hB] at h
+      repeat' split at h
+      all_goals simp_all
+
+/-- A wait on a notification holding a word does not block. -/
+theorem notificationWaitOnCore_not_blocked_of_pending {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {ntfn : Notification} (hN : st.getNotification? notifId = some ntfn)
+    (hP : ntfn.pendingBadge.isSome = true)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) : False := by
+  unfold notificationWaitOnCore at h
+  rw [hN] at h
+  cases hB : ntfn.pendingBadge with
+  | none => rw [hB] at hP; cases hP
+  | some b =>
+    simp only [hB] at h
+    generalize hS : storeObject notifId _ st = rS at h
+    cases rS with
+    | error e => cases h
+    | ok v =>
+      obtain ⟨⟨⟩, stA⟩ := v
+      dsimp only at h
+      cases hT : storeTcbIpcState stA tid .ready with
+      | error e => rw [hT] at h; cases h
+      | ok stB => rw [hT] at h; cases h
+
+/-- A checked wait that returns a result returned the unchecked wait's. -/
+theorem notificationWaitCrossCoreDispatchChecked_ok_inner {ctx : LabelingContext}
+    {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId}
+    {st st1 : SystemState} {r : Option SeLe4n.Badge}
+    (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st = (st1, .ok r)) :
+    notificationWaitOnCore notifId tid c st = (st1, .ok r) := by
+  unfold notificationWaitCrossCoreDispatchChecked at h
+  by_cases hF : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
+  · by_cases hE : notificationBoundElsewhere st notifId tid = true
+    · simp only [hF, hE, ↓reduceIte] at h; cases h
+    · simp only [hF, hE, Bool.false_eq_true, ↓reduceIte] at h; exact h
+  · simp only [hF, Bool.false_eq_true, ↓reduceIte] at h; cases h
+
+/-- **A receive that completes its bound notification** took the wait's
+consumption: the consumed word, a pre-state scheduler, and the badge register
+written over it. -/
+theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (hSig : receiveCompletesSignal ctx st tid = true)
+    (h : completeSignalArm ctx tid (receiverBoundNotification st tid) c st = .ok ((), st')) :
+    ∃ st1 badge,
+      notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st =
+        (st1, .ok (some badge)) ∧
+      st1.scheduler = st.scheduler ∧
+      st' = Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge) := by
+  unfold completeSignalArm at h
+  generalize hW : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st = w at h
+  obtain ⟨st1, r⟩ := w
+  cases r with
+  | error e => cases h
+  | ok o =>
+    cases o with
+    | some badge =>
+      cases h
+      exact ⟨st1, badge, rfl, notificationWaitOnCore_consumed_scheduler_eq
+        (notificationWaitCrossCoreDispatchChecked_ok_inner hW), rfl⟩
+    | none =>
+      exfalso
+      have hI := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+      unfold receiveCompletesSignal at hSig
+      unfold receiverBoundNotification at hI
+      cases hT : st.getTcb? tid with
+      | none => rw [hT] at hSig; cases hSig
+      | some t =>
+        rw [hT] at hSig hI
+        simp only [Bool.and_eq_true] at hSig
+        obtain ⟨⟨_, hPend⟩, _⟩ := hSig
+        cases hN : st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+        | none => rw [hN] at hPend; cases hPend
+        | some ntfn =>
+          rw [hN] at hPend
+          exact notificationWaitOnCore_not_blocked_of_pending hN hPend hI
+
+/-- A receive whose notification → receiver flow is denied does not complete
+the signal, whatever the notification holds. -/
+theorem receiveCompletesSignal_false_of_flowDenied (ctx : LabelingContext)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf (receiverBoundNotification st tid))
+      (ctx.threadLabelOf tid) = false) :
+    receiveCompletesSignal ctx st tid = false := by
+  unfold receiveCompletesSignal
+  unfold receiverBoundNotification at hDeny
+  cases h : st.getTcb? tid with
+  | none => rfl
+  | some t => rw [h] at hDeny; simp [hDeny]
+
+/-- The TCB view the completion test reads: a thread's bound-notification code. -/
+def tcbBoundNotificationCodeOf? : Option KernelObject → Option Nat
+  | some (.tcb t) => some t.boundNotificationCode
+  | _ => none
+
+/-- The notification view the completion test reads: whether it holds a word. -/
+def notificationPendingOf? : Option KernelObject → Option Bool
+  | some (.notification n) => some n.pendingBadge.isSome
+  | _ => none
+
+theorem tcbBoundNotificationCodeOf?_project (ctx : LabelingContext) (observer : IfObserver)
+    (o : Option KernelObject) :
+    tcbBoundNotificationCodeOf? (o.map (projectKernelObject ctx observer)) =
+      tcbBoundNotificationCodeOf? o := by
+  rcases o with _ | k
+  · rfl
+  · cases k <;> rfl
+
+theorem notificationPendingOf?_project (ctx : LabelingContext) (observer : IfObserver)
+    (o : Option KernelObject) :
+    notificationPendingOf? (o.map (projectKernelObject ctx observer)) =
+      notificationPendingOf? o := by
+  rcases o with _ | k
+  · rfl
+  · cases k <;> rfl
+
+/-- The completion test, read through the two views. -/
+theorem receiveCompletesSignal_eq_views (ctx : LabelingContext) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    receiveCompletesSignal ctx st tid =
+      match tcbBoundNotificationCodeOf? st.objects[tid.toObjId]? with
+      | some c =>
+          c != 0 && (notificationPendingOf? st.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]?).getD false &&
+            securityFlowsTo (ctx.objectLabelOf ⟨c - 1⟩) (ctx.threadLabelOf tid)
+      | none => false := by
+  unfold receiveCompletesSignal SystemState.getTcb? SystemState.getNotification?
+  cases h : st.objects[tid.toObjId]? with
+  | none => rfl
+  | some k =>
+    cases k <;> try rfl
+    rename_i t
+    simp only [tcbBoundNotificationCodeOf?]
+    cases h' : st.objects[(⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId)]? with
+    | none => rfl
+    | some k' => cases k' <;> rfl
+
+/-- **Non-interference of the completion test**: two states an observer
+cannot tell apart give the same answer, for a receiver the observer sees.  The
+test reads the receiver's TCB (its bound notification's code, which the
+projection keeps) and, only when the notification's label flows to the
+receiver's, the notification's pending word -- a notification the observer then
+sees too (`securityFlowsTo_trans`).  So a receive's choice between completing
+its bound notification and receiving on its endpoint reveals nothing the
+observer could not already read. -/
+theorem receiveCompletesSignal_lowEquivalent (ctx : LabelingContext)
+    (observer : IfObserver) (st₁ st₂ : SystemState) (tid : SeLe4n.ThreadId)
+    (hLow : lowEquivalent ctx observer st₁ st₂)
+    (hTcbObs : objectObservable ctx observer tid.toObjId = true)
+    (hThreadObs : threadObservable ctx observer tid = true) :
+    receiveCompletesSignal ctx st₁ tid = receiveCompletesSignal ctx st₂ tid := by
+  have hObj : ∀ oid, objectObservable ctx observer oid = true →
+      (st₁.objects[oid]?).map (projectKernelObject ctx observer) =
+        (st₂.objects[oid]?).map (projectKernelObject ctx observer) := by
+    intro oid hO
+    have h := congrFun (congrArg ObservableState.objects hLow) oid
+    simpa [projectState, projectObjects, hO, SystemState.getObject?] using h
+  have hT : tcbBoundNotificationCodeOf? st₁.objects[tid.toObjId]? =
+      tcbBoundNotificationCodeOf? st₂.objects[tid.toObjId]? := by
+    rw [← tcbBoundNotificationCodeOf?_project ctx observer,
+      ← tcbBoundNotificationCodeOf?_project ctx observer (st₂.objects[tid.toObjId]?),
+      hObj _ hTcbObs]
+  rw [receiveCompletesSignal_eq_views, receiveCompletesSignal_eq_views, hT]
+  cases tcbBoundNotificationCodeOf? st₂.objects[tid.toObjId]? with
+  | none => rfl
+  | some c =>
+    by_cases hF : securityFlowsTo (ctx.objectLabelOf ⟨c - 1⟩) (ctx.threadLabelOf tid) = true
+    · have hNO : objectObservable ctx observer ⟨c - 1⟩ = true :=
+        securityFlowsTo_trans _ _ _ hF hThreadObs
+      have hN : notificationPendingOf? st₁.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]? =
+          notificationPendingOf? st₂.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]? := by
+        rw [← notificationPendingOf?_project ctx observer,
+          ← notificationPendingOf?_project ctx observer (st₂.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]?),
+          hObj _ hNO]
+      simp only [hN]
+    · simp only [Bool.not_eq_true] at hF
+      simp [hF]
+
+
 /-- **The checked receive arm once its gate has passed and its busy reply is
 cancelled** (`dispatchWithCapChecked`'s `.receive` arm, WS-SX SX4): the reply
 object resolved, the per-core receive with its capabilities, the rendezvous
 hand-off and the delivery staged. -/
-def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
+def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (gate : SyscallGate)
     (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) :
     Kernel Unit :=
   fun st =>
@@ -6003,6 +6271,12 @@ def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
       match resolveRecvReplyId gate decoded st with
       | .error e => .error e
       | .ok replyIdOpt =>
+        -- seL4-MCS `receiveIPC`: an active bound notification is completed
+        -- (`completeSignal`) and the endpoint is not touched, the notification →
+        -- receiver flow admitting it (`receiveCompletesSignal`).
+        if receiveCompletesSignal ctx st tid then
+          completeSignalArm ctx tid (receiverBoundNotification st tid) executingCore st
+        else
         -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once,
         -- `0` in its badge register (seL4's `doNBRecvFailedTransfer`).
         if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
@@ -6158,7 +6432,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- cancelled first (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`), every
           -- check that can refuse the receive asked of the state it was handed;
           -- the cancel is committed and the receive runs on the cancelled state.
-          receiveResolvedArm decoded gate tid epId executingCore
+          receiveResolvedArm ctx decoded gate tid epId executingCore
             (cancelRecvBusyReply ctx tid gate decoded executingCore st)
     | _ => fun _ => .error (.invalidCapability 0)
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -6386,7 +6660,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- and the receive half (`handleRecv`) still runs, as `.receive` runs.
           match callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
           | some _ =>
-            receiveResolvedArm decoded gate tid epId executingCore
+            receiveResolvedArm ctx decoded gate tid epId executingCore
               (cancelRecvBusyReply ctx tid gate decoded executingCore st)
           | none =>
           match resolveReplyRecvReply gate decoded st with
@@ -6394,7 +6668,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- WS-SX SX7.2: a reply with no caller to answer replies to no one
           -- (seL4-MCS `doReplyTransfer` returns), and the receive still runs.
           | .ok none =>
-            receiveResolvedArm decoded gate tid epId executingCore
+            receiveResolvedArm ctx decoded gate tid epId executingCore
               (cancelRecvBusyReply ctx tid gate decoded executingCore st)
           | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
               -- WS-SX SX7.3: the reply capability is named by `replyRegister`
@@ -7714,6 +7988,8 @@ theorem dispatchArm_receive_matches_returnShape
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
     -- WS-SX SX7.2: the receive is not `NBRecv`'s failure with no sender waiting.
     (hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = false)
+    -- seL4-MCS `receiveIPC`: the receive does not complete a bound notification.
+    (hSig : receiveCompletesSignal ctx st tid = false)
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
     -- transfer summary's installed count rather than a hardcoded zero.
@@ -7746,7 +8022,7 @@ theorem dispatchArm_receive_matches_returnShape
     ?_, ?_⟩
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget, hFlow,
-      hReply, hNb, hDispatch, hDon]
+      hReply, hSig, hNb, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -8987,6 +9263,9 @@ theorem dispatchWithCapChecked_receive_delegates
       (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
+      -- seL4-MCS `receiveIPC`: an active bound notification is completed.
+      if receiveCompletesSignal ctx st tid then
+        completeSignalArm ctx tid (receiverBoundNotification st tid) executingCore st else
       -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
       if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
       -- PR #873 round 6: the arm routes through the WithCaps per-core receive, so
@@ -9005,13 +9284,17 @@ theorem dispatchWithCapChecked_receive_delegates
                           stDon tid
                           summary.capInfo))
        | (_, .error e) => .error e) := by
+  by_cases hS : receiveCompletesSignal ctx st tid = true
+  · subst hCancel
+    simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS]
   by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = true
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hN]
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hN]
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
@@ -9190,6 +9473,9 @@ def syscallDelegates : SyscallId → Prop
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
+          -- seL4-MCS `receiveIPC`: an active bound notification is completed.
+          if receiveCompletesSignal ctx st tid then
+            completeSignalArm ctx tid (receiverBoundNotification st tid) executingCore st else
           -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
           if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
           (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with

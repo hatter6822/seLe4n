@@ -242,7 +242,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
   clear hCK hRK
   -- the receive arm on its busy-reply-cancelled state: `.receive`, and the
   -- `.replyRecv` whose reply is skipped
-  have hRecvArm : ∀ epId, receiveResolvedArm decoded gate tid epId ec
+  have hRecvArm : ∀ epId, receiveResolvedArm ctx decoded gate tid epId ec
       (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st') →
       savedRegsKeptOffCore ec st st' := by
     intro epId h
@@ -263,6 +263,24 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
             P.toEntryPremises.queueHeadCancelFacts h⟩
     obtain ⟨w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h w0 hIC hHC
+    by_cases hSig : receiveCompletesSignal ctx stC tid = true
+    · -- seL4-MCS `receiveIPC`: the bound notification is active, so the
+      -- receive completes it -- the wait writes no saved register, then the
+      -- caller's badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hSig, ↓reduceIte] at h
+      obtain ⟨st1, badge, hWt, _, hPost⟩ := completeSignalArm_consumes hSig h
+      subst hPost
+      have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
+        (receiverBoundNotification stC tid) tid ec hIC
+      rw [hWt] at h1
+      exact hW ((w0.trans h1.writtenFree).trans
+        (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st1 tid _ h1.2)
+          fun _ e => e ▸ hFr))
+    simp only [Bool.not_eq_true] at hSig
     by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
     · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
       -- badge register.
@@ -270,14 +288,15 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       | error _ => rw [hRes] at h; cases h
       | ok r =>
       rw [hRes] at h
-      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at h
       subst h
       exact hW (w0.trans (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept stC tid _ hIC)
         fun _ e => e ▸ hFr))
     simp only [Bool.not_eq_true] at hNb
-    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
+    simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rename_i st1 dequeued summ sgi hRecv
       split at h

@@ -639,7 +639,7 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
     (hPack : syscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hSel : receivesWithoutReply decoded tid st)
     (hTgt : cap.target = .object epId)
-    (hStep : receiveResolvedArm decoded gate tid epId executingCore
+    (hStep : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     ipcInvariantFull st' := by
   have hBudgets := hPack.reachable.allTimeoutBudgetsNone
@@ -652,14 +652,46 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
   | error e => simp only [hRid] at hStep; cases hStep
   | ok replyIdOpt =>
       simp only [hRid] at hStep
+      by_cases hSig : receiveCompletesSignal ctx st tid = true
+      · -- seL4-MCS `receiveIPC`: the bound notification is active, so the
+        -- receive completes it -- the wait's consumption, then the badge
+        -- register written.
+        simp only [hSig, ↓reduceIte] at hStep
+        obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig hStep
+        have hFst := notificationWaitCrossCoreDispatchChecked_fst_of_ok ctx _ tid executingCore
+          st st1 _ hW
+        obtain ⟨tcbC, hTC, hReadyC, -⟩ := hPack.callerShape
+        have hWaitInv := notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
+          (receiverBoundNotification st tid) tid executingCore st hInv hObjInv
+          (fun tcb hTcb => by
+            rw [hTC] at hTcb
+            obtain rfl := Option.some.inj hTcb
+            exact readyThread_notBlockedOnReceive tcbC hReadyC)
+          (fun tcb hTcb => by
+            rw [hTC] at hTcb
+            obtain rfl := Option.some.inj hTcb
+            exact readyThread_notBlockedOnReply tcbC hReadyC)
+          hBudgets
+          (fun tcb hTcb => by
+            rw [hTC] at hTcb
+            obtain rfl := Option.some.inj hTcb
+            exact hReadyC)
+        have hObjInv1 := notificationWaitCrossCoreDispatch_preserves_objects_invExt
+          (receiverBoundNotification st tid) tid executingCore st hObjInv
+        unfold notificationWaitCrossCoreDispatch at hWaitInv hObjInv1
+        rw [hFst] at hWaitInv hObjInv1
+        rw [hPost]
+        exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv
+      simp only [Bool.not_eq_true] at hSig
       by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
           epId = true
       · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
-        simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+          true_and] at hStep
         rw [← hStep]
         exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
       simp only [Bool.not_eq_true] at hNb
-      simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
+      simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at hStep
       obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
           hRecvNotOwner⟩ :=
         hPack.recvStage epId replyIdOpt hSel hTgt hRid
