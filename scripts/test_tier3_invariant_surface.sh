@@ -6016,7 +6016,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              \(threadOperationCode st tid SeLe4n\.arm64DefaultLayout tcb\.registerContext\)\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U '^      \| \.viaDecode =>\n        absurd hRt \(SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall_viaDecode _\)$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_negative_check "INVARIANT" rg -n 'decodedRoutedArm' SeLe4n/Kernel
-run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv => \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv =>\n          if syscallDropsCapFault syscallId inRecv then \(Architecture\.SyscallOutcome\.resumes\.words, s\) else\n          \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
 # message held as a constant.
@@ -10120,7 +10120,7 @@ run_negative_check "INVARIANT" rg -n '\|\s*_\s*=>' SeLe4n/Kernel/InformationFlow
 
 # SM9.B.9: the write itself, and the three security theorems.
 run_check "INVARIANT" rg -n '^def recordSyscallRefusal($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U 'recordSyscallRefusal ctx executingCore syscallId tid ke x0\n\s*\(Architecture\.recordErrorOverflow stR tid ke\)' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U 'recordSyscallRefusal ctx executingCore \(seamOperationCode stRegs tid\) tid ke x0\n\s*\(Architecture\.recordErrorOverflow stR tid ke\)' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
