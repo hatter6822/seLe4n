@@ -185,8 +185,12 @@ theorem syscallId_ofNat?_eq_none_of_ge {k : Nat} (hk : SyscallId.encodingBound �
   -- AK4-A.2: Populate inlineCount/overflowCount with inline-only accounting.
   -- Legacy register-only decoder — `overflowCount` is always 0; callers that
   -- require IPC-buffer merge must use `decodeSyscallArgsFromState` instead.
+  -- WS-SX SX7.3: the reply register and `handleRecv`'s `canReply`, read off
+  -- the trapped words as seL4-MCS reads `replyRegister` and the syscall number.
   pure { capAddr, msgInfo, syscallId, msgRegs := msgRegVals,
-         inlineCount := msgRegVals.size, overflowCount := 0 }
+         inlineCount := msgRegVals.size, overflowCount := 0,
+         canReply := Syscall.wordCanReply (readRegWord regs layout.syscallNumReg),
+         replyCPtr := CPtr.ofWord (readRegWord regs layout.replyReg) }
 
 -- ============================================================================
 -- AK4-A.3: State-aware decode with IPC-buffer overflow merge (R-ABI-C01)
@@ -441,7 +445,9 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
     | .ok syscallId =>
       let base : SyscallDecodeResult :=
         { capAddr, msgInfo, syscallId, msgRegs := layout.msgRegs.map (readReg regs),
-          inlineCount := layout.msgRegs.size, overflowCount := 0 }
+          inlineCount := layout.msgRegs.size, overflowCount := 0,
+          canReply := Syscall.wordCanReply (readRegWord regs layout.syscallNumReg),
+          replyCPtr := CPtr.ofWord (readRegWord regs layout.replyReg) }
       if msgInfo.length ≤ layout.msgRegs.size then .ok base
       else mergeOverflowWords st tid base
   else .error .invalidRegister
@@ -907,14 +913,16 @@ inductive RegisterRoutedSyscall where
   /-- WS-ZA ZA4.7: a reply with no overflow words: its operand address and
       its message info; the words are the inline message registers. -/
   | reply (capAddr : CPtr) (msgInfo : MessageInfo)
-  /-- WS-ZA ZA4.7: a receive: its operand address, its message length and,
-      when the length is nonzero, the first message register (the reply
-      object's capability address), read as the decode reads it but as the
-      word (WS-ZA ZA4.8), so an address `≥ 2^63` builds no heap number. -/
-  | receive (capAddr : CPtr) (len : Nat) (replyAddr : CPtr)
+  /-- WS-ZA ZA4.7: a receive: its operand address, `handleRecv`'s
+      `canReply` (WS-SX SX7.3: `Syscall.wordCanReply` of the syscall word)
+      and the reply register (`replyRegister`, the reply object's capability
+      address), read as the decode reads them but as the word (WS-ZA ZA4.8),
+      so an address `≥ 2^63` builds no heap number. -/
+  | receive (capAddr : CPtr) (canReply : Bool) (replyAddr : CPtr)
   /-- WS-ZA ZA4.7: a reply-receive with no overflow words: its endpoint
       capability's address and its message info; the reply capability's
-      address is the first message register and the reply's words the rest. -/
+      address is the reply register (WS-SX SX7.3) and the reply's words the
+      message registers. -/
   | replyRecv (capAddr : CPtr) (msgInfo : MessageInfo)
   /-- WS-ZA ZA5.1: a capability invocation the IPC forms do not route
       (`routedInvocation`), with no overflow words: the syscall and its
@@ -1202,9 +1210,8 @@ kernel entry would build it. -/
       else if opCode = SyscallId.reply.toNat then
         .reply capAddr msgInfo
       else if opCode = SyscallId.receive.toNat then
-        if h0 : 0 < layout.msgRegs.size then
-          .receive capAddr msgInfo.length (CPtr.ofWord (readRegWord regs layout.msgRegs[0]))
-        else .viaDecode
+        .receive capAddr (Syscall.wordCanReply (readRegWord regs layout.syscallNumReg))
+          (CPtr.ofWord (readRegWord regs layout.replyReg))
       else if opCode = SyscallId.replyRecv.toNat then
         .replyRecv capAddr msgInfo
       else

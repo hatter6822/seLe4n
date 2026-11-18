@@ -212,13 +212,13 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
 no key, the checked entry covers, a capability fault is a covered delivery, and
 a refusal record touches the refusal ledger alone. -/
 theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -241,7 +241,7 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have hF := writeFaultRegistersToTcb_keyFrame _ tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hCInv
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hCInv
         exact stepCoversInv_trans
           (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
           (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
@@ -317,13 +317,13 @@ theorem activateThreadOnCore_stepCovers (c : CoreId) (st : SystemState)
 caller's return staging, the local scheduling point, the residency settlement
 and the activation.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) e) := by
@@ -416,13 +416,13 @@ theorem faultEntryDeliver_sgis_cover_diff (lctx : LabelingContext) (st : SystemS
 outstanding: the diff is taken between the pre-state and the state the commit
 settles to. -/
 theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) e).getObject? oid =
@@ -433,7 +433,7 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
         (PriorityInheritance.scheduleLocalSuccessor st
           (Architecture.stageCallerReturn st st' e outcome) e) e) e) e) :
     (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
-        x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
+        x3 x4 x5 x6 elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by
   rw [syscallDispatchCrossCoreStep_of_ok h]
   dsimp only

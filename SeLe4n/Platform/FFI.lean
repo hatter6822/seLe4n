@@ -3116,7 +3116,7 @@ theorem refusalWrite_cannot_exhaust_trail
 
 /-- PR #887 review round 3: the trap frame's fault window as the SVC seam
 carries it.  `x0`-`x5` are the syscall arguments the seam already spills,
-`x6` the IPC-buffer word (`ipcBufferAddr` crosses as `x6` verbatim), `x7` the
+`x6` the reply register (seL4-MCS `replyRegister`), `x7` the
 syscall's word (seL4's negated number), and `SP_EL0` / `x30` cross with the round's ABI extension —
 the same nine registers the abort entry spills, so a capability fault's
 context is built from what the thread held at the `SVC`, never from the
@@ -3525,17 +3525,18 @@ Pipeline:
      (`syscallWindow`) with the `SVC` instruction as the restart PC
      (`svcFaultIP`), so a payload-free reply re-issues the syscall.
 
-`ipcBufferAddr` is passed for parity with the seL4 ABI; the verified
-kernel reads the IPC buffer from `tcb.ipcBuffer` (set by
-`tcbSetIPCBuffer`) rather than from this argument, so it is unused
-inside the dispatch.  A future refinement may cross-validate the two
-when telemetry is added. -/
+`x6` is the trapped reply register (seL4-MCS `replyRegister`): the
+dispatch reads it, as every argument register, from the frame the
+caller's TCB saved, and this copy crosses only into the fault window
+(`syscallWindow`), so a capability fault's context carries what the
+thread held at the `SVC`.  The IPC buffer is `tcb.ipcBuffer` (set by
+`tcbSetIPCBuffer`), never a register. -/
 def syscallDispatchFromAbi
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64)
+    (x6 : UInt64)
     (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
     -- Errors ride the x1 label as frames computed HERE, never staged into any
@@ -3581,7 +3582,7 @@ def syscallDispatchFromAbi
               if syscallDropsFault syscallId fault then .ok (.resumes, stR) else
               .ok (.faulted,
                    deliverSyscallCapFault ctx executingCore stR tid fault
-                     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
                      elr spsr)
           | none =>
               -- WS-SM SM9.B.9: the refusal seam.  The outcome is the error
@@ -3779,14 +3780,14 @@ is `deliverSyscallCapFault` of the fault the refusal names. -/
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (d : Nat)
     (w1 w2 w3 w4 : UInt64)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr : UInt64) :
     SystemState :=
   let failed := d = (KernelError.failedLookup false .invalidRoot).toDiscriminant
   faultDeliveredWords ctx st (Fault.capFault 0 false .invalidRoot).kindCode inRecv capWord
     (if failed then LookupFault.guardWordOfWords w1 w3 else 0)
     (if failed then LookupFault.storedWordOfWords w1 w2 w3 w4
      else (LookupFault.missingCapability 0).storedWord)
-    (svcFaultIP elr) spsr (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+    (svcFaultIP elr) spsr (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
     executingCore tid
 
 /-- **The lookup fault delivered from a refusal's words is the capability
@@ -3794,12 +3795,12 @@ fault the refusal names.** -/
 theorem deliverSyscallLookupFault_eq (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (e : KernelError)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr : UInt64) :
     deliverSyscallLookupFault ctx executingCore st tid capWord inRecv e.toDiscriminant
         (e.payloadWord 1) (e.payloadWord 2) (e.payloadWord 3) (e.payloadWord 4)
-        syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr =
+        syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr =
       deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e.capFaultLookup)
-        (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr := by
+        (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr := by
   rw [deliverSyscallCapFault_eq_impl]
   unfold deliverSyscallLookupFault deliverSyscallCapFaultImpl
   have hw : (if e.toDiscriminant = (KernelError.failedLookup false .invalidRoot).toDiscriminant
@@ -3947,7 +3948,7 @@ caller's frame.  The continued entry's continuations, as the words entry hands
 them (`abiEntryRoutedWith_eq`). -/
 @[inline] def abiEntryFinishW (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId opCode : UInt32)
-    (tid : SeLe4n.ThreadId) (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (tid : SeLe4n.ThreadId) (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (sid : SyscallId) (capWord : UInt64) (s : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64) × SystemState :=
   SeLe4n.Kernel.entryReportOutcomeW
@@ -3959,7 +3960,7 @@ them (`abiEntryRoutedWith_eq`). -/
           if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallCapFault ctx executingCore s tid fault
-            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr)
+            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr)
       | none => errorRefusalWordsW ctx executingCore syscallId opCode tid x0 d w0 w1 w2 w3 w4 s)
     (fun d w0 w1 w2 w3 w4 s => errorRefusalWordsW ctx executingCore syscallId opCode tid x0 d w0 w1 w2 w3 w4 s)
     (fun d w0 w1 w2 w3 w4 s =>
@@ -3968,7 +3969,7 @@ them (`abiEntryRoutedWith_eq`). -/
           if syscallDropsCapFault syscallId inRecv then (Architecture.SyscallOutcome.resumes.words, s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4
-            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+            syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr)
       | none => errorRefusalWordsW ctx executingCore syscallId opCode tid x0 d w0 w1 w2 w3 w4 s)
     -- a receive's reply capability's failed lookup (seL4-MCS `lookupReply`):
     -- the fault raised at the reply capability's address, from its words
@@ -3979,7 +3980,7 @@ them (`abiEntryRoutedWith_eq`). -/
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid replyWord inRecv
             (KernelError.failedLookup false .invalidRoot).toDiscriminant w1 w2 w3 w4
-            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+            syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr)
       | none => errorRefusalWordsW ctx executingCore syscallId opCode tid x0
           (KernelError.failedLookup false .invalidRoot).toDiscriminant 0 w1 w2 w3 w4 s)
     s
@@ -3988,10 +3989,10 @@ them (`abiEntryRoutedWith_eq`). -/
 words entry's continuations. -/
 theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId opCode : UInt32)
-    (tid : SeLe4n.ThreadId) (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (tid : SeLe4n.ThreadId) (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) :
     SeLe4n.Kernel.syscallEntryRoutedWith ctx executingCore st
-        (abiEntryFinishW ctx executingCore syscallId opCode tid x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
+        (abiEntryFinishW ctx executingCore syscallId opCode tid x0 x1 x2 x3 x4 x5 x6 elr spsr
           spEl0 x30) =
       syscallEntryCheckedK ctx executingCore st
         (syscallRefusalOutcome tid
@@ -3999,7 +4000,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
             if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid fault
-              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
+              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr))
           (fun ke s => errorRefusalWords ctx executingCore syscallId opCode tid x0 ke s)
           (fun st' => (returnOutcomeWords opCode st' tid, st')))
         (syscallArmOutcome
@@ -4010,7 +4011,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
             if syscallDropsCapFault syscallId b then (Architecture.SyscallOutcome.resumes.words, s) else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid (.capFault w b e.capFaultLookup)
-              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
+              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr))
           (fun ke s => errorRefusalWords ctx executingCore syscallId opCode tid x0 ke s)) := by
   apply SeLe4n.Kernel.syscallEntryRoutedWith_eq
   · intro sid w r
@@ -4043,7 +4044,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
       split
       · rfl
       · exact congrArg (Prod.mk _) (deliverSyscallLookupFault_eq ctx executingCore s tid rw inRecv
-          (.failedLookup false lf) syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
+          (.failedLookup false lf) syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr)
     | none =>
       exact errorRefusalWordsW_eq ctx executingCore syscallId opCode tid x0 (.failedLookup false lf) s
 
@@ -4055,7 +4056,7 @@ its words on as scalars, so no outcome is built. -/
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64)
+    (x6 : UInt64)
     (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64) × SystemState :=
     match (st.scheduler.currentOnCore executingCore) with
@@ -4070,15 +4071,15 @@ its words on as scalars, so no outcome is built. -/
       let opCode := seamOperationCode stRegs tid
       SeLe4n.Kernel.syscallEntryRoutedWith ctx executingCore stRegs
         (fun sid capWord s => abiEntryFinishW ctx executingCore syscallId opCode tid
-          x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 sid capWord s)
+          x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 sid capWord s)
 
 theorem syscallDispatchFromAbiWords_eq
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st st' : SystemState) (o : Architecture.SyscallOutcome)
-    (h : syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
+    (h : syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6
       elr spsr spEl0 x30 st = .ok (o, st')) :
-    syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
+    syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6
       elr spsr spEl0 x30 st = (o.words, st') := by
   unfold syscallDispatchFromAbi at h
   unfold syscallDispatchFromAbiWords
@@ -4136,10 +4137,10 @@ theorem syscallDispatchFromAbi_total
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) :
     ∃ (outcome : Architecture.SyscallOutcome) (st' : SystemState),
-      syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+      syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
         = Except.ok (outcome, st') := by
   unfold syscallDispatchFromAbi
   -- The function case-splits on `(st.scheduler.currentOnCore executingCore)`,
@@ -4185,22 +4186,22 @@ Equal to the specification through `syscallDispatchFromAbiWords_eq`. -/
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64)
+    (x6 : UInt64)
     (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
     match syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st with
+        x6 elr spsr spEl0 x30 st with
     | (w, st') => .ok (Architecture.SyscallOutcome.ofWords w, st')
 
 @[csimp] theorem syscallDispatchFromAbi_eq_impl :
     @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
-  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   obtain ⟨o, st', h⟩ := syscallDispatchFromAbi_total ctx executingCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [h]
   unfold syscallDispatchFromAbiImpl
   rw [syscallDispatchFromAbiWords_eq ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-    ipcBufferAddr elr spsr spEl0 x30 st st' o h]
+    x6 elr spsr spEl0 x30 st st' o h]
   simp only [Architecture.SyscallOutcome.ofWords_words]
 
 -- ============================================================================
@@ -4760,12 +4761,12 @@ theorem syscallDispatchFromAbi_ne_error
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (e : KernelError) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr
       spEl0 x30 st ≠ Except.error e := by
   obtain ⟨_, _, h⟩ := syscallDispatchFromAbi_total ctx executingCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [h]; intro h'; cases h'
 
 /-- WS-RC R2.B.5 (restated at the WS-RA type): When `syscallEntryChecked`
@@ -4782,7 +4783,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4790,7 +4791,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (syscallReturnOutcome
           (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
           st' tid, st') := by
@@ -4811,7 +4812,7 @@ theorem syscallDispatchFromAbi_blocks_of_ipcBlocked
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState) (tcb : TCB)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4822,10 +4823,10 @@ theorem syscallDispatchFromAbi_blocks_of_ipcBlocked
     (hTcb : st'.getTcb? tid = some tcb)
     (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
     syscallDispatchFromAbi ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (.blocks, st') := by
   rw [syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st' hCur hNI hSyscall,
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid st' hCur hNI hSyscall,
       syscallReturnOutcome_blocks_of_ipcBlocked _ st' tid tcb hTcb hBlocked]
 
 /-- …and the negative form the trap layer relies on: **no frame** crosses the
@@ -4834,7 +4835,7 @@ theorem syscallDispatchFromAbi_blocked_returns_no_frame
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState) (tcb : TCB)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4846,11 +4847,11 @@ theorem syscallDispatchFromAbi_blocked_returns_no_frame
     (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
     ∀ (frame : Architecture.SyscallReturnFrame) (stAny : SystemState),
       syscallDispatchFromAbi ctx executingCore syscallId
-          x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+          x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
         ≠ Except.ok (.returns frame, stAny) := by
   intro frame stAny h
   rw [syscallDispatchFromAbi_blocks_of_ipcBlocked ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st' tcb
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid st' tcb
         hCur hNI hSyscall hTcb hBlocked] at h
   exact absurd h (by simp)
 
@@ -4883,7 +4884,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4892,7 +4893,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
     syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
+        x6 elr spsr spEl0 x30 st
       = Except.ok (syscallReturnOutcome
           (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
           st' tid, st') ∧
@@ -4913,7 +4914,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) ref = some cap ∧
             cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
   refine ⟨syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
-            x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st'
+            x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid st'
             hCur hNI hSyscall, ?_⟩
   obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode, hHeld⟩ :=
     syscallEntryChecked_implies_capability_held
@@ -4946,7 +4947,7 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4959,7 +4960,7 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = none)
     (hCall : syscallId = Syscall.call.number.toUInt32) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (.returns (Architecture.errorFrameFor
                      (cancelReceiveBusyReply ctx executingCore
                        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke),
@@ -4983,7 +4984,7 @@ theorem syscallDispatchFromAbi_capFault_faulted
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -4996,13 +4997,13 @@ theorem syscallDispatchFromAbi_capFault_faulted
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = some fault)
     (hDelivered : syscallDropsFault syscallId fault = false) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6
         elr spsr spEl0 x30 st
       = Except.ok (.faulted,
           deliverSyscallCapFault ctx executingCore
             (cancelReceiveBusyReply ctx executingCore
               (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid fault
-            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr) := by
+            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr) := by
   unfold syscallDispatchFromAbi
   simp [hCur, hNI, hSyscall, hCap, hDelivered]
 
@@ -5017,7 +5018,7 @@ theorem syscallDispatchFromAbi_error_resumes_of_not_call
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5030,7 +5031,7 @@ theorem syscallDispatchFromAbi_error_resumes_of_not_call
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = none)
     (hNotCall : syscallId ≠ Syscall.call.number.toUInt32) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (.resumes,
           recordSyscallRefusal ctx executingCore
             (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
@@ -5050,7 +5051,7 @@ theorem syscallDispatchFromAbi_invokeFault_dropped
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5065,7 +5066,7 @@ theorem syscallDispatchFromAbi_invokeFault_dropped
           tid ke = some fault)
     (hDrop : syscallDropsFault syscallId fault = true) :
     syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
+        x6 elr spsr spEl0 x30 st
       = Except.ok (.resumes,
           cancelReceiveBusyReply ctx executingCore
             (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) := by
@@ -5108,7 +5109,7 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5122,7 +5123,7 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = none)
     (hCall : syscallId = Syscall.call.number.toUInt32) :
     (syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2)
+        x6 elr spsr spEl0 x30 st).map (·.2)
       = Except.ok (recordSyscallRefusal ctx executingCore (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid) tid ke x0
           (Architecture.recordErrorOverflow
             (cancelReceiveBusyReply ctx executingCore
@@ -5139,7 +5140,7 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
     rw [recordSyscallRefusal_readReturnFrame_eq ctx executingCore _ tid ke x0 _ tid,
       Architecture.readReturnFrame_recordErrorOverflow]⟩
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
+    syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
   rfl
 
 /-- WS-SM SM9.B.9 (**the caller learns exactly what it learned before**): on
@@ -5160,7 +5161,7 @@ theorem refusalLedger_write_is_caller_invisible
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5174,12 +5175,12 @@ theorem refusalLedger_write_is_caller_invisible
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = none)
     (hCall : syscallId = Syscall.call.number.toUInt32) :
     (syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
+        x6 elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrameFor
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke)) := by
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
+    syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
   rfl
 
 /-- WS-SM SM9.B.9 (**the seam records, end to end**): a refused declassification
@@ -5193,7 +5194,7 @@ theorem syscallDispatchFromAbi_records_refusal
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5210,7 +5211,7 @@ theorem syscallDispatchFromAbi_records_refusal
     (hCall : syscallId = Syscall.call.number.toUInt32) :
     ∃ post : SystemState,
       (syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2) = Except.ok post ∧
+        x6 elr spsr spEl0 x30 st).map (·.2) = Except.ok post ∧
       post.declassificationRefusals.recent.get
           (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).declassificationRefusals.nextSlot
@@ -5229,7 +5230,7 @@ theorem syscallDispatchFromAbi_records_refusal
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke), ?_, ?_⟩
   · rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-      syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
+      syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall]
     rfl
   · have hR : refusalReceiverFor (Architecture.recordErrorOverflow
           (cancelReceiveBusyReply ctx executingCore
@@ -5261,7 +5262,7 @@ theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
@@ -5277,12 +5278,12 @@ theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = none)
     (hCall : syscallId = Syscall.call.number.toUInt32) :
     (syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2)
+        x6 elr spsr spEl0 x30 st).map (·.2)
       = Except.ok (Architecture.recordErrorOverflow
           (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke) := by
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall,
+    syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI hSyscall hNoCapFault hCall,
     recordSyscallRefusal_exempt ctx executingCore _ tid ke x0 _ sid hDecode hExempt]
   rfl
 
@@ -5296,10 +5297,10 @@ theorem syscallDispatchFromAbi_illegalState_when_no_current
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState)
     (hCur : (st.scheduler.currentOnCore executingCore) = none) :
-    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (.returns (Architecture.errorFrame .illegalState false), st) := by
   unfold syscallDispatchFromAbi
   simp [hCur]

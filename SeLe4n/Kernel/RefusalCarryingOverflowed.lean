@@ -175,7 +175,9 @@ def overflowedDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.Reg
   { capAddr, msgInfo := mi, syscallId := sid,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
+    inlineCount := 4, overflowCount := mi.length - 4 ,
+    canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)}
 
 @[simp] theorem overflowedDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :

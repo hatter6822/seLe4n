@@ -1575,14 +1575,15 @@ private def runSyscallCapFaultChecks : IO Unit := do
      | _ => false)
   -- `receiveIPC` with `isBlocking = false` and no sender: `doNBRecvFailedTransfer`
   -- writes 0 to the badge register (`x0`, which held the CPtr) and the caller
-  -- does not block.
-  assertBool "an NBRecv on an endpoint no sender waits on returns at once, x0 = 0, still running"
-    (match seamDispatchSyscall seamCtx .nbRecv 1 with
+  -- does not block.  `NBWait` names no reply capability (`canReply` false); an
+  -- `NBRecv` would look one up in x6, which this caller leaves empty.
+  assertBool "an NBWait on an endpoint no sender waits on returns at once, x0 = 0, still running"
+    (match seamDispatchSyscall seamCtx .nbWait 1 with
      | .ok (.returns f, st) =>
          f.x0 == 0 && ipcStateOf st faulter == ipcStateOf stRunning faulter
      | _ => false)
-  assertBool "control: a Recv on the same endpoint blocks the caller"
-    (match seamDispatchSyscall seamCtx .recv 1 with
+  assertBool "control: a Wait on the same endpoint blocks the caller"
+    (match seamDispatchSyscall seamCtx .wait 1 with
      | .ok (.blocks, _) => true
      | _ => false)
   -- `handleRecv` faults whatever the blocking flag: the receive phase of an
@@ -1869,15 +1870,16 @@ private def entryLabeling : LabelingContext :=
     SecurityLabel.kernelTrusted SecurityLabel.publicLabel (by decide)
 
 /-- The handler's `ReplyRecv` on core 1 through the compiled syscall entry: the
-endpoint capability in `x0`, a one-word `MessageInfo` carrying the handler's
-label in `x1`, and the reply capability's CPtr as MR0 in `x2`.  The reply
-payload (MR1..) is empty, so the answer is the label alone. -/
+endpoint capability in `x0`, an empty `MessageInfo` carrying the handler's
+label in `x1`, and the reply capability's CPtr in the reply register (`x6`,
+seL4-MCS `replyRegister`).  The reply payload is empty, so the answer is the
+label alone. -/
 private def handlerReplyRecvOnCore1 (label : Nat) (st : SystemState) :
     Except KernelError (SyscallOutcome × SystemState) :=
   SeLe4n.Testing.dispatchOperationFromAbi entryLabeling c1 SyscallId.replyRecv
     handlerCPtr.toNat.toUInt64
-    (MessageInfo.encode { length := 1, extraCaps := 0, label := label }).toUInt64
-    replyCapCPtr.toNat.toUInt64 0 0 0 0 0 0 0 0 (withHandlerReplyCap st)
+    (MessageInfo.encode { length := 0, extraCaps := 0, label := label }).toUInt64
+    0 0 0 0 replyCapCPtr.toNat.toUInt64 0 0 0 0 (withHandlerReplyCap st)
 
 /-- The second server's ordinary `.reply`: one payload word, label 0.  Read as a
 fault reply this would be a vmFault resume, which restarts at the fault's PC. -/

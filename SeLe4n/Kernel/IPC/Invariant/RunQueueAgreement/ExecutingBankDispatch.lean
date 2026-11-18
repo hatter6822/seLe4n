@@ -545,6 +545,11 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     -- and the receive runs alone
     split at h
     · exact hRecvArm epId h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR

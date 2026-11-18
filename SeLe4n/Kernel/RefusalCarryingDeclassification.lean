@@ -45,7 +45,9 @@ def auditedDecoded (sid : SyscallId) (capAddr : SeLe4n.CPtr) (regs : SeLe4n.Regi
     SyscallDecodeResult :=
   { capAddr, msgInfo := ⟨routedLength regs, 0, 0, 0⟩, syscallId := sid,
     msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs),
-    inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size }
+    inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size,
+    canReply := Syscall.wordCanReply (readRegWord regs SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord regs SeLe4n.arm64DefaultLayout.replyReg)}
 
 /-- The gate a routed declassification or audit call's arm reads: only its
 required right (`dispatchWithCapChecked_eq_auditedArmSpec`). -/

@@ -1539,6 +1539,11 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     -- and the receive runs alone
     split at h
     · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
@@ -1646,11 +1651,11 @@ thread ready**: the argument spill writes the caller's registers, then the
 checked entry, the capability-fault delivery suspending the caller, or a
 refusal record. -/
 theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (E : EntryPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     readyKeptStage (fun t => st.scheduler.currentOnCore e = some t) st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -1710,15 +1715,15 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
         obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
         have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
         have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
-            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)) := by
           unfold writeFaultRegistersToTcb
           exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
         have hCur2 : (writeFaultRegistersToTcb stR tid
-            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)).scheduler.currentOnCore e
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)).scheduler.currentOnCore e
             = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
         exact readyKeptStage.trans hL hKW (readyKeptStage.trans hW2.1 (.of_stage hW2)
           (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e (endpointHeadsWakeable_of hD2 hQ2)

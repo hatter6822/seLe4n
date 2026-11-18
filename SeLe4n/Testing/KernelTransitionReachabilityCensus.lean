@@ -1257,6 +1257,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchReplyRecvLongCheckedR
   , `SeLe4n.Kernel.dispatchTransferringCheckedR
   , `SeLe4n.Kernel.endpointReplyRecvLongGeneralR
+  -- The reply-receive's general arm and its register-read instance, the forms
+  -- the compiled checked arm is proven equal to
+  -- (`endpointReplyRecvCheckedArmR_eq_general`,
+  -- `endpointReplyRecvCheckedArmGeneralR_eq`): the compiled arm resolves the
+  -- reply capability in the reply register in continuation form and never
+  -- calls them.
+  , `SeLe4n.Kernel.endpointReplyRecvCheckedArmGeneralR
+  , `SeLe4n.Kernel.endpointReplyRecvCheckedArmRegsR
   -- The short-argument route's specification, which the compiled entry
   -- runs as the arm proven equal to it (`shortArgsRoutedArm`).
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR

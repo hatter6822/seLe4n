@@ -73,6 +73,7 @@ register msgReg0 x2
 register msgReg1 x3
 register msgReg2 x4
 register msgReg3 x5
+register reply x6
 register syscallNum x7
 maxMessageRegisters 120
 maxExtraCaps 3

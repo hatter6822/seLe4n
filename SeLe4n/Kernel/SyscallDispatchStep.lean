@@ -57,7 +57,7 @@ Inlined into the entry (WS-ZA ZA3.2), so the entry reads each component of the
 result where it is computed and the nested tuple is never built. -/
 @[inline] def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (x6 elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
@@ -69,7 +69,7 @@ result where it is computed and the nested tuple is never built. -/
   let pending0 := reschedulePendingSnapshot st
   let gen0 := st.tlbShootdown.roundGeneration
   match hD : Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st with
+      x6 elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
       -- the core's bank before any local reschedule, so a switch saves it.
@@ -99,17 +99,17 @@ result where it is computed and the nested tuple is never built. -/
       -- Unreachable (`syscallDispatchFromAbi_ne_error`); discharged rather than
       -- answered from `st`, which would keep the pre-state alive.
       absurd hD (Platform.FFI.syscallDispatchFromAbi_ne_error ctx execCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st e)
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st e)
 
 /-- **The step, on the dispatch's result**: the committed state and the result
 tuple, every pre-state read being one of the three captures. -/
 theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (h : Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = Except.ok (outcome, st')) :
     syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st =
+        x6 elr spsr spEl0 x30 st =
       let st'' := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore execCore)
           (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
@@ -139,20 +139,20 @@ the committed transition recorded.  So a write is performed once — by the seam
 this commit returns to — and none is stranded into the next syscall. -/
 theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     ∃ outcome st',
       Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
+          x6 elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
+          x6 elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1.toList =
+          x6 elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1.toList =
         (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessor st
             (Architecture.stageCallerReturn st st' execCore outcome) execCore)
           execCore) execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> rw [syscallDispatchCrossCoreStep_of_ok h]
   · simp
   · exact SystemState.toList_drainedPhysicalWrites _
@@ -164,14 +164,14 @@ target's parts off the committed state instead of carrying the target across
 the commit. -/
 theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.2.1 =
+        x6 elr spsr spEl0 x30 st).1.2.2.2.2.2.2.2.1 =
       Architecture.restoreTargetOnCore
         (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st).2 execCore := by
+          x6 elr spsr spEl0 x30 st).2 execCore := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok h]
   dsimp only
   generalize activateThreadOnCore _ execCore = x
@@ -197,7 +197,7 @@ the caller's frame is staged from them (`stageCallerReturnWords`), so a
 value-returning syscall builds neither its outcome nor its frame. -/
 @[inline] def syscallDispatchCrossCoreStepWords (ctx : LabelingContext) (execCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (x6 elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
@@ -210,7 +210,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
   -- vector in place.
   let gen0 := st.tlbShootdown.roundGeneration
   match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st with
+      x6 elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
       let stR := Architecture.stageCallerReturnWords callerCode st' execCore tag w0 w1 w2 w3 w4 w5
       let st1 := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
@@ -235,20 +235,20 @@ value-returning syscall builds neither its outcome nor its frame. -/
 
 theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     syscallDispatchCrossCoreStepWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st =
+        x6 elr spsr spEl0 x30 st =
       let r := syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
+        x6 elr spsr spEl0 x30 st
       ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
         r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2,
         currentAsCode r.1.2), r.2) := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok h]
   unfold syscallDispatchCrossCoreStepWords
   rw [Platform.FFI.syscallDispatchFromAbiWords_eq ctx execCore syscallId x0 x1 x2 x3 x4 x5
-    ipcBufferAddr elr spsr spEl0 x30 st st' outcome h]
+    x6 elr spsr spEl0 x30 st st' outcome h]
   simp only [Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
     syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode,
     Architecture.shootdownPostedOpsTaking_eq, Architecture.shootdownPostedOpsOfOne_eq,

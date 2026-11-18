@@ -794,21 +794,45 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     simp only at hDisp
     split at hDisp
     · exact absurd hDisp (by simp)
-    -- WS-SX SX6.1: an extra capability that does not look up skips the reply,
-    -- and the receive runs alone under the receive's footprint
+    -- WS-SX SX6.1, SX7.3: an extra capability that does not look up, or a
+    -- reply that answers no caller, skips the reply, and the receive runs alone
+    -- under the receive's footprint
+    have hGc : resolveReplyRecvReply gate decoded st =
+        resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st := by
+      have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb
+      rw [hGateEq]
+      exact resolveReplyRecvReply_congr _ _ decoded rfl
+        (by simp only [callerReplyGate, callerCspaceRoot, SystemState.getObject?_eq_getElem, hO])
     cases hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
     | some xf =>
-      rw [hXc] at hDisp hOps hSched
-      simp only [Option.isSome_some, true_and, ↓reduceIte] at hOps hSched
+      have hSk : replyRecvSkipsReply decoded tid st = true := by
+        simp [replyRecvSkipsReply, hXc]
+      rw [hXc] at hDisp hOps
+      simp only [Option.isSome_some, ↓reduceIte] at hOps
+      simp only [hSk, and_self, ↓reduceIte] at hSched
       exact receiveResolvedArm_coversWrites ctx decoded tid e gate epId st st' ops S hObjInv
         hHeads hTable hOps hSched hDisp
     | none =>
-      rw [hXc] at hDisp hOps hSched
-      simp only [Option.isSome_none, Bool.false_eq_true, and_false, ↓reduceIte] at hOps hSched
+      rw [hXc] at hDisp hOps
+      simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hOps
       simp only at hDisp
-      split at hOps
-      · exact absurd hOps (by simp)
-      · rename_i rid prev replyBadge replyGrant hRRR
+      cases hRRR : resolveReplyRecvReply gate decoded st with
+      | error err => rw [hRRR] at hOps; exact absurd hOps (by simp)
+      | ok r =>
+      cases r with
+      | none =>
+        have hSk : replyRecvSkipsReply decoded tid st = true := by
+          simp [replyRecvSkipsReply, hXc, ← hGc, hRRR]
+        rw [hRRR] at hOps hDisp
+        simp only [hSk, and_self, ↓reduceIte] at hSched
+        exact receiveResolvedArm_coversWrites ctx decoded tid e gate epId st st' ops S hObjInv
+          hHeads hTable hOps hSched hDisp
+      | some r =>
+        obtain ⟨rid, prev, replyBadge, replyGrant⟩ := r
+        have hSk : replyRecvSkipsReply decoded tid st = false := by
+          simp [replyRecvSkipsReply, hXc, ← hGc, hRRR]
+        rw [hRRR] at hOps
+        simp only [hSk, Bool.false_eq_true, and_false, ↓reduceIte] at hSched
         injection hOps with hOps
         subst hOps
         simp only [schedLockSetForSyscall, Option.bind_some] at hSched
@@ -942,8 +966,9 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
   rw [hDec] at hDec'
   cases hDec'
   have hRecvF : receivesWithoutReply decoded tid stSpilled := by
-    unfold receivesWithoutReply at hRecv' ⊢
-    rw [hXc]
+    unfold receivesWithoutReply replyRecvSkipsReply callerReplyGate at hRecv' ⊢
+    rw [hXc, callerCspaceRoot_congr_objects tid hFillObj,
+      resolveReplyRecvReply_congr_objects _ decoded hFillObj]
     exact hRecv'
   obtain ⟨tcbF, gate, cap, hGate, -, -, -⟩ :=
     abiEntryLockOperands_gate_lookup decoded tid stSpilled ops
@@ -981,12 +1006,12 @@ gated lookup of the decode's capability succeeded at the dispatch state, and
 the fault builder re-runs that resolution at the spilled state, whose object
 store is the same. -/
 theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (U : LockSet)
     (hInv : st.objects.invExt ∧ queueHeadBlockedConsistent st)
     (hU : declaredUnifiedLockSetForAbiEntry ctx e syscallId x0 x1 x2 x3 x4 x5 st = some U) :
     footprintCoversWrites U st
-      (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
+      (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr
         spEl0 x30 st).2 := by
   obtain ⟨hObjInv, hHeads⟩ := hInv
   unfold declaredUnifiedLockSetForAbiEntry at hU
@@ -1025,7 +1050,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     queueHeadBlockedConsistent_updateTcb_of_ipcState_eq st tid _ hObjInv (fun _ => rfl) hHeads
   have hFillHeads : queueHeadBlockedConsistent stSpilled :=
     queueHeadBlockedConsistent_of_readViewAgreement (.of_getElem_eq (fun oid => by rw [hFillObj])) hRegsHeads
-  have hD := abiEntryPlan_dispatches ctx e syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
+  have hD := abiEntryPlan_dispatches ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr
     spEl0 x30 st tid decoded stSpilled hPlan
   cases hDisp : dispatchSyscallChecked ctx decoded tid e stSpilled with
   | ok r =>

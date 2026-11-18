@@ -720,10 +720,12 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
     · cases h
   case none.replyRecv.object epId =>
-    split at h
-    · cases h
-    split at h
-    · -- an extra capability fails: the reply is skipped and the receive runs
+    -- the reply skipped (an extra capability fails, or the reply answers no
+    -- caller): the receive runs on the busy reply's cancel
+    have hRecvLeg : ∀ {st'}, receiveResolvedArm decoded gate tid epId executingCore
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st') →
+        MappingStage st st' := by
+      intro st' h
       refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
       unfold receiveResolvedArm at h
       repeat' split at h
@@ -735,6 +737,13 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
         (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
           (stageWokenSendCompletion_mappingStage _ _)).trans
           (stageDeliveredMessage_mappingStage _ _ _))
+    split at h
+    · cases h
+    split at h
+    · exact hRecvLeg h
+    split at h
+    · cases h
+    · exact hRecvLeg h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR

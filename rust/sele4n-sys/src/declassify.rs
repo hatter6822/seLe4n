@@ -74,6 +74,7 @@ pub fn declassify(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::Declassify,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -159,5 +160,6 @@ pub fn declassify_signal(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::DeclassifySignal,
+        reply_cap: CPtr::NULL,
     })
 }

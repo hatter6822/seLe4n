@@ -401,6 +401,11 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     -- and the receive runs alone
     split at h
     · exact hRecvArm epId h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
@@ -772,14 +777,14 @@ writes no object.  The coverage frames are the dispatch's own
 that wrote the saved registers of a thread current or resident on another core
 would break the remote stall's rule; none does. -/
 theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (E : EntryPremises st) (hRT : st.residentsHaveTcbs) (hN : st.currentNotResidentElsewhere)
     (hB : finalisingDeleteBundle st) (hBNR : st.blockedNotResident) (hYA : st.yieldLinksAgree)
     (hYN : st.yieldLinkedNotResident) (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     savedRegsKeptOffCore e st st' := by
   have hInv := E.objInv
   have hU := currentsUnique_of_dequeuedUnique E.dequeued
@@ -855,10 +860,10 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
         unfold Platform.FFI.deliverSyscallCapFault
         dsimp only
         have hW2 : savedRegsKeptExcept (· = tid) stR (writeFaultRegistersToTcb stR tid
-              (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
+              (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)) := by
           unfold writeFaultRegistersToTcb; exact .updateTcb_written _ _ _ iR rfl
         have iW2 : (writeFaultRegistersToTcb stR tid
-            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
             ).objects.invExt := by
           unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ iR
         refine (w1.trans (.of_kept hW2 fun _ e => e ▸ hFr)).trans

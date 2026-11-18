@@ -3885,20 +3885,13 @@ in place (`receiveBlocksInPlace`). -/
        | none => false)
   | none => false
 
-/-- The CSpace root capability of the calling thread, as the syscall gate
-reads it: its TCB's first space cell. -/
-@[inline] def callerCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId) : Option Capability :=
-  match st.getObject? tid.toObjId with
-  | some (.tcb t) => t.spaceCells[0]
-  | _ => none
-
-/-- `resolveRecvReplyId` on the message length and first message register
+/-- `resolveRecvReplyId` on `handleRecv`'s `canReply` and the reply register
 alone, with the gate the caller's own CSpace gives
 (`resolveRecvReplyIdR_eq`), so the entry builds no decode record for it. -/
 @[inline] def resolveRecvReplyIdRootR (st : SystemState) (tid : SeLe4n.ThreadId)
-    (root? : Option Capability) (len : Nat) (replyAddr : SeLe4n.CPtr) :
+    (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr) :
     Except KernelError (Option SeLe4n.ReplyId) :=
-  if len = 0 then .ok none else
+  if !canReply then .ok none else
   let gate : SyscallGate :=
     { callerId := tid
       cspaceRootCap := root?
@@ -3915,36 +3908,33 @@ alone, with the gate the caller's own CSpace gives
 
 /-- `resolveRecvReplyIdRootR` at the caller's own CSpace root. -/
 @[inline] def resolveRecvReplyIdR (st : SystemState) (tid : SeLe4n.ThreadId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) : Except KernelError (Option SeLe4n.ReplyId) :=
-  resolveRecvReplyIdRootR st tid (callerCspaceRoot st tid) len replyAddr
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) : Except KernelError (Option SeLe4n.ReplyId) :=
+  resolveRecvReplyIdRootR st tid (callerCspaceRoot st tid) canReply replyAddr
 
 theorem resolveRecvReplyIdRootR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (root? : Option Capability)
-    (gate : SyscallGate) (decoded : SyscallDecodeResult) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = root?)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr }) :
-    resolveRecvReplyIdRootR st tid root? len replyAddr = resolveRecvReplyId gate decoded st := by
+    (hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none) :
+    resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st := by
   unfold resolveRecvReplyIdRootR resolveRecvReplyId
-  by_cases h0 : len = 0
-  · simp [h0, hLen]
-  · rw [if_neg h0, hArgs h0]
-    have hL : (decoded.msgInfo.length == 0) = false := by simp [hLen, h0]
-    simp only [hL, Bool.false_eq_true, ↓reduceIte]
+  rw [hNames]
+  cases canReply
+  · rfl
+  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
     rcases gate with ⟨c, r, a, rr⟩
     simp only at hCaller hRoot
     subst hCaller hRoot
     rfl
 
 theorem resolveRecvReplyIdR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (gate : SyscallGate) (decoded : SyscallDecodeResult) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr }) :
-    resolveRecvReplyIdR st tid len replyAddr = resolveRecvReplyId gate decoded st :=
-  resolveRecvReplyIdRootR_eq st tid _ gate decoded len replyAddr hCaller hRoot hLen hArgs
+    (hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none) :
+    resolveRecvReplyIdR st tid canReply replyAddr = resolveRecvReplyId gate decoded st :=
+  resolveRecvReplyIdRootR_eq st tid _ gate decoded canReply replyAddr hCaller hRoot hNames
 
 /-- The reply capability a receive names, checked as `resolveRecvReplyIdR`
 checks it once its slot is found: present, not the idle thread's, carrying the
@@ -3974,8 +3964,8 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
 `lookupSlotFromK`, as the operand is, so the entry builds no gate,
 slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. -/
 @[inline] def resolveRecvReplyRootK {α : Type} (st : SystemState) (root? : Option Capability)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
-  if len = 0 then onOk 0 else
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
+  if !canReply then onOk 0 else
   match root? with
   | none => onErr (.failedLookup false .invalidRoot)
   | some root =>
@@ -3988,20 +3978,21 @@ slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. 
 /-- `resolveRecvReplyRootK` at the caller's own CSpace root, read from the state
 it resolves in. -/
 @[inline] def resolveRecvReplyK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
-  resolveRecvReplyRootK st (callerCspaceRoot st tid) len replyAddr onErr onOk
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) : α :=
+  resolveRecvReplyRootK st (callerCspaceRoot st tid) canReply replyAddr onErr onOk
 
 theorem resolveRecvReplyRootK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (root? : Option Capability)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
-    resolveRecvReplyRootK st root? len replyAddr onErr onOk =
-      match resolveRecvReplyIdRootR st tid root? len replyAddr with
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
+    resolveRecvReplyRootK st root? canReply replyAddr onErr onOk =
+      match resolveRecvReplyIdRootR st tid root? canReply replyAddr with
       | .error e => onErr e
       | .ok r => onOk (SeLe4n.ReplyId.optCode r) := by
   unfold resolveRecvReplyRootK resolveRecvReplyIdRootR
-  by_cases h0 : len = 0
-  · simp only [h0, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
-  · simp only [h0, ↓reduceIte, lookupReplyCap, syscallLookupCap, syscallResolveCap]
+  cases h0 : canReply
+  · simp only [Bool.not_false, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
+  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, lookupReplyCap, syscallLookupCap,
+      syscallResolveCap]
     simp only [SyscallGate.lookupSlot]
     cases root? with
     | none => rfl
@@ -4030,12 +4021,12 @@ theorem resolveRecvReplyRootK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Th
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
-    resolveRecvReplyK st tid len replyAddr onErr onOk =
-      match resolveRecvReplyIdR st tid len replyAddr with
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onOk : Nat → α) :
+    resolveRecvReplyK st tid canReply replyAddr onErr onOk =
+      match resolveRecvReplyIdR st tid canReply replyAddr with
       | .error e => onErr e
       | .ok r => onOk (SeLe4n.ReplyId.optCode r) :=
-  resolveRecvReplyRootK_eq st tid _ len replyAddr onErr onOk
+  resolveRecvReplyRootK_eq st tid _ canReply replyAddr onErr onOk
 
 /-- The checked receive arm's rendezvous through the specification: the
 WithCaps receive, the rendezvous hand-off, then the woken sender's completion
@@ -4457,18 +4448,18 @@ cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
 `root?` read before the cancel, the blocking receive written in place when it
 may be, the rendezvous otherwise, every refusal carrying the state it was
 handed (`endpointReceiveReplyResolvedR_eq`). -/
-@[inline] def endpointReceiveReplyResolvedR (tid : SeLe4n.ThreadId) (len : Nat)
+@[inline] def endpointReceiveReplyResolvedR (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
     (root? : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     let resolved := fun replyCode => endpointReceiveResolvedR epId tid replyCode executingCore st
-    resolveRecvReplyRootK st root? len replyAddr (fun e => .error (e, st)) resolved
+    resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
 
 theorem endpointReceiveReplyResolvedR_eq (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
-    (st : SystemState) (root? : Option Capability) (len : Nat) (replyAddr : SeLe4n.CPtr)
-    (hRid : resolveRecvReplyIdRootR st tid root? len replyAddr = resolveRecvReplyId gate decoded st) :
-    endpointReceiveReplyResolvedR tid len replyAddr executingCore epId root? st =
+    (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
+    (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
+    endpointReceiveReplyResolvedR tid canReply replyAddr executingCore epId root? st =
       RefusalCarrying.ofKernel (receiveResolvedArm decoded gate tid epId executingCore) st := by
   simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
   rw [resolveRecvReplyRootK_eq st tid, hRid]
@@ -4560,13 +4551,13 @@ write right, a reply capability (`busyReplyHolderCode`). -/
   else 0
 
 /-- **The thread a receive's busy reply cancels, as its code**, read as the
-compiled arm reads it: `recvBusyReplyHolderCode` on the message length and the
-reply capability's address, the reply slot resolved at `root?` through
+compiled arm reads it: `recvBusyReplyHolderCode` on `handleRecv`'s `canReply`
+and the reply capability's address, the reply slot resolved at `root?` through
 `lookupSlotFromK` (`receiveArmHolderCode_eq`).  Out of line with the state
 borrowed: a query, it builds nothing. -/
-@[noinline] def receiveArmHolderCode (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (len : Nat)
+@[noinline] def receiveArmHolderCode (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (root? : Option Capability) (st : @& SystemState) : Nat :=
-  if len = 0 then 0 else
+  if !canReply then 0 else
   match root? with
   | none => 0
   | some root =>
@@ -4575,19 +4566,17 @@ borrowed: a query, it builds nothing. -/
         (replySlotBusyHolderCode st tid (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })))
 
 theorem receiveArmHolderCode_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (root? : Option Capability) (gate : SyscallGate) (decoded : SyscallDecodeResult) (len : Nat)
+    (root? : Option Capability) (gate : SyscallGate) (decoded : SyscallDecodeResult) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (st : SystemState)
     (hRoot : gate.cspaceRootCap = root?)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr }) :
-    receiveArmHolderCode ctx tid len replyAddr root? st =
+    (hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none) :
+    receiveArmHolderCode ctx tid canReply replyAddr root? st =
       recvBusyReplyHolderCode ctx tid gate decoded st := by
   unfold receiveArmHolderCode recvBusyReplyHolderCode
-  by_cases h0 : len = 0
-  · simp [h0, hLen]
-  · rw [if_neg h0, hArgs h0]
-    have hL : (decoded.msgInfo.length == 0) = false := by simp [hLen, h0]
-    simp only [hL, Bool.false_eq_true, ↓reduceIte, lookupReplyCap, syscallLookupCap,
+  rw [hNames]
+  cases canReply
+  · rfl
+  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, lookupReplyCap, syscallLookupCap,
       syscallResolveCap, SyscallGate.lookupSlot, hRoot]
     cases root? with
     | none => rfl
@@ -4610,33 +4599,33 @@ theorem receiveArmHolderCode_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
 
 /-- **The compiled busy-reply cancel of a receive** (`cancelRecvBusyReply`): the
 holder `receiveArmHolderCode` names cancelled in place. -/
-@[inline] def cancelReceiveArmBusyReply (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (len : Nat)
+@[inline] def cancelReceiveArmBusyReply (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (root? : Option Capability)
     (st : SystemState) : SystemState :=
-  match receiveArmHolderCode ctx tid len replyAddr root? st with
+  match receiveArmHolderCode ctx tid canReply replyAddr root? st with
   | 0 => st
   | k + 1 => cancelReplyHolder st ⟨k⟩ executingCore
 
 /-- **The state a receive arm's refusal reports** (WS-SX SX4): its busy reply's
 cancel, once its endpoint and its flow gate pass; the state it was handed
 otherwise, since every refusal before the cancel writes nothing. -/
-def receiveArmReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (len : Nat)
+def receiveArmReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability)
     (st : SystemState) : SystemState :=
   match cap.target with
   | .object epId =>
     if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then st
-    else cancelReceiveArmBusyReply ctx tid len replyAddr executingCore (callerCspaceRoot st tid) st
+    else cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore (callerCspaceRoot st tid) st
   | _ => st
 
 /-- The checked receive arm (`dispatchWithCapChecked`'s `.receive` case), on
-the message length and first message register (`endpointReceiveCheckedArmR_eq`).
+`handleRecv`'s `canReply` and the reply register (`endpointReceiveCheckedArmR_eq`).
 Every check that can refuse it precedes its first write: the endpoint, its flow
 gate, then the busy-reply holder read before the cancel (seL4-MCS
 `receiveIPC`'s `cancelIPC(replyTCB)`), which is committed in place; a refusal
 after it reports the cancelled state (`receiveArmReport`). -/
 @[inline] def endpointReceiveCheckedArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
     match cap.target with
@@ -4645,8 +4634,8 @@ after it reports the cancelled state (`receiveArmReport`). -/
         .error (.flowDenied, st)
       else
       let root? := callerCspaceRoot st tid
-      endpointReceiveReplyResolvedR tid len replyAddr executingCore epId root?
-        (cancelReceiveArmBusyReply ctx tid len replyAddr executingCore root? st)
+      endpointReceiveReplyResolvedR tid canReply replyAddr executingCore epId root?
+        (cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore root? st)
     | _ => .error (.invalidCapability 0, st)
 
 /-- **The receive arm past its endpoint and flow gate** is the specification's
@@ -4657,30 +4646,28 @@ theorem endpointReceiveCheckedArmR_eq_resolved (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) (epId : SeLe4n.ObjId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr })
+    (hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none)
     (hTgt : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
-    endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st =
+    endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st =
       match receiveResolvedArm decoded gate tid epId executingCore
           (cancelRecvBusyReply ctx tid gate decoded executingCore st) with
       | .ok r => .ok r
       | .error e => .error (e, cancelRecvBusyReply ctx tid gate decoded executingCore st) := by
-  have hCancel : cancelReceiveArmBusyReply ctx tid len replyAddr executingCore
+  have hCancel : cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore
       (callerCspaceRoot st tid) st = cancelRecvBusyReply ctx tid gate decoded executingCore st := by
     unfold cancelReceiveArmBusyReply cancelRecvBusyReply
-    rw [receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
+    rw [receiveArmHolderCode_eq ctx tid _ gate decoded canReply replyAddr st hRoot hNames]
     rfl
   simp only [endpointReceiveCheckedArmR, hTgt, hFlow, Bool.not_true, Bool.false_eq_true,
     ↓reduceIte]
   rw [hCancel]
   have hR := endpointReceiveReplyResolvedR_eq decoded tid executingCore gate epId
-    (cancelRecvBusyReply ctx tid gate decoded executingCore st) (callerCspaceRoot st tid) len
-    replyAddr (resolveRecvReplyIdRootR_eq _ tid _ gate decoded len replyAddr hCaller hRoot hLen
-      hArgs)
+    (cancelRecvBusyReply ctx tid gate decoded executingCore st) (callerCspaceRoot st tid) canReply
+    replyAddr (resolveRecvReplyIdRootR_eq _ tid _ gate decoded canReply replyAddr hCaller hRoot hNames)
   rw [hR]
   simp only [RefusalCarrying.ofKernel]
   cases receiveResolvedArm decoded gate tid epId executingCore
@@ -4691,25 +4678,27 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState)
     (hRecv : decoded.syscallId = .receive)
-    (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr }) :
-    endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st =
-      RefusalCarrying.ofKernelReporting (receiveArmReport ctx tid len replyAddr executingCore cap)
+    (hLen : decoded.canReply = canReply)
+    (hArgs : decoded.replyCPtr = replyAddr) :
+    endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st =
+      RefusalCarrying.ofKernelReporting (receiveArmReport ctx tid canReply replyAddr executingCore cap)
         (dispatchWithCapChecked ctx decoded tid executingCore gate cap) st := by
-  have hCancel : cancelReceiveArmBusyReply ctx tid len replyAddr executingCore
+  have hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none := by
+    rw [receiveReplyAddr?_of_receive' hRecv, hLen, hArgs]
+  have hCancel : cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore
       (callerCspaceRoot st tid) st = cancelRecvBusyReply ctx tid gate decoded executingCore st := by
     unfold cancelReceiveArmBusyReply cancelRecvBusyReply
-    rw [receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
+    rw [receiveArmHolderCode_eq ctx tid _ gate decoded canReply replyAddr st hRoot hNames]
     rfl
   cases hTgt : cap.target with
   | object epId =>
     by_cases hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
         (ctx.threadLabelOf tid) = true
     · rw [endpointReceiveCheckedArmR_eq_resolved ctx decoded tid executingCore gate cap st epId
-        len replyAddr hCaller hRoot hLen hArgs hTgt hFlow]
+        canReply replyAddr hCaller hRoot hNames hTgt hFlow]
       simp only [RefusalCarrying.ofKernelReporting, receiveArmReport, dispatchWithCapChecked,
         dispatchCapabilityOnly, hRecv, hTgt, hFlow, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
         hCancel]
@@ -4790,7 +4779,7 @@ theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 operand resolved to, every refusal carrying the state it was handed
 (`receiveOperandArmThenTaintR_eq`). -/
 @[inline] def receiveOperandArmThenTaintR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
@@ -4801,7 +4790,7 @@ operand resolved to, every refusal carrying the state it was handed
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
-          match endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st with
+          match endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st with
           | .error refusal => .error refusal
           | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (syscallMissingRightError .receive, st)
@@ -4809,7 +4798,7 @@ operand resolved to, every refusal carrying the state it was handed
 /-- **The state a refusal of `receiveOperandArmThenTaintR` reports**: its arm's
 (`receiveArmReport`) once the operand's slot check and rights pass; the state
 it was handed otherwise, since every refusal before the arm writes nothing. -/
-def receiveOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (len : Nat)
+def receiveOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
     (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (operand : Option Capability) (st : SystemState) : SystemState :=
   match operand with
@@ -4818,7 +4807,7 @@ def receiveOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (len : 
     if SeLe4n.Kernel.capTargetsReservedKernelObject cap then st
     else if !syscallTargetAccepted .receive st cap then st
     else if cap.hasRight requiredRight then
-      receiveArmReport ctx tid len replyAddr executingCore cap st
+      receiveArmReport ctx tid canReply replyAddr executingCore cap st
     else st
 
 theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -4826,17 +4815,17 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLength : Nat)
     (st : SystemState) (ref : CSpaceAddr)
-    (hRecv : decoded.syscallId = .receive) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (hRecv : decoded.syscallId = .receive) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
-    (hLen : decoded.msgInfo.length = len)
-    (hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr })
+    (hLen : decoded.canReply = canReply)
+    (hArgs : decoded.replyCPtr = replyAddr)
     (hRef : gate.lookupSlot st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
-    receiveOperandArmThenTaintR ctx tid len replyAddr executingCore gate.requiredRight
+    receiveOperandArmThenTaintR ctx tid canReply replyAddr executingCore gate.requiredRight
         (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernelReporting
-        (receiveOperandReport ctx tid len replyAddr executingCore gate.requiredRight
+        (receiveOperandReport ctx tid canReply replyAddr executingCore gate.requiredRight
           (SystemState.lookupSlotCap st ref))
         (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate none
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
@@ -4857,52 +4846,45 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
       by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
           TaintWords.mk_fields]
-        rw [endpointReceiveCheckedArmR_eq ctx decoded tid executingCore gate cap st hRecv len replyAddr
+        rw [endpointReceiveCheckedArmR_eq ctx decoded tid executingCore gate cap st hRecv canReply replyAddr
           hCaller hRoot hLen hArgs]
         simp only [RefusalCarrying.ofKernelReporting]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
-/-- The receive's dispatch, on the message length and first message register
+/-- The receive's dispatch, on `handleRecv`'s `canReply` and the reply register
 the entry read: `dispatchOperandCheckedR` with the receive's arm
 (`dispatchReceiveCheckedR_eq`).
 
 A specification: the compiled entry runs the arm out of line
 (`syscallEntryRoutedK`), so no code is generated for it. -/
 noncomputable def dispatchReceiveCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (len : Nat) (replyAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) :
+    (canReply : Bool) (replyAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (xc : Nat) :
     RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore xc
-    (receiveOperandArmThenTaintR ctx tid len replyAddr executingCore (syscallRequiredRight .receive))
+    (receiveOperandArmThenTaintR ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive))
 
 theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (executingCore : Concurrency.CoreId) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hRecv : decoded.syscallId = .receive)
-    (hLen : decoded.msgInfo.length = len)
-    (hReplyAddr : len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.word⟩) :
-    dispatchReceiveCheckedR ctx decoded.capAddr len replyAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
+    (hLen : decoded.canReply = canReply)
+    (hArgs : decoded.replyCPtr = replyAddr) :
+    dispatchReceiveCheckedR ctx decoded.capAddr canReply replyAddr tid executingCore (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) =
       RefusalCarrying.ofKernelReporting
         (operandReport decoded.capAddr tid executingCore
           (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
-          (receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive)))
+          (receiveOperandReport ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive)))
         (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
   apply dispatchOperandCheckedR_eq_reporting_at ctx decoded tid executingCore _ _
     (by rw [hRecv]; decide) st
   intro tcb ref hTcb hRef
-  have hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr } := by
-    intro hN
-    have h := hReplyAddr hN
-    rw [Array.getElem?_eq_some_iff] at h
-    obtain ⟨h0, hv⟩ := h
-    simp only [decodeRecvArgs, requireMsgReg, h0, ↓reduceDIte, hv, bind, Except.bind, pure, Except.pure,
-      SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
   have hArm := receiveOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
-    st ref hRecv len replyAddr rfl (by simp only [callerCspaceRoot, hTcb]) hLen hArgs hRef
+    st ref hRecv canReply replyAddr rfl (by simp only [callerCspaceRoot, hTcb]) hLen hArgs hRef
     (syscallOperandCap?_of_resolved st tid _ tcb ref hTcb hRef)
   simp only [hRecv] at hArm ⊢
   exact hArm

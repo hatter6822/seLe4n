@@ -31,7 +31,7 @@ matching after the commit's staging**: from a match before the dispatch and
 after the argument spill, each of the dispatch's arms keeps it (see the module
 docstring). -/
 theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
     (hB : finalisingDeleteBundle st) (hBNR : st.blockedNotResident) (hYA : st.yieldLinksAgree)
@@ -41,7 +41,7 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     (hSpill : ∀ tid, st.scheduler.currentOnCore e = some tid → contextMatchesCurrentOnCore
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) e)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     contextMatchesCurrentOnCore
       (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e := by
   have hInv := E.objInv
@@ -112,12 +112,12 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
       · cases h
         refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
         have hF := writeFaultRegistersToTcb_keyFrame _ tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) iR
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) iR
         have hO := stepCovers_trans (stepCovers_trans (e := otherCore e) cW
           hF.stepCovers) (faultDeliverOnCoreChecked_stepCovers (otherCore e) (lctx := ctx)
             (tid := tid) (f := fault) (c := e) (ctx := Architecture.faultContextOfThread
               (writeFaultRegistersToTcb stR tid (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3
-                x4 x5 ipcBufferAddr spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
+                x4 x5 x6 spEl0 x30)) tid (Platform.FFI.svcFaultIP elr) spsr) hF.2.2).1
         unfold Platform.FFI.deliverSyscallCapFault
         dsimp only
         generalize hX : (faultDeliverOnCoreChecked _ _ _ _ _ _).1 = X at hO ⊢
@@ -210,7 +210,7 @@ and the local scheduling point, the residency settle, the activation and the
 ledger clears keep it. -/
 theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : LabelingContext}
     {e : CoreId} {syscallId : UInt32}
-    {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64} {S : SystemState}
+    {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64} {S : SystemState}
     (E : EntryPremises S) (hRT : S.residentsHaveTcbs)
     (hB : finalisingDeleteBundle S) (hBNR : S.blockedNotResident) (hYA : S.yieldLinksAgree)
     (hYN : S.yieldLinkedNotResident) (hPlaced : placedThreadsHaveTcbs S)
@@ -219,9 +219,9 @@ theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : Labeling
     (hSpill : ∀ tid, S.scheduler.currentOnCore e = some tid → contextMatchesCurrentOnCore
       (Platform.FFI.writeFfiRegistersToTcb S tid syscallId x0 x1 x2 x3 x4 x5) e) :
     contextMatchesCurrentOnCore (syscallDispatchCrossCoreStep ctx e syscallId
-      x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 S).2 e := by
+      x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 S).2 e := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 S
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 S
   have hDInv := (syscallDispatchFromAbi_stepCovers E.objInv hB hPlaced hAwayCur hD).2
   have hStage := syscallDispatchFromAbi_stagedContextMatches E hRT hB hBNR hYA hYN hPlaced
     hAwayCur hM hSpill hD

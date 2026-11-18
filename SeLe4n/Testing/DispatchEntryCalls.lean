@@ -36,47 +36,59 @@ open SeLe4n.Kernel
 /-- `Platform.FFI.syscallDispatchFromAbi`, compiled once. -/
 @[noinline] def dispatchFromAbi (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (x6 : UInt64)
     (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
-    ipcBufferAddr elr spsr spEl0 x30 st
+    x6 elr spsr spEl0 x30 st
+
+/-- The executing core's current thread with its saved reply register (x6,
+seL4-MCS `replyRegister`) holding `x6`, as the trap's frame save leaves it
+(`saveCapturedSyscallFrame` saves the whole frame before the step runs). -/
+def withTrappedReplyRegister (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (x6 : UInt64) (st : SystemState) : SystemState :=
+  match st.scheduler.currentOnCore executingCore with
+  | some tid => st.updateTcb tid fun t =>
+      { t with registerContext :=
+          SeLe4n.writeReg t.registerContext SeLe4n.arm64DefaultLayout.replyReg x6 }
+  | none => st
 
 /-- `dispatchFromAbi` issuing operation `sid` as a user does: the seL4 number
-of the syscall it is issued with, and its label in the message-info word
-(`SyscallId.syscall`, `SyscallId.msgInfoWithLabel`). -/
+of the syscall it is issued with, its label in the message-info word
+(`SyscallId.syscall`, `SyscallId.msgInfoWithLabel`), and the reply register it
+trapped with saved in its context (`withTrappedReplyRegister`). -/
 def dispatchOperationFromAbi (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (sid : SyscallId)
-    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (x6 : UInt64)
     (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   dispatchFromAbi ctx executingCore sid.syscall.number.toUInt32 x0 (sid.msgInfoWithLabel x1)
-    x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x2 x3 x4 x5 x6 elr spsr spEl0 x30 (withTrappedReplyRegister executingCore x6 st)
 
 /-- `syscallDispatchCrossCoreStep`, compiled once. -/
 @[noinline] def dispatchCrossCoreStep (ctx : LabelingContext)
     (execCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-    ipcBufferAddr elr spsr spEl0 x30 st
+    x6 elr spsr spEl0 x30 st
 
 /-- `dispatchCrossCoreStep` issuing operation `sid` as a user does
 (`dispatchOperationFromAbi`). -/
 def dispatchOperationCrossCoreStep (ctx : LabelingContext)
     (execCore : SeLe4n.Kernel.Concurrency.CoreId) (sid : SyscallId)
-    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   dispatchCrossCoreStep ctx execCore sid.syscall.number.toUInt32 x0 (sid.msgInfoWithLabel x1)
-    x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
 
 /-- `syscallDispatchCrossCoreBracketedStep`: the bracket runs its step, so this
 is the cross-core step at the trapped context's words. -/

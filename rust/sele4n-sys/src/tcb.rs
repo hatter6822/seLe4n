@@ -22,6 +22,7 @@ pub fn tcb_suspend(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::TcbSuspend,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -37,6 +38,7 @@ pub fn tcb_resume(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::TcbResume,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -65,6 +67,7 @@ pub fn tcb_set_priority(
         msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetPriority,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -91,6 +94,7 @@ pub fn tcb_set_mcp(
         msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetMCPriority,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -121,6 +125,7 @@ pub fn tcb_set_ipc_buffer(
         msg_info: MessageInfo::new_const(1, 1, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetIPCBuffer,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -141,6 +146,7 @@ pub fn tcb_set_affinity(tcb_cap: CPtr, affinity_raw: u64) -> KernelResult<Syscal
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetAffinity,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -187,6 +193,7 @@ pub fn tcb_set_space(
         msg_info: MessageInfo::new_const(2, SetSpaceArgs::EXTRA_CAPS as u8, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::TcbSetSpace,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -215,6 +222,7 @@ pub fn tcb_bind_notification(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::TcbBindNotification,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -230,5 +238,6 @@ pub fn tcb_unbind_notification(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::TcbUnbindNotification,
+        reply_cap: CPtr::NULL,
     })
 }

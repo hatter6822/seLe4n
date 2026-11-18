@@ -38,6 +38,7 @@ fn xval_001_endpoint_send() {
         msg_info: MessageInfo::new(2, 0, 0x10).unwrap(),
         msg_regs: [0xAAAA, 0xBBBB, 0, 0],
         syscall_id: SyscallId::Send,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -47,7 +48,7 @@ fn xval_001_endpoint_send() {
             (2, 0xAAAA, "x2=msg_reg[0]"),
             (3, 0xBBBB, "x3=msg_reg[1]"),
             (
-                6,
+                7,
                 SyscallId::Send.syscall().word(),
                 "x7=SyscallId::Send's syscall word",
             ),
@@ -63,6 +64,7 @@ fn xval_002_endpoint_receive() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -70,7 +72,7 @@ fn xval_002_endpoint_receive() {
             (0, 200, "x0=CPtr"),
             (1, 0, "x1=MessageInfo(empty)"),
             (
-                6,
+                7,
                 SyscallId::Receive.syscall().word(),
                 "x7=SyscallId::Receive's syscall word",
             ),
@@ -86,6 +88,7 @@ fn xval_003_endpoint_call() {
         msg_info: MessageInfo::new(1, 0, 42).unwrap(),
         msg_regs: [0xDEAD, 0, 0, 0],
         syscall_id: SyscallId::Call,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -94,7 +97,7 @@ fn xval_003_endpoint_call() {
             (1, 1 | (42 << 12), "x1=MessageInfo"),
             (2, 0xDEAD, "x2=msg_reg[0]"),
             (
-                6,
+                7,
                 SyscallId::Call.syscall().word(),
                 "x7=SyscallId::Call's syscall word",
             ),
@@ -110,13 +113,14 @@ fn xval_004_endpoint_reply() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Reply,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
         &[
             (0, 400, "x0=CPtr"),
             (
-                6,
+                7,
                 SyscallId::Reply.syscall().word(),
                 "x7=SyscallId::Reply's syscall word",
             ),
@@ -154,6 +158,7 @@ fn xval_005_cspace_mint() {
         msg_info: MessageInfo::new(6, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -164,7 +169,7 @@ fn xval_005_cspace_mint() {
             (4, 20, "x4=srcIndex"),
             (5, 64, "x5=srcDepth"),
             (
-                6,
+                7,
                 SyscallId::CSpaceMint.syscall().word(),
                 "x7=SyscallId::CSpaceMint's syscall word",
             ),
@@ -192,6 +197,7 @@ fn xval_006_cspace_copy() {
         msg_info: MessageInfo::new(5, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceCopy,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -201,7 +207,7 @@ fn xval_006_cspace_copy() {
             (4, 5, "x4=srcIndex"),
             (5, 8, "x5=srcDepth"),
             (
-                6,
+                7,
                 SyscallId::CSpaceCopy.syscall().word(),
                 "x7=SyscallId::CSpaceCopy's syscall word",
             ),
@@ -224,6 +230,7 @@ fn xval_007_cspace_move() {
         msg_info: MessageInfo::new(4, 1, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMove,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -233,7 +240,7 @@ fn xval_007_cspace_move() {
             (4, 7, "x4=srcIndex"),
             (5, 8, "x5=srcDepth"),
             (
-                6,
+                7,
                 SyscallId::CSpaceMove.syscall().word(),
                 "x7=SyscallId::CSpaceMove's syscall word",
             ),
@@ -253,13 +260,14 @@ fn xval_008_cspace_delete() {
         msg_info: MessageInfo::new(1, 0, 0).unwrap(),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CSpaceDelete,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
         &[
             (2, 99, "x2=targetSlot"),
             (
-                6,
+                7,
                 SyscallId::CSpaceDelete.syscall().word(),
                 "x7=SyscallId::CSpaceDelete's syscall word",
             ),
@@ -294,6 +302,7 @@ fn xval_009_untyped_retype_kernel_object() {
         msg_info: MessageInfo::new(7, 1, 0).unwrap(),
         msg_regs: [e[0], e[1], e[2], e[3]],
         syscall_id: SyscallId::UntypedRetype,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -303,7 +312,7 @@ fn xval_009_untyped_retype_kernel_object() {
             (4, 3, "x4=nodeIndex"),
             (5, 64, "x5=nodeDepth"),
             (
-                6,
+                7,
                 SyscallId::UntypedRetype.syscall().word(),
                 "x7=SyscallId::UntypedRetype's syscall word",
             ),
@@ -330,6 +339,7 @@ fn xval_010_vspace_map() {
         msg_info: MessageInfo::new(3, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -338,7 +348,7 @@ fn xval_010_vspace_map() {
             (3, 2, "x3=rights (CanRead)"),
             (4, 1, "x4=attr (PageCacheable)"),
             (
-                6,
+                7,
                 SyscallId::VSpaceMap.syscall().word(),
                 "x7=SyscallId::VSpaceMap's syscall word",
             ),
@@ -359,6 +369,7 @@ fn xval_011_vspace_unmap() {
         msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -366,7 +377,7 @@ fn xval_011_vspace_unmap() {
             (2, 2, "x2=asid"),
             (3, 0x3000, "x3=vaddr"),
             (
-                6,
+                7,
                 SyscallId::VSpaceUnmap.syscall().word(),
                 "x7=SyscallId::VSpaceUnmap's syscall word",
             ),
@@ -400,6 +411,7 @@ fn xval_012_service_register() {
         msg_info: MessageInfo::new(5, 1, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -415,7 +427,7 @@ fn xval_012_service_register() {
             (4, 256, "x4=maxMessageSize"),
             (5, 128, "x5=maxResponseSize"),
             (
-                6,
+                7,
                 SyscallId::ServiceRegister.syscall().word(),
                 "x7=SyscallId::ServiceRegister's syscall word",
             ),
@@ -440,6 +452,7 @@ fn xval_013_service_revoke() {
         msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -451,7 +464,7 @@ fn xval_013_service_revoke() {
                 "x1=MessageInfo(one extra cap, label 58)",
             ),
             (
-                6,
+                7,
                 SyscallId::ServiceRevoke.syscall().word(),
                 "x7=SyscallId::ServiceRevoke's syscall word",
             ),
@@ -467,6 +480,7 @@ fn xval_014_service_query() {
         msg_info: MessageInfo::new(0, 1, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
+        reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
@@ -478,7 +492,7 @@ fn xval_014_service_query() {
                 "x1=MessageInfo(one extra cap, label 59)",
             ),
             (
-                6,
+                7,
                 SyscallId::ServiceQuery.syscall().word(),
                 "x7=SyscallId::ServiceQuery's syscall word",
             ),
@@ -503,6 +517,7 @@ fn xval_015_notification_signal() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::NotificationSignal,
+        reply_cap: CPtr::NULL,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[0], 500, "x0=CPtr(notification)");
@@ -512,7 +527,7 @@ fn xval_015_notification_signal() {
     assert_eq!(regs[4], 0, "x4=msg_regs[2] must be zero");
     assert_eq!(regs[5], 0, "x5=msg_regs[3] must be zero");
     assert_eq!(
-        regs[6],
+        regs[7],
         SyscallId::NotificationSignal.syscall().word(),
         "x7=SyscallId::NotificationSignal's syscall word"
     );
@@ -530,11 +545,12 @@ fn xval_016_notification_wait() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::NotificationWait,
+        reply_cap: CPtr::NULL,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[0], 600, "x0=CPtr(notification)");
     assert_eq!(
-        regs[6],
+        regs[7],
         SyscallId::NotificationWait.syscall().word(),
         "x7=SyscallId::NotificationWait's syscall word"
     );
@@ -1331,10 +1347,11 @@ fn notification_signal_encoding() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::NotificationSignal,
+        reply_cap: CPtr::NULL,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(
-        regs[6],
+        regs[7],
         Syscall::Send.word(),
         "x7=seL4_SysSend: a signal is Send on a notification"
     );
@@ -1350,28 +1367,29 @@ fn notification_wait_encoding() {
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::NotificationWait,
+        reply_cap: CPtr::NULL,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[6], Syscall::Wait.word(), "x7=seL4_SysWait");
+    assert_eq!(regs[7], Syscall::Wait.word(), "x7=seL4_SysWait");
 }
 
 /// W1-F-1: endpoint_reply_recv encodes seL4_SysReplyRecv and places the
-/// server-supplied reply capability pointer in msg_regs[0] (faithful seL4-MCS).
+/// server-supplied reply capability pointer in the reply register, x6
+/// (seL4-MCS `replyRegister`).
 #[test]
 fn endpoint_reply_recv_encoding() {
     let reply_cap: u64 = 7;
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
-        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [reply_cap, 0, 0, 0],
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0; 4],
         syscall_id: SyscallId::ReplyRecv,
+        reply_cap: CPtr::from(reply_cap),
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[6], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
-    assert_eq!(
-        regs[2], reply_cap,
-        "x2=msg_regs[0] must carry the reply cap pointer"
-    );
+    assert_eq!(regs[7], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
+    assert_eq!(regs[6], reply_cap, "x6 must carry the reply cap pointer");
+    assert_eq!(&regs[2..6], &[0u64; 4], "no message word carries it");
 }
 
 /// W1-D: MmioUnaligned variant exists at discriminant 40.
@@ -1382,27 +1400,29 @@ fn mmio_unaligned_variant() {
     assert_eq!(err as u32, 40);
 }
 
-/// W1-E audit: endpoint_reply_recv places the reply cap pointer in MR[0] and user
-/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for the reply cap slot).
+/// W1-E audit: endpoint_reply_recv's reply is the whole message: the reply
+/// cap pointer rides x6, so MR[0..3] are the caller's data and
+/// MessageInfo.length is the data's own length.
 #[test]
 fn endpoint_reply_recv_register_layout() {
-    // Simulate: user wants 2 registers of reply data + the reply cap pointer
     let reply_cap: u64 = 7;
-    let user_data_0: u64 = 0xAAAA;
-    let user_data_1: u64 = 0xBBBB;
-    // Kernel should encode: MR[0]=reply_cap, MR[1]=user_data_0, MR[2]=user_data_1
-    // MessageInfo.length = 2 + 1 = 3
+    let data = [0xAAAAu64, 0xBBBB, 0xCCCC, 0xDDDD];
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
-        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply cap ptr
-        msg_regs: [reply_cap, user_data_0, user_data_1, 0],
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: data,
         syscall_id: SyscallId::ReplyRecv,
+        reply_cap: CPtr::from(reply_cap),
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[2], reply_cap, "x2=MR[0] must be the reply cap pointer");
-    assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
-    assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
-    assert_eq!(regs[6], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
+    assert_eq!(&regs[2..6], &data, "x2-x5 = MR[0..3], the caller's data");
+    assert_eq!(regs[6], reply_cap, "x6 = the reply cap pointer");
+    assert_eq!(
+        MessageInfo::decode(regs[1]).unwrap().length(),
+        4,
+        "the length is the data's"
+    );
+    assert_eq!(regs[7], Syscall::ReplyRecv.word(), "x7=seL4_SysReplyRecv");
 }
 
 // ============================================================================
@@ -2333,8 +2353,9 @@ fn abi_layout_matches_the_lean_table() {
     // Which register carries each field, measured from the encoder: a request
     // whose fields are distinct sentinels is encoded, and each sentinel's array
     // position is mapped to the register `trap::raw_syscall` binds it to —
-    // `inout("x0") regs[0]` .. `inout("x5") regs[5]`, `in("x7") regs[6]`.
-    const ARRAY_TO_REGISTER: [u64; 7] = [0, 1, 2, 3, 4, 5, 7];
+    // `inout("x0") regs[0]` .. `inout("x5") regs[5]`, `in("x6") regs[6]`,
+    // `in("x7") regs[7]`.
+    const ARRAY_TO_REGISTER: [u64; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
     let msg_info = MessageInfo::new(0, 0, 0x777).expect("a valid label");
     let request = SyscallRequest {
         cap_addr: CPtr::from(0xC0DE_0000u64),
@@ -2343,6 +2364,7 @@ fn abi_layout_matches_the_lean_table() {
         // A send keeps the caller's label (an invocation's label is its
         // operation's), so every field is a distinct sentinel.
         syscall_id: SyscallId::Send,
+        reply_cap: CPtr::from(0xE600_0000u64),
     };
     let regs = encode_syscall(&request).expect("the request encodes");
     let register_of = |value: u64| -> u64 {
@@ -2369,6 +2391,10 @@ fn abi_layout_matches_the_lean_table() {
             register_of(*sentinel)
         ));
     }
+    rendered.push_str(&std::format!(
+        "register reply x{}\n",
+        register_of(0xE600_0000)
+    ));
     rendered.push_str(&std::format!(
         "register syscallNum x{}\n",
         register_of(Syscall::Send.word())
@@ -2625,7 +2651,7 @@ fn wrappers_name_their_syscalls() {
     let assert_names = |name: &str, sid: SyscallId| {
         let regs = host_capture::last_request();
         assert_eq!(
-            regs[6],
+            regs[7],
             sid.syscall().word(),
             "{name}: captured x7 must be the word of the wrapper's syscall"
         );
@@ -2639,6 +2665,15 @@ fn wrappers_name_their_syscalls() {
             );
         }
         covered.borrow_mut()[sid.to_u64() as usize] = true;
+    };
+
+    // The reply register the wrapper wrote (x6, seL4-MCS `replyRegister`).
+    let assert_reply_register = |name: &str, expected: u64| {
+        let regs = host_capture::last_request();
+        assert_eq!(
+            regs[6], expected,
+            "{name}: captured x6 is its reply capability"
+        );
     };
 
     // A signal's wrapper sends length 0 and leaves every message register
@@ -2661,16 +2696,22 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::ipc::endpoint_send(cap, &empty);
     assert_names("endpoint_send", SyscallId::Send);
+    // A receive naming no reply capability is seL4's `Wait`, which reads no
+    // reply register; one naming a reply capability is `Recv`, with it in x6.
     let _ = sele4n_sys::ipc::endpoint_receive(cap);
-    assert_names("endpoint_receive", SyscallId::Receive);
-    let _ = sele4n_sys::ipc::endpoint_receive_with_reply(cap, cap);
+    assert_names("endpoint_receive", SyscallId::NotificationWait);
+    assert_reply_register("endpoint_receive", 0);
+    let reply = CPtr::from(0x5EEDu64);
+    let _ = sele4n_sys::ipc::endpoint_receive_with_reply(cap, reply);
     assert_names("endpoint_receive_with_reply", SyscallId::Receive);
+    assert_reply_register("endpoint_receive_with_reply", 0x5EED);
     let _ = sele4n_sys::ipc::endpoint_call(cap, &empty);
     assert_names("endpoint_call", SyscallId::Call);
     let _ = sele4n_sys::ipc::endpoint_reply(cap, &empty);
     assert_names("endpoint_reply", SyscallId::Reply);
-    let _ = sele4n_sys::ipc::endpoint_reply_recv(cap, cap, &empty);
+    let _ = sele4n_sys::ipc::endpoint_reply_recv(cap, reply, &empty);
     assert_names("endpoint_reply_recv", SyscallId::ReplyRecv);
+    assert_reply_register("endpoint_reply_recv", 0x5EED);
     let _ = sele4n_sys::ipc::notification_signal(cap);
     assert_names("notification_signal", SyscallId::NotificationSignal);
     // seL4's `seL4_Signal`: the real wrapper sends an empty message and no

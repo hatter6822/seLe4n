@@ -1149,7 +1149,7 @@ private def bracketStepFn (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreStep harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
     (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (x6 := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 /-- The seam's bracket at those same words (WS-LS LS2.4). -/
 private def bracketSpec :=
@@ -1172,7 +1172,7 @@ private def undeclaredBare (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreStep harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
     (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (x6 := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId

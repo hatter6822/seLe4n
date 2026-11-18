@@ -369,6 +369,13 @@ transfers no capability through it. -/
 private def replyCapabilityNoGrant : Capability :=
   { replyCapability with rights := AccessRightSet.ofList [.read, .write] }
 
+/-- seL4's `Wait` on an endpoint: a receive naming no reply capability
+(`handleRecv` with `canReply` false, so no reply register is looked up).  The
+operation whose syscall is `Wait` is `.notificationWait`; on an endpoint
+capability the kernel selects the receive (`receiveOperation`).  A `Recv`
+names its reply capability in x6 and faults on an empty one. -/
+private abbrev endpointWait : SyscallId := .notificationWait
+
 /-- The `dispatchFromAbi` driver generalised to an executing core and the
 full inline register window — the RA.B.5b scenarios interleave syscalls
 from two cores. -/
@@ -379,6 +386,16 @@ private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
   SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling core
     sid capPtr msgInfoRaw x2 x3 x4 0
     0 0 0 0 0 st
+
+/-- `dispatchFromAbiOn` for a reply-receive, its reply capability in the reply
+register (x6, seL4-MCS `replyRegister`) and its message in x2-x3. -/
+private def dispatchReplyRecvOn (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (msgInfoRaw : UInt64) (capPtr replyPtr : UInt64)
+    (x2 x3 : UInt64) (st : SystemState) :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling core
+    .replyRecv capPtr msgInfoRaw x2 x3 0 0
+    replyPtr 0 0 0 0 st
 
 -- ============================================================================
 -- §4  INVERTED witness A — a successful Unit syscall decodes as a VALUE
@@ -552,7 +569,7 @@ endpoint (core 0); the peer sends `[7, 8]` under the badge-9 endpoint cap
 private def receiveThenSendScenario :
     Except KernelError (Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 twoThreadState
   if out1 != .blocks then throw .illegalState
   let (_, st2) ← dispatchFromAbiOn core1
     SyscallId.send 2 epCapPtr.toUInt64 7 8 0 st1
@@ -571,7 +588,7 @@ private def sendThenReceiveScenario :
   if out1 != .blocks then throw .illegalState
   let preStagedX0 := (stagedFrame st1 peerTid).x0
   let (out2, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st1
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
   pure (preStagedX0, out2, stagedFrame st2 peerTid)
 
 /-- 9d: the reply delivery — `.call`'s `.message` frame.  The caller is
@@ -613,15 +630,14 @@ endpoint), so the server's own outcome is `.blocks`. -/
 private def replyRecvDeliveryScenario :
     Except KernelError (Kernel.Architecture.SyscallOutcome ×
       Kernel.Architecture.SyscallReturnFrame) := do
-  let (out1, st1) ← dispatchFromAbiOn core1
-    SyscallId.replyRecv 3 epCapPtr.toUInt64
+  let (out1, st1) ← dispatchReplyRecvOn core1 2 epCapPtr.toUInt64
     replyCapPtr.toUInt64 31 32 replyPendingState
   pure (out1, stagedFrame st1 callerTid)
 
 /-- 9j: a reply-receive's reply leg transfers capabilities as seL4's
 `doReplyTransfer` (gated on the reply capability's grant right, into the
 answered caller's receive slot), after the donation pop and before the receive
-leg.  The server replies `[31, 32]` (MR0 is the reply capability) with ONE extra
+leg.  The server replies `[31, 32]` (the reply capability in x6) with ONE extra
 capability (`payloadCapPtr`, named in its IPC buffer's `caps_or_badges[0]`)
 through the reply cap in `cn`; the caller's buffer names slot 0 of its CNode as
 its receive slot when `withSlot`; the receive leg then blocks (empty endpoint).
@@ -633,9 +649,8 @@ private def replyRecvCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
   let st0 := replyPendingStateOf cn
   let st0 := if withSlot then SeLe4n.Testing.withReceiveSlot st0 callerTid ⟨0x7701⟩ 0 else st0
   let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
-  let msgInfoRaw : UInt64 := (3 + (1 <<< 7) : Nat).toUInt64
-  let (out1, st1) ← dispatchFromAbiOn core1
-    SyscallId.replyRecv msgInfoRaw epCapPtr.toUInt64
+  let msgInfoRaw : UInt64 := (2 + (1 <<< 7) : Nat).toUInt64
+  let (out1, st1) ← dispatchReplyRecvOn core1 msgInfoRaw epCapPtr.toUInt64
     replyCapPtr.toUInt64 31 32 st0
   let slot0Occupied := match st1.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
@@ -704,7 +719,7 @@ private def capsSendScenario (epPtr : Nat) :
   -- (seL4's `seL4_SetCapReceivePath`).
   let st0 := SeLe4n.Testing.withReceiveSlot twoThreadState callerTid ⟨0x7701⟩ 0
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st0
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
   -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7, and
   -- the extra-cap address is the sender's IPC buffer's `caps_or_badges[0]`
@@ -1369,7 +1384,7 @@ private def abiRegisterLines : List String :=
   let l := arm64DefaultLayout
   [s!"register capPtr x{l.capPtrReg.val}", s!"register msgInfo x{l.msgInfoReg.val}"]
     ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
-    ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
+    ++ [s!"register reply x{l.replyReg.val}", s!"register syscallNum x{l.syscallNumReg.val}"]
 
 /-- **The CNode operations' words, measured**: a mint's six words (a copy's
 are its first five, a move's its first four) decoded with word `i` holding
@@ -1662,7 +1677,7 @@ private def overflowSendRun (rxWrite sync : Bool) :
       List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
   let st0 := mappedBuffersState rxWrite
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 st0
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
   let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
   let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
@@ -1699,7 +1714,7 @@ private def blockedSenderReceiveRun (senderToo : Bool) :
   let stS := Kernel.Architecture.IpcBufferRead.syncUserWords st1
     (Kernel.Architecture.IpcBufferRead.encodeWordPairs pairs) pairs.length
   let (_, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 stS
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 stS
   pure (SeLe4n.Testing.pendingWrites st2, addrs)
 
 private def runOverflowDeliveryWitnesses : IO Unit := do
@@ -1730,7 +1745,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   -- THE SEAM: the same send through the atomic step the hardware entry commits
   -- surfaces the three stores to the runtime and commits a state that owes none.
   match dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-      SyscallId.receive 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
+      endpointWait 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
   | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
   | .ok (_, st1) => do
       let (r, stC) := SeLe4n.Testing.dispatchOperationCrossCoreStep trustedLabeling core1

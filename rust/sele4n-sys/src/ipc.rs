@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! IPC operations — 7 syscall wrappers plus 1 checked variant.
+//! IPC operations — 8 syscall wrappers.
 //!
-//! - `endpoint_send` / `endpoint_receive` / `endpoint_call` / `endpoint_reply`
+//! - `endpoint_send` / `endpoint_receive` / `endpoint_receive_with_reply`
+//! - `endpoint_call` / `endpoint_reply`
 //! - `notification_signal` / `notification_wait`
 //! - `endpoint_reply_recv` (compound: reply + blocking receive)
-//! - `endpoint_reply_recv_checked` (AF6-B: rejects truncation)
+//!
+//! A receive's reply capability rides the reply register (x6, seL4-MCS
+//! `replyRegister`, [`SyscallRequest::reply_cap`]), never a message word: the
+//! message registers carry the message whole.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscallChecked` → `dispatchWithCapChecked`.
 
@@ -99,6 +103,7 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
         msg_info,
         msg_regs: msg.regs,
         syscall_id: SyscallId::Send,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -115,16 +120,19 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
     // V1-D: new_const() is compile-time validated — infallible for valid constants.
-    // Plain receive: no reply object supplied (MR0 omitted, length 0).  Suitable
-    // for Send / Notification sources; a `Call` rendezvous on this path is rejected
-    // fail-closed (the server provided no reply object to answer it) — use
+    // Plain receive: no reply object supplied, so the syscall is seL4's `Wait`
+    // (`handleRecv` with `canReply` false), which reads no reply register; on
+    // an endpoint the kernel selects the receive (`receiveOperation`).  A `Recv`
+    // would look its reply capability up at x6 and fault on the null one.  Use
     // `endpoint_receive_with_reply` to accept Call IPC.
     let msg_info = MessageInfo::new_const(0, 0, 0);
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: src,
         msg_info,
         msg_regs: [0; 4],
-        syscall_id: SyscallId::Receive,
+        // The operation whose syscall is `Wait` (`SyscallId::syscall`).
+        syscall_id: SyscallId::NotificationWait,
+        reply_cap: CPtr::NULL,
     })?;
     Ok((resp.badge(), resp))
 }
@@ -132,7 +140,8 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
 /// WS-SM SM6.D (faithful seL4-MCS): receive a message from an endpoint, supplying
 /// a Reply object capability so a rendezvousing `Call` caller can be answered.
 ///
-/// MR\[0\] = the server-supplied reply capability pointer (length 1).  When a
+/// x6 = the server-supplied reply capability pointer (seL4-MCS
+/// `replyRegister`; the syscall is `Recv`, which looks it up).  When a
 /// queued `Call` rendezvouses, the kernel links it to this reply object
 /// (`reply.caller`), so the server's subsequent `endpoint_reply` /
 /// `endpoint_reply_recv` resolves authority through the reply object.  A `Send`
@@ -146,13 +155,13 @@ pub fn endpoint_receive_with_reply(
     recv_cap: CPtr,
     reply_cap: CPtr,
 ) -> KernelResult<(Badge, SyscallResponse)> {
-    let msg_info =
-        MessageInfo::new(1, 0, 0).map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
+    let msg_info = MessageInfo::new_const(0, 0, 0);
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: recv_cap,
         msg_info,
-        msg_regs: [reply_cap.into(), 0, 0, 0],
+        msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
+        reply_cap,
     })?;
     Ok((resp.badge(), resp))
 }
@@ -177,6 +186,7 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<(Badge, Sysca
         msg_info,
         msg_regs: msg.regs,
         syscall_id: SyscallId::Call,
+        reply_cap: CPtr::NULL,
     })?;
     Ok((resp.badge(), resp))
 }
@@ -193,6 +203,7 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
         msg_info,
         msg_regs: msg.regs,
         syscall_id: SyscallId::Reply,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -219,6 +230,7 @@ pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
         msg_info,
         msg_regs: [0; 4],
         syscall_id: SyscallId::NotificationSignal,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -239,18 +251,9 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
         msg_info,
         msg_regs: [0; 4],
         syscall_id: SyscallId::NotificationWait,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(resp.badge())
-}
-
-/// AF6-B: Error type for IPC message truncation.
-///
-/// Returned by checked IPC wrappers when the message payload exceeds the
-/// maximum inline register capacity for the specific operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IpcTruncationError {
-    /// Reply message exceeds the 3-register limit for `endpoint_reply_recv`.
-    ReplyMessageTooLong { provided: u8, max: u8 },
 }
 
 /// Atomically reply to a caller and then block waiting for a new message.
@@ -260,17 +263,11 @@ pub enum IpcTruncationError {
 /// message on the endpoint identified by `recv_cap` — re-linking the same reply
 /// object to the next caller. This is the standard server-loop primitive.
 ///
-/// Lean: `endpointReplyRecvOnCore` (`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean`,
-/// reached from the `.replyRecv` arm in `API.lean`) — `decodeReplyRecvArgs` reads MR\[0\] as the
-/// server-supplied reply *capability* pointer (faithful seL4-MCS authority flows
-/// from holding the reply cap, `reply.caller`). The kernel extracts the reply
-/// body via `extractMessageRegisters` over all MRs, so MR\[0\] = reply cap pointer
-/// and user data occupies MR\[1..3\].
-/// `MessageInfo.length` includes the reply-cap slot (user length + 1).
-/// Maximum 3 inline reply data registers (MR\[1\], MR\[2\], MR\[3\]).
-///
-/// **Note**: Messages longer than 3 registers are silently truncated. Use
-/// [`endpoint_reply_recv_checked`] to detect truncation at call time.
+/// Lean: the `.replyRecv` arm in `API.lean` (`resolveReplyRecvReply`): seL4-MCS
+/// `SysReplyRecv` names the reply capability in the reply register (x6,
+/// `replyRegister`), so the message registers carry the reply whole, MR\[0\]
+/// on, and the kernel delivers it as a send delivers its message.  A reply
+/// capability with no caller skips the reply and receives.
 ///
 /// Returns the received badge and response registers from the new message.
 #[inline]
@@ -279,40 +276,14 @@ pub fn endpoint_reply_recv(
     reply_cap: CPtr,
     msg: &IpcMessage,
 ) -> KernelResult<(Badge, SyscallResponse)> {
-    // WS-SM SM6.D (faithful seL4-MCS): MR[0] = the server-supplied reply *capability*
-    // pointer (the kernel resolves it to the reply object whose `caller` is the
-    // previous caller, replies to that caller, then re-links the same reply object
-    // to the next caller).  User data occupies MR[1..3]. Cap at 3 user regs.
-    let user_len = if msg.length() > 3 { 3 } else { msg.length() };
-    // Kernel length includes MR[0] (reply cap pointer) + user data registers
-    let kernel_len = user_len + 1;
-    let msg_info = MessageInfo::new(kernel_len, 0, msg.label)
+    let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: recv_cap,
         msg_info,
-        msg_regs: [reply_cap.into(), msg.regs[0], msg.regs[1], msg.regs[2]],
+        msg_regs: msg.regs,
         syscall_id: SyscallId::ReplyRecv,
+        reply_cap,
     })?;
     Ok((resp.badge(), resp))
-}
-
-/// AF6-B: Checked variant of [`endpoint_reply_recv`] that rejects messages
-/// longer than 3 registers instead of silently truncating.
-///
-/// Returns `Err(IpcTruncationError::ReplyMessageTooLong)` if `msg.length() > 3`.
-/// Otherwise delegates to [`endpoint_reply_recv`].
-#[inline]
-pub fn endpoint_reply_recv_checked(
-    recv_cap: CPtr,
-    reply_cap: CPtr,
-    msg: &IpcMessage,
-) -> Result<KernelResult<(Badge, SyscallResponse)>, IpcTruncationError> {
-    if msg.length() > 3 {
-        return Err(IpcTruncationError::ReplyMessageTooLong {
-            provided: msg.length(),
-            max: 3,
-        });
-    }
-    Ok(endpoint_reply_recv(recv_cap, reply_cap, msg))
 }

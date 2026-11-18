@@ -56,6 +56,7 @@ pub fn vspace_map(
         msg_info: MessageInfo::new_const(3, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -92,6 +93,7 @@ pub fn page_table_map(
         msg_info: MessageInfo::new_const(2, 1, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::PageTableMap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -107,6 +109,7 @@ pub fn page_table_unmap(table_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::PageTableUnmap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -122,6 +125,7 @@ pub fn vspace_unmap(vspace_cap: CPtr, asid: Asid, vaddr: VAddr) -> KernelResult<
         msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -173,6 +177,7 @@ pub fn vspace_unify_instruction(
         msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnifyInstruction,
+        reply_cap: CPtr::NULL,
     })
 }
 

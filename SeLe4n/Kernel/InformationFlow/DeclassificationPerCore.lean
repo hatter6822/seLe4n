@@ -3398,7 +3398,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (executingCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (st : SystemState)
     (L : RefusalLedger) (r : DeclassificationRefusal)
     (trail : AuditRing) (e : DeclassificationEvent)
@@ -3436,7 +3436,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     -- computed from `ke` and the caller's own IPC buffer — it names no
     -- component of the ledger
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrameFor
           (cancelReceiveBusyReply ctx executingCore
             (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
@@ -3454,7 +3454,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
             { st with declassificationRefusals := L₂ } op) := by
   refine ⟨recordRefusal_never_refuses L r trail e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
-      syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI
+      syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI
       hSyscall hNoCapFault hCall
   · obtain ⟨L', hEq⟩ :=
       SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st

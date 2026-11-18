@@ -34,33 +34,26 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 
 /-! ### The frame with the transfer's report -/
 
-/-- `regReplyRecvInfoWord` with the transfer's report. -/
-@[noinline] def regReplyRecvInfoWordCaps (layout : SeLe4n.SyscallRegisterLayout) (len capInfo : Nat) :
-    UInt64 :=
-  (({ length := min (min (Architecture.regMessageLength layout len - 1) 4) maxMessageRegisters
-      extraCaps := capInfo % 4
-      label := min 0 (Architecture.errorLabelBase - 1)
-      capsUnwrapped := capInfo / 4 % 8 } : MessageInfo).encode).toUInt64
-
-/-- `regReplyRecvFrame` with the transfer's report in its message-info word. -/
-@[inline] def regReplyRecvFrameCaps (layout : SeLe4n.SyscallRegisterLayout)
+/-- `regMessageFrame` with the transfer's report in its message-info word, the
+badge given as an option (`regMessageFrameCapsW` takes it as a word and a flag). -/
+@[inline] def regMessageFrameCapsOpt (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (capInfo : Nat) :
     Architecture.SyscallReturnFrame :=
   { x0 := Architecture.badgeWordOrZero badge
-    x1 := regReplyRecvInfoWordCaps layout len capInfo
-    x2 := Architecture.regMessageWord layout rf len 1
-    x3 := Architecture.regMessageWord layout rf len 2
-    x4 := Architecture.regMessageWord layout rf len 3
-    x5 := Architecture.regMessageWord layout rf len 4 }
+    x1 := regMessageInfoWordCaps layout len capInfo
+    x2 := Architecture.regMessageWord layout rf len 0
+    x3 := Architecture.regMessageWord layout rf len 1
+    x4 := Architecture.regMessageWord layout rf len 2
+    x5 := Architecture.regMessageWord layout rf len 3 }
 
-theorem returnFrameOfMessage_regReplyRecvBody_caps (layout : SeLe4n.SyscallRegisterLayout)
+theorem returnFrameOfMessage_regMessageBody_capsOpt (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (capInfo : Nat) :
     Architecture.returnFrameOfMessage
-        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } capInfo 0 =
-      regReplyRecvFrameCaps layout rf len badge capInfo := by
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } capInfo 0 =
+      regMessageFrameCapsOpt layout rf len badge capInfo := by
   simp only [Architecture.returnFrameOfMessage, Architecture.returnMessageInfo,
-    regReplyRecvFrameCaps, Architecture.badgeWordOrZero, regReplyRecvInfoWordCaps,
-    Architecture.regReplyRecvBody_size, Architecture.regReplyRecvBody_word, Nat.add_zero]
+    regMessageFrameCapsOpt, Architecture.badgeWordOrZero, regMessageInfoWordCaps,
+    Architecture.regMessageBody_size, Architecture.regMessageBody_word, Nat.add_zero]
 
 /-- **The reply-receive's last write, with the transfer's report**: the frame
 written into the ready caller's saved registers, the message held where the
@@ -69,7 +62,7 @@ before the state is handed over. -/
 @[noinline] def deliverReplyRecvCapsFrame (capInfo : Nat) (Y : SystemState) (c : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) : SystemState :=
-  writeDeliveredFrameIfReady Y c (regReplyRecvFrameCaps layout rf len badge capInfo)
+  writeDeliveredFrameIfReady Y c (regMessageFrameCapsOpt layout rf len badge capInfo)
     (fun _ => holdReplyRecvBody Y c layout rf len badge)
 
 /-! ### The request a routed reply-receive makes -/
@@ -232,21 +225,21 @@ theorem replyRecvBlockTail_staged (Y : SystemState) (c tid : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (capInfo : Nat)
     (hNo : Y.objects.noResizeDue) (hNe : tid ≠ c)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hE2 : (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[epId]? =
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })).objects[epId]? =
         some (.endpoint ep)) {rt2 : TCB}
     (hR2 : (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[tid.toObjId]? =
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })).objects[tid.toObjId]? =
         some (.tcb rt2))
     (hA2 : receiveBlockAdmits rt2 = true)
     (hG2 : receiveBlocksInPlace (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })) epId tid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })) epId tid
         ep.receiveQ.tail (some rid) = true) :
     Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock (Y.mapTcbInPlace c (holdMessage
-            { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }))
+            { registers := Architecture.regMessageBody layout rf len, badge := badge }))
             epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1
         c capInfo) tid 0 =
       deliverReplyRecvCapsFrame capInfo (storeReplyRecvBlockTail Y tid rid epId ep.recvTailCode core)
@@ -262,8 +255,8 @@ theorem replyRecvBlockTail_staged (Y : SystemState) (c tid : SeLe4n.ThreadId)
   rw [storeReceiveBlock_msg _ _ _ _ _ _ _ hNo hNe, removeRunnableOnCore_msg,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ h3,
     stageDeliveredMessage_holdMessage_caps _ _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ h3)
-      (by rw [Architecture.regReplyRecvBody_size]; exact hSz4),
-    returnFrameOfMessage_regReplyRecvBody_caps]
+      (by rw [Architecture.regMessageBody_size]; exact hSz4),
+    returnFrameOfMessage_regMessageBody_capsOpt]
   exact stageDeliveredMessage_writeDeliveredFrameIfReady_blocked
     (storeReplyRecvBlockTail Y tid rid epId ep.recvTailCode core) c tid _ _ 0 hCT x hX
     (by rw [hEq, hB]; exact fun h => by cases h)
@@ -278,7 +271,7 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (stcb : TCB) (count : Nat)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
     (hRO : ct.replyObject = some rid)
@@ -292,7 +285,7 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
     (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
@@ -307,9 +300,9 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
-  have hSz : ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters := by
-    rw [Architecture.regReplyRecvBody_size]; unfold maxMessageRegisters; omega
-  generalize hMsg : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+  have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+  generalize hMsg : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
     IpcMessage) = msg
   have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
   have hAX := ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo
@@ -453,21 +446,21 @@ theorem replyRecvDonatedTail_staged (Y : SystemState) (c tid : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (capInfo : Nat)
     (hNo : Y.objects.noResizeDue) (hNe : tid ≠ c)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hE2 : (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[epId]? =
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })).objects[epId]? =
         some (.endpoint ep)) {rt2 : TCB}
     (hR2 : (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[tid.toObjId]? =
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })).objects[tid.toObjId]? =
         some (.tcb rt2))
     (hA2 : receiveBlockAdmits rt2 = true)
     (hG2 : receiveBlocksInPlace (Y.mapTcbInPlace c (holdMessage
-      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })) epId tid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })) epId tid
         ep.receiveQ.tail (some rid) = true) :
     Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
           (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock (Y.mapTcbInPlace c
-            (holdMessage { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }))
+            (holdMessage { registers := Architecture.regMessageBody layout rf len, badge := badge }))
             epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1
         c capInfo) tid 0 =
       deliverReplyRecvCapsFrame capInfo
@@ -485,8 +478,8 @@ theorem replyRecvDonatedTail_staged (Y : SystemState) (c tid : SeLe4n.ThreadId)
   rw [storeReceiveBlock_msg _ _ _ _ _ _ _ hNo hNe, removeRunnableOnCore_msg,
     descheduleAtPlacement_msg, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ h5,
     stageDeliveredMessage_holdMessage_caps _ _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ h5)
-      (by rw [Architecture.regReplyRecvBody_size]; exact hSz4),
-    returnFrameOfMessage_regReplyRecvBody_caps]
+      (by rw [Architecture.regMessageBody_size]; exact hSz4),
+    returnFrameOfMessage_regMessageBody_capsOpt]
   exact stageDeliveredMessage_writeDeliveredFrameIfReady_blocked
     (storeReplyRecvDonatedTail Y tid rid epId ep.recvTailCode core) c tid _ _ 0 hCT x hX
     (by rw [hEq, e1, hB]; exact fun h => by cases h)
@@ -501,7 +494,7 @@ theorem replyRecvOnCore_donated_capsDelivered (st : SystemState) (epId : SeLe4n.
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (stcb : TCB) (count : Nat)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
     (hRO : ct.replyObject = some rid)
@@ -515,7 +508,7 @@ theorem replyRecvOnCore_donated_capsDelivered (st : SystemState) (epId : SeLe4n.
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
     (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
@@ -526,9 +519,9 @@ theorem replyRecvOnCore_donated_capsDelivered (st : SystemState) (epId : SeLe4n.
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
-  have hSz : ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters := by
-    rw [Architecture.regReplyRecvBody_size]; unfold maxMessageRegisters; omega
-  generalize hMsg : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+  have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+  generalize hMsg : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
     IpcMessage) = msg
   obtain ⟨rp', scId, sc, hRp', hN, hScO, hHead, hBelow, hCode, -, hNe', hNo, -, hFC, -⟩ :=
     replyPopsInPlace_donation st c tid rid msg ct hT hSRes hG
@@ -687,7 +680,7 @@ theorem replyRecvOnCore_unheld_capsDelivered (st : SystemState) (epId : SeLe4n.O
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (stcb : TCB) (count : Nat)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 none)
     (hRO : ct.replyObject = some rid)
@@ -701,7 +694,7 @@ theorem replyRecvOnCore_unheld_capsDelivered (st : SystemState) (epId : SeLe4n.O
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
     (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
@@ -712,9 +705,9 @@ theorem replyRecvOnCore_unheld_capsDelivered (st : SystemState) (epId : SeLe4n.O
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
-  have hSz : ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters := by
-    rw [Architecture.regReplyRecvBody_size]; unfold maxMessageRegisters; omega
-  generalize hMsg : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+  have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+  generalize hMsg : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
     IpcMessage) = msg
   obtain ⟨rp', scId, hRp', hN, hCode, -, hNo, -, hFC, -⟩ :=
     replyUnheldPopsInPlace_pop st c rid msg ct hT hG
@@ -912,7 +905,7 @@ theorem replyRecvOnCore_blocks_capsDeliveredLong (st : SystemState) (epId : SeLe
       tid core).1 = storeReplyRecvBlockTail Y1 tid rid epId ep.recvTailCode core := rfl
   rw [hTailEq]
   subst hMsg
-  have hDel := deliverLongReplyRecvFrame_eq _ st c tid rf len badge s.capInfo hNoT hWT hLen
+  have hDel := deliverLongReplyRecvFrame_eq _ st c tid rf len badge s.capInfo hNoT hWT (by omega)
   rw [← hDel]
   have hStage := Architecture.stageDeliveredMessage_id_when_blocked
     (deliverLongReplyRecvFrame (storeReplyRecvBlockTail Y1 tid rid epId ep.recvTailCode core) c rf

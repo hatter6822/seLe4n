@@ -29,7 +29,8 @@
 //!
 //! ```text
 //! x0..x5 : inline message registers
-//! x6     : ipc_buffer_addr     (caller's TPIDRRO_EL0; optional)
+//! x6     : reply register      (seL4-MCS `replyRegister`: the reply cap a
+//!          Recv / NBRecv / ReplyRecv names)
 //! x7     : syscall word        (seL4's syscall number, negated)
 //! ```
 //!

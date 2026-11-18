@@ -77,9 +77,9 @@ continuations are compiled once. -/
         finish .reply capAddr.word
           (replyRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .reply msgInfo.extraCaps) msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
-      | .receive capAddr len replyAddr =>
+      | .receive capAddr canReply replyAddr =>
         finish .receive capAddr.word
-          (receiveRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .receive tcb.registerContext) len replyAddr.word st)
+          (receiveRoutedArm ctx executingCore tid capAddr.word (routedExtraCapCount .receive tcb.registerContext) canReply replyAddr.word st)
       | .replyRecv capAddr msgInfo =>
         finish .replyRecv capAddr.word
           (replyRecvRoutedArm ctx executingCore tid capAddr.word (syscallExtraCapCount .replyRecv msgInfo.extraCaps) msgInfo.length
@@ -256,7 +256,7 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
       simp only [replyRoutedArm, dispatchOperandCheckedKW_report,
         hO, finish_operand finish kGen kRes kLook hG hR hL hRL]; rfl
-    next capAddr len replyAddr hRt =>
+    next capAddr canReply replyAddr hRt =>
       rw [hRt]; symm
       simp only [receiveRoutedArm, dispatchOperandCheckedKW_reportReply,
         finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl

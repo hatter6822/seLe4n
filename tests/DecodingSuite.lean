@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 import SeLe4n.Kernel.Architecture.IpcBufferRead
+import SeLe4n.Kernel.API
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
 
@@ -435,14 +436,24 @@ private def sad014_notificationWait : IO Unit := do
   let result := decodeNotificationWaitArgs stub
   expect "SAD-014a notification wait ok" result.isOk
 
-/-- SAD-015: decodeReplyRecvArgs — valid and insufficient. -/
-private def sad015_replyRecv : IO Unit := do
-  let stub := mkStub #[⟨42⟩]
-  let result := decodeReplyRecvArgs stub
-  expect "SAD-015a replyRecv ok" result.isOk
-  let stubEmpty := mkStub #[]
-  let resultEmpty := decodeReplyRecvArgs stubEmpty
-  expect "SAD-015b replyRecv empty err" (!resultEmpty.isOk)
+/-- SAD-015: the reply register (seL4-MCS `replyRegister`, x6): `canReply`
+follows the syscall word, and a receive that can reply names the reply
+register's capability whatever its message length. -/
+private def sad015_replyRegister : IO Unit := do
+  expect "SAD-015a Recv can reply" (Syscall.wordCanReply Syscall.recv.word)
+  expect "SAD-015b ReplyRecv can reply" (Syscall.wordCanReply Syscall.replyRecv.word)
+  expect "SAD-015c NBSendRecv can reply" (Syscall.wordCanReply Syscall.nbSendRecv.word)
+  expect "SAD-015d Wait cannot reply" (!Syscall.wordCanReply Syscall.wait.word)
+  expect "SAD-015e NBSendWait cannot reply" (!Syscall.wordCanReply Syscall.nbSendWait.word)
+  let rr : SyscallDecodeResult :=
+    { mkStub #[] with syscallId := .replyRecv, replyCPtr := CPtr.ofNat 42 }
+  expect "SAD-015f empty ReplyRecv names x6"
+    (SeLe4n.Kernel.receiveReplyAddr? rr == some (CPtr.ofNat 42))
+  let recv : SyscallDecodeResult := { rr with syscallId := .receive, canReply := true }
+  expect "SAD-015g empty Recv names x6"
+    (SeLe4n.Kernel.receiveReplyAddr? recv == some (CPtr.ofNat 42))
+  let wait : SyscallDecodeResult := { recv with canReply := false }
+  expect "SAD-015h Wait names none" (SeLe4n.Kernel.receiveReplyAddr? wait).isNone
 
 -- SchedContext family ----------------------------------------------------------
 
@@ -954,7 +965,7 @@ private def runSyscallArgDecodeTests : IO Unit := do
   -- Notification
   sad013_notificationSignal
   sad014_notificationWait
-  sad015_replyRecv
+  sad015_replyRegister
   -- SchedContext
   sad016_schedContextConfigure
   sad017_schedContextConfigureInsufficient

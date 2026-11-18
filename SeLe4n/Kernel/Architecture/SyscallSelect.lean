@@ -190,13 +190,6 @@ def invokedCapType (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) : Option 
   | .error _ => none
   | .ok ref => (st.lookupSlotCap ref).map (CapType.ofCap st)
 
-/-- The fused reply-receive applies when the reply register names a reply
-capability or nothing the lookup finds. -/
-@[inline] def replyRegisterFused (ty : Option CapType) : Bool :=
-  match ty with
-  | none | some .replyCap => true
-  | _ => false
-
 /-- The label a message-info word carries: bits 12 and up (seL4's
 `seL4_MessageInfo_t`), read as a number below `2 ^ 52`. -/
 @[inline] def msgInfoWordLabel (w : UInt64) : Nat := (w >>> 12).toNat

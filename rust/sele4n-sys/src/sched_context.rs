@@ -60,6 +60,7 @@ pub fn sched_context_configure(
         msg_info: MessageInfo::new_const(5, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::SchedContextConfigure,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -84,6 +85,7 @@ pub fn sched_context_bind(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::SchedContextBind,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -99,6 +101,7 @@ pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextUnbind,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -118,6 +121,7 @@ pub fn sched_context_consumed(sc_cap: CPtr) -> KernelResult<u64> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextConsumed,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(resp.msg_regs[0])
 }
@@ -144,6 +148,7 @@ pub fn sched_context_yield_to(sc_cap: CPtr) -> KernelResult<u64> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextYieldTo,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(resp.msg_regs[0])
 }
@@ -164,6 +169,7 @@ pub fn yield_now() -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Yield,
+        reply_cap: CPtr::NULL,
     })
 }
 

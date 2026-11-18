@@ -33,8 +33,9 @@ use sele4n_types::{KernelError, KernelResult};
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 #[allow(unsafe_code)]
-pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
-    // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x7=syscall_num
+pub unsafe fn raw_syscall(regs: &mut [u64; 8]) {
+    // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x6=reply register
+    // (seL4-MCS `replyRegister`), x7=syscall_num.
     // The kernel writes results back into x0-x5.
     //
     // U3-A: `clobber_abi("C")` tells the compiler that all caller-saved
@@ -42,19 +43,14 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // kernel during the exception. This includes x8-x18, x29, x30, NZCV,
     // and all SIMD/FP registers. The explicit `inout`/`in`/`lateout`
     // operands for x0-x7 take precedence over the clobber set.
-    // AK4-H (R-ABI-L5): `lateout("x6") _` is redundant here — `clobber_abi("C")`
-    // already declares x0..x18 as caller-saved per AAPCS64, so x6 is implicitly
-    // clobbered. We keep the explicit annotation for readability: it makes the
-    // kernel's use of x6 as a scratch register visible at the call site. Removing
-    // it is a no-op codegen-wise.
     //
     // The `unsafe` block is explicit rather than inherited from the `unsafe fn`
     // signature: the crate denies `unsafe_op_in_unsafe_fn`, so an unsafe
     // operation anywhere in this library has to say so at its own site.
     //
     // SAFETY: the operands describe the register effect of the trap exactly —
-    // x0-x5 are read and written by the kernel (`inout`), x7 is read (`in`),
-    // x6 is written (`lateout`), and `clobber_abi("C")` covers every other
+    // x0-x5 are read and written by the kernel (`inout`), x6 and x7 are read
+    // (`in`), and `clobber_abi("C")` covers every other
     // AAPCS64 caller-saved register the kernel may touch. `nostack` is sound
     // because the instruction pushes nothing: AAPCS64 has no red zone, and the
     // kernel switches to its own stack on the exception. The trap's *effect* on
@@ -68,8 +64,8 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
             inout("x3") regs[3],
             inout("x4") regs[4],
             inout("x5") regs[5],
-            in("x7") regs[6],
-            lateout("x6") _,
+            in("x6") regs[6],
+            in("x7") regs[7],
             clobber_abi("C"),
             options(nostack),
         );
@@ -91,9 +87,10 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 pub mod host_capture {
     use core::sync::atomic::{AtomicU64, Ordering};
 
-    /// The last request's raw registers `[x0, x1, x2, x3, x4, x5, x7]`,
+    /// The last request's raw registers `[x0, x1, x2, x3, x4, x5, x6, x7]`,
     /// exactly as `encode_syscall` produced them.
-    pub static LAST_REQUEST: [AtomicU64; 7] = [
+    pub static LAST_REQUEST: [AtomicU64; 8] = [
+        AtomicU64::new(0),
         AtomicU64::new(0),
         AtomicU64::new(0),
         AtomicU64::new(0),
@@ -104,15 +101,15 @@ pub mod host_capture {
     ];
 
     /// Snapshot the captured registers.
-    pub fn last_request() -> [u64; 7] {
-        let mut out = [0u64; 7];
+    pub fn last_request() -> [u64; 8] {
+        let mut out = [0u64; 8];
         for (slot, value) in LAST_REQUEST.iter().zip(out.iter_mut()) {
             *value = slot.load(Ordering::Relaxed);
         }
         out
     }
 
-    pub(super) fn record(regs: &[u64; 7]) {
+    pub(super) fn record(regs: &[u64; 8]) {
         for (slot, value) in LAST_REQUEST.iter().zip(regs.iter()) {
             slot.store(*value, Ordering::Relaxed);
         }
@@ -177,7 +174,7 @@ const MOCK_ERROR_FRAME_X1: u64 = {
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 #[allow(unsafe_code)]
-pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
+pub unsafe fn raw_syscall(regs: &mut [u64; 8]) {
     host_capture::record(regs);
     // Mock (WS-RA shape, ABI v3): an error rides the x1 label in the top of
     // the label range (label ERROR_LABEL_BASE + d = discriminant d), with
@@ -207,7 +204,8 @@ pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
     // `SyscallRequest`. The kernel validates all parameters on entry. This is
     // the single syscall boundary in the entire library.
     unsafe { raw_syscall(&mut regs) };
-    decode_response(regs)
+    // The response frame is `x0`-`x5`; x6 and x7 carry nothing back.
+    decode_response([regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], 0])
 }
 
 #[cfg(test)]
@@ -232,6 +230,7 @@ mod tests {
             msg_info: MessageInfo::new(0, 0, 0).unwrap(),
             msg_regs: [0; 4],
             syscall_id: SyscallId::Send,
+            reply_cap: CPtr::NULL,
         };
         assert_eq!(invoke_syscall(req), Err(KernelError::InvalidSyscallNumber));
     }
@@ -247,7 +246,7 @@ mod tests {
     // same targeted allow the three production sites carry.
     #[allow(unsafe_code)]
     fn mock_error_frame_matches_the_kernel_shape() {
-        let mut regs = [1u64; 7];
+        let mut regs = [1u64; 8];
         // SAFETY: the host mock writes only this register array (see its
         // `# Safety` note — it is `unsafe fn` for signature parity alone).
         unsafe { raw_syscall(&mut regs) };

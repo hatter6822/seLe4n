@@ -491,7 +491,7 @@ footprint is a proof obligation, not a runtime branch.
 `execCore` is the core the syscall executes on.  `trapped` is the context the
 caller trapped with, whole (`v0.36.47` audit): the step reads the syscall
 number (`x7`, `InFlightContext.syscallId`; WS-ZA ZA6.27), the six message
-registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
+registers, the reply register (`x6`) and the fault window (`pc`, `pstate`, `sp`,
 `x30`) off it here, so no word the HAL passes beside the frame can disagree
 with the frame the entry saves, so the closure the entry hands
 `Platform.FFI.modifyGetKernelState` captures one object rather than eleven
@@ -677,8 +677,8 @@ capability for only has three words read that the step never uses. -/
   else 0
 
 /-- **The second thread whose receive path a reply-receive's transfers read**:
-on a reply-receive, the caller the reply capability in `MR0` (`x2`,
-`decodeReplyRecvArgs`'s `replyCPtr`) answers (`replyAnsweredCaller?`, the
+on a reply-receive, the caller the reply capability in the reply register
+(`x6`, seL4-MCS `replyRegister`; the decode's `replyCPtr`) answers (`replyAnsweredCaller?`, the
 receiver of the reply leg's `doReplyTransfer` capability transfer), as a code
 (`tid + 1`, 0 for none), resolved as `transferReceiverCode` resolves a reply's.
 The reply-receive's other receive path, its receive leg's, is the caller's own
@@ -786,7 +786,7 @@ sender, that sender's (`rendezvousSenderOverflowAddrs`) — the extra-capability
 addresses of each (`captureSenderCapAddrs`), and the receive-path words a
 capability transfer reads (`transferReceiverCode`, `captureReceivePath`; on a
 reply-receive also the answered caller's, `replyRecvAnsweredCallerCode`, whose
-reply leg transfers into it; `replyWord` is the reply-receive's `MR0`) from
+reply leg transfers into it; `replyWord` is the reply register, `x6`) from
 RAM into the
 executing core's entry-word buffer, and answers how many pairs it read; the
 atomic step hands the buffer to the state before the decode
@@ -957,7 +957,7 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- The frame is also where the syscall's number and arguments are read,
   -- once: the syscall number (`x7`, WS-ZA ZA6.27, as seL4's `handleSyscall`
   -- reads them from the registers the thread trapped with), the message info
-  -- (`x1`), the six message registers, the IPC buffer (`x6`) and the fault
+  -- (`x1`), the six message registers, the reply register (`x6`) and the fault
   -- window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`), so the HAL passes no word
   -- beside the frame that could disagree with it.  An `SVC` handler always
   -- publishes its frame before it dispatches, so an entry with none — or with
@@ -974,7 +974,7 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- into this core's entry-word buffer and handed to the model in the atomic
   -- step, so the decode reads what the thread wrote; the committed state drops
   -- the buffer (WS-ZA ZA5.2).
-  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
+  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x6
   let wordBytes ← Platform.FFI.ffiEntryWordBuffer
   -- The kernel heap's free bytes, read as a word before the atomic step and
   -- written into the state right after the words (`withKernelHeapFreeBytes`),
@@ -1078,7 +1078,7 @@ theorem syscallDispatchCrossCoreEntry_def :
           | .ok trapped => pure trapped
           | .error tag => return tag
         let msgInfo := trapped.x1
-        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
+        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x6
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let heapFree ← Platform.FFI.ffiKernelHeapFreeBytes
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
@@ -1130,17 +1130,17 @@ theorem vacatedCore_next_syscall_rejected
     (ctx : LabelingContext) (execCore : CoreId)
     (pre post : SystemState)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (hVacated :
       (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30
+        x6 elr spsr spEl0 x30
         (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState false),
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 _ hVacated
 
 -- ============================================================================
 -- WS-ZA ZA6.27 — the syscall's number and arguments are the saved frame's

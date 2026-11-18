@@ -146,11 +146,11 @@ theorem syscallEntryChecked_recordsStage {ctx : LabelingContext}
 write, which keeps the premises), then the checked entry, a capability-fault
 delivery for the running caller, or a refusal record. -/
 theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (P : RecordsArmPremises st) (hR : CurrentReady st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     RecordsStage st st' := by
   have hInv := P.deletes.2.1.2.1
   unfold Platform.FFI.syscallDispatchFromAbi at h
@@ -223,12 +223,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
 return staging, the local scheduling point, the residency settlement, the
 activation and the ledger drains. -/
 theorem syscallDispatchCrossCoreStep_recordsStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (P : RecordsArmPremises st) (hR : CurrentReady st) :
     RecordsStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+      x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_recordsStage P hR hD).trans
     (RecordsStage.of_frameK fun hI =>

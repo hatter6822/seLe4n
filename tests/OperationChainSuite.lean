@@ -587,10 +587,11 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
-        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=seL4's `Recv` word
+        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=seL4's `Wait` word: a
+        -- receive naming no reply capability (a `Recv` names one in x6)
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
             if r == 0 then 1       -- capAddr = CPtr 1 (receive cap)
-            else if r == 7 then Syscall.recv.word
+            else if r == 7 then Syscall.wait.word
             else 0)
       })
       |>.withObject epId (.endpoint {})

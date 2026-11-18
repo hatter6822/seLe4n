@@ -2697,6 +2697,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     capPtrReg     := ⟨50⟩   -- exceeds 32-register bound
     msgInfoReg    := ⟨1⟩
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
+    replyReg      := ⟨6⟩
     syscallNumReg := ⟨7⟩
   }
   let defaultRegs : SeLe4n.RegisterFile := default
@@ -2709,6 +2710,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     capPtrReg     := ⟨0⟩
     msgInfoReg    := ⟨1⟩
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨40⟩, ⟨5⟩]  -- index 40 exceeds bound
+    replyReg      := ⟨6⟩
     syscallNumReg := ⟨7⟩
   }
   expectErr "J1 decodeSyscallArgs out-of-bounds msgReg"

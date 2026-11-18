@@ -338,10 +338,10 @@ theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
 register write, which keeps the premises), then the checked entry, a
 capability-fault delivery, or a refusal record. -/
 theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome} (P : MappingArmPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     MappingStage st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -416,12 +416,12 @@ theorem stageCallerReturnFor_mappingStage (caller? : Option SeLe4n.ThreadId)
 caller's return staging, the local scheduling point, the residency settlement
 and the ledger drains. -/
 theorem syscallDispatchCrossCoreStep_mappingStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (P : MappingArmPremises st) :
     MappingStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+      x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_mappingStage P hD).trans
     ((((stageCallerReturnFor_mappingStage _ _ e outcome).trans

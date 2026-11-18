@@ -89,7 +89,7 @@ theorem replyRecvBlockTail_stagedLong (Y Z : SystemState) (c tid : SeLe4n.Thread
       (storeReceiveBlock Y epId tid tailCode (SeLe4n.ReplyId.optCode (some rid))) tid core)
       tid core).1 = storeReplyRecvBlockTail Y tid rid epId tailCode core := rfl
   rw [hTailEq, ← deliverLongReplyRecvFrame_eq _ Z c tid rf len badge capInfo
-    (storeReplyRecvBlockTail_noResizeDue Y tid rid epId tailCode core hNo) hW hLen]
+    (storeReplyRecvBlockTail_noResizeDue Y tid rid epId tailCode core hNo) hW (by omega)]
   unfold deliverLongReplyRecvCapsFrame
   exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x
     (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ _ hCT]; exact hX)
@@ -130,7 +130,7 @@ theorem replyRecvDonatedTail_stagedLong (Y Z : SystemState) (c tid : SeLe4n.Thre
         (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 =
       storeReplyRecvDonatedTail Y tid rid epId tailCode core := rfl
   rw [hTailEq, ← deliverLongReplyRecvFrame_eq _ Z c tid rf len badge capInfo
-    (storeReplyRecvDonatedTail_noResizeDue Y tid rid epId tailCode core hNo) hW hLen]
+    (storeReplyRecvDonatedTail_noResizeDue Y tid rid epId tailCode core hNo) hW (by omega)]
   unfold deliverLongReplyRecvCapsFrame
   exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x
     (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ _ hCT]; exact hX)

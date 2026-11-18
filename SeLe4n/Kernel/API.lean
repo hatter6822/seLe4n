@@ -505,49 +505,61 @@ theorem extractAuditAuthority_rejects_non_audit_capability (oid : SeLe4n.ObjId) 
     extractAuditAuthority
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error (.invalidCapability 0) := rfl
 
+/-- **The reply capability's address a receive names**, when it names one
+(WS-SX SX7.3: seL4-MCS's `replyRegister`, x6): a `.receive` with `canReply`
+and every `.replyRecv`, read as each arm reads it (`resolveRecvReplyId`,
+`resolveReplyRecvReply`): seL4-MCS's `handleRecv` with `canReply`, which
+`SysReplyRecv` passes as true.  `none` on every other syscall. -/
+def receiveReplyAddr? (decoded : SyscallDecodeResult) : Option SeLe4n.CPtr :=
+  match decoded.syscallId with
+  | .receive => if decoded.canReply then some decoded.replyCPtr else none
+  | .replyRecv => some decoded.replyCPtr
+  | _ => none
+
+theorem receiveReplyAddr?_of_receive' {decoded : SyscallDecodeResult}
+    (hSid : decoded.syscallId = .receive) :
+    receiveReplyAddr? decoded = if decoded.canReply then some decoded.replyCPtr else none := by
+  unfold receiveReplyAddr?; rw [hSid]
+
+theorem receiveReplyAddr?_of_replyRecv' {decoded : SyscallDecodeResult}
+    (hSid : decoded.syscallId = .replyRecv) : receiveReplyAddr? decoded = some decoded.replyCPtr := by
+  unfold receiveReplyAddr?; rw [hSid]
+
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
-reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
-its `ReplyId`.  Crucially the reply cap lives at a **different** CSpace slot than
-the endpoint receive cap, so we resolve it through a gate whose `capAddr` is
-`replyCPtr` (not the primary syscall gate, which names the endpoint).  Read-only.
-Returns `none` for a plain `Recv` that omits a reply object (message length 0);
-the caller arm then links only on a genuine `Call` rendezvous.  A reply
-capability that does not look up (`lookupReplyCap`, seL4-MCS's `lookupReply`)
-is refused `failedLookup` with its lookup fault, which the entry raises as the
-receive's capability fault at the reply capability's address
-(`receiveReplyFault?`). -/
+reply capability a receive passes to its `ReplyId`.  WS-SX SX7.3: the reply
+capability is the one at `replyRegister` (x6), looked up exactly when the
+syscall receives with `canReply` (`receiveReplyAddr?`: `Recv`, `NBRecv`,
+`ReplyRecv`, `NBSendRecv`), as seL4-MCS's `handleRecv` calls `lookupReply`;
+`Wait`, `NBWait` and `NBSendWait` pass none (`.ok none`).  No
+message length decides it.  The reply cap lives at a **different** CSpace slot
+than the endpoint receive cap, so it is resolved through a gate whose `capAddr`
+is the reply register's address.  Read-only.  A reply register that names no
+reply capability (`lookupReplyCap`, seL4-MCS's `lookupReply`: a failed lookup,
+or a slot holding anything but a reply capability) is refused `failedLookup`
+with its lookup fault, which the entry raises as the receive's capability fault
+at the reply capability's address (`receiveReplyFault?`). -/
 def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) : Except KernelError (Option SeLe4n.ReplyId) :=
-  -- A plain `Recv` *omits* the reply object via message length 0 (PR #822 review):
-  -- the ARM64 register decoder always materializes x2..x5, so MR0 is present even
-  -- for a no-reply receive (the Rust `endpoint_receive` wrapper sends length 0 /
-  -- x2 = 0).  Gate on the declared `msgInfo.length`: **only** length 0 means "no
-  -- reply object" (→ `.ok none`).  At length ≥ 1 MR0 names an *explicit* reply
-  -- cap, so a failed resolution is a hard error (`.ok none` would silently
-  -- downgrade a bad/stale CPtr to a plain receive and then strand a later Call);
-  -- `endpoint_receive_with_reply` declares length 1.
-  if decoded.msgInfo.length == 0 then .ok none else
-  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | .error e => .error e
-  | .ok rargs =>
-      -- seL4-MCS `lookupReply`: a reply capability that does not look up is
-      -- the receive's capability fault, its error the lookup fault itself.
-      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | .error lf => .error (.failedLookup false lf)
-      | .ok (_, rid) =>
-              -- PR #822 review: validate the reply object exists AND is FREE before
-              -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
-              -- caller-first link) AND not already stashed in some server's
-              -- `pendingReceiveReply` (`replyIsStashed` — a server-first link in
-              -- progress); else a second `endpoint_receive_with_reply` via a copied
-              -- cap could block another server on the same `rid` and later roll back
-              -- `.replyCapInvalid` on a stale stash.  Matches the lifecycle-cleanup
-              -- in-use treatment.  Explicit-MR0 failure is fail-closed before receive.
-              match st.getReply? rid with
-              | some r =>
-                  if r.caller.isNone && !st.replyStashedAt rid r then .ok (some rid)
-                  else .error .replyCapInvalid
-              | none => .error .replyCapInvalid
+  match receiveReplyAddr? decoded with
+  | none => .ok none
+  | some replyAddr =>
+  -- seL4-MCS `lookupReply`: a reply capability that does not look up is
+  -- the receive's capability fault, its error the lookup fault itself.
+  match lookupReplyCap { gate with capAddr := replyAddr } st with
+  | .error lf => .error (.failedLookup false lf)
+  | .ok (_, rid) =>
+          -- PR #822 review: validate the reply object exists AND is FREE before
+          -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
+          -- caller-first link) AND not already stashed in some server's
+          -- `pendingReceiveReply` (`replyIsStashed` — a server-first link in
+          -- progress); else a second receive via a copied cap could block another
+          -- server on the same `rid` and later roll back `.replyCapInvalid` on a
+          -- stale stash.
+          match st.getReply? rid with
+          | some r =>
+              if r.caller.isNone && !st.replyStashedAt rid r then .ok (some rid)
+              else .error .replyCapInvalid
+          | none => .error .replyCapInvalid
 
 /-- **WS-SX SX4: the thread a receive's busy reply cancels, as its code** (`0`
 for none, `t + 1` for thread `t`): the reply capability the receive names,
@@ -557,17 +569,16 @@ is about to cancel (the reply capability it presents is its authority over the
 reply's holder).  Every answer is read from the state the receive is handed. -/
 def recvBusyReplyHolderCode (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (decoded : SyscallDecodeResult) (st : SystemState) : Nat :=
-  if decoded.msgInfo.length == 0 then 0 else
-  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  match receiveReplyAddr? decoded with
+  | none => 0
+  | some replyAddr =>
+  match lookupReplyCap { gate with capAddr := replyAddr } st with
   | .error _ => 0
-  | .ok rargs =>
-      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | .error _ => 0
-      | .ok (_, rid) =>
-          let h := busyReplyHolderCode st tid rid
-          if h = 0 then 0
-          else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf ⟨h - 1⟩) then h
-          else 0
+  | .ok (_, rid) =>
+      let h := busyReplyHolderCode st tid rid
+      if h = 0 then 0
+      else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf ⟨h - 1⟩) then h
+      else 0
 
 /-- **WS-SX SX4: a receive's busy-reply cancel** (seL4-MCS `receiveIPC`'s
 `cancelIPC(replyTCB)`): the holder `recvBusyReplyHolderCode` names cancelled in
@@ -586,13 +597,12 @@ freeness check: what the receive's lock operands name when its reply is busy, so
 its footprints can name the holder the receive cancels. -/
 def recvReplyLookup? (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) : Option SeLe4n.ReplyId :=
-  if decoded.msgInfo.length == 0 then none else
-  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  match receiveReplyAddr? decoded with
+  | none => none
+  | some replyAddr =>
+  match lookupReplyCap { gate with capAddr := replyAddr } st with
   | .error _ => none
-  | .ok rargs =>
-      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | .error _ => none
-      | .ok (_, rid) => some rid
+  | .ok (_, rid) => some rid
 
 /-- The holder a receive cancels is the one its named reply is busy with. -/
 theorem recvBusyReplyHolderCode_succ {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
@@ -601,25 +611,21 @@ theorem recvBusyReplyHolderCode_succ {ctx : LabelingContext} {tid : SeLe4n.Threa
     busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = some ⟨k⟩ := by
   unfold recvBusyReplyHolderCode at h
   unfold recvReplyLookup?
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0] at h
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => rw [hA] at h; simp at h
-  | ok rargs =>
-    rw [hA] at h
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp [hA] at h
+  | some replyAddr =>
+  simp only [hA] at h ⊢
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error e => rw [hL] at h; simp at h
+  | ok p =>
+    obtain ⟨_, rid⟩ := p
+    rw [hL] at h
     simp only at h ⊢
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error e => rw [hL] at h; simp at h
-    | ok p =>
-      obtain ⟨_, rid⟩ := p
-      rw [hL] at h
-      simp only at h ⊢
-      split at h
+    split at h
+    · simp at h
+    · split at h
+      · simp only [busyReplyHolder?, h]
       · simp at h
-      · split at h
-        · simp only [busyReplyHolder?, h]
-        · simp at h
 
 /-- A receive whose named reply is busy with no other thread cancels nothing. -/
 theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingContext}
@@ -655,33 +661,29 @@ theorem busyReplyHolder?_of_resolveRecvReplyId_ok {gate : SyscallGate}
     (tid : SeLe4n.ThreadId) (h : resolveRecvReplyId gate decoded st = .ok r) :
     busyReplyHolder? st tid r = none := by
   unfold resolveRecvReplyId at h
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp only [h0, ↓reduceIte, Except.ok.injEq] at h; subst h; rfl
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => rw [hA] at h; cases h
-  | ok rargs =>
-    rw [hA] at h
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp only [hA, Except.ok.injEq] at h; subst h; rfl
+  | some replyAddr =>
+  simp only [hA] at h
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error e => rw [hL] at h; cases h
+  | ok p =>
+    obtain ⟨_, rid⟩ := p
+    rw [hL] at h
     simp only at h
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error e => rw [hL] at h; cases h
-    | ok p =>
-      obtain ⟨_, rid⟩ := p
-      rw [hL] at h
+    cases hR : st.getReply? rid with
+    | none => rw [hR] at h; cases h
+    | some rr =>
+      rw [hR] at h
       simp only at h
-      cases hR : st.getReply? rid with
-      | none => rw [hR] at h; cases h
-      | some rr =>
-        rw [hR] at h
-        simp only at h
-        split at h
-        · rename_i hFree
-          simp only [Except.ok.injEq] at h
-          subst h
-          simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.not_eq_true'] at hFree
-          simp only [busyReplyHolder?, busyReplyHolderCode, hR, hFree.1, hFree.2,
-            Bool.false_eq_true, ↓reduceIte]
-        · cases h
+      split at h
+      · rename_i hFree
+        simp only [Except.ok.injEq] at h
+        subst h
+        simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.not_eq_true'] at hFree
+        simp only [busyReplyHolder?, busyReplyHolderCode, hR, hFree.1, hFree.2,
+          Bool.false_eq_true, ↓reduceIte]
+      · cases h
 
 /-- ...and so cancels none. -/
 theorem busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok
@@ -693,30 +695,26 @@ theorem busyReplyHolder?_recvReplyLookup?_of_resolveRecvReplyId_ok
   -- the named reply is the resolved one
   unfold resolveRecvReplyId at h
   unfold recvReplyLookup?
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0, busyReplyHolder?]
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => rw [hA] at h; cases h
-  | ok rargs =>
-    rw [hA] at h
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp [hA, busyReplyHolder?]
+  | some replyAddr =>
+  simp only [hA] at h ⊢
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error e => rw [hL] at h; cases h
+  | ok p =>
+    obtain ⟨_, rid⟩ := p
+    rw [hL] at h
     simp only at h ⊢
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error e => rw [hL] at h; cases h
-    | ok p =>
-      obtain ⟨_, rid⟩ := p
-      rw [hL] at h
-      simp only at h ⊢
-      cases hR : st.getReply? rid with
-      | none => rw [hR] at h; cases h
-      | some rr =>
-        rw [hR] at h
-        simp only at h
-        split at h
-        · simp only [Except.ok.injEq] at h
-          subst h
-          exact hN
-        · cases h
+    cases hR : st.getReply? rid with
+    | none => rw [hR] at h; cases h
+    | some rr =>
+      rw [hR] at h
+      simp only at h
+      split at h
+      · simp only [Except.ok.injEq] at h
+        subst h
+        exact hN
+      · cases h
 
 theorem recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok {ctx : LabelingContext}
     {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
@@ -780,28 +778,24 @@ theorem resolveRecvReplyId_eq_of_getCNode? {gate : SyscallGate}
     (h : resolveRecvReplyId gate decoded st' = .ok r) : r = some rid := by
   unfold recvReplyLookup? at hLk
   unfold resolveRecvReplyId at h
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0] at hLk
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hLk
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => rw [hA] at h; cases h
-  | ok rargs =>
-    rw [hA] at h hLk
-    simp only at h hLk
-    rw [lookupReplyCap_congr_getCNode? _ st' st hC] at h
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error e => rw [hL] at h; cases h
-    | ok p =>
-      obtain ⟨_, rid'⟩ := p
-      rw [hL] at h hLk
-      simp only [Option.some.injEq] at hLk
-      subst hLk
-      simp only at h
-      split at h
-      · split at h
-        · simp only [Except.ok.injEq] at h; exact h.symm
-        · cases h
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp [hA] at hLk
+  | some replyAddr =>
+  simp only [hA] at h hLk
+  rw [lookupReplyCap_congr_getCNode? _ st' st hC] at h
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error e => rw [hL] at h; cases h
+  | ok p =>
+    obtain ⟨_, rid'⟩ := p
+    rw [hL] at h hLk
+    simp only [Option.some.injEq] at hLk
+    subst hLk
+    simp only at h
+    split at h
+    · split at h
+      · simp only [Except.ok.injEq] at h; exact h.symm
       · cases h
+    · cases h
 
 /-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
 (`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
@@ -981,46 +975,97 @@ theorem clearWokenReceiverStash_preserves_objects_invExt
         exact storeObject_preserves_objects_invExt' st _ _ pair hObjInv hStep
 
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
-capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
+capability a reply-receive replies through to the `(ReplyId, prevCaller)` pair
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
-the reply leg answers.  Resolves the reply cap from the caller's CSpace at
-`replyCPtr` (a gate whose `capAddr` is that slot), then `getReply?` + reads
-`reply.caller`.  Read-only.  Returns `Except KernelError`: a reply capability
-that does not look up (`lookupReplyCap`, seL4-MCS `lookupReply`) answers
-`.failedLookup false lf`, the receive's capability fault carrying the lookup
-fault `lf`, mirroring `resolveRecvReplyId`, so a malformed or unauthorized
-reply-cap slot is distinguishable from a valid-but-consumed Reply.  `.replyCapInvalid` is reserved for
-a missing MR0, a missing Reply object, or a present Reply object with **no
-outstanding caller** (authority now flows from *holding* the reply cap, exactly like
-the `.reply` arm — no raw-thread bypass). -/
+the reply leg answers.  WS-SX SX7.3: the reply capability is the one at
+`replyRegister` (`decoded.replyCPtr`, x6), seL4-MCS's `SysReplyRecv`, whatever
+the message length.  Resolves the reply cap from the caller's CSpace at that
+address (a gate whose `capAddr` is that slot), then `getReply?` + reads
+`reply.caller`.  Read-only.  A reply capability that does not look up
+(`lookupReplyCap`, seL4-MCS `lookupReply`) answers `.failedLookup false lf`,
+the receive's capability fault carrying the lookup fault `lf`, mirroring
+`resolveRecvReplyId`.  WS-SX SX7.2: a reply object with **no outstanding
+caller** answers `.ok none`: seL4-MCS's `doReplyTransfer` returns with nothing
+to do when the reply's `replyTCB` is `NULL` or not blocked on reply, and the
+receive half still runs (authority flows from *holding* the reply cap, exactly
+like the `.reply` arm — no raw-thread bypass). -/
 def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) :
-    Except KernelError (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool) :=
-  -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
-  -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
-  -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
-  if decoded.msgInfo.length == 0 then .error .replyCapInvalid else
-  match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-  | .error e => .error e
-  | .ok rargs =>
-      -- seL4-MCS `lookupReply`: a reply capability that does not look up is
-      -- the receive's capability fault, its error the lookup fault itself; a
-      -- `.replyCapInvalid` is reserved for a resolved Reply object with no
-      -- outstanding caller (mirrors `resolveRecvReplyId`).
-      match lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | .error lf => .error (.failedLookup false lf)
-      | .ok (rcap, rid) =>
-              -- WS-RR RR7.11: one resolution of "which thread does this reply
-              -- capability answer", shared with the `.reply` arm and with the
-              -- declared-footprint resolver.  Both former `none` arms produced
-              -- `.replyCapInvalid`, so this is behaviour-identical.
-              match replyAnsweredCaller? st rid with
-              -- PR #822 review: carry the *reply cap's* badge (the reply
-              -- authority), not the endpoint receive cap's, so the previous
-              -- caller receives the badge associated with the reply cap (as in
-              -- the `.reply` arm) when the two differ.
-              | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
-              | none => .error .replyCapInvalid
+    Except KernelError (Option (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool)) :=
+  -- seL4-MCS `lookupReply`: a reply capability that does not look up is
+  -- the receive's capability fault, its error the lookup fault itself.
+  match lookupReplyCap { gate with capAddr := decoded.replyCPtr } st with
+  | .error lf => .error (.failedLookup false lf)
+  | .ok (rcap, rid) =>
+          -- WS-RR RR7.11: one resolution of "which thread does this reply
+          -- capability answer", shared with the `.reply` arm and with the
+          -- declared-footprint resolver.
+          match replyAnsweredCaller? st rid with
+          -- PR #822 review: carry the *reply cap's* badge (the reply
+          -- authority), not the endpoint receive cap's, so the previous
+          -- caller receives the badge associated with the reply cap (as in
+          -- the `.reply` arm) when the two differ.
+          | some prevCaller => .ok (some (rid, prevCaller, rcap.badge, rcap.rights.mem .grant))
+          | none => .ok none
+
+/-- The CSpace root capability of the calling thread, as the syscall gate
+reads it: its TCB's first space cell. -/
+@[inline] def callerCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId) : Option Capability :=
+  match st.getObject? tid.toObjId with
+  | some (.tcb t) => t.spaceCells[0]
+  | _ => none
+
+/-- The gate a thread's own syscall reads its reply capability through: its
+CSpace root, the reply authority (`lookupReplyCap` reads nothing else of a
+gate but its caller and root, `lookupReplyCap_congr`). -/
+@[inline] def callerReplyGate (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : SyscallGate :=
+  { callerId := tid, cspaceRootCap := callerCspaceRoot st tid, capAddr := decoded.replyCPtr,
+    requiredRight := .write }
+
+/-- **Whether a reply-receive skips its reply half**: its message names an
+extra capability that does not look up, or its reply capability answers no
+caller (`receivesWithoutReply`). -/
+def replyRecvSkipsReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Bool :=
+  (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome ||
+    match resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st with
+    | .ok none => true
+    | _ => false
+
+/-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
+a `.replyRecv` whose reply half is skipped — its message names an extra
+capability that does not look up (seL4-MCS `SysReplyRecv`: `handleInvocation`
+with `isBlocking = false` skips the reply with no fault), or its reply
+capability answers no caller (`doReplyTransfer` returns when the reply holds no
+caller) — after which `handleRecv` still runs. -/
+def receivesWithoutReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Prop :=
+  decoded.syscallId = .receive ∨
+    (decoded.syscallId = .replyRecv ∧ replyRecvSkipsReply decoded tid st = true)
+
+/-- `resolveReplyRecvReply` reads only the gate's caller and root. -/
+theorem resolveReplyRecvReply_congr (g g' : SyscallGate) (decoded : SyscallDecodeResult)
+    {st : SystemState} (h1 : g.callerId = g'.callerId) (h2 : g.cspaceRootCap = g'.cspaceRootCap) :
+    resolveReplyRecvReply g decoded st = resolveReplyRecvReply g' decoded st := by
+  unfold resolveReplyRecvReply
+  rw [lookupReplyCap_congr { g with capAddr := decoded.replyCPtr }
+    { g' with capAddr := decoded.replyCPtr } h1 h2 rfl]
+
+/-- `resolveReplyRecvReply` reads only the objects. -/
+theorem resolveReplyRecvReply_congr_objects (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    {st₁ st₂ : SystemState} (h : st₁.objects = st₂.objects) :
+    resolveReplyRecvReply gate decoded st₁ = resolveReplyRecvReply gate decoded st₂ := by
+  have hC : ∀ id, st₁.getCNode? id = st₂.getCNode? id := fun id => by
+    simp only [SystemState.getCNode?, h]
+  unfold resolveReplyRecvReply
+  rw [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC]
+  simp only [replyAnsweredCaller?, SystemState.getReply?, h]
+
+/-- A thread's CSpace root reads only the objects. -/
+theorem callerCspaceRoot_congr_objects (tid : SeLe4n.ThreadId) {st₁ st₂ : SystemState}
+    (h : st₁.objects = st₂.objects) : callerCspaceRoot st₁ tid = callerCspaceRoot st₂ tid := by
+  simp only [callerCspaceRoot, SystemState.getObject?_eq_getElem, h]
 
 -- ============================================================================
 -- Syscall soundness theorems
@@ -1032,22 +1077,18 @@ scheduler footprint's `replyAnsweredCaller?` read is the arm's. -/
 theorem resolveReplyRecvReply_answered (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (grant : Bool)
-    (h : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, badge, grant)) :
+    (h : resolveReplyRecvReply gate decoded st = .ok (some (rid, prevCaller, badge, grant))) :
     replyAnsweredCaller? st rid = some prevCaller := by
   unfold resolveReplyRecvReply at h
   split at h
   · exact absurd h (by simp)
   · split at h
+    · rename_i hAns
+      simp only [Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨hR, hP, _⟩ := h
+      subst hR; subst hP
+      exact hAns
     · exact absurd h (by simp)
-    · split at h
-      · exact absurd h (by simp)
-      · split at h
-        · rename_i hAns
-          simp only [Except.ok.injEq, Prod.mk.injEq] at h
-          obtain ⟨hR, hP, _⟩ := h
-          subst hR; subst hP
-          exact hAns
-        · exact absurd h (by simp)
 
 /-- **WS-LS LS2.3**: the rights-gated lookup succeeds only through a successful
 resolution of the same gate at the same state. -/
@@ -1542,23 +1583,6 @@ def receiveGateRefuses (sid : SyscallId) (tid : SeLe4n.ThreadId) (st : SystemSta
     (!syscallTargetAccepted sid st cap || !cap.hasRight (syscallRequiredRight sid) ||
       receiveBoundRefuses sid tid st cap)
 
-/-- **The reply capability's address a receive names**, when it names one: a
-`.receive` or `.replyRecv` whose message declares its first register (length at
-least 1), read as each arm reads it (`resolveRecvReplyId`,
-`resolveReplyRecvReply`).  `none` on every other syscall. -/
-def receiveReplyAddr? (decoded : SyscallDecodeResult) : Option SeLe4n.CPtr :=
-  if decoded.msgInfo.length == 0 then none else
-  match decoded.syscallId with
-  | .receive =>
-      match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-      | .ok rargs => some rargs.replyCPtr
-      | .error _ => none
-  | .replyRecv =>
-      match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-      | .ok rargs => some rargs.replyCPtr
-      | .error _ => none
-  | _ => none
-
 /-- **The capability fault a receive's reply capability raises**
 (seL4-MCS's `lookupReply`): the reply capability's address and the lookup
 fault, when the receive names a reply capability (`receiveReplyAddr?`) that
@@ -1630,30 +1654,21 @@ theorem resolveRecvReplyId_failedLookup (gate : SyscallGate) (decoded : SyscallD
     (h : resolveRecvReplyId gate decoded st = .error (.failedLookup w lf)) :
     ∃ replyAddr, receiveReplyFaults gate decoded st (.failedLookup w lf) = some (replyAddr, lf) := by
   unfold resolveRecvReplyId at h
-  unfold receiveReplyFaults receiveReplyFault? receiveReplyAddr?
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0] at h
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
-  rw [hSid]
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e =>
-    rw [hA] at h; cases h
-    exfalso; revert hA
-    unfold Architecture.SyscallArgDecode.decodeRecvArgs Architecture.SyscallArgDecode.requireMsgReg
-    split <;> simp [bind, Except.bind, pure, Except.pure]
-  | ok rargs =>
-    rw [hA] at h
-    simp only at h ⊢
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error lf' =>
-      rw [hL] at h
-      simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
-      obtain ⟨rfl, rfl⟩ := h
-      exact ⟨rargs.replyCPtr, by simp⟩
-    | ok p =>
-      rw [hL] at h
-      simp only at h
-      split at h <;> (try split at h) <;> cases h
+  unfold receiveReplyFaults receiveReplyFault?
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp [hA] at h
+  | some replyAddr =>
+  simp only [hA] at h ⊢
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error lf' =>
+    rw [hL] at h
+    simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨replyAddr, by simp⟩
+  | ok p =>
+    rw [hL] at h
+    simp only at h
+    split at h <;> (try split at h) <;> cases h
 
 /-- A reply-receive refused by its reply capability's resolution likewise
 raises the capability fault. -/
@@ -1663,53 +1678,33 @@ theorem resolveReplyRecvReply_failedLookup (gate : SyscallGate) (decoded : Sysca
     ∃ replyAddr, receiveReplyFaults gate decoded st (.failedLookup w lf) = some (replyAddr, lf) := by
   unfold resolveReplyRecvReply at h
   unfold receiveReplyFaults receiveReplyFault? receiveReplyAddr?
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0] at h
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
   rw [hSid]
-  cases hA : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-  | error e =>
-    rw [hA] at h; cases h
-    exfalso; revert hA
-    unfold Architecture.SyscallArgDecode.decodeReplyRecvArgs Architecture.SyscallArgDecode.requireMsgReg
-    split <;> simp [bind, Except.bind, pure, Except.pure]
-  | ok rargs =>
-    rw [hA] at h
-    simp only at h ⊢
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error lf' =>
-      rw [hL] at h
-      simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
-      obtain ⟨rfl, rfl⟩ := h
-      exact ⟨rargs.replyCPtr, by simp⟩
-    | ok p =>
-      rw [hL] at h
-      simp only at h
-      split at h <;> cases h
+  simp only
+  cases hL : lookupReplyCap { gate with capAddr := decoded.replyCPtr } st with
+  | error lf' =>
+    rw [hL] at h
+    simp only [Except.error.injEq, KernelError.failedLookup.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨decoded.replyCPtr, by simp⟩
+  | ok p =>
+    rw [hL] at h
+    simp only at h
+    split at h <;> cases h
 
 /-- A receive whose reply capability resolved raises no reply fault. -/
 theorem receiveReplyFault?_of_resolveRecvReplyId_ok (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState) (r : Option SeLe4n.ReplyId)
     (hSid : decoded.syscallId = .receive) (h : resolveRecvReplyId gate decoded st = .ok r) :
     receiveReplyFault? gate decoded st = none := by
-  cases hF : receiveReplyFault? gate decoded st with
+  unfold receiveReplyFault?
+  unfold resolveRecvReplyId at h
+  cases hA : receiveReplyAddr? decoded with
   | none => rfl
-  | some p =>
-    exfalso
-    unfold receiveReplyFault? receiveReplyAddr? at hF
-    unfold resolveRecvReplyId at h
-    rw [hSid] at hF
-    by_cases h0 : (decoded.msgInfo.length == 0) = true
-    · simp [h0] at hF
-    simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hF
-    cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-    | error e => rw [hA] at h; cases h
-    | ok rargs =>
-      rw [hA] at h hF
-      simp only at h hF
-      cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | error lf => rw [hL] at h; cases h
-      | ok q => rw [hL] at hF; cases hF
+  | some replyAddr =>
+  simp only [hA] at h ⊢
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error lf => rw [hL] at h; cases h
+  | ok q => rfl
 
 /-- A receive whose reply capability looked up raises no reply fault, whether
 or not the reply it names is free. -/
@@ -1718,44 +1713,28 @@ theorem receiveReplyFault?_of_recvReplyLookup?_some (gate : SyscallGate)
     (hSid : decoded.syscallId = .receive) (h : recvReplyLookup? gate decoded st = some rid) :
     receiveReplyFault? gate decoded st = none := by
   unfold recvReplyLookup? at h
-  unfold receiveReplyFault? receiveReplyAddr?
-  rw [hSid]
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0]
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at h ⊢
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => simp [hA] at h
-  | ok rargs =>
-    rw [hA] at h
-    simp only at h ⊢
-    cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-    | error e => simp [hL] at h
-    | ok q => simp only
+  unfold receiveReplyFault?
+  cases hA : receiveReplyAddr? decoded with
+  | none => rfl
+  | some replyAddr =>
+  simp only [hA] at h ⊢
+  cases hL : lookupReplyCap { gate with capAddr := replyAddr } st with
+  | error e => simp [hL] at h
+  | ok q => rfl
 
 /-- A reply-receive whose reply capability resolved raises no reply fault. -/
 theorem receiveReplyFault?_of_resolveReplyRecvReply_ok (gate : SyscallGate)
     (decoded : SyscallDecodeResult) (st : SystemState)
-    (r : SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool)
+    (r : Option (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool))
     (hSid : decoded.syscallId = .replyRecv) (h : resolveReplyRecvReply gate decoded st = .ok r) :
     receiveReplyFault? gate decoded st = none := by
-  cases hF : receiveReplyFault? gate decoded st with
-  | none => rfl
-  | some p =>
-    exfalso
-    unfold receiveReplyFault? receiveReplyAddr? at hF
-    unfold resolveReplyRecvReply at h
-    rw [hSid] at hF
-    by_cases h0 : (decoded.msgInfo.length == 0) = true
-    · simp [h0] at h
-    simp only [h0, Bool.false_eq_true, ↓reduceIte] at h hF
-    cases hA : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-    | error e => rw [hA] at h; cases h
-    | ok rargs =>
-      rw [hA] at h hF
-      simp only at h hF
-      cases hL : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
-      | error lf => rw [hL] at h; cases h
-      | ok q => rw [hL] at hF; cases hF
+  unfold receiveReplyFault? receiveReplyAddr?
+  unfold resolveReplyRecvReply at h
+  rw [hSid]
+  simp only
+  cases hL : lookupReplyCap { gate with capAddr := decoded.replyCPtr } st with
+  | error lf => rw [hL] at h; cases h
+  | ok q => rfl
 
 /-- **The syscalls that name a reply capability to receive with**: the
 receive and the reply-receive.  No wildcard: a new syscall states its answer. -/
@@ -1779,8 +1758,9 @@ theorem receiveReplyAddr?_none_of_namesReply (decoded : SyscallDecodeResult)
     receiveReplyAddr? decoded = none := by
   unfold receiveReplyAddr?
   split
+  · next hS => rw [hS] at h; cases h
+  · next hS => rw [hS] at h; cases h
   · rfl
-  · revert h; cases decoded.syscallId <;> simp [syscallNamesReply]
 
 /-- A receive's reply fault reads the object store alone. -/
 theorem receiveReplyFault?_congr_objects (gate : SyscallGate) (decoded : SyscallDecodeResult)
@@ -6441,14 +6421,19 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           | none =>
           match resolveReplyRecvReply gate decoded st with
           | .error e => .error e
-          | .ok (rid, prevCaller, replyBadge, replyGrant) =>
-              -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
-              -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
-              -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
-              -- endpoint receive cap's.
-              let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-              let body := full.extract 1 full.size
-              let msg : IpcMessage := { registers := body, badge := replyBadge }
+          -- WS-SX SX7.2: a reply with no caller to answer replies to no one
+          -- (seL4-MCS `doReplyTransfer` returns), and the receive still runs.
+          | .ok none =>
+            receiveResolvedArm decoded gate tid epId executingCore
+              (cancelRecvBusyReply ctx tid gate decoded executingCore st)
+          | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
+              -- WS-SX SX7.3: the reply capability is named by `replyRegister`
+              -- (x6), so the reply's payload is the whole message, MR0 on.
+              -- The reply badge is the *reply cap's* badge (`replyBadge`), not
+              -- the endpoint receive cap's.
+              let msg : IpcMessage :=
+                { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                  badge := replyBadge }
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
@@ -7851,11 +7836,11 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hTarget : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
-    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
+    (hResolve : resolveReplyRecvReply gate decoded st =
+      .ok (some (rid, prevCaller, replyBadge, replyGrant)))
     (hReplyFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
-            (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := replyBadge }
         replyGrant executingCore st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)

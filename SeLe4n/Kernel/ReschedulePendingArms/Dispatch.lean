@@ -1802,6 +1802,11 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · cases h
     split at h
     · exact receiveResolvedArm_cancelled_stepCovers e hInv h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR

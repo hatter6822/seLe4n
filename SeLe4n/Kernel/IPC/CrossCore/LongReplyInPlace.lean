@@ -37,7 +37,9 @@ def longMessageDecode (sid : SyscallId) (st : SystemState) (tid : SeLe4n.ThreadI
   { capAddr, msgInfo := mi, syscallId := sid,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
+    inlineCount := 4, overflowCount := mi.length - 4 ,
+    canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)}
 
 @[simp] theorem longMessageDecode_overflowCount (sid : SyscallId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
@@ -60,7 +62,9 @@ theorem decodeSyscallArgsFromState_of_routedReplyLongAny (st : SystemState)
       mergeOverflowWords st tid
         { capAddr, msgInfo := mi, syscallId := sid,
           msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf),
-          inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 } := by
+          inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 ,
+          canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+          replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)} := by
   rcases hR with ⟨hR, rfl⟩ | ⟨hR, rfl⟩ | ⟨hR, hGt⟩
   · exact decodeSyscallArgsFromState_of_routedReplyLong st tid _ rf 32 capAddr mi hR
   · exact decodeSyscallArgsFromState_of_routedReplyRecvLong st tid _ rf 32 capAddr mi hR

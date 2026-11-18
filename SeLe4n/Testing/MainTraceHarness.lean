@@ -1344,6 +1344,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     capPtrReg     := ⟨50⟩  -- exceeds 32-register bound
     msgInfoReg    := ⟨1⟩
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
+    replyReg      := ⟨6⟩
     syscallNumReg := ⟨7⟩
   }
   match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext

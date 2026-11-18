@@ -5388,6 +5388,20 @@ capability is read from `replyRegister`. -/
   | .recv | .nbRecv | .replyRecv | .nbSendRecv => true
   | _ => false
 
+/-- **`handleRecv`'s `canReply`, read from the trapped syscall word**: `true`
+for the words of `Recv`, `NBRecv`, `ReplyRecv` and `NBSendRecv`
+(`wordCanReply_word`), whose receive on an endpoint looks the reply capability
+up from `replyRegister` (seL4-MCS `lookupReply`); `false` for `Wait`, `NBWait`,
+`NBSendWait` and every other word, whose receive passes no reply capability.  A
+Bool test on the word, so the entry builds no `Option Syscall` to ask it. -/
+@[inline] def wordCanReply (w : UInt64) : Bool :=
+  w == Syscall.recv.word || w == Syscall.nbRecv.word || w == Syscall.replyRecv.word ||
+    w == Syscall.nbSendRecv.word
+
+/-- At a syscall's own word, `wordCanReply` is `receiveCanReply`. -/
+theorem wordCanReply_word (s : Syscall) : wordCanReply s.word = s.receiveCanReply := by
+  cases s <;> decide
+
 end Syscall
 
 namespace SyscallId
@@ -5748,6 +5762,16 @@ structure SyscallDecodeResult where
       on the `decodeSyscallArgsFromState` overflow branch (e.g., 1 for the
       5-arg syscalls `serviceRegister` and `schedContextConfigure`). -/
   overflowCount : Nat := 0
+  /-- WS-SX SX7.3: **`handleRecv`'s `canReply`**, `Syscall.wordCanReply` of
+      the trapped syscall word: a receive on an endpoint looks its reply
+      capability up at `replyCPtr` (seL4-MCS `lookupReply`) exactly when it is
+      set (`Recv`, `NBRecv`, `ReplyRecv`, `NBSendRecv`), and passes none for
+      `Wait`, `NBWait` and `NBSendWait`.  No message length decides it. -/
+  canReply     : Bool := false
+  /-- WS-SX SX7.3: **the reply capability's address**, the trapped
+      `replyRegister` (x6 on ARM64, `SyscallRegisterLayout.replyReg`): the
+      reply capability a receive passes and a reply-receive replies through. -/
+  replyCPtr    : SeLe4n.CPtr := SeLe4n.CPtr.sentinel
   deriving Repr, DecidableEq
 
 /-! ### The interrupt nodes' reserved ids

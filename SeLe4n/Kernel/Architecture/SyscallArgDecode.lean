@@ -1203,7 +1203,7 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
       Nat.mod_eq_of_lt hMmsW, Nat.mod_eq_of_lt hMrsW, Nat.mod_eq_of_lt hIid']
 
 -- ============================================================================
--- V2-I: Notification and ReplyRecv argument structures
+-- V2-I: Notification argument structures
 -- ============================================================================
 
 /-- V2-A/V2-I: Per-syscall argument structure for `notificationWait`.
@@ -1212,77 +1212,10 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
 structure NotificationWaitArgs where
   deriving Repr, DecidableEq
 
-/-- V2-C/V2-I: Per-syscall argument structure for `replyRecv`.
-    Register mapping: `msgRegs[0]` = the server-supplied reply capability pointer.
-    WS-SM SM6.D (faithful seL4-MCS): `ReplyRecv` replies to the *previous* caller
-    via the reply *object* the cap names (`reply.caller`) — not a raw thread id —
-    and re-links that same reply object to the *next* caller on the receive leg.
-    The endpoint is resolved from the capability target. Message body comes
-    from the standard message registers (same as send). -/
-structure ReplyRecvArgs where
-  replyCPtr : SeLe4n.CPtr
-  deriving Repr, DecidableEq
-
 /-- V2-I: Decode notification wait arguments. No message registers needed. -/
 def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
     : Except KernelError NotificationWaitArgs :=
   pure {}
-
-/-- V2-I: Decode replyRecv arguments from message registers.
-    Requires 1 message register (the server-supplied reply capability pointer). -/
-def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
-    : Except KernelError ReplyRecvArgs := do
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyCPtr := SeLe4n.CPtr.ofNat r0.val }
-
--- ============================================================================
-
--- WS-SM SM6.D: MCS `Recv` ABI (faithful server-supplied reply objects)
--- ============================================================================
-
-/-- WS-SM SM6.D: argument structure for the MCS `Recv` syscall — `msgRegs[0]` =
-    the reply capability pointer (the server-supplied Reply object cap slot the
-    kernel links to a rendezvousing Call-caller). -/
-structure RecvArgs where
-  replyCPtr : SeLe4n.CPtr
-  deriving Repr, DecidableEq
-
-/-- WS-SM SM6.D: decode MCS `Recv` arguments (1 register: the reply capability
-    pointer the server supplies, resolved through the server's CSpace — like
-    `tcbBindNotification` — so the link authority flows from *holding* a reply
-    capability, never from naming a raw `ReplyId`). -/
-def decodeRecvArgs (decoded : SyscallDecodeResult) : Except KernelError RecvArgs := do
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyCPtr := SeLe4n.CPtr.ofNat r0.val }
-
-/-- WS-SM SM6.D: encode MCS `Recv` arguments into message registers.  Inverse of
-    `decodeRecvArgs`. -/
-@[inline] def encodeRecvArgs (args : RecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr.word⟩]
-
-/-- WS-SM SM6.D: `Recv` decode fails iff fewer than 1 message register. -/
-theorem decodeRecvArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeRecvArgs d = .error e) ↔ d.msgRegs.size < 1 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 1
-    · exact hlt
-    · exfalso
-      simp only [decodeRecvArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeRecvArgs, bind, Except.bind]
-    rw [requireMsgReg_unfold_err _ _ (by omega)]
-
-/-- WS-SM SM6.D: round-trip — encoding then decoding `RecvArgs` recovers the
-    original. -/
-theorem decodeRecvArgs_roundtrip (args : RecvArgs) :
-    decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args := by
-  simp [decodeRecvArgs, encodeRecvArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- Z5-A/B/C: SchedContext argument structures
@@ -1496,20 +1429,10 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 @[inline] def encodeNotificationWaitArgs (_args : NotificationWaitArgs) : Array RegValue :=
   #[]
 
-/-- V2-I: Encode replyRecv arguments into message registers. -/
-@[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr.word⟩]
-
 /-- V2-I: NotificationWaitArgs decode round-trip (trivial — no MR decode). -/
 theorem decodeNotificationWaitArgs_roundtrip (args : NotificationWaitArgs) :
     decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args := by
   rcases args; rfl
-
-/-- V2-I: ReplyRecvArgs decode round-trip. -/
-theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
-    decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args := by
-  simp [decodeReplyRecvArgs, encodeReplyRecvArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Composed round-trip: every argument structure listed satisfies the
     encode-decode round-trip property. R6-B: CSpaceMintArgs requires badge
@@ -1545,8 +1468,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       args.interfaceId.toNat < 2 ^ 64 →
       decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
-    (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
-    (∀ args, decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args) ∧
     (∀ args : SchedContextConfigureArgs, args.budget < 2 ^ 64 → args.period < 2 ^ 64 →
       decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
@@ -1559,27 +1480,8 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    fun args hA hV hW => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV hW,
    fun args hMc hMms hMrs hI => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs hI,
    decodeNotificationWaitArgs_roundtrip,
-   decodeReplyRecvArgs_roundtrip,
-   decodeRecvArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
    decodeSchedContextUnbindArgs_roundtrip⟩
-
-/-- V2-I: ReplyRecvArgs error exclusivity. -/
-theorem decodeReplyRecvArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeReplyRecvArgs d = .error e) ↔ d.msgRegs.size < 1 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 1
-    · exact hlt
-    · exfalso
-      simp only [decodeReplyRecvArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeReplyRecvArgs, bind, Except.bind]
-    rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 -- ============================================================================
 -- Z8-B: SchedContext error-exclusivity theorems

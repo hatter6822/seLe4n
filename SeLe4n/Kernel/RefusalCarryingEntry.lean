@@ -200,8 +200,8 @@ noncomputable def syscallEntryCheckedR (ctx : LabelingContext)
         -- WS-ZA ZA4.7: a receive, with or without a reply object; one that
         -- blocks checks everything, the reply object included, before its
         -- first write.
-        | .receive capAddr len replyAddr =>
-          dispatchReceiveCheckedR ctx capAddr len replyAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext) st
+        | .receive capAddr canReply replyAddr =>
+          dispatchReceiveCheckedR ctx capAddr canReply replyAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext) st
         -- WS-ZA ZA4.7: a reply-receive; one that answers a caller blocked on
         -- this server and then blocks writes in place, after every check.
         | .replyRecv capAddr msgInfo =>
@@ -330,8 +330,8 @@ def replyRecvEntryReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     if decoded.syscallId = .replyRecv then
       operandReport decoded.capAddr tid executingCore
         (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
-        (replyRecvOperandReport ctx tid decoded.msgInfo.length decoded.msgInfo.extraCaps
-          decoded.msgRegs executingCore (syscallRequiredRight .replyRecv)) st
+        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st
     else st
   | .error _ => st
 
@@ -355,9 +355,9 @@ def cancelReceiveBusyReply (ctx : LabelingContext) (executingCore : Concurrency.
       match SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
               (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
               SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-      | .receive capAddr len replyAddr =>
+      | .receive capAddr canReply replyAddr =>
         operandReport capAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext)
-          (receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive)) st
+          (receiveOperandReport ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive)) st
       | .replyRecv _ _ | .replyRecvLong _ _ =>
         replyRecvEntryReport ctx tid tcb.registerContext executingCore st
       | _ => st
@@ -368,13 +368,13 @@ cancel, the holder its decode's busy-reply code names through any gate on the
 caller's CSpace root. -/
 private theorem receiveEntryReport_cases (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (capAddr : SeLe4n.CPtr) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (capAddr : SeLe4n.CPtr) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hObj : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRecvRegs : SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
       (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
-      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr len replyAddr) :
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr canReply replyAddr) :
     operandReport capAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext)
-        (receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive))
+        (receiveOperandReport ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive))
         st = st ∨
       ∃ (decoded : SyscallDecodeResult) (k : Nat),
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
@@ -384,32 +384,24 @@ private theorem receiveEntryReport_cases (ctx : LabelingContext)
         (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
           recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
         operandReport capAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext)
-          (receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive))
+          (receiveOperandReport ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive))
           st = cancelReplyHolder st ⟨k⟩ executingCore := by
   obtain ⟨decoded, hDec, hRecv, -, -, hLen, hReplyAddr⟩ :=
     SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
-      st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr len replyAddr hRecvRegs
-  have hArgs : len ≠ 0 → SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs decoded
-      = .ok { replyCPtr := replyAddr } := by
-    intro hN
-    have h := hReplyAddr hN
-    rw [Array.getElem?_eq_some_iff] at h
-    obtain ⟨h0, hv⟩ := h
-    simp only [SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs,
-      SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg, h0, ↓reduceDIte, hv, bind,
-      Except.bind, pure, Except.pure, SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
-  have hCode : ∀ k, receiveArmHolderCode ctx tid len replyAddr (callerCspaceRoot st tid) st = k + 1 →
+      st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr canReply replyAddr hRecvRegs
+  have hCode : ∀ k, receiveArmHolderCode ctx tid canReply replyAddr (callerCspaceRoot st tid) st = k + 1 →
       ∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
         recvBusyReplyHolderCode ctx tid gate decoded st = k + 1 := by
     intro k hK gate hRoot
-    rw [← receiveArmHolderCode_eq ctx tid _ gate decoded len replyAddr st hRoot hLen hArgs]
+    rw [← receiveArmHolderCode_eq ctx tid _ gate decoded canReply replyAddr st hRoot
+      (by rw [receiveReplyAddr?_of_receive' hRecv, hLen, hReplyAddr])]
     exact hK
   -- the arm's report, through the operand and the receive's checks
   have hArm : ∀ cap? : Option Capability,
-      receiveOperandReport ctx tid len replyAddr executingCore (syscallRequiredRight .receive)
+      receiveOperandReport ctx tid canReply replyAddr executingCore (syscallRequiredRight .receive)
           cap? st = st ∨
-        ∃ k, receiveArmHolderCode ctx tid len replyAddr (callerCspaceRoot st tid) st = k + 1 ∧
-          receiveOperandReport ctx tid len replyAddr executingCore
+        ∃ k, receiveArmHolderCode ctx tid canReply replyAddr (callerCspaceRoot st tid) st = k + 1 ∧
+          receiveOperandReport ctx tid canReply replyAddr executingCore
             (syscallRequiredRight .receive) cap? st = cancelReplyHolder st ⟨k⟩ executingCore := by
     intro cap?
     unfold receiveOperandReport
@@ -448,33 +440,56 @@ private theorem receiveEntryReport_cases (ctx : LabelingContext)
   · exact Or.inl rfl
 
 /-- A reply-receive's report on its decode is the state handed to it or its
-busy reply's cancel: the latter only when its extra capabilities fail, so it
-skipped its reply and received, the holder named by the receive's busy-reply
-code through any gate on the caller's CSpace root. -/
+busy reply's cancel: the latter only when it skipped its reply and received,
+its extra capabilities failing or its reply answering no caller, the holder
+named by the receive's busy-reply code through any gate on the caller's CSpace
+root. -/
 theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (decoded : SyscallDecodeResult) (xc : Nat)
-    (st : SystemState) :
+    (st : SystemState) (hRR : decoded.syscallId = .replyRecv) :
     operandReport decoded.capAddr tid executingCore xc
-        (replyRecvOperandReport ctx tid decoded.msgInfo.length decoded.msgInfo.extraCaps
-          decoded.msgRegs executingCore (syscallRequiredRight .replyRecv)) st = st ∨
-      ∃ k : Nat, (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome ∧
+        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st = st ∨
+      ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
         (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
           recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
         operandReport decoded.capAddr tid executingCore xc
-          (replyRecvOperandReport ctx tid decoded.msgInfo.length decoded.msgInfo.extraCaps
-            decoded.msgRegs executingCore (syscallRequiredRight .replyRecv)) st =
+          (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+            decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st =
           cancelReplyHolder st ⟨k⟩ executingCore := by
-  have hArm : ∀ cap? : Option Capability,
-      replyRecvOperandReport ctx tid decoded.msgInfo.length decoded.msgInfo.extraCaps
-          decoded.msgRegs executingCore (syscallRequiredRight .replyRecv) cap? st = st ∨
-        ∃ k : Nat, (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome ∧
+  have hRecvCase : ∀ cap : Capability,
+      replyRecvSkipsReply decoded tid st = true →
+      receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st = st ∨
+        ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
           (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
             recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
-          replyRecvOperandReport ctx tid decoded.msgInfo.length decoded.msgInfo.extraCaps
-            decoded.msgRegs executingCore (syscallRequiredRight .replyRecv) cap? st =
+          receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st =
+            cancelReplyHolder st ⟨k⟩ executingCore := by
+    intro cap hD
+    unfold receiveArmReport
+    split
+    · split
+      · exact Or.inl rfl
+      · unfold cancelReceiveArmBusyReply
+        split
+        · exact Or.inl rfl
+        · rename_i k hK
+          refine Or.inr ⟨k, hD, fun gate hRoot => ?_, rfl⟩
+          rw [← receiveArmHolderCode_eq ctx tid _ gate decoded true decoded.replyCPtr st hRoot
+            (by rw [receiveReplyAddr?_of_replyRecv' hRR]; rfl)]
+          exact hK
+    · exact Or.inl rfl
+  have hArm : ∀ cap? : Option Capability,
+      replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st = st ∨
+        ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
+          (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
+            recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
+          replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+            decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st =
             cancelReplyHolder st ⟨k⟩ executingCore := by
     intro cap?
-    unfold replyRecvOperandReport replyRecvArmReport replyRecvSkipReport
+    unfold replyRecvOperandReport replyRecvArmReport
     split
     · exact Or.inl rfl
     split
@@ -484,23 +499,11 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
     split
     · split
       · rename_i hXc
-        split
-        · rename_i r0 hM
-          unfold receiveArmReport
-          split
-          · split
-            · exact Or.inl rfl
-            · unfold cancelReceiveArmBusyReply
-              split
-              · exact Or.inl rfl
-              · rename_i k hK
-                refine Or.inr ⟨k, by rw [hXc]; rfl, fun gate hRoot => ?_, rfl⟩
-                rw [← receiveArmHolderCode_eq ctx tid _ gate decoded _ _ st hRoot rfl
-                  (fun _ => decodeRecvArgs_of_requireMsgReg hM)]
-                exact hK
-          · exact Or.inl rfl
+        exact hRecvCase _ (by simp [replyRecvSkipsReply, hXc])
+      · split
+        · rename_i hNo
+          exact hRecvCase _ (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])
         · exact Or.inl rfl
-      · exact Or.inl rfl
     · exact Or.inl rfl
   unfold operandReport
   split
@@ -542,8 +545,8 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
   split
   · rename_i tcb hObj
     split
-    · rename_i capAddr len replyAddr hRecvRegs
-      rcases receiveEntryReport_cases ctx executingCore st tid tcb capAddr len replyAddr hObj
+    · rename_i capAddr canReply replyAddr hRecvRegs
+      rcases receiveEntryReport_cases ctx executingCore st tid tcb capAddr canReply replyAddr hObj
         hRecvRegs with h | ⟨decoded, k, hDec, hRecv, hK, h⟩
       · exact Or.inl h
       · exact Or.inr ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inl hRecv, hK, h⟩
@@ -554,7 +557,7 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
          · rename_i decoded hDec
            split
            · rename_i hRR
-             rcases replyRecvDecodedReport_cases ctx tid executingCore decoded _ st with
+             rcases replyRecvDecodedReport_cases ctx tid executingCore decoded _ st hRR with
                h | ⟨k, hXc, hK, h⟩
              · exact Or.inl h
              · exact Or.inr ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inr ⟨hRR, hXc⟩, hK, h⟩
@@ -583,13 +586,13 @@ theorem cancelReceiveBusyReply_cases_holder (ctx : LabelingContext)
 /-- The entry routed to a receive: `syscallEntryCheckedR_eq`'s receive case. -/
 theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (capAddr : SeLe4n.CPtr) (len : Nat) (replyAddr : SeLe4n.CPtr)
+    (capAddr : SeLe4n.CPtr) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
     (hCtx : ¬ isInsecureDefaultContext ctx = true)
     (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (hObj : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRecvRegs : SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
       (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
-      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr len replyAddr) :
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr canReply replyAddr) :
     syscallEntryCheckedR ctx executingCore st =
       RefusalCarrying.ofKernelReporting (cancelReceiveBusyReply ctx executingCore)
         (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st := by
@@ -597,11 +600,11 @@ theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)
     simp only [lookupThreadRegisterContext, hObj]
   obtain ⟨decoded, hDec, hRecv, hCap, hZero, hLen, hReplyAddr⟩ :=
     SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
-      st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr len replyAddr hRecvRegs
+      st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr canReply replyAddr hRecvRegs
   subst hCap
   simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRecvRegs, Bool.false_eq_true, ↓reduceIte]
   rw [routedExtraCapCount_eq hDec hRecv]
-  rw [dispatchReceiveCheckedR_eq ctx decoded tid executingCore len replyAddr hRecv hLen
+  rw [dispatchReceiveCheckedR_eq ctx decoded tid executingCore canReply replyAddr hRecv hLen
     hReplyAddr]
   simp only [RefusalCarrying.ofKernelReporting, cancelReceiveBusyReply, syscallEntryChecked, hCtx,
     hCur, hRegs, hDec, hObj, hRecvRegs, hZero, Bool.false_eq_true, ↓reduceIte, routedExtraCapCount_eq hDec hRecv]
@@ -623,14 +626,14 @@ theorem syscallEntryCheckedR_eq_of_replyRecv (ctx : LabelingContext)
         (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st := by
   have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
     simp only [lookupThreadRegisterContext, hObj]
-  obtain ⟨decoded, hDec, hRR, hCap, hZero, hInfo, hRegs'⟩ :=
+  obtain ⟨decoded, hDec, hRR, hCap, hZero, hInfo, hRegs', hReply⟩ :=
     SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecv
       st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr msgInfo hRRRegs
   subst hCap hInfo
   simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRRRegs, Bool.false_eq_true, ↓reduceIte]
   rw [routedExtraCapCount_eq hDec hRR]
   rw [dispatchReplyRecvCheckedR_eq ctx decoded tid executingCore SeLe4n.arm64DefaultLayout
-    tcb.registerContext hRR hRegs'.symm]
+    tcb.registerContext hRR hRegs'.symm hReply]
   simp only [RefusalCarrying.ofKernelReporting, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
     hZero, hObj, hRRRegs, hRR, cancelReceiveBusyReply, replyRecvEntryReport, Bool.false_eq_true,
     ↓reduceIte]
@@ -673,7 +676,7 @@ theorem syscallEntryCheckedR_eq_of_replyRecvLong (ctx : LabelingContext)
       .replyRecv (.inr (.inl ⟨hRRLRegs, rfl⟩)) 0 hn0 e hR0
     rw [routedExtraCapCount_of_msgInfo (n := msgInfo.extraCaps) ⟨_, hD, rfl⟩]
     have hE := dispatchReplyRecvCheckedR_eq ctx (clampedFrameDecode .replyRecv tcb.registerContext capAddr msgInfo)
-      tid executingCore SeLe4n.arm64DefaultLayout tcb.registerContext rfl rfl
+      tid executingCore SeLe4n.arm64DefaultLayout tcb.registerContext rfl rfl rfl
     simp only [clampedFrameDecode] at hE
     rw [congrFun hE st]
     simp only [RefusalCarrying.ofKernelReporting, syscallEntryChecked, hCtx, hCur, hRegs, hD,
@@ -691,7 +694,7 @@ theorem syscallEntryCheckedR_eq_of_replyRecvLong (ctx : LabelingContext)
       Bool.false_eq_true, ↓reduceIte, longMessageDecode_overflowCount]
     exact dispatchReplyRecvLongCheckedR_eq ctx
       (longMessageDecode .replyRecv st tid tcb.registerContext capAddr msgInfo)
-      tcb.registerContext capAddr tid executingCore st rfl hRRLRegs rfl hRead
+      tcb.registerContext capAddr tid executingCore st rfl hRRLRegs rfl rfl hRead
       (frameOf hObj)
 theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurrency.CoreId) :
     syscallEntryCheckedR ctx executingCore =
@@ -701,9 +704,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
   by_cases hR : ∃ tid tcb, ¬ isInsecureDefaultContext ctx = true ∧
       st.scheduler.currentOnCore executingCore = some tid ∧
       st.getObject? tid.toObjId = some (.tcb tcb) ∧
-      ((∃ capAddr len replyAddr, SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
+      ((∃ capAddr canReply replyAddr, SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
           (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
-          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr len replyAddr) ∨
+          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .receive capAddr canReply replyAddr) ∨
         (∃ capAddr msgInfo, SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
           (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .replyRecv capAddr msgInfo) ∨
@@ -711,9 +714,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .replyRecvLong capAddr msgInfo))
   · obtain ⟨tid, tcb, hCtx, hCur, hObj, hRoute⟩ := hR
-    rcases hRoute with ⟨capAddr, len, replyAddr, hRecvRegs⟩ | ⟨capAddr, msgInfo, hRRRegs⟩ |
+    rcases hRoute with ⟨capAddr, canReply, replyAddr, hRecvRegs⟩ | ⟨capAddr, msgInfo, hRRRegs⟩ |
       ⟨capAddr, msgInfo, hRRLRegs⟩
-    · exact syscallEntryCheckedR_eq_of_receive ctx executingCore st tid tcb capAddr len replyAddr
+    · exact syscallEntryCheckedR_eq_of_receive ctx executingCore st tid tcb capAddr canReply replyAddr
         hCtx hCur hObj hRecvRegs
     · exact syscallEntryCheckedR_eq_of_replyRecv ctx executingCore st tid tcb capAddr msgInfo
         hCtx hCur hObj hRRRegs
@@ -730,8 +733,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
         split
         · next tcb hObj =>
           split
-          · next capAddr len replyAddr hRecvRegs =>
-            exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inl ⟨capAddr, len, replyAddr, hRecvRegs⟩⟩ hR
+          · next capAddr canReply replyAddr hRecvRegs =>
+            exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inl ⟨capAddr, canReply, replyAddr, hRecvRegs⟩⟩ hR
           · next capAddr msgInfo hRRRegs =>
             exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inr (.inl ⟨capAddr, msgInfo, hRRRegs⟩)⟩ hR
           · next capAddr msgInfo hRRLRegs =>
@@ -809,8 +812,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
             hReply hRegs'.symm]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte]
-        · next capAddr len replyAddr hRecvRegs =>
-          exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inl ⟨capAddr, len, replyAddr, hRecvRegs⟩⟩ hR
+        · next capAddr canReply replyAddr hRecvRegs =>
+          exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inl ⟨capAddr, canReply, replyAddr, hRecvRegs⟩⟩ hR
         · next capAddr msgInfo hRRRegs =>
           exact absurd ⟨tid, tcb, hCtx, hCur, hObj, .inr (.inl ⟨capAddr, msgInfo, hRRRegs⟩)⟩ hR
         · next sid capAddr hInvRegs =>
@@ -849,7 +852,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               { capAddr, msgInfo, syscallId := sid,
                 msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
                   #[(⟨w⟩ : RegValue)],
-                inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 }
+                inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 ,
+                canReply := Syscall.wordCanReply (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg),
+                replyCPtr := SeLe4n.CPtr.ofWord (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg)}
               tcb.registerContext w tid executingCore hRouted (.of_eq rfl 5)
               (show msgInfo.length = 5 by rw [hMl]; rfl)
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
@@ -991,7 +996,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               dispatchTransferringCheckedR_eq ctx
                 { capAddr, msgInfo, syscallId := sid,
                   msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext),
-                  inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 }
+                  inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 ,
+                  canReply := Syscall.wordCanReply (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg),
+                  replyCPtr := SeLe4n.CPtr.ofWord (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg)}
                 sid tid executingCore st rfl hSC tcb.registerContext capAddr msgInfo
                 (frameOf hObj) (.inl ⟨blockedSenderRoute_of_transferring hTrRegs hSC, fun h => absurd hShort (by omega)⟩)]
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
@@ -1216,11 +1223,10 @@ theorem replyLookupRefusal_map {β γ : Type} (g : β → γ) (names : Bool) (ti
     · rfl
   · rfl
 
-/-- The reply capability's address a reply-receive names: its first message
-register, as the arm reads it (`endpointReplyRecvCheckedArmR`). -/
+/-- The reply capability's address a reply-receive names: its reply register
+(seL4-MCS `replyRegister`), as the arm reads it (`endpointReplyRecvCheckedArmR`). -/
 @[inline] def replyRecvReplyAddr (rf : SeLe4n.RegisterFile) : SeLe4n.CPtr :=
-  SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf
-    (SeLe4n.arm64DefaultLayout.msgRegs[0]'(Nat.lt_of_lt_of_eq (by decide : 0 < 4) rfl)))
+  SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)
 
 /-- **`dispatchOperandCheckedR`, continued**: a refusal before the operand's
 resolution is handed to `kPre`; a resolution that fails as `syscallResolveCap`
@@ -1497,11 +1503,11 @@ noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
           (replyOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
             msgInfo.length msgInfo.extraCaps msgInfo.label tid executingCore
             (syscallRequiredRight .reply)) st kGen kRes (kLook .reply)
-      | .receive capAddr len replyAddr =>
+      | .receive capAddr canReply replyAddr =>
         dispatchOperandCheckedK .receive capAddr tid executingCore (routedExtraCapCount .receive tcb.registerContext)
-          (receiveOperandArmThenTaintR ctx tid len replyAddr executingCore
+          (receiveOperandArmThenTaintR ctx tid canReply replyAddr executingCore
             (syscallRequiredRight .receive)) st kGen
-          (replyLookupRefusal (len != 0) tid replyAddr kRes
+          (replyLookupRefusal canReply tid replyAddr kRes
             (fun lf s => kLook .receive replyAddr (.failedLookup false lf) s))
           (kLook .receive)
       | .replyRecv capAddr msgInfo =>
@@ -1509,7 +1515,7 @@ noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
           (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
             msgInfo.length msgInfo.extraCaps msgInfo.label tid executingCore
             (syscallRequiredRight .replyRecv)) st kGen
-          (replyLookupRefusal (msgInfo.length != 0) tid (replyRecvReplyAddr tcb.registerContext) kRes
+          (replyLookupRefusal true tid (replyRecvReplyAddr tcb.registerContext) kRes
             (fun lf s => kLook .replyRecv (replyRecvReplyAddr tcb.registerContext)
               (.failedLookup false lf) s))
           (kLook .replyRecv)
@@ -1803,42 +1809,24 @@ theorem entryOperandOutcome_of_replyArm {β : Type} (ctx : LabelingContext)
         | error lf => simp [hNot ke s hE rfl lf hLk]
   · exact ⟨tid, tcb, decoded, hCur, hObj, hDec, .inr (.inl hL)⟩
 
-/-- A receive or reply-receive whose message declares its first register names
-the reply capability that register holds. -/
-theorem receiveReplyAddr?_of_msgReg0 (decoded : SyscallDecodeResult) (r : SeLe4n.CPtr)
-    (hLen : decoded.msgInfo.length ≠ 0)
-    (hSid : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv)
-    (h0 : decoded.msgRegs[0]? = some ⟨r.word⟩) :
-    receiveReplyAddr? decoded = some r := by
-  have hR : SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg decoded.msgRegs 0 =
-      .ok ⟨r.word⟩ := by
-    rw [Array.getElem?_eq_some_iff] at h0
-    obtain ⟨hs, hv⟩ := h0
-    simp only [SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg, hs, ↓reduceDIte, hv]
-  have hL : (decoded.msgInfo.length == 0) = false := by simp [hLen]
-  unfold receiveReplyAddr?
-  rcases hSid with hS | hS <;>
-    simp only [hL, hS, Bool.false_eq_true, ↓reduceIte,
-      SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs,
-      SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeReplyRecvArgs, hR, bind, Except.bind,
-      pure, Except.pure, SeLe4n.RegValue.val_mk, SeLe4n.CPtr.ofNat_word_toNat]
+/-- A receive that can reply names the reply capability its reply register
+holds (seL4-MCS `handleRecv`'s `lookupReply`). -/
+theorem receiveReplyAddr?_of_receive (decoded : SyscallDecodeResult)
+    (hSid : decoded.syscallId = .receive) (hCan : decoded.canReply = true) :
+    receiveReplyAddr? decoded = some decoded.replyCPtr := by
+  simp [receiveReplyAddr?, hSid, hCan]
 
-/-- The reply-receive's first message register holds the reply capability's
-address `replyRecvReplyAddr` reads. -/
-theorem replyRecvReplyAddr_msgReg0 (rf : SeLe4n.RegisterFile) :
-    (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf))[0]? =
-      some ⟨(replyRecvReplyAddr rf).word⟩ := by
-  simp only [Array.getElem?_map, replyRecvReplyAddr, readReg_eq_word]
-  rfl
+/-- A receive that cannot reply (`Wait`, `NBWait`) names none. -/
+theorem receiveReplyAddr?_of_receive_none (decoded : SyscallDecodeResult)
+    (hSid : decoded.syscallId = .receive) (hCan : decoded.canReply = false) :
+    receiveReplyAddr? decoded = none := by
+  simp [receiveReplyAddr?, hSid, hCan]
 
-/-- …and so does the long frame's merge, whose inline registers come first. -/
-theorem replyRecvReplyAddr_longMsgReg0 (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
-    (longMessageDecode .replyRecv st tid rf capAddr mi).msgRegs[0]? =
-      some ⟨(replyRecvReplyAddr rf).word⟩ := by
-  simp only [longMessageDecode]
-  rw [Array.getElem?_append_left (by simp [Architecture.regMessageRegs]; decide)]
-  exact replyRecvReplyAddr_msgReg0 rf
+/-- A reply-receive names the reply capability its reply register holds. -/
+theorem receiveReplyAddr?_of_replyRecv (decoded : SyscallDecodeResult)
+    (hSid : decoded.syscallId = .replyRecv) :
+    receiveReplyAddr? decoded = some decoded.replyCPtr := by
+  simp [receiveReplyAddr?, hSid]
 
 /-- A receive route's operand dispatch, its reply capability's failed lookup
 told apart, and its share of `syscallEntryCheckedK_spec`. -/
@@ -2000,38 +1988,32 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
       exact hD decoded _ (by decide) _ hCur hObj hDec hSid (by
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
         rfl)
-    | receive capAddr len replyAddr =>
+    | receive capAddr canReply replyAddr =>
       obtain ⟨decoded, hDec, hSid, hCap, -, hLen, hR0⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
-          st tid _ _ 32 capAddr len replyAddr hRt
+          st tid _ _ 32 capAddr canReply replyAddr hRt
       subst hCap
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
       refine (entryOperandOutcome_of_replyDispatch ctx executingCore st kGen kRes kLook tid tcb
-        decoded _ _ (len != 0) replyAddr hCur hObj hDec hSid (by
+        decoded _ _ canReply replyAddr hCur hObj hDec hSid (by
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
         rfl)
-        (fun h => receiveReplyAddr?_of_msgReg0 decoded replyAddr
-          (by rw [hLen]; simpa using h) (.inl hSid) (hR0 (by simpa using h)))
-        (fun h => by
-          have h0 : len = 0 := by simpa using h
-          simp [receiveReplyAddr?, hLen, h0])).imp_left And.left
+        (fun h => by rw [receiveReplyAddr?_of_receive decoded hSid (by rw [hLen]; exact h), hR0])
+        (fun h => receiveReplyAddr?_of_receive_none decoded hSid (by rw [hLen]; exact h))).imp_left
+        And.left
     | replyRecv capAddr msgInfo =>
-      obtain ⟨decoded, hDec, hSid, hCap, -, hMi, hRegs⟩ :=
+      obtain ⟨decoded, hDec, hSid, hCap, -, -, -, hReply⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecv
           st tid _ _ 32 capAddr msgInfo hRt
       subst hCap
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
       refine (entryOperandOutcome_of_replyDispatch ctx executingCore st kGen kRes kLook tid tcb
-        decoded _ _ (msgInfo.length != 0) (replyRecvReplyAddr tcb.registerContext) hCur hObj hDec
+        decoded _ _ true (replyRecvReplyAddr tcb.registerContext) hCur hObj hDec
         hSid (by
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
         rfl)
-        (fun h => receiveReplyAddr?_of_msgReg0 decoded _
-          (by rw [hMi]; simpa using h) (.inr hSid)
-          (by rw [hRegs]; exact replyRecvReplyAddr_msgReg0 tcb.registerContext))
-        (fun h => by
-          have h0 : msgInfo.length = 0 := by simpa using h
-          simp [receiveReplyAddr?, hMi, h0])).imp_left And.left
+        (fun _ => by rw [receiveReplyAddr?_of_replyRecv decoded hSid, hReply]; rfl)
+        (fun h => nomatch h)).imp_left And.left
     | invoke sid capAddr =>
       obtain ⟨decoded, hDec, hSid, hRI, hCap, -⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedInvoke
@@ -2062,7 +2044,9 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
         exact hD (SeLe4n.Kernel.Architecture.RegisterDecode.clampToInline
             { capAddr, msgInfo, syscallId := sid,
               msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext),
-              inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 })
+              inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 ,
+              canReply := Syscall.wordCanReply (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg),
+              replyCPtr := SeLe4n.CPtr.ofWord (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg)})
           sid hNRs _ hCur hObj (by rw [hDecM]; simp only [SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR0])
           rfl (by
             simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt,
@@ -2076,7 +2060,9 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
               { capAddr, msgInfo, syscallId := sid,
                 msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
                   #[(⟨w⟩ : RegValue)],
-                inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 } := by
+                inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 ,
+                canReply := Syscall.wordCanReply (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg),
+                replyCPtr := SeLe4n.CPtr.ofWord (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg)} := by
           rw [hDecM]
           simp only [SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR0]
         exact entryOperandOutcome_of_dispatch ctx executingCore st kGen kRes kLook tid tcb _ sid hNRs
@@ -2217,8 +2203,7 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
             simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt,
           Bool.false_eq_true, ↓reduceIte, SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq, hR0]
             rfl)
-          (fun _ => receiveReplyAddr?_of_msgReg0 _ _ (by simp [clampedFrameDecode]) (.inr rfl)
-            (replyRecvReplyAddr_msgReg0 tcb.registerContext)) (fun h => nomatch h)).imp_left And.left
+          (fun _ => receiveReplyAddr?_of_replyRecv _ rfl) (fun h => nomatch h)).imp_left And.left
       | ok w0 =>
         dsimp only
         have hRead := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowReadable hn ⟨w0, hR0⟩
@@ -2233,8 +2218,7 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
             simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true,
               ↓reduceIte, SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq, hR0]
             rfl)
-          (receiveReplyAddr?_of_msgReg0 _ _ (by simp [longMessageDecode]; omega) (.inr rfl)
-            (replyRecvReplyAddr_longMsgReg0 st tid tcb.registerContext capAddr msgInfo))).imp_left
+          (receiveReplyAddr?_of_replyRecv _ rfl)).imp_left
           And.left
     | transferring sid capAddr msgInfo =>
       have hNRs : syscallNamesReply sid = false := by
@@ -2252,7 +2236,9 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
           ({ capAddr := capAddr, msgInfo := msgInfo, syscallId := sid,
              msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext),
              inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size,
-             overflowCount := 0 } : SyscallDecodeResult)
+             overflowCount := 0 ,
+             canReply := Syscall.wordCanReply (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg),
+             replyCPtr := SeLe4n.CPtr.ofWord (readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg)} : SyscallDecodeResult)
           sid hNRs _ hCur hObj hDec rfl (by
           simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, hShort, Bool.false_eq_true,
             ↓reduceIte]
@@ -2398,8 +2384,7 @@ theorem replyRecvLong_entryOperandOutcome {β : Type} (ctx : LabelingContext)
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt,
       Bool.false_eq_true, ↓reduceIte, SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq, hR0]
         rfl)
-      (fun _ => receiveReplyAddr?_of_msgReg0 _ _ (by simp [clampedFrameDecode]) (.inr rfl)
-        (replyRecvReplyAddr_msgReg0 tcb.registerContext)) (fun h => nomatch h) with h | h
+      (fun _ => receiveReplyAddr?_of_replyRecv _ rfl) (fun h => nomatch h) with h | h
     · exact absurd hObj (h.2 tcb hCur)
     · exact h
   | ok w0 =>
@@ -2416,8 +2401,7 @@ theorem replyRecvLong_entryOperandOutcome {β : Type} (ctx : LabelingContext)
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true,
           ↓reduceIte, SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq, hR0]
         rfl)
-      (receiveReplyAddr?_of_msgReg0 _ _ (by simp [longMessageDecode]; omega) (.inr rfl)
-        (replyRecvReplyAddr_longMsgReg0 st tid tcb.registerContext capAddr msgInfo)) with h | h
+      (receiveReplyAddr?_of_replyRecv _ rfl) with h | h
     · exact absurd hObj (h.2 tcb hCur)
     · exact h
 
@@ -2448,40 +2432,33 @@ theorem syscallEntryCheckedK_spec_fixedReport {β : Type} (ctx : LabelingContext
   split at hFix
   · next tcb hObj =>
     split at hFix
-    · next capAddr len replyAddr hRt =>
+    · next capAddr canReply replyAddr hRt =>
       obtain ⟨decoded, hDec, hSid, hCap, -, hLen, hR0⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
-          st tid _ _ 32 capAddr len replyAddr hRt
+          st tid _ _ 32 capAddr canReply replyAddr hRt
       subst hCap
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
       rcases entryOperandOutcome_of_replyDispatch ctx executingCore st kGen kRes kLook tid tcb
-        decoded _ _ (len != 0) replyAddr hCur hObj hDec hSid (by
+        decoded _ _ canReply replyAddr hCur hObj hDec hSid (by
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
         rfl)
-        (fun h => receiveReplyAddr?_of_msgReg0 decoded replyAddr
-          (by rw [hLen]; simpa using h) (.inl hSid) (hR0 (by simpa using h)))
-        (fun h => by
-          have h0 : len = 0 := by simpa using h
-          simp [receiveReplyAddr?, hLen, h0]) with h | h
+        (fun h => by rw [receiveReplyAddr?_of_receive decoded hSid (by rw [hLen]; exact h), hR0])
+        (fun h => receiveReplyAddr?_of_receive_none decoded hSid (by rw [hLen]; exact h)) with h | h
       · exact absurd hObj (h.2 tcb hCur)
       · exact h
     · next capAddr msgInfo hRt =>
-      obtain ⟨decoded, hDec, hSid, hCap, -, hMi, hRegs⟩ :=
+      obtain ⟨decoded, hDec, hSid, hCap, -, -, -, hReply⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecv
           st tid _ _ 32 capAddr msgInfo hRt
       subst hCap
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
       rcases entryOperandOutcome_of_replyDispatch ctx executingCore st kGen kRes kLook tid tcb
-        decoded _ _ (msgInfo.length != 0) (replyRecvReplyAddr tcb.registerContext) hCur hObj hDec
+        decoded _ _ true (replyRecvReplyAddr tcb.registerContext) hCur hObj hDec
         hSid (by
         simp only [syscallEntryCheckedR, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
         rfl)
-        (fun h => receiveReplyAddr?_of_msgReg0 decoded _
-          (by rw [hMi]; simpa using h) (.inr hSid)
-          (by rw [hRegs]; exact replyRecvReplyAddr_msgReg0 tcb.registerContext))
-        (fun h => by
-          have h0 : msgInfo.length = 0 := by simpa using h
-          simp [receiveReplyAddr?, hMi, h0]) with h | h
+        (fun _ => by rw [receiveReplyAddr?_of_replyRecv decoded hSid, hReply]; rfl)
+        (fun h => nomatch h) with h | h
       · exact absurd hObj (h.2 tcb hCur)
       · exact h
     · next capAddr msgInfo hRt =>

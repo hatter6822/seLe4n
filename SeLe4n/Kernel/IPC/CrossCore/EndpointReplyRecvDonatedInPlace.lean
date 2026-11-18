@@ -928,7 +928,7 @@ unexpectedly, not ready. -/
     (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId) : SystemState :=
   let X := storeReplyRecvDonatedReady st c tid rid scId home epId tailCode core
-  writeDeliveredFrameIfReady X c (Architecture.regReplyRecvFrame layout rf len badge)
+  writeDeliveredFrameIfReady X c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody X c layout rf len badge)
 
 end SeLe4n.Kernel

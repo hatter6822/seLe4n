@@ -442,17 +442,17 @@ registers of no thread current on another core: the dispatch's census
 (`syscallCommitTail_currentSavedRegsKeptOffCore`). -/
 theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOffCore {ctx : LabelingContext}
     {e : CoreId} {syscallId : UInt32}
-    {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64} {S : SystemState}
+    {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64} {S : SystemState}
     (E : EntryPremises S) (hRT : S.residentsHaveTcbs) (hN : S.currentNotResidentElsewhere)
     (hB : finalisingDeleteBundle S) (hBNR : S.blockedNotResident) (hYA : S.yieldLinksAgree)
     (hYN : S.yieldLinkedNotResident) (hPlaced : placedThreadsHaveTcbs S)
     (hAwayCur : ∀ t, S.scheduler.currentOnCore e = some t → ∀ c, S.queuedOn c t = false)
     (d : CoreId) (hd : d ≠ e) (h : contextMatchesCurrentOnCore S d) :
     contextMatchesCurrentOnCore (syscallDispatchCrossCoreStep ctx e syscallId
-      x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 S).2 d := by
+      x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 S).2 d := by
   have hU := currentsUnique_of_dequeuedUnique E.dequeued
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 S
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 S
   obtain ⟨hDc, hDInv⟩ := syscallDispatchFromAbi_stepCovers E.objInv hB hPlaced hAwayCur hD
   have A := syscallDispatchFromAbi_runQueueEntryStage E hD
   have hL := A.1.links E.objInv E.refined

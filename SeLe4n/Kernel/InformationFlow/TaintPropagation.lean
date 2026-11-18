@@ -614,8 +614,8 @@ content to a client, so omitting this edge would lose hop 2 of the §3.6 chain
 whenever the server replies through `replyRecv` rather than a bare `.reply` —
 an under-approximation, the direction a detector must never err in.
 
-The resolution mirrors `resolveReplyRecvReply` step for step: the MR0-present
-guard, `decodeReplyRecvArgs` for the reply CPtr, the caller's own CSpace at
+The resolution mirrors `resolveReplyRecvReply` step for step: the reply
+register's address (`decoded.replyCPtr`, WS-SX SX7.3), the caller's own CSpace at
 that slot (`syscallOperandCap?`, the same root/depth/resolver the dispatch
 gate carries), the `.replyCap` shape, then `getReply? → reply.caller` — which
 is `replyTaintEdges`, so the `.reply` arm and this leg cannot drift apart.
@@ -628,18 +628,14 @@ the reply leg (seL4-MCS `handleInvocation` with `isBlocking = false`), so it
 declares no edge: no content reaches the caller. -/
 def replyRecvReplyLegEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
-  if decoded.msgInfo.length == 0 then []
-  else if (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome then []
+  if (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome then []
   else
-    match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-    | .error _ => []
-    | .ok rargs =>
-        match syscallOperandCap? st tid (rargs.replyCPtr) with
-        | none => []
-        | some rcap =>
-            match rcap.target with
-            | .replyCap rid => replyTaintEdges st tid rid
-            | _ => []
+    match syscallOperandCap? st tid decoded.replyCPtr with
+    | none => []
+    | some rcap =>
+        match rcap.target with
+        | .replyCap rid => replyTaintEdges st tid rid
+        | _ => []
 
 /-- WS-SM SM9.D.10: **how a signal actually delivers.**
 
@@ -2754,15 +2750,12 @@ reply object records — the hop a receive-leg-only plan would lose. -/
 theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap rcap : Capability)
     (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (rargs : Architecture.SyscallArgDecode.ReplyRecvArgs)
     (hClass : contentFlowClass decoded.syscallId = .movesContent)
     (hSid : decoded.syscallId = .replyRecv)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
-    (hLen : (decoded.msgInfo.length == 0) = false)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
-    (hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded = .ok rargs)
-    (hRCap : syscallOperandCap? st tid (rargs.replyCPtr) = some rcap)
+    (hRCap : syscallOperandCap? st tid decoded.replyCPtr = some rcap)
     (hRTarget : rcap.target = .replyCap rid)
     (hCaller : (st.getReply? rid).bind (·.caller) = some prevCaller)
     (hLive : taintHolderAt post prevCaller.toObjId = true) {t : Nat}
@@ -2773,7 +2766,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
       contentFlowEdges st tid decoded := by
     simp only [contentFlowEdges, hCap, hSid, hTarget, List.mem_append]
     refine Or.inr ?_
-    simp only [replyRecvReplyLegEdges, hLen, hXc, hArgs, hRCap, hRTarget]
+    simp only [replyRecvReplyLegEdges, hXc, hRCap, hRTarget]
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hLive hServer

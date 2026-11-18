@@ -7315,11 +7315,12 @@ dispatch really mutates the state, and which the low observer still cannot see.
 
 The caller is the fixture's **high** thread on core 1, given a CSpace that holds
 a read capability to the **high** endpoint and registers encoding `.receive`
-(`x0` = the capability pointer, `x7` = seL4's `Recv` word).  The receive finds no
+(`x0` = the capability pointer, `x7` = seL4's `Wait` word: a receive naming no
+reply capability, where a `Recv` looks one up in x6).  The receive finds no
 sender and blocks it — so the object store, the endpoint queue and core 1's
 scheduler slots all move, and every one of those movements is high. -/
 private def hiCallerTcb : TCB :=
-  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then Syscall.recv.word else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then Syscall.wait.word else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -10621,19 +10622,19 @@ private def replyLegState : SystemState :=
     highCurrent.toObjId (DeclassificationTaint.singleton 57)
 
 /-- A hand-built `replyRecv` decode: primary operand = the endpoint cap at
-slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
-guard the arm enforces is satisfied here too. -/
+slot 2, the reply CPtr (slot 3) in the reply register (x6, seL4-MCS
+`replyRegister`), and an empty message. -/
 private def replyLegDecoded : SyscallDecodeResult :=
   { syscallId := .replyRecv, capAddr := SeLe4n.CPtr.ofNat 2,
-    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0 0,
-    msgRegs := #[⟨3⟩] }
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 0,
+    canReply := true, replyCPtr := SeLe4n.CPtr.ofNat 3 }
 
 /-- `replyLegDecoded` naming one extra capability, whose address (the IPC
 buffer's `caps_or_badges[0]` word, `replyLegSkipState`) does not look up: seL4-MCS `SysReplyRecv` runs `handleInvocation` with `isBlocking = false`,
 so the failed `lookupExtraCaps` skips the reply with no fault, and the receive
 half still runs (WS-SX SX6.1). -/
 private def replyLegSkipDecoded : SyscallDecodeResult :=
-  { replyLegDecoded with msgInfo := SeLe4n.Model.MessageInfo.mk 1 1 0 0 }
+  { replyLegDecoded with msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 0 }
 
 /-- `replyLegState` with the server's IPC buffer naming, as its one extra
 capability, an address its CSpace does not resolve; the reply still records

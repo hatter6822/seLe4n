@@ -94,6 +94,7 @@ pub fn untyped_retype(
         msg_info: MessageInfo::new_const(7, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::UntypedRetype,
+        reply_cap: CPtr::NULL,
     })
 }
 

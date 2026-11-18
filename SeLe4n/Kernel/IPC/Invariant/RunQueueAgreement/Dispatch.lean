@@ -1168,6 +1168,11 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     -- and the receive runs alone
     split at h
     · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
