@@ -11104,6 +11104,9 @@ open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm_readyKeptStage
 #check @replyRecvCompletesSignalArm_preserves_ipcInvariantFull
 #check @replyRecvCompletesSignalArm_coversWrites
+#check @replyRecvCompletesSignalArm_completes
+#check @replyTransferOnCoreChecked_keeps_receiveCompletesSignal
+#check @notificationsAndBindingsKept.of_replyTransferOnCoreChecked
 #check @replyTransferOnCore_preserves_ipcInvariantFull
 #check @notificationWaitOnCore_consumed_runQueueStage
 #check @schedLockSet_replyRecvArmOnCore
@@ -12816,6 +12819,8 @@ run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnSha
 run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_signal_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCompletesSignalArm_completes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n '^theorem of_replyTransferOnCoreChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplySignalFrame.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallReturnOutcome($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean

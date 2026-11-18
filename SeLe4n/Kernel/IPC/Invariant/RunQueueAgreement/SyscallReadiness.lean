@@ -3,6 +3,7 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.BlockedNotResident
+import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 
 /-!
 # The syscall arms' readiness frames, and the syscall entry's carry
@@ -1424,6 +1425,95 @@ theorem replyRecvCompletesSignalArm_readyKeptStage {S : SeLe4n.ThreadId → Prop
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
     exact hK.trans hE.1 ((readyKeptStage.of_stage hQ).trans hQ.entry.1
       (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+
+/-- **The reply keeps the receive's test**: a reply that leaves the replier's
+bound notification active and the replier ready in IPC on the entry state
+leaves both so on the state it returns, naming the same notification.  The
+reply writes no notification and no binding code
+(`notificationsAndBindingsKept.of_replyTransferOnCoreChecked`) and blocks no
+thread (`replyTransferOnCoreChecked_readyKeptStage`). -/
+theorem replyTransferOnCoreChecked_keeps_receiveCompletesSignal {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true)
+    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st = .ok ((), st1)) :
+    receiveCompletesSignal ctx st1 tid = true ∧ receiverIpcReady st1 tid = true ∧
+      receiverBoundNotification st1 tid = receiverBoundNotification st tid := by
+  have K := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hInv hR
+  have hKeep := replyTransferOnCoreChecked_readyKeptStage (S := fun _ => False) hD hR hInv hRf
+  obtain ⟨t, hT, hReady⟩ := (receiverIpcReady_iff st tid).mp hRdy
+  have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  -- the replier's TCB survives with its bound-notification code
+  have hB := K.2 tid.toObjId
+  rw [hTo] at hB
+  unfold receiveCompletesSignal at hSig
+  rw [hT] at hSig
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
+  obtain ⟨⟨hC, hN⟩, hF⟩ := hSig
+  obtain ⟨t', hO, hCode⟩ : ∃ t', st1.objects[tid.toObjId]? = some (.tcb t') ∧
+      t'.boundNotificationCode = t.boundNotificationCode := by
+    cases hO : st1.objects[tid.toObjId]? with
+    | none =>
+      rw [hO] at hB
+      simp only [notificationBindingCodes, KernelObject.bindingCodes, Prod.mk.injEq] at hB
+      exact absurd hB.1.symm hC
+    | some o =>
+      rw [hO] at hB
+      cases o <;> simp only [notificationBindingCodes, KernelObject.bindingCodes,
+        Prod.mk.injEq] at hB
+      all_goals first
+        | exact absurd hB.1.symm hC
+        | exact ⟨_, rfl, hB.1⟩
+  have hT1 : st1.getTcb? tid = some t' := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
+  have hReady1 : t'.ipcState = .ready :=
+    hKeep tid (fun h => h) (fun x hx => by rw [hT] at hx; cases hx; exact hReady) t' hT1
+  -- the notification survives unchanged
+  have hNt : st1.getNotification? ⟨t.boundNotificationCode - 1⟩ =
+      st.getNotification? ⟨t.boundNotificationCode - 1⟩ := by
+    cases hn : st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+    | none => rw [hn] at hN; simp at hN
+    | some n =>
+      exact (SystemState.getNotification?_eq_some_iff _ _ _).mpr
+        (K.1 _ n ((SystemState.getNotification?_eq_some_iff _ _ _).mp hn))
+  refine ⟨?_, (receiverIpcReady_iff st1 tid).mpr ⟨t', hT1, hReady1⟩, ?_⟩
+  · unfold receiveCompletesSignal
+    rw [hT1]
+    dsimp only
+    rw [hCode, hNt]
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
+    exact ⟨⟨hC, hN⟩, hF⟩
+  · unfold receiverBoundNotification
+    rw [hT1, hT]
+    dsimp only
+    rw [hCode]
+
+/-- **seL4's `handleReplyRecv` by construction**: on a reply-receive that chose
+the completion path (its receive's test holds on the entry state, the replier
+ready), the arm is the reply and then the completion of the notification the
+entry state named — the last branch, returning with nothing received, is never
+taken. -/
+theorem replyRecvCompletesSignalArm_completes {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true) :
+    replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st =
+      match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+          msg.registers msg grant c st with
+      | .error e => .error e
+      | .ok ((), st1) =>
+          completeSignalArm ctx tid (receiverBoundNotification st tid) c st1 := by
+  unfold replyRecvCompletesSignalArm
+  generalize hR : replyTransferOnCoreChecked ctx tid prevCaller
+    (replyRecvReplyMessageInfo label msg) msg.registers msg grant c st = r
+  cases r with
+  | error e => rfl
+  | ok v =>
+    obtain ⟨⟨⟩, st1⟩ := v
+    obtain ⟨h1, h2, h3⟩ := replyTransferOnCoreChecked_keeps_receiveCompletesSignal
+      hInv hRf hD hSig hRdy hR
+    simp only [h1, h2, Bool.and_self, ↓reduceIte, h3]
 
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
