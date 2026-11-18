@@ -28,11 +28,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (RunQueueStage)
 
-theorem storeTcbReceiveComplete_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
-    {m : Option IpcMessage} (h : storeTcbReceiveComplete st tid m = .ok st') :
-    RunQueueStage st st' :=
-  modifyTcb_runQueueStage h (fun _ _ => rfl)
-
 /-- A stage to a pair's state is a stage to whatever state the pair is matched
 against. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_fst_eq {α : Type}

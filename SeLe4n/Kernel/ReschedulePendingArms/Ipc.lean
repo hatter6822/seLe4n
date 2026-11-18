@@ -847,6 +847,14 @@ theorem linkServerStashedReply_keyFrame {caller server : SeLe4n.ThreadId}
         exact hF1.trans (storeObject_tcbKeyKeeping_keyFrame hF1.2.2
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) h rfl)
 
+/-- A TCB rewrite that keeps the key fields, in its total form. -/
+theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
+    capabilityKeyFrame st (st.updateTcb tid f) :=
+  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
+   SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+
 /-- The per-core call covers on every outcome. -/
 theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload} {executingCore : CoreId} {st : SystemState}
@@ -858,27 +866,42 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
   split
   · split
     · split
-      · exact hRefl
-      · rename_i receiver _tcb st1 hPop
-        have hF1 := endpointQueuePopHead_keyFrame hInv hPop
-        split
+      · split
         · exact hRefl
-        · rename_i st2 hRdy
-          have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hRdy)
-          obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hF2.2.2
+        · rename_i receiver _tcb st1 hPop
+          have hF1 := endpointQueuePopHead_keyFrame hInv hPop
           split
           · exact hRefl
-          · rename_i st4 hBlk
-            have hF4 := storeTcbIpcStateAndMessage_keyFrame hWInv hBlk
+          · rename_i st2 hRdy
+            have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hRdy)
+            obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hF2.2.2
             split
             · exact hRefl
-            · rename_i st5 hLink
-              have hF5 := hF4.trans (linkServerStashedReply_keyFrame hF4.2.2 hLink)
-              exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans
-                (stepCovers_trans hF2.stepCovers hW) hF5.stepCovers)
-                (removeRunnableOnCore_stepCovers e _ _ _)) (linkReplyWaiter_stepCovers e _ _ _),
-                SystemState.linkReplyWaiter_objects_invExt _ _ _
-                  (removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2)⟩
+            · rename_i st4 hBlk
+              have hF4 := storeTcbIpcStateAndMessage_keyFrame hWInv hBlk
+              split
+              · exact hRefl
+              · rename_i st5 hLink
+                have hF5 := hF4.trans (linkServerStashedReply_keyFrame hF4.2.2 hLink)
+                exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans
+                  (stepCovers_trans hF2.stepCovers hW) hF5.stepCovers)
+                  (removeRunnableOnCore_stepCovers e _ _ _)) (linkReplyWaiter_stepCovers e _ _ _),
+                  SystemState.linkReplyWaiter_objects_invExt _ _ _
+                    (removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2)⟩
+      · split
+        · exact hRefl
+        · rename_i receiver _tcb st1 hPop
+          have hF1 := endpointQueuePopHead_keyFrame hInv hPop
+          split
+          · exact hRefl
+          · rename_i st2 hRC
+            have hF2 := hF1.trans (storeTcbReceiveComplete_keyFrame hF1.2.2 hRC)
+            obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hF2.2.2
+            have hF := updateTcb_keyFrame (removeRunnableOnCore _ caller executingCore) caller
+              (f := fun tcb => { tcb with threadState := .Inactive }) (fun _ => rfl)
+              (removeRunnableOnCore_objects_invExt _ _ _ hWInv)
+            exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans hF2.stepCovers hW)
+              (removeRunnableOnCore_stepCovers e _ _ _)) hF.stepCovers, hF.2.2⟩
     · split
       · exact hRefl
       · rename_i st1 hEnq
@@ -967,14 +990,6 @@ theorem endpointCallCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : Labe
   · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-! ### Reply -/
-
-/-- A TCB rewrite that keeps the key fields, in its total form. -/
-theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
-    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
-    capabilityKeyFrame st (st.updateTcb tid f) :=
-  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
-   SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
 
 theorem cutReplyFrameOutOrSelf_keyFrame (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) : capabilityKeyFrame st (cutReplyFrameOutOrSelf st rid) := by

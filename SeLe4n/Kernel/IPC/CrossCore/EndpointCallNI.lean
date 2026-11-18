@@ -200,6 +200,7 @@ theorem endpointCallOnCore_call_path_NI
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link folds into the rendezvous.
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt)
     -- WS-SM SM6.D (#7.3b): structural completeness for the link's `.reply` re-store
     -- projection-invisibility (mirrors single-core `endpointCall_preserves_projection`).
@@ -235,7 +236,7 @@ theorem endpointCallOnCore_call_path_NI
     (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
     none hInvW hCallerStore
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   show projectState ctx observer
       ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver)
     = projectState ctx observer st

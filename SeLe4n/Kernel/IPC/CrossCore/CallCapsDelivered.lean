@@ -344,6 +344,7 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
@@ -370,7 +371,7 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr
       (storeCallRendezvousReady_noResizeDue _ _ _ _ _ _ _ hNo)
   obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
-    hE hH hT hRid hG
+    hE hH hT hRid hGr hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
   have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
@@ -387,7 +388,10 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch endpointCallWithCapsOnCore
   rw [hEq]
-  simp only [hEp, hH, Option.bind_some, hcv, hrv]
+  have hLk : callRendezvousLinks st r payload = true := by
+    rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
+    exact hGr
+  simp only [hEp, hH, Option.bind_some, hLk, ↓reduceIte, hcv, hrv]
   cases hReq : sendCapRequest st endpointId caller payload with
   | none =>
     rw [hReq] at hTr

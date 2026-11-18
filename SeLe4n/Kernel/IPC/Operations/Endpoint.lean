@@ -1772,6 +1772,13 @@ def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
   modifyTcb st tid
     (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
 
+/-- The receive-completing store writes no CDT. -/
+theorem storeTcbReceiveComplete_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {msg : Option IpcMessage}
+    (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
+
 /-- The receive-completing store is a `kindPreservingWrite`. -/
 theorem storeTcbReceiveComplete_kindPreservingWrite
     {st st' : SystemState} {tid : SeLe4n.ThreadId} {msg : Option IpcMessage}
@@ -2410,6 +2417,23 @@ theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st 
   intro tid tcb' hObj
   ntfn_links_back h at tcb' hObj
   exact ⟨tcb', hObj, rfl⟩
+
+/-- A TCB rewrite that keeps the binding (a `threadState` store, say) preserves
+all bindings. -/
+theorem of_updateTcb {st : SystemState} (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hf : ∀ x, (f x).schedContextBinding = x.schedContextBinding)
+    (hInv : st.objects.invExt) : sameSchedContextBindings st (st.updateTcb tid f) := by
+  intro w tcb' h
+  by_cases hk : tid.toObjId = w.toObjId
+  · cases hT : st.getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT] at h; exact ⟨tcb', h, rfl⟩
+    | some t =>
+      have hRaw := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+      rw [← hk, updateTcb_objects_self_of_tcb f hInv hRaw] at h
+      have e := KernelObject.tcb.inj (Option.some.inj h)
+      subst e
+      exact ⟨t, hk ▸ hRaw, (hf t).symm⟩
+  · rw [SystemState.updateTcb_objects_ne st tid f _ hk hInv] at h; exact ⟨tcb', h, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
 `lookupTcb` at the same thread with an equal binding — the frame read through the

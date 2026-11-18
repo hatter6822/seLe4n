@@ -435,6 +435,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
+  , (`SeLe4n.Kernel.endpointCallOnCore,
+      "the per-core call: its one direct store is the `updateTcb` that writes a caller linking no reply `Inactive` (`threadState` alone, seL4's `sendIPC` without `Grant`/`GrantReply`); the reply it links on the other path is written by `linkServerStashedReply`, a registered write site that answers for its own update")
   , (`SeLe4n.Kernel.Liveness.stepPost,
       "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
     -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh

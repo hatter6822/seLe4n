@@ -188,7 +188,8 @@ end savedRegsUnwritten
 /-- The per-core call writes no saved register: the rendezvous hands the
 receiver the message as a pending message, wakes it, blocks the caller on its
 reply, links the reply objects, deschedules the caller and queues it on the
-server's reply waiters; the block appends the caller, stores its state,
+server's reply waiters; a call that links no reply hands the message over,
+wakes the receiver, deschedules the caller and writes it `Inactive`; the block appends the caller, stores its state,
 deschedules it and records its capability's bits. -/
 theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId) {st : SystemState}
@@ -198,24 +199,39 @@ theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
   split
   · split
     · split
-      · exact .refl hInv
-      · rename_i receiver _tcb st1 hPop
-        have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
-        split
+      · split
         · exact .refl hInv
-        · rename_i st2 hRdy
-          have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
-          have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
+        · rename_i receiver _tcb st1 hPop
+          have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
           split
           · exact .refl hInv
-          · rename_i st4 hBlk
-            have h4 := hW.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage hW.2 hBlk)
+          · rename_i st2 hRdy
+            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
+            have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
             split
             · exact .refl hInv
-            · rename_i st5 hLink
-              have h5 := h4.trans (savedRegsUnwritten.of_linkServerStashedReply h4.2 hLink)
-              have h6 := h5.trans (savedRegsUnwritten.of_removeRunnableOnCore st5 caller c h5.2)
-              exact h6.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h6.2)
+            · rename_i st4 hBlk
+              have h4 := hW.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage hW.2 hBlk)
+              split
+              · exact .refl hInv
+              · rename_i st5 hLink
+                have h5 := h4.trans (savedRegsUnwritten.of_linkServerStashedReply h4.2 hLink)
+                have h6 := h5.trans (savedRegsUnwritten.of_removeRunnableOnCore st5 caller c h5.2)
+                exact h6.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h6.2)
+      · -- A call that links no reply: the receiver's delivery and wake, the
+        -- caller's deschedule, and its `Inactive` write, none a saved register.
+        split
+        · exact .refl hInv
+        · rename_i receiver _tcb st1 hPop
+          have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
+          split
+          · exact .refl hInv
+          · rename_i st2 hRC
+            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbReceiveComplete h1.2 hRC)
+            have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
+            have h3 := hW.trans (savedRegsUnwritten.of_removeRunnableOnCore _ caller c hW.2)
+            exact ⟨h3.kept.trans (.updateTcb _ _ _ h3.2 fun _ => rfl),
+              SystemState.updateTcb_preserves_objects_invExt _ _ _ h3.2⟩
     · split
       · exact .refl hInv
       · rename_i st1 hEnq

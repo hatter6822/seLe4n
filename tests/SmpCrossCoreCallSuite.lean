@@ -169,13 +169,14 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPa
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
     (endpointCallOnCore endpointId caller payload executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) :=
   endpointCallOnCore_emits_sgi_if_remote_receiver endpointId caller payload executingCore st ep
     receiver recvTcb0 recvTcb'' st' st'' st4 st5 hObj hHead hPop hStore hCallerStore
-    hLink hTcb'' hRemote
+    hLink hLinks hTcb'' hRemote
 
 /-- SM6.A.9 (WS-LS LS2.1: over the pair): the call is a single 2PL-atomic step
 under its lock-set — the ghost bracket's value is the bare transition's. -/
@@ -200,6 +201,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : objectIndexSetComplete st)
@@ -213,7 +215,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     projectState ctx observer (endpointCallOnCore endpointId caller payload executingCore st).1
       = projectState ctx observer st :=
   endpointCallOnCore_call_path_NI ctx observer endpointId caller payload executingCore st ep receiver
-    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hObjInv
+    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks hObjInv
     hObjSetInv hIdxComplete hEndpointHigh
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
@@ -263,7 +265,8 @@ private def stWithReceiver (recv : SeLe4n.ThreadId) : Option SystemState :=
   | .error _ => none
 
 /-- Like `stWithReceiver` but the server supplies NO Reply object (a plain `Recv`):
-a later `Call` rendezvous has no stash to link and must fail closed. -/
+a later `Call` rendezvous has no stash to link, so it delivers the message and
+leaves its caller `Inactive` (seL4's `sendIPC`). -/
 private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState :=
   match endpointReceiveDual epId recv none stBase with
   | .ok (_, st) => some st
@@ -399,19 +402,40 @@ private def runRendezvousChecks : IO Unit := do
       assertBool "rendezvous clears the server's reply stash (one-shot)"
         ((st'.getTcb? recvRemoteTid).all (fun t => decide (t.pendingReceiveReply = none)))
   | none => assertBool "rendezvous setup (remote receiver) succeeded" false
-  -- #7.3b fold (fail-closed): a Call rendezvous with a server that supplied NO Reply
-  -- object (plain Recv) cannot be answered — the fold makes `endpointCallOnCore`
-  -- itself fail closed, with no intermediate `.blockedOnReply` caller and no SGI.
+  -- seL4's `sendIPC` (`do_call`, `EPState_Recv`): the caller is linked only when
+  -- the receiver holds a reply object and the capability has `Grant` or
+  -- `GrantReply`; otherwise the message is delivered and the caller goes
+  -- `Inactive`, with no reply.  First: a server that supplied NO Reply object.
   match stWithReceiverNoReply recvRemoteTid with
   | some st =>
       let (st', res) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
-      assertBool "no-stash rendezvous fails closed with replyCapInvalid"
-        (match res with | .error .replyCapInvalid => true | _ => false)
-      assertBool "no-stash rendezvous leaves the caller unblocked (no green intermediate)"
-        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready)))
-      assertBool "no-stash rendezvous surfaces no SGI"
-        (match res with | .error _ => true | _ => false)
+      assertBool "no-stash rendezvous succeeds (seL4 delivers the message)"
+        (match res with | .ok _ => true | _ => false)
+      assertBool "no-stash rendezvous leaves the caller Inactive, linked to no reply"
+        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.threadState = .Inactive ∧ t.replyObject = none)))
+      assertBool "no-stash rendezvous takes the caller off its core's run queue"
+        (!st'.queuedOn bootCoreId callerTid)
+      assertBool "no-stash rendezvous wakes the receiver holding the message"
+        ((st'.getTcb? recvRemoteTid).any (fun t => decide (t.ipcState = .ready) && t.pendingMessage.isSome))
   | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
+  -- Second: a server that stashed a Reply object, called through a capability with
+  -- neither `Grant` nor `GrantReply`: delivered, caller `Inactive`, the stash
+  -- dropped (seL4's `reply_unlink`), the reply left unlinked.
+  match stWithReceiver recvRemoteTid with
+  | some st =>
+      let (st', res) := endpointCallOnCore epId callerTid (.frame none false false) bootCoreId st
+      assertBool "no-grant call succeeds (seL4 delivers the message)"
+        (match res with | .ok _ => true | _ => false)
+      assertBool "no-grant call leaves the caller Inactive, linked to no reply"
+        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.threadState = .Inactive ∧ t.replyObject = none)))
+      assertBool "no-grant call wakes the receiver holding the message, its stash dropped"
+        ((st'.getTcb? recvRemoteTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.pendingReceiveReply = none) && t.pendingMessage.isSome))
+      assertBool "no-grant call links no caller into the reply object"
+        ((st'.getReply? replyId).all (fun r => decide (r.caller = none)))
+  | none => assertBool "rendezvous setup (no-grant call) succeeded" false
 
 -- ============================================================================
 -- §SM6.D Per-core IPC invariant bundle (surface anchors + witnesses)

@@ -108,40 +108,46 @@ def endpointCallCrossCoreDispatch
   | (st', .ok (summary, sgi)) =>
       match maybeReceiver with
       | some receiverTid =>
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerV, some receiverV =>
-          -- WS-RR RR2.7: the live `.call` arm routes through the **migrating**
-          -- donation. A SchedContext donated to a server homed on another core
-          -- must drag its pending CBS replenishments with it, or the SM5.H
-          -- affinity invariant `replenishQueueAffinityConsistentOnCore` breaks on
-          -- a reachable path and the donee's budget is refilled by a core that no
-          -- longer runs it. Both endpoints are resolved from the **pre**-state
-          -- `st`, which is what the `withLockSet` bracket sees when it acquires
-          -- the two `LockKey.replenishQueue` write locks
-          -- (`endpointCallCrossCoreDispatchLockSet`); the intervening
-          -- rendezvous writes `ipcState` / queue links / scheduler slots and the
-          -- receiver's CSpace, never a `cpuAffinity`, so the pre-state reading is
-          -- the reading at the donation site. Donor and donee on one core makes
-          -- the migration a definitional no-op, which is every single-core
-          -- configuration.
-          match applyCallDonationOnCore st' callerV receiverV
-              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
-          | .error e => (st', .error e)
-          | .ok st'' =>
-              -- WS-SM SM6.A: propagate the donated-priority boost with the
-              -- *cross-core* chain walk (`propagatePipChainCrossCore`, SM5.F.4 — in
-              -- the FFI-free `Propagate`, so no import cycle below the API layer);
-              -- its `.1` is the post-walk state. Each boosted server's run-queue
-              -- bucket migrates on its *home* core (via `pipBoostWithWake`'s
-              -- `updatePipBoostOnCore`), so a passive server pinned to a remote core
-              -- becomes schedulable at the donated priority there — and the run-queue
-              -- change surfaces in the `(pre, post)` diff the syscall seam fires the
-              -- cross-core SGI from. On the boot core with an unbound receiver this
-              -- is state-identical to the single-core `propagatePriorityInheritance`
-              -- (`pipBoostWithWake … bootCoreId` of an unbound thread = `updatePipBoost`).
-              ((PriorityInheritance.propagatePipChainCrossCore st'' receiverTid executingCore).1,
-               .ok (summary, sgi))
-        | _, _ => (st', .error (.invalidArgument 0))
+        -- seL4's `sendIPC` donates only to a call that links a reply
+        -- (`reply_push`); a call that links none (`callRendezvousLinks`, read
+        -- from the pre-state exactly as `endpointCallOnCore` reads it) leaves
+        -- the caller `Inactive` holding its SchedContext, with no boost to walk.
+        if callRendezvousLinks st receiverTid payload then
+          match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+          | some callerV, some receiverV =>
+            -- WS-RR RR2.7: the live `.call` arm routes through the **migrating**
+            -- donation. A SchedContext donated to a server homed on another core
+            -- must drag its pending CBS replenishments with it, or the SM5.H
+            -- affinity invariant `replenishQueueAffinityConsistentOnCore` breaks on
+            -- a reachable path and the donee's budget is refilled by a core that no
+            -- longer runs it. Both endpoints are resolved from the **pre**-state
+            -- `st`, which is what the `withLockSet` bracket sees when it acquires
+            -- the two `LockKey.replenishQueue` write locks
+            -- (`endpointCallCrossCoreDispatchLockSet`); the intervening
+            -- rendezvous writes `ipcState` / queue links / scheduler slots and the
+            -- receiver's CSpace, never a `cpuAffinity`, so the pre-state reading is
+            -- the reading at the donation site. Donor and donee on one core makes
+            -- the migration a definitional no-op, which is every single-core
+            -- configuration.
+            match applyCallDonationOnCore st' callerV receiverV
+                (determineTargetCore st caller) (determineTargetCore st receiverTid) with
+            | .error e => (st', .error e)
+            | .ok st'' =>
+                -- WS-SM SM6.A: propagate the donated-priority boost with the
+                -- *cross-core* chain walk (`propagatePipChainCrossCore`, SM5.F.4 — in
+                -- the FFI-free `Propagate`, so no import cycle below the API layer);
+                -- its `.1` is the post-walk state. Each boosted server's run-queue
+                -- bucket migrates on its *home* core (via `pipBoostWithWake`'s
+                -- `updatePipBoostOnCore`), so a passive server pinned to a remote core
+                -- becomes schedulable at the donated priority there — and the run-queue
+                -- change surfaces in the `(pre, post)` diff the syscall seam fires the
+                -- cross-core SGI from. On the boot core with an unbound receiver this
+                -- is state-identical to the single-core `propagatePriorityInheritance`
+                -- (`pipBoostWithWake … bootCoreId` of an unbound thread = `updatePipBoost`).
+                ((PriorityInheritance.propagatePipChainCrossCore st'' receiverTid executingCore).1,
+                 .ok (summary, sgi))
+          | _, _ => (st', .error (.invalidArgument 0))
+        else (st', .ok (summary, sgi))
       | none => (st', .ok (summary, sgi))
 
 /-- WS-SM SM6.A (live `.call` enforcement): the **information-flow-checked**
@@ -322,16 +328,19 @@ def endpointCallDispatchChainWriteSet
   | (st', .ok _) =>
       match maybeReceiver with
       | some receiverTid =>
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerV, some receiverV =>
-          -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
-          -- chain state named here is the state the dispatch really walks from.
-          match applyCallDonationOnCore st' callerV receiverV
-              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
-          | .error _ => []
-          | .ok st'' =>
-              pipChainWriteSet st'' receiverTid executingCore st''.objects.size
-        | _, _ => []
+        -- No reply linked, no donation (`endpointCallCrossCoreDispatch`).
+        if callRendezvousLinks st receiverTid payload then
+          match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+          | some callerV, some receiverV =>
+            -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
+            -- chain state named here is the state the dispatch really walks from.
+            match applyCallDonationOnCore st' callerV receiverV
+                (determineTargetCore st caller) (determineTargetCore st receiverTid) with
+            | .error _ => []
+            | .ok st'' =>
+                pipChainWriteSet st'' receiverTid executingCore st''.objects.size
+          | _, _ => []
+        else []
       | none => []
 
 /-- SM8.B.2: **the cores the live cross-core `.call` may write** — the endpoint
@@ -447,12 +456,15 @@ def endpointCallDispatchReplenishCores
   | (st', .ok _) =>
       match maybeReceiver with
       | some receiverTid =>
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerV, some receiverV =>
-          match callDonationSchedContext? st' callerV.val receiverV.val with
-          | some _ => [determineTargetCore st caller, determineTargetCore st receiverTid]
-          | none => []
-        | _, _ => []
+        -- No reply linked, no donation (`endpointCallCrossCoreDispatch`).
+        if callRendezvousLinks st receiverTid payload then
+          match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+          | some callerV, some receiverV =>
+            match callDonationSchedContext? st' callerV.val receiverV.val with
+            | some _ => [determineTargetCore st caller, determineTargetCore st receiverTid]
+            | none => []
+          | _, _ => []
+        else []
       | none => []
 
 /-- The segment on a rendezvous whose donation resolves: the migration's own two
@@ -468,6 +480,7 @@ theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjI
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     endpointCallDispatchReplenishCores endpointId caller payload
         executingCore st
@@ -476,7 +489,7 @@ theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjI
       | some ep => ep.receiveQ.head
       | none => none) = some receiverTid := hRecv
   unfold endpointCallDispatchReplenishCores
-  simp only [hWith, hRecv', hCallerV, hRecvV, hSc]
+  simp only [hWith, hRecv', hLinks, ↓reduceIte, hCallerV, hRecvV, hSc]
 
 /-- Where the guard declines, no core. -/
 theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId)
@@ -489,6 +502,7 @@ theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.O
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none) :
     endpointCallDispatchReplenishCores endpointId caller payload
         executingCore st = [] := by
@@ -496,7 +510,7 @@ theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.O
       | some ep => ep.receiveQ.head
       | none => none) = some receiverTid := hRecv
   unfold endpointCallDispatchReplenishCores
-  simp only [hWith, hRecv', hCallerV, hRecvV, hNone]
+  simp only [hWith, hRecv', hLinks, ↓reduceIte, hCallerV, hRecvV, hNone]
 
 /-- And with no receiver — the block path — none either, whatever the leg did. -/
 theorem endpointCallDispatchReplenishCores_of_no_receiver (endpointId : SeLe4n.ObjId)
@@ -604,6 +618,7 @@ theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.Obj
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     ∀ p ∈ applyCallDonationOnCoreLockSet (determineTargetCore st caller)
              (determineTargetCore st receiverTid),
@@ -611,7 +626,7 @@ theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.Obj
             executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV
-    summary sgi scId hRecv hWith hCallerV hRecvV hSc
+    summary sgi scId hRecv hWith hCallerV hRecvV hLinks hSc
   unfold applyCallDonationOnCoreLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   exact schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
@@ -634,6 +649,7 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     ∀ p ∈ endpointCallCrossCoreDispatchLockSet executingCore
              (determineTargetCore st receiverTid) (determineTargetCore st caller)
@@ -642,7 +658,7 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
             executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV
-    summary sgi scId hRecv hWith hCallerV hRecvV hSc
+    summary sgi scId hRecv hWith hCallerV hRecvV hLinks hSc
   unfold endpointCallCrossCoreDispatchLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   refine schedFootprintOfCores_subset (fun c hc => ?_) (fun _ h => h)
@@ -667,6 +683,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
@@ -676,7 +693,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointCallDispatchReplenishCores_of_no_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV summary sgi hRecv
-    hWith hCallerV hRecvV hNone] at this
+    hWith hCallerV hRecvV hLinks hNone] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C3a**: and on the block path — no receiver, so no
@@ -729,6 +746,7 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (hDisp : endpointCallCrossCoreDispatch endpointId caller payload
       executingCore st = (stDisp, res)) (c : CoreId) :
@@ -743,7 +761,7 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
     rw [hWith] at h
     exact h
   unfold endpointCallCrossCoreDispatch at hDisp
-  simp only [hWith, hRecv', hCallerV, hRecvV] at hDisp
+  simp only [hWith, hRecv', hLinks, ↓reduceIte, hCallerV, hRecvV] at hDisp
   cases hDon : applyCallDonationOnCore stWith callerV receiverV (determineTargetCore st caller)
       (determineTargetCore st receiverTid) with
   | error e =>
@@ -798,26 +816,30 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe
         rw [hRecv] at hne
         simp only [] at hne
         split
-        · rename_i callerV receiverV hCv hRv
-          rw [hCv, hRv] at hne
-          simp only [] at hne
+        · rename_i hLk
+          simp only [hLk, ↓reduceIte] at hne
           split
+          · rename_i callerV receiverV hCv hRv
+            rw [hCv, hRv] at hne
+            simp only [] at hne
+            split
+            · exact hFrame
+            · rename_i st'' hDon
+              simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+              cases hSc : callDonationSchedContext? stW callerV.val receiverV.val with
+              | none =>
+                  rw [applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stW st''
+                    callerV receiverV (determineTargetCore st caller)
+                    (determineTargetCore st receiverTid) hSc hDon c]
+                  exact hFrame
+              | some scId =>
+                  rw [hSc] at hne
+                  simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+                  rw [applyCallDonationOnCore_replenishQueueOnCore_ne stW st'' callerV receiverV
+                    (determineTargetCore st caller) (determineTargetCore st receiverTid) c
+                    hne.1 hne.2 hDon]
+                  exact hFrame
           · exact hFrame
-          · rename_i st'' hDon
-            simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
-            cases hSc : callDonationSchedContext? stW callerV.val receiverV.val with
-            | none =>
-                rw [applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stW st''
-                  callerV receiverV (determineTargetCore st caller)
-                  (determineTargetCore st receiverTid) hSc hDon c]
-                exact hFrame
-            | some scId =>
-                rw [hSc] at hne
-                simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
-                rw [applyCallDonationOnCore_replenishQueueOnCore_ne stW st'' callerV receiverV
-                  (determineTargetCore st caller) (determineTargetCore st receiverTid) c
-                  hne.1 hne.2 hDon]
-                exact hFrame
         · exact hFrame
       · exact hFrame
 
@@ -1002,11 +1024,13 @@ theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
           split
           · split
             · split
+              · split
+                · exact hWc
+                · rename_i stD hDon
+                  exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                    _ _ _ _
+                    (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc hDon)
               · exact hWc
-              · rename_i stD hDon
-                exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _
-                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc hDon)
             · exact hWc
           · exact hWc
 
@@ -1099,12 +1123,14 @@ theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
           split
           · split
             · split
+              · split
+                · exact hWc
+                · rename_i stD hDon
+                  exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp _ _ _ _
+                    (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWcInv hDon)
+                    (applyCallDonationOnCore_preserves_schedulerInvariantBase_smp _ _ _ _ _ _
+                      hWcInv hWc hDon)
               · exact hWc
-              · rename_i stD hDon
-                exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp _ _ _ _
-                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWcInv hDon)
-                  (applyCallDonationOnCore_preserves_schedulerInvariantBase_smp _ _ _ _ _ _
-                    hWcInv hWc hDon)
             · exact hWc
           · exact hWc
 
@@ -1141,11 +1167,13 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
           split
           · split
             · split
+              · split
+                · exact hWc
+                · rename_i stD hDon
+                  exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
+                    (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                      hWc hDon)
               · exact hWc
-              · rename_i stD hDon
-                exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
-                  (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
-                    hWc hDon)
             · exact hWc
           · exact hWc
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and when the send asks to transfer **no**
@@ -1193,11 +1221,13 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_
           split
           · split
             · split
+              · split
+                · exact hWc
+                · rename_i stD hDon
+                  exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
+                    (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                      hWc hDon)
               · exact hWc
-              · rename_i stD hDon
-                exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
-                  (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
-                    hWc hDon)
             · exact hWc
           · exact hWc
 

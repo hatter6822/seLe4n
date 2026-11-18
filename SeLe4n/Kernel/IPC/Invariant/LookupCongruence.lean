@@ -928,12 +928,16 @@ theorem notificationBindingCodes_of_absentOrInert {o : Option KernelObject}
     · cases o <;> first | rfl | exact absurd h (by simp [ipcReadInert])
 
 /-- A thread as every IPC bundle conjunct but the reciprocity reads it: the record
-with its run-queue fields, its space-slot links, its bound-notification code and
-(WS-ZA ZA5.11) its taint words cleared.  The code is read by `notificationBindingReciprocal` alone, which the
-whole-bundle transports take as its own hypothesis. -/
+with its run-queue fields, its space-slot links, its bound-notification code,
+(WS-ZA ZA5.11) its taint words and its scheduler `threadState` cleared.  The
+code is read by `notificationBindingReciprocal` alone, which the whole-bundle
+transports take as its own hypothesis; `threadState` is read by no IPC
+conjunct (they classify a thread by its `ipcState`), so a thread made
+`Inactive` -- a call that links no reply, a fault suspension -- stays inside the
+frame. -/
 def _root_.SeLe4n.Model.TCB.ipcReadView (t : TCB) : TCB :=
   TCB.withoutLinks { TCB.withoutRunLinks t with
-    boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0,
+    threadState := .Inactive, boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0,
     taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }
 
 /-- A thread's taint words are outside its IPC read view. -/
@@ -954,7 +958,7 @@ theorem _root_.SeLe4n.Model.TCB.eq_withIpcReadView_of_eq {t t' : TCB}
                   replyWaitersCount := t'.replyWaitersCount,
                   ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
                   ipcCanGrant := t'.ipcCanGrant, ipcCanGrantReply := t'.ipcCanGrantReply, ipcFaultSend := t'.ipcFaultSend,
-                  spaceLinks := t'.spaceLinks,
+                  spaceLinks := t'.spaceLinks, threadState := t'.threadState,
                   boundNotificationCode := t'.boundNotificationCode,
                   taintTag0 := t'.taintTag0, taintTag1 := t'.taintTag1,
                   taintTag2 := t'.taintTag2, taintTag3 := t'.taintTag3,
@@ -1130,10 +1134,10 @@ theorem of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffSchedulerLinks s1) : ipcReadViewAgreement s1 s2 :=
   ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with
-       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
+       threadState := .Inactive, boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    fun _ _ hx => (h.get_tcb hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with
-       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
+       threadState := .Inactive, boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    endpointBack_of_iff fun _ _ => h.get_endpoint_iff,
    endpointFwd_of_iff fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
@@ -1153,10 +1157,10 @@ theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffDerivationLinks s1) : ipcReadViewAgreement s1 s2 :=
   ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with
-       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
+       threadState := .Inactive, boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    fun _ _ hx => (h.tcb_fwd hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with
-       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
+       threadState := .Inactive, boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    endpointBack_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    endpointFwd_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    fun _ ntfn hObj =>
@@ -1380,6 +1384,21 @@ theorem of_tcb_ipcReadView_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
       exact ⟨t', hAt, hView⟩
     · exact ⟨x, by rw [hNe oid hK]; exact h, rfl⟩
 
+/-- **A `threadState` store is read-view agreement**: the scheduler state is
+outside the IPC read view, so making a thread `Inactive` (a call that links no
+reply, a fault suspension) is inside the frame. -/
+theorem of_updateTcb_threadState (s : SystemState) (tid : SeLe4n.ThreadId)
+    (ts : ThreadState) (hInv : s.objects.invExt) :
+    ipcReadViewAgreement s (s.updateTcb tid fun t => { t with threadState := ts }) := by
+  cases hT : s.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact .of_getElem_eq (fun _ => rfl)
+  | some t =>
+    exact of_tcb_ipcReadView_write (key := tid.toObjId) (t := t) (t' := { t with threadState := ts })
+      ((SystemState.getTcb?_eq_some_iff s tid t).mp hT)
+      ((SystemState.getTcb?_eq_some_iff _ tid _).mp
+        (by rw [SystemState.updateTcb_getTcb?_self s tid _ hInv, hT]; rfl))
+      (fun oid hNe => SystemState.updateTcb_objects_ne s tid _ oid (Ne.symm hNe) hInv) rfl
+
 /-- A single SchedContext rewrite preserving `boundThread` — budget, period,
 priority, deadline, domain and the lock word are free — is read-view
 agreement.  The `.schedContextConfigure` arm's store and the priority arms'
@@ -1457,7 +1476,7 @@ form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
     ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg icgr ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (sl : Vector Nat (slotLinkWords * 4)) (ts : ThreadState) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s1.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
@@ -1465,18 +1484,18 @@ theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcCanGrantReply := icgr, ipcFaultSend := ifs,
-                    spaceLinks := sl, boundNotificationCode := bnc,
+                    spaceLinks := sl, threadState := ts, boundNotificationCode := bnc,
                     taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
                     taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
                     taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
 
 /-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
     ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg icgr ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (sl : Vector Nat (slotLinkWords * 4)) (ts : ThreadState) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s2.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
@@ -1484,12 +1503,12 @@ theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcCanGrantReply := icgr, ipcFaultSend := ifs,
-                    spaceLinks := sl, boundNotificationCode := bnc,
+                    spaceLinks := sl, threadState := ts, boundNotificationCode := bnc,
                     taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
                     taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
                     taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
-  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
+  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)

@@ -58,23 +58,6 @@ theorem replyViews_eq_of_getTcb_map {st st' : SystemState}
   | some o' => cases o' <;> cases st.objects[k]? <;>
       (try rename_i o; try cases o) <;> simp [objReplyView]
 
-/-- A TCB update that keeps every reply-view field keeps the views. -/
-theorem replyViews_updateTcb_eq (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hInv : st.objects.invExt) (hf : ∀ x, (f x).replyView = x.replyView) :
-    (st.updateTcb t f).replyViews = st.replyViews := by
-  cases hT : st.getTcb? t with
-  | none =>
-    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_none hT]
-  | some tcb =>
-    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_some hT]
-    have hO := (getTcb?_eq_some_iff st t tcb).1 hT
-    funext x
-    rw [replyViews_rewriteObject _ _ _ _ hInv]
-    split
-    · rename_i hx; subst hx
-      rw [replyViews_of_tcb hO, objReplyView_tcb, hf]
-    · rfl
-
 end SeLe4n.Kernel
 
 namespace SeLe4n.Kernel

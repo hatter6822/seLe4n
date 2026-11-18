@@ -26,13 +26,14 @@ inductive AccessRight where
   | read
   | write
   | grant
-  -- U5-L/U-L05: `grantReply` (bit 3) is defined for spec fidelity with seL4's
-  -- `seL4_CapRights_t` but has no operational effect in the current IPC model.
-  -- The `.grant` right (bit 2) governs ALL grant operations including reply cap
-  -- grant. In real seL4, `grantReply` permits granting reply capabilities
-  -- without granting full `grant` authority. seLe4n does not yet implement this
-  -- distinction because reply cap grant is implicitly allowed by the reply
-  -- mechanism itself (single-use authority).
+  -- `grantReply` (bit 3), seL4's `seL4_CapRights_t` `GrantReply`: a call (or a
+  -- fault sent through a handler capability) is linked to the receiver's reply
+  -- object only when the capability carries `grant` or `grantReply`
+  -- (`Capability.canLinkReply`, `SendPayload.canLinkReply`, seL4's
+  -- `canGrant || canGrantReply` in `sendIPC`/`receiveIPC`).  A call through a
+  -- capability with neither still delivers its message, and its caller goes
+  -- `Inactive` with no reply (`callRendezvousLinks`).  `grantReply` grants no
+  -- capability transfer: that is `grant`'s alone.
   | grantReply
   | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq

@@ -112,8 +112,8 @@ outside `endpointCallDispatchWriteSet`.
 
 This is the theorem the composition rule §5a was missing. The proof splits on
 exactly the scrutinees the dispatch splits on, so each branch's write set is the
-one that branch's states justify: the fail-closed arms and the no-receiver arm
-stop at the WithCaps post-state (`endpointCallWriteSet`), and the rendezvous arm
+one that branch's states justify: the fail-closed arms, the no-receiver arm and
+the arm whose call links no reply stop at the WithCaps post-state (`endpointCallWriteSet`), and the rendezvous arm
 composes WithCaps, the per-core-silent donation and the chain walk at the
 post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
@@ -155,6 +155,12 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
         | none => simp only []; exact hWiden _ _ hCaps
         | some receiverTid =>
           simp only []
+          -- A call that links no reply donates nothing and walks no chain: it
+          -- stops at the WithCaps post-state.
+          by_cases hLk : callRendezvousLinks st receiverTid payload = true
+          rotate_left
+          · simp only [hLk, Bool.false_eq_true, ↓reduceIte]; exact hWiden _ _ hCaps
+          simp only [hLk, ↓reduceIte]
           cases hCallerV : SeLe4n.ThreadId.toValid? caller with
           | none => simp only []; exact hWiden _ _ hCaps
           | some callerV =>
@@ -173,7 +179,8 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
                     (determineTargetCore st caller) (determineTargetCore st receiverTid) hDon)
 
 /-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
-instantiated at the states the dispatch really produces. Stated separately so
+instantiated at the states the dispatch really produces, for a call that links
+a reply (one that links none walks no chain). Stated separately so
 the instantiation is visible rather than buried inside the proof above: the
 chain start is the resolved receiver and the chain state is the post-donation
 state, the two things the second review round said were being supplied by hand. -/
@@ -188,6 +195,7 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
       executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hDon : applyCallDonationOnCore stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
@@ -200,7 +208,7 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
   | some ep =>
     rw [hEp] at hRecv
     simp only [] at hRecv
-    simp only [hWith, hRecv, hCallerV, hRecvV, hDon]
+    simp only [hWith, hRecv, hLinks, ↓reduceIte, hCallerV, hRecvV, hDon]
 
 -- ============================================================================
 -- §5c The live `.reply` arm itself

@@ -581,7 +581,8 @@ dispatch, which keeps `StateMono`. -/
 
 /-- **The cross-core call blocks only its caller**: the receiver's hand-over
 and wake are run-queue stages, the caller's block is its IPC-state store, and
-the deschedule closing the window is a dispatch. -/
+the deschedule closing the window is a dispatch; a call that links no reply
+leaves its caller `Inactive` but keeps its IPC state `.ready`. -/
 theorem endpointCallOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
     (st : SystemState) (hHeads : endpointHeadsWakeable st)
@@ -593,41 +594,60 @@ theorem endpointCallOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
     split
     · rename_i r hHead
       split
-      · exact .refl _
-      · rename_i receiver tcb st1 hPop
-        split
+      · split
         · exact .refl _
-        · rename_i st2 hS2
-          have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
-            (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-          have hC2 : st2.scheduler.currentOnCore c = some caller :=
-            currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-              (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
-          have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
-            show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
-            rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
+        · rename_i receiver tcb st1 hPop
           split
           · exact .refl _
-          · rename_i st4 hS4
+          · rename_i st2 hS2
+            have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+            have hC2 : st2.scheduler.currentOnCore c = some caller :=
+              currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+                (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
+            have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
+              show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
+              rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
             split
             · exact .refl _
-            · rename_i st5 hS5
-              have hC5 : st5.scheduler.currentOnCore c = some caller :=
-                currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
-                  (currentOnCore_of_scheduler_eq
-                    (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
-              have P := ((endpointQueuePopHead_runQueueStage hPop).trans
-                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
-                (hHeads.popped_blocked hPop)
-              have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI
-              have L5 := linkServerStashedReply_runQueueStage hS5
-              have D := SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5
-              exact (readyKeptStage.of_stage P).trans P.1
-                ((storeTcbIpcStateAndMessage_readyKeptStage hS4).trans W.1
-                ((readyKeptStage.of_stage L5).trans L5.1
-                ((readyKeptStage.of_dispatch D).trans D.1
-                (readyKeptStage.of_stage (SystemState.linkReplyWaiter_runQueueStage _ caller
-                  receiver)))))
+            · rename_i st4 hS4
+              split
+              · exact .refl _
+              · rename_i st5 hS5
+                have hC5 : st5.scheduler.currentOnCore c = some caller :=
+                  currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
+                    (currentOnCore_of_scheduler_eq
+                      (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
+                have P := ((endpointQueuePopHead_runQueueStage hPop).trans
+                  (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
+                  (hHeads.popped_blocked hPop)
+                have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI
+                have L5 := linkServerStashedReply_runQueueStage hS5
+                have D := SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5
+                exact (readyKeptStage.of_stage P).trans P.1
+                  ((storeTcbIpcStateAndMessage_readyKeptStage hS4).trans W.1
+                  ((readyKeptStage.of_stage L5).trans L5.1
+                  ((readyKeptStage.of_dispatch D).trans D.1
+                  (readyKeptStage.of_stage (SystemState.linkReplyWaiter_runQueueStage _ caller
+                    receiver)))))
+      · -- A call that links no reply: the receiver's delivery and wake are run-queue
+        -- stages, the caller's deschedule a dispatch, and its `Inactive` write keeps
+        -- every ready thread ready.
+        split
+        · exact .refl _
+        · rename_i receiver tcb st1 hPop
+          split
+          · exact .refl _
+          · rename_i st2 hS2
+            have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+              (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2)
+            have P := ((endpointQueuePopHead_runQueueStage hPop).trans
+              (storeTcbReceiveComplete_runQueueStage hS2)).then_wake c hN
+              (hHeads.popped_blocked hPop)
+            have D := SystemState.RunQueueStage.runDescheduleOnCore (wakeThread st2 receiver c).1 c caller
+            exact (readyKeptStage.of_stage P).trans P.1
+              ((readyKeptStage.of_stage D).trans D.1
+                (fun hI _ => readyKeptExcept_updateTcb _ caller _ hI (fun _ h => h)))
     · split
       · exact .refl _
       · rename_i st1 hE

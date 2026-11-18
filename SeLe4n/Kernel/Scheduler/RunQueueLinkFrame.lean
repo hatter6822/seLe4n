@@ -1223,7 +1223,7 @@ namespace SeLe4n.Model.SystemState
 `get_tcb_back` (`objectsAgreeOffRunLinks st' st`, or the IPC read view) and
 `h : st'.objects[x]? = some (.tcb t)`, replace `t` by the pre-state TCB (with
 its run-queue fields — and, for the IPC read view, its space-slot links,
-bound-notification code and taint words — rewritten, so every other field reads the pre-state's)
+`threadState`, bound-notification code and taint words — rewritten, so every other field reads the pre-state's)
 and `h` by the pre-state read `st.objects[x]? = some (.tcb t)`. -/
 syntax (name := runLinksBack) "run_links_back " term " at " Lean.Parser.Tactic.rcasesPatLo ident : tactic
 
@@ -1236,6 +1236,8 @@ macro_rules
                 | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
                     ($e).get_tcb_back $h
                 | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
+                    ($e).get_tcb_back $h
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
                     ($e).get_tcb_back $h
                clear $h
                have $h := hPreRunLinks
@@ -1253,6 +1255,8 @@ macro_rules
                 | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
                     ($e).get_tcb_fwd $h
                 | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
+                    ($e).get_tcb_fwd $h
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
                     ($e).get_tcb_fwd $h
                clear $h
                have $h := hPostRunLinks

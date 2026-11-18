@@ -66,31 +66,50 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
     split
     · rename_i hd hHead
       split
-      · exact refl hInv
-      · rename_i receiver _tcb st1 hPop
-        have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
-          hEpO (by simpa using hHead) hPop
-        subst hRh
-        have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
-        split
+      · split
         · exact refl hInv
-        · rename_i st2 hRdy
-          have S2 := storeTcbIpcStateAndMessage F1.invExt hRdy
-            (fun x hx => .inl (F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx))
-          obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
-          have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
-            rw [hx] at hy; cases hy; simp)
+        · rename_i receiver _tcb st1 hPop
+          have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
+            hEpO (by simpa using hHead) hPop
+          subst hRh
+          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
           split
           · exact refl hInv
-          · rename_i st4 hBlk
-            have S4 := storeTcbIpcStateAndMessage F3.invExt hBlk (fun _ _ => .inr (by simp))
+          · rename_i st2 hRdy
+            have S2 := storeTcbIpcStateAndMessage F1.invExt hRdy
+              (fun x hx => .inl (F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx))
+            obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
+            have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
+              rw [hx] at hy; cases hy; simp)
             split
             · exact refl hInv
-            · rename_i st5 hLink
-              have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
-              have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
-              exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
-                ((of_frame F5).trans ((of_frame F6).trans (linkReplyWaiter _ _ _ F6.invExt))))))
+            · rename_i st4 hBlk
+              have S4 := storeTcbIpcStateAndMessage F3.invExt hBlk (fun _ _ => .inr (by simp))
+              split
+              · exact refl hInv
+              · rename_i st5 hLink
+                have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
+                have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
+                exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
+                  ((of_frame F5).trans ((of_frame F6).trans (linkReplyWaiter _ _ _ F6.invExt))))))
+      · split
+        · exact refl hInv
+        · rename_i receiver _tcb st1 hPop
+          have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
+            hEpO (by simpa using hHead) hPop
+          subst hRh
+          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          split
+          · exact refl hInv
+          · rename_i st2 hRC
+            have S2 := storeTcbReceiveComplete F1.invExt hRC
+              (fun x hx => F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx)
+            obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRC
+            have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
+              rw [hx] at hy; cases hy; simp)
+            have F4 := RecordsFrame.removeRunnableOnCore _ caller c F3.invExt
+            exact (of_frame F1).trans (S2.trans ((of_frame F3).trans ((of_frame F4).trans
+              (updateTcb _ caller F4.invExt fun _ _ => TcbStaysParked.of_parked (.inl rfl)))))
     · split
       · exact refl hInv
       · rename_i st1 hEnq

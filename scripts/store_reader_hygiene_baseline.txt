@@ -601,7 +601,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean|replyRe
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean|storeFaultReplyLeg_preserves_donationChainWellFormed|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|callBlock_inPlace_eq|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|callDispatch_inPlace|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|callOnCore_noReply_refused|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|faultReplyTransferChecked_inPlace|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|getFrame?_mapTcbInPlace|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean|storeCallRendezvousReady_ready|2

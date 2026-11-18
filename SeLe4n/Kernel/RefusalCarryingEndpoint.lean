@@ -377,6 +377,7 @@ theorem callDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemSt
     (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
     (hInert : capTransferInert st endpointId (receiverCapTarget? st r)
       (sendCapRequest st endpointId caller payload) = true)
@@ -395,7 +396,7 @@ theorem callDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemSt
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
-    hE hH hT hRid hG
+    hE hH hT hRid hGr hG
   obtain ⟨s, hC, hW⟩ := endpointCallWithCapsOnCore_inert endpointId caller r payload core st
     _ _ hEq (by simp only [hEp, Option.bind_some, hH]) hInert
     (getCNode?_storeCallRendezvous st endpointId caller r rt.queueNext rid msg core hNo
@@ -410,7 +411,10 @@ theorem callDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemSt
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
   rw [hW]
-  simp only [hEp, hH, hcv, hrv]
+  have hLk : callRendezvousLinks st r payload = true := by
+    rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
+    exact hGr
+  simp only [hEp, hH, hLk, ↓reduceIte, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
   simp only [hcv', hrv', hDon]
@@ -1615,14 +1619,14 @@ does; any other call takes the general arm. -/
                         if (st.getTcb? tid).isSome &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            callWakesInPlace st epId tid r rt rid then
+                            cap.canLinkReply && callWakesInPlace st epId tid r rt rid then
                           .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
                             layout rf len
                             cap.badgeWord cap.badged executingCore)
                         else if (st.getTcb? tid).isSome &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            callDonatesInPlace st epId tid r rt rid then
+                            cap.canLinkReply && callDonatesInPlace st epId tid r rt rid then
                           .ok ((), callRendezvousDonatingDelivered st epId tid r rt.queueNextCode
                             rid (callerScId st tid) (determineTargetCore st tid)
                             (determineTargetCore st r) layout rf len cap.badgeWord cap.badged
@@ -1667,24 +1671,24 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
             split
             · next hG =>
               simp only [Bool.and_eq_true] at hG
-              obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+              obtain ⟨⟨⟨hS, hFlow⟩, hGr⟩, hW⟩ := hG
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
                 (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                 (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
               rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
             · split
               · next hG =>
                 simp only [Bool.and_eq_true] at hG
-                obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+                obtain ⟨⟨⟨hS, hFlow⟩, hGr⟩, hW⟩ := hG
                 obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid
                   (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                   (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
                 rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
                 rfl
@@ -1860,7 +1864,7 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
                         if (st.getTcb? tid).isSome &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            callWakesInPlace st epId tid r rt rid then
+                            cap.canLinkReply && callWakesInPlace st epId tid r rt rid then
                           .ok ((), performCallDeliveredLong st epId tid r rt.queueNextCode rid
                             layout rf len cap.badgeWord cap.badged executingCore)
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -1914,12 +1918,12 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
             split
             · next hG =>
               simp only [Bool.and_eq_true] at hG
-              obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+              obtain ⟨⟨⟨hS, hFlow⟩, hGr⟩, hW⟩ := hG
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
                 (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                 (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rw [← TCB.optCode_queueNext]
               rw [← stageWokenDelivery_performCallRendezvous_long st epId tid r rt.queueNext rid
@@ -3147,7 +3151,7 @@ write. -/
                     | some rid =>
                         if endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            callWakesInPlace st epId tid r rt rid then
+                            cap.canLinkReply && callWakesInPlace st epId tid r rt rid then
                           if decide (len ≤ 4) then
                             if senderTransferInertW st epId rt tid then
                               .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
@@ -3207,7 +3211,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
             split
             · next hG =>
               simp only [Bool.and_eq_true] at hG
-              obtain ⟨hFlow, hW⟩ := hG
+              obtain ⟨⟨hFlow, hGr⟩, hW⟩ := hG
               split
               rotate_left
               · next hLong =>
@@ -3223,7 +3227,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                     rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                     (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
                   rw [hD, sendCapRequest_routedLong st epId tid r ctcb rf capAddr mi sid _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hR hGt
@@ -3259,7 +3263,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                   tid r rt rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                   (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hInert hFlow
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hInert hFlow
                 rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD, hC]
                 rfl
@@ -3272,7 +3276,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                     rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                     (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
                   rw [hD, TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hTr hShort,

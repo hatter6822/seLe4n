@@ -4459,12 +4459,13 @@ run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStoresInPlace_eq($|[ (
 run_check "INVARIANT" rg -n '^theorem cutReplyFrameStoresInPlace_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
 # WS-ZA ZA6.33: a donating call writes in place.  The donation's in-place form
 # is the specification's on every state whose checks pass, and the checked call
-# arm routes a donating call to it only under the pre-state guard, the theorem
+# arm routes a donating call to it only under the pre-state guard (and only a
+# call whose capability can link a reply), the theorem
 # that the routed dispatch is the specification's naming both.
 run_check "INVARIANT" rg -n '^theorem donateSchedContext_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationInPlace.lean
 run_check "INVARIANT" rg -n '^theorem callDispatchChecked_donating_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n '^theorem donateSchedContextInPlace_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
-run_check "INVARIANT" rg -n -U '                            callDonatesInPlace st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 # WS-ZA ZA6.33: the donating route migrates the replenishment in place, the two
 # homes read in the arm before its first write, and the migration is compiled
 # through its in-place write.

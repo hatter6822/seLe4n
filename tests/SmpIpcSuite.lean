@@ -168,8 +168,9 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) :
     removeRunnableOnCore st tid bootCoreId = removeRunnable st tid :=
   removeRunnableOnCore_bootCoreId st tid
 
-/-- SM6.A.1 rendezvous reduction: on a waiting receiver, the cross-core call is
-the receiver wake + caller block, surfacing exactly the wake's SGI. -/
+/-- SM6.A.1 rendezvous reduction: on a waiting receiver the call links a reply
+to, the cross-core call is the receiver wake + caller block, surfacing exactly
+the wake's SGI. -/
 example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
@@ -179,12 +180,13 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPa
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
-    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true) :
     endpointCallOnCore endpointId caller payload executingCore st
       = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) :=
   endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink
+    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks
 
 /-- SM6.D: the per-core bundle's thread restriction is the operational wake
 target — the wake path delivers each thread to its `threadHomeCore`. -/
