@@ -53,51 +53,20 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- **The interrupt's signal**, as the `.notificationSignal` syscall's arm
-leaves the state (`dispatchWithCapChecked`): the bound-aware per-core signal,
-then the woken bound receiver's reply stash cleared
-(`clearWokenReceiverStash`).  The wake writes the badge into the woken thread's
-badge register itself (`TCB.signalWoken`, `TCB.signalBoundWoken`), so nothing
-is staged after it.  A signal the notification refuses leaves the state as the
-signal does, unchanged. -/
+leaves the state (`dispatchWithCapChecked`): the bound-aware per-core signal.
+The wake writes the badge into the woken thread's badge register and drops a
+woken bound receiver's reply stash itself (`TCB.signalWoken`,
+`TCB.signalBoundWoken`), so nothing runs after it.  A signal the notification
+refuses leaves the state as the signal does, unchanged. -/
 def interruptSignal (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
-  match notificationSignalBoundOnCore ntfn badge c st with
-  | (s1, .ok _) =>
-      match clearWokenReceiverStash ((boundDeliveryTarget? st ntfn).map (·.1)) s1 with
-      | .ok ((), s2) => s2
-      | .error _ => s1
-  | (s1, .error _) => s1
+  (notificationSignalBoundOnCore ntfn badge c st).1
 
-/-- **Every state the signal reaches is `P`** when the signal's own state is,
-and the state after each stash clear that succeeds is: the one case
-split every frame of the signal below is an instance of. -/
-theorem interruptSignal_of {P : SystemState → Prop} (ntfn : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
-    (hSig : P (notificationSignalBoundOnCore ntfn badge c st).1)
-    (hStage : ∀ r s2, notificationSignalBoundOnCore ntfn badge c st =
-        ((notificationSignalBoundOnCore ntfn badge c st).1, .ok r) →
-      clearWokenReceiverStash ((boundDeliveryTarget? st ntfn).map (·.1))
-        (notificationSignalBoundOnCore ntfn badge c st).1 = .ok ((), s2) →
-      P s2) :
-    P (interruptSignal ntfn badge c st) := by
-  unfold interruptSignal
-  rcases hR : notificationSignalBoundOnCore ntfn badge c st with ⟨s1, _ | r⟩
-  · rw [hR] at hSig; exact hSig
-  · rw [hR] at hSig hStage
-    dsimp only at hSig hStage ⊢
-    split
-    · next s2 hC => exact hStage r s2 rfl hC
-    · exact hSig
-
-/-- `interruptSignal` restated, the fallback of its compiled form. -/
+/-- `interruptSignal` restated, the fallback of its compiled form (a separate
+definition, so the `@[csimp]` replacement does not reach the fallback). -/
 def interruptSignalGeneral (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
-  match notificationSignalBoundOnCore ntfn badge c st with
-  | (s1, .ok _) =>
-      match clearWokenReceiverStash ((boundDeliveryTarget? st ntfn).map (·.1)) s1 with
-      | .ok ((), s2) => s2
-      | .error _ => s1
-  | (s1, .error _) => s1
+  (notificationSignalBoundOnCore ntfn badge c st).1
 
 /-- **The interrupt's signal as compiled**: a signal that wakes its
 notification's head waiter, with no bound receiver and every write in its slot
@@ -107,7 +76,8 @@ syscall's arm does (`notificationSignalCheckedArmR`); a signal whose bound
 thread is blocked receiving, every write of its removal in its slot
 (`queueRemoveInPlace`), wakes that thread with the badge in its badge register
 (`performSignalBoundDelivered`); a signal with neither a bound receiver nor a
-waiter wakes no thread, so it clears no stash, and is the signal's own state; every other signal runs the specification. -/
+waiter wakes no thread and is the signal's own state; every other signal runs
+the specification. -/
 @[inline] def interruptSignalImpl (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
   if (boundDeliveryTarget? st ntfn).isNone then
@@ -160,14 +130,13 @@ waiter wakes no thread, so it clears no stash, and is the signal's own state; ev
             rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
           simp only [interruptSignal, notificationSignalBoundOnCore, hBound,
             notificationSignalOnCore_eq_impl, notificationSignalOnCoreImpl, hN, hHead, hW,
-            ↓reduceIte, Option.map_none, clearWokenReceiverStash]
+            ↓reduceIte, Option.map_none]
           rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
         · exact hG
       · next hK =>
         have hHead : n.waitHead = none := by
           rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-        simp only [interruptSignal, hBound, Option.map_none, clearWokenReceiverStash]
-        split <;> next h => rw [h]
+        simp only [interruptSignal, hBound, Option.map_none]
     · exact hG
   · split
     · next n hN =>
@@ -184,18 +153,10 @@ waiter wakes no thread, so it clears no stash, and is the signal's own state; ev
               split
               · next hQ =>
                 have hBT := boundDeliveryTarget?_of_codes st ntfn n k tcb hN hK0 hB hTT hSt
-                have hNo : st.objects.noResizeDue := by
-                  have hQ' := hQ
-                  unfold queueRemoveInPlace at hQ'
-                  simp only [Bool.and_eq_true] at hQ'
-                  obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ'
-                  exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
                 rw [← hG]
                 unfold interruptSignalGeneral
                 rw [notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩ ⟨tcb.ipcObjectCode⟩
                   ep tcb hBT hE hTT hQ]
-                simp only [hBT, Option.map_some, clearWokenReceiverStash_eq_pure]
-                rw [signalBound_eq_writes _ _ _ _ _ _ _ hNo]
                 rfl
               · exact hG
             all_goals exact hG
@@ -295,10 +256,7 @@ theorem handleInterruptOnCore_preserves_objects_invExt (st : SystemState) (c : C
     (line : Nat) (h : st.objects.invExt) : (handleInterruptOnCore st c line).objects.invExt :=
   handleInterruptOnCore_of (P := fun s => s.objects.invExt) st c line
     (fun s hs => by simpa using hs) h
-    (fun ntfn _ _ => interruptSignal_of (P := fun s => s.objects.invExt) ntfn _ c st
-      (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h)
-      (fun _ s2 _ hC => clearWokenReceiverStash_preserves_objects_invExt _ _ ((), s2)
-        (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h) hC))
+    (fun ntfn _ _ => (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h))
 
 /-- …and so does the raw step. -/
 theorem interruptEntryStep_preserves_objects_invExt (st : SystemState) (coreId intId : UInt64)
@@ -314,12 +272,6 @@ theorem handleInterruptOnCore_replenishQueueOnCore (st : SystemState) (c d : Cor
   handleInterruptOnCore_of
     (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
     st c line (fun s hs => by simpa using hs) rfl
-    (fun ntfn _ _ => interruptSignal_of
-      (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-      ntfn _ c st (notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d)
-      (fun _ s2 _ hC => by
-        dsimp only
-        rw [clearWokenReceiverStash_scheduler_eq _ _ ((), s2) hC]
-        exact notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d))
+    (fun ntfn _ _ => (notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d))
 
 end SeLe4n.Kernel

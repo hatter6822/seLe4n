@@ -109,10 +109,7 @@ theorem interruptEntryStep_mappingStage (st : SystemState) (coreId intId : UInt6
   interruptEntryStep_of (P := MappingStage st) st coreId intId (.refl st) fun c _ _ =>
     handleInterruptOnCore_of (P := MappingStage st) st c _
       (fun _ h => h.trans (.of_objects_eq rfl)) (.refl st)
-      (fun ntfn _ _ => interruptSignal_of (P := MappingStage st) ntfn _ c st
-        notificationSignalBoundOnCore_mappingStage
-        (fun _ _ _ hC => notificationSignalBoundOnCore_mappingStage.trans
-          (clearWokenReceiverStash_mappingStage _ hC)))
+      (fun ntfn _ _ => notificationSignalBoundOnCore_mappingStage)
 
 
 theorem dispatchVacatedCore_mappingStage (st : SystemState) (c : CoreId) :

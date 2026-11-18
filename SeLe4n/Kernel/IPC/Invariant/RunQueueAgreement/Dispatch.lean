@@ -1136,10 +1136,10 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
+      cases h
+      exact (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (stage := id) (fun x => RunQueueStage.refl x) h
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -1188,10 +1188,10 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
+      cases h
+      exact (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (stage := id) (fun x => RunQueueStage.refl x) h
     · cases h
 
 /-- WS-ZA ZA6.29: **every arm `dispatchWithCapChecked` routes links only the

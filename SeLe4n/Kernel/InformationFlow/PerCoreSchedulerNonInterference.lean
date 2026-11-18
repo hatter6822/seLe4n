@@ -1895,35 +1895,11 @@ def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : Sy
   ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
     boundSignalHidden ctx observer st ntfn
 
-/-- **A woken receiver's stash clear is invisible on every core** when the
-receiver's object is hidden: one store at that object, and neither the
-scheduler nor the machine. -/
-theorem clearWokenReceiverStash_lowEquivalent {w : Option SeLe4n.ThreadId} {s s' : SystemState}
-    (hInv : s.objects.invExt)
-    (hW : ∀ t, w = some t → objectObservable ctx observer t.toObjId = false)
-    (h : clearWokenReceiverStash w s = .ok ((), s')) : lowEquivalent_smp ctx observer s' s := by
-  have hS := clearWokenReceiverStash_scheduler_eq w s ((), s') h
-  have hM := clearWokenReceiverStash_machine_eq w s ((), s') h
-  have hP : projectState ctx observer s' = projectState ctx observer s := by
-    unfold clearWokenReceiverStash at h
-    cases w with
-    | none => cases h; rfl
-    | some t =>
-      dsimp only at h
-      split at h
-      · split at h
-        · exact storeObject_preserves_projection ctx observer s s' _ _ (hW t rfl) hInv h
-        · cases h; rfl
-      · cases h; rfl
-  intro c
-  exact projectStateOnCore_congr ctx observer hP (by rw [hS]) (by rw [hS]) (by rw [hS])
-    (by rw [hS]) (by rw [hS]) (by rw [hM])
-
 /-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
 sends writes only hidden state: the signal
-(`notificationSignalBoundOnCore_lowEquivalent`, whose badge-register write
-lands in a register context no projection shows), the bound receiver's stash
-clear (its object hidden), and the mask. -/
+(`notificationSignalBoundOnCore_lowEquivalent`, whose badge-register write and
+stash clear land in a register context and a TCB no projection shows), and the
+mask. -/
 theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (line : Nat)
     (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st line) :
     lowEquivalent_smp ctx observer (handleInterruptOnCore st c line) st :=
@@ -1931,21 +1907,8 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
     (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
     (lowEquivalent_smp_refl st)
     (fun ntfn badge hN =>
-      have hL := notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn badge c st hInv
-        (h ntfn badge hN)
-      have hI1 := notificationSignalBoundOnCore_preserves_objects_invExt ntfn badge c st hInv
-      interruptSignal_of (P := fun s => lowEquivalent_smp ctx observer s st) ntfn _ c st hL
-        fun _ s2 _ hC =>
-          have hI2 := clearWokenReceiverStash_preserves_objects_invExt _ _ ((), s2) hI1 hC
-          have hW : ∀ t, (boundDeliveryTarget? st ntfn).map (·.1) = some t →
-              objectObservable ctx observer t.toObjId = false := fun t ht => by
-            cases hB : boundDeliveryTarget? st ntfn with
-            | none => rw [hB] at ht; cases ht
-            | some p =>
-              obtain ⟨t', epId⟩ := p
-              rw [hB] at ht; cases ht
-              exact ((h ntfn badge hN).bound t' epId hB).2.2
-          lowEquivalent_smp_trans (clearWokenReceiverStash_lowEquivalent hI1 hW hC) hL)
+      notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn badge c st hInv
+        (h ntfn badge hN))
 
 /-- …and so is the raw step. -/
 theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)

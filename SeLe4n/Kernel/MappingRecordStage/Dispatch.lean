@@ -700,9 +700,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_mappingStage
-        (MappingStage.of_fst_eq notificationSignalBoundCrossCoreDispatchChecked_mappingStage hSig)
-        (stage := id) (fun x => MappingStage.refl x) h
+      cases h
+      exact (MappingStage.of_fst_eq notificationSignalBoundCrossCoreDispatchChecked_mappingStage hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -755,9 +754,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_mappingStage
-        (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
-        (stage := id) (fun x => MappingStage.refl x) h
+      cases h
+      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
     · cases h
 
 /-- **The checked syscall dispatch keeps the mappings recorded**: the yield, the

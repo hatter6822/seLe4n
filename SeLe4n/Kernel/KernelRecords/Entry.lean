@@ -191,10 +191,7 @@ theorem RecordsStage.interruptEntryStep (st : SystemState) (coreId intId : UInt6
   interruptEntryStep_of (P := RecordsStage st) st coreId intId (.refl st) fun c _ _ =>
     handleInterruptOnCore_of (P := RecordsStage st) st c _
       (fun _ h => h.trans (.of_frameK fun hI => RecordsFrame.of_objects_eq hI rfl rfl)) (.refl st)
-      (fun ntfn _ _ => interruptSignal_of (P := RecordsStage st) ntfn _ c st
-        (RecordsStage.notificationSignalBoundOnCore hR)
-        (fun _ _ _ hC => (RecordsStage.notificationSignalBoundOnCore hR).trans
-          (.of_frameK fun hI => RecordsFrame.clearWokenReceiverStash _ hI hC)))
+      (fun ntfn _ _ => (RecordsStage.notificationSignalBoundOnCore hR))
 
 /-- WS-ZA ZA6.32: **the interrupt entry's committed state keeps the records**,
 from the reachable state the step runs from: the trap-frame save writes one

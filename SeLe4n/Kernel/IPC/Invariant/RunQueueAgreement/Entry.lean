@@ -1011,8 +1011,7 @@ theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (lin
   split
   · rename_i ntfn badge _
     have hB := notificationSignalBoundOnCore_runQueueStage ntfn badge c st hHeads hBlk
-    exact (interruptSignal_of (P := RunQueueStage st) ntfn badge c st hB
-      (fun _ _ _ hC => hB.trans (clearWokenReceiverStash_runQueueStage _ hC))).trans
+    exact (hB).trans
       (setInterruptLineMask_runQueueStage _ _ _)
   · exact setInterruptLineMask_runQueueStage _ _ _
 

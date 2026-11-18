@@ -109,33 +109,13 @@ theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.
 /-- **A signal's bound delivery** (seL4's `sendSignal`, a bound TCB blocked on
 receive): the bound thread `t` taken off the receive queue of the endpoint
 `epId` it is blocked on, made ready with the badge in its badge register
-(`TCB.signalBoundWoken`), and woken.  The wake drops its reply stash, so the
-stash clear after it writes nothing (`signalBound_eq_writes`). -/
+(`TCB.signalBoundWoken`), and woken.  The wake drops its reply stash itself
+(seL4's `cancelIPC` unlinks the receiver's reply). -/
 @[inline] def signalBoundWrites (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
     (st : SystemState) : SystemState :=
   (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
     (TCB.signalBoundWoken badge)) t c).1
-
-/-- The specification's bound delivery and the stash drop after it is the
-delivered form. -/
-theorem signalBound_eq_writes (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
-    (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
-    (st : SystemState) (hNo : st.objects.noResizeDue) :
-    clearWokenReceiverStashPure (some t)
-        (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
-          (TCB.signalBoundWoken badge)) t c).1 =
-      signalBoundWrites c t epId ep tcb badge st := by
-  have hNo1 := storeQueueRemove_noResizeDue st epId true t ep tcb hNo
-  have hNo2 : ((storeQueueRemove st epId true t ep tcb).mapTcbInPlace t
-      ipcReadyTcb).objects.noResizeDue := (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNo1
-  have hD : TCB.signalBoundWoken badge =
-      TCB.withMessageSlots (fun rf => { rf with x0 := badge.word }) (fun _ => none)
-        (fun _ => 0) ∘ ipcReadyTcb := rfl
-  unfold signalBoundWrites
-  rw [hD, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
-    ← SystemState.mapTcbInPlace_mapTcbInPlace, wakeThread_msg _ _ _ _ _ _ _ hNo2]
-  exact clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl)
 
 /-- **An admitted bound signal's writes** (`signalBoundWrites`), out of line. -/
 @[noinline] def performSignalBoundDelivered (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
@@ -198,10 +178,9 @@ message array. -/
   fun st =>
     match cap.target with
     | .object notifId =>
-        let woken? := (boundDeliveryTarget? st notifId).map (·.1)
         match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap.signalBadge
             executingCore st with
-        | (st', .ok _) => .ok ((), clearWokenReceiverStashPure woken? st')
+        | (st', .ok _) => .ok ((), st')
         | (st', .error e) => .error (e, st')
     | _ => .error (.invalidCapability 0, st)
 
@@ -211,7 +190,7 @@ every write in its slot (`signalWakesInPlace`), makes the wake's writes in place
 (`performSignalWoken`, `signalWoken_eq_perform`).  A signal with no waiter whose
 bound thread is blocked receiving, both flow gates passed and every write of the
 removal in its slot (`queueRemoveInPlace`), wakes that thread with the badge
-(`performSignalBoundDelivered`, `signalBound_eq_writes`, WS-ZA ZA6.35); any
+(`performSignalBoundDelivered`, `signalBoundWrites`, WS-ZA ZA6.35); any
 other signal takes the general arm. -/
 @[inline] def notificationSignalCheckedArmR (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -283,8 +262,7 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                 rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
               simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow,
                 ↓reduceIte, hBound, notificationSignalBoundOnCore, notificationSignalOnCore_eq_impl,
-                notificationSignalOnCoreImpl, hN, hHead, hW, Option.map_none,
-                clearWokenReceiverStashPure]
+                notificationSignalOnCoreImpl, hN, hHead, hW]
               rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
             · rfl
           · rfl
@@ -309,17 +287,10 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                       obtain ⟨hFlow2, hG⟩ := hA
                       have hBT := boundDeliveryTarget?_of_codes st notifId ntfn k tcb hN hK0 hB
                         hTT hSt
-                      have hNo : st.objects.noResizeDue := by
-                        have hQ := hG
-                        unfold queueRemoveInPlace at hQ
-                        simp only [Bool.and_eq_true] at hQ
-                        obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
-                        exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
                       have hS := notificationSignalBoundOnCore_bound_eq notifId cap.signalBadge
                         executingCore st ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hG
                       simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow, hBT,
-                        hFlow2, ↓reduceIte, hS, Option.map_some]
-                      rw [signalBound_eq_writes _ _ _ _ _ _ _ hNo]
+                        hFlow2, ↓reduceIte, hS]
                       rfl
                     · rfl
                   all_goals rfl
@@ -350,7 +321,7 @@ theorem notificationSignalCheckedArmR_eq (ctx : LabelingContext)
       rw [hRun] at hst
       simp only at hst
       rw [hst]
-    · simp only [clearWokenReceiverStash_eq_pure]
+    · rfl
   | _ => rfl
 
 /-- The signal's taint plan (`syscallTaintPlan`) from its operand, resolved

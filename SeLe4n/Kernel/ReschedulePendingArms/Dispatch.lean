@@ -1776,8 +1776,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage (stage := id) hS hSInv
-        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)
+      cases h
+      exact ⟨hS, hSInv⟩
     · cases h
   case none.notificationWait.object notifId =>
     by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
@@ -1832,8 +1832,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage (stage := id) hS hSInv
-        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)
+      cases h
+      exact ⟨hS, hSInv⟩
     · cases h
 
 /-! ### The checked syscall dispatch -/

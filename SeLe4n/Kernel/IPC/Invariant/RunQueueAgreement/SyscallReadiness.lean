@@ -1504,12 +1504,10 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_readyKeptStage (runQueueStage_of_pair_eq
+      cases h
+      exact .of_stage (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
-        (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig))
-        (stage := id) (fun x => SystemState.RunQueueStage.refl x) h
+          P.blocked) hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -1562,12 +1560,10 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_readyKeptStage (runQueueStage_of_pair_eq
+      cases h
+      exact .of_stage (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig))
-        (stage := id) (fun x => SystemState.RunQueueStage.refl x) h
+          P.blocked) hSig)
     · cases h
 
 

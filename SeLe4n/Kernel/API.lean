@@ -6324,17 +6324,14 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- info-flow-checked analogue of the unchecked arm, gating on
           -- `securityFlowsTo signaler→notification` before the bound-aware
           -- cross-core dispatch.
-          -- WS-SM SM6.D (PR #822 review): clear a woken bound receiver's server-first
-          -- reply stash (mirrors the unchecked arm + the plain-Send wake).
-          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           -- WS-SX SX7: the wake writes the badge into the woken thread's badge
-          -- register itself (seL4's `sendSignal`), so nothing is staged after it.
+          -- register and clears a woken bound receiver's server-first reply stash
+          -- itself (`TCB.signalBoundWoken`; seL4's `sendSignal` runs `cancelIPC`,
+          -- whose `reply_unlink` drops the receiver's reply), so nothing runs
+          -- after it.
           match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap.signalBadge executingCore st with
           | (st', .ok _) =>
-              match clearWokenReceiverStash woken? st' with
-              | .error e => .error e
-              | .ok ((), st'') =>
-                  .ok ((), st'')
+              .ok ((), st')
           | (_, .error e) => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
@@ -6455,16 +6452,13 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- Structurally the `.notificationSignal` arm — same notification, same
   -- badge (the notification capability's, `Capability.signalBadge`: no message register is
   -- read, so the declassified datum is the identity the capability was minted
-  -- with, never a caller-chosen word), same woken-stash clear, same WS-RA
-  -- staging — with the
+  -- with, never a caller-chosen word) — with the
   -- bound-aware cross-core dispatch replaced by the declassifying one.  Keeping
   -- the surrounding shape identical is deliberate: the transition really does
   -- perform the ordinary signal's writes
-  -- (`declassifiedSignal_ordinary_eq_signal`), so any post-processing the
-  -- ordinary arm owes its woken threads, this arm owes them too.  Dropping the
-  -- stash clear would leave a woken bound receiver holding a server-first reply
-  -- stash the ordinary path clears; dropping the stagers would leave the woken
-  -- thread's badge undeliverable at the context restore (WS-BP BP7.6).
+  -- (`declassifiedSignal_ordinary_eq_signal`), so the woken thread's badge
+  -- register and a woken bound receiver's reply stash are written by the wake
+  -- itself, as on the ordinary path, and nothing runs after it.
   --
   -- Neither domain is an operand.  The source is the *actor's* — read off the
   -- subject the executing core is running — and the two destinations are the
@@ -6479,14 +6473,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         match resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st with
         | .error e => .error e
         | .ok (ntfnCap, notifId) =>
-          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
                   ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
           | (st', .ok _) =>
-              match clearWokenReceiverStash woken? st' with
-              | .error e => .error e
-              | .ok ((), st'') =>
-                  .ok ((), st'')
+              .ok ((), st')
           | (_, .error e) => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM9.A.10: **the live audit read.**
@@ -8368,11 +8358,11 @@ theorem dispatchWithCapChecked_declassify_default_denied
 Checked dispatch only, like `.declassify` (`dispatchWithCap_declassifySignal_denied`
 is its dual).
 
-The conclusion names the **whole arm**, not just the transition: the woken
-bound receiver's server-first reply stash is cleared and both WS-RA stagers
-run, exactly as on the ordinary `.notificationSignal` path.  Stating it that
-way is the point — an arm that ran the right transition and then skipped the
-post-processing its woken threads are owed would not satisfy this, and the
+The conclusion names the **whole arm**, not just the transition: the arm runs
+nothing after the declassifying signal, exactly as on the ordinary
+`.notificationSignal` path (the wake itself writes the badge register and drops
+a woken bound receiver's reply stash).  Stating it that way is the point — an
+arm that ran anything else around the transition would not satisfy this, and the
 per-core routing gate and the cross-core inventory both consume this equation
 as their tie to the dispatch. -/
 theorem dispatchWithCapChecked_declassifySignal_delegates
@@ -8386,10 +8376,7 @@ theorem dispatchWithCapChecked_declassifySignal_delegates
       (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
               ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
        | (st', .ok _) =>
-           (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
-            | .error e => .error e
-            | .ok ((), st'') =>
-                .ok ((), st''))
+           .ok ((), st')
        | (_, .error e) => .error e) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
@@ -8461,24 +8448,14 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
   | error e => exact absurd hStep (by simp)
   | ok sgi =>
     simp only at hStep
-    -- The transition's own trail statement, then the arm's post-processing —
-    -- the stash clear does not touch the trail.
+    -- The transition's own trail statement: the arm runs nothing after it.
     have hTrail := declassifiedSignal_default_policy_never_downgrades (liftLegacyContext ctx)
       ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st stT
       sgi hDefault hPair
-    obtain ⟨stash, hStash⟩ : ∃ r, clearWokenReceiverStash
-        ((boundDeliveryTarget? st notifId).map (·.1)) stT = r := ⟨_, rfl⟩
-    rw [hStash] at hStep
-    cases stash with
-    | error e => exact absurd hStep (by simp)
-    | ok pr =>
-      obtain ⟨u, st2⟩ := pr
-      cases u
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨-, hSt'⟩ := hStep
-      rw [← hSt']
-      rw [clearWokenReceiverStash_declassificationAuditLog_eq _ _ _ hStash]
-      exact hTrail
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨-, hSt'⟩ := hStep
+    rw [← hSt']
+    exact hTrail
 
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,
 and writes the selected word into the caller's return register.**
@@ -9310,8 +9287,7 @@ def syscallDelegates : SyscallId → Prop
             executingCore targetId st
   -- WS-SM SM9.C.9: the live data-carrying declassification.  Checked dispatch
   -- only, like `.declassify` — and the conclusion names the *whole arm*, so an
-  -- arm that ran the transition and skipped the stash clear or either stager
-  -- would not satisfy this.
+  -- arm that ran anything after the transition would not satisfy this.
   | .declassifySignal =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability) (code : Nat) (ntfnCap : Capability)
@@ -9323,10 +9299,7 @@ def syscallDelegates : SyscallId → Prop
           (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
                   ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
            | (st', .ok _) =>
-               (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
-                | .error e => .error e
-                | .ok ((), st'') =>
-                    .ok ((), st''))
+               .ok ((), st')
            | (_, .error e) => .error e)
   -- WS-SM SM9.A.10: the live audit arms.  Stated over the *checked* dispatch,
   -- like `.declassify`, because that is the only path they have — and the

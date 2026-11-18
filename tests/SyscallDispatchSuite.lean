@@ -2532,48 +2532,44 @@ private def sd053_serverFirstLink : IO Unit := do
 /-- SD-053g (PR #822 review): a bound-notification wake also clears a server-first
     reply stash.  A server blocked on a server-first `Recv` (stashing a reply object)
     that is bound to a notification can be woken by a signal via the bound-delivery
-    path (`boundDeliveryTarget?` → `.ready`); the dispatch then clears its stash with
-    `clearWokenReceiverStash`, just like the plain-`Send` wake — a stash lives only on
-    a `.blockedOnReceive` TCB. -/
+    path (`boundDeliveryTarget?` → `.ready`).  As in seL4's `sendSignal`, whose
+    `cancelIPC` unlinks the receiver's reply (`reply_unlink`), the wake itself
+    clears the stash (`storeTcbSignalBoundWoken`); the dispatch adds no separate
+    clear. -/
 private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
   let server    : SeLe4n.ThreadId := ⟨1⟩
-  let signaller : SeLe4n.ThreadId := ⟨2⟩
   let epId      : SeLe4n.ObjId := ⟨10⟩
   let nId       : SeLe4n.ObjId := ⟨20⟩
   let rid       : SeLe4n.ReplyId := ⟨707⟩
-  let _ := signaller
-  -- (a) capture: the `.notificationSignal` dispatch resolves the bound delivery target
-  -- (`boundDeliveryTarget?` → the `.blockedOnReceive` bound server) before the signal.
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject epId (.endpoint {})
+      |>.withObject epId (.endpoint
+          { recvHeadCode := SeLe4n.ThreadId.optCode (some server)
+            recvTailCode := SeLe4n.ThreadId.optCode (some server) })
       |>.withObject nId (.notification
           { state := .idle, boundTCBCode := SeLe4n.ThreadId.optCode (some server) })
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReceive epId)))
+          (.tcb (TCB.setIpcState
+            { mkTcb 1 with
+                pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid)
+                queuePPrevCode := QueuePPrev.optCode (some .endpointHead) }
+            (.blockedOnReceive epId)))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.build)
+  -- (a) the bound BlockedOnReceive server is the wake target.
   expect "sd053g_bound_target_resolved"
     (decide ((SeLe4n.Kernel.boundDeliveryTarget? st0 nId).map (·.1) = some server))
     "the bound BlockedOnReceive server is the captured wake target"
-  -- (b) clear: after the bound delivery wakes the server (`.ready`), the dispatch
-  -- clears its stash via `clearWokenReceiverStash` (the stash lives only on a blocked
-  -- receiver) — the reply object stays free.
-  let stWoken : SystemState :=
-    (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } .ready))
-      |>.withObject rid.toObjId (.reply { replyId := rid })
-      |>.build)
-  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
-  | .ok ((), st') =>
+  -- (b) the signal's own wake clears the stash and leaves the reply object free.
+  match SeLe4n.Kernel.notificationSignalBoundOnCore nId (Badge.ofNatMasked 5) bootCoreId st0 with
+  | (st', .ok _) =>
       expect "sd053g_stash_cleared"
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
-        "the bound-woken server's stale reply stash must be cleared"
+        "the bound-woken server's stale reply stash must be cleared by the wake"
       expect "sd053g_reply_stays_free"
         ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
         "clearing the stash must not consume the reply object"
-  | .error _ => failLine "sd053g" "clearWokenReceiverStash should succeed"
+  | (_, .error _) => failLine "sd053g" "the bound signal should succeed"
 
 /-- **Every argument capability's refusal names its argument.**  Under the
 payload convention the invoked capability is `invalidCapability 0` and argument

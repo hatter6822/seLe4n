@@ -893,10 +893,9 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_recordsStage
-        (RecordsStage.of_fst_eq
-          (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
-        (stage := id) (fun x => RecordsStage.refl x) h
+      cases h
+      exact (RecordsStage.of_fst_eq
+        (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -922,9 +921,8 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_recordsStage
-        (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
-        (stage := id) (fun x => RecordsStage.refl x) h
+      cases h
+      exact (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
     · cases h
 
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/

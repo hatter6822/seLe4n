@@ -137,16 +137,11 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
     obtain ⟨ntfn, badge⟩ := p
     rw [hH] at hP
     dsimp only
-    have hT : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
-      rw [hP]; exact List.mem_cons_self
     have hB := footprintCoversWrites_of_confined S _ [] st _ hP
       ((notificationSignalBoundOnCore_confinedToCores ntfn badge
         c st hInv).mono (fun _ h => List.mem_cons_of_mem _ h))
       (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore _ _ c st d)
-    refine footprintCoversWrites_of_frame
-      (interruptSignal_of (P := footprintCoversWrites S st) ntfn _ c st hB
-        (fun _ s2 _ hC => footprintCoversWrites_of_table hB hT ?_)) rfl rfl
-    rw [clearWokenReceiverStash_scheduler_eq _ _ ((), s2) hC]
+    exact footprintCoversWrites_of_frame hB rfl rfl
 
 /-- The declared footprint names the table write lock… -/
 theorem declaredLockSetForInterrupt_objStore {coreId intId : UInt64} {st : SystemState}

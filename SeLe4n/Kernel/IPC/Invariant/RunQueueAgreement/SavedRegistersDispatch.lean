@@ -374,11 +374,8 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     try dsimp only at h
     split at h
     · rename_i hSig
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact hW (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)
+      exact hW (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -427,11 +424,8 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     try dsimp only at h
     split at h
     · rename_i hSig
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact hW (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)
+      exact hW (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig)
     · cases h
 
 

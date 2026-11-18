@@ -651,19 +651,13 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     simp only at hDisp
     split at hDisp
     · rename_i st₁ r hSig
-      split at hDisp
-      · exact absurd hDisp (by simp)
-      · rename_i st₂ hClr
-        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
-        subst hDisp
-        have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
-          cap.signalBadge e st st₁ r hSig
-        refine footprintCoversWrites_trans S ?_
-          (footprintCoversWrites_of_scheduler_eq S hTable
-            (clearWokenReceiverStash_scheduler_eq _ _ _ hClr))
-        rw [← h₁]
-        exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId cap.signalBadge e st S
-          hObjInv hSched
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+      subst hDisp
+      have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
+        cap.signalBadge e st st₁ r hSig
+      rw [← h₁]
+      exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId cap.signalBadge e st S
+        hObjInv hSched
     · exact absurd hDisp (by simp)
   -- ---- `.notificationWait` ------------------------------------------------
   case notificationWait =>

@@ -4913,8 +4913,8 @@ run_check "INVARIANT" rg -n '^    exact hW \(sendArm_savedRegsWrittenFree _ P hR
 run_check "INVARIANT" rg -n '^      exact hW \(w0\.trans \(receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P hRT hBNR hCall\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    exact hW \(replyTransferOnCoreChecked_savedRegsWrittenFree P\.dequeued hRT hBNR hInv h\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -24067,7 +24067,6 @@ run_check "INVARIANT" rg -n '^theorem interruptEntryStep_preserves_objects_invEx
 # signal arm does, and runs in place through its `@[csimp]` fast form.
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptSignal \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem interruptSignal_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
-run_check "INVARIANT" rg -n '^theorem interruptSignal_of($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptRunCores \(' SeLe4n/Kernel/InterruptEntry.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def declaredLockSetForInterrupt \(' SeLe4n/Kernel/InterruptEntry.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
@@ -24091,7 +24090,6 @@ run_check "INVARIANT" rg -n '^theorem interruptEntryTail_coversWrites($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
-run_check "INVARIANT" rg -n '^theorem clearWokenReceiverStash_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntry_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_irqHandlerAck($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_irqHandlerAck_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean

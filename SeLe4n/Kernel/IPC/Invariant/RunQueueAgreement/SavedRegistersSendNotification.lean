@@ -855,42 +855,38 @@ theorem offCoreFree_of_signalWritten {e : CoreId} {st : SystemState} {nid : SeLe
 
 /-- WS-ZA ZA6.26: **a signal arm writes only the thread it wakes**: the signal
 writes the badge register of the bound thread blocked on receive or of the
-notification's head waiter, both blocked at the entry's start, and the stash
-clear writes no saved register. -/
+notification's head waiter, both blocked at the entry's start. -/
 theorem signalArm_savedRegsWrittenFree {nid : SeLe4n.ObjId}
-    {e : CoreId} {st s1 s2 : SystemState} (P : EntryPremises st)
+    {e : CoreId} {st s1 : SystemState} (P : EntryPremises st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
-    (h1 : savedRegsKeptExcept (signalWritten st nid) st s1 ∧ s1.objects.invExt)
-    (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st s2 :=
-  .of_kept (h1.1.trans (clearWokenReceiverStash_savedRegsUnwritten h1.2 hClr).kept)
+    (h1 : savedRegsKeptExcept (signalWritten st nid) st s1 ∧ s1.objects.invExt) :
+    savedRegsWrittenFree e st st s1 :=
+  .of_kept h1.1
     fun _ h => offCoreFree_of_signalWritten P hRT hBNR h
 
 /-- The checked signal arm. -/
 theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 s2 : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 : SystemState}
     {r : Option (CoreId × Concurrency.SgiKind)} (P : SyscallArmPremises st ec tid)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
-    (hSig : notificationSignalBoundCrossCoreDispatchChecked ctx nid tid badge ec st = (s1, .ok r))
-    (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st s2 := by
+    (hSig : notificationSignalBoundCrossCoreDispatchChecked ctx nid tid badge ec st = (s1, .ok r)) :
+    savedRegsWrittenFree e st st s1 := by
   have h1 := notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept ctx nid tid badge
     ec P.objInv
   rw [hSig] at h1
-  exact signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR h1 hClr
+  exact signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR h1
 
 /-- The declassifying signal arm. -/
 theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
     {declPolicy : DeclassificationPolicy} {nid : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
-    {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 s2 : SystemState}
+    {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 : SystemState}
     {r : Option (CoreId × Concurrency.SgiKind)} (P : SyscallArmPremises st ec tid)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hSig : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy nid badge ec st
-      = (s1, .ok r))
-    (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st s2 :=
+      = (s1, .ok r)) :
+    savedRegsWrittenFree e st st s1 :=
   signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR
-    (notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept P.objInv hSig) hClr
+    (notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept P.objInv hSig)
 
 /-- WS-ZA ZA6.32: **the interrupt step writes only the thread its signal
 wakes**: seL4's `handleInterrupt` signals the bound notification
@@ -908,9 +904,7 @@ theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemStat
   have h1 := fun ntfn badge => notificationSignalBoundOnCore_savedRegsKept ntfn badge c E.objInv
   unfold handleInterruptOnCore
   split
-  · exact hM _ (interruptSignal_of (P := savedRegsWrittenFree e st st) _ _ c st
-      (.of_kept (h1 _ _).1 fun _ h => offCoreFree_of_signalWritten E hRT hBNR h)
-      fun _ _ _ hClr => signalArm_savedRegsWrittenFree E hRT hBNR (h1 _ _) hClr)
+  · exact hM _ ((.of_kept (h1 _ _).1 fun _ h => offCoreFree_of_signalWritten E hRT hBNR h))
   · exact hM _ (.refl _)
 
 /-- …and so does the raw step. -/

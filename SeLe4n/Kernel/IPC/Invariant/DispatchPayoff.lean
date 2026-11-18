@@ -1101,20 +1101,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       | error e => simp only [] at hStep; cases hStep
                       | ok u1 =>
                           simp only [] at hStep
-                          have hObjInv1 : st1.objects.invExt := by
-                            have h := notificationSignalOnCore_preserves_objects_invExt
-                              notifId cap.signalBadge executingCore st hObjInv
-                            rw [hSig] at h; exact h
-                          cases hClear : clearWokenReceiverStash
-                              ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
-                          | error e => rw [hClear] at hStep; cases hStep
-                          | ok pair2 =>
-                              rw [hClear] at hStep
-                              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                              have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
-                                _ st1 pair2 hObjInv1 hSigInv hClear
-                              rw [← hStep]
-                              exact hClearInv
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          rw [← hStep]
+                          exact hSigInv
         all_goals cases hStep
       case notificationWait =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1268,21 +1257,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                           ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone hDisp
-                      have hObjInv1 : st1.objects.invExt :=
-                        notificationSignalDeclassifiedOnCore_preserves_objects_invExt
-                          (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          ntfnCap.signalBadge executingCore st st1 sgi1
-                          hObjInv hDisp
-                      cases hClear : clearWokenReceiverStash
-                          ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
-                      | error e => rw [hClear] at hStep; cases hStep
-                      | ok pair2 =>
-                          rw [hClear] at hStep
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
-                            _ st1 pair2 hObjInv1 hSigInv hClear
-                          rw [← hStep]
-                          exact hClearInv
+                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      rw [← hStep]
+                      exact hSigInv
         all_goals cases hStep
       case auditRead =>
         cases hAuth : extractAuditAuthority cap with

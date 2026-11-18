@@ -504,13 +504,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage (stage := id) hS hSInv
-        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)).1
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact (hW hCv (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)).bankAgree hA
+      exact (hW hS (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -569,13 +564,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage (stage := id) hS hSInv
-        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)).1
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact (hW hCv (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)).bankAgree hA
+      exact (hW hS (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
 
 /-! ### The yield, the taint pass and the checked dispatch -/
