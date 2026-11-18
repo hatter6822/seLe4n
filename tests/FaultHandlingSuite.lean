@@ -1956,7 +1956,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
         match endpointReceiveDualOnCore epServer orphan (some replyS) c2 stRun with
         | (_, .error e) => assertBool s!"the second server's receive must succeed (got {repr e})" false
         | (stS, .ok _) =>
-          match endpointCallCrossCoreDispatch epServer faulter (.frame none false)
+          match endpointCallCrossCoreDispatch epServer faulter (.frame none false true)
               c0 stS with
           | (_, .error e) => assertBool s!"the faulter's Call must succeed (got {repr e})" false
           | (stC, .ok _) =>

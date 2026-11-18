@@ -441,11 +441,11 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
   · exact hSus
   · rename_i tgt _
     have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) c st hInv hC
+      (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv hC
       hFaulted (hHead tgt.endpoint)
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) c st hInv
-    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
+      (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv
+    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
         c st with
     | mk s1 res =>
       rw [hR] at hB hI

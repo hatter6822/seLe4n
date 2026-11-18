@@ -374,7 +374,7 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
-                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                   (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))))
     | some _ =>
       simp only []
@@ -531,7 +531,7 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
-                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                   (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore))))
     | some _ =>
       simp only []
@@ -741,7 +741,7 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
             sender _ none hInv1 hIpc)).trans
             (sameSchedContextBindings.of_objectsAgreeOffRunLinks
               (SystemState.objectsAgreeOffRunLinks.trans
-                (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                 (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore)))
     | some _ =>
       simp only []

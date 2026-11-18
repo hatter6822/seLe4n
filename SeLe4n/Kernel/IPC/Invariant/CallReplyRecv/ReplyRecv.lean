@@ -642,7 +642,7 @@ theorem endpointCall_preserves_objects_invExt
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 caller _ none hObjInv1 hMsg
-            exact recordSendCap_objects_invExt _ _ _ _ <| removeRunnable_objects_invExt _ _ (by assumption)
+            exact recordSendCap_objects_invExt _ _ _ _ _ <| removeRunnable_objects_invExt _ _ (by assumption)
 
 -- ============================================================================
 -- M3-E4: endpointCallWithCaps preservation

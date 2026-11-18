@@ -117,12 +117,12 @@ theorem endpointSendDualOnCore_post_agrees
         | ok st2 =>
           simp only
           right
-          refine ⟨recordSendCap (removeRunnable st2 sender) sender payload.badge payload.grant,
+          refine ⟨recordSendCap (removeRunnable st2 sender) sender payload.badge payload.grant payload.grantReply,
             rfl, ?_⟩
-          exact (recordSendCap_offSchedulerAgrees _ _ _ _).symm.trans
+          exact (recordSendCap_offSchedulerAgrees _ _ _ _ _).symm.trans
             ((removeRunnable_offSchedulerAgrees st2 sender).symm.trans
               ((removeRunnableOnCore_offSchedulerAgrees st2 sender executingCore).trans
-                (recordSendCap_offSchedulerAgrees _ _ _ _)))
+                (recordSendCap_offSchedulerAgrees _ _ _ _ _)))
 
 -- ============================================================================
 -- §3 RR2.14 — object-store invariant preservation
@@ -174,7 +174,7 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
         | error e => simp only; exact hObjInv
         | ok st2 =>
           simp only
-          exact recordSendCap_objects_invExt _ _ _ _ <| removeRunnableOnCore_objects_invExt _ _ _
+          exact recordSendCap_objects_invExt _ _ _ _ _ <| removeRunnableOnCore_objects_invExt _ _ _
             (storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _ _
               hObjInv1 hStore)
 

@@ -179,12 +179,12 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
       (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext)
       SeLe4n.arm64DefaultLayout
         tcb.registerContext 32 = .call capAddr mi)
-    (endpointId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grant : Bool) :
-    sendPayloadMessage st s (.frame badge grant) =
+    (endpointId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    sendPayloadMessage st s (.frame badge grant grantReply) =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             tcb.registerContext mi.length,
           badge := badge } ∧
-      sendCapRequest st endpointId s (.frame badge grant) = none := by
+      sendCapRequest st endpointId s (.frame badge grant grantReply) = none := by
   obtain ⟨d, hDec, hMi, hX, hRegs⟩ : ∃ d, blockedSenderDecode st s tcb = .ok d ∧
       d.msgInfo = mi ∧ mi.extraCaps = 0 ∧
       d.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map

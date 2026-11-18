@@ -57,14 +57,14 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi ∨
       registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
       SeLe4n.arm64DefaultLayout rf 32 = .call capAddr mi) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
             badge := badge } := by
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -72,10 +72,10 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    exact ⟨fun endpointId badge grant =>
-        (sendFrame_of_routed st tid tcb hT capAddr mi hR endpointId badge grant).2,
-      fun badge grant _ => (sendFrame_of_routed st tid tcb hT capAddr mi hR tid.toObjId badge
-        grant).1⟩
+    exact ⟨fun endpointId badge grant grantReply =>
+        (sendFrame_of_routed st tid tcb hT capAddr mi hR endpointId badge grant grantReply).2,
+      fun badge grant grantReply _ => (sendFrame_of_routed st tid tcb hT capAddr mi hR tid.toObjId badge
+        grant grantReply).1⟩
 
 /-- **The message a routed capability-carrying frame of at most four words
 sends**: its inline words, as a capability-free send's
@@ -86,11 +86,11 @@ theorem routedTransferringMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
       SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
     (hLen : mi.length ≤ 4) :
-    ∀ badge grant, (st.getTcb? tid).isSome = true →
-      sendPayloadMessage st tid (.frame badge grant) =
+    ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+      sendPayloadMessage st tid (.frame badge grant grantReply) =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
           badge := badge } := by
-  intro badge grant hS
+  intro badge grant grantReply hS
   obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp hS
   have hRf := hFrame tcb hT
   subst hRf
@@ -149,13 +149,13 @@ theorem TransferringFrameRouted.message {st : SystemState} {tid : SeLe4n.ThreadI
     {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr} {mi : MessageInfo} {sid : SyscallId}
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
     (hTr : TransferringFrameRouted st tid rf capAddr mi sid) (hLen : mi.length ≤ 4) :
-    ∀ badge grant, (st.getTcb? tid).isSome = true →
-      sendPayloadMessage st tid (.frame badge grant) =
+    ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+      sendPayloadMessage st tid (.frame badge grant grantReply) =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
           badge := badge } := by
   rcases hTr with ⟨hR, -⟩ | ⟨mi0, hR, rfl, hUn⟩
   · exact routedTransferringMessage st tid rf capAddr mi sid hFrame hR hLen
-  · intro badge grant hS
+  · intro badge grant grantReply hS
     obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp hS
     have hRf := hFrame tcb hT
     subst hRf
@@ -167,14 +167,14 @@ theorem TransferringFrameRouted.message {st : SystemState} {tid : SeLe4n.ThreadI
 clamped or not (`sendCapRequest_routed`). -/
 theorem TransferringFrameRouted.sendCapRequest {st : SystemState} {epId : SeLe4n.ObjId}
     {tid r : SeLe4n.ThreadId} {stcb : TCB} {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr}
-    {mi : MessageInfo} {sid : SyscallId} (b : Option SeLe4n.Badge) (g : Bool)
+    {mi : MessageInfo} {sid : SyscallId} (b : Option SeLe4n.Badge) (g gr : Bool)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
     (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
     (hTr : TransferringFrameRouted st tid rf capAddr mi sid) (hLen : mi.length ≤ 4) :
-    sendCapRequest st epId tid (.frame b g) =
+    sendCapRequest st epId tid (.frame b g gr) =
       frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
   rcases hTr with ⟨hR, -⟩ | ⟨mi0, hR, -, hUn⟩
-  · exact sendCapRequest_routed st epId tid r stcb rf capAddr mi sid b g hRecv hS hRf hR hLen
+  · exact sendCapRequest_routed st epId tid r stcb rf capAddr mi sid b g gr hRecv hS hRf hR hLen
   · unfold SeLe4n.Kernel.sendCapRequest
     rw [hRecv]
     simp only [hS]
@@ -201,7 +201,7 @@ def endpointSendCheckedArmGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadI
         else
         let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendCrossCoreDispatchChecked ctx epId tid
-            (.frame cap.badge (cap.rights.mem .grant))
+            (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
             executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery (clearWokenReceiverStashPure woken? st')
@@ -217,8 +217,8 @@ theorem endpointSendCheckedArmGeneralR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState)
     (hSend : decoded.syscallId = .send)
-    (hReq : ∀ endpointId badge grant,
-      sendCapRequest st endpointId tid (.frame badge grant) = none) :
+    (hReq : ∀ endpointId badge grant grantReply,
+      sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) :
     endpointSendCheckedArmGeneralR ctx tid executingCore cap st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
         st := by
@@ -233,10 +233,10 @@ theorem endpointSendCheckedArmGeneralR_eq (ctx : LabelingContext)
     simp only [Bool.not_eq_true] at hD
     simp only [hD, Bool.false_eq_true, ↓reduceIte]
     rcases hRun : endpointSendCrossCoreDispatchChecked ctx epId tid
-        (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
+        (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st with
       ⟨st', _ | ⟨summary, sgi⟩⟩
     · have hst := endpointSendCrossCoreDispatchChecked_error_state ctx epId tid _
-        executingCore st _ (hReq _ _ _) (by rw [hRun])
+        executingCore st _ (hReq _ _ _ _) (by rw [hRun])
       rw [hRun] at hst
       simp only at hst
       rw [hst]
@@ -1212,7 +1212,7 @@ the general arm. -/
                       (ctx.endpointLabelOf epId) then
                   .ok ((), recordSendCapWords (removeRunnableOnCore
                     (storeSendBlock st epId tid ep.sendTailCode) tid executingCore) tid
-                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                    cap.badgeWord cap.badged (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointSendCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability 0, st)
@@ -1252,9 +1252,9 @@ theorem CallFrameRouted.frame {st : SystemState} {tid : SeLe4n.ThreadId}
     {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr} {mi : MessageInfo}
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
     (hR : CallFrameRouted st tid rf capAddr mi) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
             badge := badge } := by
   rcases hR with hR | ⟨mi0, hR, rfl, hUn⟩
@@ -1266,7 +1266,7 @@ theorem SendFrameRouted.capRequest {st : SystemState} {tid : SeLe4n.ThreadId}
     {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr} {mi : MessageInfo}
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
     (hR : SendFrameRouted st tid rf capAddr mi) :
-    ∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none := by
+    ∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none := by
   rcases hR with hR | ⟨hR, hRead⟩ | ⟨mi0, hR, -, hUn⟩
   · exact (routedSenderFrame st tid rf capAddr mi hFrame (.inl hR)).1
   · exact (routedLongSenderFrame st tid rf capAddr mi hFrame hR hRead).1
@@ -1317,7 +1317,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
                 have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout mi.length ≤ 4 := by
                   unfold Architecture.regMessageLength; omega
                 rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
-                  (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
+                  (hMsg _ _ _ hS) (hReq _ _ _ _) hE hH hT hS hW hFlow]
                 simp only []
                 rw [← TCB.optCode_queueNext,
                   ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
@@ -1332,7 +1332,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
                 have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout 4 ≤ 4 := by
                   unfold Architecture.regMessageLength; omega
                 rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
-                  (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
+                  (hMsg _ _ _ hS) (hReq _ _ _ _) hE hH hT hS hW hFlow]
                 simp only []
                 rw [← TCB.optCode_queueNext,
                   ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
@@ -1343,7 +1343,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
                   (registerRoutedSyscall_send_length _ rf 32 capAddr mi hR) (by decide)) hLong
               · have hMsg := (routedLongSenderFrame st tid rf capAddr mi hFrame hR hRead).2
                 rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
-                  (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
+                  (hMsg _ _ _ hS) (hReq _ _ _ _) hE hH hT hS hW hFlow]
                 simp only []
                 rw [← TCB.optCode_queueNext,
                   ← sendRendezvous_eq_deliveredLong _ _ _ _ _ _ _ _ _ _ _ hNo rfl (by omega)]
@@ -1367,7 +1367,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
             simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
             unfold endpointSendCrossCoreDispatchChecked
             rw [if_pos hFlow,
-              endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ (hReq _ _ _),
+              endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ (hReq _ _ _ _),
               sendBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
@@ -1559,7 +1559,7 @@ def endpointCallCheckedArmGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadI
     | .object epId =>
         let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatchChecked ctx epId tid
-            (.frame cap.badge (cap.rights.mem .grant))
+            (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
             executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' woken? summary.capInfo)
@@ -1579,7 +1579,7 @@ theorem endpointCallCheckedArmGeneralR_eq (ctx : LabelingContext)
   | object epId =>
     simp only []
     rcases endpointCallCrossCoreDispatchChecked ctx epId tid
-        (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
+        (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st with
       ⟨st', _ | ⟨summary, sgi⟩⟩ <;> rfl
   | _ => rfl
 
@@ -1636,7 +1636,7 @@ does; any other call takes the general arm. -/
                       (ctx.endpointLabelOf epId) then
                   .ok ((), recordSendCapWords (removeRunnableOnCore
                     (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
-                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                    cap.badgeWord cap.badged (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability 0, st)
@@ -1669,8 +1669,8 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               simp only [Bool.and_eq_true] at hG
               obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
-                (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
               rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
@@ -1681,8 +1681,8 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
                 simp only [Bool.and_eq_true] at hG
                 obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
                 obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid
-                  (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                  (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
+                  (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                  (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
                 rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
@@ -1710,7 +1710,7 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked
             rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv,
-              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _),
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _ _),
               callBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
@@ -1872,7 +1872,7 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
                       (ctx.endpointLabelOf epId) then
                   .ok ((), recordSendCapWords (removeRunnableOnCore
                     (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
-                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                    cap.badgeWord cap.badged (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability 0, st)
@@ -1916,8 +1916,8 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
               simp only [Bool.and_eq_true] at hG
               obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
-                (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
@@ -1948,7 +1948,7 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked
             rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv,
-              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _),
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _ _),
               callBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
@@ -2858,7 +2858,7 @@ def endpointSendCapsGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
         else
         let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendCrossCoreDispatchChecked ctx epId tid
-            (.frame cap.badge (cap.rights.mem .grant))
+            (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
             executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery (clearWokenReceiverStashPure woken? st')
@@ -2884,7 +2884,7 @@ theorem endpointSendCapsGeneralR_eq (ctx : LabelingContext)
     simp only [Bool.not_eq_true] at hD
     simp only [hD, Bool.false_eq_true, ↓reduceIte]
     rcases endpointSendCrossCoreDispatchChecked ctx epId tid
-        (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
+        (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st with
       ⟨st', _ | ⟨summary, sgi⟩⟩
     · rfl
     · simp only [clearWokenReceiverStash_eq_pure]
@@ -2955,7 +2955,7 @@ into the receiver's (`performSendCapsDeliveredLong`). -/
                       (ctx.endpointLabelOf epId) then
                   .ok ((), recordSendCapWords (removeRunnableOnCore
                     (storeSendBlock st epId tid ep.sendTailCode) tid executingCore) tid
-                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                    cap.badgeWord cap.badged (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 else endpointSendCapsGeneralR ctx tid executingCore cap st
         | none => endpointSendCapsGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability 0, st)
@@ -3005,8 +3005,8 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 unfold endpointSendCapsGeneralR
                 simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
                 rw [sendDispatchChecked_inPlace_transfer ctx st epId ep tid r rt _ _ executingCore
-                  (hMsg _ _ hSome) hE hH hT hSome hW hFlow,
-                  sendCapRequest_routedLong st epId tid r stcb rf capAddr mi sid _ _
+                  (hMsg _ _ _ hSome) hE hH hT hSome hW hFlow,
+                  sendCapRequest_routedLong st epId tid r stcb rf capAddr mi sid _ _ _
                     (by simp only [hE, Option.bind_some, hH]) hS (hFrame stcb hS) hR hGt
                     (hRead hGt),
                   receiverCapTarget?_eq_capTargetOf hT, hb]
@@ -3036,9 +3036,9 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
               unfold endpointSendCapsGeneralR
               simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
               have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid cap.badge
-                (cap.rights.mem .grant) hT hSI
+                (cap.rights.mem .grant) (cap.rights.mem .grantReply) hT hSI
               obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_inert ctx st epId ep tid r rt
-                _ _ executingCore (hMsg _ _ hS) hE hH hT hS hW hInert hFlow
+                _ _ executingCore (hMsg _ _ _ hS) hE hH hT hS hW hInert hFlow
               rw [hD]
               simp only [hC]
               rw [← TCB.optCode_queueNext,
@@ -3052,8 +3052,8 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 unfold endpointSendCapsGeneralR
                 simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
                 rw [sendDispatchChecked_inPlace_transfer ctx st epId ep tid r rt _ _ executingCore
-                  (hMsg _ _ hSome) hE hH hT hSome hW hFlow,
-                  TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _
+                  (hMsg _ _ _ hSome) hE hH hT hSome hW hFlow,
+                  TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _ _
                     (by simp only [hE, Option.bind_some, hH]) hS (hFrame stcb hS) hTr hShort,
                   receiverCapTarget?_eq_capTargetOf hT, hb]
                 have hEq := sendRendezvousCaps_eq_delivered st epId r rt.queueNext
@@ -3085,7 +3085,7 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
             rw [enqueuesInPlaceCode_eq,
               show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
             have hReq := sendCapRequest_of_no_receiver st epId tid
-              (.frame cap.badge (cap.rights.mem .grant)) (by simp only [hE, Option.bind_some, hH])
+              (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) (by simp only [hE, Option.bind_some, hH])
             unfold endpointSendCapsGeneralR
             simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
             unfold endpointSendCrossCoreDispatchChecked
@@ -3180,7 +3180,7 @@ write. -/
                       (ctx.endpointLabelOf epId) then
                   .ok ((), recordSendCapWords (removeRunnableOnCore
                     (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
-                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                    cap.badgeWord cap.badged (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability 0, st)
@@ -3220,12 +3220,12 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                   have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
                   have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
                   obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace_transfer ctx st epId ep tid r rt
-                    rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                    (hMsg cap.badge (cap.rights.mem .grant) hSome)
+                    rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                    (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
-                  rw [hD, sendCapRequest_routedLong st epId tid r ctcb rf capAddr mi sid _ _
+                  rw [hD, sendCapRequest_routedLong st epId tid r ctcb rf capAddr mi sid _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hR hGt
                       (hRead hGt),
                     receiverCapTarget?_eq_capTargetOf hT, hb]
@@ -3254,10 +3254,10 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 have hS := senderTransferInertW_isSome hSI
                 have hMsg := TransferringFrameRouted.message hFrame hTr hShort
                 have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid cap.badge
-                  (cap.rights.mem .grant) hT hSI
+                  (cap.rights.mem .grant) (cap.rights.mem .grantReply) hT hSI
                 obtain ⟨s, hC, sgi, hD⟩ := callDispatchChecked_inPlace_inert ctx st epId ep
-                  tid r rt rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                  (hMsg cap.badge (cap.rights.mem .grant) hS)
+                  tid r rt rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                  (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hInert hFlow
                 rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
@@ -3269,12 +3269,12 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                   have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
                   have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
                   obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace_transfer ctx st epId ep tid r rt
-                    rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
-                    (hMsg cap.badge (cap.rights.mem .grant) hSome)
+                    rid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
+                    (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
-                  rw [hD, TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _
+                  rw [hD, TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hTr hShort,
                     receiverCapTarget?_eq_capTargetOf hT, hb]
                   have hEq := callRendezvousCaps_eq_delivered st epId tid r rt.queueNext rid
@@ -3313,7 +3313,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 | some ep => ep.receiveQ.head | none => none) = none := by
               rw [hE]; exact hH
             have hReq := sendCapRequest_of_no_receiver st epId tid
-              (.frame cap.badge (cap.rights.mem .grant)) (by simp only [hE, Option.bind_some, hH])
+              (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) (by simp only [hE, Option.bind_some, hH])
             unfold endpointCallCheckedArmGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked

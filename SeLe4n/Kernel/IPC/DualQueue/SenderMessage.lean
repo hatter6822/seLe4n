@@ -671,25 +671,49 @@ and IPC buffer, and whichever arm delivers them reads them there
 (`sendPayloadMessage`), so a send that meets a waiting receiver and one that
 blocks until a receive takes it deliver the same words.
 
-* `frame badge grant` -- an ordinary send: the message is the sender's frame
-  (`senderFrameMessage`) under its capability's badge; the grant right decides
-  only the capability request (`sendPayloadCapRequest`).
-* `fault f ctx badge` -- the one message the kernel writes: a fault, delivered
-  under the handler capability's badge (`faultMessage`). -/
+* `frame badge grant grantReply` -- an ordinary send: the message is the
+  sender's frame (`senderFrameMessage`) under its capability's badge; the grant
+  right decides the capability request (`sendPayloadCapRequest`), and the grant
+  and grant-reply rights together decide whether a call is linked to the
+  receiver's reply object (`SendPayload.canLinkReply`).
+* `fault f ctx badge linkReply` -- the one message the kernel writes: a fault,
+  delivered under the handler capability's badge (`faultMessage`); `linkReply`
+  is the handler capability's `Grant || GrantReply` (seL4's `sendFaultIPC`
+  hands `sendIPC` both rights of the handler capability). -/
 inductive SendPayload where
-  | frame (badge : Option SeLe4n.Badge) (grant : Bool)
-  | fault (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge)
+  | frame (badge : Option SeLe4n.Badge) (grant grantReply : Bool)
+  | fault (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge) (linkReply : Bool)
 
 /-- The badge a send's capability carries. -/
 @[inline] def SendPayload.badge : SendPayload → Option SeLe4n.Badge
-  | .frame b _ => b
-  | .fault _ _ b => b
+  | .frame b _ _ => b
+  | .fault _ _ b _ => b
 
 /-- Whether a send may transfer capabilities: an ordinary send whose capability
 had the grant right; a fault never transfers authority. -/
 @[inline] def SendPayload.grant : SendPayload → Bool
-  | .frame _ g => g
-  | .fault _ _ _ => false
+  | .frame _ g _ => g
+  | .fault _ _ _ _ => false
+
+/-- The capability's `GrantReply` right (seL4's `canGrantReply`); for a fault,
+whether the handler capability had `Grant` or `GrantReply`. -/
+@[inline] def SendPayload.grantReply : SendPayload → Bool
+  | .frame _ _ gr => gr
+  | .fault _ _ _ l => l
+
+/-- **Whether a call through this payload is linked to the receiver's reply
+object**: seL4's `canGrant || canGrantReply` in `sendIPC` / `receiveIPC`.  A
+call that may not link still delivers its message; its caller goes `Inactive`
+and receives no reply. -/
+@[inline] def SendPayload.canLinkReply (p : SendPayload) : Bool :=
+  p.grant || p.grantReply
+
+/-- **Whether a fault sent through this handler capability is linked to the
+handler's reply object**: the capability's `Grant` or `GrantReply` right, the
+two rights seL4's `sendFaultIPC` hands `sendIPC` (`capCanGrant`,
+`capCanGrantReply`), carried by the fault payload (`SendPayload.fault`). -/
+@[inline] def _root_.SeLe4n.Model.Capability.canLinkReply (cap : Capability) : Bool :=
+  cap.rights.mem .grant || cap.rights.mem .grantReply
 
 /-- WS-ZA ZA4.7: the decode of a sender's saved frame, looked up by its id: a
 thread that does not exist has no frame, and its decode is a refusal. -/
@@ -705,37 +729,37 @@ badge -- the same read the receive that takes a blocked sender
 makes (`sendPayloadMessage_frame_eq_blockedSenderMessage`). -/
 @[inline] def sendPayloadMessage (st : SystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b _ => senderFrameMessage (senderFrameDecode st sender) b
-  | .fault f ctx b => faultMessage f ctx b
+  | .frame b _ _ => senderFrameMessage (senderFrameDecode st sender) b
+  | .fault f ctx b _ => faultMessage f ctx b
 
 /-- WS-ZA ZA4.7: **the capabilities a send transfers** to a waiting receiver:
 the frame's request (`senderFrameCapRequest`) under the capability's grant
 right, none for a fault. -/
 def sendPayloadCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     SendPayload → Option (Capability × Array SeLe4n.CPtr)
-  | .frame _ g => senderFrameCapRequest st sender tcb g
-  | .fault _ _ _ => none
+  | .frame _ g _ => senderFrameCapRequest st sender tcb g
+  | .fault _ _ _ _ => none
 
 /-- WS-ZA ZA4.7: **both arrival orders deliver one message**: an ordinary send
 that blocks records its capability's badge and grant right (`TCB.setSendCap`),
 and the receive that takes it reads what the send to a waiting receiver
 delivers. -/
 theorem sendPayloadMessage_frame_eq_blockedSenderMessage (st : SystemState)
-    (sender : SeLe4n.ThreadId) (tcb : TCB) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (sender : SeLe4n.ThreadId) (tcb : TCB) (badge : Option SeLe4n.Badge) (grant grantReply : Bool)
     (hT : st.getTcb? sender = some tcb) :
-    blockedSenderMessageOf (tcb.setSendCap badge grant) (blockedSenderDecode st sender tcb) =
-      sendPayloadMessage st sender (.frame badge grant) := by
+    blockedSenderMessageOf (tcb.setSendCap badge grant grantReply) (blockedSenderDecode st sender tcb) =
+      sendPayloadMessage st sender (.frame badge grant grantReply) := by
   simp [blockedSenderMessageOf, sendPayloadMessage, senderFrameDecode, hT]
 
 /-- WS-ZA ZA4.7: and it is within the payload bound. -/
 theorem sendPayloadMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (p : SendPayload) : (sendPayloadMessage st sender p).bounded := by
   cases p with
-  | frame b g =>
+  | frame b g gr =>
     simp only [sendPayloadMessage, senderFrameMessage]
     split
     · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
-  | fault f ctx b => exact faultMessage_bounded f ctx b
+  | fault f ctx b _ => exact faultMessage_bounded f ctx b
 
 end SeLe4n.Kernel

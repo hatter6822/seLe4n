@@ -844,7 +844,7 @@ theorem endpointSendDual_preserves_endpointQueueNoDup
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hNoDup1 := endpointQueueEnqueue_preserves_endpointQueueNoDup endpointId false sender st st1 hInv hDQSI1 hObjInv
               (fun ep' hEp' => by simp only [Bool.false_eq]; rw [hEp'] at hObj; cases hObj; exact hHead) hEnq
-            exact endpointQueueNoDup_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueNoDup _ _ <|
+            exact endpointQueueNoDup_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueNoDup _ _ <|
               storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup st1 st2 sender (.blockedOnSend endpointId) none hNoDup1 hObjInv1 hMsg
 
 /-- V3-K-op-5: endpointReceiveDual preserves endpointQueueNoDup.
@@ -1103,7 +1103,7 @@ theorem endpointCall_preserves_endpointQueueNoDup
             obtain ⟨_, rfl⟩ := hStep
             have hNoDup1 := endpointQueueEnqueue_preserves_endpointQueueNoDup endpointId false caller st st1 hInv hDQSI1 hObjInv
               (fun ep' hEp' => by simp only [Bool.false_eq]; rw [hEp'] at hObj; cases hObj; exact hHead) hEnq
-            exact endpointQueueNoDup_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueNoDup _ _ <|
+            exact endpointQueueNoDup_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueNoDup _ _ <|
               storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup st1 st2 caller _ none hNoDup1 hObjInv1 hMsg
 
 /-- V3-K-op-7: endpointReplyRecv preserves endpointQueueNoDup.
@@ -1367,7 +1367,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
               | some tcb =>
                 have := lookupTcb_some_objects st sender tcb hL
                 rw [← h, hObj] at this; cases this
-            exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_ipcStateQueueMembershipConsistent st2 sender <|
+            exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_ipcStateQueueMembershipConsistent st2 sender <|
               storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipConsistent
                 st1 st2 sender (.blockedOnSend endpointId) none hV3J1 hObjInv1 hMsg
                 (fun epId hEq => by
@@ -1751,7 +1751,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
               | some tcb =>
                 have := lookupTcb_some_objects st caller tcb hL
                 rw [← h, hObj] at this; cases this
-            exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_ipcStateQueueMembershipConsistent st2 caller <|
+            exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_ipcStateQueueMembershipConsistent st2 caller <|
               storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipConsistent
                 st1 st2 caller (.blockedOnCall endpointId) none hV3J1 hObjInv1 hMsg
                 (fun _ h => absurd h (by simp))
@@ -2587,7 +2587,7 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
+            refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
               storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent st1 st2 sender
                 (.blockedOnSend endpointId) none hQNBC1 hObjInv1 hMsg ?_ ?_
             · -- hFwd: the enqueued sender has `queueNext = none`, so the forward link is vacuous.
@@ -2714,7 +2714,7 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
               endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent
                 endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) none
                 hObjInv hObj hInv
@@ -2791,7 +2791,7 @@ theorem endpointSendDual_preserves_queueNextTargetBlocked
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueNextTargetBlocked _ _ <|
+            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueNextTargetBlocked _ _ <|
               endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked
                 endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) none
                 hObjInv hObj hQNTB hInv hDQSI hFreshSender hSendTailFresh (by simp) hEnq hMsg
@@ -2868,7 +2868,7 @@ theorem endpointSendDual_preserves_endpointQueueLinksOnlyBlocked
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
+            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
               endpointQueueEnqueue_blockStore_establishes_endpointQueueLinksOnlyBlocked
                 endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) none
                 hObjInv hObj hQNTB hInv hDQSI hFreshSender hSendTailFresh (by simp) hEnq hMsg
@@ -3191,7 +3191,7 @@ theorem endpointSendDual_preserves_ipcStateQueueConsistent
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hObjInvEnq : st1.objects.invExt :=
               endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
-            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
+            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvEnq hMsg
                 (endpointQueueEnqueue_preserves_ipcStateQueueConsistent endpointId false sender st st1
                   hObjInv hEnq hInv)
@@ -3854,7 +3854,7 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
             have hObjInvEnq := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
-            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
+            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvEnq hMsg
                 (endpointQueueEnqueue_preserves_ipcStateQueueConsistent endpointId false caller st st1
                   hObjInv hEnq hInv)
@@ -5881,7 +5881,7 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
             have hP2 : blockedOnReplyHasReplyObject st2 :=
               storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
                 st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hP1 (by simp) hMsg
-            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointReceiveDual` **establishes** the third clause of
@@ -6363,7 +6363,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
               st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hP1 (by simp) hMsg
-            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: storing any **non-TCB** object frames the third clause — the
@@ -10074,7 +10074,7 @@ theorem endpointCall_sameSchedContextBindings
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hS2 := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hMsg
-            exact (hS1.trans hS2).trans (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+            exact (hS1.trans hS2).trans (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
 
 
 open SeLe4n.Model.SystemState in
@@ -10138,7 +10138,7 @@ theorem endpointCall_kindPreservingWrite
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hS2 := storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hMsg
-            exact (hS1.trans hS2).trans ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 caller))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))))
+            exact (hS1.trans hS2).trans ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 caller))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)))))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCall` frames the SchedContext/owner side forward. Rendezvous: pop the receiver
@@ -10231,7 +10231,7 @@ theorem endpointCall_donationOwnerFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 caller (.blockedOnCall endpointId) none
               (fun tcb hTcb_s1 ep' rt => ?_) hObjInv1 hMsg)).trans
-              (((donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+              (((donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
             obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st1
               caller tcb hObjInv hEnq hTcb_s1
             exact fun hc => hCallerNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)
@@ -10318,7 +10318,7 @@ theorem endpointCall_timeoutBudgetFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 caller (.blockedOnCall endpointId) none
               hObjInv1 hMsg)).trans
-              (((timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+              (((timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointCall` preserves `blockedThreadTimeoutConsistent` from the
@@ -10385,7 +10385,7 @@ theorem endpointSendDual_sameSchedContextBindings
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg)).trans
-              (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+              (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
 
 
 open SeLe4n.Model.SystemState in
@@ -10440,7 +10440,7 @@ theorem endpointSendDual_kindPreservingWrite
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hMsg)).trans
-              ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 sender))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))))
+              ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 sender))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)))))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` frames the SchedContext/owner side forward. Rendezvous: pop the
@@ -10509,7 +10509,7 @@ theorem endpointSendDual_donationOwnerFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 sender (.blockedOnSend endpointId) none
               (fun tcb hTcb_st1 ep' rt => ?_) hObjInv1 hMsg)).trans
-              (((donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+              (((donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
             obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false sender st st1
               sender tcb hObjInv hEnq hTcb_st1
             exact fun hc => hSenderNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)
@@ -10584,7 +10584,7 @@ theorem endpointSendDual_timeoutBudgetFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 sender (.blockedOnSend endpointId) none
               hObjInv1 hMsg)).trans
-              (((timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+              (((timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))))
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointSendDual` preserves `blockedThreadTimeoutConsistent` from the
@@ -11277,7 +11277,7 @@ theorem endpointSendDual_preserves_replyCallerLinkageReciprocal
             refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked st1 st2
               sender (.blockedOnSend endpointId) none
               (hF1.unlinked_forward hSenderUnlinked) hObjInv1 hStore)).trans ?_
-            exact ((replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (replyLinkageFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))
+            exact ((replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (replyLinkageFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)))
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointCall` **establishes** `replyCallerLinkageReciprocal`
@@ -11384,7 +11384,7 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
             refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
               st1 st2 caller (.blockedOnCall endpointId) none
               (hF1.unlinked_forward hCallerUnlinked) hObjInv1 hMsg)).trans ?_
-            exact ((replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (replyLinkageFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))
+            exact ((replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (replyLinkageFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)))
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointReceiveDual` **establishes** `replyCallerLinkageReciprocal`
@@ -13789,7 +13789,7 @@ theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
               st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hP1 ?_ hMsg
-            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
+            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
             · -- the enqueue preserves the sender's `ipcState`; carry `hSenderNotRecv` to `st1`.
               intro tcb' hTcb' ep' h
               obtain ⟨tcb0, hTcb0, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward
@@ -13841,7 +13841,7 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
               st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hP1 ?_ hMsg
-            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
+            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
             · -- caller's `ipcState` is preserved by the enqueue; carry `hCallerNotRecv` to `st1`.
               intro tcb' hTcb' ep' h
               obtain ⟨tcb0, hTcb0, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward
@@ -15955,7 +15955,7 @@ theorem endpointCall_preserves_queueNextBlockingConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
+            refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
               storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent st1 st2 caller
                 (.blockedOnCall endpointId) none hQNBC1 hObjInv1 hMsg ?_ ?_
             · intro b tcbTid tcbB hSenderObj hSenderNext _
@@ -16058,7 +16058,7 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
               endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent
                 endpointId false caller st st1 st2 ep (.blockedOnCall endpointId) none
                 hObjInv hObj hInv
@@ -18368,7 +18368,7 @@ theorem endpointSendDual_preserves_queueHeadBlockedConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
+            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
               endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
                 endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) none
                 hObjInv hObj hQHBC hFreshSender (by simp) hEnq hMsg
@@ -20112,7 +20112,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
+            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
               endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
                 endpointId false caller st st1 st2 ep (.blockedOnCall endpointId) none
                 hObjInv hObj hQHBC hFreshCaller (by simp) hEnq hMsg
@@ -20246,7 +20246,7 @@ theorem endpointCall_preserves_queueNextTargetBlocked
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_queueNextTargetBlocked _ _ <|
+            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_queueNextTargetBlocked _ _ <|
               endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked
                 endpointId false caller st st1 st2 ep (.blockedOnCall endpointId) none
                 hObjInv hObj hQNTB hTail hDQSI hFreshCaller hSendTailFresh (by simp) hEnq hMsg
@@ -20378,7 +20378,7 @@ theorem endpointCall_preserves_endpointQueueLinksOnlyBlocked
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
+            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
               endpointQueueEnqueue_blockStore_establishes_endpointQueueLinksOnlyBlocked
                 endpointId false caller st st1 st2 ep (.blockedOnCall endpointId) none
                 hObjInv hObj hQNTB hTail hDQSI hFreshCaller hSendTailFresh (by simp) hEnq hMsg

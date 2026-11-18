@@ -188,7 +188,7 @@ theorem senderFrameCapRequest_routedLong (st : SystemState) (tid : SeLe4n.Thread
 
 theorem sendCapRequest_routedLong (st : SystemState) (epId : SeLe4n.ObjId)
     (tid r : SeLe4n.ThreadId) (stcb : TCB) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
-    (mi : MessageInfo) (sid : SyscallId) (b : Option SeLe4n.Badge) (g : Bool)
+    (mi : MessageInfo) (sid : SyscallId) (b : Option SeLe4n.Badge) (g gr : Bool)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
     (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
     (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
@@ -196,7 +196,7 @@ theorem sendCapRequest_routedLong (st : SystemState) (epId : SeLe4n.ObjId)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    sendCapRequest st epId tid (.frame b g) =
+    sendCapRequest st epId tid (.frame b g gr) =
       frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
   unfold sendCapRequest
   rw [hRecv]
@@ -213,10 +213,10 @@ theorem routedLongTransferringMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (hGt : 4 < mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    ∀ badge grant, (st.getTcb? tid).isSome = true →
-      sendPayloadMessage st tid (.frame badge grant) =
+    ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+      sendPayloadMessage st tid (.frame badge grant grantReply) =
         longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
-  intro badge grant hS
+  intro badge grant grantReply hS
   obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp hS
   obtain ⟨-, -, hMax, -, -⟩ :=
     decodeSyscallArgsFromState_of_routedTransferring st tid _ _ 32 sid capAddr mi hR

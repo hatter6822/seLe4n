@@ -511,7 +511,7 @@ private def runBadgeTruncationNegativeChecks : IO Unit := do
 
   expectErr "dual-queue send on missing object"
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
-      (.frame none false) baseState)
+      (.frame none false true) baseState)
     .objectNotFound
 
 /-- WS-H12d/A-09: IPC message payload bounds enforcement (registers > 120 / caps > 3
@@ -568,7 +568,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- ==========================================================================
 
   let (_, stDualSend1) ← expectOkSt "dual queue send blocks sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   match (stDualSend1.objects[endpointId]? : Option KernelObject) with
   | some (.endpoint ep) =>
       if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
@@ -588,9 +588,9 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   -- FIFO check across two blocked senders and one receiver consuming twice.
   let (_, stDualFifo1) ← expectOkSt "dual queue fifo enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stDualFifo2) ← expectOkSt "dual queue fifo enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stDualFifo1)
   expectThreadQueueLinks "dual queue fifo sender 7 links to sender 8"
     stDualFifo2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 8))
   expectThreadQueueLinks "dual queue fifo sender 8 links from sender 7"
@@ -608,11 +608,11 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   -- Arbitrary O(1) remove with queuePPrev metadata: remove middle waiter 8 from [7,8,9].
   let (_, stDualRemove1) ← expectOkSt "dual queue remove enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stDualRemove2) ← expectOkSt "dual queue remove enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stDualRemove1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stDualRemove1)
   let (_, stDualRemove3) ← expectOkSt "dual queue remove enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false) stDualRemove2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false true) stDualRemove2)
   let (_, stDualRemove4) ← expectOkSt "dual queue remove middle sender 8"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRemove3)
   expectThreadQueueLinks "dual queue remove middle clears sender 8 links"
@@ -654,7 +654,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{toString fifoFirst},{toString fifoSecond}]"
 
   expectErr "dual queue sender double-wait prevention"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stDualFifo1)
     .alreadyWaiting
 
   let (_, stDualRecvWait1) ← expectOkSt "dual queue receiver wait #1"
@@ -668,7 +668,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   expectThreadQueueLinks "dual queue receiver fifo receiver 8 links from receiver 9"
     stDualRecvWait2 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 9)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 9))) none
   let (_, stDualRecvWake) ← expectOkSt "dual queue sender wakes first waiting receiver"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stDualRecvWait2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stDualRecvWait2)
   expectThreadQueueLinks "dual queue sender wake clears first receiver links"
     stDualRecvWake (SeLe4n.ThreadId.ofNat 9) none none none
   expectThreadQueueLinks "dual queue sender wake keeps second receiver singleton head"
@@ -1033,11 +1033,11 @@ Four assertions the tree could not make before this cut (the fourth added at
    is where a fact about a queue's head belongs. -/
 private def runDualQueuePPrevPairingChecks : IO Unit := do
   let (_, stPair1) ← expectOkSt "pprev pairing enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stPair2) ← expectOkSt "pprev pairing enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stPair1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stPair1)
   let (_, stPair3) ← expectOkSt "pprev pairing enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false) stPair2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false true) stPair2)
 
   -- (1) the live queue satisfies the invariant, and the guard holds on it.
   let sendQOf (st : SystemState) : IO IntrusiveQueue :=
@@ -1135,7 +1135,7 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   -- where it can be said: `intrusiveQueueWellFormed`'s **P2**, a fact about a
   -- queue's head, which this case is the witness for.
   let (_, stSingle) ← expectOkSt "pprev pairing enqueue a single sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let stHeadNoBackPointer ← expectOkVal "pprev pairing clear the SOLE member's back-pointer"
     (corruptThreadQueueLinks stSingle (SeLe4n.ThreadId.ofNat 7) none none none)
   let qSingle ← sendQOf stHeadNoBackPointer
@@ -1245,9 +1245,9 @@ Four assertions.
    the third assertion would pass for a guard that refused everything. -/
 private def runDualQueueTailPairingChecks : IO Unit := do
   let (_, stTail1) ← expectOkSt "tail pairing enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stTail2) ← expectOkSt "tail pairing enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stTail1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stTail1)
 
   let sendQOf (st : SystemState) : IO IntrusiveQueue :=
     match st.getEndpoint? endpointId with
@@ -1333,7 +1333,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   -- links are exactly what the kernel writes; only the second endpoint's boundary
   -- is written by hand.
   let (_, stSingle) ← expectOkSt "head disjoint: enqueue the sole sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let stShared ← expectOkVal "head disjoint: a SECOND endpoint claims the same head"
     (corruptEndpointQueueHeads stSingle otherEndpointId none (some (SeLe4n.ThreadId.ofNat 7)))
 
@@ -1426,7 +1426,7 @@ private def runEndpointQueueLinksOnlyBlockedChecks : IO Unit := do
   let ready := SeLe4n.ThreadId.ofNat 7
   -- (1) the live send: thread 8 is `.blockedOnSend` and the sole sendQ member.
   let (_, stSent) ← expectOkSt "queue links: enqueue the sole sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId sender (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId sender (.frame none false true) baseState)
   expectBool "the live queue satisfies the check"
     (endpointQueueLinksOnlyBlockedBool stSent) true
   let stEmptied ← expectOkVal "queue links: empty the endpoint's queues"
@@ -1736,7 +1736,7 @@ private def runAuditCoverageChecks : IO Unit := do
       bootCoreId rrSetupState)
   -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
   let (_, stCallSetup2) ← expectOkOnCore "replyRecv setup: caller calls endpoint"
-    (SeLe4n.Kernel.endpointCallOnCore endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) bootCoreId
+    (SeLe4n.Kernel.endpointCallOnCore endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) bootCoreId
       stCallSetup1)
   -- Verify caller is now blocked on reply
   match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
@@ -1766,7 +1766,7 @@ private def runAuditCoverageChecks : IO Unit := do
   let (_, stNoStashRecv) ← expectOkSt "no-reply receive setup (server blocks, no stash)"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) none baseState)
   expectErr "Call with no server reply object fails closed (no unanswerable blockedOnReply)"
-    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stNoStashRecv)
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stNoStashRecv)
     .replyCapInvalid
   IO.println "endpointReplyRecv coverage checks passed"
 
@@ -2152,7 +2152,7 @@ private def runWSH15Checks : IO Unit := do
   expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } none (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
-      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
+      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false true)) st)
     (.invalidCapability 0)
 
   -- H15-NEG-06: syscallLookupCap with no CSpace root capability → invalidRoot
@@ -3072,11 +3072,11 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   -- Block thread 7 on send (no receiver → enqueues on sendQ)
   let (_, stSendBlocked) ← expectOkSt "setup: send blocks thread 7"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) blockedState)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) blockedState)
 
   -- Attempt another send on same endpoint while already blocked → alreadyWaiting
   expectErr "blocked-on-send rejects second send"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) stSendBlocked)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) stSendBlocked)
     .alreadyWaiting
 
   -- Block thread 7 on receive instead
@@ -3094,7 +3094,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   -- Attempt send while blocked on notification → alreadyWaiting
   expectErr "blocked-on-notification rejects send"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) stNtfnBlocked)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) stNtfnBlocked)
     .alreadyWaiting
 
   -- Cross-type: blocked on receive → send to DIFFERENT endpoint rejected
@@ -3104,7 +3104,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let stRecvBlockedWithEp2 : SystemState := { stRecvBlocked with
     objects := stRecvBlocked.objects.insert epId2 (.endpoint (Endpoint.ofQueues {} {})) }
   expectErr "blocked-on-receive rejects send to different endpoint"
-    (SeLe4n.Kernel.endpointSendDual epId2 tid7 (.frame none false) stRecvBlockedWithEp2)
+    (SeLe4n.Kernel.endpointSendDual epId2 tid7 (.frame none false true) stRecvBlockedWithEp2)
     .alreadyWaiting
 
   -- Cross-type: blocked on send → receive from DIFFERENT endpoint rejected
@@ -4308,7 +4308,7 @@ private def r1FaultyState (st : SystemState) : SystemState :=
 
 private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stQueued)
+    (.frame none (r1EndpointRights.mem .grant) true) (r1Framed stQueued)
   match result with
   | .ok _ =>
       IO.println "positive check passed [R1-NEG-01 endpointCallWithCaps healthy state succeeds]"
@@ -4318,7 +4318,7 @@ private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
 
 private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stFaulty)
+    (.frame none (r1EndpointRights.mem .grant) true) (r1Framed stFaulty)
   match result with
   | .ok _ =>
       throw <| IO.userError

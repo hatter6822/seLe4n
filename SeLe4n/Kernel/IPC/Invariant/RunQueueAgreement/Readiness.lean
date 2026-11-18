@@ -128,11 +128,11 @@ theorem blockThenDescheduleRecord_readyKeptStage {st st1 st2 st3 : SystemState}
     (pre : SystemState.RunQueueStage st st1) (hS : storeTcbIpcStateAndMessage st1 t s m = .ok st2)
     (post : SystemState.RunQueueStage st2 st3) (hC1 : st1.scheduler.currentOnCore c = some t)
     (hC3 : st3.scheduler.currentOnCore c = some t) (hNI : isIdleThreadId t = false)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    readyKeptStage (· = t) st (recordSendCap (removeRunnableOnCore st3 t c) t badge grant) :=
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    readyKeptStage (· = t) st (recordSendCap (removeRunnableOnCore st3 t c) t badge grant grantReply) :=
   (blockThenDeschedule_readyKeptStage pre hS post hC1 hC3 hNI).trans
     (pre.blockThenDeschedule hS post hC1 hC3 hNI).1
-    (.of_stage (recordSendCap_runQueueStage _ t badge grant))
+    (.of_stage (recordSendCap_runQueueStage _ t badge grant grantReply))
 
 /-! ### Send and receive -/
 
@@ -168,7 +168,7 @@ theorem endpointSendDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
           exact blockThenDescheduleRecord_readyKeptStage (endpointQueueEnqueue_runQueueStage hE)
             hS2 (SystemState.RunQueueStage.refl _) hC1
             (currentOnCore_of_scheduler_eq
-              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _ _
   · split <;> exact .refl _
 
 theorem endpointSendDualWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)

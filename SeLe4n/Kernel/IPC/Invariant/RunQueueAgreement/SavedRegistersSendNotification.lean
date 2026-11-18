@@ -174,10 +174,10 @@ theorem of_removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : 
     removeRunnableOnCore_objects_invExt st tid c hInv⟩
 
 theorem of_recordSendCap (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (recordSendCap st tid badge grant) :=
-  ⟨.of_runLinks (recordSendCap_objectsAgreeOffRunLinks st tid badge grant),
-    recordSendCap_objects_invExt st tid badge grant hInv⟩
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (recordSendCap st tid badge grant grantReply) :=
+  ⟨.of_runLinks (recordSendCap_objectsAgreeOffRunLinks st tid badge grant grantReply),
+    recordSendCap_objects_invExt st tid badge grant grantReply hInv⟩
 
 /-- The notification-queue link writes rewrite two links of a thread. -/
 theorem of_ntfnLinksRewritten {st s : SystemState} (h : ntfnLinksRewritten st s) :
@@ -471,7 +471,7 @@ theorem endpointSendDualOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
           have h1 := endpointQueueEnqueue_savedRegsUnwritten hInv hEnq
           have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
           have h3 := h2.trans (savedRegsUnwritten.of_removeRunnableOnCore st2 sender c h2.2)
-          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ sender _ _ h3.2)
+          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ sender _ _ _ h3.2)
   · split <;> exact .refl hInv
 
 /-- The capability transfer writes CNodes and the derivation tree alone. -/

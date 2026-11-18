@@ -361,7 +361,7 @@ theorem senderFrameCapRequest_routed (st : SystemState) (tid : SeLe4n.ThreadId) 
 
 theorem sendCapRequest_routed (st : SystemState) (epId : SeLe4n.ObjId) (tid r : SeLe4n.ThreadId)
     (stcb : TCB) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (sid : SyscallId) (b : Option SeLe4n.Badge) (g : Bool)
+    (sid : SyscallId) (b : Option SeLe4n.Badge) (g gr : Bool)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
     (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
     (hR : Architecture.RegisterDecode.registerRoutedSyscall
@@ -369,7 +369,7 @@ theorem sendCapRequest_routed (st : SystemState) (epId : SeLe4n.ObjId) (tid r : 
       SeLe4n.arm64DefaultLayout rf 32 =
       .transferring sid capAddr mi)
     (hLen : mi.length ≤ 4) :
-    sendCapRequest st epId tid (.frame b g) =
+    sendCapRequest st epId tid (.frame b g gr) =
       frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
   unfold sendCapRequest
   rw [hRecv]

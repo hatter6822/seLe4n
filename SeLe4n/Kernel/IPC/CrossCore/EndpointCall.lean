@@ -225,7 +225,7 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- ZA4.7: and on what its frame asks for, `sendCapRequest`). Defaulted to
     -- an ungranted frame, which transfers nothing, so every capless call site
     -- reduces definitionally to the pre-RR7.8 footprint.
-    (payload : SendPayload := .frame none false) : LockSet :=
+    (payload : SendPayload := .frame none false false) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
     (endpointCallServerFirstReply? st endpointId)
@@ -278,7 +278,7 @@ destination is `rendezvousCapsDestination?`, the expression
 `endpointSendDualWithCaps` itself evaluates. -/
 def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (payload : SendPayload := .frame none false) : LockSet :=
+    (payload : SendPayload := .frame none false false) : LockSet :=
   lockSet_endpointSend sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
     (rendezvousCapsDestination? st endpointId sender payload)
@@ -407,7 +407,7 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
               | .error e => (st, .error e)
               | .ok st'' =>
                   (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
-                    payload.badge payload.grant, .ok none)
+                    payload.badge payload.grant payload.grantReply, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -461,7 +461,7 @@ theorem endpointCallOnCore_noReceiver_eq
         = .ok st'') :
     endpointCallOnCore endpointId caller payload executingCore st
       = (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
-          payload.badge payload.grant, .ok none) := by
+          payload.badge payload.grant payload.grantReply, .ok none) := by
   unfold endpointCallOnCore
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
@@ -627,7 +627,7 @@ kind permitted for `.call`. This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false false) :
     ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
@@ -642,7 +642,7 @@ theorem lockSet_endpointCallOnCore_correct
 message — the send side's first resolved-footprint correctness statement. -/
 theorem lockSet_endpointSendOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false false) :
     ∀ p ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .send :=
   lockSet_consistent_send sender cnodeRootObjId endpointId
@@ -2031,7 +2031,7 @@ theorem endpointCallOnCore_preserves_objects_invExt
         | ok st'' =>
           simp only
           have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          exact recordSendCap_objects_invExt _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
+          exact recordSendCap_objects_invExt _ _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2099,7 +2099,7 @@ theorem endpointCallOnCore_kindPreservingWrite
           exact ((w1.trans w2).trans
             ((removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
               (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
-            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _).kindPreserving
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2248,7 +2248,7 @@ theorem endpointCallOnCore_sameSchedContextBindings
           simp only
           have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg)
           exact (hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))).trans
-            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
+            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2616,8 +2616,8 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
               (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
           exact schedulerInvariantBase_smp_of_kindPreserving
             (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h2)
-            (recordSendCap_scheduler _ _ _ _)
-            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
+            (recordSendCap_scheduler _ _ _ _ _)
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _).kindPreserving
     | some headTid =>
       -- The rendezvous branch: the queued receiver is popped, delivered and woken.
       simp only

@@ -292,7 +292,7 @@ private theorem cmwpFoldBody_of_objectsAgreeOffRunLinks
       exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
     rw [hn]
   | some tc =>
-    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
+    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
       h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st waiterTid tc).mp e)
     rw [(SystemState.getTcb?_eq_some_iff st' waiterTid tc').mpr ht']
     simp only [effectiveSchedParams_of_objectsAgreeOffRunLinks st st' _ h]
@@ -324,7 +324,7 @@ theorem blockingServer_of_objectsAgreeOffRunLinks
       exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
     rw [hn]
   | some tc =>
-    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
+    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
       h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st t tc).mp e)
     rw [(SystemState.getTcb?_eq_some_iff st' t tc').mpr ht']; rfl
 

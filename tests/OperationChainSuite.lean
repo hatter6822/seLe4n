@@ -109,8 +109,8 @@ private def chain2SendSendReceiveFifo : IO Unit := do
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
   let msg2 : IpcMessage := .empty
-  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge false) st0)
-  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge false) st1)
+  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge false true) st0)
+  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge false true) st1)
   let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 none st2)
   expect "chain2: FIFO sender order" (sender = tid1)
   assertInvariants "chain2: send→send→receive" st3
@@ -339,9 +339,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
-  let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false) st0)
-  let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false) st1)
-  let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC (.frame none false) st2)
+  let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false true) st0)
+  let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false true) st1)
+  let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC (.frame none false true) st2)
   let (firstSender, st4) ← expectOkSt "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st3)
   let (secondSender, st5) ← expectOkSt "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st4)
   let (thirdSender, st6) ← expectOkSt "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st5)
@@ -355,9 +355,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: three-sender FIFO ordering" st6
 
-  let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false) st6)
+  let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false true) st6)
   let (interleaveFirst, st8) ← expectOkSt "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st7)
-  let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false) st8)
+  let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false true) st8)
   let (interleaveSecond, st10) ← expectOkSt "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st9)
   expect "chain8: interleaved receive #1 sender A" (interleaveFirst = tidA)
   expect "chain8: interleaved receive #2 sender B" (interleaveSecond = tidB)
@@ -750,7 +750,7 @@ private def chain12IpcCapTransfer : IO Unit := do
   let capAddrs : Array SeLe4n.CPtr :=
     #[SeLe4n.CPtr.ofNat 0, SeLe4n.CPtr.ofNat 1, SeLe4n.CPtr.ofNat 2]
   let (summary, st2) ← expectOkSt "chain12: send with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg capAddrs))
 
   -- Verify: one install into the receive slot, then the transfer stops.
@@ -825,7 +825,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   let msg : IpcMessage :=
     { registers := #[], badge := none }
   let (_, st2) ← expectOkSt "chain12b: send with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat srcSlot.toNat]))
 
   let receiverSlotFilled (st : SystemState) : Bool :=
@@ -870,7 +870,7 @@ private def ipcCapTransferRevocable : IO Unit := do
         { st1 with objects := st1.objects.insert senderCNode (.cnode (cn.insert srcSlot unrelatedCap)) }
     | _ => st1
   let (_, stStale) ← expectOkSt "chain12b: send after the source slot was rewritten"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stOverwritten sender msg #[SeLe4n.CPtr.ofNat srcSlot.toNat]))
   let (_, stStaleRevoke) ← expectOkSt "chain12b: revoke the rewritten slot"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId { cnode := senderCNode, slot := srcSlot } stStale)
@@ -883,7 +883,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   -- and a receive after the delete finds nothing at the address.
   let srcPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 5
   let (_, stParked) ← expectOkSt "chain12b: send blocks with no receiver"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st0 sender msg #[srcPtr]))
   expect "chain12b: the parked sender holds no message, only its frame"
     ((stParked.getTcb? sender).any (fun t => t.pendingMessage.isNone))
@@ -1067,12 +1067,12 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let (_, stA1) ← expectOkSt "chain12c: A — receiver blocks first"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryA, stA2) ← expectOkSt "chain12c: A — sender rendezvouses with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stA1 sender msg #[SeLe4n.CPtr.ofNat 5]))
 
   -- Ordering B: sender first (the send parks; the receive must install).
   let (summaryPark, stB1) ← expectOkSt "chain12c: B — sender parks with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   expect "chain12c: B — a parked send installs nothing yet"
     (summaryPark.results.isEmpty && !receiverSlotFilled stB1)
@@ -1098,10 +1098,10 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let (_, stC1) ← expectOkSt "chain12c: C — receiver blocks first (no grant)"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryC, stC2) ← expectOkSt "chain12c: C — non-granting sender rendezvouses"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stC1 sender msg #[SeLe4n.CPtr.ofNat 5]))
   let (_, stD1) ← expectOkSt "chain12c: D — non-granting sender parks"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   let ((_, summaryD), stD2) ← expectOkSt "chain12c: D — receiver dequeues the parked sender"
     (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none
@@ -1196,7 +1196,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   -- with `.replyRecv` and dequeues it.  This is the ordering that dropped the
   -- capabilities.
   let (stA1, sendResA) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant) true)
       bootCoreId
       (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   expect "chain12d: A — the request parks (no server waiting yet)"
@@ -1215,7 +1215,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   expect "chain12d: B — a blocked receive leg installs nothing yet"
     (summaryB0.results.isEmpty && !serverSlotFilled stB1)
   let (stB2, sendResB) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant) true)
       bootCoreId
       (SeLe4n.Testing.withSenderFrame stB1 nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
 
@@ -1238,7 +1238,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   -- transfer rather than the mere presence of a slot.
   let (stC1, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender
-      (.frame requestMsg.badge ((AccessRightSet.ofList [.read, .write]).mem .grant)) bootCoreId
+      (.frame requestMsg.badge ((AccessRightSet.ofList [.read, .write]).mem .grant) true) bootCoreId
       (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
@@ -1314,7 +1314,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
 
   -- A legitimate transfer: the sender parks, the receiver collects it.
   let (st1, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5])
   let (st2, res2) :=
     SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none
@@ -1374,7 +1374,7 @@ private def receiveTakesParkedSenderRegisters : IO Unit := do
 
   -- No receiver is waiting, so the sender blocks `.blockedOnSend`.
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (plainRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (plainRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame st0 sender msg)
   expect "chain12f: the sender parked holding no message"
     ((stParked.getTcb? sender).any (fun t =>
@@ -1470,7 +1470,7 @@ private def revokeWhileParkedTransfersNothing : IO Unit := do
 
   -- The sender parks with the source's address in its frame.
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5])
   expect "revoke-parked: the parked sender holds no message"
     ((stParked.getTcb? sender).any (fun t => t.pendingMessage.isNone))
@@ -1559,7 +1559,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
     { registers := #[], badge := none }
 
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 6])
 
   let slotFilled (st : SystemState) (cn : SeLe4n.ObjId) (s : SeLe4n.Slot) : Bool :=
@@ -1667,12 +1667,12 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   let (_, stA1) ← expectOkSt "chain12h: A — receiver blocks first"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryA, stA2) ← expectOkSt "chain12h: A — granting sender rendezvouses"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stA1 sender msg #[SeLe4n.CPtr.ofNat 5]))
 
   -- Ordering B: sender first (the send parks; the receive must install).
   let (_, stB1) ← expectOkSt "chain12h: B — granting sender parks"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   let ((_, summaryB), stB2) ← expectOkSt "chain12h: B — receiver dequeues the parked sender"
     (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none
@@ -1695,7 +1695,7 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   -- NEGATIVE, load-bearing: the grant right comes only from the endpoint
   -- capability (the payload's one grant bit, WS-ZA ZA4.7), so a frame naming a
   -- capability on a non-granting endpoint transfers nothing on either ordering.
-  let noGrantPayload : SeLe4n.Kernel.SendPayload := .frame msg.badge (noGrantRights.mem .grant)
+  let noGrantPayload : SeLe4n.Kernel.SendPayload := .frame msg.badge (noGrantRights.mem .grant) true
   let (_, stC1) ← expectOkSt "chain12h: C — receiver blocks first (endpoint denies)"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryC, stC2) ← expectOkSt "chain12h: C — sender names a capability the endpoint cannot grant"
@@ -1747,7 +1747,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
 
   let msg : IpcMessage := { registers := #[⟨99⟩], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat 0]))
 
   -- Without the grant right nothing is transferred (seL4's `doNormalTransfer`
@@ -1811,7 +1811,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let msg : IpcMessage := { registers := #[⟨77⟩], badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat 0, SeLe4n.CPtr.ofNat 1]))
 
   -- Verify: the endpoint cap is unwrapped, the notification cap installed.

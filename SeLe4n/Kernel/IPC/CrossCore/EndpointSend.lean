@@ -103,7 +103,7 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
                   -- The sender blocks on the core it is RUNNING on, holding its
                   -- message in its registers (WS-ZA ZA4.7, `recordSendCap`).
                   (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
-                    payload.badge payload.grant, .ok none)
+                    payload.badge payload.grant payload.grantReply, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -324,7 +324,7 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
               | .error e => (st, .error e)
               | .ok st'' =>
                   (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
-                    payload.badge payload.grant, .ok none)
+                    payload.badge payload.grant payload.grantReply, .ok none)
   | none =>
       if (st.getObject? endpointId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
@@ -392,7 +392,7 @@ theorem sendBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thread
     (hG : enqueuesInPlace st endpointId sender ep.sendQ.tail = true) :
     endpointSendDualOnCore endpointId sender payload executingCore st =
       (recordSendCap (removeRunnableOnCore (storeSendBlock st endpointId sender ep.sendTailCode)
-        sender executingCore) sender payload.badge payload.grant, .ok none) := by
+        sender executingCore) sender payload.badge payload.grant payload.grantReply, .ok none) := by
   obtain ⟨hEnq, hT, hF, hL⟩ :=
     endpointEnqueue_inPlace_eq st endpointId ep false sender t ep.sendQ.tail hE rfl hR hA hG
   have hRes : sender.isReserved = false := by

@@ -317,10 +317,10 @@ theorem unlinkReplyWaiterOpt_offSchedulerAgrees (st : SystemState) (w : SeLe4n.T
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
 fields off the IPC read view. -/
 theorem recordSendCap_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    OffSchedulerAgrees st (recordSendCap st tid badge grant) :=
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    OffSchedulerAgrees st (recordSendCap st tid badge grant grantReply) :=
   .of_runLinkStep (by unfold SystemState.onlyObjectsSchedulerDiffer; rfl)
-    (recordSendCap_objectsAgreeOffRunLinks st tid badge grant)
+    (recordSendCap_objectsAgreeOffRunLinks st tid badge grant grantReply)
 
 /-- SM6.D: `removeRunnableOnCore` (the per-core dequeue) agrees with its
 input off-scheduler. -/
@@ -472,19 +472,19 @@ is the TCB of the other store with its run-queue fields rewritten. -/
 theorem lookupTcb_back_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffSchedulerLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
     (hL : lookupTcb s2 tid = some t') :
-    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg icgr ifs : Bool),
       lookupTcb s1 tid = some t ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } := by
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcCanGrantReply := icgr, ipcFaultSend := ifs } := by
   unfold lookupTcb at hL ⊢
   cases hr : tid.isReserved
   · simp only [hr, Bool.false_eq_true, ↓reduceIte] at hL ⊢
-    obtain ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, ht, e⟩ :=
+    obtain ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, icgr, ifs, ht, e⟩ :=
       h.get_tcb_back ((SystemState.getTcb?_eq_some_iff s2 tid t').mp hL)
-    exact ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, (SystemState.getTcb?_eq_some_iff s1 tid t).mpr ht, e⟩
+    exact ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, icgr, ifs, (SystemState.getTcb?_eq_some_iff s1 tid t).mpr ht, e⟩
   · simp only [hr, ↓reduceIte] at hL; cases hL
 
 open SeLe4n.Model.SystemState in
@@ -502,7 +502,7 @@ theorem modifyTcb_offSchedulerAgrees {s1 s2 r2 : SystemState}
   cases hL2 : lookupTcb s2 tid with
   | none => simp only [hL2] at h2; cases h2
   | some tcb2 =>
-    obtain ⟨tcb, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, hL, hTcbEq⟩ :=
+    obtain ⟨tcb, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, icgr, ifs, hL, hTcbEq⟩ :=
       lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hL2
     simp only [hL2] at h2
     simp only [hL]
@@ -518,7 +518,7 @@ theorem modifyTcb_offSchedulerAgrees {s1 s2 r2 : SystemState}
         obtain ⟨⟨⟩, r1'⟩ := p1
         refine ⟨r1', rfl, storeObject_offSchedulerAgrees_of_agree _ ?_ hRel hInv1 hInv2 hSO1 hSO2⟩
         rw [hTcbEq]
-        exact congrArg KernelObject.tcb (hf tcb rc rp rpv rnx rbpv rbnx rwp rwn rwh rwc ib ibd icg ifs)
+        exact congrArg KernelObject.tcb (hf tcb rc rp rpv rnx rbpv rbnx rwp rwn rwh rwc ib ibd icg icgr ifs)
 
 /-- SM6.D step congruence: `storeTcbIpcStateAndMessage` succeeds on the
 single-core-side state whenever it succeeds on the cross-core-side state,
@@ -529,7 +529,7 @@ theorem storeTcbIpcStateAndMessage_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbIpcStateAndMessage s2 tid ipc msg = .ok r2) :
     ∃ r1, storeTcbIpcStateAndMessage s1 tid ipc msg = .ok r1 ∧ OffSchedulerAgrees r1 r2 :=
-  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
+  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
 
 /-- **`v0.35.161`** step congruence: `storeTcbQueueLinks` succeeds on the
 single-core-side state whenever it succeeds on the cross-core-side state, with
@@ -541,7 +541,7 @@ theorem storeTcbQueueLinks_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbQueueLinks s2 tid prev pprev next = .ok r2) :
     ∃ r1, storeTcbQueueLinks s1 tid prev pprev next = .ok r1 ∧ OffSchedulerAgrees r1 r2 :=
-  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
+  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
 
 /-- WS-ZA ZA4.4 step congruence: the notification link-in — two `modifyTcb`
 writes — carries the off-scheduler agreement. -/
@@ -553,7 +553,7 @@ theorem linkNtfnWaiter_offSchedulerAgrees {s1 s2 r2 : SystemState}
     ∃ r1, linkNtfnWaiter s1 waiter tail = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
   obtain ⟨m2, hM2, hR2⟩ := linkNtfnWaiter_ok_cases h2
   obtain ⟨m1, hM1, hRel1⟩ := modifyTcb_offSchedulerAgrees waiter _
-    (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 hM2
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 hM2
   have hInvM1 := modifyTcb_preserves_objects_invExt hInv1 hM1
   have hInvM2 := modifyTcb_preserves_objects_invExt hInv2 hM2
   unfold linkNtfnWaiter storeTcbNtfnLinks
@@ -561,7 +561,7 @@ theorem linkNtfnWaiter_offSchedulerAgrees {s1 s2 r2 : SystemState}
   unfold relinkNtfnNext modifyTcbOpt at hR2 ⊢
   cases tail with
   | none => cases hR2; exact ⟨m1, rfl, hRel1⟩
-  | some t => exact modifyTcb_offSchedulerAgrees t _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel1 hInvM1 hInvM2 hR2
+  | some t => exact modifyTcb_offSchedulerAgrees t _ (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl) hRel1 hInvM1 hInvM2 hR2
 
 open SeLe4n.Model.SystemState in
 /-- **`v0.35.161`** step congruence: `endpointQueueEnqueue` succeeds on the
@@ -595,7 +595,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
       cases hL2 : lookupTcb s2 tid with
       | none => simp
       | some tcb2 =>
-        obtain ⟨tcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hL, rfl⟩ :=
+        obtain ⟨tcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hL, rfl⟩ :=
           lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hL2
         rw [hL]
         simp only []
@@ -635,7 +635,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
               cases hLT2 : lookupTcb s2 tailTid with
               | none => simp
               | some tailTcb2 =>
-                obtain ⟨tailTcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hLT, hTailEq⟩ :=
+                obtain ⟨tailTcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hLT, hTailEq⟩ :=
                   lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hLT2
                 have hQP : tailTcb2.queuePrev = tailTcb.queuePrev := by subst hTailEq; rfl
                 have hQPP : tailTcb2.queuePPrev = tailTcb.queuePPrev := by subst hTailEq; rfl
@@ -953,7 +953,7 @@ theorem _root_.SeLe4n.Model.TCB.eq_withIpcReadView_of_eq {t t' : TCB}
                   replyWaitersHeadCode := t'.replyWaitersHeadCode,
                   replyWaitersCount := t'.replyWaitersCount,
                   ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
-                  ipcCanGrant := t'.ipcCanGrant, ipcFaultSend := t'.ipcFaultSend,
+                  ipcCanGrant := t'.ipcCanGrant, ipcCanGrantReply := t'.ipcCanGrantReply, ipcFaultSend := t'.ipcFaultSend,
                   spaceLinks := t'.spaceLinks,
                   boundNotificationCode := t'.boundNotificationCode,
                   taintTag0 := t'.taintTag0, taintTag1 := t'.taintTag1,
@@ -1456,7 +1456,7 @@ theorem trans {s1 s2 s3 : SystemState}
 form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
-    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg icgr ifs : Bool)
       (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s1.objects[x]? = some (.tcb t) ∧
@@ -1464,18 +1464,18 @@ theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcCanGrantReply := icgr, ipcFaultSend := ifs,
                     spaceLinks := sl, boundNotificationCode := bnc,
                     taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
                     taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
                     taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
 
 /-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
-    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
+    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg icgr ifs : Bool)
       (sl : Vector Nat (slotLinkWords * 4)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
       (wc : Nat) (ws : Bool),
       s2.objects[x]? = some (.tcb t') ∧
@@ -1483,13 +1483,13 @@ theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcCanGrantReply := icgr, ipcFaultSend := ifs,
                     spaceLinks := sl, boundNotificationCode := bnc,
                     taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
                     taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
                     taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
-  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
+  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)

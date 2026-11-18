@@ -345,16 +345,16 @@ theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : S
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/
 theorem recordSendCap_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) (hInv : st.objects.invExt) :
-    capabilityKeyFrame st (recordSendCap st tid badge grant) :=
-  ⟨keyInputsEq_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (recordSendCap st tid badge grant grantReply) :=
+  ⟨keyInputsEq_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
       (fun y => by
         unfold recordSendCap
         by_cases h : y = tid
         · subst h; rw [SystemState.mapTcbInPlace_getTcb?_self]; cases st.getTcb? y <;> rfl
         · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _
             (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]),
-    recordSendCap_scheduler _ _ _ _, recordSendCap_objects_invExt _ _ _ _ hInv⟩
+    recordSendCap_scheduler _ _ _ _ _, recordSendCap_objects_invExt _ _ _ _ _ hInv⟩
 
 /-! ### Send -/
 
@@ -397,7 +397,7 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           have hInv1 := endpointQueueEnqueue_preserves_objects_invExt _ _ _ _ _ hInv hEnq
           have hF2 := storeTcbIpcStateAndMessage_keyFrame hInv1 hBlk
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv1 hBlk
-          have hF3 := recordSendCap_keyFrame _ sender payload.badge payload.grant
+          have hF3 := recordSendCap_keyFrame _ sender payload.badge payload.grant payload.grantReply
             (removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2)
           exact ⟨stepCovers_trans (stepCovers_trans ((hF1.trans hF2).stepCovers
             (congrArg MachineState.residentCode
@@ -888,7 +888,7 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
         · rename_i st2 hBlk
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
           have hF3 := recordSendCap_keyFrame (removeRunnableOnCore st2 caller executingCore)
-            caller payload.badge payload.grant
+            caller payload.badge payload.grant payload.grantReply
             (removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2)
           exact ⟨stepCovers_trans (stepCovers_trans hF2.stepCovers
             (removeRunnableOnCore_stepCovers e _ _ _)) hF3.stepCovers, hF3.2.2⟩

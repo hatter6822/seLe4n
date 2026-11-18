@@ -155,7 +155,7 @@ theorem endpointSendDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
           exact (endpointQueueEnqueue_runQueueStage hE).blockThenDescheduleRecord hS2
             (RunQueueStage.refl _) hC1
             (currentOnCore_of_scheduler_eq
-              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _ _
   · split <;> exact (RunQueueStage.refl _).entry
 
 theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)

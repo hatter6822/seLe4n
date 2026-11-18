@@ -1651,7 +1651,7 @@ theorem endpointSendDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
               (endpointQueueEnqueue_confinedToCores endpointId false sender st st1 hEnq)
               (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hMsg))
             (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 sender executingCore
-              payload.badge payload.grant)
+              payload.badge payload.grant payload.grantReply)
     | some headRecv =>
       -- Rendezvous path: the receiver wakes on its own home core.
       simp only []

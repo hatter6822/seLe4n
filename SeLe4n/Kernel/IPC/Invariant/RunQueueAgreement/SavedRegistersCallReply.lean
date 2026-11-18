@@ -19,9 +19,7 @@ WS-ZA ZA6.26.  The `.call`, `.receive`, `.reply` and `.replyRecv` arms of
   completion are pending messages and IPC states.
 * **The woken receiver's delivery names the receive queue's head** at the
   entry's start, blocked there (`offCoreFree_of_receiveHead`); **the send's
-  completion names the send queue's head** (`offCoreFree_of_sendHead`), which
-  the reply-and-receive's reply leg and donation pop leave as it was, since they
-  write no endpoint (`sendHead_backward`).
+  completion names the send queue's head** (`offCoreFree_of_sendHead`).
 * **The reply's staging names the answered caller**, whom the reply leg refuses
   unless it is blocked on its reply (`endpointReplyCrossCoreDispatch_ok_target_notReady`);
   the fault reply's restart frame likewise.  The receive's delivered message is
@@ -227,7 +225,7 @@ theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
         · rename_i st2 hBlk
           have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
           have h3 := h2.trans (savedRegsUnwritten.of_removeRunnableOnCore st2 caller c h2.2)
-          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ caller _ _ h3.2)
+          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ caller _ _ _ h3.2)
   · split <;> exact .refl hInv
 
 theorem endpointCallWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
@@ -685,21 +683,6 @@ theorem offCoreFree_of_sendHead {e : CoreId} {st : SystemState} {epId : SeLe4n.O
     rw [hE] at h
     exact offCoreFree_of_notReady hD hRT hBNR fun x hx =>
       endpointWaiter_notReady (q := false) hQ hE (by simpa [endpointWaitQueue] using h) hx
-
-/-- A send queue's head read after a step that wrote no endpoint is the head the
-step began from. -/
-theorem sendHead_backward {st s : SystemState} {epId : SeLe4n.ObjId} {t : SeLe4n.ThreadId}
-    (hB : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s.objects[oid]? = some (.endpoint ep) →
-      st.objects[oid]? = some (.endpoint ep))
-    (h : (s.getEndpoint? epId).bind (·.sendQ.head) = some t) :
-    (st.getEndpoint? epId).bind (·.sendQ.head) = some t := by
-  cases hE : s.getEndpoint? epId with
-  | none => rw [hE] at h; cases h
-  | some ep =>
-    rw [hE] at h
-    rw [(SystemState.getEndpoint?_eq_some_iff st epId ep).mpr
-      (hB _ _ ((SystemState.getEndpoint?_eq_some_iff s epId ep).mp hE))]
-    exact h
 
 /-- **A successful reply leg names a thread blocked on its reply**: the leg
 refuses any other. -/

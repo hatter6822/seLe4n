@@ -238,10 +238,11 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        replyWaitersHeadCode := 0, replyWaitersCount := 0,
                        -- WS-ZA ZA4.7: a blocked sender's badge, grant bit and
                        -- fault flag are the parked half of its message (seL4's
-                       -- `blockingIPCBadge`/`blockingIPCCanGrant`/`blockingIPCIsCall`);
+                       -- `blockingIPCBadge`/`blockingIPCCanGrant`/
+                       -- `blockingIPCCanGrantReply`/`blockingIPCIsCall`);
                        -- erased as `pendingMessage`, the field they replace, is.
                        ipcBadge := 0, ipcBadged := false, ipcCanGrant := false,
-                       ipcFaultSend := false,
+                       ipcCanGrantReply := false, ipcFaultSend := false,
                        -- The context the thread is the recorded origin of is
                        -- erased, as the context's own `donationOrigin` is.
                        originScCode := 0,

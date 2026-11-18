@@ -588,12 +588,12 @@ blocked-sender read above makes the same read under the recorded badge, so the t
 capabilities on either. -/
 def frozenSendPayloadMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b _ =>
+  | .frame b _ _ =>
       senderFrameMessage
         (match frozenLookupTcb st sender with
          | some tcb => frozenSenderDecode st sender tcb
          | none => .error .objectNotFound) b
-  | .fault f ctx b => faultMessage f ctx b
+  | .fault f ctx b _ => faultMessage f ctx b
 
 /-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.
 Follows `queueNext` link in the head TCB to advance the queue.
@@ -758,7 +758,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             -- is nothing to propagate here.
             -- `senderTcb` is the one resolved above, shared with the rendezvous
             -- ordering so the two cannot disagree about what a valid sender is.
-            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap payload.badge payload.grant with
+            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap payload.badge payload.grant payload.grantReply with
               pendingMessage := none } (.blockedOnSend endpointId))
             match frozenStoreTcb sender senderTcb' st with
             | .error e => .error e
@@ -930,7 +930,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             -- message stays in its frame, as for a blocked send (WS-ZA ZA4.7)
             match frozenLookupTcb st caller with
             | some callerTcb =>
-                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap payload.badge payload.grant with
+                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap payload.badge payload.grant payload.grantReply with
                   pendingMessage := none } (.blockedOnCall endpointId))
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e

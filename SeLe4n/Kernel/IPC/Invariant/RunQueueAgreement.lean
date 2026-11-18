@@ -65,10 +65,10 @@ theorem storeTcbSignalBoundWoken_runQueueStage {st st' : SystemState}
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word
 and two flags: no run link, thread state or scheduler field. -/
 theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    RunQueueStage st (recordSendCap st tid badge grant) := by
-  have hG : ∀ {β : Type} (p : TCB → β), (∀ x, p (x.setSendCap badge grant) = p x) →
-      ∀ t, ((recordSendCap st tid badge grant).getTcb? t).map p = (st.getTcb? t).map p := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    RunQueueStage st (recordSendCap st tid badge grant grantReply) := by
+  have hG : ∀ {β : Type} (p : TCB → β), (∀ x, p (x.setSendCap badge grant grantReply) = p x) →
+      ∀ t, ((recordSendCap st tid badge grant grantReply).getTcb? t).map p = (st.getTcb? t).map p := by
     intro β p hp t
     unfold recordSendCap
     by_cases h : t = tid
@@ -76,21 +76,21 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       cases st.getTcb? t <;> simp [hp]
     · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _
         (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
-  have hL : ∀ c t, (recordSendCap st tid badge grant).runLinkOn c t = st.runLinkOn c t := by
+  have hL : ∀ c t, (recordSendCap st tid badge grant grantReply).runLinkOn c t = st.runLinkOn c t := by
     intro c t
     have e := hG (fun x => x.runLinkOn c) (fun _ => rfl) t
     unfold SystemState.runLinkOn
-    cases h1 : (recordSendCap st tid badge grant).getTcb? t <;> cases h2 : st.getTcb? t <;>
+    cases h1 : (recordSendCap st tid badge grant grantReply).getTcb? t <;> cases h2 : st.getTcb? t <;>
       rw [h1, h2] at e <;> first | rfl | cases e | exact Option.some.inj e
-  have hM : SystemState.StateMono st (recordSendCap st tid badge grant) :=
+  have hM : SystemState.StateMono st (recordSendCap st tid badge grant grantReply) :=
     SystemState.StateMono.of_stateFields (hG _ (fun _ => rfl))
-  exact ⟨.of_frames (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
+  exact ⟨.of_frames (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant grantReply h,
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
-      (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
+      (st' := recordSendCap st tid badge grant grantReply) rfl hL hM d, fun _ _ => hM⟩
 
 /-- **The block write** of core `c`'s current thread through `modifyTcb`. -/
 theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -464,13 +464,13 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.blockThenDescheduleRecord
     (pre : RunQueueStage st st1) (hS : storeTcbIpcStateAndMessage st1 t s m = .ok st2)
     (post : RunQueueStage st2 st3) (hC1 : st1.scheduler.currentOnCore c = some t)
     (hC3 : st3.scheduler.currentOnCore c = some t) (hNI : isIdleThreadId t = false)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
     SystemState.RunQueueEntryStage st
-      (recordSendCap (removeRunnableOnCore st3 t c) t badge grant) :=
+      (recordSendCap (removeRunnableOnCore st3 t c) t badge grant grantReply) :=
   (((pre.window (.block c)).trans (storeTcbIpcStateAndMessage_runQueueBlockStage hS hC1 hNI)).trans
     (post.window _)).dispatch
     ((SystemState.RunQueueDispatchStage.descheduleCurrent st3 c t hC3).trans_stage
-      (recordSendCap_runQueueStage _ t badge grant))
+      (recordSendCap_runQueueStage _ t badge grant grantReply))
 
 -- ============================================================================
 -- Call
@@ -765,7 +765,7 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
             ((SystemState.RunQueueDispatchStage.descheduleCurrent st2 c caller
               (currentOnCore_of_scheduler_eq
                 (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1)).trans_stage
-              (recordSendCap_runQueueStage _ caller _ _))
+              (recordSendCap_runQueueStage _ caller _ _ _))
   · split <;> exact (RunQueueStage.refl _).entry
 
 -- ============================================================================
@@ -1108,7 +1108,7 @@ theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
           exact (activeKeptStage.of_stage E1).trans E1.1
             ((storeTcbIpcStateAndMessage_activeKeptStage hS2).trans W.1
             ((activeKeptStage.of_dispatch D).trans D.1
-            (activeKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _))))
+            (activeKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _ _))))
   · split <;> exact .refl _
 
 theorem endpointCallWithCapsOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
@@ -1430,9 +1430,9 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
   · exact sus
   · rename_i tgt _
     have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st hHeads hCur hNI hInv hR hAct
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

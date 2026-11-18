@@ -451,10 +451,10 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
   mintBadgeValid : ∀ args, decoded.syscallId = .cspaceMint →
     decodeCSpaceMintArgs decoded = .ok args → args.badge.valid
   sendStage : ∀ epId, decoded.syscallId = .send → cap.target = .object epId →
-    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st = (st1, res) →
+    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st = (st1, res) →
     st1.objects.invExt
   callStage : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
-    ∀ st1 res, endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st = (st1, res) →
+    ∀ st1 res, endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st = (st1, res) →
     st1.objects.invExt
   callNotSelfRendezvous : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
     ∀ ep receiverTid, st.getEndpoint? epId = some ep →
@@ -956,8 +956,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           simp only [Bool.not_eq_true] at hNb
           simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
           by_cases hG : endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
-          · rw [show endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st
-                = endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st by simp [endpointSendCrossCoreDispatchChecked, hG]] at hStep
+          · rw [show endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st
+                = endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st by simp [endpointSendCrossCoreDispatchChecked, hG]] at hStep
             obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
             have hFreshR := readyThread_endpointQueueFresh st tid tcbC
               hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
@@ -965,7 +965,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
             have hTailR := sendTailCrossQueueFresh st epId
               hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
             have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
-              epId tid (.frame cap.badge (cap.rights.mem .grant))
+              epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
               executingCore st
               hInv hObjInv hBudgets hFreshR hTailR
               (fun tcb hTcb => by
@@ -981,7 +981,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                 obtain rfl := Option.some.inj hTcb
                 exact hBoundC)
             cases hSend : endpointSendDualWithCapsOnCore epId tid
-                (.frame cap.badge (cap.rights.mem .grant))
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 executingCore st with
             | mk st1 res1 =>
                 rw [hSend] at hStep hSendInv
@@ -1018,7 +1018,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                         rw [← hStep]
                         exact stageWokenDelivery_preserves_ipcInvariantFull pair2.2 _ _
                           hClearObjInv hClearInv
-          · rw [show endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st
+          · rw [show endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st
                 = (st, .error .flowDenied) by simp [endpointSendCrossCoreDispatchChecked, hG]] at hStep
             simp only [] at hStep; cases hStep
         all_goals cases hStep
@@ -1034,8 +1034,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
           by_cases hG : endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
-          · rw [show endpointCallCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st
-                = endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st by simp [endpointCallCrossCoreDispatchChecked, hG]] at hStep
+          · rw [show endpointCallCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st
+                = endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st by simp [endpointCallCrossCoreDispatchChecked, hG]] at hStep
             obtain ⟨tcbC, hTC, hReadyC, -⟩ := hPack.callerShape
             have hFreshR := readyThread_endpointQueueFresh st tid tcbC
               hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
@@ -1044,7 +1044,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
             have hNeR := hPack.callNotSelfRendezvous epId hSy hTgt
             have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
-              epId tid (.frame cap.badge (cap.rights.mem .grant))
+              epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
               executingCore st
               hInv hObjInv hBudgets hFreshR hTailR
               (fun tcb hTcb => by
@@ -1061,7 +1061,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                 exact readyThread_notBlockedOnReply tcbC hReadyC)
               hNeR
             cases hCall : endpointCallCrossCoreDispatch epId tid
-                (.frame cap.badge (cap.rights.mem .grant))
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
                 executingCore st with
             | mk st1 res1 =>
                 rw [hCall] at hStep hCallInv
@@ -1075,7 +1075,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     rw [← hStep]
                     exact stageWokenDelivery_preserves_ipcInvariantFull st1 _ _
                       hObjInv1 hCallInv
-          · rw [show endpointCallCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st
+          · rw [show endpointCallCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st
                 = (st, .error .flowDenied) by simp [endpointCallCrossCoreDispatchChecked, hG]] at hStep
             simp only [] at hStep; cases hStep
         all_goals cases hStep

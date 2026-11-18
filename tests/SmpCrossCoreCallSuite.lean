@@ -271,7 +271,7 @@ private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState 
 
 /-- The optional SGI surfaced by a cross-core call (`none` on a kernel error). -/
 private def callSgi (st : SystemState) (ec : CoreId) : Option (CoreId × SgiKind) :=
-  match (endpointCallOnCore epId callerTid (.frame none false) ec st).2 with
+  match (endpointCallOnCore epId callerTid (.frame none false true) ec st).2 with
   | .ok sgi => sgi
   | .error _ => none
 
@@ -343,7 +343,7 @@ private def runBlockingChecks : IO Unit := do
 
 private def runNoReceiverChecks : IO Unit := do
   IO.println "--- §3.3 SM6.A.1 no-receiver path (blockedOnCall) ---"
-  let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId stBase
+  let (st', res) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId stBase
   -- No receiver waiting ⇒ no cross-core wake ⇒ no SGI.
   assertBool "no-receiver call surfaces no SGI"
     (match res with | .ok none => true | _ => false)
@@ -357,11 +357,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- SM6.A.5/.8: WithCaps + the full cross-core dispatch agree with the bare call
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
-    (match (endpointCallWithCapsOnCore epId callerTid (.frame none false)
+    (match (endpointCallWithCapsOnCore epId callerTid (.frame none false true)
         bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
-    (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false)
+    (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false true)
         bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
@@ -385,7 +385,7 @@ private def runRendezvousChecks : IO Unit := do
          | some (tgt, kind) => decide (tgt = core1 ∧ kind = SgiKind.reschedule)
          | none => false)
       -- The caller blocks on its own core awaiting the reply.
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "rendezvous blocks the caller as blockedOnReply (reply linkage)"
         (match st'.getTcb? callerTid with
          | some t => decide (t.ipcState = .blockedOnReply epId (some recvRemoteTid))
@@ -404,7 +404,7 @@ private def runRendezvousChecks : IO Unit := do
   -- itself fail closed, with no intermediate `.blockedOnReply` caller and no SGI.
   match stWithReceiverNoReply recvRemoteTid with
   | some st =>
-      let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', res) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "no-stash rendezvous fails closed with replyCapInvalid"
         (match res with | .error .replyCapInvalid => true | _ => false)
       assertBool "no-stash rendezvous leaves the caller unblocked (no green intermediate)"
@@ -980,7 +980,7 @@ private def stTwoReceivers? : Option SystemState :=
 /-- **WS-OD OD3.11** fixture (blocking branch): one sender already parked, so a
 second `.call` enqueues behind it and writes *its* TCB as the old tail. -/
 private def stOneParkedSender? : Option SystemState :=
-  match endpointCallOnCore epId recvLocalTid (.frame none false) bootCoreId stBase with
+  match endpointCallOnCore epId recvLocalTid (.frame none false true) bootCoreId stBase with
   | (st1, .ok _) => some st1
   | _ => none
 
@@ -1009,7 +1009,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the successor's TCB write lock is declared (rendezvous)"
         (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "the call rewrites the promoted head's links"
         (match st'.getTcb? recvRemoteTid with
          | some t => decide (t.queuePrev = none ∧ t.queuePPrev = some .endpointHead)
@@ -1028,7 +1028,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the old tail's TCB write lock is declared (blocking)"
         (decide ((tcbLock recvLocalTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "the call rewrites the old tail's queueNext"
         (match st'.getTcb? recvLocalTid with
          | some t => decide (t.queueNext = some callerTid)

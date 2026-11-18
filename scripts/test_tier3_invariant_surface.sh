@@ -4908,7 +4908,6 @@ run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queu
 run_check "INVARIANT" rg -n '^      · exact ⟨\.refl _, hInv, fun _ h => offCoreFree_of_sendHead P\.dequeued P\.queueHeads hRT hBNR h⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      e ▸ offCoreFree_of_notReady hD hRT hBNR hB\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^            \(endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
-run_check "INVARIANT" rg -n '^        \(sendHead_backward \(fun o ep hx => hB0 o ep \(hB1 o ep hx\)\) ht\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^    exact hW \(sendArm_savedRegsWrittenFree _ P hRT hBNR hSend hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(w0\.trans \(receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P hRT hBNR hCall\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -23135,8 +23134,11 @@ run_negative_check "INVARIANT" rg -n 'replyNoPendingFault' SeLe4n/Kernel/IPC/Inv
 # RELATION, not presence: the payoff's `.reply` arm must reach BOTH branches of
 # the seam.  Every existing anchor over that arm is satisfied by the unfaulted
 # branch alone, which is exactly the confinement this cut removed.
-run_check "INVARIANT" rg -n 'replyTransferOnCore_of_fault tid callerTid decoded\.msgInfo' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
-run_check "INVARIANT" rg -n 'faultReplyOnCore_preserves_ipcInvariantFull tid' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+# The arm reaches the seam through the reply-transfer bundle theorem, and that
+# theorem takes the fault branch as well as the unfaulted one.
+run_check "INVARIANT" rg -n '^                    refine \(replyTransferOnCore_preserves_ipcInvariantFull tid callerTid$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '^  · rw \[replyTransferOnCore_of_fault replier callerTid mi regs msg grant c st hF\] at hStep$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '^    have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull replier callerTid mi regs c st$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '  replyFaultStage : ' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 # ...and the bundle it reaches must compose the DONATING form.  Both names
 # contain `endpointReplyCrossCoreDispatch`, so a presence check for the dispatch
@@ -23156,7 +23158,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_i
 run_check "INVARIANT" rg -n 'the delivery lends the faulted thread.s reservation to its handler' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n 'control: with no reservation to lend' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n 'the live \.reply dispatch abandons a faulted caller that had donated' tests/FaultHandlingSuite.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "  runReplySeamChecks\n  runReplyRecvFaultAnswerChecks\n  runFaultDonationChecks\n  runProgressChecks" tests/FaultHandlingSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runReplySeamChecks\n  runReplyRecvFaultAnswerChecks\n  runReplyRecvBoundSignalChecks\n  runFaultDonationChecks\n  runProgressChecks" tests/FaultHandlingSuite.lean'
 
 # ============================================================================
 # WS-RR RR8.16 (`v0.35.196`) — the RECEIVING side of the endpoint gate

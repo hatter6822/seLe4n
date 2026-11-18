@@ -2116,7 +2116,7 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
               st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg hInv1 rfl
-            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves
 `blockedThreadsPendingMessageConsistent`. The `.reply` store inside `linkReply`
@@ -2473,7 +2473,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
             have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
               st1 st2 caller (.blockedOnCall endpointId) none
               hObjInvEnq hMsg hInvEnq rfl
-            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 -- ============================================================================
 -- V3-G: endpointReply preservation

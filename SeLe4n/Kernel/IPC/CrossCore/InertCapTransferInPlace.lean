@@ -103,11 +103,11 @@ request the send makes (`sendCapRequest`) transfers nothing to the receiver's
 side. -/
 theorem capTransferInert_sendCapRequest_of_W (st : SystemState) (endpointId : SeLe4n.ObjId)
     (r : SeLe4n.ThreadId) (rt : TCB) (sender : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool)
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool)
     (hT : st.getTcb? r = some rt)
     (hW : senderTransferInertW st endpointId rt sender = true) :
     capTransferInert st endpointId (receiverCapTarget? st r)
-      (sendCapRequest st endpointId sender (.frame badge grant)) = true := by
+      (sendCapRequest st endpointId sender (.frame badge grant grantReply)) = true := by
   unfold sendCapRequest
   split
   · rfl

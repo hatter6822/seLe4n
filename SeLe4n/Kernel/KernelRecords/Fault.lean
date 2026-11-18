@@ -122,7 +122,7 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c S2.invExt
           intro _ _
           exact ((FaultParkedAt.of_store F1.invExt hBlk (by simp)).frame F3).frame
-            (RecordsFrame.recordSendCap _ caller payload.badge payload.grant F3.invExt)
+            (RecordsFrame.recordSendCap _ caller payload.badge payload.grant payload.grantReply F3.invExt)
   · split <;> (intro _ h; cases h)
 
 theorem endpointCallWithCapsOnCore_callerParked {endpointId : SeLe4n.ObjId}
@@ -237,13 +237,13 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
   · exact sus
   · rename_i tgt _
     have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
-      (payload := .fault f fctx tgt.cap.badge)
+      (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ
     have P := endpointCallCrossCoreDispatch_callerParked (endpointId := tgt.endpoint)
-      (caller := t) (payload := .fault f fctx tgt.cap.badge)
+      (caller := t) (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ
     generalize _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch tgt.endpoint t
-      (.fault f fctx tgt.cap.badge) c st = r at S P ⊢
+      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at S P ⊢
     obtain ⟨st1, res⟩ := r
     dsimp only at S P ⊢
     cases res with

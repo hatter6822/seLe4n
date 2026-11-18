@@ -365,8 +365,8 @@ theorem removeRunnableOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreI
   runDescheduleOnCore st c t hInv
 
 theorem recordSendCap (st : SystemState) (t : SeLe4n.ThreadId) (b : Option SeLe4n.Badge)
-    (g : Bool) (hInv : st.objects.invExt) :
-    RecordsFrame st (_root_.SeLe4n.Kernel.recordSendCap st t b g) :=
+    (g gr : Bool) (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.recordSendCap st t b g gr) :=
   mapTcbInPlace st t hInv fun _ => rfl
 
 end RecordsFrame

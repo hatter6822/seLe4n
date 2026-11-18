@@ -2181,7 +2181,7 @@ private def sd051_receiveLinkCaller : IO Unit := do
       |>.withRunnable [server, caller]
       |>.build)
   -- Caller issues a `Call` → enqueues `.blockedOnCall` on the endpoint sendQ.
-  match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stReady with
+  match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stReady with
   | .error _ => failLine "sd051_setup" "endpointCall setup should succeed"
   | .ok (_, stCalled) =>
       -- (a) the receive transition dequeues the Call caller (→ `.blockedOnReply`) and
@@ -2200,7 +2200,7 @@ private def sd051_receiveLinkCaller : IO Unit := do
          | .error .replyCapInvalid => true | _ => false)
         "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
   -- (c) a non-Call (`Send`) rendezvous links nothing (the dequeued sender → `.ready`).
-  match SeLe4n.Kernel.endpointSendDual epId caller (.frame none false) stReady with
+  match SeLe4n.Kernel.endpointSendDual epId caller (.frame none false true) stReady with
   | .error _ => failLine "sd051c_setup" "endpointSendDual setup should succeed"
   | .ok (_, stSent) =>
       expect "sd051c_ready_rendezvous_no_link"
@@ -2302,7 +2302,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
     "the previous caller's Reply must head the donated context, as a real Call leaves it"
   -- clientB issues a Call while the server is busy → it enqueues `blockedOnCall`
   -- (the queued-Call path does NOT donate; the donation is deferred to rendezvous).
-  match SeLe4n.Kernel.endpointCallOnCore epId clientB (.frame none false) bootCoreId st0 with
+  match SeLe4n.Kernel.endpointCallOnCore epId clientB (.frame none false true) bootCoreId st0 with
   | (_, .error _) => failLine "sd052b" "clientB Call should enqueue (blockedOnCall)"
   | (st1, .ok _) =>
       let msg : IpcMessage :=
@@ -2431,7 +2431,7 @@ private def sd053_serverFirstLink : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stBBase with
   | .error _ => failLine "sd053b" "server-first receive (stash) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
     | .ok ((), st') =>
         expect "sd053b_caller_linked"
           ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
@@ -2492,7 +2492,7 @@ private def sd053_serverFirstLink : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server none stDBase with
   | .error _ => failLine "sd053d" "plain receive (no-reply) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
     | .error e =>
         expect "sd053d_server_first_call_without_reply_rejected"
           (e == .replyCapInvalid)

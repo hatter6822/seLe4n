@@ -644,7 +644,7 @@ theorem endpointCallOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
           exact (readyKeptStage.of_stage E1).trans E1.1
             ((storeTcbIpcStateAndMessage_readyKeptStage hS2).trans W.1
             ((readyKeptStage.of_dispatch D).trans D.1
-            (readyKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _))))
+            (readyKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _ _))))
   · split <;> exact .refl _
 
 theorem endpointCallWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
@@ -718,12 +718,12 @@ theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.Threa
   · rename_i tgt _
     intro hI hR
     have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st hHeads hCur hNI
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
       hI hR hAct).1
     have r0 := endpointCallCrossCoreDispatch_readyKeptStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st hHeads hCur hNI
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st = r at s0 r0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 r0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus hI hR

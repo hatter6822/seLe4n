@@ -1121,7 +1121,7 @@ theorem callBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (caller : SeLe4n.Thread
     (hG : enqueuesInPlace st endpointId caller ep.sendQ.tail = true) :
     endpointCallOnCore endpointId caller payload executingCore st =
       (recordSendCap (removeRunnableOnCore (storeCallBlock st endpointId caller ep.sendTailCode)
-        caller executingCore) caller payload.badge payload.grant, .ok none) := by
+        caller executingCore) caller payload.badge payload.grant payload.grantReply, .ok none) := by
   obtain ⟨hEnq, hT, _, hL⟩ :=
     endpointEnqueue_inPlace_eq st endpointId ep false caller t ep.sendQ.tail hE rfl hR hA hG
   have hRes : caller.isReserved = false := by
@@ -1146,7 +1146,7 @@ as the specification's delivery does. -/
     (caller : SeLe4n.ThreadId) (tailCode : Nat) (cap : Capability) (core : CoreId) :
     SystemState :=
   recordSendCapWords (removeRunnableOnCore (storeCallBlock st endpointId caller tailCode)
-    caller core) caller cap.badgeWord cap.badged false
+    caller core) caller cap.badgeWord cap.badged false cap.canLinkReply
 
 /-- **The admitted delivery, handed words**: a fault whose handler is already
 waiting with a reply object, every write of the call rendezvous staying in its
@@ -1247,7 +1247,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
             subst hw
             obtain ⟨sgi, hD⟩ := callDispatch_inPlace st tgt.endpoint ep tid r rt rid
-              (.fault f ctx tgt.cap.badge) (faultMessage f ctx tgt.cap.badge)
+              (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
               c rfl
               (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
               hE hH hT' hRid hIn
@@ -1271,7 +1271,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
                 exact h.1
               subst hw
               obtain ⟨sgi, hD⟩ := callDispatch_donating_inPlace st tgt.endpoint ep tid r rt rid
-                (.fault f ctx tgt.cap.badge) (faultMessage f ctx tgt.cap.badge)
+                (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
                 c rfl
                 (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
                 hE hH hT' hRid hDon
@@ -1294,7 +1294,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
             subst hw
             have hC := callOnCore_noReply_refused st tgt.endpoint ep tid r rt
-              (.fault f ctx tgt.cap.badge) c hE hH hT' hRid hNR
+              (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c hE hH hT' hRid hNR
             unfold faultDeliverOnCore
             simp only [hRes]
             unfold endpointCallCrossCoreDispatch
@@ -1315,7 +1315,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
           have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
           have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
           subst hw
-          have hBlk := callBlock_inPlace_eq tgt.endpoint tid (.fault f ctx tgt.cap.badge) c st ep t
+          have hBlk := callBlock_inPlace_eq tgt.endpoint tid (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st ep t
             hE hH hT' hA hIn
           have hNoR : (match st.getEndpoint? tgt.endpoint with
               | some ep => ep.receiveQ.head | none => none) = none := by

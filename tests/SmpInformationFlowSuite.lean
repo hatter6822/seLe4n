@@ -4864,7 +4864,7 @@ private def vacatingSendMsg : IpcMessage :=
 /-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
 its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
 private def vacatedPost : SystemState :=
-  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge false) c0 niState).1
+  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge false true) c0 niState).1
 
 /-- The same state after the entry seam's local reschedule. -/
 private def vacatedRescheduled : SystemState :=
@@ -6129,7 +6129,7 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
     SystemState ×
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
-  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false)
+  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false true)
     c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
@@ -7643,7 +7643,7 @@ still fired.  Parking it properly is what makes each of them decided by the
 private def ipcSenderTcb : TCB :=
   TCB.setIpcState
     ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcMessage 1).setSendCap
-      none true)
+      none true true)
     (.blockedOnCall lowEndpoint)
 
 private def ipcFootprintState : SystemState :=
@@ -7705,7 +7705,7 @@ what the capability contributes, the badge and the grant right (WS-ZA ZA4.7).
 The words and capability addresses are in the caller's frame, which
 `ipcFootprintState` stages. -/
 private def ipcSendOperands (grant : Bool) : Concurrency.SyscallLockOperands :=
-  .ofObjectTarget lowCurrent lowEndpoint (some (.frame ipcMessage.badge grant))
+  .ofObjectTarget lowCurrent lowEndpoint (some (.frame ipcMessage.badge grant true))
 
 private def ipcDeclaredMember
     (declared : Option Concurrency.LockSet)
@@ -10572,7 +10572,7 @@ private def taintedEndpointState : SystemState :=
         { base with
             objects := base.objects.insert taintedSender.toObjId
               (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage 1).setSendCap
-                none true)) }
+                none true true)) }
         taintedSender #[SeLe4n.CPtr.ofNat 0]
 
 /-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
@@ -11924,7 +11924,7 @@ private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLa
 /-- The live checked `.call` dispatch under a labelling. -/
 private def flowCall (ctx : LabelingContext) : SystemState :=
   (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient
-    (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant))
+    (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant) true)
     bootCoreId
     flowState).1
 

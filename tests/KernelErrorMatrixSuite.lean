@@ -519,7 +519,7 @@ private def row_invalidCapability_send_to_nonEndpoint : KernelErrorRejection :=
         objects := (default : SystemState).objects.insert endpointId
           (.notification stuff) }
       runUnit (endpointSendDual endpointId (ThreadId.ofNat 1)
-        (.frame none false) st) }
+        (.frame none false true) st) }
 
 /-- Row: `endpointSendDual` rejects send to absent endpoint with
 `.objectNotFound`. -/
@@ -531,7 +531,7 @@ private def row_objectNotFound_send_missing : KernelErrorRejection :=
                      " exist in the object store"
     runScenario   := fun _ =>
       runUnit (endpointSendDual (ObjId.ofNat 9999) (ThreadId.ofNat 1)
-        (.frame none false) (default : SystemState)) }
+        (.frame none false true) (default : SystemState)) }
 
 /-- Row: `endpointQueueEnqueue` on a thread with non-`.ready` ipcState
 returns `.alreadyWaiting`. -/

@@ -6531,7 +6531,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- sender's own frame at delivery, and the extra capabilities are looked up
         -- only on the arm that delivers (a send that blocks resolves none; its
         -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
         -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
         -- stash (mirrors the unchecked `.send` arm).
@@ -6599,7 +6599,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- sender's own frame at delivery, and the extra capabilities are looked up
         -- only on the arm that delivers (a send that blocks resolves none; its
         -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
         -- WS-SM SM6.A (live cross-core `.call`): route the checked `.call`
         -- through the cross-core dispatch.  `endpointCallCrossCoreDispatchChecked`
         -- is the cross-core analogue of `endpointCallChecked` + inline donation:
@@ -7932,7 +7932,7 @@ theorem dispatchWithCapChecked_call_uses_crossCoreDispatch
         -- sender's own frame at delivery, and the extra capabilities are looked up
         -- only on the arm that delivers (a send that blocks resolves none; its
         -- receiver looks them up at the rendezvous).
-        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
         -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
         -- rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`); no
         -- separate post-dispatch link step.
@@ -9515,7 +9515,7 @@ theorem dispatchWithCapChecked_send_delegates
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       -- WS-SX SX7.2: `NBSend` with no receiver waiting drops the message.
       if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then .ok ((), st) else
-      (match endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant))
+      (match endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
               executingCore st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -9623,7 +9623,7 @@ def syscallDelegates : SyscallId → Prop
           -- WS-SX SX7.2: `NBSend` with no receiver waiting drops the message.
           if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then .ok ((), st) else
           (match endpointSendCrossCoreDispatchChecked ctx epId tid
-                  (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
+                  (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) executingCore st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>
                match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with

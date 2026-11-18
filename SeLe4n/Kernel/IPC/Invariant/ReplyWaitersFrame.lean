@@ -195,10 +195,10 @@ theorem removeRunnableOnCore_replyViews_eq (st : SystemState) (tid : ThreadId) (
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit touches no
 reply view. -/
 theorem recordSendCap_replyViews_eq (st : SystemState) (tid : ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).replyViews = st.replyViews := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).replyViews = st.replyViews := by
   unfold recordSendCap
-  rw [replyViews_mapTcbInPlace st tid (g := fun tcb => tcb.setSendCap badge grant) (gv := id)
+  rw [replyViews_mapTcbInPlace st tid (g := fun tcb => tcb.setSendCap badge grant grantReply) (gv := id)
     (fun _ => rfl)]
   funext k
   unfold ReplyViews.mapAt

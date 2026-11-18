@@ -974,6 +974,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _spaceSpare,
      -- The taint words name no object.
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
+     -- The grant-reply bit of a blocked sender names no object.
+     _ipcCanGrantReply,
      -- The id cell is the thread's own id (`TCB.idCell_eq`).
      _idCell, _hIdCell⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
@@ -2355,6 +2357,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated,
      -- The yield link is empty (WS-ZA ZA6.6): a boot state has yielded to nothing.
      _yieldToCode,
+     -- The grant-reply bit of a blocked sender names no object.
+     _ipcCanGrantReply,
      -- The id cell is the thread's own id (`TCB.idCell_eq`).
      _idCell, _hIdCell⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
@@ -4283,6 +4287,8 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _spaceSpare,
      -- The taint words name no object.
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
+     -- The grant-reply bit of a blocked sender names no object.
+     _ipcCanGrantReply,
      -- The id cell is the thread's own id (`TCB.idCell_eq`).
      _idCell, _hIdCell⟩ =>
     match tcb.cpuAffinity with

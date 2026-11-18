@@ -2328,7 +2328,7 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' sender) sender payload.badge
-                      payload.grant)
+                      payload.grant payload.grantReply)
     | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
@@ -2448,8 +2448,8 @@ theorem sendCapRequest_of_no_receiver (st : SystemState) (endpointId : SeLe4n.Ob
 
 /-- WS-ZA ZA4.7: a fault transfers nothing. -/
 @[simp] theorem sendCapRequest_fault (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) :
-    sendCapRequest st endpointId sender (.fault f ctx b) = none := by
+    (sender : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) (l : Bool) :
+    sendCapRequest st endpointId sender (.fault f ctx b l) = none := by
   unfold sendCapRequest
   split
   · rfl
@@ -2731,7 +2731,7 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' caller) caller payload.badge
-                      payload.grant)
+                      payload.grant payload.grantReply)
     | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 

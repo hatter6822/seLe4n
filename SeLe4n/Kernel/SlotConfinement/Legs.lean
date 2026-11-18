@@ -128,13 +128,13 @@ theorem removeRunnableOnCore_confinedToCores (st : SystemState)
 /-- WS-ZA ZA4.7: a blocking sender's deschedule, then its send-cap record (a TCB
 write of a badge word and two flags): core `cc`'s slots alone. -/
 theorem removeRunnableOnCoreThenRecordSendCap_confinedToCores (st : SystemState)
-    (tid : SeLe4n.ThreadId) (cc : CoreId) (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (tid : SeLe4n.ThreadId) (cc : CoreId) (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
     observableSlotsConfinedToCores st
-      (recordSendCap (removeRunnableOnCore st tid cc) tid badge grant) [cc] := by
+      (recordSendCap (removeRunnableOnCore st tid cc) tid badge grant grantReply) [cc] := by
   have h := observableSlotsConfinedToCores_trans (removeRunnableOnCore_confinedToCores st tid cc)
     (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq
       (st := removeRunnableOnCore st tid cc)
-      (st' := recordSendCap (removeRunnableOnCore st tid cc) tid badge grant)
+      (st' := recordSendCap (removeRunnableOnCore st tid cc) tid badge grant grantReply)
       (by rw [recordSendCap_scheduler]) (fun _ => rfl))
   simpa using h
 
@@ -710,7 +710,7 @@ theorem endpointCallOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
               (endpointQueueEnqueue_confinedToCores endpointId false caller st st1 hEnq)
               (storeTcbIpcStateAndMessage_confinedToCores st1 st2 caller _ _ hMsg))
             (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 caller executingCore
-              payload.badge payload.grant)
+              payload.badge payload.grant payload.grantReply)
     | some headRecv =>
       -- Rendezvous path: wake the receiver on its home core, block the caller.
       simp only []

@@ -1740,8 +1740,8 @@ theorem storeTcbQueueLinks_preservesFieldsOutside
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
 its TCB. -/
 theorem recordSendCap_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    preservesFieldsOutside ipcEndpointOp_modifiedFields st (recordSendCap st tid badge grant) := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (recordSendCap st tid badge grant grantReply) := by
   intro f hf
   cases f <;> first
     | rfl
@@ -1950,7 +1950,7 @@ theorem endpointSendDual_preservesFieldsOutside
             (preservesFieldsOutside_trans
               (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
               (preservesFieldsOutside_trans (removeRunnable_preservesFieldsOutside _ _)
-                (recordSendCap_preservesFieldsOutside _ _ _ _)))
+                (recordSendCap_preservesFieldsOutside _ _ _ _ _)))
   · cases hStep
   · cases hStep
 

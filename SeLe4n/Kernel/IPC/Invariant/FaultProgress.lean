@@ -97,7 +97,7 @@ theorem endpointCallOnCore_deschedules_caller
   all_goals (obtain ⟨h1, -⟩ := hStep; subst h1
              first
                | exact ⟨_, SystemState.linkReplyWaiter_scheduler _ _ _⟩
-               | exact ⟨_, recordSendCap_scheduler _ _ _ _⟩)
+               | exact ⟨_, recordSendCap_scheduler _ _ _ _ _⟩)
 
 /-- WS-RR RR4.19: a caller that completed a cross-core `endpointCallOnCore`
 is neither queued on nor current on the core it called from. -/
@@ -228,7 +228,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
     · simp only [faultDeliverOnCore, hRes, recordPendingFault_scheduler_eq]
       exact faultSuspendOnCore_not_runnable _ tid c
     · rcases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) c st with ⟨stC, res⟩
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st with ⟨stC, res⟩
       cases res with
       | error e =>
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq]
@@ -239,7 +239,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
             Architecture.stageWokenDelivery_scheduler_eq]
           exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
             c st stC summary sgi?
-            (sendCapRequest_fault _ _ _ _ _ _) hCall
+            (sendCapRequest_fault _ _ _ _ _ _ _) hCall
   rintro (hQ | hC)
   · exact hNot.1 hQ
   · exact hNot.2 hC

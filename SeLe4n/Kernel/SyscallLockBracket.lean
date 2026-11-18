@@ -459,7 +459,7 @@ where they land is read from the sender's frame at the state the footprint is
 resolved in (`sendCapRequest`, `rendezvousCapsDestination?`), so nothing is
 resolved, and no derivation node minted, before the bracket holds its locks. -/
 def abiEntryPayload (cap : Capability) : SendPayload :=
-  .frame cap.badge (cap.rights.mem .grant)
+  .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
 
 /-- **The operands a receive declares** on the endpoint `epId`: the reply the
 receive resolves, or, when the reply is busy with another thread, the reply its

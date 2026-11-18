@@ -99,9 +99,9 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
   obtain ⟨hGt, hMax, hX, -⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
@@ -110,7 +110,7 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   have hD := decodeSyscallArgsFromState_of_routedSendLong_ok st tid rf capAddr mi hR hRead
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -118,7 +118,7 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl
@@ -206,9 +206,9 @@ theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi0)
     (hUn : ∃ j e, j < mi0.length - 4 ∧
       Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf 4,
             badge := badge } := by
   obtain ⟨j, e, hj, h0⟩ := hUn
@@ -221,7 +221,7 @@ theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         j hj e h0, (decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi0 hR).2.2.1⟩
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -229,7 +229,7 @@ theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl
@@ -256,9 +256,9 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
   obtain ⟨hGt, hMax, hX, -⟩ :=
     decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
@@ -267,7 +267,7 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   have hD := decodeSyscallArgsFromState_of_routedCallLong_ok st tid rf capAddr mi hR hRead
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -275,7 +275,7 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl

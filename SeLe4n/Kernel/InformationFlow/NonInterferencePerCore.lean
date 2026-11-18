@@ -1005,7 +1005,7 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 sender _ _ bootCoreId hStore) ?_
             exact observableSlotsConfinedToCore_trans (removeRunnable_confinedToBootCore st2 sender)
-              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _) rfl)
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _ _) rfl)
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 
@@ -1249,7 +1249,7 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 caller _ _ bootCoreId hStore) ?_
             exact observableSlotsConfinedToCore_trans (removeRunnable_confinedToBootCore st2 caller)
-              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _) rfl)
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _ _) rfl)
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 

@@ -2665,9 +2665,9 @@ private def runThreadFinaliseChecks : IO Unit := do
     [("receiving", .BlockedRecv, true, .blockedOnReceive epId,
        fun t st => kernelState (SeLe4n.Kernel.endpointReceiveDual epId t none st)),
      ("sending", .BlockedSend, false, .blockedOnSend epId,
-       fun t st => kernelState (SeLe4n.Kernel.endpointSendDual epId t (.frame none false) st)),
+       fun t st => kernelState (SeLe4n.Kernel.endpointSendDual epId t (.frame none false true) st)),
      ("calling", .BlockedCall, false, .blockedOnCall epId,
-       fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false) st))]
+       fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false true) st))]
   for (name, ts, isRecv, blocked, block) in blocks do
     match runAll carveScenario (threeThreads ++ [OwnerStep.call <| decodeCarve slotUtRetype endpointTag 963 15]) with
     | .error e => assertBool s!"carving three threads and an endpoint succeeds (got {repr e})" false

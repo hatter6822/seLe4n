@@ -402,7 +402,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
               endpointId false sender st st1 hObjInv hEnq
             exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
-              (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+              (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
               (removeRunnable_preserves_dualQueueSystemInvariant _ _
                 (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                   st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hStore hInv1))
@@ -846,7 +846,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
               endpointId false caller st st1 hEnq hInv hObjInv hFreshCaller hSendTailFresh
             have hObjInvEnq := endpointQueueEnqueue_preserves_objects_invExt
               endpointId false caller st st1 hObjInv hEnq
-            exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_dualQueueSystemInvariant _ _
+            exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_dualQueueSystemInvariant _ _
               (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                 st1 st2 caller (.blockedOnCall endpointId) none hObjInvEnq hStore hInvEnq)
 
@@ -2285,7 +2285,7 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_allPendingMessagesBounded st2 sender
+            exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_allPendingMessagesBounded st2 sender
               (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
                 st1 st2 sender _ _ (by intro m hm; cases hm)
                 hObjInv1 hStore hInv1)
@@ -2348,7 +2348,7 @@ theorem endpointSendDual_preserves_badgeWellFormed
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact badgeWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_badgeWellFormed st2 sender
+            exact badgeWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_badgeWellFormed st2 sender
               (storeTcbIpcStateAndMessage_preserves_badgeWellFormed
                 st1 st2 sender _ _ hInv1 hObjInv1 hStore)
 
@@ -2749,7 +2749,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_allPendingMessagesBounded st2 caller
+            exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_allPendingMessagesBounded st2 caller
               (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
                 st1 st2 caller _ _ (by intro m hm; cases hm)
                 hObjInv1 hStore hInv1)
@@ -2824,7 +2824,7 @@ theorem endpointCall_preserves_badgeWellFormed
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact badgeWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_badgeWellFormed st2 caller
+            exact badgeWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_badgeWellFormed st2 caller
               (storeTcbIpcStateAndMessage_preserves_badgeWellFormed
                 st1 st2 caller _ _ hInv1 hObjInv1 hStore)
 

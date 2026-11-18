@@ -175,13 +175,13 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
             (endpointReceiveHeadsNotCurrent_at hHeads tgt.endpoint) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with
@@ -231,12 +231,12 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st (sendCapRequest_fault _ _ _ _ _ _) h
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st (sendCapRequest_fault _ _ _ _ _ _ _) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with
