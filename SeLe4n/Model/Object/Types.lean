@@ -4301,6 +4301,24 @@ notification with waiters holds none — and the binding is carried. -/
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
+/-- `Notification.withHeadPopped` with the successor given as its code
+(`ThreadId.optCode`): the compiled wake reads the successor off the woken
+head's `ntfnNextCode`, and taking the code keeps the `some` cell an
+`Option ThreadId` argument would need from ever being built. -/
+@[inline] def Notification.withHeadPoppedCode (n : Notification)
+    (nextCode : Nat) : Notification :=
+  { state := if nextCode != 0 then .waiting else .idle
+    waitHeadCode := nextCode
+    waitTailCode := if nextCode != 0 then n.waitTailCode else 0
+    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+
+/-- The code-taking pop is the pop. -/
+theorem Notification.withHeadPopped_eq_code (n : Notification)
+    (next : Option SeLe4n.ThreadId) :
+    n.withHeadPopped next = n.withHeadPoppedCode (SeLe4n.ThreadId.optCode next) := by
+  cases next <;> rfl
+
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
 @[inline] def Notification.withWaiterAppended (n : Notification)

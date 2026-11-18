@@ -1085,6 +1085,21 @@ def detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId)
     (next : Option SeLe4n.ThreadId) : SystemState :=
   unlinkNtfnNeighbours (clearNtfnLinks st head) none next
 
+/-- `detachNtfnHead` with the successor given as its code
+(`ThreadId.optCode`), so the compiled wake builds no `some` cell for it. -/
+def detachNtfnHeadCode (st : SystemState) (head : SeLe4n.ThreadId) (nextCode : Nat) :
+    SystemState :=
+  match nextCode with
+  | 0 => clearNtfnLinks st head
+  | k + 1 => (clearNtfnLinks st head).updateTcb ⟨k⟩ (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode none })
+
+/-- The code-taking detach is the detach. -/
+theorem detachNtfnHead_eq_code (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) :
+    detachNtfnHead st head next = detachNtfnHeadCode st head (SeLe4n.ThreadId.optCode next) := by
+  cases next <;> rfl
+
 /-- WS-UC UC3: the notification-link writes never shrink the object store. -/
 @[simp] theorem le_unlinkNtfnNeighbours_objects_capacity {n : Nat} (st : SystemState)
     (prev next : Option SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :

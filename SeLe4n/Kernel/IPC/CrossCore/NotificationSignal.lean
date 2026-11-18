@@ -147,6 +147,19 @@ notification's cell: `next` heads the queue. -/
   | .notification n => .notification (n.withHeadPopped next)
   | o => o
 
+/-- `signalPoppedObject` with the successor given as its code, so the compiled
+wake builds no `some` cell for it. -/
+@[inline] def signalPoppedObjectCode (nextCode : Nat) : KernelObject → KernelObject
+  | .notification n => .notification (n.withHeadPoppedCode nextCode)
+  | o => o
+
+/-- The code-taking pop is the pop. -/
+theorem signalPoppedObject_eq_code (next : Option SeLe4n.ThreadId) :
+    signalPoppedObject next = signalPoppedObjectCode (SeLe4n.ThreadId.optCode next) := by
+  funext o
+  cases o <;> simp only [signalPoppedObject, signalPoppedObjectCode,
+    Notification.withHeadPopped_eq_code]
+
 /-- WS-ZA ZA4.4: the wake path's writes, each made in its slot: the head popped
 off the notification's queue, the woken waiter made ready with the badge in its
 badge register (`TCB.signalWoken`, seL4's `sendSignal`), and the queue links

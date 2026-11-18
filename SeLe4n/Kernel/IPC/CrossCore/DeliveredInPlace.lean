@@ -654,44 +654,15 @@ seL4's `sendSignal` writes the badge into the woken waiter's badge register and
 transfers no message (`TCB.signalWoken`), so the wake's in-place writes
 (`storeSignalWoken`) are the whole delivery: nothing is staged after it. -/
 
-/-- `storeSignalWoken` with the waiter's write given as `g`. -/
-@[inline] def storeSignalWokenWith (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
-  detachNtfnHead ((st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter g)
-    waiter next
-
-theorem storeSignalWoken_eq_with (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (badge : SeLe4n.Badge) :
-    storeSignalWoken st notificationId waiter next badge =
-      storeSignalWokenWith st notificationId waiter next (TCB.signalWoken badge) := rfl
-
-theorem detachNtfnHead_noResizeDue (st : SystemState) (head : SeLe4n.ThreadId)
-    (next : Option SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) :
-    (detachNtfnHead st head next).objects.noResizeDue := by
-  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
-  dsimp only
-  have h1 := updateTcb_noResizeDue st head (fun t => { t with
-    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hNo
-  cases next with
-  | none => exact h1
-  | some n => exact updateTcb_noResizeDue _ _ _ h1
-
-theorem storeSignalWokenWith_noResizeDue (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB)
-    (hNo : st.objects.noResizeDue) :
-    (storeSignalWokenWith st notificationId waiter next g).objects.noResizeDue :=
-  detachNtfnHead_noResizeDue _ _ _ (updateTcb_noResizeDue _ waiter g
-    (modifyObject_noResizeDue _ notificationId (signalPoppedObject next) hNo))
-
 /-- **A signal's wake, out of line**: the head waiter popped, woken with the
 badge in its badge register (`storeSignalWoken`), and made runnable.  The
 successor arrives as its code, so no `Option` is built. -/
 @[noinline] def performSignalWoken (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (nextCode : Nat) (badge : SeLe4n.Badge) (core : CoreId) :
     SystemState :=
-  (wakeThread (storeSignalWokenWith st notificationId waiter (ThreadId.ofOptCode nextCode)
-    (TCB.signalWoken badge)) waiter core).1
+  (wakeThread (detachNtfnHeadCode
+    ((st.modifyObject notificationId (signalPoppedObjectCode nextCode)).updateTcb waiter
+      (TCB.signalWoken badge)) waiter nextCode) waiter core).1
 
 /-- WS-ZA ZA4.7: **the out-of-line signal wake is the specification's.** -/
 theorem signalWoken_eq_perform (st : SystemState) (notificationId : SeLe4n.ObjId)
@@ -700,7 +671,6 @@ theorem signalWoken_eq_perform (st : SystemState) (notificationId : SeLe4n.ObjId
     (wakeThread (storeSignalWoken st notificationId waiter next badge) waiter core).1 =
       performSignalWoken st notificationId waiter (ThreadId.optCode next) badge core := by
   unfold performSignalWoken
-  rw [SeLe4n.ThreadId.ofOptCode_optCode]
-  rfl
+  rw [storeSignalWoken, detachNtfnHead_eq_code, signalPoppedObject_eq_code]
 
 end SeLe4n.Kernel
