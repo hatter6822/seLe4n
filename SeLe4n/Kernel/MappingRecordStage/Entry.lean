@@ -365,12 +365,19 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
       (by unfold Platform.FFI.recordSyscallRefusal; split
           · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
           · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
+  have hDrop : ∀ (s : SystemState) (op : UInt32) (f : Fault),
+      MappingStage s (Platform.FFI.recordDroppedFault ctx e op tid x0 f s) := fun s op f => by
+    cases f with
+    | capFault a r lf => rw [Platform.FFI.recordDroppedFault_capFault]; exact hRec _ _ _
+    | _ => exact MappingStage.refl _
   dsimp only at h
   split at h
   · split at h
-    · -- WS-SX SX7.2: an `NBSend`'s dropped fault resumes, nothing written
+    · -- WS-SX SX7.2: an `NBSend`'s dropped fault resumes, the refusal
+      -- recorded in the ledger and nothing else written
       split at h
-      · cases h; exact hC
+      · cases h
+        exact hC.trans (hDrop _ _ _)
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans

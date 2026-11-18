@@ -194,8 +194,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR at h hS hQR hCR
     split at h
     · split at h
-      · cases h
-        exact hW.trans hS
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _ stR
+        rw [hL]
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI =>
+          RecordsFrame.of_objects_eq hI rfl rfl rfl)
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)

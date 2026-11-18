@@ -107,8 +107,12 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     split at h
     · rename_i fault _
       split at h
-      · cases h
-        exact contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv hMR
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 fault stR
+        rw [hL]
+        exact (contextMatchesCurrentOnCore_frame (st := stR) rfl rfl rfl).mpr hMR
       · cases h
         refine contextMatchesCurrentOnCore_stageCallerReturnFor _ _ hDInv ?_
         have hF := writeFaultRegistersToTcb_keyFrame _ tid

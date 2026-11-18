@@ -1554,7 +1554,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
     (seamCapFault (seamDispatch seamCtx .notificationSignal unresolvedCPtr) (unresolvedFault false))
   -- seL4's `handleInvocation` without `isBlocking` (NBSend): the invoke-phase
-  -- fault is dropped, nothing is recorded and the caller resumes as it trapped.
+  -- fault is dropped, no fault is recorded on the caller, and the caller resumes as it trapped.
   assertBool "an NBSend at the same CPtr drops its fault: the caller resumes, no fault recorded, still running"
     (match seamDispatchSyscall seamCtx .nbSend unresolvedCPtr with
      | .ok (.resumes, st) =>
@@ -1647,6 +1647,27 @@ private def runSyscallCapFaultChecks : IO Unit := do
            (match st.declassificationRefusals.recent.get
                stRunning.declassificationRefusals.nextSlot with
             | some r => decide (r.reason = KernelError.illegalAuthority) &&
+                        decide (r.syscall = SyscallId.declassify)
+            | none => false)
+     | _ => false)
+  -- seL4 drops an NBSend's invoke-phase lookup fault (`handleInvocation`
+  -- without `isBlocking`), and the refusal ledger still records the refusal a
+  -- recording operation met: a declassification on the audit-trail capability
+  -- whose one extra capability (`lookupExtraCaps`) does not resolve.
+  let nbDeclassifyBadExtra := SeLe4n.Testing.dispatchFromAbi seamCtx c0
+      Syscall.nbSend.number.toUInt32 3
+      (SyscallId.declassify.msgInfoWithLabel
+        (MessageInfo.encode { length := 0, extraCaps := 1, label := 0 }).toUInt64)
+      0 0 0 0 0 svcElr svcSpsr svcSpEl0 svcX30
+      (SeLe4n.Testing.withSenderCapAddrs auditCapAt3 faulter
+        #[SeLe4n.CPtr.ofNat unresolvedCPtr.toNat])
+  assertBool "an NBSend declassification whose extra capability does not resolve drops its fault, resumes, and records the failed lookup in the ledger"
+    (match nbDeclassifyBadExtra with
+     | .ok (.resumes, st) =>
+         pendingFaultOf st faulter == none &&
+           (match st.declassificationRefusals.recent.get
+               stRunning.declassificationRefusals.nextSlot with
+            | some r => decide (r.reason = KernelError.failedLookup false (.guardMismatch 64 0 62)) &&
                         decide (r.syscall = SyscallId.declassify)
             | none => false)
      | _ => false)

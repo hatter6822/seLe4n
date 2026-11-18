@@ -153,8 +153,12 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                  tid ke with
              | some fault =>
                  if Platform.FFI.syscallDropsFault syscallId fault then
-                   .ok (.resumes, cancelReceiveBusyReply ctx executingCore
-                     (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+                   .ok (.resumes, Platform.FFI.recordDroppedFault ctx executingCore
+                     (Platform.FFI.seamOperationCode
+                       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+                     tid x0 fault
+                     (cancelReceiveBusyReply ctx executingCore
+                       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)))
                  else
                  .ok (.faulted,
                       Platform.FFI.deliverSyscallCapFault ctx executingCore

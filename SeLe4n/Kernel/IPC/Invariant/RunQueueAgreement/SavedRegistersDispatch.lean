@@ -846,8 +846,11 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
       at h w1 iR hHR
     split at h
     · split at h
-      · cases h
-        exact savedRegsWrittenFree.census (base := st) w1 hC.currentKept hC.residentKept
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        exact savedRegsWrittenFree.census (base := st) (w1.trans (.of_kept (W := fun _ => False)
+            (.of_objects_eq (Platform.FFI.recordDroppedFault_objects_eq _ _ _ _ _ _ _))
+            fun _ h => h.elim)) hC.currentKept hC.residentKept
       · cases h
         refine savedRegsWrittenFree.census (base := st) ?_ hC.currentKept hC.residentKept
         unfold Platform.FFI.deliverSyscallCapFault

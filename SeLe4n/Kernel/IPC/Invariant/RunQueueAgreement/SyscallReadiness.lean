@@ -1701,8 +1701,13 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
     have hL := hW.entry.1.trans hS.1
     split at h
     · split at h
-      · cases h
-        exact hKW
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        obtain ⟨L, hLd⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _ stR
+        rw [hLd]
+        exact readyKeptStage.trans hL hKW (.of_stage ((SystemState.RunQueueStage.of_frame
+          rfl rfl rfl rfl (hS := rfl) (hRes := rfl) :
+            SystemState.RunQueueStage stR { stR with declassificationRefusals := L })))
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid

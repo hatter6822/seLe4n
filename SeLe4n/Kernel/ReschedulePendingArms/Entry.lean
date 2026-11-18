@@ -235,9 +235,18 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) hW.2.2
     split at h
     · split at h
-      · -- an NBSend lookup fault is dropped: the refusal's state, nothing more
+      · -- an NBSend lookup fault is dropped: the refusal's state and its
+        -- ledger record, nothing more
         cases h
-        exact ⟨stepCovers_trans hW.stepCovers hC, hCInv⟩
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e
+          (Platform.FFI.seamOperationCode
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+          tid x0 _ (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+        rw [hL]
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv rfl rfl
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have hF := writeFaultRegistersToTcb_keyFrame _ tid

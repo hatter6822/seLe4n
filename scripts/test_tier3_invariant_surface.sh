@@ -5957,6 +5957,10 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # WS-SX SX7.2: seL4's fault drop, by phase: an invoke-phase fault of a
 # non-blocking invocation resumes the caller; a receive-phase one never drops.
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_invokeFault_dropped($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_invokeFault_dropped_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_invokeFault_dropped_records($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordDroppedFault_capFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordDroppedLookupW_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDropsCapFault_recv($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'an NBSend at the same CPtr drops its fault' tests/FaultHandlingSuite.lean
 # WS-SX SX7.2: the non-blocking syscalls never block.  A send that only
@@ -6027,7 +6031,7 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n -U '^      match hRt : SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall\n              \(threadOperationCode st tid SeLe4n\.arm64DefaultLayout tcb\.registerContext\)\n              SeLe4n\.arm64DefaultLayout tcb\.registerContext 32 with$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U '^      \| \.viaDecode =>\n        absurd hRt \(SeLe4n\.Kernel\.Architecture\.RegisterDecode\.registerRoutedSyscall_viaDecode _\)$' SeLe4n/Kernel/RoutedArms/Dispatch.lean
 run_negative_check "INVARIANT" rg -n 'decodedRoutedArm' SeLe4n/Kernel
-run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv =>\n          if syscallDropsCapFault syscallId inRecv then \(Architecture\.SyscallOutcome\.resumes\.words, s\) else\n          \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match capFaultReceivePhase\? sid with\n      \| some inRecv =>\n          if syscallDropsCapFault syscallId inRecv then\n            \(Architecture\.SyscallOutcome\.resumes\.words,\n              recordDroppedLookupW ctx executingCore opCode tid x0 d w1 w2 w3 w4 s\) else\n          \(Architecture\.SyscallOutcome\.faulted\.words,\n          deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
 # message held as a constant.

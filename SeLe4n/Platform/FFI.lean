@@ -3514,6 +3514,83 @@ phase is its `InRecvPhase` word; no other fault is dropped. -/
   | .capFault _ inRecv _ => syscallDropsCapFault syscallId inRecv
   | _ => false
 
+/-- **A dropped capability fault, recorded in the refusal ledger.**  seL4
+drops an invoke-phase lookup fault of a non-blocking invocation
+(`syscallDropsFault`), so nothing reaches a fault handler and the caller
+resumes with the registers it trapped with; the refusal it was is recorded as
+every other refusal of a recording syscall is (`recordSyscallRefusal`), its
+reason seL4's failed lookup carrying the fault's lookup fault
+(`recordDroppedFault_capFault`).  Recording is total and invisible to the
+caller, so the outcome is the one seL4 gives.  The record is built from the
+lookup fault's words (`recordSyscallRefusalW`), so no error is built; a fault
+other than a capability fault is never dropped and records nothing. -/
+@[inline] def recordDroppedFault (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (fault : Fault) (s : SystemState) : SystemState :=
+  match fault with
+  | .capFault _ _ lf =>
+      recordSyscallRefusalW ctx executingCore opCode tid
+        (KernelError.failedLookup false .invalidRoot).toDiscriminant 0
+        (lf.word 0) (lf.word 1) (lf.word 2) (lf.word 3) x0 s
+  | _ => s
+
+/-- The dropped fault's record is the refusal `failedLookup false lf`. -/
+theorem recordDroppedFault_capFault (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (capAddress : UInt64) (inRecv : Bool)
+    (lf : LookupFault) (s : SystemState) :
+    recordDroppedFault ctx executingCore opCode tid x0 (.capFault capAddress inRecv lf) s =
+      recordSyscallRefusal ctx executingCore opCode tid (.failedLookup false lf) x0 s :=
+  recordSyscallRefusalW_eq ctx executingCore opCode tid (.failedLookup false lf) x0 s
+
+/-- A dropped fault's record leaves the object store as it stands. -/
+theorem recordDroppedFault_objects_eq (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (fault : Fault) (s : SystemState) :
+    (recordDroppedFault ctx executingCore opCode tid x0 fault s).objects = s.objects := by
+  cases fault with
+  | capFault a r lf =>
+    rw [recordDroppedFault_capFault]; exact recordSyscallRefusal_objects_eq _ _ _ _ _ _ _
+  | _ => rfl
+
+/-- A dropped fault's record leaves the scheduler as it stands. -/
+theorem recordDroppedFault_scheduler_eq (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (fault : Fault) (s : SystemState) :
+    (recordDroppedFault ctx executingCore opCode tid x0 fault s).scheduler = s.scheduler := by
+  cases fault with
+  | capFault a r lf =>
+    rw [recordDroppedFault_capFault]; exact recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _
+  | _ => rfl
+
+/-- `recordDroppedFault` of the capability fault a refusal's words name
+(`KernelError.capFaultLookup`), on the words: the lookup fault's words are the
+refusal's own payload words when it is a failed lookup, and
+`missingCapability 0`'s otherwise. -/
+@[inline] def recordDroppedLookupW (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (d : Nat) (w1 w2 w3 w4 : UInt64)
+    (s : SystemState) : SystemState :=
+  if d = (KernelError.failedLookup false .invalidRoot).toDiscriminant then
+    recordSyscallRefusalW ctx executingCore opCode tid d 0 w1 w2 w3 w4 x0 s
+  else
+    recordSyscallRefusalW ctx executingCore opCode tid
+      (KernelError.failedLookup false .invalidRoot).toDiscriminant 0
+      ((LookupFault.missingCapability 0).word 0) ((LookupFault.missingCapability 0).word 1)
+      ((LookupFault.missingCapability 0).word 2) ((LookupFault.missingCapability 0).word 3) x0 s
+
+theorem recordDroppedLookupW_eq (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (e : KernelError) (s : SystemState) :
+    recordDroppedLookupW ctx executingCore opCode tid x0 e.toDiscriminant
+        (e.payloadWord 1) (e.payloadWord 2) (e.payloadWord 3) (e.payloadWord 4) s =
+      recordSyscallRefusal ctx executingCore opCode tid (.failedLookup false e.capFaultLookup) x0 s := by
+  rw [← recordSyscallRefusalW_eq]
+  unfold recordDroppedLookupW
+  cases e with
+  | failedLookup w f => rfl
+  | _ => simp [KernelError.toDiscriminant, KernelError.capFaultLookup, KernelError.payloadWord]
+
 /-- A receive-phase fault is never dropped, whatever the syscall. -/
 theorem syscallDropsCapFault_recv (syscallId : UInt32) :
     syscallDropsCapFault syscallId true = false := rfl
@@ -3639,9 +3716,13 @@ def syscallDispatchFromAbi
               -- than resumes it (PR #887 review round 5).  WS-SX SX7.2: a
               -- non-blocking invocation runs `handleInvocation` without
               -- `isBlocking`, so its invoke-phase fault is dropped and the
-              -- thread resumes unchanged; a receive-phase fault is always
-              -- delivered (`syscallDropsFault`).
-              if syscallDropsFault syscallId fault then .ok (.resumes, stR) else
+              -- thread resumes with the registers it trapped with; a
+              -- receive-phase fault is always delivered (`syscallDropsFault`).
+              -- The dropped fault is recorded in the refusal ledger as the
+              -- refusal it was (`recordDroppedFault`), invisible to the caller.
+              if syscallDropsFault syscallId fault then
+                .ok (.resumes, recordDroppedFault ctx executingCore (seamOperationCode stRegs tid)
+                  tid x0 fault stR) else
               .ok (.faulted,
                    deliverSyscallCapFault ctx executingCore stR tid fault
                      (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
@@ -4034,7 +4115,9 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun d w0 w1 w2 w3 w4 s =>
       match syscallCapFaultOfW SeLe4n.arm64DefaultLayout s tid d w0 w1 w2 w3 w4 with
       | some fault =>
-          if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsFault syscallId fault then
+            (Architecture.SyscallOutcome.resumes.words,
+              recordDroppedFault ctx executingCore opCode tid x0 fault s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallCapFault ctx executingCore s tid fault
             (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr)
@@ -4043,7 +4126,9 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun d w0 w1 w2 w3 w4 s =>
       match capFaultReceivePhase? sid with
       | some inRecv =>
-          if syscallDropsCapFault syscallId inRecv then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsCapFault syscallId inRecv then
+            (Architecture.SyscallOutcome.resumes.words,
+              recordDroppedLookupW ctx executingCore opCode tid x0 d w1 w2 w3 w4 s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4
             syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30 elr spsr)
@@ -4053,7 +4138,10 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun replyWord w1 w2 w3 w4 s =>
       match capFaultReceivePhase? sid with
       | some inRecv =>
-          if syscallDropsCapFault syscallId inRecv then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsCapFault syscallId inRecv then
+            (Architecture.SyscallOutcome.resumes.words,
+              recordSyscallRefusalW ctx executingCore opCode tid
+                (KernelError.failedLookup false .invalidRoot).toDiscriminant 0 w1 w2 w3 w4 x0 s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid replyWord inRecv
             (KernelError.failedLookup false .invalidRoot).toDiscriminant w1 w2 w3 w4
@@ -4074,7 +4162,9 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
       syscallEntryCheckedK ctx executingCore st
         (syscallRefusalOutcome tid
           (fun s fault =>
-            if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
+            if syscallDropsFault syscallId fault then
+              (Architecture.SyscallOutcome.resumes.words,
+                recordDroppedFault ctx executingCore opCode tid x0 fault s) else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid fault
               (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr))
@@ -4085,7 +4175,10 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
           (fun st' => (returnOutcomeWords syscallId opCode st' tid, st')))
         (syscallLookupOutcome
           (fun s w b e =>
-            if syscallDropsCapFault syscallId b then (Architecture.SyscallOutcome.resumes.words, s) else
+            if syscallDropsCapFault syscallId b then
+              (Architecture.SyscallOutcome.resumes.words,
+                recordDroppedFault ctx executingCore opCode tid x0 (.capFault w b e.capFaultLookup) s)
+            else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid (.capFault w b e.capFaultLookup)
               (syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) elr spsr))
@@ -4109,7 +4202,8 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
     rw [SeLe4n.Kernel.entryReportOutcomeW_lookup]
     unfold syscallLookupOutcome
     cases capFaultReceivePhase? sid with
-    | some inRecv => simp only [deliverSyscallLookupFault_eq]; rfl
+    | some inRecv =>
+      simp only [deliverSyscallLookupFault_eq, recordDroppedLookupW_eq, recordDroppedFault_capFault]; rfl
     | none => simp only [errorRefusalWordsW_eq]
   · intro sid w rw lf s
     unfold abiEntryFinishW
@@ -5128,9 +5222,12 @@ theorem syscallDispatchFromAbi_error_resumes_of_not_call
 /-- **WS-SX SX7.2 (a non-blocking invocation's failed lookup is silent)**: seL4
 runs `handleInvocation` without `isBlocking` for `NBSend` and the invoke phase
 of `ReplyRecv`, `NBSendRecv` and `NBSendWait`, so an invoke-phase capability
-fault is dropped: no fault is delivered, nothing is written, and the caller
-resumes with the registers it trapped with (`syscallDropsFault`; a
-receive-phase fault is delivered, `syscallDropsCapFault_recv`). -/
+fault is dropped: no fault is delivered, no register or IPC-buffer word is
+written, and the caller resumes with the registers it trapped with
+(`syscallDropsFault`; a receive-phase fault is delivered,
+`syscallDropsCapFault_recv`).  The committed state differs from the spilled
+one only by the refusal's ledger record (`recordDroppedFault`), which the
+caller cannot observe (`syscallDispatchFromAbi_invokeFault_dropped_frame`). -/
 theorem syscallDispatchFromAbi_invokeFault_dropped
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -5152,10 +5249,111 @@ theorem syscallDispatchFromAbi_invokeFault_dropped
     syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
         x6 elr spsr spEl0 x30 st
       = Except.ok (.resumes,
-          cancelReceiveBusyReply ctx executingCore
-            (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) := by
+          recordDroppedFault ctx executingCore
+            (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+            tid x0 fault
+            (cancelReceiveBusyReply ctx executingCore
+              (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))) := by
   unfold syscallDispatchFromAbi
   simp [hCur, hNI, hSyscall, hCap, hDrop]
+
+/-- A dropped fault's record writes the refusal ledger and nothing else. -/
+theorem recordDroppedFault_frame (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (opCode : UInt32)
+    (tid : SeLe4n.ThreadId) (x0 : UInt64) (fault : Fault) (st : SystemState) :
+    ∃ L : RefusalLedger,
+      recordDroppedFault ctx executingCore opCode tid x0 fault st =
+        { st with declassificationRefusals := L } := by
+  cases fault with
+  | capFault a r lf =>
+    rw [recordDroppedFault_capFault]
+    exact recordSyscallRefusal_frame ctx executingCore opCode tid _ x0 st
+  | _ => exact ⟨st.declassificationRefusals, rfl⟩
+
+/-- **A dropped fault is invisible to its caller**: the state the seam commits
+for it gives every thread the return frame the spilled state gave it, so the
+caller resumes with the registers it trapped with, as seL4's dropped fault
+leaves them, though the refusal is recorded in the ledger. -/
+theorem syscallDispatchFromAbi_invokeFault_dropped_frame
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+        = Except.error ke)
+    (hCap : syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+        (cancelReceiveBusyReply ctx executingCore
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+          tid ke = some fault)
+    (hDrop : syscallDropsFault syscallId fault = true) :
+    ∃ post : SystemState,
+      syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
+          x6 elr spsr spEl0 x30 st = Except.ok (.resumes, post) ∧
+      (∀ t, Architecture.readReturnFrame post t =
+        Architecture.readReturnFrame (cancelReceiveBusyReply ctx executingCore
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) t) := by
+  refine ⟨_, syscallDispatchFromAbi_invokeFault_dropped ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap hDrop, ?_⟩
+  intro t
+  obtain ⟨L, hL⟩ := recordDroppedFault_frame ctx executingCore
+    (seamOperationCode (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+    tid x0 fault (cancelReceiveBusyReply ctx executingCore
+      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+  rw [hL]
+  rfl
+
+/-- **A dropped fault of a recording syscall lands in the ledger**: the
+record names the caller, its domain, the invoked operation, the operand word
+and, as its reason, seL4's failed lookup carrying the fault's lookup fault. -/
+theorem syscallDispatchFromAbi_invokeFault_dropped_records
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
+    (capAddress : UInt64) (inRecv : Bool) (lf : LookupFault)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
+    (hDecode : SyscallId.ofNat? (seamOperationCode
+      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid).toNat = some sid)
+    (hRecords : refusalSeamClass sid = .records)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+        = Except.error ke)
+    (hCap : syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+        (cancelReceiveBusyReply ctx executingCore
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+          tid ke = some (.capFault capAddress inRecv lf))
+    (hDrop : syscallDropsFault syscallId (.capFault capAddress inRecv lf) = true) :
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
+        x6 elr spsr spEl0 x30 st =
+      Except.ok (.resumes,
+        { cancelReceiveBusyReply ctx executingCore
+            (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+          declassificationRefusals :=
+            recordRefusal (cancelReceiveBusyReply ctx executingCore
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).declassificationRefusals
+              { originatingCore := executingCore
+                subject := tid
+                subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+                syscall := sid
+                reason := .failedLookup false lf
+                requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+                refusedReceiver := none } }) := by
+  rw [syscallDispatchFromAbi_invokeFault_dropped ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke _ hCur hNI hSyscall hCap hDrop,
+    recordDroppedFault_capFault]
+  simp only [recordSyscallRefusal, hDecode, hRecords]
+  rw [refusalReceiverFor_other]
+  simp
 
 /-- **The registers a resumed caller returns with are the ones it trapped
 with**: the spill writes the trapped `x0`-`x5` into the caller's saved
